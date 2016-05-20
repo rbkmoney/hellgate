@@ -1,0 +1,2 @@
+include/hg_*_thrift.hrl
+src/hg_*_thrift.erl

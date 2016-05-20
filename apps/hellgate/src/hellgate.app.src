@@ -1,11 +1,18 @@
 {application, hellgate, [
-    {description, "A service that does something"},
+    {description,
+        "Umbrella project for state processors implementing payment processing activities"
+    },
     {vsn, "1"},
     {registered, []},
     {mod, {hellgate, []}},
     {applications, [
         kernel,
-        stdlib
+        stdlib,
+        lager,
+        genlib,
+        cowboy,
+        woody,
+        hg_proto
     ]},
     {env, []},
     {modules, []},

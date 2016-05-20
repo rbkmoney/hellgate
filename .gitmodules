@@ -1,0 +1,3 @@
+[submodule "apps/hg_proto/damsel"]
+	path = apps/hg_proto/damsel
+	url = git@github.com:rbkmoney/damsel.git
