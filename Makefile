@@ -1,26 +1,35 @@
 REBAR := $(shell which rebar3 2>/dev/null || which ./rebar3)
-RELNAME = hellgate
+SUBMODULES = apps/hg_proto/damsel
+SUBTARGETS = $(patsubst %,%/.git,$(SUBMODULES))
 
-.PHONY: all compile devrel start test clean distclean dialyze
+.PHONY: all submodules compile devrel start test clean distclean dialyze
 
 all: compile
-
-compile:
-	$(REBAR) compile
 
 rebar-update:
 	$(REBAR) update
 
-devrel:
+$(SUBTARGETS): %/.git: %
+	git submodule update --init $<
+
+submodules: $(SUBTARGETS)
+
+compile: submodules
+	$(REBAR) compile
+
+devrel: submodules
 	$(REBAR) release
 
-start:
+start: submodules
 	$(REBAR) run
 
-test:
+test: submodules
 	$(REBAR) ct
 
-xref:
+lint: compile
+	elvis rock
+
+xref: submodules
 	$(REBAR) xref
 
 clean:
