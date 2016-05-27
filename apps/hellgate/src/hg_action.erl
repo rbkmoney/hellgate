@@ -14,7 +14,8 @@
 
 -type tag() :: binary().
 -type seconds() :: non_neg_integer().
--type datetime() :: calendar:datetime().
+-type datetime_iso8601() :: binary().
+-type datetime() :: calendar:datetime() | datetime_iso8601().
 
 -type t() :: hg_state_processing_thrift:'ComplexAction'().
 
@@ -45,7 +46,7 @@ set_deadline(Deadline) ->
 -spec set_deadline(datetime(), t()) -> t().
 
 set_deadline(Deadline, Action) ->
-    set_timer({deadline, genlib_format:format_datetime_iso8601(Deadline)}, Action).
+    set_timer({deadline, try_format_dt(Deadline)}, Action).
 
 set_timer(Timer, Action = #'ComplexAction'{}) ->
     Action#'ComplexAction'{set_timer = #'SetTimerAction'{timer = Timer}}.
@@ -59,3 +60,10 @@ set_tag(Tag) ->
 
 set_tag(Tag, Action = #'ComplexAction'{}) when is_binary(Tag) andalso byte_size(Tag) > 0 ->
     Action#'ComplexAction'{tag = #'TagAction'{tag = Tag}}.
+
+%%
+
+try_format_dt(Datetime = {_, _}) ->
+    genlib_format:format_datetime_iso8601(Datetime);
+try_format_dt(Datetime) when is_binary(Datetime) ->
+    Datetime.
