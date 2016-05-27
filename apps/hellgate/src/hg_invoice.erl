@@ -267,7 +267,15 @@ map_history(Evs, St, Acc) when is_list(Evs) ->
 
 map_history(ID, Ev, St, Acc) ->
     St1 = merge_history(Ev, St),
-    {St1, [{ID, Ev1} || Ev1 <- map_history(Ev, St1)] ++ Acc}.
+    {St1, [construct_external_event(ID, Ev1) || Ev1 <- map_history(Ev, St1)] ++ Acc}.
+
+construct_external_event(ID, Ev) ->
+    #'Event'{id = integer_to_binary(ID), ev = wrap_external_event(Ev)}.
+
+wrap_external_event(Ev = #'InvoiceStatusChanged'{}) ->
+    {invoice_status_changed, Ev};
+wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
+    {invoice_payment_status_changed, Ev}.
 
 map_history({invoice_created, _}, #st{invoice = Invoice}) ->
     [#'InvoiceStatusChanged'{invoice = Invoice}];

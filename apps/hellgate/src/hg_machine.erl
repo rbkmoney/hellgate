@@ -61,7 +61,7 @@ call(Module, ID, Args, #{context := Context}) ->
                 ok ->
                     ok;
                 {ok, Result} ->
-                    {ok, Result};
+                    Result;
                 {exception, Exception} ->
                     throw(Exception)
             end;
