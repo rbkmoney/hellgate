@@ -1,0 +1,24 @@
+{
+    "builders": [
+        {
+            "type": "docker",
+            "image": "rbkmoney/service_erlang",
+            "pull": "true",
+            "commit": "true"
+        }
+    ],
+    "provisioners": [
+        {
+            "type": "file",
+            "source": "./_build/prod/rel/hellgate",
+            "destination": "/opt/"
+        }
+    ],
+    "post-processors": [
+        {
+            "type": "docker-tag",
+            "repository": "rbkmoney/hellgate"
+        }
+    ]
+}
+
