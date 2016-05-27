@@ -11,6 +11,7 @@ rebar-update:
 
 $(SUBTARGETS): %/.git: %
 	git submodule update --init $<
+	touch $@
 
 submodules: $(SUBTARGETS)
 
