@@ -50,7 +50,7 @@ type_to_name(#'ProxyRef'{}) ->
 get_fixture() ->
     #{
         ?object('CurrencyObject',
-            #'CurrencyRef'{symbolic_code = <<"RUR">>},
-            #'Currency'{name = <<"Russian rubles">>, numeric_code = 643, symbolic_code = <<"RUR">>, exponent = 2}
+            #'CurrencyRef'{symbolic_code = <<"RUB">>},
+            #'Currency'{name = <<"Russian rubles">>, numeric_code = 643, symbolic_code = <<"RUB">>, exponent = 2}
         )
     }.
