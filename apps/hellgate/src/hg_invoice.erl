@@ -25,25 +25,30 @@
 create(UserInfo, InvoiceParams, Opts) ->
     hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, Opts).
 
-get(_UserInfo, InvoiceID, Opts) ->
-    get_invoice_state(collapse_history(hg_machine:get_history(?MODULE, InvoiceID, Opts))).
+get(UserInfo, InvoiceID, Opts) ->
+    get_invoice_state(get_state(UserInfo, InvoiceID, Opts)).
 
-get_events(_UserInfo, _InvoiceID, _Range, _Opts) ->
-    % call_machine(InvoiceID, {get_events, Range, UserInfo}, Opts).
-    error(noimpl).
+get_events(UserInfo, InvoiceID, #'EventRange'{'after' = AfterID, limit = Limit}, Opts) ->
+    History = get_history(UserInfo, InvoiceID, Opts),
+    select_range(AfterID, Limit, map_history(History)).
 
 start_payment(UserInfo, InvoiceID, PaymentParams, Opts) ->
     hg_machine:call(?MODULE, InvoiceID, {start_payment, PaymentParams, UserInfo}, Opts).
 
 get_payment(UserInfo, PaymentID, Opts) ->
-    InvoiceID = deduce_invoice_id(PaymentID),
-    hg_machine:call(?MODULE, InvoiceID, {get_payment, PaymentID, UserInfo}, Opts).
+    get_payment(PaymentID, get_state(UserInfo, deduce_invoice_id(PaymentID), Opts)).
 
 fulfill(UserInfo, InvoiceID, Reason, Opts) ->
     hg_machine:call(?MODULE, InvoiceID, {fulfill, Reason, UserInfo}, Opts).
 
 void(UserInfo, InvoiceID, Reason, Opts) ->
     hg_machine:call(?MODULE, InvoiceID, {void, Reason, UserInfo}, Opts).
+
+get_history(_UserInfo, InvoiceID, Opts) ->
+    hg_machine:get_history(?MODULE, InvoiceID, Opts).
+
+get_state(UserInfo, InvoiceID, Opts) ->
+    collapse_history(get_history(UserInfo, InvoiceID, Opts)).
 
 %%
 
@@ -68,7 +73,7 @@ void(UserInfo, InvoiceID, Reason, Opts) ->
     {payment_succeeded, payment_id()} |
     {payment_failed, payment_id(), error()}.
 
-init(ID, {_UserInfo, InvoiceParams}) ->
+init(ID, {InvoiceParams, _UserInfo}) ->
     Invoice = create_invoice(ID, InvoiceParams),
     Event = {invoice_created, Invoice},
     ok(Event, set_invoice_timer(Invoice)).
@@ -103,15 +108,6 @@ process_call({start_payment, PaymentParams, _UserInfo}, History) ->
             raise(invalid_invoice_status(Invoice))
     end;
 
-process_call({get_payment, PaymentID, _UserInfo}, History) ->
-    St = collapse_history(History),
-    case get_payment(PaymentID, St) of
-        Payment = #'InvoicePayment'{} ->
-            respond({ok, Payment}, [], set_invoice_timer(St#st.invoice));
-        false ->
-            raise(payment_not_found())
-    end;
-
 process_call({fulfill, Reason, _UserInfo}, History) ->
     #st{invoice = Invoice} = collapse_history(History),
     case fulfill_invoice(Reason, Invoice) of
@@ -131,7 +127,8 @@ process_call({void, Reason, _UserInfo}, History) ->
     end.
 
 set_invoice_timer(#'Invoice'{status = unpaid, due = Due}) when Due /= undefined ->
-    hg_action:set_deadline(Due);
+    Ts = genlib_time:daytime_to_unixtime(genlib_format:parse_datetime_iso8601(Due)),
+    hg_action:set_timeout(max(Ts - genlib_time:unow(), 0));
 set_invoice_timer(_Invoice) ->
     hg_action:new().
 
@@ -203,8 +200,6 @@ get_invoice_id(#'Invoice'{id = ID}) ->
 
 get_invoice_status(#'Invoice'{status = Status}) ->
     Status.
-set_invoice_status(Status, V = #'Invoice'{}) ->
-    V#'Invoice'{status = Status}.
 
 get_payment_id(#'InvoicePayment'{id = ID}) ->
     ID.
@@ -231,12 +226,15 @@ payment_pending(Payment) ->
 -spec collapse_history([ev()]) -> st().
 
 collapse_history(History) ->
-    lists:foldl(fun merge_history/2, #st{}, History).
+    lists:foldl(fun ({_ID, Ev}, St) -> merge_history(Ev, St) end, #st{}, History).
+
+merge_history(Events, St) when is_list(Events) ->
+    lists:foldl(fun merge_history/2, St, Events);
 
 merge_history({invoice_created, Invoice}, St) ->
     St#st{invoice = Invoice};
-merge_history({invoice_status_changed, Status}, St = #st{invoice = I}) ->
-    St#st{invoice = set_invoice_status(Status, I)};
+merge_history({invoice_status_changed, Status, Details}, St = #st{invoice = I}) ->
+    St#st{invoice = I#'Invoice'{status = Status, details = Details}};
 
 merge_history({payment_created, Payment}, St) ->
     set_payment(Payment, St);
@@ -254,6 +252,42 @@ set_payment(Payment, St) ->
 
 get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
     #'InvoiceState'{invoice = Invoice, payments = Payments}.
+
+%%
+
+map_history(History) ->
+    lists:reverse(element(2, lists:foldl(
+        fun ({ID, Evs}, {St, Acc}) -> map_history([{ID, Ev} || Ev <- Evs], St, Acc) end,
+        {#st{}, []},
+        History
+    ))).
+
+map_history(Evs, St, Acc) when is_list(Evs) ->
+    lists:foldl(fun ({ID, Ev}, {St0, Acc0}) -> map_history(ID, Ev, St0, Acc0) end, {St, Acc}, Evs).
+
+map_history(ID, Ev, St, Acc) ->
+    St1 = merge_history(Ev, St),
+    {St1, [{ID, Ev1} || Ev1 <- map_history(Ev, St1)] ++ Acc}.
+
+map_history({invoice_created, _}, #st{invoice = Invoice}) ->
+    [#'InvoiceStatusChanged'{invoice = Invoice}];
+map_history({invoice_status_changed, _, _}, #st{invoice = Invoice}) ->
+    [#'InvoiceStatusChanged'{invoice = Invoice}];
+
+map_history({payment_created, Payment}, _St) ->
+    [#'InvoicePaymentStatusChanged'{payment = Payment}];
+map_history({payment_succeeded, PaymentID}, St) ->
+    [#'InvoicePaymentStatusChanged'{payment = get_payment(PaymentID, St)}];
+map_history({payment_failed, PaymentID, _}, St) ->
+    [#'InvoicePaymentStatusChanged'{payment = get_payment(PaymentID, St)}].
+
+select_range(undefined, Limit, History) ->
+    select_range(Limit, History);
+select_range(AfterID, Limit, History) ->
+    select_range(Limit, lists:dropwhile(fun ({ID, _}) -> ID =< AfterID end, History)).
+
+select_range(Limit, History) ->
+    lists:sublist(History, Limit).
 
 %%
 

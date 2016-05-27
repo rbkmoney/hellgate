@@ -24,7 +24,7 @@ handle_function('processCall', {Args}, Context, _Opts) ->
 unmarshal_history(undefined) ->
     [];
 unmarshal_history(History) ->
-    [E || {event, E} <- History].
+    [{ID, Body} || #'Event'{id = ID, body = Body} <- History].
 
 opts(Context) ->
     #{context => Context}.
