@@ -15,11 +15,11 @@
 
 handle_function('processSignal', {Args}, Context, _Opts) ->
     #'SignalArgs'{signal = {_Type, Signal}, history = History} = Args,
-    {ok, hg_dispatcher:dispatch_signal(Signal, unmarshal_history(History), opts(Context))};
+    {ok, hg_machine:dispatch_signal(Signal, unmarshal_history(History), opts(Context))};
 
 handle_function('processCall', {Args}, Context, _Opts) ->
     #'CallArgs'{call = Payload, history = History} = Args,
-    {ok, hg_dispatcher:dispatch_call(Payload, unmarshal_history(History), opts(Context))}.
+    {ok, hg_machine:dispatch_call(Payload, unmarshal_history(History), opts(Context))}.
 
 unmarshal_history(undefined) ->
     [];

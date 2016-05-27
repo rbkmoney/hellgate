@@ -1,4 +1,6 @@
 -module(hg_invoice).
+-include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include("hg_duration.hrl").
 
 %% Public
 
@@ -6,6 +8,7 @@
 -export([get/3]).
 -export([get_events/4]).
 -export([start_payment/4]).
+-export([get_payment/3]).
 -export([fulfill/4]).
 -export([void/4]).
 
@@ -19,131 +22,181 @@
 
 %%
 
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
-
 create(UserInfo, InvoiceParams, Opts) ->
-    hg_dispatcher:start_machine(?MODULE, {InvoiceParams, UserInfo}, Opts).
+    hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, Opts).
 
-get(UserInfo, InvoiceID, Opts) ->
-    % call_machine(InvoiceID, {get, UserInfo}, Opts).
-    error(noimpl).
+get(_UserInfo, InvoiceID, Opts) ->
+    get_invoice_state(collapse_history(hg_machine:get_history(?MODULE, InvoiceID, Opts))).
 
-get_events(UserInfo, InvoiceID, Range, Opts) ->
+get_events(_UserInfo, _InvoiceID, _Range, _Opts) ->
     % call_machine(InvoiceID, {get_events, Range, UserInfo}, Opts).
     error(noimpl).
 
 start_payment(UserInfo, InvoiceID, PaymentParams, Opts) ->
-    hg_dispatcher:call_machine(?MODULE, InvoiceID, {start_payment, PaymentParams, UserInfo}, Opts).
+    hg_machine:call(?MODULE, InvoiceID, {start_payment, PaymentParams, UserInfo}, Opts).
+
+get_payment(UserInfo, PaymentID, Opts) ->
+    InvoiceID = deduce_invoice_id(PaymentID),
+    hg_machine:call(?MODULE, InvoiceID, {get_payment, PaymentID, UserInfo}, Opts).
 
 fulfill(UserInfo, InvoiceID, Reason, Opts) ->
-    hg_dispatcher:call_machine(?MODULE, InvoiceID, {fulfill, Reason, UserInfo}, Opts).
+    hg_machine:call(?MODULE, InvoiceID, {fulfill, Reason, UserInfo}, Opts).
 
 void(UserInfo, InvoiceID, Reason, Opts) ->
-    hg_dispatcher:call_machine(?MODULE, InvoiceID, {void, Reason, UserInfo}, Opts).
+    hg_machine:call(?MODULE, InvoiceID, {void, Reason, UserInfo}, Opts).
 
 %%
 
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
--include("hg_duration.hrl").
+-type invoice() :: hg_domain_thrift:'Invoice'().
+-type payment() :: hg_domain_thrift:'InvoicePayment'().
+-type invoice_status() :: hg_domain_thrift:'InvoiceStatus'().
+-type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
+-type detail() :: binary().
+-type error() :: hg_domain_thrift:'OperationError'().
+
+-record(st, {
+    invoice :: invoice(),
+    payments = [] :: [payment()]
+}).
+
+-type st() :: #st{}.
+
+-type ev() ::
+    {invoice_created, invoice()} |
+    {invoice_status_changed, invoice_status(), detail()} |
+    {payment_created, payment()} |
+    {payment_succeeded, payment_id()} |
+    {payment_failed, payment_id(), error()}.
 
 init(ID, {_UserInfo, InvoiceParams}) ->
     Invoice = create_invoice(ID, InvoiceParams),
-    Event = emit_invoice_changed_event(Invoice),
-    {ok, {Event, hg_action:set_timeout(?MINUTE)}}.
-
-%%
+    Event = {invoice_created, Invoice},
+    ok(Event, set_invoice_timer(Invoice)).
 
 process_signal(timeout, History) ->
-    {Invoice, Payments} = collapse_history(History),
+    St = #st{invoice = Invoice, payments = Payments} = collapse_history(History),
     case {get_invoice_status(Invoice), Payments} of
         {unpaid, []} ->
-            % expired
-            try_change_status(fun (I) -> cancel_invoice(overdue, I) end, Invoice);
-        {unpaid, [Payment]} ->
-            % payment succeeded
-            PaymentNext = set_payment_status(succeeded, Payment),
-            InvoiceNext = set_invoice_status(paid, Invoice),
-            Events = [
-                emit_payment_changed_event(PaymentNext),
-                emit_invoice_changed_event(InvoiceNext)
-            ],
-            {ok, {Events, hg_action:new()}};
+            process_expiration(St);
         _ ->
-            % nothing specific
-            Event = emit_invoice_changed_event(Invoice),
-            {ok, {Event, hg_action:new()}}
+            ok()
     end;
 
 process_signal({repair, _}, History) ->
-    {Invoice, _} = collapse_history(History),
-    Event = emit_invoice_changed_event(Invoice),
-    {ok, {Event, hg_action:set_timeout(?MINUTE)}}.
+    #st{invoice = Invoice} = collapse_history(History),
+    ok([], set_invoice_timer(Invoice)).
 
-%%
+process_expiration(#st{invoice = Invoice}) ->
+    {ok, Event} = cancel_invoice(overdue, Invoice),
+    ok(Event).
 
 process_call({start_payment, PaymentParams, _UserInfo}, History) ->
-    {Invoice, Payments} = collapse_history(History),
+    #st{invoice = Invoice, payments = Payments} = collapse_history(History),
     case {get_invoice_status(Invoice), Payments} of
         {unpaid, []} ->
             Payment = create_payment(PaymentParams, Invoice),
-            Event = emit_payment_changed_event(Payment),
-            Response = {ok, get_payment_id(Payment)},
-            {ok, Response, {Event, hg_action:set_timeout(?seconds(5))}};
+            Event = {payment_created, Payment},
+            respond({ok, get_payment_id(Payment)}, Event);
         {unpaid, [Payment]} ->
-            % TODO: need something like 'payment pending'
-            [Payment] = Payments,
-            Event = emit_payment_changed_event(Payment),
-            Response = {ok, get_payment_id(Payment)},
-            {ok, Response, {Event, hg_action:set_timeout(?seconds(5))}};
+            raise(payment_pending(Payment));
         _ ->
-            Event = emit_invoice_changed_event(Invoice),
-            Response = raise_invalid_invoice_status(Invoice),
-            {ok, Response, {Event, hg_action:new()}}
+            raise(invalid_invoice_status(Invoice))
+    end;
+
+process_call({get_payment, PaymentID, _UserInfo}, History) ->
+    St = collapse_history(History),
+    case get_payment(PaymentID, St) of
+        Payment = #'InvoicePayment'{} ->
+            respond({ok, Payment}, [], set_invoice_timer(St#st.invoice));
+        false ->
+            raise(payment_not_found())
     end;
 
 process_call({fulfill, Reason, _UserInfo}, History) ->
-    {Invoice, _} = collapse_history(History),
-    try_change_status(fun (I) -> fulfill_invoice(Reason, I) end, Invoice);
+    #st{invoice = Invoice} = collapse_history(History),
+    case fulfill_invoice(Reason, Invoice) of
+        {ok, Event} ->
+            respond(ok, Event, set_invoice_timer(Invoice));
+        {error, Exception} ->
+            raise(Exception, set_invoice_timer(Invoice))
+    end;
 
 process_call({void, Reason, _UserInfo}, History) ->
-    {Invoice, _} = collapse_history(History),
-    try_change_status(fun (I) -> cancel_invoice({void, Reason}, I) end, Invoice).
-
-try_change_status(WithFun, Invoice) ->
-    case WithFun(Invoice) of
-        {ok, InvoiceNext} ->
-            Event = emit_invoice_changed_event(InvoiceNext),
-            {ok, ok, {Event, hg_action:new()}};
-        error ->
-            Event = emit_invoice_changed_event(Invoice),
-            Response = raise_invalid_invoice_status(Invoice),
-            {ok, Response, {Event, hg_action:new()}}
+    #st{invoice = Invoice} = collapse_history(History),
+    case cancel_invoice({void, Reason}, Invoice) of
+        {ok, Event} ->
+            respond(ok, Event, set_invoice_timer(Invoice));
+        {error, Exception} ->
+            raise(Exception, set_invoice_timer(Invoice))
     end.
+
+set_invoice_timer(#'Invoice'{status = unpaid, due = Due}) when Due /= undefined ->
+    hg_action:set_deadline(Due);
+set_invoice_timer(_Invoice) ->
+    hg_action:new().
+
+ok() ->
+    ok([]).
+ok(Event) ->
+    ok(Event, hg_action:new()).
+ok(Event, Action) ->
+    {ok, {wrap_event_list(Event), Action}}.
+
+respond(Response, Event) ->
+    respond(Response, Event, hg_action:new()).
+respond(Response, Event, Action) ->
+    {ok, Response, {wrap_event_list(Event), Action}}.
+
+raise(Exception) ->
+    raise(Exception, hg_action:new()).
+raise(Exception, Action) ->
+    {ok, {exception, Exception}, {[], Action}}.
+
+wrap_event_list(Event) when is_tuple(Event) ->
+    [Event];
+wrap_event_list(Events) when is_list(Events) ->
+    Events.
 
 %%
 
 create_invoice(ID, V = #'InvoiceParams'{}) ->
+    Version = hg_domain:head(),
     #'Invoice'{
         id          = ID,
+        created_at  = get_datetime_utc(),
         status      = unpaid,
+        due         = V#'InvoiceParams'.due,
         product     = V#'InvoiceParams'.product,
         description = V#'InvoiceParams'.description,
-        cost        = V#'InvoiceParams'.cost,
-        context     = V#'InvoiceParams'.context
+        context     = V#'InvoiceParams'.context,
+        cost        = #'Funds'{
+            amount      = V#'InvoiceParams'.amount,
+            currency    = hg_domain:get(Version, V#'InvoiceParams'.currency)
+        }
     }.
 
 create_payment(V = #'InvoicePaymentParams'{}, Invoice) ->
     #'InvoicePayment'{
         id           = create_payment_id(Invoice),
+        created_at   = get_datetime_utc(),
         status       = pending,
         payer        = V#'InvoicePaymentParams'.payer,
         payment_tool = V#'InvoicePaymentParams'.payment_tool,
         session      = V#'InvoicePaymentParams'.session
     }.
 
-create_payment_id(Invoice) ->
-    ID = get_invoice_id(Invoice),
-    <<ID/binary, ":", "0">>.
+create_payment_id(Invoice = #'Invoice'{}) ->
+    create_payment_id(get_invoice_id(Invoice));
+create_payment_id(InvoiceID) ->
+    <<InvoiceID/binary, ":", "0">>.
+
+deduce_invoice_id(PaymentID) ->
+    case binary:split(PaymentID, <<":">>) of
+        [InvoiceID, _] ->
+            InvoiceID;
+        _ ->
+            <<>>
+    end.
 
 get_invoice_id(#'Invoice'{id = ID}) ->
     ID.
@@ -156,40 +209,59 @@ set_invoice_status(Status, V = #'Invoice'{}) ->
 get_payment_id(#'InvoicePayment'{id = ID}) ->
     ID.
 
-set_payment_status(Status, V = #'InvoicePayment'{}) ->
-    V#'InvoicePayment'{status = Status}.
+cancel_invoice(Reason, #'Invoice'{status = unpaid}) ->
+    {ok, {invoice_status_changed, cancelled, format_reason(Reason)}};
+cancel_invoice(_Reason, Invoice) ->
+    {error, invalid_invoice_status(Invoice)}.
 
-cancel_invoice(Reason, V = #'Invoice'{status = unpaid}) ->
-    {ok, V#'Invoice'{status = cancelled, details = format_reason(Reason)}};
-cancel_invoice(_Reason, _Invoice) ->
-    error.
+fulfill_invoice(Reason, #'Invoice'{status = paid}) ->
+    {ok, {invoice_status_changed, fulfilled, format_reason(Reason)}};
+fulfill_invoice(_Reason, Invoice) ->
+    {error, invalid_invoice_status(Invoice)}.
 
-fulfill_invoice(Reason, V = #'Invoice'{status = paid}) ->
-    {ok, V#'Invoice'{status = fulfilled, details = format_reason(Reason)}};
-fulfill_invoice(_Reason, _Invoice) ->
-    error.
+invalid_invoice_status(Invoice) ->
+    #'InvalidInvoiceStatus'{status = get_invoice_status(Invoice)}.
+payment_not_found() ->
+    #'InvoicePaymentNotFound'{}.
+payment_pending(Payment) ->
+    #'InvoicePaymentPending'{id = get_payment_id(Payment)}.
 
-emit_payment_changed_event(Payment) ->
-    #'InvoicePaymentStatusChanged'{payment = Payment}.
+%%
 
-emit_invoice_changed_event(Invoice) ->
-    #'InvoiceStatusChanged'{invoice = Invoice}.
-
-raise_invalid_invoice_status(Invoice) ->
-    {exception, #'InvalidInvoiceStatus'{status = get_invoice_status(Invoice)}}.
+-spec collapse_history([ev()]) -> st().
 
 collapse_history(History) ->
-    lists:foldl(fun merge_history/2, {undefined, []}, History).
+    lists:foldl(fun merge_history/2, #st{}, History).
 
-merge_history(#'InvoicePaymentStatusChanged'{payment = Payment}, {Invoice, Payments}) ->
-    {Invoice, lists:keystore(get_payment_id(Payment), #'InvoicePayment'.id, Payments, Payment)};
-merge_history(#'InvoiceStatusChanged'{invoice = Invoice}, {_WasInvoice, Payments}) ->
-    {Invoice, Payments};
-merge_history(_, Acc) ->
-    Acc.
+merge_history({invoice_created, Invoice}, St) ->
+    St#st{invoice = Invoice};
+merge_history({invoice_status_changed, Status}, St = #st{invoice = I}) ->
+    St#st{invoice = set_invoice_status(Status, I)};
+
+merge_history({payment_created, Payment}, St) ->
+    set_payment(Payment, St);
+merge_history({payment_succeeded, PaymentID}, St) ->
+    Payment = get_payment(PaymentID, St),
+    set_payment(Payment#'InvoicePayment'{status = succeeded}, St);
+merge_history({payment_failed, PaymentID, Error}, St) ->
+    Payment = get_payment(PaymentID, St),
+    set_payment(Payment#'InvoicePayment'{status = failed, err = Error}, St).
+
+get_payment(PaymentID, St) ->
+    lists:keyfind(PaymentID, #'InvoicePayment'.id, St#st.payments).
+set_payment(Payment, St) ->
+    St#st{payments = lists:keystore(get_payment_id(Payment), #'InvoicePayment'.id, St#st.payments, Payment)}.
+
+get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
+    #'InvoiceState'{invoice = Invoice, payments = Payments}.
+
+%%
 
 %% TODO: fix this dirty hack
 format_reason({Pre, V}) ->
     genlib:format("~s: ~s", [Pre, genlib:to_binary(V)]);
 format_reason(V) ->
     genlib:to_binary(V).
+
+get_datetime_utc() ->
+    genlib_format:format_datetime_iso8601(calendar:universal_time()).

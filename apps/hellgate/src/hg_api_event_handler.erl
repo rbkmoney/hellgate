@@ -18,4 +18,4 @@ handle_event(EventType, RpcID, EventMeta) when
     lager:error(maps:to_list(RpcID), "[server] ~s: ~p", [EventType, EventMeta]);
 
 handle_event(EventType, RpcID, EventMeta) ->
-    lager:info(maps:to_list(RpcID), "[server] ~s: ~p", [EventType, EventMeta]).
+    lager:debug(maps:to_list(RpcID), "[server] ~s: ~p", [EventType, EventMeta]).

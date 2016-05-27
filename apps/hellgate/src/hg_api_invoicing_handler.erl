@@ -23,6 +23,9 @@ handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context, _Opts) ->
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context, _Opts) ->
     hg_invoice:start_payment(UserInfo, InvoiceID, PaymentParams, opts(Context));
 
+handle_function('GetPayment', {UserInfo, PaymentID}, Context, _Opts) ->
+    hg_invoice:get_payment(UserInfo, PaymentID, opts(Context));
+
 handle_function('Fulfill', {UserInfo, InvoiceID, Reason}, Context, _Opts) ->
     hg_invoice:fulfill(UserInfo, InvoiceID, Reason, opts(Context));
 
