@@ -56,6 +56,11 @@ get_api_child_spec() ->
                     {hg_state_processing_thrift, 'Processor'},
                     hg_api_processor_handler,
                     []
+                }},
+                {"/v1/proxy/provider/dummy", {
+                    {hg_proxy_provider_thrift, 'ProviderProxy'},
+                    hg_dummy_provider,
+                    []
                 }}
             ]
         }
