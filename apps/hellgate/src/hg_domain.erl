@@ -63,7 +63,7 @@ get_fixture() ->
             #'Proxy'{
                 type    = provider,
                 url     = genlib_app:env(hellgate, provider_proxy_url),
-                options = genlib_app:env(hellgate, provider_proxy_url, #{})
+                options = genlib_app:env(hellgate, provider_proxy_options, #{})
             }
         )
     }.
