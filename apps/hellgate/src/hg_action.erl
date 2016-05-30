@@ -1,10 +1,13 @@
 -module(hg_action).
 
 -export([new/0]).
+-export([instant/0]).
 -export([set_timeout/1]).
 -export([set_timeout/2]).
 -export([set_deadline/1]).
 -export([set_deadline/2]).
+-export([set_timer/1]).
+-export([set_timer/2]).
 -export([set_tag/1]).
 -export([set_tag/2]).
 
@@ -17,6 +20,7 @@
 -type datetime_iso8601() :: binary().
 -type datetime() :: calendar:datetime() | datetime_iso8601().
 
+-type timer() :: hg_base_thrift:'Timer'().
 -type t() :: hg_state_processing_thrift:'ComplexAction'().
 
 -export_type([t/0]).
@@ -27,6 +31,11 @@
 
 new() ->
     #'ComplexAction'{}.
+
+-spec instant() -> t().
+
+instant() ->
+    set_timeout(0, new()).
 
 -spec set_timeout(seconds()) -> t().
 
@@ -47,6 +56,13 @@ set_deadline(Deadline) ->
 
 set_deadline(Deadline, Action) ->
     set_timer({deadline, try_format_dt(Deadline)}, Action).
+
+-spec set_timer(timer()) -> t().
+
+set_timer(Timer) ->
+    set_timer(Timer, new()).
+
+-spec set_timer(timer(), t()) -> t().
 
 set_timer(Timer, Action = #'ComplexAction'{}) ->
     Action#'ComplexAction'{set_timer = #'SetTimerAction'{timer = Timer}}.

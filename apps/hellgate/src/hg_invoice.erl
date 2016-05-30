@@ -1,6 +1,5 @@
 -module(hg_invoice).
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
--include("hg_duration.hrl").
 
 %% Public
 
@@ -36,7 +35,12 @@ start_payment(UserInfo, InvoiceID, PaymentParams, Opts) ->
     hg_machine:call(?MODULE, InvoiceID, {start_payment, PaymentParams, UserInfo}, Opts).
 
 get_payment(UserInfo, PaymentID, Opts) ->
-    get_payment(PaymentID, get_state(UserInfo, deduce_invoice_id(PaymentID), Opts)).
+    case get_payment(PaymentID, get_state(UserInfo, deduce_invoice_id(PaymentID), Opts)) of
+        Payment = #'InvoicePayment'{} ->
+            Payment;
+        false ->
+            throw(payment_not_found())
+    end.
 
 fulfill(UserInfo, InvoiceID, Reason, Opts) ->
     hg_machine:call(?MODULE, InvoiceID, {fulfill, Reason, UserInfo}, Opts).
@@ -56,20 +60,30 @@ get_state(UserInfo, InvoiceID, Opts) ->
 -type payment() :: hg_domain_thrift:'InvoicePayment'().
 -type invoice_status() :: hg_domain_thrift:'InvoiceStatus'().
 -type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
+-type payment_st() :: hg_invoice_payment:st().
+-type payment_trx() :: hg_domain_thrift:'TransactionInfo'().
 -type detail() :: binary().
 -type error() :: hg_domain_thrift:'OperationError'().
 
+-type stage() ::
+    idling |
+    {processing_payment, payment_id(), payment_st()}.
+
 -record(st, {
     invoice :: invoice(),
-    payments = [] :: [payment()]
+    payments = [] :: [payment()],
+    stage = idling :: stage()
 }).
 
 -type st() :: #st{}.
 
 -type ev() ::
+    {stage_changed, stage()} |
     {invoice_created, invoice()} |
     {invoice_status_changed, invoice_status(), detail()} |
     {payment_created, payment()} |
+    {payment_state_changed, payment_id(), payment_st()} |
+    {payment_bound, payment_id(), payment_trx() | undefined} |
     {payment_succeeded, payment_id()} |
     {payment_failed, payment_id(), error()}.
 
@@ -79,9 +93,14 @@ init(ID, {InvoiceParams, _UserInfo}) ->
     ok(Event, set_invoice_timer(Invoice)).
 
 process_signal(timeout, History) ->
-    St = #st{invoice = Invoice, payments = Payments} = collapse_history(History),
-    case {get_invoice_status(Invoice), Payments} of
-        {unpaid, []} ->
+    St = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
+    Status = get_invoice_status(Invoice),
+    case Stage of
+        {processing_payment, PaymentID, PaymentState} ->
+            % there's a payment pending
+            process_payment(PaymentID, PaymentState, St);
+        idling when Status == unpaid ->
+            % invoice is expired
             process_expiration(St);
         _ ->
             ok()
@@ -95,15 +114,46 @@ process_expiration(#st{invoice = Invoice}) ->
     {ok, Event} = cancel_invoice(overdue, Invoice),
     ok(Event).
 
+process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice}) ->
+    % FIXME: code looks shitty, destined to be in payment submachine
+    Payment = get_payment(PaymentID, St),
+    case hg_invoice_payment:process(Payment, Invoice, PaymentState0) of
+        % TODO: check proxy contracts
+        %       binding different trx ids is not allowed
+        %       empty action is questionable to allow
+        {ok, Trx} ->
+            % payment finished successfully
+            Events = [{payment_succeeded, PaymentID}, {invoice_status_changed, paid, <<>>}],
+            ok(construct_payment_events(PaymentID, Trx, Events));
+        {{error, Error = #'OperationError'{}}, Trx} ->
+            % payment finished with error
+            Event = {payment_failed, PaymentID, Error},
+            ok(construct_payment_events(PaymentID, Trx, Event));
+        {{next, Action, PaymentState}, Trx} ->
+            % payment progressing yet
+            Event = {payment_state_changed, PaymentID, PaymentState},
+            ok(construct_payment_events(PaymentID, Trx, Event), Action)
+    end.
+
+construct_payment_events(PaymentID, Trx = #'TransactionInfo'{}, Events) ->
+    [{payment_bound, PaymentID, Trx} | wrap_event_list(Events)];
+construct_payment_events(_PaymentID, undefined, Events) ->
+    Events.
+
 process_call({start_payment, PaymentParams, _UserInfo}, History) ->
-    #st{invoice = Invoice, payments = Payments} = collapse_history(History),
-    case {get_invoice_status(Invoice), Payments} of
-        {unpaid, []} ->
+    #st{invoice = Invoice, stage = Stage} = collapse_history(History),
+    Status = get_invoice_status(Invoice),
+    case Stage of
+        idling when Status == unpaid ->
             Payment = create_payment(PaymentParams, Invoice),
-            Event = {payment_created, Payment},
-            respond({ok, get_payment_id(Payment)}, Event);
-        {unpaid, [Payment]} ->
-            raise(payment_pending(Payment));
+            PaymentID = get_payment_id(Payment),
+            Events = [
+                {payment_created, Payment},
+                {payment_state_changed, PaymentID, undefined}
+            ],
+            respond({ok, PaymentID}, Events, hg_action:instant());
+        {processing_payment, PaymentID, _} ->
+            raise(payment_pending(PaymentID));
         _ ->
             raise(invalid_invoice_status(Invoice))
     end;
@@ -157,18 +207,19 @@ wrap_event_list(Events) when is_list(Events) ->
 %%
 
 create_invoice(ID, V = #'InvoiceParams'{}) ->
-    Version = hg_domain:head(),
+    Revision = hg_domain:head(),
     #'Invoice'{
-        id          = ID,
-        created_at  = get_datetime_utc(),
-        status      = unpaid,
-        due         = V#'InvoiceParams'.due,
-        product     = V#'InvoiceParams'.product,
-        description = V#'InvoiceParams'.description,
-        context     = V#'InvoiceParams'.context,
-        cost        = #'Funds'{
-            amount      = V#'InvoiceParams'.amount,
-            currency    = hg_domain:get(Version, V#'InvoiceParams'.currency)
+        id              = ID,
+        created_at      = get_datetime_utc(),
+        status          = unpaid,
+        domain_revision = Revision,
+        due             = V#'InvoiceParams'.due,
+        product         = V#'InvoiceParams'.product,
+        description     = V#'InvoiceParams'.description,
+        context         = V#'InvoiceParams'.context,
+        cost            = #'Funds'{
+        amount              = V#'InvoiceParams'.amount,
+        currency            = hg_domain:get(Revision, V#'InvoiceParams'.currency)
         }
     }.
 
@@ -218,8 +269,8 @@ invalid_invoice_status(Invoice) ->
     #'InvalidInvoiceStatus'{status = get_invoice_status(Invoice)}.
 payment_not_found() ->
     #'InvoicePaymentNotFound'{}.
-payment_pending(Payment) ->
-    #'InvoicePaymentPending'{id = get_payment_id(Payment)}.
+payment_pending(PaymentID) ->
+    #'InvoicePaymentPending'{id = PaymentID}.
 
 %%
 
@@ -238,12 +289,20 @@ merge_history({invoice_status_changed, Status, Details}, St = #st{invoice = I}) 
 
 merge_history({payment_created, Payment}, St) ->
     set_payment(Payment, St);
+merge_history({payment_state_changed, PaymentID, PaymentState}, St) ->
+    set_stage({processing_payment, PaymentID, PaymentState}, St);
+merge_history({payment_bound, PaymentID, Trx}, St) ->
+    Payment = get_payment(PaymentID, St),
+    set_payment(Payment#'InvoicePayment'{trx = Trx}, St);
 merge_history({payment_succeeded, PaymentID}, St) ->
     Payment = get_payment(PaymentID, St),
-    set_payment(Payment#'InvoicePayment'{status = succeeded}, St);
+    set_payment(Payment#'InvoicePayment'{status = succeeded}, set_stage(idling, St));
 merge_history({payment_failed, PaymentID, Error}, St) ->
     Payment = get_payment(PaymentID, St),
     set_payment(Payment#'InvoicePayment'{status = failed, err = Error}, St).
+
+set_stage(Stage, St) ->
+    St#st{stage = Stage}.
 
 get_payment(PaymentID, St) ->
     lists:keyfind(PaymentID, #'InvoicePayment'.id, St#st.payments).
@@ -287,7 +346,9 @@ map_history({payment_created, Payment}, _St) ->
 map_history({payment_succeeded, PaymentID}, St) ->
     [#'InvoicePaymentStatusChanged'{payment = get_payment(PaymentID, St)}];
 map_history({payment_failed, PaymentID, _}, St) ->
-    [#'InvoicePaymentStatusChanged'{payment = get_payment(PaymentID, St)}].
+    [#'InvoicePaymentStatusChanged'{payment = get_payment(PaymentID, St)}];
+map_history(_Event, _St) ->
+    [].
 
 select_range(undefined, Limit, History) ->
     select_range(Limit, History);
