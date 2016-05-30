@@ -9,26 +9,26 @@
 
 %%
 
--type version() :: _.
+-type revision() :: pos_integer().
 -type ref() :: _.
 -type data() :: _.
 
--spec head() -> version().
+-spec head() -> revision().
 
 head() ->
     42.
 
--spec all(version()) -> hg_domain_thrift:'Domain'().
+-spec all(revision()) -> hg_domain_thrift:'Domain'().
 
-all(_Version) ->
+all(_Revision) ->
     get_fixture().
 
--spec get(version(), ref()) -> data().
+-spec get(revision(), ref()) -> data().
 
-get(Version, Ref) ->
+get(Revision, Ref) ->
     % FIXME: the dirtiest hack you'll ever see
     Name = type_to_name(Ref),
-    case maps:get({Name, Ref}, all(Version), undefined) of
+    case maps:get({Name, Ref}, all(Revision), undefined) of
         {Name, {_, Ref, Data}} ->
             Data;
         undefined ->
@@ -51,6 +51,19 @@ get_fixture() ->
     #{
         ?object('CurrencyObject',
             #'CurrencyRef'{symbolic_code = <<"RUB">>},
-            #'Currency'{name = <<"Russian rubles">>, numeric_code = 643, symbolic_code = <<"RUB">>, exponent = 2}
+            #'Currency'{
+                name = <<"Russian rubles">>,
+                numeric_code = 643,
+                symbolic_code = <<"RUB">>,
+                exponent = 2
+            }
+        ),
+        ?object('ProxyObject',
+            #'ProxyRef'{id = 1},
+            #'Proxy'{
+                type    = provider,
+                url     = genlib_app:env(hellgate, provider_proxy_url),
+                options = genlib_app:env(hellgate, provider_proxy_url, #{})
+            }
         )
     }.
