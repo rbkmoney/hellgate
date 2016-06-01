@@ -47,10 +47,10 @@ DOCKER := $(shell which docker 2>/dev/null)
 PACKER := $(shell which packer 2>/dev/null)
 BASE_DIR := $(shell pwd)
 
-release: $(DOCKER) ~/.docker/config.json distclean
+release: ~/.docker/config.json distclean
 	$(DOCKER) run --rm -v $(BASE_DIR):$(BASE_DIR) --workdir $(BASE_DIR) rbkmoney/build rebar3 as prod release
 
-containerize: $(PACKER) release ./packer.json
+containerize: release ./packer.json
 	$(PACKER) build packer.json
 
 ~/.docker/config.json:
