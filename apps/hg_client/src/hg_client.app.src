@@ -1,0 +1,11 @@
+{application, hg_client, [
+    {description, "Hellgate client"},
+    {vsn, "0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        woody,
+        hg_proto
+    ]}
+]}.
