@@ -4,6 +4,12 @@
 -export([handle_function/4]).
 -export([handle_error/4]).
 
+% {"/v1/proxy/provider/dummy", {
+%     {hg_proxy_provider_thrift, 'ProviderProxy'},
+%     hg_dummy_provider,
+%     []
+% }}
+
 %%
 
 -include_lib("hg_proto/include/hg_proxy_provider_thrift.hrl").
