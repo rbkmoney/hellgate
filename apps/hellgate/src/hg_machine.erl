@@ -5,7 +5,7 @@
 -type event() :: _.
 
 -type history() :: [event()].
--type result() :: {event(), hg_action:t()}.
+-type result() :: {event(), hg_machine_action:t()}.
 
 -callback init(id(), args()) ->
     {ok, result()}.
@@ -154,7 +154,10 @@ dispatch_call(Payload, History0, _Opts) ->
 %%
 
 marshal_call_result({ok, Response, {Event, Action}}, Module) ->
-    _ = lager:debug("[machine] [~p] call response = ~p with event = ~p and action = ~p", [Module, Response, Event, Action]),
+    _ = lager:debug(
+        "[machine] [~p] call response = ~p with event = ~p and action = ~p",
+        [Module, Response, Event, Action]
+    ),
     #'CallResult'{
         ev = wrap_event(Module, Event),
         action = Action,

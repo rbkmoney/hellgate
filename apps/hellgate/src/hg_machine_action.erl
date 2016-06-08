@@ -1,4 +1,4 @@
--module(hg_action).
+-module(hg_machine_action).
 
 -export([new/0]).
 -export([instant/0]).

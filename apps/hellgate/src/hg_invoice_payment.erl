@@ -34,7 +34,7 @@
 -spec process(payment(), invoice(), st() | undefined) ->
     {ok, payment_trx()} |
     {{error, error()}, payment_trx()} |
-    {{next, hg_action:t(), st()}, payment_trx()}.
+    {{next, hg_machine_action:t(), st()}, payment_trx()}.
 
 process(Payment, Invoice, undefined) ->
     process(Payment, Invoice, construct_state(Payment, Invoice));
@@ -48,7 +48,7 @@ process_(Proxy, PaymentInfo, St = #st{stage = process_payment, context = Context
     case handle_process_result(process_payment(Proxy, PaymentInfo, Context), St) of
         {ok, Trx} ->
             NextSt = St#st{stage = capture_payment, proxy_state = undefined},
-            {{next, hg_action:instant(), NextSt}, Trx};
+            {{next, hg_machine_action:instant(), NextSt}, Trx};
         Result ->
             Result
     end;
@@ -63,7 +63,7 @@ handle_process_result(#'FinishIntent'{status = {ok, _}}, Trx, _) ->
 handle_process_result(#'FinishIntent'{status = {failure, Error}}, Trx, _) ->
     {{error, map_error(Error)}, Trx};
 handle_process_result(#'SleepIntent'{timer = Timer}, Trx, StNext) ->
-    {{next, hg_action:set_timer(Timer), StNext}, Trx}.
+    {{next, hg_machine_action:set_timer(Timer), StNext}, Trx}.
 
 get_proxy(#'Invoice'{domain_revision = Revision}, #st{proxy_ref = Ref}) ->
     hg_domain:get(Revision, Ref).

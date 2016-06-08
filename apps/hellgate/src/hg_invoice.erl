@@ -151,7 +151,7 @@ process_call({start_payment, PaymentParams, _UserInfo}, History) ->
                 {payment_created, Payment},
                 {payment_state_changed, PaymentID, undefined}
             ],
-            respond({ok, PaymentID}, Events, hg_action:instant());
+            respond({ok, PaymentID}, Events, hg_machine_action:instant());
         {processing_payment, PaymentID, _} ->
             raise(payment_pending(PaymentID));
         _ ->
@@ -178,24 +178,24 @@ process_call({void, Reason, _UserInfo}, History) ->
 
 set_invoice_timer(#'Invoice'{status = unpaid, due = Due}) when Due /= undefined ->
     Ts = genlib_time:daytime_to_unixtime(genlib_format:parse_datetime_iso8601(Due)),
-    hg_action:set_timeout(max(Ts - genlib_time:unow(), 0));
+    hg_machine_action:set_timeout(max(Ts - genlib_time:unow(), 0));
 set_invoice_timer(_Invoice) ->
-    hg_action:new().
+    hg_machine_action:new().
 
 ok() ->
     ok([]).
 ok(Event) ->
-    ok(Event, hg_action:new()).
+    ok(Event, hg_machine_action:new()).
 ok(Event, Action) ->
     {ok, {wrap_event_list(Event), Action}}.
 
 respond(Response, Event) ->
-    respond(Response, Event, hg_action:new()).
+    respond(Response, Event, hg_machine_action:new()).
 respond(Response, Event, Action) ->
     {ok, Response, {wrap_event_list(Event), Action}}.
 
 raise(Exception) ->
-    raise(Exception, hg_action:new()).
+    raise(Exception, hg_machine_action:new()).
 raise(Exception, Action) ->
     {ok, {exception, Exception}, {[], Action}}.
 
