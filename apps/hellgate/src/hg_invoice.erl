@@ -29,7 +29,7 @@ get(UserInfo, InvoiceID, Opts) ->
 
 get_events(UserInfo, InvoiceID, #'EventRange'{'after' = AfterID, limit = Limit}, Opts) ->
     History = get_history(UserInfo, InvoiceID, Opts),
-    select_range(AfterID, Limit, map_history(History)).
+    map_events(select_range(AfterID, Limit, map_history(History))).
 
 start_payment(UserInfo, InvoiceID, PaymentParams, Opts) ->
     hg_machine:call(?MODULE, InvoiceID, {start_payment, PaymentParams, UserInfo}, Opts).
@@ -53,6 +53,17 @@ get_history(_UserInfo, InvoiceID, Opts) ->
 
 get_state(UserInfo, InvoiceID, Opts) ->
     collapse_history(get_history(UserInfo, InvoiceID, Opts)).
+
+map_events(Evs) ->
+    [construct_external_event(ID, Ev) || {ID, Ev} <- Evs].
+
+construct_external_event(ID, Ev) ->
+    #'Event'{id = ID, ev = wrap_external_event(Ev)}.
+
+wrap_external_event(Ev = #'InvoiceStatusChanged'{}) ->
+    {invoice_status_changed, Ev};
+wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
+    {invoice_payment_status_changed, Ev}.
 
 %%
 
@@ -189,8 +200,6 @@ ok(Event) ->
 ok(Event, Action) ->
     {ok, {wrap_event_list(Event), Action}}.
 
-respond(Response, Event) ->
-    respond(Response, Event, hg_machine_action:new()).
 respond(Response, Event, Action) ->
     {ok, Response, {wrap_event_list(Event), Action}}.
 
@@ -326,15 +335,7 @@ map_history(Evs, St, Acc) when is_list(Evs) ->
 
 map_history(ID, Ev, St, Acc) ->
     St1 = merge_history(Ev, St),
-    {St1, [construct_external_event(ID, Ev1) || Ev1 <- map_history(Ev, St1)] ++ Acc}.
-
-construct_external_event(ID, Ev) ->
-    #'Event'{id = integer_to_binary(ID), ev = wrap_external_event(Ev)}.
-
-wrap_external_event(Ev = #'InvoiceStatusChanged'{}) ->
-    {invoice_status_changed, Ev};
-wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
-    {invoice_payment_status_changed, Ev}.
+    {St1, [{ID, Ev1} || Ev1 <- map_history(Ev, St1)] ++ Acc}.
 
 map_history({invoice_created, _}, #st{invoice = Invoice}) ->
     [#'InvoiceStatusChanged'{invoice = Invoice}];
