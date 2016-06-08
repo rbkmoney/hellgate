@@ -24,18 +24,14 @@ parse_dt(Dt) ->
 
 %%
 
--include_lib("kernel/include/inet.hrl").
-
 -spec get_hostname_ip(Hostname | IP) -> IP when
     Hostname :: string(),
     IP :: inet:ip_address().
 
-get_hostname_ip(IP) when tuple_size(IP) == 4 ->
-    IP;
-
 get_hostname_ip(Host) ->
-    case inet:gethostbyname(Host) of
-        {ok, #hostent{h_addr_list = [IP | _]}} ->
+    % TODO: respect preferred address family
+    case inet:getaddr(Host, inet) of
+        {ok, IP} ->
             IP;
         {error, Error} ->
             exit(Error)
