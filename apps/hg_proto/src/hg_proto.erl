@@ -1,37 +1,26 @@
 -module(hg_proto).
 
-%% TODO:
-%%  - specs
+-export([get_service_specs/0]).
+-export([get_service_spec/1]).
 
--export([serialize/2]).
--export([deserialize/2]).
+-export_type([service_spec/0]).
 
 %%
 
--spec serialize(any(), term()) -> {ok, binary()} | {error, any()}.
+-type service_spec() :: {Name :: atom(), Path :: string(), Service :: {module(), atom()}}.
 
-serialize(Type, Data) ->
-    {ok, Trans} = thrift_membuffer_transport:new(),
-    {ok, Proto} = new_protocol(Trans),
-    case thrift_protocol:write(Proto, {Type, Data}) of
-        {NewProto, ok} ->
-            {_, Result} = thrift_protocol:close_transport(NewProto),
-            {ok, Result};
-        {_NewProto, {error, _Reason} = Error} ->
-            Error
-    end.
+-spec get_service_specs() -> [service_spec()].
 
--spec deserialize(any(), binary()) -> {ok, term()} | {error, any()}.
+get_service_specs() ->
+    VersionPrefix = "/v1",
+    [
+        {invoicing, VersionPrefix ++ "/processing/invoicing",
+            {hg_payment_processing_thrift, 'Invoicing'}},
+        {processor, VersionPrefix ++ "/stateproc/processor",
+            {hg_state_processing_thrift, 'Processor'}}
+    ].
 
-deserialize(Type, Data) ->
-    {ok, Trans} = thrift_membuffer_transport:new(Data),
-    {ok, Proto} = new_protocol(Trans),
-    case thrift_protocol:read(Proto, Type) of
-        {_NewProto, {ok, Result}} ->
-            {ok, Result};
-        {_NewProto, {error, _Reason} = Error} ->
-            Error
-    end.
+-spec get_service_spec(Name :: atom()) -> service_spec() | false.
 
-new_protocol(Trans) ->
-    thrift_binary_protocol:new(Trans, [{strict_read, true}, {strict_write, true}]).
+get_service_spec(Name) ->
+    lists:keyfind(Name, 1, get_service_specs()).

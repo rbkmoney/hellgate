@@ -47,24 +47,15 @@ get_api_child_spec() ->
             net_opts => [],
             event_handler => hg_api_event_handler,
             handlers => [
-                {"/v1/processing/invoicing", {
-                    {hg_payment_processing_thrift, 'Invoicing'},
-                    hg_api_invoicing_handler,
-                    []
-                }},
-                {"/v1/stateproc/processor", {
-                    {hg_state_processing_thrift, 'Processor'},
-                    hg_api_processor_handler,
-                    []
-                }},
-                {"/v1/proxy/provider/dummy", {
-                    {hg_proxy_provider_thrift, 'ProviderProxy'},
-                    hg_dummy_provider,
-                    []
-                }}
+                construct_service_handler(invoicing, hg_api_invoicing_handler, []),
+                construct_service_handler(processor, hg_api_processor_handler, [])
             ]
         }
     ).
+
+construct_service_handler(Name, Module, Opts) ->
+    {Name, Path, Service} = hg_proto:get_service_spec(Name),
+    {Path, {Service, Module, Opts}}.
 
 %%
 %% Application callbacks
