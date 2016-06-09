@@ -1,15 +1,12 @@
 -module(hg_invoice).
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 
-%% Public
+%% Woody handler
 
--export([create/3]).
--export([get/3]).
--export([get_events/4]).
--export([start_payment/4]).
--export([get_payment/3]).
--export([fulfill/4]).
--export([void/4]).
+-behaviour(woody_server_thrift_handler).
+
+-export([handle_function/4]).
+-export([handle_error/4]).
 
 %% Machine callbacks
 
@@ -21,32 +18,54 @@
 
 %%
 
-create(UserInfo, InvoiceParams, Opts) ->
-    hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, Opts).
+-spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), []) ->
+    {ok, term()} | no_return().
 
-get(UserInfo, InvoiceID, Opts) ->
-    get_invoice_state(get_state(UserInfo, InvoiceID, Opts)).
+handle_function('Create', {UserInfo, InvoiceParams}, Context, _Opts) ->
+    InvoiceID = hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, opts(Context)),
+    {ok, InvoiceID};
 
-get_events(UserInfo, InvoiceID, #'EventRange'{'after' = AfterID, limit = Limit}, Opts) ->
-    History = get_history(UserInfo, InvoiceID, Opts),
-    map_events(select_range(AfterID, Limit, map_history(History))).
+handle_function('Get', {UserInfo, InvoiceID}, Context, _Opts) ->
+    InvoiceState = get_invoice_state(get_state(UserInfo, InvoiceID, opts(Context))),
+    {ok, InvoiceState};
 
-start_payment(UserInfo, InvoiceID, PaymentParams, Opts) ->
-    hg_machine:call(?MODULE, InvoiceID, {start_payment, PaymentParams, UserInfo}, Opts).
+handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context, _Opts) ->
+    #'EventRange'{'after' = AfterID, limit = Limit} = Range,
+    History = get_history(UserInfo, InvoiceID, opts(Context)),
+    {ok, map_events(select_range(AfterID, Limit, map_history(History)))};
 
-get_payment(UserInfo, PaymentID, Opts) ->
-    case get_payment(PaymentID, get_state(UserInfo, deduce_invoice_id(PaymentID), Opts)) of
+handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context, _Opts) ->
+    Call = {start_payment, PaymentParams, UserInfo},
+    PaymentID = hg_machine:call(?MODULE, InvoiceID, Call, opts(Context)),
+    {ok, PaymentID};
+
+handle_function('GetPayment', {UserInfo, PaymentID}, Context, _Opts) ->
+    St = get_state(UserInfo, deduce_invoice_id(PaymentID), opts(Context)),
+    case get_payment(PaymentID, St) of
         Payment = #'InvoicePayment'{} ->
-            Payment;
+            {ok, Payment};
         false ->
             throw(payment_not_found())
-    end.
+    end;
 
-fulfill(UserInfo, InvoiceID, Reason, Opts) ->
-    hg_machine:call(?MODULE, InvoiceID, {fulfill, Reason, UserInfo}, Opts).
+handle_function('Fulfill', {UserInfo, InvoiceID, Reason}, Context, _Opts) ->
+    Result = hg_machine:call(?MODULE, InvoiceID, {fulfill, Reason, UserInfo}, opts(Context)),
+    {ok, Result};
 
-void(UserInfo, InvoiceID, Reason, Opts) ->
-    hg_machine:call(?MODULE, InvoiceID, {void, Reason, UserInfo}, Opts).
+handle_function('Void', {UserInfo, InvoiceID, Reason}, Context, _Opts) ->
+    Result = hg_machine:call(?MODULE, InvoiceID, {void, Reason, UserInfo}, opts(Context)),
+    {ok, Result}.
+
+opts(Context) ->
+    #{context => Context}.
+
+-spec handle_error(woody_t:func(), term(), woody_client:context(), []) ->
+    _.
+
+handle_error(_Function, _Reason, _Context, _Opts) ->
+    ok.
+
+%%
 
 get_history(_UserInfo, InvoiceID, Opts) ->
     hg_machine:get_history(?MODULE, InvoiceID, Opts).

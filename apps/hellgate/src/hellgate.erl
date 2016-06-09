@@ -47,7 +47,7 @@ get_api_child_spec() ->
             net_opts => [],
             event_handler => hg_api_event_handler,
             handlers => [
-                construct_service_handler(invoicing, hg_api_invoicing_handler, []),
+                construct_service_handler(invoicing, hg_invoice, []),
                 construct_service_handler(processor, hg_api_processor_handler, [])
             ]
         }
