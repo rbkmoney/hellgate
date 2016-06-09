@@ -45,10 +45,10 @@ get_api_child_spec() ->
             ip => hg_utils:get_hostname_ip(genlib_app:env(?MODULE, host, "localhost")),
             port => genlib_app:env(?MODULE, port, 8800),
             net_opts => [],
-            event_handler => hg_api_event_handler,
+            event_handler => hg_woody_event_handler,
             handlers => [
                 construct_service_handler(invoicing, hg_invoice, []),
-                construct_service_handler(processor, hg_api_processor_handler, [])
+                construct_service_handler(processor, hg_machine, [])
             ]
         }
     ).

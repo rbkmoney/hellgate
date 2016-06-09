@@ -90,7 +90,7 @@ construct_state(Payment, Invoice) ->
 
 construct_context() ->
     ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
-    woody_client:new_context(ReqID, hg_api_event_handler).
+    woody_client:new_context(ReqID, hg_woody_event_handler).
 
 select_proxy(_, _) ->
     % FIXME: turbo routing

@@ -1,4 +1,4 @@
--module(hg_api_event_handler).
+-module(hg_woody_event_handler).
 -behaviour(woody_event_handler).
 
 -export([handle_event/3]).
