@@ -13,3 +13,4 @@ erl_crash.dump
 /_projects/
 /_steps/
 /_temp/
+/.wercker/
