@@ -59,9 +59,8 @@ construct_service_handler(Name, Module, Opts) ->
     {Name, Path, Service} = hg_proto:get_service_spec(Name),
     {Path, {Service, Module, Opts}}.
 
-%%
 %% Application callbacks
-%%
+
 -spec start(normal, any()) ->
     {ok, pid()} | {error, any()}.
 start(_StartType, _StartArgs) ->

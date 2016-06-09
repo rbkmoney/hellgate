@@ -5,9 +5,22 @@
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
 -export([init_per_testcase/2]).
+-export([end_per_testcase/2]).
 
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancelled/1]).
+-export([payment_success/1]).
+
+%%
+
+-behaviour(supervisor).
+-export([init/1]).
+
+-spec init([]) ->
+    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+
+init([]) ->
+    {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
 
 %%
 
@@ -23,7 +36,8 @@
 all() ->
     [
         invoice_cancellation,
-        overdue_invoice_cancelled
+        overdue_invoice_cancelled,
+        payment_success
     ].
 
 %% starting/stopping
@@ -59,35 +73,75 @@ end_per_suite(C) ->
 
 init_per_testcase(_Name, C) ->
     Client = hg_client:new(?config(root_url)),
-    [{client, Client} | C].
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    [{client, Client}, {test_sup, SupPid} | C].
+
+-spec end_per_testcase(test_case_name(), config()) -> config().
+
+end_per_testcase(_Name, C) ->
+    _ = unlink(?config(test_sup)),
+    exit(?config(test_sup), shutdown).
 
 -spec invoice_cancellation(config()) -> _ | no_return().
 
 invoice_cancellation(C) ->
-    Client0 = ?config(client),
+    Client = ?config(client),
     UserInfo = make_userinfo(),
-    InvoiceParams = make_invoice_params(<<"rubberduck">>, {10000, <<"RUB">>}),
-    {{ok, InvoiceID}, Client1} =
-        hg_client:create_invoice(UserInfo, InvoiceParams, Client0),
-    {{exception, #'InvalidInvoiceStatus'{}}, Client2} =
-        hg_client:fulfill_invoice(UserInfo, InvoiceID, <<"perfect">>, Client1),
-    {ok, _Client3} =
-        hg_client:void_invoice(UserInfo, InvoiceID, <<"whynot">>, Client2).
+    InvoiceParams = make_invoice_params(<<"rubberduck">>, 10000),
+    {ok, InvoiceID} =
+        hg_client:create_invoice(UserInfo, InvoiceParams, Client),
+    {exception, #'InvalidInvoiceStatus'{}} =
+        hg_client:fulfill_invoice(UserInfo, InvoiceID, <<"perfect">>, Client),
+    ok =
+        hg_client:void_invoice(UserInfo, InvoiceID, <<"whynot">>, Client).
 
 -spec overdue_invoice_cancelled(config()) -> _ | no_return().
 
 overdue_invoice_cancelled(C) ->
-    Client0 = ?config(client),
+    Client = ?config(client),
     UserInfo = make_userinfo(),
-    InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(3), {10000, <<"RUB">>}, []),
-    {{ok, InvoiceID}, Client1} =
-        hg_client:create_invoice(UserInfo, InvoiceParams, Client0),
-    {{ok, #'InvoiceStatusChanged'{invoice = Invoice0}}, Client2} =
-        hg_client:get_next_event(UserInfo, InvoiceID, 5000, Client1),
-    #'Invoice'{status = unpaid} = Invoice0,
-    {{ok, #'InvoiceStatusChanged'{invoice = Invoice1}}, _Client3} =
-        hg_client:get_next_event(UserInfo, InvoiceID, 5000, Client2),
-    #'Invoice'{status = cancelled, details = <<"overdue">>} = Invoice1.
+    InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(1), 10000),
+    {ok, InvoiceID} =
+        hg_client:create_invoice(UserInfo, InvoiceParams, Client),
+    {ok, #'InvoiceStatusChanged'{invoice = #'Invoice'{status = unpaid}}} =
+        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client),
+    {ok, #'InvoiceStatusChanged'{invoice = #'Invoice'{status = cancelled, details = <<"overdue">>}}} =
+        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client).
+
+-spec payment_success(config()) -> _ | no_return().
+
+payment_success(C) ->
+    Client = ?config(client),
+    ProxyUrl = start_service_handler(hg_dummy_provider, C),
+    ok = application:set_env(hellgate, provider_proxy_url, ProxyUrl),
+    UserInfo = make_userinfo(),
+    InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(5), 42000),
+    PaymentParams = make_payment_params(),
+    {ok, InvoiceID} =
+        hg_client:create_invoice(UserInfo, InvoiceParams, Client),
+    {ok, #'InvoiceStatusChanged'{invoice = #'Invoice'{status = unpaid}}} =
+        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client),
+    {ok, PaymentID} =
+        hg_client:start_payment(UserInfo, InvoiceID, PaymentParams, Client),
+    {ok, #'InvoicePaymentStatusChanged'{payment = #'InvoicePayment'{id = PaymentID, status = pending}}} =
+        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client),
+    {ok, #'InvoicePaymentStatusChanged'{payment = #'InvoicePayment'{id = PaymentID, status = succeeded}}} =
+        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client),
+    % FIXME: will fail when eventlist feature lands in mg
+    timeout =
+        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client).
+
+%%
+
+start_service_handler(Module, C) ->
+    Host = "localhost",
+    Port = get_random_port(),
+    ChildSpec = Module:get_child_spec(Host, Port),
+    {ok, _} = supervisor:start_child(?config(test_sup), ChildSpec),
+    Module:get_url(Host, Port).
+
+get_random_port() ->
+    rand:uniform(32768) + 32767.
 
 %%
 
@@ -95,18 +149,42 @@ make_userinfo() ->
     #'UserInfo'{id = <<?MODULE_STRING>>}.
 
 make_invoice_params(Product, Cost) ->
-    make_invoice_params(Product, Cost, []).
+    make_invoice_params(Product, make_due_date(), Cost).
 
-make_invoice_params(Product, Cost, Context) ->
-    make_invoice_params(Product, make_due_date(), Cost, Context).
+make_invoice_params(Product, Due, Cost) ->
+    make_invoice_params(Product, Due, Cost, []).
 
+make_invoice_params(Product, Due, Amount, Context) when is_integer(Amount) ->
+    make_invoice_params(Product, Due, {Amount, <<"RUB">>}, Context);
 make_invoice_params(Product, Due, {Amount, Currency}, Context) ->
     #'InvoiceParams'{
-        product = Product,
-        amount = Amount,
-        due = format_datetime(Due),
+        product  = Product,
+        amount   = Amount,
+        due      = format_datetime(Due),
         currency = #'CurrencyRef'{symbolic_code = Currency},
-        context = term_to_binary(Context)
+        context  = term_to_binary(Context)
+    }.
+
+make_payment_params() ->
+    {PaymentTool, Session} = make_payment_tool(),
+    make_payment_params(PaymentTool, Session).
+
+make_payment_params(PaymentTool, Session) ->
+    #'InvoicePaymentParams'{
+        payer = #'Payer'{},
+        payment_tool = PaymentTool,
+        session = Session
+    }.
+
+make_payment_tool() ->
+    {
+        {bank_card, #'BankCard'{
+            token          = <<"TOKEN42">>,
+            payment_system = visa,
+            bin            = <<"424242">>,
+            masked_pan     = <<"4242">>
+        }},
+        <<"SESSION42">>
     }.
 
 make_due_date() ->
