@@ -120,15 +120,6 @@ process_payment(Proxy, PaymentInfo, Context) ->
 capture_payment(Proxy, PaymentInfo, Context) ->
     call(Context, Proxy, {?SERVICE, 'CapturePayment', [PaymentInfo]}).
 
--spec cancel_payment(
-    hg_domain_thrift:'Proxy'(),
-    hg_proxy_provider_thrift:'PaymentInfo'(),
-    woody_client:context()
-) ->
-    process_payment_result().
-cancel_payment(Proxy, PaymentInfo, Context) ->
-    call(Context, Proxy, {?SERVICE, 'CancelPayment', [PaymentInfo]}).
-
 call(Context, Proxy, Call) ->
     Endpoint = get_call_options(Proxy),
     try woody_client:call(Context, Call, Endpoint) of

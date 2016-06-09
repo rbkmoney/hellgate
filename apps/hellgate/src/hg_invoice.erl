@@ -87,7 +87,11 @@ wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
 %%
 
 -type invoice() :: hg_domain_thrift:'Invoice'().
+-type invoice_id() :: hg_domain_thrift:'InvoiceID'().
+-type user_info() :: hg_payment_processing_thrift:'UserInfo'().
+-type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
 -type payment() :: hg_domain_thrift:'InvoicePayment'().
+-type payment_params() :: hg_payment_processing_thrift:'InvoicePaymentParams'().
 -type invoice_status() :: hg_domain_thrift:'InvoiceStatus'().
 -type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
 -type payment_st() :: hg_invoice_payment:st().
@@ -117,10 +121,16 @@ wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
     {payment_succeeded, payment_id()} |
     {payment_failed, payment_id(), error()}.
 
+-spec init(invoice_id(), {invoice_params(), user_info()}) ->
+    {ok, hg_machine:result([ev()])}.
+
 init(ID, {InvoiceParams, _UserInfo}) ->
     Invoice = create_invoice(ID, InvoiceParams),
     Event = {invoice_created, Invoice},
     ok(Event, set_invoice_timer(Invoice)).
+
+-spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
+    {ok, hg_machine:result([ev()])}.
 
 process_signal(timeout, History) ->
     St = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
@@ -169,6 +179,17 @@ construct_payment_events(PaymentID, Trx = #'TransactionInfo'{}, Events) ->
     [{payment_bound, PaymentID, Trx} | wrap_event_list(Events)];
 construct_payment_events(_PaymentID, undefined, Events) ->
     Events.
+
+-type call() ::
+    {start_payment, payment_params(), user_info()} |
+    {fulfill, binary(), user_info()} |
+    {void, binary(), user_info()}.
+
+-type response() ::
+    ok | {ok, term()} | {exception, term()}.
+
+-spec process_call(call(), hg_machine:history(ev())) ->
+    {ok, response(), hg_machine:result([ev()])}.
 
 process_call({start_payment, PaymentParams, _UserInfo}, History) ->
     #st{invoice = Invoice, stage = Stage} = collapse_history(History),

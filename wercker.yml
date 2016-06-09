@@ -1,4 +1,8 @@
-box: erlang:18
+box:
+  id: rbkmoney/build
+  username: $CI_BOT_GIT_USERNAME
+  password: $CI_BOT_GIT_PASSWORD
+  tag: latest
 
 dev:
     steps:

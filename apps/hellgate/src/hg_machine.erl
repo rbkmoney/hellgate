@@ -4,8 +4,11 @@
 -type args() :: _.
 -type event() :: _.
 
--type history() :: [event()].
--type result() :: {event(), hg_machine_action:t()}.
+-type history(Event) :: [Event].
+-type history() :: history(event()).
+
+-type result(Event) :: {Event, hg_machine_action:t()}.
+-type result() :: result(event()).
 
 -callback init(id(), args()) ->
     {ok, result()}.
@@ -24,8 +27,11 @@
 
 -export_type([id/0]).
 -export_type([event/0]).
+-export_type([signal/0]).
 -export_type([history/0]).
+-export_type([history/1]).
 -export_type([result/0]).
+-export_type([result/1]).
 
 -export([start/3]).
 -export([call/4]).

@@ -29,9 +29,11 @@ start() ->
 stop() ->
     application:stop(?MODULE).
 
-%%
 %% Supervisor callbacks
-%%
+
+-spec init([]) ->
+    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+
 init([]) ->
     {ok, {
         #{strategy => one_for_all, intensity => 6, period => 30},
