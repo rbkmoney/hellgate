@@ -87,6 +87,7 @@ init_per_testcase(_Name, C) ->
 
 end_per_testcase(_Name, C) ->
     _ = unlink(?config(test_sup)),
+    _ = application:set_env(hellgate, provider_proxy_url, undefined),
     exit(?config(test_sup), shutdown).
 
 -spec invoice_cancellation(config()) -> _ | no_return().
