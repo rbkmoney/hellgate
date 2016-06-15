@@ -1,16 +1,17 @@
 -module(hg_client).
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 
--export([new/1]).
 -export([new/2]).
+-export([new/3]).
 
--export([create_invoice/3]).
--export([get_invoice/3]).
--export([fulfill_invoice/4]).
--export([void_invoice/4]).
--export([start_payment/4]).
+-export([create_invoice/2]).
+-export([get_invoice/2]).
+-export([fulfill_invoice/3]).
+-export([void_invoice/3]).
+-export([start_payment/3]).
 
--export([get_next_event/4]).
+-export([get_next_event/2]).
+-export([get_next_event/3]).
 
 -export_type([t/0]).
 
@@ -33,68 +34,76 @@
 %%
 
 -define(POLL_INTERVAL, 1000).
+-define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
 -opaque t() :: pid().
 
--spec new(woody_t:url()) -> t().
+-type user_info() :: hg_payment_processing_thrift:'UserInfo'().
+-type invoice_id() :: hg_domain_thrift:'InvoiceID'().
+-type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
+-type event_id() :: hg_payment_processing_thrift:'EventID'().
+-type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
+-type payment_params() :: hg_payment_processing_thrift:'InvoicePaymentParams'().
 
-new(RootUrl) ->
-    new(RootUrl, construct_context()).
+-spec new(woody_t:url(), user_info()) -> t().
+
+new(RootUrl, UserInfo) ->
+    new(RootUrl, UserInfo, construct_context()).
 
 construct_context() ->
     ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
     woody_client:new_context(ReqID, ?MODULE).
 
--spec new(woody_t:url(), woody_client:context()) -> t().
+-spec new(woody_t:url(), user_info(), woody_client:context()) -> t().
 
-new(RootUrl, Context) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, {Context, RootUrl}, []),
+new(RootUrl, UserInfo, Context) ->
+    {ok, Pid} = gen_server:start_link(?MODULE, {RootUrl, UserInfo, Context}, []),
     Pid.
 
 %%
 
--type user_info() :: hg_payment_processing_thrift:'UserInfo'().
--type invoice_id() :: hg_domain_thrift:'InvoiceID'().
--type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
--type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
--type payment_params() :: hg_payment_processing_thrift:'InvoicePaymentParams'().
-
--spec create_invoice(user_info(), invoice_params(), t()) ->
+-spec create_invoice(invoice_params(), t()) ->
     {{ok, invoice_id()} | woody_client:result_error(), t()}.
 
-create_invoice(UserInfo, InvoiceParams, Client) ->
-    do_service_call(Client, 'Create', [UserInfo, InvoiceParams]).
+create_invoice(InvoiceParams, Client) ->
+    do_service_call(Client, 'Create', [InvoiceParams]).
 
--spec get_invoice(user_info(), invoice_id(), t()) ->
+-spec get_invoice(invoice_id(), t()) ->
     {{ok, hg_payment_processing_thrift:'InvoiceState'()} | woody_client:result_error(), t()}.
 
-get_invoice(UserInfo, InvoiceID, Client) ->
-    do_service_call(Client, 'Get', [UserInfo, InvoiceID]).
+get_invoice(InvoiceID, Client) ->
+    do_service_call(Client, 'Get', [InvoiceID]).
 
--spec fulfill_invoice(user_info(), invoice_id(), binary(), t()) ->
+-spec fulfill_invoice(invoice_id(), binary(), t()) ->
     {ok | woody_client:result_error(), t()}.
 
-fulfill_invoice(UserInfo, InvoiceID, Reason, Client) ->
-    do_service_call(Client, 'Fulfill', [UserInfo, InvoiceID, Reason]).
+fulfill_invoice(InvoiceID, Reason, Client) ->
+    do_service_call(Client, 'Fulfill', [InvoiceID, Reason]).
 
--spec void_invoice(user_info(), invoice_id(), binary(), t()) ->
+-spec void_invoice(invoice_id(), binary(), t()) ->
     {ok | woody_client:result_error(), t()}.
 
-void_invoice(UserInfo, InvoiceID, Reason, Client) ->
-    do_service_call(Client, 'Void', [UserInfo, InvoiceID, Reason]).
+void_invoice(InvoiceID, Reason, Client) ->
+    do_service_call(Client, 'Void', [InvoiceID, Reason]).
 
--spec start_payment(user_info(), invoice_id(), payment_params(), t()) ->
+-spec start_payment(invoice_id(), payment_params(), t()) ->
     {{ok, payment_id()} | woody_client:result_error(), t()}.
 
-start_payment(UserInfo, InvoiceID, PaymentParams, Client) ->
-    do_service_call(Client, 'StartPayment', [UserInfo, InvoiceID, PaymentParams]).
+start_payment(InvoiceID, PaymentParams, Client) ->
+    do_service_call(Client, 'StartPayment', [InvoiceID, PaymentParams]).
 
--spec get_next_event(user_info(), invoice_id(), timeout(), t()) ->
+-spec get_next_event(invoice_id(), t()) ->
     {{ok, tuple()} | timeout | woody_client:result_error(), t()}.
 
-get_next_event(UserInfo, InvoiceID, Timeout, Client) ->
+get_next_event(InvoiceID, Client) ->
+    get_next_event(InvoiceID, ?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
+
+-spec get_next_event(invoice_id(), timeout(), t()) ->
+    {{ok, tuple()} | timeout | woody_client:result_error(), t()}.
+
+get_next_event(InvoiceID, Timeout, Client) ->
     % FIXME: infinity sounds dangerous
-    gen_server:call(Client, {get_next_event, InvoiceID, UserInfo, Timeout}, infinity).
+    gen_server:call(Client, {get_next_event, InvoiceID, Timeout}, infinity).
 
 do_service_call(Client, Function, Args) ->
     % FIXME: infinity sounds dangerous
@@ -104,28 +113,29 @@ do_service_call(Client, Function, Args) ->
 
 -record(cl, {
     root_url          :: woody_t:url(),
+    user_info         :: user_info(),
     context           :: woody_client:context(),
-    last_events = #{} :: #{invoice_id() => hg_payment_processing_thrift:'EventID'()}
+    last_events = #{} :: #{invoice_id() => event_id()}
 }).
 
 -type cl() :: #cl{}.
 -type callref() :: {pid(), Tag :: reference()}.
 
--spec init({woody_client:context(), woody_t:url()}) ->
+-spec init({woody_t:url(), user_info(), woody_client:context()}) ->
     {ok, cl()}.
 
-init({Context, RootUrl}) ->
-    {ok, #cl{context = Context, root_url = RootUrl}}.
+init({RootUrl, UserInfo, Context}) ->
+    {ok, #cl{context = Context, user_info = UserInfo, root_url = RootUrl}}.
 
 -spec handle_call(term(), callref(), cl()) ->
     {reply, term(), cl()} | {noreply, cl()}.
 
 handle_call({issue_service_call, Function, Args}, _From, Client) ->
-    {Result, ClientNext} = issue_service_call(Function, Args, Client),
+    {Result, ClientNext} = issue_service_call(Function, [get_user_info(Client) | Args], Client),
     {reply, Result, ClientNext};
 
-handle_call({get_next_event, InvoiceID, UserInfo, Timeout}, _From, Client) ->
-    {Result, ClientNext} = poll_next_event(InvoiceID, UserInfo, Timeout, Client),
+handle_call({get_next_event, InvoiceID, Timeout}, _From, Client) ->
+    {Result, ClientNext} = poll_next_event(InvoiceID, Timeout, Client),
     {reply, Result, ClientNext};
 
 handle_call(Call, _From, State) ->
@@ -162,16 +172,17 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %%
 
-poll_next_event(_InvoiceID, _UserInfo, Timeout, Client) when Timeout =< 0 ->
+poll_next_event(_InvoiceID, Timeout, Client) when Timeout =< 0 ->
     {timeout, Client};
-poll_next_event(InvoiceID, UserInfo, Timeout, Client) ->
-    Range = construct_range(InvoiceID, Client),
+poll_next_event(InvoiceID, Timeout, Client) ->
     StartTs = genlib_time:ticks(),
+    UserInfo = get_user_info(Client),
+    Range = construct_range(InvoiceID, Client),
     {Result, ClientNext} = issue_service_call('GetEvents', [UserInfo, InvoiceID, Range], Client),
     case Result of
         {ok, []} ->
             _ = timer:sleep(?POLL_INTERVAL),
-            poll_next_event(InvoiceID, UserInfo, compute_timeout_left(StartTs, Timeout), ClientNext);
+            poll_next_event(InvoiceID, compute_timeout_left(StartTs, Timeout), ClientNext);
         {ok, [#'Event'{id = EventID, ev = {_, Event}} | _Rest]} ->
             {{ok, Event}, update_last_events(InvoiceID, EventID, ClientNext)};
         {What, _} when What =:= exception; What =:= error ->
@@ -193,6 +204,9 @@ issue_service_call(Function, Args, Client = #cl{context = Context, root_url = Ro
 
 compute_timeout_left(StartTs, TimeoutWas) ->
     TimeoutWas - (genlib_time:ticks() - StartTs) div 1000.
+
+get_user_info(#cl{user_info = UserInfo}) ->
+    UserInfo.
 
 %%
 

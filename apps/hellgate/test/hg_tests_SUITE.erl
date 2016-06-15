@@ -69,10 +69,17 @@ end_per_suite(C) ->
 
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 
+-define(ev_invoice_status(Status),
+    #'InvoiceStatusChanged'{invoice = #'Invoice'{status = Status}}).
+-define(ev_invoice_status(Status, Details),
+    #'InvoiceStatusChanged'{invoice = #'Invoice'{status = Status, details = Details}}).
+-define(ev_payment_status(PaymentID, Status),
+    #'InvoicePaymentStatusChanged'{payment = #'InvoicePayment'{id = PaymentID, status = Status}}).
+
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(_Name, C) ->
-    Client = hg_client:new(?config(root_url)),
+    Client = hg_client:new(?config(root_url), make_userinfo()),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [{client, Client}, {test_sup, SupPid} | C].
 
@@ -86,27 +93,19 @@ end_per_testcase(_Name, C) ->
 
 invoice_cancellation(C) ->
     Client = ?config(client),
-    UserInfo = make_userinfo(),
     InvoiceParams = make_invoice_params(<<"rubberduck">>, 10000),
-    {ok, InvoiceID} =
-        hg_client:create_invoice(UserInfo, InvoiceParams, Client),
-    {exception, #'InvalidInvoiceStatus'{}} =
-        hg_client:fulfill_invoice(UserInfo, InvoiceID, <<"perfect">>, Client),
-    ok =
-        hg_client:void_invoice(UserInfo, InvoiceID, <<"whynot">>, Client).
+    {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
+    {exception, #'InvalidInvoiceStatus'{}} = hg_client:fulfill_invoice(InvoiceID, <<"perfect">>, Client),
+    ok = hg_client:void_invoice(InvoiceID, <<"whynot">>, Client).
 
 -spec overdue_invoice_cancelled(config()) -> _ | no_return().
 
 overdue_invoice_cancelled(C) ->
     Client = ?config(client),
-    UserInfo = make_userinfo(),
     InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(1), 10000),
-    {ok, InvoiceID} =
-        hg_client:create_invoice(UserInfo, InvoiceParams, Client),
-    {ok, #'InvoiceStatusChanged'{invoice = #'Invoice'{status = unpaid}}} =
-        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client),
-    {ok, #'InvoiceStatusChanged'{invoice = #'Invoice'{status = cancelled, details = <<"overdue">>}}} =
-        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client).
+    {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
+    {ok, ?ev_invoice_status(unpaid)} = hg_client:get_next_event(InvoiceID, 3000, Client),
+    {ok, ?ev_invoice_status(cancelled, <<"overdue">>)} = hg_client:get_next_event(InvoiceID, 3000, Client).
 
 -spec payment_success(config()) -> _ | no_return().
 
@@ -114,31 +113,24 @@ payment_success(C) ->
     Client = ?config(client),
     ProxyUrl = start_service_handler(hg_dummy_provider, C),
     ok = application:set_env(hellgate, provider_proxy_url, ProxyUrl),
-    UserInfo = make_userinfo(),
     InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(5), 42000),
     PaymentParams = make_payment_params(),
-    {ok, InvoiceID} =
-        hg_client:create_invoice(UserInfo, InvoiceParams, Client),
-    {ok, #'InvoiceStatusChanged'{invoice = #'Invoice'{status = unpaid}}} =
-        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client),
-    {ok, PaymentID} =
-        hg_client:start_payment(UserInfo, InvoiceID, PaymentParams, Client),
-    {ok, #'InvoicePaymentStatusChanged'{payment = #'InvoicePayment'{id = PaymentID, status = pending}}} =
-        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client),
-    {ok, #'InvoicePaymentStatusChanged'{payment = #'InvoicePayment'{id = PaymentID, status = succeeded}}} =
-        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client),
+    {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
+    {ok, ?ev_invoice_status(unpaid)} = hg_client:get_next_event(InvoiceID, 3000, Client),
+    {ok, PaymentID} = hg_client:start_payment(InvoiceID, PaymentParams, Client),
+    {ok, ?ev_payment_status(PaymentID, pending)} = hg_client:get_next_event(InvoiceID, 3000, Client),
+    {ok, ?ev_payment_status(PaymentID, succeeded)} = hg_client:get_next_event(InvoiceID, 3000, Client),
     % FIXME: will fail when eventlist feature lands in mg
-    timeout =
-        hg_client:get_next_event(UserInfo, InvoiceID, 3000, Client).
+    timeout = hg_client:get_next_event(InvoiceID, 3000, Client).
 
 %%
 
 start_service_handler(Module, C) ->
     Host = "localhost",
     Port = get_random_port(),
-    ChildSpec = Module:get_child_spec(Host, Port),
+    ChildSpec = hg_test_provider:get_child_spec(Module, Host, Port),
     {ok, _} = supervisor:start_child(?config(test_sup), ChildSpec),
-    Module:get_url(Host, Port).
+    hg_test_provider:get_url(Module, Host, Port).
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
