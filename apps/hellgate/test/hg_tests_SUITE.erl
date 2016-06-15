@@ -55,7 +55,10 @@ init_per_suite(C) ->
         hg_ct_helper:start_app(hellgate, [
             {host, Host},
             {port, Port},
-            % FIXME
+            % FIXME:
+            %   You will need up and running mgun reachable at the following url,
+            %   properly configured to serve incoming requests and talk back to
+            %   the test hg instance.
             {automaton_service_url, <<"http://localhost:8022/v1/automaton_service">>}
         ]),
     [{root_url, RootUrl}, {apps, lists:reverse(Apps)} | C].
