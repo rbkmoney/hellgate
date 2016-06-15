@@ -129,9 +129,9 @@ payment_success(C) ->
 start_service_handler(Module, C) ->
     Host = "localhost",
     Port = get_random_port(),
-    ChildSpec = hg_test_provider:get_child_spec(Module, Host, Port),
+    ChildSpec = hg_test_proxy:get_child_spec(Module, Host, Port),
     {ok, _} = supervisor:start_child(?config(test_sup), ChildSpec),
-    hg_test_provider:get_url(Module, Host, Port).
+    hg_test_proxy:get_url(Module, Host, Port).
 
 get_random_port() ->
     rand:uniform(32768) + 32767.

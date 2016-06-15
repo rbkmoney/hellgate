@@ -1,4 +1,4 @@
--module(hg_test_provider).
+-module(hg_test_proxy).
 
 -type host() :: inet:hostname() | inet:ip_address().
 
