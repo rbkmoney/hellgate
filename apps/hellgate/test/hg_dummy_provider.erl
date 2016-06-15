@@ -4,15 +4,15 @@
 -export([handle_function/4]).
 -export([handle_error/4]).
 
+-behaviour(hg_test_provider).
+
 -export([get_child_spec/2]).
 -export([get_url/2]).
 
 %%
 
--type host() :: string() | inet:ip_address().
--type port_num() :: 1024..65535.
-
--spec get_child_spec(host(), port_num()) -> supervisor:child_spec().
+-spec get_child_spec(inet:hostname() | inet:ip_address(), inet:port_number()) ->
+    supervisor:child_spec().
 
 get_child_spec(Host, Port) ->
     {Name, Path, Service} = get_service_spec(),
@@ -27,7 +27,8 @@ get_child_spec(Host, Port) ->
         }
     ).
 
--spec get_url(host(), port_num()) -> woody_t:url().
+-spec get_url(inet:hostname() | inet:ip_address(), inet:port_number()) ->
+    woody_t:url().
 
 get_url(Host, Port) ->
     {_Name, Path, _Service} = get_service_spec(),
