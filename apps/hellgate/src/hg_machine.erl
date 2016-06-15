@@ -7,7 +7,7 @@
 -type history(Event) :: [Event].
 -type history() :: history(event()).
 
--type result(Event) :: {Event, hg_machine_action:t()}.
+-type result(Event) :: {[Event], hg_machine_action:t()}.
 -type result() :: result(event()).
 
 -callback init(id(), args()) ->
@@ -162,10 +162,10 @@ dispatch_signal(#'RepairSignal'{arg = Payload}, History0, _Opts) ->
     _ = lager:debug("[machine] [~p] dispatch repair (~p) with history: ~p", [Module, Args, History]),
     marshal_signal_result(Module:process_signal({repair, Args}, History), Module).
 
-marshal_signal_result({ok, {Event, Action}}, Module) ->
-    _ = lager:debug("[machine] [~p] result with event = ~p and action = ~p", [Module, Event, Action]),
+marshal_signal_result({ok, {Events, Action}}, Module) ->
+    _ = lager:debug("[machine] [~p] result with events = ~p and action = ~p", [Module, Events, Action]),
     #'SignalResult'{
-        ev = wrap_event(Module, Event),
+        events = wrap_events(Module, Events),
         action = Action
     }.
 
@@ -184,13 +184,13 @@ dispatch_call(Payload, History0, _Opts) ->
 
 %%
 
-marshal_call_result({ok, Response, {Event, Action}}, Module) ->
+marshal_call_result({ok, Response, {Events, Action}}, Module) ->
     _ = lager:debug(
         "[machine] [~p] call response = ~p with event = ~p and action = ~p",
-        [Module, Response, Event, Action]
+        [Module, Response, Events, Action]
     ),
     #'CallResult'{
-        ev = wrap_event(Module, Event),
+        events = wrap_events(Module, Events),
         action = Action,
         response = marshal_term(Response)
     }.
@@ -205,6 +205,9 @@ unmarshal_history(History) ->
 unwrap_history(History = [Event | _]) ->
     {_ID, {Module, _EventInner}} = unwrap_event(Event),
     {Module, [begin {ID, {_, EventInner}} = unwrap_event(E), {ID, EventInner} end || E <- History]}.
+
+wrap_events(Module, Events) ->
+    [wrap_event(Module, Ev) || Ev <- Events].
 
 wrap_event(Module, EventInner) ->
     wrap_args(Module, EventInner).

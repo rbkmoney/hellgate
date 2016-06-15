@@ -124,7 +124,7 @@ payment_success(C) ->
     {ok, PaymentID} = hg_client:start_payment(InvoiceID, PaymentParams, Client),
     {ok, ?ev_payment_status(PaymentID, pending)} = hg_client:get_next_event(InvoiceID, 3000, Client),
     {ok, ?ev_payment_status(PaymentID, succeeded)} = hg_client:get_next_event(InvoiceID, 3000, Client),
-    % FIXME: will fail when eventlist feature lands in mg
+    {ok, ?ev_invoice_status(paid)} = hg_client:get_next_event(InvoiceID, 1000, Client),
     timeout = hg_client:get_next_event(InvoiceID, 3000, Client).
 
 %%
