@@ -4,7 +4,7 @@
 
 %% API
 
--export([process/3]).
+-export([process/4]).
 
 %% Machine callbacks
 
@@ -31,13 +31,23 @@
 -type payment_trx() :: hg_domain_thrift:'TransactionInfo'() | undefined.
 -type error()       :: hg_domain_thrift:'OperationError'().
 
--spec process(payment(), invoice(), st() | undefined) ->
+
+
+-spec process(payment(), invoice(), st() | undefined, woody_client:context()) ->
     {ok, payment_trx()} |
     {{error, error()}, payment_trx()} |
     {{next, hg_machine_action:t(), st()}, payment_trx()}.
 
-process(Payment, Invoice, undefined) ->
-    process(Payment, Invoice, construct_state(Payment, Invoice));
+process(Payment, Invoice, undefined, Context) ->
+    process(Payment, Invoice, construct_state(Payment, Invoice, Context));
+process(Payment, Invoice, St = #st{}, Context) ->
+    process(Payment, Invoice, St#st{context = Context}).
+
+-spec process(payment(), invoice(), st()) ->
+    {ok, payment_trx()} |
+    {{error, error()}, payment_trx()} |
+    {{next, hg_machine_action:t(), st()}, payment_trx()}.
+
 process(Payment, Invoice, St = #st{}) ->
     Proxy = get_proxy(Invoice, St),
     PaymentInfo = construct_payment_info(Payment, Invoice, Proxy, St),
@@ -81,16 +91,12 @@ map_error(#'Error'{code = Code, description = Description}) ->
 
 %%
 
-construct_state(Payment, Invoice) ->
+construct_state(Payment, Invoice, Context) ->
     #st{
         stage     = process_payment,
         proxy_ref = select_proxy(Payment, Invoice),
-        context   = construct_context()
+        context   = Context
     }.
-
-construct_context() ->
-    ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
-    woody_client:new_context(ReqID, hg_woody_event_handler).
 
 select_proxy(_, _) ->
     % FIXME: turbo routing

@@ -10,19 +10,19 @@
 -type result(Event) :: {Event, hg_machine_action:t()}.
 -type result() :: result(event()).
 
--callback init(id(), args()) ->
+-callback init(id(), args(), woody_client:context()) ->
     {ok, result()}.
 
 -type signal() ::
     timeout | {repair, args()}.
 
--callback process_signal(signal(), history()) ->
+-callback process_signal(signal(), history(), woody_client:context()) ->
     {ok, result()}.
 
 -type call() :: _.
 -type response() :: ok | {ok, term()} | {exception, term()}.
 
--callback process_call(call(), history()) ->
+-callback process_call(call(), history(), woody_client:context()) ->
     {ok, response(), result()}.
 
 -export_type([id/0]).
@@ -141,26 +141,23 @@ handle_error(_Function, _Reason, _Context, _Opts) ->
     Result ::
         hg_state_processing_thrift:'SignalResult'().
 
-dispatch_signal(#'InitSignal'{id = ID, arg = Payload}, [], _Opts) ->
-    % TODO: do not ignore `Opts`
+dispatch_signal(#'InitSignal'{id = ID, arg = Payload}, [], _Opts = #{context := Context}) ->
     {Module, Args} = unwrap_args(Payload),
     _ = lager:debug("[machine] [~p] dispatch init (~p: ~p) with history: ~p", [Module, ID, Args, []]),
-    marshal_signal_result(Module:init(ID, Args), Module);
+    marshal_signal_result(Module:init(ID, Args, Context), Module);
 
-dispatch_signal(#'TimeoutSignal'{}, History0, _Opts) ->
-    % TODO: do not ignore `Opts`
+dispatch_signal(#'TimeoutSignal'{}, History0, _Opts = #{context := Context}) ->
     % TODO: deducing module from signal payload looks more natural
     %       opaque payload in every event?
     {Module, History} = unwrap_history(History0),
     _ = lager:debug("[machine] [~p] dispatch timeout with history: ~p", [Module, History]),
-    marshal_signal_result(Module:process_signal(timeout, History), Module);
+    marshal_signal_result(Module:process_signal(timeout, History, Context), Module);
 
-dispatch_signal(#'RepairSignal'{arg = Payload}, History0, _Opts) ->
-    % TODO: do not ignore `Opts`
+dispatch_signal(#'RepairSignal'{arg = Payload}, History0, _Opts = #{context := Context}) ->
     {Module, History} = unwrap_history(History0),
     Args = unmarshal_term(Payload),
     _ = lager:debug("[machine] [~p] dispatch repair (~p) with history: ~p", [Module, Args, History]),
-    marshal_signal_result(Module:process_signal({repair, Args}, History), Module).
+    marshal_signal_result(Module:process_signal({repair, Args}, History, Context), Module).
 
 marshal_signal_result({ok, {Event, Action}}, Module) ->
     _ = lager:debug("[machine] [~p] result with event = ~p and action = ~p", [Module, Event, Action]),
@@ -174,13 +171,12 @@ marshal_signal_result({ok, {Event, Action}}, Module) ->
     Call :: hg_state_processing_thrift:'Call'(),
     Result :: hg_state_processing_thrift:'CallResult'().
 
-dispatch_call(Payload, History0, _Opts) ->
-    % TODO: do not ignore `Opts`
+dispatch_call(Payload, History0, _Opts = #{context := Context}) ->
     % TODO: looks suspicious
     {Module, Args} = unwrap_args(Payload),
     {Module, History} = unwrap_history(History0),
     _ = lager:debug("[machine] [~p] dispatch call (~p) with history: ~p", [Module, Args, History]),
-    marshal_call_result(Module:process_call(Args, History), Module).
+    marshal_call_result(Module:process_call(Args, History, Context), Module).
 
 %%
 
