@@ -12,9 +12,9 @@
 
 -behaviour(hg_machine).
 
--export([init/2]).
--export([process_signal/2]).
--export([process_call/2]).
+-export([init/3]).
+-export([process_signal/3]).
+-export([process_call/3]).
 
 %%
 
@@ -106,7 +106,8 @@ wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
 -record(st, {
     invoice :: invoice(),
     payments = [] :: [payment()],
-    stage = idling :: stage()
+    stage = idling :: stage(),
+    context :: woody_client:context()
 }).
 
 -type st() :: #st{}.
@@ -121,19 +122,20 @@ wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
     {payment_succeeded, payment_id()} |
     {payment_failed, payment_id(), error()}.
 
--spec init(invoice_id(), {invoice_params(), user_info()}) ->
+-spec init(invoice_id(), {invoice_params(), user_info()}, woody_client:context()) ->
     {ok, hg_machine:result([ev()])}.
 
-init(ID, {InvoiceParams, _UserInfo}) ->
+init(ID, {InvoiceParams, _UserInfo}, _Context) ->
     Invoice = create_invoice(ID, InvoiceParams),
     Event = {invoice_created, Invoice},
     ok(Event, set_invoice_timer(Invoice)).
 
--spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
+-spec process_signal(hg_machine:signal(), hg_machine:history(ev()), woody_client:context()) ->
     {ok, hg_machine:result([ev()])}.
 
-process_signal(timeout, History) ->
-    St = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
+process_signal(timeout, History, Context) ->
+    St0 = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
+    St = St0#st{context = Context},
     Status = get_invoice_status(Invoice),
     case Stage of
         {processing_payment, PaymentID, PaymentState} ->
@@ -146,7 +148,7 @@ process_signal(timeout, History) ->
             ok()
     end;
 
-process_signal({repair, _}, History) ->
+process_signal({repair, _}, History, _Context) ->
     #st{invoice = Invoice} = collapse_history(History),
     ok([], set_invoice_timer(Invoice)).
 
@@ -154,10 +156,10 @@ process_expiration(#st{invoice = Invoice}) ->
     {ok, Event} = cancel_invoice(overdue, Invoice),
     ok(Event).
 
-process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice}) ->
+process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice, context = Context}) ->
     % FIXME: code looks shitty, destined to be in payment submachine
     Payment = get_payment(PaymentID, St),
-    case hg_invoice_payment:process(Payment, Invoice, PaymentState0) of
+    case hg_invoice_payment:process(Payment, Invoice, PaymentState0, Context) of
         % TODO: check proxy contracts
         %       binding different trx ids is not allowed
         %       empty action is questionable to allow
@@ -188,10 +190,10 @@ construct_payment_events(_PaymentID, undefined, Events) ->
 -type response() ::
     ok | {ok, term()} | {exception, term()}.
 
--spec process_call(call(), hg_machine:history(ev())) ->
+-spec process_call(call(), hg_machine:history(ev()), woody_client:context()) ->
     {ok, response(), hg_machine:result([ev()])}.
 
-process_call({start_payment, PaymentParams, _UserInfo}, History) ->
+process_call({start_payment, PaymentParams, _UserInfo}, History, _Context) ->
     #st{invoice = Invoice, stage = Stage} = collapse_history(History),
     Status = get_invoice_status(Invoice),
     case Stage of
@@ -209,7 +211,7 @@ process_call({start_payment, PaymentParams, _UserInfo}, History) ->
             raise(invalid_invoice_status(Invoice))
     end;
 
-process_call({fulfill, Reason, _UserInfo}, History) ->
+process_call({fulfill, Reason, _UserInfo}, History, _Context) ->
     #st{invoice = Invoice} = collapse_history(History),
     case fulfill_invoice(Reason, Invoice) of
         {ok, Event} ->
@@ -218,7 +220,7 @@ process_call({fulfill, Reason, _UserInfo}, History) ->
             raise(Exception, set_invoice_timer(Invoice))
     end;
 
-process_call({void, Reason, _UserInfo}, History) ->
+process_call({void, Reason, _UserInfo}, History, _Context) ->
     #st{invoice = Invoice} = collapse_history(History),
     case cancel_invoice({void, Reason}, Invoice) of
         {ok, Event} ->
