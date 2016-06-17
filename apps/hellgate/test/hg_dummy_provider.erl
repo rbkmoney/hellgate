@@ -4,7 +4,7 @@
 -export([handle_function/4]).
 -export([handle_error/4]).
 
--behaviour(hg_test_provider).
+-behaviour(hg_test_proxy).
 
 -export([get_child_spec/2]).
 -export([get_url/2]).
@@ -43,18 +43,18 @@ get_service_spec() ->
 -include_lib("hg_proto/include/hg_proxy_provider_thrift.hrl").
 
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), []) ->
-    {ok, term()} | no_return().
+    {{ok, term()}, woody_client:context()} | no_return().
 
-handle_function('ProcessPayment', {#'PaymentInfo'{state = undefined}}, _Context, _Opts) ->
-    {ok, sleep(1, <<"sleeping">>)};
-handle_function('ProcessPayment', {#'PaymentInfo'{state = <<"sleeping">>} = PaymentInfo}, _Context, _Opts) ->
-    {ok, finish(PaymentInfo)};
+handle_function('ProcessPayment', {#'PaymentInfo'{state = undefined}}, Context, _Opts) ->
+    {{ok, sleep(1, <<"sleeping">>)}, Context};
+handle_function('ProcessPayment', {#'PaymentInfo'{state = <<"sleeping">>} = PaymentInfo}, Context, _Opts) ->
+    {{ok, finish(PaymentInfo)}, Context};
 
-handle_function('CapturePayment', {PaymentInfo}, _Context, _Opts) ->
-    {ok, finish(PaymentInfo)};
+handle_function('CapturePayment', {PaymentInfo}, Context, _Opts) ->
+    {{ok, finish(PaymentInfo)}, Context};
 
-handle_function('CancelPayment', {PaymentInfo}, _Context, _Opts) ->
-    {ok, finish(PaymentInfo)}.
+handle_function('CancelPayment', {PaymentInfo}, Context, _Opts) ->
+    {{ok, finish(PaymentInfo)}, Context}.
 
 finish(#'PaymentInfo'{payment = Payment}) ->
     #'ProcessResult'{

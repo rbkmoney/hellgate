@@ -6,7 +6,6 @@
 -behaviour(woody_server_thrift_handler).
 
 -export([handle_function/4]).
--export([handle_error/4]).
 
 %% Machine callbacks
 
@@ -17,53 +16,57 @@
 -export([process_call/3]).
 
 %%
+-record(st, {
+    invoice :: invoice(),
+    payments = [] :: [payment()],
+    stage = idling :: stage(),
+    context :: woody_client:context()
+}).
+
+-type st() :: #st{}.
+%%
 
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), []) ->
-    {ok, term()} | no_return().
+    {{ok, term()}, woody_client:context()} | no_return().
 
-handle_function('Create', {UserInfo, InvoiceParams}, Context, _Opts) ->
-    InvoiceID = hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, opts(Context)),
-    {ok, InvoiceID};
+handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
+    {InvoiceID, Context} = hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, opts(Context0)),
+    {{ok, InvoiceID}, Context};
 
-handle_function('Get', {UserInfo, InvoiceID}, Context, _Opts) ->
-    InvoiceState = get_invoice_state(get_state(UserInfo, InvoiceID, opts(Context))),
-    {ok, InvoiceState};
+handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
+    St = #st{context = Context} = get_state(UserInfo, InvoiceID, opts(Context0)),
+    InvoiceState = get_invoice_state(St),
+    {{ok, InvoiceState, Context}};
 
-handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context, _Opts) ->
+handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
     #'EventRange'{'after' = AfterID, limit = Limit} = Range,
-    History = get_history(UserInfo, InvoiceID, opts(Context)),
-    {ok, map_events(select_range(AfterID, Limit, map_history(History)))};
+    {History, Context} = get_history(UserInfo, InvoiceID, opts(Context0)),
+    {{ok, map_events(select_range(AfterID, Limit, map_history(History)))}, Context};
 
-handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context, _Opts) ->
+handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, _Opts) ->
     Call = {start_payment, PaymentParams, UserInfo},
-    PaymentID = hg_machine:call(?MODULE, InvoiceID, Call, opts(Context)),
-    {ok, PaymentID};
+    {PaymentID, Context} = hg_machine:call(?MODULE, InvoiceID, Call, opts(Context0)),
+    {{ok, PaymentID}, Context};
 
-handle_function('GetPayment', {UserInfo, PaymentID}, Context, _Opts) ->
-    St = get_state(UserInfo, deduce_invoice_id(PaymentID), opts(Context)),
+handle_function('GetPayment', {UserInfo, PaymentID}, Context0, _Opts) ->
+    St = get_state(UserInfo, deduce_invoice_id(PaymentID), opts(Context0)),
     case get_payment(PaymentID, St) of
         Payment = #'InvoicePayment'{} ->
-            {ok, Payment};
+            {{ok, Payment}, St#st.context};
         false ->
-            throw(payment_not_found())
+            throw({payment_not_found(), Context0})
     end;
 
-handle_function('Fulfill', {UserInfo, InvoiceID, Reason}, Context, _Opts) ->
-    Result = hg_machine:call(?MODULE, InvoiceID, {fulfill, Reason, UserInfo}, opts(Context)),
-    {ok, Result};
+handle_function('Fulfill', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
+    {Result, Context} = hg_machine:call(?MODULE, InvoiceID, {fulfill, Reason, UserInfo}, opts(Context0)),
+    {{ok, Result}, Context};
 
-handle_function('Void', {UserInfo, InvoiceID, Reason}, Context, _Opts) ->
-    Result = hg_machine:call(?MODULE, InvoiceID, {void, Reason, UserInfo}, opts(Context)),
-    {ok, Result}.
+handle_function('Void', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
+    {Result, Context} = hg_machine:call(?MODULE, InvoiceID, {void, Reason, UserInfo}, opts(Context0)),
+    {{ok, Result}, Context}.
 
 opts(Context) ->
     #{context => Context}.
-
--spec handle_error(woody_t:func(), term(), woody_client:context(), []) ->
-    _.
-
-handle_error(_Function, _Reason, _Context, _Opts) ->
-    ok.
 
 %%
 
@@ -71,7 +74,9 @@ get_history(_UserInfo, InvoiceID, Opts) ->
     hg_machine:get_history(?MODULE, InvoiceID, Opts).
 
 get_state(UserInfo, InvoiceID, Opts) ->
-    collapse_history(get_history(UserInfo, InvoiceID, Opts)).
+    {History, Context} = get_history(UserInfo, InvoiceID, Opts),
+    St = collapse_history(History),
+    St#st{context = Context}.
 
 map_events(Evs) ->
     [construct_external_event(ID, Ev) || {ID, Ev} <- Evs].
@@ -103,15 +108,6 @@ wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
     idling |
     {processing_payment, payment_id(), payment_st()}.
 
--record(st, {
-    invoice :: invoice(),
-    payments = [] :: [payment()],
-    stage = idling :: stage(),
-    context :: woody_client:context()
-}).
-
--type st() :: #st{}.
-
 -type ev() ::
     {stage_changed, stage()} |
     {invoice_created, invoice()} |
@@ -123,15 +119,15 @@ wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
     {payment_failed, payment_id(), error()}.
 
 -spec init(invoice_id(), {invoice_params(), user_info()}, woody_client:context()) ->
-    {ok, hg_machine:result([ev()])}.
+    {{ok, hg_machine:result([ev()])}, woody_client:context()}.
 
-init(ID, {InvoiceParams, _UserInfo}, _Context) ->
+init(ID, {InvoiceParams, _UserInfo}, Context) ->
     Invoice = create_invoice(ID, InvoiceParams),
     Event = {invoice_created, Invoice},
-    ok(Event, set_invoice_timer(Invoice)).
+    {ok(Event, set_invoice_timer(Invoice)), Context}.
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev()), woody_client:context()) ->
-    {ok, hg_machine:result([ev()])}.
+    {{ok, hg_machine:result([ev()])}, woody_client:context()}.
 
 process_signal(timeout, History, Context) ->
     St0 = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
@@ -148,33 +144,33 @@ process_signal(timeout, History, Context) ->
             ok()
     end;
 
-process_signal({repair, _}, History, _Context) ->
+process_signal({repair, _}, History, Context) ->
     #st{invoice = Invoice} = collapse_history(History),
-    ok([], set_invoice_timer(Invoice)).
+    {ok([], set_invoice_timer(Invoice)), Context}.
 
-process_expiration(#st{invoice = Invoice}) ->
+process_expiration(#st{invoice = Invoice, context = Context}) ->
     {ok, Event} = cancel_invoice(overdue, Invoice),
-    ok(Event).
+    {ok(Event), Context}.
 
-process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice, context = Context}) ->
+process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice, context = Context0}) ->
     % FIXME: code looks shitty, destined to be in payment submachine
     Payment = get_payment(PaymentID, St),
-    case hg_invoice_payment:process(Payment, Invoice, PaymentState0, Context) of
+    case hg_invoice_payment:process(Payment, Invoice, PaymentState0, Context0) of
         % TODO: check proxy contracts
         %       binding different trx ids is not allowed
         %       empty action is questionable to allow
-        {ok, Trx} ->
+        {{ok, Trx}, Context} ->
             % payment finished successfully
             Events = [{payment_succeeded, PaymentID}, {invoice_status_changed, paid, <<>>}],
-            ok(construct_payment_events(PaymentID, Trx, Events));
-        {{error, Error = #'OperationError'{}}, Trx} ->
+            {ok(construct_payment_events(PaymentID, Trx, Events)), Context};
+        {{{error, Error = #'OperationError'{}}, Trx}, Context} ->
             % payment finished with error
             Event = {payment_failed, PaymentID, Error},
-            ok(construct_payment_events(PaymentID, Trx, Event));
-        {{next, Action, PaymentState}, Trx} ->
+            {ok(construct_payment_events(PaymentID, Trx, Event)), Context};
+        {{{next, Action, PaymentState}, Trx}, Context} ->
             % payment progressing yet
             Event = {payment_state_changed, PaymentID, PaymentState},
-            ok(construct_payment_events(PaymentID, Trx, Event), Action)
+            {ok(construct_payment_events(PaymentID, Trx, Event), Action), Context}
     end.
 
 construct_payment_events(PaymentID, Trx = #'TransactionInfo'{}, Events) ->
@@ -191,9 +187,9 @@ construct_payment_events(_PaymentID, undefined, Events) ->
     ok | {ok, term()} | {exception, term()}.
 
 -spec process_call(call(), hg_machine:history(ev()), woody_client:context()) ->
-    {ok, response(), hg_machine:result([ev()])}.
+    {{ok, response(), hg_machine:result([ev()])}, woody_client:context()}.
 
-process_call({start_payment, PaymentParams, _UserInfo}, History, _Context) ->
+process_call({start_payment, PaymentParams, _UserInfo}, History, Context) ->
     #st{invoice = Invoice, stage = Stage} = collapse_history(History),
     Status = get_invoice_status(Invoice),
     case Stage of
@@ -204,29 +200,29 @@ process_call({start_payment, PaymentParams, _UserInfo}, History, _Context) ->
                 {payment_created, Payment},
                 {payment_state_changed, PaymentID, undefined}
             ],
-            respond({ok, PaymentID}, Events, hg_machine_action:instant());
+            {respond({ok, PaymentID}, Events, hg_machine_action:instant()), Context};
         {processing_payment, PaymentID, _} ->
-            raise(payment_pending(PaymentID));
+            {raise(payment_pending(PaymentID)), Context};
         _ ->
-            raise(invalid_invoice_status(Invoice))
+            {raise(invalid_invoice_status(Invoice)), Context}
     end;
 
-process_call({fulfill, Reason, _UserInfo}, History, _Context) ->
+process_call({fulfill, Reason, _UserInfo}, History, Context) ->
     #st{invoice = Invoice} = collapse_history(History),
     case fulfill_invoice(Reason, Invoice) of
         {ok, Event} ->
-            respond(ok, Event, set_invoice_timer(Invoice));
+            {respond(ok, Event, set_invoice_timer(Invoice)), Context};
         {error, Exception} ->
-            raise(Exception, set_invoice_timer(Invoice))
+            {raise(Exception, set_invoice_timer(Invoice)), Context}
     end;
 
-process_call({void, Reason, _UserInfo}, History, _Context) ->
+process_call({void, Reason, _UserInfo}, History, Context) ->
     #st{invoice = Invoice} = collapse_history(History),
     case cancel_invoice({void, Reason}, Invoice) of
         {ok, Event} ->
-            respond(ok, Event, set_invoice_timer(Invoice));
+            {respond(ok, Event, set_invoice_timer(Invoice)), Context};
         {error, Exception} ->
-            raise(Exception, set_invoice_timer(Invoice))
+            {raise(Exception, set_invoice_timer(Invoice)), Context}
     end.
 
 set_invoice_timer(#'Invoice'{status = unpaid, due = Due}) when Due /= undefined ->
