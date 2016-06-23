@@ -267,8 +267,8 @@ create_invoice(ID, V = #'InvoiceParams'{}) ->
         description     = V#'InvoiceParams'.description,
         context         = V#'InvoiceParams'.context,
         cost            = #'Funds'{
-        amount              = V#'InvoiceParams'.amount,
-        currency            = hg_domain:get(Revision, V#'InvoiceParams'.currency)
+            amount          = V#'InvoiceParams'.amount,
+            currency        = hg_domain:get(Revision, V#'InvoiceParams'.currency)
         }
     }.
 
@@ -384,11 +384,16 @@ map_event({invoice_status_changed, _, _}, #st{invoice = Invoice}) ->
 
 map_event({payment_created, Payment}, _St) ->
     #'InvoicePaymentStatusChanged'{payment = Payment};
+map_event({payment_state_changed, _, _}, _St) ->
+    undefined;
+map_event({payment_bound, _, _}, _St) ->
+    undefined;
 map_event({payment_succeeded, PaymentID}, St) ->
     #'InvoicePaymentStatusChanged'{payment = get_payment(PaymentID, St)};
 map_event({payment_failed, PaymentID, _}, St) ->
     #'InvoicePaymentStatusChanged'{payment = get_payment(PaymentID, St)};
-map_event(_Event, _St) ->
+
+map_event({stage_changed, _}, _St) ->
     undefined.
 
 select_range(undefined, Limit, History) ->
