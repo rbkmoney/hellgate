@@ -14,6 +14,8 @@
 get_service_specs() ->
     VersionPrefix = "/v1",
     [
+        {eventsink, VersionPrefix ++ "/processing/eventsink",
+            {hg_payment_processing_thrift, 'EventSink'}},
         {invoicing, VersionPrefix ++ "/processing/invoicing",
             {hg_payment_processing_thrift, 'Invoicing'}},
         {processor, VersionPrefix ++ "/stateproc/processor",

@@ -71,13 +71,11 @@ end_per_suite(C) ->
 %% tests
 
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include("events.hrl").
 
--define(ev_invoice_status(Status),
-    #'InvoiceStatusChanged'{invoice = #'Invoice'{status = Status}}).
--define(ev_invoice_status(Status, Details),
-    #'InvoiceStatusChanged'{invoice = #'Invoice'{status = Status, details = Details}}).
--define(ev_payment_status(PaymentID, Status),
-    #'InvoicePaymentStatusChanged'{payment = #'InvoicePayment'{id = PaymentID, status = Status}}).
+-define(invoice_w_status(Status), #domain_Invoice{status = Status}).
+-define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
+-define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -99,8 +97,8 @@ invoice_cancellation(C) ->
     Client = ?config(client),
     InvoiceParams = make_invoice_params(<<"rubberduck">>, 10000),
     {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
-    {exception, #'InvalidInvoiceStatus'{}} = hg_client:fulfill_invoice(InvoiceID, <<"perfect">>, Client),
-    ok = hg_client:void_invoice(InvoiceID, <<"whynot">>, Client).
+    {exception, #payproc_InvalidInvoiceStatus{}} = hg_client:fulfill_invoice(InvoiceID, <<"perfect">>, Client),
+    ok = hg_client:rescind_invoice(InvoiceID, <<"whynot">>, Client).
 
 -spec overdue_invoice_cancelled(config()) -> _ | no_return().
 
@@ -108,8 +106,8 @@ overdue_invoice_cancelled(C) ->
     Client = ?config(client),
     InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(1), 10000),
     {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
-    {ok, ?ev_invoice_status(unpaid)} = hg_client:get_next_event(InvoiceID, 3000, Client),
-    {ok, ?ev_invoice_status(cancelled, <<"overdue">>)} = hg_client:get_next_event(InvoiceID, 3000, Client).
+    ?invoice_created(?invoice_w_status(?unpaid())) = get_next_event(InvoiceID, Client),
+    ?invoice_status_changed(?cancelled(<<"overdue">>)) = get_next_event(InvoiceID, Client).
 
 -spec payment_success(config()) -> _ | no_return().
 
@@ -120,12 +118,36 @@ payment_success(C) ->
     InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(5), 42000),
     PaymentParams = make_payment_params(),
     {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
-    {ok, ?ev_invoice_status(unpaid)} = hg_client:get_next_event(InvoiceID, 3000, Client),
+    ?invoice_created(?invoice_w_status(?unpaid())) = get_next_event(InvoiceID, Client),
     {ok, PaymentID} = hg_client:start_payment(InvoiceID, PaymentParams, Client),
-    {ok, ?ev_payment_status(PaymentID, pending)} = hg_client:get_next_event(InvoiceID, 3000, Client),
-    {ok, ?ev_payment_status(PaymentID, succeeded)} = hg_client:get_next_event(InvoiceID, 3000, Client),
-    {ok, ?ev_invoice_status(paid)} = hg_client:get_next_event(InvoiceID, 1000, Client),
-    timeout = hg_client:get_next_event(InvoiceID, 3000, Client).
+    ?payment_started(?payment_w_status(?pending())) = get_next_event(InvoiceID, Client),
+    ?payment_state_changed(PaymentID) = get_next_event(InvoiceID, Client),
+    ?payment_state_changed(PaymentID) = get_next_event(InvoiceID, Client),
+    ?payment_bound(PaymentID, ?trx_info(PaymentID)) = get_next_event(InvoiceID, Client),
+    ?payment_state_changed(PaymentID) = get_next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID, ?succeeded()) = get_next_event(InvoiceID, Client),
+    ?invoice_status_changed(?paid()) = get_next_event(InvoiceID, 1000, Client),
+    timeout = get_next_event(InvoiceID, 2000, Client).
+
+%%
+
+get_next_event(InvoiceID, Client) ->
+    get_next_event(InvoiceID, 3000, Client).
+
+get_next_event(InvoiceID, Timeout, Client) ->
+    case hg_client:get_next_event(InvoiceID, Timeout, Client) of
+        {ok, Event} ->
+            unwrap_event(Event);
+        Result ->
+            Result
+    end.
+
+unwrap_event({invoice_event, E}) ->
+    unwrap_event(E);
+unwrap_event({invoice_payment_event, E}) ->
+    unwrap_event(E);
+unwrap_event(E) ->
+    E.
 
 %%
 
@@ -142,7 +164,7 @@ get_random_port() ->
 %%
 
 make_userinfo() ->
-    #'UserInfo'{id = <<?MODULE_STRING>>}.
+    #payproc_UserInfo{id = <<?MODULE_STRING>>}.
 
 make_invoice_params(Product, Cost) ->
     make_invoice_params(Product, make_due_date(), Cost).
@@ -153,11 +175,11 @@ make_invoice_params(Product, Due, Cost) ->
 make_invoice_params(Product, Due, Amount, Context) when is_integer(Amount) ->
     make_invoice_params(Product, Due, {Amount, <<"RUB">>}, Context);
 make_invoice_params(Product, Due, {Amount, Currency}, Context) ->
-    #'InvoiceParams'{
+    #payproc_InvoiceParams{
         product  = Product,
         amount   = Amount,
         due      = format_datetime(Due),
-        currency = #'CurrencyRef'{symbolic_code = Currency},
+        currency = #domain_CurrencyRef{symbolic_code = Currency},
         context  = term_to_binary(Context)
     }.
 
@@ -166,15 +188,15 @@ make_payment_params() ->
     make_payment_params(PaymentTool, Session).
 
 make_payment_params(PaymentTool, Session) ->
-    #'InvoicePaymentParams'{
-        payer = #'Payer'{},
+    #payproc_InvoicePaymentParams{
+        payer = #domain_Payer{},
         payment_tool = PaymentTool,
         session = Session
     }.
 
 make_payment_tool() ->
     {
-        {bank_card, #'BankCard'{
+        {bank_card, #domain_BankCard{
             token          = <<"TOKEN42">>,
             payment_system = visa,
             bin            = <<"424242">>,

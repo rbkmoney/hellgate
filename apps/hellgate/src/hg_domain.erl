@@ -35,9 +35,9 @@ get(Revision, Ref) ->
             undefined
     end.
 
-type_to_name(#'CurrencyRef'{}) ->
+type_to_name(#domain_CurrencyRef{}) ->
     currency;
-type_to_name(#'ProxyRef'{}) ->
+type_to_name(#domain_ProxyRef{}) ->
     proxy.
 
 %%
@@ -50,8 +50,8 @@ type_to_name(#'ProxyRef'{}) ->
 get_fixture() ->
     #{
         ?object('CurrencyObject',
-            #'CurrencyRef'{symbolic_code = <<"RUB">>},
-            #'Currency'{
+            #domain_CurrencyRef{symbolic_code = <<"RUB">>},
+            #domain_Currency{
                 name = <<"Russian rubles">>,
                 numeric_code = 643,
                 symbolic_code = <<"RUB">>,
@@ -59,8 +59,8 @@ get_fixture() ->
             }
         ),
         ?object('ProxyObject',
-            #'ProxyRef'{id = 1},
-            #'Proxy'{
+            #domain_ProxyRef{id = 1},
+            #domain_Proxy{
                 type    = provider,
                 url     = genlib_app:env(hellgate, provider_proxy_url),
                 options = genlib_app:env(hellgate, provider_proxy_options, #{})

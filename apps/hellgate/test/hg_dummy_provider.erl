@@ -59,7 +59,7 @@ handle_function('CancelPayment', {PaymentInfo}, Context, _Opts) ->
 finish(#'PaymentInfo'{payment = Payment}) ->
     #'ProcessResult'{
         intent = {finish, #'FinishIntent'{status = {ok, #'Ok'{}}}},
-        trx    = #'TransactionInfo'{id = Payment#'InvoicePayment'.id}
+        trx    = #domain_TransactionInfo{id = Payment#domain_InvoicePayment.id}
     }.
 
 sleep(Timeout, State) ->

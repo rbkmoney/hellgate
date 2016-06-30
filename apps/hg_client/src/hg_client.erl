@@ -7,7 +7,7 @@
 -export([create_invoice/2]).
 -export([get_invoice/2]).
 -export([fulfill_invoice/3]).
--export([void_invoice/3]).
+-export([rescind_invoice/3]).
 -export([start_payment/3]).
 
 -export([get_next_event/2]).
@@ -80,11 +80,11 @@ get_invoice(InvoiceID, Client) ->
 fulfill_invoice(InvoiceID, Reason, Client) ->
     do_service_call(Client, 'Fulfill', [InvoiceID, Reason]).
 
--spec void_invoice(invoice_id(), binary(), t()) ->
+-spec rescind_invoice(invoice_id(), binary(), t()) ->
     {ok | woody_client:result_error(), t()}.
 
-void_invoice(InvoiceID, Reason, Client) ->
-    do_service_call(Client, 'Void', [InvoiceID, Reason]).
+rescind_invoice(InvoiceID, Reason, Client) ->
+    do_service_call(Client, 'Rescind', [InvoiceID, Reason]).
 
 -spec start_payment(invoice_id(), payment_params(), t()) ->
     {{ok, payment_id()} | woody_client:result_error(), t()}.
@@ -183,14 +183,14 @@ poll_next_event(InvoiceID, Timeout, Client) ->
         {ok, []} ->
             _ = timer:sleep(?POLL_INTERVAL),
             poll_next_event(InvoiceID, compute_timeout_left(StartTs, Timeout), ClientNext);
-        {ok, [#'Event'{id = EventID, ev = {_, Event}} | _Rest]} ->
+        {ok, [#payproc_Event{id = EventID, payload = Event} | _Rest]} ->
             {{ok, Event}, update_last_events(InvoiceID, EventID, ClientNext)};
         {What, _} when What =:= exception; What =:= error ->
             {Result, ClientNext}
     end.
 
 construct_range(InvoiceID, #cl{last_events = LastEvents}) ->
-    #'EventRange'{'after' = genlib_map:get(InvoiceID, LastEvents), limit = 1}.
+    #payproc_EventRange{'after' = genlib_map:get(InvoiceID, LastEvents), limit = 1}.
 
 update_last_events(InvoiceID, EventID, Client = #cl{last_events = LastEvents}) ->
     Client#cl{last_events = LastEvents#{InvoiceID => EventID}}.

@@ -49,6 +49,7 @@ get_api_child_spec() ->
             net_opts => [],
             event_handler => hg_woody_event_handler,
             handlers => [
+                construct_service_handler(eventsink, hg_event_sink, []),
                 construct_service_handler(invoicing, hg_invoice, []),
                 construct_service_handler(processor, hg_machine, [])
             ]
