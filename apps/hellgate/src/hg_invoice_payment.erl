@@ -133,9 +133,9 @@ call(Context0, Proxy, Call) ->
             {Result, Context}
     catch
         % TODO: support retry strategies
-        {#'TryLater'{e = _Error}, _} ->
+        {#'TryLater'{e = _Error}, Context} ->
             Result = #'ProcessResult'{intent = {sleep, #'SleepIntent'{timer = {timeout, 10}}}},
-            {Result, Context0}
+            {Result, Context}
     end.
 
 get_call_options(#'Proxy'{url = Url}) ->

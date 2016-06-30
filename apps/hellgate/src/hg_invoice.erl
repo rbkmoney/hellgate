@@ -19,8 +19,7 @@
 -record(st, {
     invoice :: invoice(),
     payments = [] :: [payment()],
-    stage = idling :: stage(),
-    context :: woody_client:context()
+    stage = idling :: stage()
 }).
 
 -type st() :: #st{}.
@@ -34,7 +33,7 @@ handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
     {{ok, InvoiceID}, Context};
 
 handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
-    St = #st{context = Context} = get_state(UserInfo, InvoiceID, opts(Context0)),
+    {St, Context}= get_state(UserInfo, InvoiceID, opts(Context0)),
     InvoiceState = get_invoice_state(St),
     {{ok, InvoiceState, Context}};
 
@@ -49,10 +48,10 @@ handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, 
     {{ok, PaymentID}, Context};
 
 handle_function('GetPayment', {UserInfo, PaymentID}, Context0, _Opts) ->
-    St = get_state(UserInfo, deduce_invoice_id(PaymentID), opts(Context0)),
+    {St, Context} = get_state(UserInfo, deduce_invoice_id(PaymentID), opts(Context0)),
     case get_payment(PaymentID, St) of
         Payment = #'InvoicePayment'{} ->
-            {{ok, Payment}, St#st.context};
+            {{ok, Payment}, Context};
         false ->
             throw({payment_not_found(), Context0})
     end;
@@ -76,7 +75,7 @@ get_history(_UserInfo, InvoiceID, Opts) ->
 get_state(UserInfo, InvoiceID, Opts) ->
     {History, Context} = get_history(UserInfo, InvoiceID, Opts),
     St = collapse_history(History),
-    St#st{context = Context}.
+    {St, Context}.
 
 map_events(Evs) ->
     [construct_external_event(ID, Ev) || {ID, Ev} <- Evs].
@@ -130,16 +129,16 @@ init(ID, {InvoiceParams, _UserInfo}, Context) ->
     {{ok, hg_machine:result([ev()])}, woody_client:context()}.
 
 process_signal(timeout, History, Context) ->
-    St0 = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
-    St = St0#st{context = Context},
+    St = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
+
     Status = get_invoice_status(Invoice),
     case Stage of
         {processing_payment, PaymentID, PaymentState} ->
             % there's a payment pending
-            process_payment(PaymentID, PaymentState, St);
+            process_payment(PaymentID, PaymentState, St, Context);
         idling when Status == unpaid ->
             % invoice is expired
-            process_expiration(St);
+            process_expiration(St, Context);
         _ ->
             ok()
     end;
@@ -148,11 +147,11 @@ process_signal({repair, _}, History, Context) ->
     #st{invoice = Invoice} = collapse_history(History),
     {ok([], set_invoice_timer(Invoice)), Context}.
 
-process_expiration(#st{invoice = Invoice, context = Context}) ->
+process_expiration(#st{invoice = Invoice}, Context) ->
     {ok, Event} = cancel_invoice(overdue, Invoice),
     {ok(Event), Context}.
 
-process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice, context = Context0}) ->
+process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice}, Context0) ->
     % FIXME: code looks shitty, destined to be in payment submachine
     Payment = get_payment(PaymentID, St),
     case hg_invoice_payment:process(Payment, Invoice, PaymentState0, Context0) of
