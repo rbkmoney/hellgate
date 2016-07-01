@@ -50,8 +50,8 @@
 
 -export([start/3]).
 -export([call/3]).
--export([get_history/3]).
--export([get_history/5]).
+-export([get_history/2]).
+-export([get_history/4]).
 
 %% TODO not the right place either
 -export([map_history/1]).
@@ -102,24 +102,24 @@ call(ID, Args, #{client_context := Context0}) ->
             error(Reason)
     end.
 
--spec get_history(module(), id(), opts()) ->
+-spec get_history(id(), opts()) ->
     {history(), woody_client:context()}.
 
-get_history(Module, ID, Opts) ->
-    get_history(Module, ID, #'HistoryRange'{}, Opts).
+get_history(ID, Opts) ->
+    get_history(ID, #'HistoryRange'{}, Opts).
 
--spec get_history(module(), id(), event_id(), undefined | non_neg_integer(), opts()) ->
+-spec get_history(id(), event_id(), undefined | non_neg_integer(), opts()) ->
     {history(), woody_client:context()}.
 
-get_history(Module, ID, AfterID, Limit, Opts) when is_integer(AfterID) ->
-    get_history(Module, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}, Opts).
+get_history(ID, AfterID, Limit, Opts) when is_integer(AfterID) ->
+    get_history(ID, #'HistoryRange'{'after' = AfterID, limit = Limit}, Opts).
 
-get_history(Module, ID, Range, #{client_context := Context0}) ->
+get_history(ID, Range, #{client_context := Context0}) ->
     case call_automaton('getHistory', [{id, ID}, Range], Context0) of
         {{ok, []}, Context} ->
             {[], Context};
         {{ok, History0}, Context} ->
-            {Module, History} = untag_history(unwrap_history(History0)),
+            {_Module, History} = untag_history(unwrap_history(History0)),
             {History, Context};
         {{exception, Exception}, Context} ->
             throw({Exception, Context});

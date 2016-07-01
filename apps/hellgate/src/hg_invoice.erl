@@ -70,10 +70,10 @@ opts(Context) ->
 %%
 
 get_history(_UserInfo, InvoiceID, Opts) ->
-    hg_machine:get_history(?MODULE, InvoiceID, Opts).
+    hg_machine:get_history(InvoiceID, Opts).
 
 get_history(_UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Opts) ->
-    hg_machine:get_history(?MODULE, InvoiceID, AfterID, Limit, Opts).
+    hg_machine:get_history(InvoiceID, AfterID, Limit, Opts).
 
 get_state(UserInfo, InvoiceID, Opts) ->
     {History, Context} = get_history(UserInfo, InvoiceID, Opts),
