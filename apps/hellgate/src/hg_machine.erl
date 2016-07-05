@@ -10,20 +10,24 @@
 -type result(Event) :: {Event, hg_machine_action:t()}.
 -type result() :: result(event()).
 
--callback init(id(), args(), woody_client:context()) ->
-    {{ok, result()}, woody_client:context()}.
+-callback init(id(), args(), context()) ->
+    {{ok, result()}, context()}.
 
 -type signal() ::
     timeout | {repair, args()}.
 
--callback process_signal(signal(), history(), woody_client:context()) ->
-    {{ok, result()}, woody_client:context()}.
+-callback process_signal(signal(), history(), context()) ->
+    {{ok, result()}, context()}.
 
 -type call() :: _.
 -type response() :: ok | {ok, term()} | {exception, term()}.
 
--callback process_call(call(), history(), woody_client:context()) ->
-    {{ok, response(), result()}, woody_client:context()}.
+-callback process_call(call(), history(), context()) ->
+    {{ok, response(), result()}, context()}.
+
+-type context() :: #{
+    client_context => woody_client:context()
+}.
 
 -export_type([id/0]).
 -export_type([event/0]).
@@ -32,6 +36,7 @@
 -export_type([history/1]).
 -export_type([result/0]).
 -export_type([result/1]).
+-export_type([context/0]).
 
 -export([start/3]).
 -export([call/4]).
@@ -51,21 +56,21 @@
 -include_lib("hg_proto/include/hg_state_processing_thrift.hrl").
 
 -type opts() :: #{
-    context => woody_client:context()
+    client_context => woody_client:context()
 }.
 
 %%
 
 -spec start(module(), term(), opts()) -> {id(), woody_client:context()}.
 
-start(Module, Args, #{context := Context0}) ->
+start(Module, Args, #{client_context := Context0}) ->
     {{ok, Response}, Context} = call_automaton('start', [#'Args'{arg = wrap_args(Module, Args)}], Context0),
     #'StartResult'{id = ID} = Response,
     {ID, Context}.
 
 -spec call(module(), id(), term(), opts()) -> {term(), woody_client:context()} | no_return().
 
-call(Module, ID, Args, #{context := Context0}) ->
+call(Module, ID, Args, #{client_context := Context0}) ->
     case call_automaton('call', [{id, ID}, wrap_args(Module, Args)], Context0) of
         {{ok, Response}, Context} ->
             % should be specific to a processing interface already
@@ -86,7 +91,7 @@ call(Module, ID, Args, #{context := Context0}) ->
 
 -spec get_history(module(), id(), opts()) -> {history(), woody_client:context()}.
 
-get_history(Module, ID, #{context := Context0}) ->
+get_history(Module, ID, #{client_context := Context0}) ->
     case call_automaton('getHistory', [{id, ID}, #'HistoryRange'{}], Context0) of
         {{ok, History0}, Context} ->
             {Module, History} = unwrap_history(unmarshal_history(History0)),
@@ -124,8 +129,11 @@ handle_function('processCall', {Args}, Context0, _Opts) ->
     {{ok, Result}, Context}.
 
 opts(Context) ->
-    #{context => Context}.
+    #{client_context => Context}.
 
+
+create_context(ClientContext) ->
+    #{client_context => ClientContext}.
 %%
 
 -spec dispatch_signal(Signal, hg_machine:history(), opts()) -> {Result, woody_client:context()} when
@@ -136,25 +144,25 @@ opts(Context) ->
     Result ::
         hg_state_processing_thrift:'SignalResult'().
 
-dispatch_signal(#'InitSignal'{id = ID, arg = Payload}, [], _Opts = #{context := Context0}) ->
+dispatch_signal(#'InitSignal'{id = ID, arg = Payload}, [], _Opts = #{client_context := Context0}) ->
     {Module, Args} = unwrap_args(Payload),
     _ = lager:debug("[machine] [~p] dispatch init (~p: ~p) with history: ~p", [Module, ID, Args, []]),
-    {Result, Context} = Module:init(ID, Args, Context0),
+    {Result, #{client_context := Context}} = Module:init(ID, Args, create_context(Context0)),
     {marshal_signal_result(Result, Module), Context};
 
-dispatch_signal(#'TimeoutSignal'{}, History0, _Opts = #{context := Context0}) ->
+dispatch_signal(#'TimeoutSignal'{}, History0, _Opts = #{client_context := Context0}) ->
     % TODO: deducing module from signal payload looks more natural
     %       opaque payload in every event?
     {Module, History} = unwrap_history(History0),
     _ = lager:debug("[machine] [~p] dispatch timeout with history: ~p", [Module, History]),
-    {Result, Context} = Module:process_signal(timeout, History, Context0),
+    {Result, #{client_context := Context}} = Module:process_signal(timeout, History, create_context(Context0)),
     {marshal_signal_result(Result, Module), Context};
 
-dispatch_signal(#'RepairSignal'{arg = Payload}, History0, _Opts = #{context := Context0}) ->
+dispatch_signal(#'RepairSignal'{arg = Payload}, History0, _Opts = #{client_context := Context0}) ->
     {Module, History} = unwrap_history(History0),
     Args = unmarshal_term(Payload),
     _ = lager:debug("[machine] [~p] dispatch repair (~p) with history: ~p", [Module, Args, History]),
-    {Result, Context} = Module:process_signal({repair, Args}, History, Context0),
+    {Result, #{client_context := Context}} = Module:process_signal({repair, Args}, History, create_context(Context0)),
     {marshal_signal_result(Result, Module), Context}.
 
 marshal_signal_result({ok, {Event, Action}}, Module) ->
@@ -169,12 +177,12 @@ marshal_signal_result({ok, {Event, Action}}, Module) ->
     Call :: hg_state_processing_thrift:'Call'(),
     Result :: hg_state_processing_thrift:'CallResult'().
 
-dispatch_call(Payload, History0, _Opts = #{context := Context0}) ->
+dispatch_call(Payload, History0, _Opts = #{client_context := Context0}) ->
     % TODO: looks suspicious
     {Module, Args} = unwrap_args(Payload),
     {Module, History} = unwrap_history(History0),
     _ = lager:debug("[machine] [~p] dispatch call (~p) with history: ~p", [Module, Args, History]),
-    {Result, Context} = Module:process_call(Args, History, Context0),
+    {Result, #{client_context := Context}} = Module:process_call(Args, History, create_context(Context0)),
     {marshal_call_result(Result, Module), Context}.
 
 %%

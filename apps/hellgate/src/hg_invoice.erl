@@ -35,7 +35,7 @@ handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
 handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
     {St, Context}= get_state(UserInfo, InvoiceID, opts(Context0)),
     InvoiceState = get_invoice_state(St),
-    {{ok, InvoiceState, Context}};
+    {{ok, InvoiceState}, Context};
 
 handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
     #'EventRange'{'after' = AfterID, limit = Limit} = Range,
@@ -65,7 +65,7 @@ handle_function('Void', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
     {{ok, Result}, Context}.
 
 opts(Context) ->
-    #{context => Context}.
+    #{client_context => Context}.
 
 %%
 
@@ -117,7 +117,7 @@ wrap_external_event(Ev = #'InvoicePaymentStatusChanged'{}) ->
     {payment_succeeded, payment_id()} |
     {payment_failed, payment_id(), error()}.
 
--spec init(invoice_id(), {invoice_params(), user_info()}, woody_client:context()) ->
+-spec init(invoice_id(), {invoice_params(), user_info()}, hg_machine:context()) ->
     {{ok, hg_machine:result([ev()])}, woody_client:context()}.
 
 init(ID, {InvoiceParams, _UserInfo}, Context) ->
@@ -125,7 +125,7 @@ init(ID, {InvoiceParams, _UserInfo}, Context) ->
     Event = {invoice_created, Invoice},
     {ok(Event, set_invoice_timer(Invoice)), Context}.
 
--spec process_signal(hg_machine:signal(), hg_machine:history(ev()), woody_client:context()) ->
+-spec process_signal(hg_machine:signal(), hg_machine:history(ev()), hg_machine:context()) ->
     {{ok, hg_machine:result([ev()])}, woody_client:context()}.
 
 process_signal(timeout, History, Context) ->

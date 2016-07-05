@@ -20,7 +20,7 @@
     stage       :: process_payment | capture_payment,
     proxy_ref   :: hg_domain_thrift:'ProxyRef'(),
     proxy_state :: binary() | undefined,
-    context     :: woody_client:context()
+    context     :: hg_machine:context()
 }).
 
 -opaque st() :: #st{}.
@@ -33,10 +33,10 @@
 
 
 
--spec process(payment(), invoice(), st() | undefined, woody_client:context()) ->
-    {{ok, payment_trx()}, woody_client:context()} |
-    {{{error, error()}, payment_trx()}, woody_client:context()} |
-    {{{next, hg_machine_action:t(), st()}, payment_trx()}, woody_client:context()}.
+-spec process(payment(), invoice(), st() | undefined, hg_machine:context()) ->
+    {{ok, payment_trx()}, hg_machine:context()} |
+    {{{error, error()}, payment_trx()}, hg_machine:context()} |
+    {{{next, hg_machine_action:t(), st()}, payment_trx()}, hg_machine:context()}.
 
 process(Payment, Invoice, undefined, Context) ->
     process(Payment, Invoice, construct_state(Payment, Invoice, Context));
@@ -44,9 +44,9 @@ process(Payment, Invoice, St = #st{}, Context) ->
     process(Payment, Invoice, St#st{context = Context}).
 
 -spec process(payment(), invoice(), st()) ->
-    {{ok, payment_trx()}, woody_client:context()} |
-    {{{error, error()}, payment_trx()}, woody_client:context()} |
-    {{{next, hg_machine_action:t(), st()}, payment_trx()}, woody_client:context()}.
+    {{ok, payment_trx()}, hg_machine:context()} |
+    {{{error, error()}, payment_trx()}, hg_machine:context()} |
+    {{{next, hg_machine_action:t(), st()}, payment_trx()}, hg_machine:context()}.
 
 process(Payment, Invoice, St = #st{}) ->
     Proxy = get_proxy(Invoice, St),
@@ -126,16 +126,16 @@ process_payment(Proxy, PaymentInfo, Context) ->
 capture_payment(Proxy, PaymentInfo, Context) ->
     call(Context, Proxy, {?SERVICE, 'CapturePayment', [PaymentInfo]}).
 
-call(Context0, Proxy, Call) ->
+call(Context = #{client_context := ClientContext0}, Proxy, Call) ->
     Endpoint = get_call_options(Proxy),
-    try woody_client:call(Context0, Call, Endpoint) of
-        {{ok, Result = #'ProcessResult'{}}, Context} ->
-            {Result, Context}
+    try woody_client:call(ClientContext0, Call, Endpoint) of
+        {{ok, Result = #'ProcessResult'{}}, ClientContext} ->
+            {Result, Context#{client_context => ClientContext}}
     catch
         % TODO: support retry strategies
-        {#'TryLater'{e = _Error}, Context} ->
+        {#'TryLater'{e = _Error}, ClientContext} ->
             Result = #'ProcessResult'{intent = {sleep, #'SleepIntent'{timer = {timeout, 10}}}},
-            {Result, Context}
+            {Result, Context#{client_context => ClientContext}}
     end.
 
 get_call_options(#'Proxy'{url = Url}) ->
