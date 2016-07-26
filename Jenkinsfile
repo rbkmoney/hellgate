@@ -7,32 +7,40 @@
 pipeline("hellgate", 'docker-host', "_build/") {
 
   runStage('submodules') {
-    sh 'make w_container_submodules'
+    sh 'make wc_submodules'
   }
 
   runStage('compile') {
-    sh 'make w_container_compile'
+    sh 'make wc_compile'
   }
 
   runStage('lint') {
-    sh 'make w_container_lint'
+    sh 'make wc_lint'
   }
 
   runStage('xref') {
-    sh 'make w_container_xref'
-  }
-
-  runStage('test') {
-    sh "make w_compose_test"
+    sh 'make wc_xref'
   }
 
   runStage('dialyze') {
-    sh 'make w_container_dialyze'
+    sh 'make wc_dialyze'
+  }
+
+  runStage('test') {
+    sh "make wdeps_test"
   }
 
   if (env.BRANCH_NAME == 'master') {
-    runStage('push container') {
-      sh 'make push'
+    runStage('build image') {
+      sh "IMAGE_TAG=${env.BUILD_ID} make containerize"
+    }
+
+    runStage('push image :commit') {
+      sh "IMAGE_TAG=${env.BUILD_ID} PUSH_IMAGE_TAG=`git rev-parse --short HEAD`_`date +"%s"` make push"
+    }
+
+    runStage('push image :latest') {
+      sh "IMAGE_TAG=latest make push"
     }
   }
 }

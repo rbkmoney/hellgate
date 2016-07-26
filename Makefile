@@ -10,12 +10,15 @@ BASE_IMAGE := "$(REGISTRY)/$(ORG_NAME)/build:latest"
 # the first service in docker-compose.yml
 RELNAME := hellgate
 
-TAG = latest
-IMAGE_NAME = "$(REGISTRY)/$(ORG_NAME)/$(RELNAME):$(TAG)"
+IMAGE_TAG ?= $(shell whoami)
+PUSH_IMAGE_TAG ?= $(IMAGE_TAG)
+IMAGE_NAME = $(REGISTRY)/$(ORG_NAME)/$(RELNAME)
 
 CALL_ANYWHERE := submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
+
+all: compile
 
 include utils.mk
 
@@ -64,11 +67,10 @@ test: submodules
 	$(REBAR) ct
 
 # OTHER
-all: compile
+containerize: wc_release
+	$(DOCKER) build --force-rm --tag "$(IMAGE_NAME):$(IMAGE_TAG)" .
 
-containerize: w_container_release
-	$(DOCKER) build --force-rm --tag $(IMAGE_NAME) .
-
-push: containerize
-	$(DOCKER) push "$(IMAGE_NAME)"
+push:
+	$(DOCKER) tag "$(IMAGE_NAME):$(IMAGE_TAG)" "$(IMAGE_NAME):$(PUSH_IMAGE_TAG)"
+	$(DOCKER) push "$(IMAGE_NAME):$(PUSH_IMAGE_TAG)"
 
