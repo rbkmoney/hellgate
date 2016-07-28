@@ -5,7 +5,7 @@
 
 -type event() :: event(_).
 -type event(T) :: {event_id(), id(), timestamp(), sequence(), T}.
--type event_id() :: integer().
+-type event_id() :: hg_base_thrift:'EventID'().
 -type timestamp() :: hg_base_thrift:'Timestamp'().
 -type sequence() :: pos_integer().
 
@@ -225,10 +225,20 @@ marshal_call_result({ok, Response, {Events, Action}}, Module, History) ->
 %%
 
 -spec map_history(hg_state_processing_thrift:'History'()) ->
-    [term()].
+    {event_id(), [term()]}.
 
 map_history(History) ->
-    [Module:map_event(E) || {Module, E} <- unwrap_history(History)].
+    map_history(unwrap_history(History), undefined, []).
+
+map_history([], LastID, Evs) ->
+    {LastID, lists:reverse(Evs)};
+map_history([{Module, Ev0 = {ID, _, _, _, _}} | Rest], _, Evs) ->
+    case Module:map_event(Ev0) of
+        Ev when Ev /= undefined ->
+            map_history(Rest, ID, [Ev | Evs]);
+        undefined ->
+            map_history(Rest, ID, Evs)
+    end.
 
 unwrap_history(History) ->
     [unwrap_event(E) || E <- History].

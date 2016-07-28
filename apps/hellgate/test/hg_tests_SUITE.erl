@@ -157,10 +157,7 @@ payment_success(C) ->
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),
     {ok, PaymentID} = hg_client:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
-    ?payment_state_changed(PaymentID) = next_event(InvoiceID, Client),
-    ?payment_state_changed(PaymentID) = next_event(InvoiceID, Client),
     ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
-    ?payment_state_changed(PaymentID) = next_event(InvoiceID, Client),
     ?payment_status_changed(PaymentID, ?succeeded()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, 1000, Client),
     timeout = next_event(InvoiceID, 2000, Client).
@@ -178,9 +175,9 @@ next_event(InvoiceID, Timeout, Client) ->
             Result
     end.
 
-unwrap_event({invoice_event, E}) ->
+unwrap_event(?invoice_ev(E)) ->
     unwrap_event(E);
-unwrap_event({invoice_payment_event, E}) ->
+unwrap_event(?payment_ev(E)) ->
     unwrap_event(E);
 unwrap_event(E) ->
     E.

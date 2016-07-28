@@ -20,8 +20,8 @@
 handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, Context0, _Opts) ->
     HistoryRange = #'HistoryRange'{'after' = After, limit = Limit},
     try
-        {{ok, History}, Context} = call_event_sink('GetHistory', [HistoryRange], Context0),
-        {{ok, hg_machine:map_history(History)}, Context}
+        {History, Context} = get_public_history(HistoryRange, Context0),
+        {{ok, History}, Context}
     catch
         {{exception, #'EventNotFound'{}}, Context1} ->
             throw({#payproc_EventNotFound{}, Context1})
@@ -34,6 +34,31 @@ handle_function('GetLastEventID', {}, Context0, _Opts) ->
         {{exception, #'NoLastEvent'{}}, Context} ->
             throw({#payproc_NoLastEvent{}, Context})
     end.
+
+get_public_history(HistoryRange = #'HistoryRange'{limit = undefined}, Context0) ->
+    {History0, Context} = get_history_range(HistoryRange, Context0),
+    {_LastID, History} = hg_machine:map_history(History0),
+    {History, Context};
+
+get_public_history(#'HistoryRange'{limit = 0}, Context) ->
+    {[], Context};
+get_public_history(HistoryRange = #'HistoryRange'{limit = N}, Context0) ->
+    {History0, Context1} = get_history_range(HistoryRange, Context0),
+    {LastID, History} = hg_machine:map_history(History0),
+    case length(History0) of
+        N when length(History) =:= N ->
+            {History, Context1};
+        N ->
+            NextRange = #'HistoryRange'{'after' = LastID, limit = N - length(History)},
+            {HistoryRest, Context2} = get_public_history(NextRange, Context1),
+            {History ++ HistoryRest, Context2};
+        M when M < N ->
+            {{ok, History}, Context1}
+    end.
+
+get_history_range(HistoryRange, Context0) ->
+    {{ok, History}, Context} = call_event_sink('GetHistory', [HistoryRange], Context0),
+    {History, Context}.
 
 call_event_sink(Function, Args, Context) ->
     Url = genlib_app:env(hellgate, eventsink_service_url),

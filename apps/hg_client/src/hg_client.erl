@@ -44,7 +44,7 @@
 -type user_info() :: hg_payment_processing_thrift:'UserInfo'().
 -type invoice_id() :: hg_domain_thrift:'InvoiceID'().
 -type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
--type event_id() :: hg_payment_processing_thrift:'EventID'().
+-type event_id() :: hg_base_thrift:'EventID'().
 -type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: hg_payment_processing_thrift:'InvoicePaymentParams'().
 
@@ -229,7 +229,7 @@ update_last_invoice_events(InvoiceID, Event, Client = #cl{last_invoice_events = 
 poll_events(N, Timeout, Client) ->
     Call = fun (Range, Cl) -> issue_service_call(eventsink, 'GetEvents', [Range], Cl) end,
     case poll_events(get_last_event(Client), N, Call, Timeout, [], Client) of
-        {Events, ClientNext} ->
+        {Events, ClientNext} when is_list(Events) ->
             {{ok, Events}, update_last_event(Events, ClientNext)};
         Result ->
             Result

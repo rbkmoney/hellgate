@@ -1,6 +1,8 @@
 -ifndef(__hellgate_events__).
 -define(__hellgate_events__, 42).
 
+-define(invoice_ev(Body), {invoice_event, Body}).
+
 -define(invoice_created(Invoice),
     {invoice_created,
         #payproc_InvoiceCreated{invoice = Invoice}}
@@ -9,6 +11,8 @@
     {invoice_status_changed,
         #payproc_InvoiceStatusChanged{status = Status}}
 ).
+
+-define(payment_ev(Body), {invoice_payment_event, Body}).
 
 -define(payment_started(Payment),
     {invoice_payment_started,
@@ -25,10 +29,6 @@
 -define(payment_state_changed(PaymentID),
     {invoice_payment_state_changed,
         #payproc_InvoicePaymentStateChanged{payment_id = PaymentID}}
-).
--define(payment_state_changed(PaymentID, State),
-    {invoice_payment_state_changed,
-        #payproc_InvoicePaymentStateChanged{payment_id = PaymentID, state = State}}
 ).
 
 -define(paid(),

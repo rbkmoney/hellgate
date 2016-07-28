@@ -34,21 +34,21 @@ handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
     {InvoiceID, Context} = hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, opts(Context0)),
     {{ok, InvoiceID}, Context};
 
-handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
-    {St, Context}= get_state(UserInfo, InvoiceID, opts(Context0)),
+handle_function('Get', {_UserInfo, InvoiceID}, Context0, _Opts) ->
+    {St, Context} = get_state(InvoiceID, Context0),
     InvoiceState = get_invoice_state(St),
     {{ok, InvoiceState}, Context};
 
-handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
-    {History, Context} = get_history(UserInfo, InvoiceID, Range, opts(Context0)),
-    {{ok, map_events(History)}, Context};
+handle_function('GetEvents', {_UserInfo, InvoiceID, Range}, Context0, _Opts) ->
+    {History, Context} = get_public_history(InvoiceID, Range, Context0),
+    {{ok, History}, Context};
 
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, _Opts) ->
     {PaymentID, Context} = hg_machine:call(InvoiceID, {start_payment, PaymentParams, UserInfo}, opts(Context0)),
     {{ok, PaymentID}, Context};
 
-handle_function('GetPayment', {UserInfo, PaymentID}, Context0, _Opts) ->
-    {St, Context} = get_state(UserInfo, deduce_invoice_id(PaymentID), opts(Context0)),
+handle_function('GetPayment', {_UserInfo, PaymentID}, Context0, _Opts) ->
+    {St, Context} = get_state(deduce_invoice_id(PaymentID), Context0),
     case get_payment(PaymentID, St) of
         Payment = #domain_InvoicePayment{} ->
             {{ok, Payment}, Context};
@@ -64,38 +64,58 @@ handle_function('Rescind', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
     {Result, Context} = hg_machine:call(InvoiceID, {rescind, Reason, UserInfo}, opts(Context0)),
     {{ok, Result}, Context}.
 
-opts(Context) ->
-    #{client_context => Context}.
-
 %%
 
-get_history(_UserInfo, InvoiceID, Opts) ->
-    hg_machine:get_history(InvoiceID, Opts).
+get_history(InvoiceID, Context) ->
+    hg_machine:get_history(InvoiceID, opts(Context)).
 
-get_history(_UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Opts) ->
-    hg_machine:get_history(InvoiceID, AfterID, Limit, Opts).
+get_history(InvoiceID, AfterID, Limit, Context) ->
+    hg_machine:get_history(InvoiceID, AfterID, Limit, opts(Context)).
 
-get_state(UserInfo, InvoiceID, Opts) ->
-    {History, Context} = get_history(UserInfo, InvoiceID, Opts),
+get_state(InvoiceID, Context0) ->
+    {History, Context} = get_history(InvoiceID, Context0),
     St = collapse_history(History),
     {St, Context}.
 
-map_events(Events) ->
-    [map_event(E) || E <- Events].
+get_public_history(InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Context) ->
+    get_public_history(InvoiceID, AfterID, Limit, Context).
 
-%%
+get_public_history(InvoiceID, AfterID, undefined, Context0) ->
+    {History0, Context} = get_history(InvoiceID, AfterID, undefined, Context0),
+    {_LastID, History} = map_history(History0),
+    {History, Context};
 
--spec map_event(hg_machine:event(ev())) ->
-    hg_payment_processing_thrift:'Event'().
+get_public_history(_InvoiceID, _AfterID, 0, Context) ->
+    {[], Context};
+get_public_history(InvoiceID, AfterID, N, Context0) ->
+    {History0, Context1} = get_history(InvoiceID, AfterID, N, Context0),
+    {LastID, History} = map_history(History0),
+    case length(History0) of
+        N when length(History) =:= N ->
+            {History, Context1};
+        N ->
+            NextRange = #payproc_EventRange{'after' = LastID, limit = N - length(History)},
+            {HistoryRest, Context2} = get_public_history(InvoiceID, NextRange, Context1),
+            {History ++ HistoryRest, Context2};
+        M when M < N ->
+            {History, Context1}
+    end.
 
-map_event({ID, Source, Dt, Seq, Ev}) ->
-    #payproc_Event{
-        id         = ID,
-        created_at = Dt,
-        source     = {invoice, Source},
-        sequence   = Seq,
-        payload    = Ev
-    }.
+map_history(History) ->
+    map_history(History, undefined, []).
+
+map_history([], LastID, Evs) ->
+    {LastID, lists:reverse(Evs)};
+map_history([Ev0 = {ID, _, _, _, _} | Rest], _, Evs) ->
+    case map_event(Ev0) of
+        Ev when Ev /= undefined ->
+            map_history(Rest, ID, [Ev | Evs]);
+        undefined ->
+            map_history(Rest, ID, Evs)
+    end.
+
+opts(Context) ->
+    #{client_context => Context}.
 
 %%
 
@@ -113,21 +133,42 @@ map_event({ID, Source, Dt, Seq, Ev}) ->
     {processing_payment, payment_id(), payment_st()}.
 
 -type ev() ::
-    hg_payment_processing_thrift:'EventPayload'().
+    hg_payment_processing_thrift:'EventPayload'() |
+    {internal_event, payment_state_changed()}.
+
+-type payment_state_changed() :: {payment_state_changed, payment_id(), payment_st()}.
 
 -include("events.hrl").
+
+-define(internal_ev(Body), {internal_event, Body}).
 
 -define(invalid_invoice_status(Invoice),
     #payproc_InvalidInvoiceStatus{status = Invoice#domain_Invoice.status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
+-spec map_event(hg_machine:event(ev())) ->
+    hg_payment_processing_thrift:'Event'() | undefined.
+
+map_event({ID, Source, Dt, Seq, Ev = ?invoice_ev(_)}) ->
+    #payproc_Event{
+        id         = ID,
+        created_at = Dt,
+        source     = {invoice, Source},
+        sequence   = Seq,
+        payload    = Ev
+    };
+map_event(_) ->
+    undefined.
+
+%%
+
 -spec init(invoice_id(), {invoice_params(), user_info()}, hg_machine:context()) ->
     {{ok, hg_machine:result(ev())}, woody_client:context()}.
 
 init(ID, {InvoiceParams, _UserInfo}, Context) ->
     Invoice = create_invoice(ID, InvoiceParams),
-    Event = ?invoice_created(Invoice),
+    Event = ?invoice_ev(?invoice_created(Invoice)),
     {ok(Event, set_invoice_timer(Invoice)), Context}.
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev()), hg_machine:context()) ->
@@ -135,7 +176,6 @@ init(ID, {InvoiceParams, _UserInfo}, Context) ->
 
 process_signal(timeout, History, Context) ->
     St = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
-
     Status = get_invoice_status(Invoice),
     case Stage of
         {processing_payment, PaymentID, PaymentState} ->
@@ -166,8 +206,8 @@ process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice}, Context0)
         {{ok, Trx}, Context} ->
             % payment finished successfully
             Events = [
-                {invoice_payment_event, ?payment_status_changed(PaymentID, ?succeeded())},
-                ?invoice_status_changed(?paid())
+                ?invoice_ev(?payment_ev(?payment_status_changed(PaymentID, ?succeeded()))),
+                ?invoice_ev(?invoice_status_changed(?paid()))
             ],
             {ok(construct_payment_events(Payment, Trx, Events)), Context};
         {{{error, Error = #domain_OperationError{}}, Trx}, Context} ->
@@ -176,14 +216,14 @@ process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice}, Context0)
             {ok(construct_payment_events(Payment, Trx, [Event])), Context};
         {{{next, Action, PaymentState}, Trx}, Context} ->
             % payment progressing yet
-            Event = {invoice_payment_event, ?payment_state_changed(PaymentID, PaymentState)},
+            Event = ?internal_ev({payment_state_changed, PaymentID, PaymentState}),
             {ok(construct_payment_events(Payment, Trx, [Event]), Action), Context}
     end.
 
 construct_payment_events(#domain_InvoicePayment{trx = Trx}, #domain_TransactionInfo{} = Trx, Events) ->
     Events;
 construct_payment_events(#domain_InvoicePayment{} = Payment, #domain_TransactionInfo{} = Trx, Events) ->
-    [{invoice_payment_event, ?payment_bound(get_payment_id(Payment), Trx)} | Events];
+    [?invoice_ev(?payment_ev(?payment_bound(get_payment_id(Payment), Trx))) | Events];
 construct_payment_events(#domain_InvoicePayment{trx = Trx}, Trx = undefined, Events) ->
     Events.
 
@@ -206,8 +246,8 @@ process_call({start_payment, PaymentParams, _UserInfo}, History, Context) ->
             Payment = create_payment(PaymentParams, Invoice),
             PaymentID = get_payment_id(Payment),
             Events = [
-                {invoice_payment_event, ?payment_started(Payment)},
-                {invoice_payment_event, ?payment_state_changed(PaymentID, undefined)}
+                ?invoice_ev(?payment_ev(?payment_started(Payment))),
+                ?internal_ev({payment_state_changed, PaymentID, undefined})
             ],
             {respond({ok, PaymentID}, Events, hg_machine_action:instant()), Context};
         {processing_payment, PaymentID, _} ->
@@ -257,7 +297,7 @@ raise(Exception, Action) ->
 wrap_event_list(Event) when is_tuple(Event) ->
     wrap_event_list([Event]);
 wrap_event_list(Events) when is_list(Events) ->
-    [{invoice_event, E} || E <- Events].
+    Events.
 
 %%
 
@@ -311,12 +351,12 @@ get_payment_id(#domain_InvoicePayment{id = ID}) ->
     ID.
 
 cancel_invoice(Reason, #domain_Invoice{status = ?unpaid()}) ->
-    {ok, ?invoice_status_changed(?cancelled(format_reason(Reason)))};
+    {ok, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(Reason))))};
 cancel_invoice(_Reason, Invoice) ->
     {error, ?invalid_invoice_status(Invoice)}.
 
 fulfill_invoice(Reason, #domain_Invoice{status = ?paid()}) ->
-    {ok, ?invoice_status_changed(?fulfilled(format_reason(Reason)))};
+    {ok, ?invoice_ev(?invoice_status_changed(?fulfilled(format_reason(Reason))))};
 fulfill_invoice(_Reason, Invoice) ->
     {error, ?invalid_invoice_status(Invoice)}.
 
@@ -327,25 +367,28 @@ fulfill_invoice(_Reason, Invoice) ->
 collapse_history(History) ->
     lists:foldl(fun ({_ID, _, _, _, Ev}, St) -> merge_history(Ev, St) end, #st{}, History).
 
-merge_history({invoice_event, InvoiceEvent}, St) ->
-    merge_invoice_event(InvoiceEvent, St).
+merge_history(?invoice_ev(Event), St) ->
+    merge_invoice_event(Event, St);
+merge_history(?internal_ev(Event), St) ->
+    merge_internal_event(Event, St).
 
-merge_invoice_event({_, #payproc_InvoiceCreated{invoice = Invoice}}, St) ->
+merge_invoice_event(?invoice_created(Invoice), St) ->
     St#st{invoice = Invoice};
-merge_invoice_event({_, #payproc_InvoiceStatusChanged{status = Status}}, St = #st{invoice = I}) ->
+merge_invoice_event(?invoice_status_changed(Status), St = #st{invoice = I}) ->
     St#st{invoice = I#domain_Invoice{status = Status}};
-merge_invoice_event({invoice_payment_event, PaymentEvent}, St) ->
-    merge_payment_event(PaymentEvent, St).
+merge_invoice_event(?payment_ev(Event), St) ->
+    merge_payment_event(Event, St).
 
-merge_payment_event({_, #payproc_InvoicePaymentStarted{payment = Payment}}, St) ->
+merge_payment_event(?payment_started(Payment), St) ->
     set_payment(Payment, St);
-merge_payment_event({_, #payproc_InvoicePaymentBound{payment_id = PaymentID, trx = Trx}}, St) ->
+merge_payment_event(?payment_bound(PaymentID, Trx), St) ->
     Payment = get_payment(PaymentID, St),
     set_payment(Payment#domain_InvoicePayment{trx = Trx}, St);
-merge_payment_event({_, #payproc_InvoicePaymentStatusChanged{payment_id = PaymentID, status = Status}}, St) ->
+merge_payment_event(?payment_status_changed(PaymentID, Status), St) ->
     Payment = get_payment(PaymentID, St),
-    set_payment(Payment#domain_InvoicePayment{status = Status}, set_stage(idling, St));
-merge_payment_event({_, #payproc_InvoicePaymentStateChanged{payment_id = PaymentID, state = State}}, St) ->
+    set_payment(Payment#domain_InvoicePayment{status = Status}, set_stage(idling, St)).
+
+merge_internal_event({payment_state_changed, PaymentID, State}, St) ->
     set_stage({processing_payment, PaymentID, State}, St).
 
 set_stage(Stage, St) ->
