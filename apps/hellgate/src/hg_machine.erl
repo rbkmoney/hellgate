@@ -4,9 +4,9 @@
 -type args() :: _.
 
 -type event() :: event(_).
--type event(T) :: {event_id(), id(), datetime(), sequence(), T}.
+-type event(T) :: {event_id(), id(), timestamp(), sequence(), T}.
 -type event_id() :: integer().
--type datetime() :: calendar:datetime().
+-type timestamp() :: hg_base_thrift:'Timestamp'().
 -type sequence() :: pos_integer().
 
 -type history() :: history(_).
@@ -111,7 +111,7 @@ get_history(ID, Opts) ->
 -spec get_history(id(), event_id(), undefined | non_neg_integer(), opts()) ->
     {history(), woody_client:context()}.
 
-get_history(ID, AfterID, Limit, Opts) when is_integer(AfterID) ->
+get_history(ID, AfterID, Limit, Opts) ->
     get_history(ID, #'HistoryRange'{'after' = AfterID, limit = Limit}, Opts).
 
 get_history(ID, Range, #{client_context := Context0}) ->
@@ -247,7 +247,7 @@ wrap_events_(_, _, []) ->
 wrap_event(Module, Seq, EventInner) ->
     marshal_term({Module, Seq, EventInner}).
 
-unwrap_event(#'Event'{id = ID, machine_id = Source, created_at = Dt, event_payload = Payload}) ->
+unwrap_event(#'Event'{id = ID, source = Source, created_at = Dt, event_payload = Payload}) ->
     {Module, Seq, EventInner} = unmarshal_term(Payload),
     {Module, {ID, Source, Dt, Seq, EventInner}}.
 

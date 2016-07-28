@@ -7,6 +7,8 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
+-export([no_events/1]).
+-export([events_observed/1]).
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancelled/1]).
 -export([payment_success/1]).
@@ -35,6 +37,8 @@ init([]) ->
 
 all() ->
     [
+        no_events,
+        events_observed,
         invoice_cancellation,
         overdue_invoice_cancelled,
         payment_success
@@ -47,7 +51,7 @@ all() ->
 init_per_suite(C) ->
     Host = "hellgate",
     % Port = rand:uniform(32768) + 32767,
-    Port = 8042,
+    Port = 8022,
     RootUrl = "http://" ++ Host ++ ":" ++ integer_to_list(Port),
     Apps =
         hg_ct_helper:start_app(lager) ++
@@ -59,7 +63,8 @@ init_per_suite(C) ->
             %   You will need up and running mgun reachable at the following url,
             %   properly configured to serve incoming requests and talk back to
             %   the test hg instance.
-            {automaton_service_url, <<"http://machinegun:8022/v1/automaton_service">>}
+            {automaton_service_url, <<"http://machinegun:8022/v1/automaton_service">>},
+            {eventsink_service_url, <<"http://machinegun:8024/v1/eventsink_service">>}
         ]),
     [{root_url, RootUrl}, {apps, lists:reverse(Apps)} | C].
 
@@ -77,6 +82,9 @@ end_per_suite(C) ->
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 
+-define(invoice_event(ID, InvoiceID, Payload),
+    #payproc_Event{id = ID, source = {invoice, InvoiceID}, payload = {invoice_event, Payload}}).
+
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(_Name, C) ->
@@ -90,6 +98,34 @@ end_per_testcase(_Name, C) ->
     _ = unlink(?config(test_sup)),
     _ = application:set_env(hellgate, provider_proxy_url, undefined),
     exit(?config(test_sup), shutdown).
+
+-spec no_events(config()) -> _ | no_return().
+
+no_events(C) ->
+    Client = ?config(client),
+    none = hg_client:get_last_event_id(Client).
+
+-spec events_observed(config()) -> _ | no_return().
+
+events_observed(C) ->
+    Client = ?config(client),
+    InvoiceParams = make_invoice_params(<<"rubberduck">>, 10000),
+    {ok, InvoiceID1} = hg_client:create_invoice(InvoiceParams, Client),
+    ok = hg_client:rescind_invoice(InvoiceID1, <<"die">>, Client),
+    {ok, InvoiceID2} = hg_client:create_invoice(InvoiceParams, Client),
+    ok = hg_client:rescind_invoice(InvoiceID2, <<"noway">>, Client),
+    {ok, Events1} = hg_client:pull_events(2, 3000, Client),
+    {ok, Events2} = hg_client:pull_events(2, 3000, Client),
+    [
+        ?invoice_event(ID1, InvoiceID1, ?invoice_created(?invoice_w_status(?unpaid()))),
+        ?invoice_event(ID2, InvoiceID1, ?invoice_status_changed(?cancelled(_)))
+    ] = Events1,
+    [
+        ?invoice_event(ID3, InvoiceID2, ?invoice_created(?invoice_w_status(?unpaid()))),
+        ?invoice_event(ID4, InvoiceID2, ?invoice_status_changed(?cancelled(_)))
+    ] = Events2,
+    IDs = [ID1, ID2, ID3, ID4],
+    IDs = lists:sort(IDs).
 
 -spec invoice_cancellation(config()) -> _ | no_return().
 
@@ -106,8 +142,8 @@ overdue_invoice_cancelled(C) ->
     Client = ?config(client),
     InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(1), 10000),
     {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
-    ?invoice_created(?invoice_w_status(?unpaid())) = get_next_event(InvoiceID, Client),
-    ?invoice_status_changed(?cancelled(<<"overdue">>)) = get_next_event(InvoiceID, Client).
+    ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),
+    ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
 
 -spec payment_success(config()) -> _ | no_return().
 
@@ -118,24 +154,24 @@ payment_success(C) ->
     InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(5), 42000),
     PaymentParams = make_payment_params(),
     {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
-    ?invoice_created(?invoice_w_status(?unpaid())) = get_next_event(InvoiceID, Client),
+    ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),
     {ok, PaymentID} = hg_client:start_payment(InvoiceID, PaymentParams, Client),
-    ?payment_started(?payment_w_status(?pending())) = get_next_event(InvoiceID, Client),
-    ?payment_state_changed(PaymentID) = get_next_event(InvoiceID, Client),
-    ?payment_state_changed(PaymentID) = get_next_event(InvoiceID, Client),
-    ?payment_bound(PaymentID, ?trx_info(PaymentID)) = get_next_event(InvoiceID, Client),
-    ?payment_state_changed(PaymentID) = get_next_event(InvoiceID, Client),
-    ?payment_status_changed(PaymentID, ?succeeded()) = get_next_event(InvoiceID, Client),
-    ?invoice_status_changed(?paid()) = get_next_event(InvoiceID, 1000, Client),
-    timeout = get_next_event(InvoiceID, 2000, Client).
+    ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
+    ?payment_state_changed(PaymentID) = next_event(InvoiceID, Client),
+    ?payment_state_changed(PaymentID) = next_event(InvoiceID, Client),
+    ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
+    ?payment_state_changed(PaymentID) = next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID, ?succeeded()) = next_event(InvoiceID, Client),
+    ?invoice_status_changed(?paid()) = next_event(InvoiceID, 1000, Client),
+    timeout = next_event(InvoiceID, 2000, Client).
 
 %%
 
-get_next_event(InvoiceID, Client) ->
-    get_next_event(InvoiceID, 3000, Client).
+next_event(InvoiceID, Client) ->
+    next_event(InvoiceID, 3000, Client).
 
-get_next_event(InvoiceID, Timeout, Client) ->
-    case hg_client:get_next_event(InvoiceID, Timeout, Client) of
+next_event(InvoiceID, Timeout, Client) ->
+    case hg_client:pull_invoice_event(InvoiceID, Timeout, Client) of
         {ok, Event} ->
             unwrap_event(Event);
         Result ->

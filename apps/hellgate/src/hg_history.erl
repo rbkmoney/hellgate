@@ -28,7 +28,7 @@ wrap_event(Module, Seq, EventInner) ->
 unwrap(History) ->
     [unwrap_event(E) || E <- History].
 
-unwrap_event(#'Event'{id = ID, machine_id = Source, created_at = Dt, event_payload = Payload}) ->
+unwrap_event(#'Event'{id = ID, source = Source, created_at = Dt, event_payload = Payload}) ->
     {Module, Seq, EventInner} = unmarshal_term(Payload),
     {Module, {ID, Source, Dt, Seq, EventInner}}.
 

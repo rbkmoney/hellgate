@@ -10,8 +10,11 @@
 -export([rescind_invoice/3]).
 -export([start_payment/3]).
 
--export([get_next_event/2]).
--export([get_next_event/3]).
+-export([pull_invoice_event/2]).
+-export([pull_invoice_event/3]).
+
+-export([get_last_event_id/1]).
+-export([pull_events/3]).
 
 -export_type([t/0]).
 
@@ -63,59 +66,81 @@ new(RootUrl, UserInfo, Context) ->
 %%
 
 -spec create_invoice(invoice_params(), t()) ->
-    {{ok, invoice_id()} | woody_client:result_error(), t()}.
+    {ok, invoice_id()} | woody_client:result_error().
 
 create_invoice(InvoiceParams, Client) ->
-    do_service_call(Client, 'Create', [InvoiceParams]).
+    call_invoicing(Client, 'Create', [InvoiceParams]).
 
 -spec get_invoice(invoice_id(), t()) ->
-    {{ok, hg_payment_processing_thrift:'InvoiceState'()} | woody_client:result_error(), t()}.
+    {ok, hg_payment_processing_thrift:'InvoiceState'()} | woody_client:result_error().
 
 get_invoice(InvoiceID, Client) ->
-    do_service_call(Client, 'Get', [InvoiceID]).
+    call_invoicing(Client, 'Get', [InvoiceID]).
 
 -spec fulfill_invoice(invoice_id(), binary(), t()) ->
-    {ok | woody_client:result_error(), t()}.
+    ok | woody_client:result_error().
 
 fulfill_invoice(InvoiceID, Reason, Client) ->
-    do_service_call(Client, 'Fulfill', [InvoiceID, Reason]).
+    call_invoicing(Client, 'Fulfill', [InvoiceID, Reason]).
 
 -spec rescind_invoice(invoice_id(), binary(), t()) ->
-    {ok | woody_client:result_error(), t()}.
+    ok | woody_client:result_error().
 
 rescind_invoice(InvoiceID, Reason, Client) ->
-    do_service_call(Client, 'Rescind', [InvoiceID, Reason]).
+    call_invoicing(Client, 'Rescind', [InvoiceID, Reason]).
 
 -spec start_payment(invoice_id(), payment_params(), t()) ->
-    {{ok, payment_id()} | woody_client:result_error(), t()}.
+    {ok, payment_id()} | woody_client:result_error().
 
 start_payment(InvoiceID, PaymentParams, Client) ->
-    do_service_call(Client, 'StartPayment', [InvoiceID, PaymentParams]).
+    call_invoicing(Client, 'StartPayment', [InvoiceID, PaymentParams]).
 
--spec get_next_event(invoice_id(), t()) ->
-    {{ok, tuple()} | timeout | woody_client:result_error(), t()}.
+-spec pull_invoice_event(invoice_id(), t()) ->
+    {ok, tuple()} | timeout | woody_client:result_error().
 
-get_next_event(InvoiceID, Client) ->
-    get_next_event(InvoiceID, ?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
+pull_invoice_event(InvoiceID, Client) ->
+    pull_invoice_event(InvoiceID, ?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
 
--spec get_next_event(invoice_id(), timeout(), t()) ->
-    {{ok, tuple()} | timeout | woody_client:result_error(), t()}.
+-spec pull_invoice_event(invoice_id(), timeout(), t()) ->
+    {ok, tuple()} | timeout | woody_client:result_error().
 
-get_next_event(InvoiceID, Timeout, Client) ->
+pull_invoice_event(InvoiceID, Timeout, Client) ->
     % FIXME: infinity sounds dangerous
-    gen_server:call(Client, {get_next_event, InvoiceID, Timeout}, infinity).
+    gen_server:call(Client, {pull_invoice_event, InvoiceID, Timeout}, infinity).
 
-do_service_call(Client, Function, Args) ->
-    % FIXME: infinity sounds dangerous
-    gen_server:call(Client, {issue_service_call, Function, Args}, infinity).
+-spec get_last_event_id(t()) ->
+    {ok, event_id()} | none | woody_client:result_error().
+
+get_last_event_id(Client) ->
+    case call_eventsink(Client, 'GetLastEventID', []) of
+        {ok, EventID} ->
+            {ok, EventID};
+        {exception, #payproc_NoLastEvent{}} ->
+            none;
+        Error ->
+            Error
+    end.
+
+-spec pull_events(pos_integer(), timeout(), t()) ->
+    {ok, [tuple()]} | woody_client:result_error().
+
+pull_events(N, Timeout, Client) when N > 0 ->
+    gen_server:call(Client, {pull_events, N, Timeout}, infinity).
+
+call_invoicing(Client, Function, Args) ->
+    gen_server:call(Client, {call_invoicing, Function, Args}).
+
+call_eventsink(Client, Function, Args) ->
+    gen_server:call(Client, {call_eventsink, Function, Args}).
 
 %%
 
 -record(cl, {
-    root_url          :: woody_t:url(),
-    user_info         :: user_info(),
-    context           :: woody_client:context(),
-    last_events = #{} :: #{invoice_id() => event_id()}
+    root_url                  :: woody_t:url(),
+    user_info                 :: user_info(),
+    context                   :: woody_client:context(),
+    last_event                :: event_id(),
+    last_invoice_events = #{} :: #{invoice_id() => event_id()}
 }).
 
 -type cl() :: #cl{}.
@@ -130,12 +155,21 @@ init({RootUrl, UserInfo, Context}) ->
 -spec handle_call(term(), callref(), cl()) ->
     {reply, term(), cl()} | {noreply, cl()}.
 
-handle_call({issue_service_call, Function, Args}, _From, Client) ->
-    {Result, ClientNext} = issue_service_call(Function, [get_user_info(Client) | Args], Client),
+handle_call({call_invoicing, Function, Args}, _From, Client) ->
+    UserInfo = get_user_info(Client),
+    {Result, ClientNext} = issue_service_call(invoicing, Function, [UserInfo | Args], Client),
     {reply, Result, ClientNext};
 
-handle_call({get_next_event, InvoiceID, Timeout}, _From, Client) ->
+handle_call({call_eventsink, Function, Args}, _From, Client) ->
+    {Result, ClientNext} = issue_service_call(eventsink, Function, Args, Client),
+    {reply, Result, ClientNext};
+
+handle_call({pull_invoice_event, InvoiceID, Timeout}, _From, Client) ->
     {Result, ClientNext} = poll_next_event(InvoiceID, Timeout, Client),
+    {reply, Result, ClientNext};
+
+handle_call({pull_events, N, Timeout}, _From, Client) ->
+    {Result, ClientNext} = poll_events(N, Timeout, Client),
     {reply, Result, ClientNext};
 
 handle_call(Call, _From, State) ->
@@ -172,31 +206,72 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %%
 
-poll_next_event(_InvoiceID, Timeout, Client) when Timeout =< 0 ->
-    {timeout, Client};
 poll_next_event(InvoiceID, Timeout, Client) ->
+    Call = fun (Range, Cl) ->
+        issue_service_call(invoicing, 'GetEvents', [get_user_info(Cl), InvoiceID, Range], Cl)
+    end,
+    case poll_events(get_last_invoice_event(InvoiceID, Client), 1, Call, Timeout, [], Client) of
+        {[], ClientNext} ->
+            {timeout, ClientNext};
+        {[Event], ClientNext} ->
+            {{ok, strip_event(Event)}, update_last_invoice_events(InvoiceID, Event, ClientNext)};
+        Error ->
+            Error
+    end.
+
+get_last_invoice_event(InvoiceID, #cl{last_invoice_events = LastEvents}) ->
+    genlib_map:get(InvoiceID, LastEvents).
+
+update_last_invoice_events(InvoiceID, Event, Client = #cl{last_invoice_events = LastEvents}) ->
+    #payproc_Event{id = EventID} = Event,
+    Client#cl{last_invoice_events = LastEvents#{InvoiceID => EventID}}.
+
+poll_events(N, Timeout, Client) ->
+    Call = fun (Range, Cl) -> issue_service_call(eventsink, 'GetEvents', [Range], Cl) end,
+    case poll_events(get_last_event(Client), N, Call, Timeout, [], Client) of
+        {Events, ClientNext} ->
+            {{ok, Events}, update_last_event(Events, ClientNext)};
+        Result ->
+            Result
+    end.
+
+get_last_event(#cl{last_event = EventID}) ->
+    EventID.
+
+update_last_event([], Client) ->
+    Client;
+update_last_event(Events, Client) ->
+    #payproc_Event{id = EventID} = lists:last(Events),
+    Client#cl{last_event = EventID}.
+
+poll_events(_, _, _, Timeout, Acc, Client) when Timeout =< 0 ->
+    {Acc, Client};
+poll_events(After, N, Call, Timeout, Acc, Client) ->
     StartTs = genlib_time:ticks(),
-    UserInfo = get_user_info(Client),
-    Range = construct_range(InvoiceID, Client),
-    {Result, ClientNext} = issue_service_call('GetEvents', [UserInfo, InvoiceID, Range], Client),
+    Range = construct_range(After, N, Acc),
+    {Result, ClientNext} = Call(Range, Client),
     case Result of
-        {ok, []} ->
+        {ok, Events} when length(Events) == N ->
+            {Acc ++ Events, ClientNext};
+        {ok, Events} ->
             _ = timer:sleep(?POLL_INTERVAL),
-            poll_next_event(InvoiceID, compute_timeout_left(StartTs, Timeout), ClientNext);
-        {ok, [#payproc_Event{id = EventID, payload = Event} | _Rest]} ->
-            {{ok, Event}, update_last_events(InvoiceID, EventID, ClientNext)};
-        {What, _} when What =:= exception; What =:= error ->
+            TimeoutLeft = compute_timeout_left(StartTs, Timeout),
+            poll_events(After, N - length(Events), Call, TimeoutLeft, Acc ++ Events, ClientNext);
+        _Error ->
             {Result, ClientNext}
     end.
 
-construct_range(InvoiceID, #cl{last_events = LastEvents}) ->
-    #payproc_EventRange{'after' = genlib_map:get(InvoiceID, LastEvents), limit = 1}.
+construct_range(After, N, []) ->
+    #payproc_EventRange{'after' = After, limit = N};
+construct_range(_After, N, Events) ->
+    #payproc_Event{id = LastEvent} = lists:last(Events),
+    #payproc_EventRange{'after' = LastEvent, limit = N}.
 
-update_last_events(InvoiceID, EventID, Client = #cl{last_events = LastEvents}) ->
-    Client#cl{last_events = LastEvents#{InvoiceID => EventID}}.
+strip_event(#payproc_Event{payload = Payload}) ->
+    Payload.
 
-issue_service_call(Function, Args, Client = #cl{context = Context, root_url = RootUrl}) ->
-    {_Name, Path, Service} = hg_proto:get_service_spec(invoicing),
+issue_service_call(ServiceName, Function, Args, Client = #cl{context = Context, root_url = RootUrl}) ->
+    {_Name, Path, Service} = hg_proto:get_service_spec(ServiceName),
     Url = iolist_to_binary([RootUrl, Path]),
     Request = {Service, Function, Args},
     {Result, ContextNext} = woody_client:call_safe(Context, Request, #{url => Url}),

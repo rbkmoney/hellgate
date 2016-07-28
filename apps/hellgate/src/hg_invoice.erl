@@ -91,7 +91,7 @@ map_events(Events) ->
 map_event({ID, Source, Dt, Seq, Ev}) ->
     #payproc_Event{
         id         = ID,
-        created_at = genlib_format:format_datetime_iso8601(Dt),
+        created_at = Dt,
         source     = {invoice, Source},
         sequence   = Seq,
         payload    = Ev
