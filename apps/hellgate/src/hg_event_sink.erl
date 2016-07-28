@@ -23,16 +23,16 @@ handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit
         {{ok, History}, Context} = call_event_sink('GetHistory', [HistoryRange], Context0),
         {{ok, hg_machine:map_history(History)}, Context}
     catch
-        {{exception, #'EventNotFound'{}}, _} ->
-            throw(#payproc_EventNotFound{})
+        {{exception, #'EventNotFound'{}}, Context1} ->
+            throw({#payproc_EventNotFound{}, Context1})
     end;
 
 handle_function('GetLastEventID', {}, Context0, _Opts) ->
     try
         call_event_sink('GetLastEventID', [], Context0)
     catch
-        {{exception, #'NoLastEvent'{}}, _} ->
-            throw(#payproc_NoLastEvent{})
+        {{exception, #'NoLastEvent'{}}, Context} ->
+            throw({#payproc_NoLastEvent{}, Context})
     end.
 
 call_event_sink(Function, Args, Context) ->
