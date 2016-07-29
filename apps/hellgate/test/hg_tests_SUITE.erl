@@ -82,8 +82,14 @@ end_per_suite(C) ->
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 
--define(invoice_event(ID, InvoiceID, Payload),
-    #payproc_Event{id = ID, source = {invoice, InvoiceID}, payload = {invoice_event, Payload}}).
+-define(event(ID, InvoiceID, Seq, Payload),
+    #payproc_Event{
+        id = ID,
+        source = {invoice, InvoiceID},
+        sequence = Seq,
+        payload = Payload
+    }
+).
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -117,12 +123,12 @@ events_observed(C) ->
     {ok, Events1} = hg_client:pull_events(2, 3000, Client),
     {ok, Events2} = hg_client:pull_events(2, 3000, Client),
     [
-        ?invoice_event(ID1, InvoiceID1, ?invoice_created(?invoice_w_status(?unpaid()))),
-        ?invoice_event(ID2, InvoiceID1, ?invoice_status_changed(?cancelled(_)))
+        ?event(ID1, InvoiceID1, 1, ?invoice_ev(?invoice_created(?invoice_w_status(?unpaid())))),
+        ?event(ID2, InvoiceID1, 2, ?invoice_ev(?invoice_status_changed(?cancelled(_))))
     ] = Events1,
     [
-        ?invoice_event(ID3, InvoiceID2, ?invoice_created(?invoice_w_status(?unpaid()))),
-        ?invoice_event(ID4, InvoiceID2, ?invoice_status_changed(?cancelled(_)))
+        ?event(ID3, InvoiceID2, 1, ?invoice_ev(?invoice_created(?invoice_w_status(?unpaid())))),
+        ?event(ID4, InvoiceID2, 2, ?invoice_ev(?invoice_status_changed(?cancelled(_))))
     ] = Events2,
     IDs = [ID1, ID2, ID3, ID4],
     IDs = lists:sort(IDs).
