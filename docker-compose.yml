@@ -2,7 +2,7 @@ version: '2'
 
 services:
   hellgate:
-    image: rbkmoney/build:latest
+    image: dr.rbkmoney.com/rbkmoney/build:latest
     volumes:
       - .:/code
     working_dir: /code
@@ -11,7 +11,7 @@ services:
       - machinegun
 
   machinegun:
-    image: rbkmoney/mg:ci_latest
+    image: dr.rbkmoney.com/rbkmoney/mg_prototype:87bef0b
     command: /opt/mgun/bin/mgun foreground
 
 networks:
