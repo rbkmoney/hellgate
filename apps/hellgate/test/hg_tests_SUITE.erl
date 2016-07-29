@@ -12,6 +12,7 @@
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancelled/1]).
 -export([payment_success/1]).
+-export([consistent_history/1]).
 
 %%
 
@@ -41,7 +42,8 @@ all() ->
         events_observed,
         invoice_cancellation,
         overdue_invoice_cancelled,
-        payment_success
+        payment_success,
+        consistent_history
     ].
 
 %% starting/stopping
@@ -167,6 +169,25 @@ payment_success(C) ->
     ?payment_status_changed(PaymentID, ?succeeded()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, 1000, Client),
     timeout = next_event(InvoiceID, 2000, Client).
+
+-spec consistent_history(config()) -> _ | no_return().
+
+consistent_history(C) ->
+    Client = ?config(client),
+    {ok, Events} = hg_client:pull_events(_N = 1000, 1000, Client),
+    InvoiceSeqs = orddict:to_list(lists:foldl(
+        fun (?event(_ID, InvoiceID, Seq, _), Acc) ->
+            orddict:update(InvoiceID, fun (Seqs) -> Seqs ++ [Seq] end, [Seq], Acc)
+        end,
+        orddict:new(),
+        Events
+    )),
+    ok = lists:foreach(
+        fun (E = {InvoiceID, Seqs}) ->
+            E = {InvoiceID, lists:seq(1, length(Seqs))}
+        end,
+        InvoiceSeqs
+    ).
 
 %%
 

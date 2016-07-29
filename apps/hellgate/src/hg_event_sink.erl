@@ -53,7 +53,7 @@ get_public_history(HistoryRange = #'HistoryRange'{limit = N}, Context0) ->
             {HistoryRest, Context2} = get_public_history(NextRange, Context1),
             {History ++ HistoryRest, Context2};
         M when M < N ->
-            {{ok, History}, Context1}
+            {History, Context1}
     end.
 
 get_history_range(HistoryRange, Context0) ->

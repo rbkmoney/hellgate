@@ -4,10 +4,9 @@
 -type args() :: _.
 
 -type event() :: event(_).
--type event(T) :: {event_id(), id(), timestamp(), sequence(), T}.
+-type event(T) :: {event_id(), id(), timestamp(), T}.
 -type event_id() :: hg_base_thrift:'EventID'().
 -type timestamp() :: hg_base_thrift:'Timestamp'().
--type sequence() :: pos_integer().
 
 -type history() :: history(_).
 -type history(T) :: [event(T)].
@@ -172,7 +171,7 @@ dispatch_signal(#'InitSignal'{id = ID, arg = Payload}, [], _Opts = #{client_cont
     {Module, Args} = unwrap_args(Payload),
     _ = lager:debug("[machine] [~p] dispatch init (~p: ~p) with history: ~p", [Module, ID, Args, []]),
     {Result, #{client_context := Context}} = Module:init(ID, Args, create_context(Context0)),
-    {marshal_signal_result(Result, Module, []), Context};
+    {marshal_signal_result(Result, Module), Context};
 
 dispatch_signal(#'TimeoutSignal'{}, History0, _Opts = #{client_context := Context0}) ->
     % TODO: deducing module from signal payload looks more natural
@@ -180,19 +179,19 @@ dispatch_signal(#'TimeoutSignal'{}, History0, _Opts = #{client_context := Contex
     {Module, History} = untag_history(unwrap_history(History0)),
     _ = lager:debug("[machine] [~p] dispatch timeout with history: ~p", [Module, History]),
     {Result, #{client_context := Context}} = Module:process_signal(timeout, History, create_context(Context0)),
-    {marshal_signal_result(Result, Module, History), Context};
+    {marshal_signal_result(Result, Module), Context};
 
 dispatch_signal(#'RepairSignal'{arg = Payload}, History0, _Opts = #{client_context := Context0}) ->
     Args = unmarshal_term(Payload),
     {Module, History} = untag_history(unwrap_history(History0)),
     _ = lager:debug("[machine] [~p] dispatch repair (~p) with history: ~p", [Module, Args, History]),
     {Result, #{client_context := Context}} = Module:process_signal({repair, Args}, History, create_context(Context0)),
-    {marshal_signal_result(Result, Module, History), Context}.
+    {marshal_signal_result(Result, Module), Context}.
 
-marshal_signal_result({ok, {Events, Action}}, Module, History) ->
+marshal_signal_result({ok, {Events, Action}}, Module) ->
     _ = lager:debug("[machine] [~p] result with events = ~p and action = ~p", [Module, Events, Action]),
     #'SignalResult'{
-        events = wrap_events(Module, History, Events),
+        events = wrap_events(Module, Events),
         action = Action
     }.
 
@@ -207,17 +206,17 @@ dispatch_call(Payload, History0, _Opts = #{client_context := Context0}) ->
     {Module, History} = untag_history(unwrap_history(History0)),
     _ = lager:debug("[machine] [~p] dispatch call (~p) with history: ~p", [Module, Args, History]),
     {Result, #{client_context := Context}} = Module:process_call(Args, History, create_context(Context0)),
-    {marshal_call_result(Result, Module, History), Context}.
+    {marshal_call_result(Result, Module), Context}.
 
 %%
 
-marshal_call_result({ok, Response, {Events, Action}}, Module, History) ->
+marshal_call_result({ok, Response, {Events, Action}}, Module) ->
     _ = lager:debug(
         "[machine] [~p] call response = ~p with event = ~p and action = ~p",
         [Module, Response, Events, Action]
     ),
     #'CallResult'{
-        events = wrap_events(Module, History, Events),
+        events = wrap_events(Module, Events),
         action = Action,
         response = marshal_term(Response)
     }.
@@ -232,7 +231,7 @@ map_history(History) ->
 
 map_history([], LastID, Evs) ->
     {LastID, lists:reverse(Evs)};
-map_history([{Module, Ev0 = {ID, _, _, _, _}} | Rest], _, Evs) ->
+map_history([{Module, Ev0 = {ID, _, _, _}} | Rest], _, Evs) ->
     case Module:map_event(Ev0) of
         Ev when Ev /= undefined ->
             map_history(Rest, ID, [Ev | Evs]);
@@ -246,20 +245,17 @@ unwrap_history(History) ->
 untag_history(History = [{Module, _} | _]) ->
     {Module, [E || {_, E} <- History]}.
 
-wrap_events(Module, History, Events) ->
-    wrap_events_(Module, length(History) + 1, Events).
-
-wrap_events_(Module, Seq, [Ev | Rest]) ->
-    [wrap_event(Module, Seq, Ev) | wrap_events_(Module, Seq + 1, Rest)];
-wrap_events_(_, _, []) ->
+wrap_events(Module, [Ev | Rest]) ->
+    [wrap_event(Module, Ev) | wrap_events(Module, Rest)];
+wrap_events(_, []) ->
     [].
 
-wrap_event(Module, Seq, EventInner) ->
-    marshal_term({Module, Seq, EventInner}).
+wrap_event(Module, EventInner) ->
+    marshal_term({Module, EventInner}).
 
 unwrap_event(#'Event'{id = ID, source = Source, created_at = Dt, event_payload = Payload}) ->
-    {Module, Seq, EventInner} = unmarshal_term(Payload),
-    {Module, {ID, Source, Dt, Seq, EventInner}}.
+    {Module, EventInner} = unmarshal_term(Payload),
+    {Module, {ID, Source, Dt, EventInner}}.
 
 wrap_args(Args) ->
     marshal_term(Args).
