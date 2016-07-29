@@ -20,8 +20,8 @@
  {<<"thrift">>,
   {git,"https://github.com/rbkmoney/thrift_erlang.git",
        {ref,"2a39a0b373d98f3b52d32912a3dab88c6b4c5037"}},
-  0},
+  1},
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
-       {ref,"dbe03ca171087f2649a7057a379cdb10c5dce90c"}},
+       {ref,"cd7779e615b536ce872c0d2eeca01d0addab66e1"}},
   0}].
