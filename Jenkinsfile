@@ -33,6 +33,10 @@ node('docker-host') {
     }
 
     if (env.BRANCH_NAME == 'master') {
+      runStage('make release') {
+        sh "make wc_release"
+      }
+
       runStage('build image') {
         sh "make build_image"
       }

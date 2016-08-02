@@ -7,10 +7,8 @@ TEMPLATES_PATH := .
 
 # Name of the service
 SERVICE_NAME := hellgate
-
 # Service image default tag
 SERVICE_IMAGE_TAG ?= $(shell git rev-parse HEAD)
-
 # The tag for service image to be pushed with
 SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
@@ -21,14 +19,7 @@ BASE_IMAGE_TAG := latest
 # Build image tag to be used
 BUILD_IMAGE_TAG := 530114ab63a7ff0379a2220169a0be61d3f7c64c
 
-# Note: SERVICE_NAME should match the name of
-# the first service in docker-compose.yml
-SERVICE_NAME := hellgate
-
-IMAGE_TAG ?= $(shell whoami)
-PUSH_IMAGE_TAG ?= $(IMAGE_TAG)
-
-CALL_ANYWHERE := submodules rebar-update compile xref lint dialyze start devrel release clean distclean
+CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
@@ -37,7 +28,7 @@ all: compile
 -include $(UTILS_PATH)/utils_container.mk
 -include $(UTILS_PATH)/utils_image.mk
 
-.PHONY: $(CALL_W_CONTAINER) all containerize push $(UTIL_TARGETS)
+.PHONY: $(CALL_W_CONTAINER)
 
 # CALL_ANYWHERE
 $(SUBTARGETS): %/.git: %
@@ -80,12 +71,4 @@ distclean:
 # CALL_W_CONTAINER
 test: submodules
 	$(REBAR) ct
-
-# OTHER
-containerize: wc_release
-	$(DOCKER) build --force-rm --tag "$(IMAGE_NAME):$(IMAGE_TAG)" .
-
-push:
-	$(DOCKER) tag "$(IMAGE_NAME):$(IMAGE_TAG)" "$(IMAGE_NAME):$(PUSH_IMAGE_TAG)"
-	$(DOCKER) push "$(IMAGE_NAME):$(PUSH_IMAGE_TAG)"
 
