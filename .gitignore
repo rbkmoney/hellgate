@@ -7,10 +7,6 @@ erl_crash.dump
 *.sublime-workspace
 .DS_Store
 
-# wercker
-/_builds/
-/_cache/
-/_projects/
-/_steps/
-/_temp/
-/.wercker/
+Dockerfile
+docker-compose.yml
+
