@@ -35,21 +35,21 @@ handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
     {InvoiceID, Context} = hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, opts(Context0)),
     {{ok, InvoiceID}, Context};
 
-handle_function('Get', {_UserInfo, InvoiceID}, Context0, _Opts) ->
-    {St, Context} = get_state(InvoiceID, Context0),
+handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
+    {St, Context} = get_state(UserInfo, InvoiceID, Context0),
     InvoiceState = get_invoice_state(St),
     {{ok, InvoiceState}, Context};
 
-handle_function('GetEvents', {_UserInfo, InvoiceID, Range}, Context0, _Opts) ->
-    {History, Context} = get_public_history(InvoiceID, Range, Context0),
+handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
+    {History, Context} = get_public_history(UserInfo, InvoiceID, Range, Context0),
     {{ok, History}, Context};
 
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, _Opts) ->
     {PaymentID, Context} = hg_machine:call(InvoiceID, {start_payment, PaymentParams, UserInfo}, opts(Context0)),
     {{ok, PaymentID}, Context};
 
-handle_function('GetPayment', {_UserInfo, PaymentID}, Context0, _Opts) ->
-    {St, Context} = get_state(deduce_invoice_id(PaymentID), Context0),
+handle_function('GetPayment', {UserInfo, UserInfo, PaymentID}, Context0, _Opts) ->
+    {St, Context} = get_state(UserInfo, deduce_invoice_id(PaymentID), Context0),
     case get_payment(PaymentID, St) of
         Payment = #domain_InvoicePayment{} ->
             {{ok, Payment}, Context};
@@ -67,36 +67,36 @@ handle_function('Rescind', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
 
 %%
 
-get_history(InvoiceID, Context) ->
+get_history(_UserInfo, InvoiceID, Context) ->
     hg_machine:get_history(InvoiceID, opts(Context)).
 
-get_history(InvoiceID, AfterID, Limit, Context) ->
+get_history(_UserInfo, InvoiceID, AfterID, Limit, Context) ->
     hg_machine:get_history(InvoiceID, AfterID, Limit, opts(Context)).
 
-get_state(InvoiceID, Context0) ->
-    {History, Context} = get_history(InvoiceID, Context0),
+get_state(UserInfo, InvoiceID, Context0) ->
+    {History, Context} = get_history(UserInfo, InvoiceID, Context0),
     St = collapse_history(History),
     {St, Context}.
 
-get_public_history(InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Context) ->
-    get_public_history(InvoiceID, AfterID, Limit, Context).
+get_public_history(UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Context) ->
+    get_public_history(UserInfo, InvoiceID, AfterID, Limit, Context).
 
-get_public_history(InvoiceID, AfterID, undefined, Context0) ->
-    {History0, Context} = get_history(InvoiceID, AfterID, undefined, Context0),
+get_public_history(UserInfo, InvoiceID, AfterID, undefined, Context0) ->
+    {History0, Context} = get_history(UserInfo, InvoiceID, AfterID, undefined, Context0),
     {_LastID, History} = map_history(History0),
     {History, Context};
 
-get_public_history(_InvoiceID, _AfterID, 0, Context) ->
+get_public_history(_UserInfo, _InvoiceID, _AfterID, 0, Context) ->
     {[], Context};
-get_public_history(InvoiceID, AfterID, N, Context0) ->
-    {History0, Context1} = get_history(InvoiceID, AfterID, N, Context0),
+get_public_history(UserInfo, InvoiceID, AfterID, N, Context0) ->
+    {History0, Context1} = get_history(UserInfo, InvoiceID, AfterID, N, Context0),
     {LastID, History} = map_history(History0),
     case length(History0) of
         N when length(History) =:= N ->
             {History, Context1};
         N ->
             NextRange = #payproc_EventRange{'after' = LastID, limit = N - length(History)},
-            {HistoryRest, Context2} = get_public_history(InvoiceID, NextRange, Context1),
+            {HistoryRest, Context2} = get_public_history(UserInfo, InvoiceID, NextRange, Context1),
             {History ++ HistoryRest, Context2};
         M when M < N ->
             {History, Context1}
