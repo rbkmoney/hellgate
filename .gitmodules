@@ -1,3 +1,7 @@
 [submodule "apps/hg_proto/damsel"]
 	path = apps/hg_proto/damsel
 	url = git@github.com:keynslug/damsel.git
+[submodule "build_utils"]
+	path = build_utils
+	url = git@github.com:rbkmoney/build_utils.git
+

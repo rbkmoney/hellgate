@@ -1,25 +1,34 @@
 REBAR := $(shell which rebar3 2>/dev/null || which ./rebar3)
-SUBMODULES = apps/hg_proto/damsel
+SUBMODULES = apps/hg_proto/damsel build_utils
 SUBTARGETS = $(patsubst %,%/.git,$(SUBMODULES))
 
-REGISTRY := dr.rbkmoney.com
-ORG_NAME := rbkmoney
-BASE_IMAGE := "$(REGISTRY)/$(ORG_NAME)/build:latest"
+UTILS_PATH := build_utils/make_lib
+TEMPLATES_PATH := .
 
-# Note: RELNAME should match the name of
-# the first service in docker-compose.yml
-RELNAME := hellgate
+# Name of the service
+SERVICE_NAME := hellgate
+# Service image default tag
+SERVICE_IMAGE_TAG ?= $(shell git rev-parse HEAD)
+# The tag for service image to be pushed with
+SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
-TAG = latest
-IMAGE_NAME = "$(REGISTRY)/$(ORG_NAME)/$(RELNAME):$(TAG)"
+# Base image for the service
+BASE_IMAGE_NAME := service_erlang
+BASE_IMAGE_TAG := latest
 
-CALL_ANYWHERE := submodules rebar-update compile xref lint dialyze start devrel release clean distclean
+# Build image tag to be used
+BUILD_IMAGE_TAG := 530114ab63a7ff0379a2220169a0be61d3f7c64c
+
+CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
-include utils.mk
+all: compile
 
-.PHONY: $(CALL_W_CONTAINER) all containerize push $(UTIL_TARGETS)
+-include $(UTILS_PATH)/utils_container.mk
+-include $(UTILS_PATH)/utils_image.mk
+
+.PHONY: $(CALL_W_CONTAINER)
 
 # CALL_ANYWHERE
 $(SUBTARGETS): %/.git: %
@@ -62,13 +71,4 @@ distclean:
 # CALL_W_CONTAINER
 test: submodules
 	$(REBAR) ct
-
-# OTHER
-all: compile
-
-containerize: w_container_release
-	$(DOCKER) build --force-rm --tag $(IMAGE_NAME) .
-
-push: containerize
-	$(DOCKER) push "$(IMAGE_NAME)"
 
