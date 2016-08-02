@@ -7,7 +7,7 @@ which = $(if $(shell which $(1) 2>/dev/null),\
 DOCKER = $(call which,docker)
 DOCKER_COMPOSE = $(call which,docker-compose)
 
-UTIL_TARGETS := wc wc_% wdeps_% run_w_container_% check_w_container_%
+UTIL_TARGETS := wc_shell wc_% wdeps_% run_w_container_% check_w_container_%
 
 ifndef RELNAME
 $(error RELNAME is not set)
@@ -18,7 +18,7 @@ $(error CALL_W_CONTAINER is not set)
 endif
 
 # Run and attach to build container
-wc:
+wc_shell:
 	$(DOCKER) run -it --rm -v $$PWD:$$PWD --workdir $$PWD $(BASE_IMAGE) /bin/bash
 
 wc_%:
@@ -45,3 +45,4 @@ run_w_compose_%: check_w_container_%
 check_w_container_%:
 	$(if $(filter $*,$(CALL_W_CONTAINER)),,\
 	$(error "Error: target '$*' cannot be called wc_ or wdeps_"))
+

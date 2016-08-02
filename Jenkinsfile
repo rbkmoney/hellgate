@@ -36,11 +36,7 @@ pipeline("hellgate", 'docker-host', "_build/") {
     }
 
     runStage('push image :commit') {
-      sh "IMAGE_TAG=${env.BUILD_ID} PUSH_IMAGE_TAG=`git rev-parse --short HEAD`_`date +"%s"` make push"
-    }
-
-    runStage('push image :latest') {
-      sh "IMAGE_TAG=latest make push"
+      sh "IMAGE_TAG=${env.BUILD_ID} PUSH_IMAGE_TAG=`git rev-parse --short HEAD` make push"
     }
   }
 }

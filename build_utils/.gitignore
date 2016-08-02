@@ -1,0 +1,8 @@
+*~
+\#*
+.\#*
+.tags*
+*.sublime-workspace
+.DS_Store
+Dockerfile
+docker-compose.yml

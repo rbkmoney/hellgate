@@ -6,13 +6,13 @@ REGISTRY := dr.rbkmoney.com
 ORG_NAME := rbkmoney
 BASE_IMAGE := "$(REGISTRY)/$(ORG_NAME)/build:latest"
 
-# Note: RELNAME should match the name of
+# Note: SERVICE_NAME should match the name of
 # the first service in docker-compose.yml
-RELNAME := hellgate
+SERVICE_NAME := hellgate
 
 IMAGE_TAG ?= $(shell whoami)
 PUSH_IMAGE_TAG ?= $(IMAGE_TAG)
-IMAGE_NAME = $(REGISTRY)/$(ORG_NAME)/$(RELNAME)
+
 
 CALL_ANYWHERE := submodules rebar-update compile xref lint dialyze start devrel release clean distclean
 
