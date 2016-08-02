@@ -4,13 +4,15 @@ node('docker-host') {
   stage 'git checkout'
   checkout scm
 
+  stage 'load submodules'
+  withCredentials([[$class: 'FileBinding', credentialsId: 'github-rbkmoney-ci-bot-file', variable: 'GITHUB_PRIVKEY']]) {
+    sh "make submodules"
+  }
+
   stage 'load pipeline'
   def pipeline = load("build_utils/jenkins_lib/pipeline.groovy")
-  pipeline("hellgate", '_build/') {
 
-    runStage('submodules') {
-      sh 'make wc_submodules'
-    }
+  pipeline("hellgate", '_build/') {
 
     runStage('compile') {
       sh 'make wc_compile'
