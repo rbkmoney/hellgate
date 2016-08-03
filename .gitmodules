@@ -1,3 +1,4 @@
 [submodule "apps/hg_proto/damsel"]
 	path = apps/hg_proto/damsel
 	url = git@github.com:keynslug/damsel.git
+	branch = HG-40/fix/events
