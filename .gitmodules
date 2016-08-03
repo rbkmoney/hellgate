@@ -2,3 +2,7 @@
 	path = apps/hg_proto/damsel
 	url = git@github.com:keynslug/damsel.git
 	branch = HG-40/fix/events
+[submodule "build_utils"]
+	path = build_utils
+	url = git@github.com:rbkmoney/build_utils.git
+	branch = master
