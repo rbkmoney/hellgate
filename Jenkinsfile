@@ -1,14 +1,16 @@
 #!groovy
 
+// ToDo(arentrue): change to build(), (same approach as in erlang-service-template)
+// as soon as the PR in build_utils is merged to master.
 node('docker-host') {
-  stage 'git checkout'
-  checkout scm
-
+  checkoutRepo()
   loadBuildUtils()
 
-  stage 'load pipeline'
-  env.JENKINS_LIB = "build_utils/jenkins_lib"
-  def pipeline = load("${env.JENKINS_LIB}/pipeline.groovy")
+  def pipeline
+  runStage('load pipeline') {
+    env.JENKINS_LIB = "build_utils/jenkins_lib"
+    pipeline = load("${env.JENKINS_LIB}/pipeline.groovy")
+  }
 
   pipeline("hellgate", '_build/') {
 
