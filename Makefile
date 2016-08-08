@@ -46,7 +46,7 @@ compile: submodules rebar-update
 xref: submodules
 	$(REBAR) xref
 
-lint: compile
+lint:
 	elvis rock
 
 dialyze:
