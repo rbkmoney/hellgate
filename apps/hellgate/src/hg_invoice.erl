@@ -176,7 +176,7 @@ process_signal(timeout, History, Context) ->
             % invoice is expired
             process_expiration(St, Context);
         _ ->
-            ok()
+            {ok(), Context}
     end;
 
 process_signal({repair, _}, History, Context) ->
