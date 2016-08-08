@@ -17,8 +17,8 @@
 
 -type tag() :: binary().
 -type seconds() :: non_neg_integer().
--type datetime_iso8601() :: binary().
--type datetime() :: calendar:datetime() | datetime_iso8601().
+-type datetime_rfc3339() :: binary().
+-type datetime() :: calendar:datetime() | datetime_rfc3339().
 
 -type timer() :: hg_base_thrift:'Timer'().
 -type t() :: hg_state_processing_thrift:'ComplexAction'().

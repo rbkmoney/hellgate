@@ -1,14 +1,23 @@
 -module(hg_utils).
 
+-export([unique_id/0]).
 -export([shift_datetime/2]).
+-export([logtag_process/2]).
 -export([get_hostname_ip/1]).
 
 %%
 
--type seconds() :: integer().
--type datetime_iso8601() :: binary().
+-spec unique_id() -> hg_base_thrift:'ID'().
 
--type dt() :: calendar:datetime() | datetime_iso8601().
+unique_id() ->
+    <<ID:64>> = snowflake:new(),
+    genlib_format:format_int_base(ID, 62).
+
+%%
+
+-type seconds() :: integer().
+
+-type dt() :: calendar:datetime() | hg_base_thrift:'Timestamp'().
 
 -spec shift_datetime(dt(), seconds()) -> dt().
 
@@ -21,6 +30,14 @@ format_dt(Dt) ->
     genlib_format:format_datetime_iso8601(Dt).
 parse_dt(Dt) ->
     genlib_format:parse_datetime_iso8601(Dt).
+
+%%
+
+-spec logtag_process(atom(), any()) -> ok.
+
+logtag_process(Key, Value) when is_atom(Key) ->
+    % TODO preformat into binary?
+    lager:md(orddict:store(Key, Value, lager:md())).
 
 %%
 

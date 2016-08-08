@@ -35,12 +35,18 @@ stop() ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 
 init([]) ->
+    MachineHandlers = [
+        hg_invoice
+    ],
     {ok, {
         #{strategy => one_for_all, intensity => 6, period => 30},
-        [get_api_child_spec()]
+        [
+            hg_machine:get_child_spec(MachineHandlers),
+            get_api_child_spec(MachineHandlers)
+        ]
     }}.
 
-get_api_child_spec() ->
+get_api_child_spec(MachineHandlers) ->
     woody_server:child_spec(
         ?MODULE,
         #{
@@ -48,10 +54,9 @@ get_api_child_spec() ->
             port => genlib_app:env(?MODULE, port, 8022),
             net_opts => [],
             event_handler => hg_woody_event_handler,
-            handlers => [
-                construct_service_handler(eventsink, hg_event_sink, []),
+            handlers => hg_machine:get_service_handlers(MachineHandlers) ++ [
                 construct_service_handler(invoicing, hg_invoice, []),
-                construct_service_handler(processor, hg_machine, [])
+                construct_service_handler(eventsink, hg_event_sink, [])
             ]
         }
     ).

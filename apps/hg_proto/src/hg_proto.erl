@@ -17,9 +17,7 @@ get_service_specs() ->
         {eventsink, VersionPrefix ++ "/processing/eventsink",
             {hg_payment_processing_thrift, 'EventSink'}},
         {invoicing, VersionPrefix ++ "/processing/invoicing",
-            {hg_payment_processing_thrift, 'Invoicing'}},
-        {processor, VersionPrefix ++ "/stateproc/processor",
-            {hg_state_processing_thrift, 'Processor'}}
+            {hg_payment_processing_thrift, 'Invoicing'}}
     ].
 
 -spec get_service_spec(Name :: atom()) -> service_spec() | false.

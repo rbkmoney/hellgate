@@ -1,6 +1,8 @@
 -module(hg_invoice).
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 
+-define(NS, <<"invoice">>).
+
 %% Woody handler
 
 -behaviour(woody_server_thrift_handler).
@@ -11,13 +13,16 @@
 
 -behaviour(hg_machine).
 
+-export([namespace/0]).
+
 -export([init/3]).
 -export([process_signal/3]).
 -export([process_call/3]).
 
--export([map_event/1]).
+-export([publish_event/2]).
 
 %%
+
 -record(st, {
     invoice :: invoice(),
     payments = [] :: [payment()],
@@ -26,13 +31,14 @@
 }).
 
 -type st() :: #st{}.
+
 %%
 
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), []) ->
     {{ok, term()}, woody_client:context()} | no_return().
 
 handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
-    {InvoiceID, Context} = hg_machine:start(?MODULE, {InvoiceParams, UserInfo}, opts(Context0)),
+    {InvoiceID, Context} = start(hg_utils:unique_id(), {InvoiceParams, UserInfo}, Context0),
     {{ok, InvoiceID}, Context};
 
 handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
@@ -45,7 +51,7 @@ handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
     {{ok, History}, Context};
 
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, _Opts) ->
-    {PaymentID, Context} = hg_machine:call(InvoiceID, {start_payment, PaymentParams, UserInfo}, opts(Context0)),
+    {PaymentID, Context} = call(InvoiceID, {start_payment, PaymentParams, UserInfo}, Context0),
     {{ok, PaymentID}, Context};
 
 handle_function('GetPayment', {UserInfo, UserInfo, PaymentID}, Context0, _Opts) ->
@@ -58,20 +64,20 @@ handle_function('GetPayment', {UserInfo, UserInfo, PaymentID}, Context0, _Opts) 
     end;
 
 handle_function('Fulfill', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
-    {Result, Context} = hg_machine:call(InvoiceID, {fulfill, Reason, UserInfo}, opts(Context0)),
+    {Result, Context} = call(InvoiceID, {fulfill, Reason, UserInfo}, Context0),
     {{ok, Result}, Context};
 
 handle_function('Rescind', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
-    {Result, Context} = hg_machine:call(InvoiceID, {rescind, Reason, UserInfo}, opts(Context0)),
+    {Result, Context} = call(InvoiceID, {rescind, Reason, UserInfo}, Context0),
     {{ok, Result}, Context}.
 
 %%
 
 get_history(_UserInfo, InvoiceID, Context) ->
-    hg_machine:get_history(InvoiceID, opts(Context)).
+    hg_machine:get_history(?NS, InvoiceID, opts(Context)).
 
 get_history(_UserInfo, InvoiceID, AfterID, Limit, Context) ->
-    hg_machine:get_history(InvoiceID, AfterID, Limit, opts(Context)).
+    hg_machine:get_history(?NS, InvoiceID, AfterID, Limit, opts(Context)).
 
 get_state(UserInfo, InvoiceID, Context0) ->
     {History, Context} = get_history(UserInfo, InvoiceID, Context0),
@@ -79,41 +85,18 @@ get_state(UserInfo, InvoiceID, Context0) ->
     {St, Context}.
 
 get_public_history(UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Context) ->
-    get_public_history(UserInfo, InvoiceID, AfterID, Limit, Context).
+    hg_history:get_public_history(
+        fun (ID, Lim, Ctx) -> get_history(UserInfo, InvoiceID, ID, Lim, Ctx) end,
+        fun (Event) -> publish_event(InvoiceID, Event) end,
+        AfterID, Limit,
+        Context
+    ).
 
-get_public_history(UserInfo, InvoiceID, AfterID, undefined, Context0) ->
-    {History0, Context} = get_history(UserInfo, InvoiceID, AfterID, undefined, Context0),
-    {_LastID, History} = map_history(History0),
-    {History, Context};
+start(ID, Args, Context) ->
+    hg_machine:start(?NS, ID, Args, opts(Context)).
 
-get_public_history(_UserInfo, _InvoiceID, _AfterID, 0, Context) ->
-    {[], Context};
-get_public_history(UserInfo, InvoiceID, AfterID, N, Context0) ->
-    {History0, Context1} = get_history(UserInfo, InvoiceID, AfterID, N, Context0),
-    {LastID, History} = map_history(History0),
-    case length(History0) of
-        N when length(History) =:= N ->
-            {History, Context1};
-        N ->
-            NextRange = #payproc_EventRange{'after' = LastID, limit = N - length(History)},
-            {HistoryRest, Context2} = get_public_history(UserInfo, InvoiceID, NextRange, Context1),
-            {History ++ HistoryRest, Context2};
-        M when M < N ->
-            {History, Context1}
-    end.
-
-map_history(History) ->
-    map_history(History, undefined, []).
-
-map_history([], LastID, Evs) ->
-    {LastID, lists:reverse(Evs)};
-map_history([Ev0 = {ID, _, _, _} | Rest], _, Evs) ->
-    case map_event(Ev0) of
-        Ev when Ev /= undefined ->
-            map_history(Rest, ID, [Ev | Evs]);
-        undefined ->
-            map_history(Rest, ID, Evs)
-    end.
+call(ID, Args, Context) ->
+    hg_machine:call(?NS, ID, Args, opts(Context)).
 
 opts(Context) ->
     #{client_context => Context}.
@@ -148,24 +131,31 @@ opts(Context) ->
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
--spec map_event(hg_machine:event(ev())) ->
-    hg_payment_processing_thrift:'Event'() | undefined.
+-spec publish_event(invoice_id(), hg_machine:event(ev())) ->
+    {true, hg_machine:event_id(), hg_payment_processing_thrift:'Event'()} |
+    {false, hg_machine:event_id()}.
 
-map_event({ID, Source, Dt, {public, Seq, Ev}}) ->
-    #payproc_Event{
-        id         = ID,
+publish_event(InvoiceID, {EventID, Dt, {public, Seq, Ev}}) ->
+    {true, EventID, #payproc_Event{
+        id         = EventID,
         created_at = Dt,
-        source     = {invoice, Source},
+        source     = {invoice, InvoiceID},
         sequence   = Seq,
         payload    = Ev
-    };
-map_event(_) ->
-    undefined.
+    }};
+publish_event(_InvoiceID, {EventID, _, _}) ->
+    {false, EventID}.
 
 %%
 
+-spec namespace() ->
+    hg_machine:ns().
+
+namespace() ->
+    ?NS.
+
 -spec init(invoice_id(), {invoice_params(), user_info()}, hg_machine:context()) ->
-    {{ok, hg_machine:result(ev())}, woody_client:context()}.
+    {hg_machine:result(ev()), woody_client:context()}.
 
 init(ID, {InvoiceParams, _UserInfo}, Context) ->
     Invoice = create_invoice(ID, InvoiceParams),
@@ -173,7 +163,7 @@ init(ID, {InvoiceParams, _UserInfo}, Context) ->
     {ok(Event, #st{}, set_invoice_timer(Invoice)), Context}.
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev()), hg_machine:context()) ->
-    {{ok, hg_machine:result(ev())}, woody_client:context()}.
+    {hg_machine:result(ev()), woody_client:context()}.
 
 process_signal(timeout, History, Context) ->
     St = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
@@ -237,7 +227,7 @@ construct_payment_events(#domain_InvoicePayment{trx = Trx}, Trx = undefined, Eve
     ok | {ok, term()} | {exception, term()}.
 
 -spec process_call(call(), hg_machine:history(ev()), woody_client:context()) ->
-    {{ok, response(), hg_machine:result(ev())}, woody_client:context()}.
+    {{response(), hg_machine:result(ev())}, woody_client:context()}.
 
 process_call({start_payment, PaymentParams, _UserInfo}, History, Context) ->
     St = #st{invoice = Invoice, stage = Stage} = collapse_history(History),
@@ -281,19 +271,19 @@ set_invoice_timer(_Invoice) ->
     hg_machine_action:new().
 
 ok() ->
-    {ok, {[], hg_machine_action:new()}}.
+    {[], hg_machine_action:new()}.
 ok(Event, St) ->
     ok(Event, St, hg_machine_action:new()).
 ok(Event, St, Action) ->
-    {ok, {sequence_events(wrap_event_list(Event), St), Action}}.
+    {sequence_events(wrap_event_list(Event), St), Action}.
 
 respond(Response, Event, St, Action) ->
-    {ok, Response, {sequence_events(wrap_event_list(Event), St), Action}}.
+    {Response, {sequence_events(wrap_event_list(Event), St), Action}}.
 
 raise(Exception) ->
     raise(Exception, hg_machine_action:new()).
 raise(Exception, Action) ->
-    {ok, {exception, Exception}, {[], Action}}.
+    {{exception, Exception}, {[], Action}}.
 
 wrap_event_list(Event) when is_tuple(Event) ->
     wrap_event_list([Event]);
@@ -333,9 +323,7 @@ create_payment(V = #payproc_InvoicePaymentParams{}, Invoice) ->
         id           = create_payment_id(Invoice),
         created_at   = get_datetime_utc(),
         status       = ?pending(),
-        payer        = V#payproc_InvoicePaymentParams.payer,
-        payment_tool = V#payproc_InvoicePaymentParams.payment_tool,
-        session      = V#payproc_InvoicePaymentParams.session
+        payer        = V#payproc_InvoicePaymentParams.payer
     }.
 
 create_payment_id(Invoice = #domain_Invoice{}) ->
