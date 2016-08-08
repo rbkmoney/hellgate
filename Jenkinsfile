@@ -1,35 +1,34 @@
 #!groovy
 
-// ToDo(arentrue): change to build(), (same approach as in erlang-service-template)
-// as soon as the PR in build_utils is merged to master.
-node('docker-host') {
+def finalHook = {
+  runStage('store CT logs') {
+    archive '_build/test/logs/'
+  }
+}
+
+build('hellgate', 'docker-host', finalHook) {
   checkoutRepo()
   loadBuildUtils()
 
-  def pipeline
+  def pipeDefault
   runStage('load pipeline') {
     env.JENKINS_LIB = "build_utils/jenkins_lib"
-    pipeline = load("${env.JENKINS_LIB}/pipeline.groovy")
+    pipeDefault = load("${env.JENKINS_LIB}/pipeDefault.groovy")
   }
 
-  pipeline("hellgate", '_build/') {
-
+  pipeDefault() {
     runStage('compile') {
       sh 'make wc_compile'
     }
-
     runStage('lint') {
       sh 'make wc_lint'
     }
-
     runStage('xref') {
       sh 'make wc_xref'
     }
-
     runStage('dialyze') {
       sh 'make wc_dialyze'
     }
-
     runStage('test') {
       sh "make wdeps_test"
     }
@@ -38,11 +37,9 @@ node('docker-host') {
       runStage('make release') {
         sh "make wc_release"
       }
-
       runStage('build image') {
         sh "make build_image"
       }
-
       runStage('push image') {
         sh "make push_image"
       }
