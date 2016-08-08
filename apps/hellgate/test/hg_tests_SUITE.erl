@@ -244,9 +244,11 @@ make_payment_params() ->
 
 make_payment_params(PaymentTool, Session) ->
     #payproc_InvoicePaymentParams{
-        payer = #domain_Payer{},
-        payment_tool = PaymentTool,
-        session = Session
+        payer = #domain_Payer{
+            payment_tool = PaymentTool,
+            session = Session,
+            client_info = #domain_ClientInfo{}
+        }
     }.
 
 make_payment_tool() ->
