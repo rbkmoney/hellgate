@@ -231,6 +231,7 @@ make_invoice_params(Product, Due, Amount, Context) when is_integer(Amount) ->
     make_invoice_params(Product, Due, {Amount, <<"RUB">>}, Context);
 make_invoice_params(Product, Due, {Amount, Currency}, Context) ->
     #payproc_InvoiceParams{
+        shop_id  = <<"THRIFT-SHOP">>,
         product  = Product,
         amount   = Amount,
         due      = format_datetime(Due),

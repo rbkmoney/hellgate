@@ -157,8 +157,8 @@ namespace() ->
 -spec init(invoice_id(), {invoice_params(), user_info()}, hg_machine:context()) ->
     {hg_machine:result(ev()), woody_client:context()}.
 
-init(ID, {InvoiceParams, _UserInfo}, Context) ->
-    Invoice = create_invoice(ID, InvoiceParams),
+init(ID, {InvoiceParams, UserInfo}, Context) ->
+    Invoice = create_invoice(ID, InvoiceParams, UserInfo),
     Event = {public, ?invoice_ev(?invoice_created(Invoice))},
     {ok(Event, #st{}, set_invoice_timer(Invoice)), Context}.
 
@@ -301,10 +301,12 @@ sequence_event_({private, Ev}, Seq) ->
 
 %%
 
-create_invoice(ID, V = #payproc_InvoiceParams{}) ->
+create_invoice(ID, V = #payproc_InvoiceParams{}, #payproc_UserInfo{id = UserID}) ->
     Revision = hg_domain:head(),
     #domain_Invoice{
         id              = ID,
+        shop_id         = V#payproc_InvoiceParams.shop_id,
+        owner           = #domain_PartyRef{id = UserID, revision = 1},
         created_at      = get_datetime_utc(),
         status          = ?unpaid(),
         domain_revision = Revision,
@@ -318,11 +320,12 @@ create_invoice(ID, V = #payproc_InvoiceParams{}) ->
         }
     }.
 
-create_payment(V = #payproc_InvoicePaymentParams{}, Invoice) ->
+create_payment(V = #payproc_InvoicePaymentParams{}, Invoice = #domain_Invoice{cost = Cost}) ->
     #domain_InvoicePayment{
         id           = create_payment_id(Invoice),
         created_at   = get_datetime_utc(),
         status       = ?pending(),
+        cost         = Cost,
         payer        = V#payproc_InvoicePaymentParams.payer
     }.
 
@@ -363,7 +366,7 @@ fulfill_invoice(_Reason, Invoice) ->
 -spec collapse_history([ev()]) -> st().
 
 collapse_history(History) ->
-    lists:foldl(fun ({_ID, _, _, Ev}, St) -> merge_history(Ev, St) end, #st{}, History).
+    lists:foldl(fun ({_ID, _, Ev}, St) -> merge_history(Ev, St) end, #st{}, History).
 
 merge_history({public, Seq, ?invoice_ev(Event)}, St) ->
     merge_invoice_event(Event, St#st{sequence = Seq});
