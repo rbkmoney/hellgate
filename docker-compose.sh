@@ -11,7 +11,7 @@ services:
     depends_on:
       - machinegun
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/mg_prototype:87bef0b
+    image: dr.rbkmoney.com/rbkmoney/mg_prototype:3455e7b
     command: /opt/mgun/bin/mgun foreground
 networks:
   default:
