@@ -170,7 +170,7 @@ handle_function('processCall', {Args}, Context0, [Ns]) ->
 
 %%
 
--spec dispatch_signal(ns(), Signal, hg_machine:history(), opts()) ->
+-spec dispatch_signal(ns(), Signal, hg_machine:history(), woody_client:context()) ->
     {Result, woody_client:context()} when
         Signal ::
             hg_state_processing_thrift:'InitSignal'() |
@@ -179,21 +179,21 @@ handle_function('processCall', {Args}, Context0, [Ns]) ->
         Result ::
             hg_state_processing_thrift:'SignalResult'().
 
-dispatch_signal(Ns, #'InitSignal'{id = ID, arg = Payload}, [], #{client_context := Context0}) ->
+dispatch_signal(Ns, #'InitSignal'{id = ID, arg = Payload}, [], Context0) ->
     Args = unwrap_args(Payload),
     _ = lager:debug("dispatch init with id = ~s and args = ~p", [ID, Args]),
     Module = get_handler_module(Ns),
     {Result, #{client_context := Context}} = Module:init(ID, Args, create_context(Context0)),
     {marshal_signal_result(Result), Context};
 
-dispatch_signal(Ns, #'TimeoutSignal'{}, History0, #{client_context := Context0}) ->
+dispatch_signal(Ns, #'TimeoutSignal'{}, History0, Context0) ->
     History = unwrap_history(History0),
     _ = lager:debug("dispatch timeout with history = ~p", [History]),
     Module = get_handler_module(Ns),
     {Result, #{client_context := Context}} = Module:process_signal(timeout, History, create_context(Context0)),
     {marshal_signal_result(Result), Context};
 
-dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, History0, _Opts = #{client_context := Context0}) ->
+dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, History0, Context0) ->
     Args = unwrap_args(Payload),
     History = unwrap_history(History0),
     _ = lager:debug("dispatch repair with args = ~p and history: ~p", [Args, History]),
@@ -208,12 +208,12 @@ marshal_signal_result({Events, Action}) ->
         action = Action
     }.
 
--spec dispatch_call(ns(), Call, hg_machine:history(), opts()) ->
+-spec dispatch_call(ns(), Call, hg_machine:history(), woody_client:context()) ->
     {Result, woody_client:context()} when
         Call :: hg_state_processing_thrift:'Call'(),
         Result :: hg_state_processing_thrift:'CallResult'().
 
-dispatch_call(Ns, Payload, History0, #{client_context := Context0}) ->
+dispatch_call(Ns, Payload, History0, Context0) ->
     Args = unwrap_args(Payload),
     History = unwrap_history(History0),
     _ = lager:debug("dispatch call with args = ~p and history: ~p", [Args, History]),
