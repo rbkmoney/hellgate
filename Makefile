@@ -2,7 +2,7 @@ REBAR := $(shell which rebar3 2>/dev/null || which ./rebar3)
 SUBMODULES = apps/hg_proto/damsel build_utils
 SUBTARGETS = $(patsubst %,%/.git,$(SUBMODULES))
 
-UTILS_PATH := build_utils/make_lib
+UTILS_PATH := build_utils
 TEMPLATES_PATH := .
 
 # Name of the service
@@ -23,10 +23,10 @@ CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start dev
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
-all: compile
+all: submodules compile
 
--include $(UTILS_PATH)/utils_container.mk
--include $(UTILS_PATH)/utils_image.mk
+-include $(UTILS_PATH)/make_lib/utils_container.mk
+-include $(UTILS_PATH)/make_lib/utils_image.mk
 
 .PHONY: $(CALL_W_CONTAINER)
 
@@ -40,10 +40,11 @@ submodules: $(SUBTARGETS)
 rebar-update:
 	$(REBAR) update
 
-compile: submodules rebar-update
+compile: rebar-update
+	echo "GIT_SSH_COMMAND=$(GIT_SSH_COMMAND)"
 	$(REBAR) compile
 
-xref: submodules
+xref:
 	$(REBAR) xref
 
 lint:
@@ -52,10 +53,10 @@ lint:
 dialyze:
 	$(REBAR) dialyzer
 
-start: submodules
+start:
 	$(REBAR) run
 
-devrel: submodules
+devrel:
 	$(REBAR) release
 
 release: distclean
@@ -69,6 +70,6 @@ distclean:
 	rm -rfv _build _builds _cache _steps _temp
 
 # CALL_W_CONTAINER
-test: submodules
+test:
 	$(REBAR) ct
 
