@@ -271,7 +271,7 @@ strip_event(#payproc_Event{payload = Payload}) ->
     Payload.
 
 issue_service_call(ServiceName, Function, Args, Client = #cl{context = Context, root_url = RootUrl}) ->
-    {_Name, Path, Service} = hg_proto:get_service_spec(ServiceName),
+    {Path, Service} = hg_proto:get_service_spec(ServiceName),
     Url = iolist_to_binary([RootUrl, Path]),
     Request = {Service, Function, Args},
     {Result, ContextNext} = woody_client:call_safe(Context, Request, #{url => Url}),

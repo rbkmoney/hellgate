@@ -235,7 +235,7 @@ create_context(ClientContext) ->
 %%
 
 -type service_handler() ::
-    {Path :: string(), {woody_t:service(), woody_t:handler(), ns()}}.
+    {Path :: string(), {woody_t:service(), woody_t:handler(), [ns()]}}.
 
 -spec get_child_spec([MachineHandler :: module()]) ->
     supervisor:child_spec().
@@ -251,10 +251,12 @@ get_child_spec(MachineHandlers) ->
     [service_handler()].
 
 get_service_handlers(MachineHandlers) ->
-    Service = {hg_state_processing_thrift, 'Processor'},
-    PathPrefix = "/v1/stateproc/",
-    [{PathPrefix ++ binary_to_list(Ns), {Service, ?MODULE, [Ns]}}
-        || MH <- MachineHandlers, Ns <- [MH:namespace()]].
+    lists:map(fun get_service_handler/1, MachineHandlers).
+
+get_service_handler(MachineHandler) ->
+    Ns = MachineHandler:namespace(),
+    {Path, Service} = hg_proto:get_service_spec(processor, #{namespace => Ns}),
+    {Path, {Service, ?MODULE, [Ns]}}.
 
 %%
 

@@ -1,26 +1,31 @@
 -module(hg_proto).
 
--export([get_service_specs/0]).
 -export([get_service_spec/1]).
+-export([get_service_spec/2]).
 
 -export_type([service_spec/0]).
 
 %%
 
--type service_spec() :: {Name :: atom(), Path :: string(), Service :: {module(), atom()}}.
+-define(VERSION_PREFIX, "/v1").
 
--spec get_service_specs() -> [service_spec()].
+-type service_spec() :: {Path :: string(), Service :: {module(), atom()}}.
 
-get_service_specs() ->
-    VersionPrefix = "/v1",
-    [
-        {eventsink, VersionPrefix ++ "/processing/eventsink",
-            {hg_payment_processing_thrift, 'EventSink'}},
-        {invoicing, VersionPrefix ++ "/processing/invoicing",
-            {hg_payment_processing_thrift, 'Invoicing'}}
-    ].
-
--spec get_service_spec(Name :: atom()) -> service_spec() | false.
+-spec get_service_spec(Name :: atom()) -> service_spec().
 
 get_service_spec(Name) ->
-    lists:keyfind(Name, 1, get_service_specs()).
+    get_service_spec(Name, #{}).
+
+-spec get_service_spec(Name :: atom(), Opts :: #{}) -> service_spec().
+
+get_service_spec(eventsink, #{}) ->
+    Service = {hg_payment_processing_thrift, 'EventSink'},
+    {?VERSION_PREFIX ++ "/processing/eventsink", Service};
+
+get_service_spec(invoicing, #{}) ->
+    Service = {hg_payment_processing_thrift, 'Invoicing'},
+    {?VERSION_PREFIX ++ "/processing/invoicing", Service};
+
+get_service_spec(processor, #{namespace := Ns}) when is_binary(Ns) ->
+    Service = {hg_state_processing_thrift, 'Processor'},
+    {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), Service}.

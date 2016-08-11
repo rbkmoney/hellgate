@@ -15,9 +15,9 @@
     supervisor:child_spec().
 
 get_child_spec(Host, Port) ->
-    {Name, Path, Service} = get_service_spec(),
+    {Path, Service} = get_service_spec(),
     woody_server:child_spec(
-        Name,
+        ?MODULE,
         #{
             ip => hg_utils:get_hostname_ip(Host),
             port => Port,
@@ -31,12 +31,11 @@ get_child_spec(Host, Port) ->
     woody_t:url().
 
 get_url(Host, Port) ->
-    {_Name, Path, _Service} = get_service_spec(),
+    {Path, _Service} = get_service_spec(),
     iolist_to_binary(["http://", Host, ":", integer_to_list(Port), Path]).
 
 get_service_spec() ->
-    {?MODULE, "/test/proxy/provider/dummy",
-        {hg_proxy_provider_thrift, 'ProviderProxy'}}.
+    {"/test/proxy/provider/dummy", {hg_proxy_provider_thrift, 'ProviderProxy'}}.
 
 %%
 

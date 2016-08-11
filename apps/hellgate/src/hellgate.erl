@@ -62,7 +62,7 @@ get_api_child_spec(MachineHandlers) ->
     ).
 
 construct_service_handler(Name, Module, Opts) ->
-    {Name, Path, Service} = hg_proto:get_service_spec(Name),
+    {Path, Service} = hg_proto:get_service_spec(Name),
     {Path, {Service, Module, Opts}}.
 
 %% Application callbacks
