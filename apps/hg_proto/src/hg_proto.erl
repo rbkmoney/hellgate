@@ -22,6 +22,10 @@ get_service_spec(eventsink, #{}) ->
     Service = {hg_payment_processing_thrift, 'EventSink'},
     {?VERSION_PREFIX ++ "/processing/eventsink", Service};
 
+get_service_spec(party_management, #{}) ->
+    Service = {hg_payment_processing_thrift, 'PartyManagement'},
+    {?VERSION_PREFIX ++ "/processing/partymgmt", Service};
+
 get_service_spec(invoicing, #{}) ->
     Service = {hg_payment_processing_thrift, 'Invoicing'},
     {?VERSION_PREFIX ++ "/processing/invoicing", Service};

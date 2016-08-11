@@ -12,6 +12,7 @@
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.0.2">>},2},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.2.1">>},2},
+ {<<"rfc3339">>,{pkg,<<"rfc3339">>,<<"0.9.0">>},0},
  {<<"snowflake">>,
   {git,"https://github.com/tel/snowflake.git",
        {ref,"7a8eab0f12757133623b2151a7913b6d2707b629"}},

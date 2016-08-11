@@ -1,4 +1,4 @@
--module(hg_tests_SUITE).
+-module(hg_invoice_tests_SUITE).
 -include_lib("common_test/include/ct.hrl").
 
 -export([all/0]).
@@ -7,8 +7,6 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
--export([no_events/1]).
--export([events_observed/1]).
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancelled/1]).
 -export([payment_success/1]).
@@ -38,11 +36,10 @@ init([]) ->
 
 all() ->
     [
-        no_events,
-        events_observed,
         invoice_cancellation,
         overdue_invoice_cancelled,
         payment_success,
+
         consistent_history
     ].
 
@@ -51,19 +48,8 @@ all() ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
-    Host = "hellgate",
-    Port = 8022,
-    RootUrl = "http://" ++ Host ++ ":" ++ integer_to_list(Port),
-    Apps =
-        hg_ct_helper:start_app(lager) ++
-        hg_ct_helper:start_app(woody) ++
-        hg_ct_helper:start_app(hellgate, [
-            {host, Host},
-            {port, Port},
-            {automaton_service_url, <<"http://machinegun:8022/v1/automaton">>},
-            {eventsink_service_url, <<"http://machinegun:8022/v1/event_sink">>}
-        ]),
-    [{root_url, RootUrl}, {apps, lists:reverse(Apps)} | C].
+    {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate]),
+    [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.
 
@@ -73,25 +59,16 @@ end_per_suite(C) ->
 %% tests
 
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
--include("events.hrl").
+-include("invoice_events.hrl").
 
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 
--define(event(ID, InvoiceID, Seq, Payload),
-    #payproc_Event{
-        id = ID,
-        source = {invoice, InvoiceID},
-        sequence = Seq,
-        payload = Payload
-    }
-).
-
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(_Name, C) ->
-    Client = hg_client:new(?config(root_url), make_userinfo()),
+    Client = hg_client:start_link(?config(root_url), make_userinfo()),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [{client, Client}, {test_sup, SupPid} | C].
 
@@ -101,34 +78,6 @@ end_per_testcase(_Name, C) ->
     _ = unlink(?config(test_sup)),
     _ = application:set_env(hellgate, provider_proxy_url, undefined),
     exit(?config(test_sup), shutdown).
-
--spec no_events(config()) -> _ | no_return().
-
-no_events(C) ->
-    Client = ?config(client),
-    none = hg_client:get_last_event_id(Client).
-
--spec events_observed(config()) -> _ | no_return().
-
-events_observed(C) ->
-    Client = ?config(client),
-    InvoiceParams = make_invoice_params(<<"rubberduck">>, 10000),
-    {ok, InvoiceID1} = hg_client:create_invoice(InvoiceParams, Client),
-    ok = hg_client:rescind_invoice(InvoiceID1, <<"die">>, Client),
-    {ok, InvoiceID2} = hg_client:create_invoice(InvoiceParams, Client),
-    ok = hg_client:rescind_invoice(InvoiceID2, <<"noway">>, Client),
-    {ok, Events1} = hg_client:pull_events(2, 3000, Client),
-    {ok, Events2} = hg_client:pull_events(2, 3000, Client),
-    [
-        ?event(ID1, InvoiceID1, 1, ?invoice_ev(?invoice_created(?invoice_w_status(?unpaid())))),
-        ?event(ID2, InvoiceID1, 2, ?invoice_ev(?invoice_status_changed(?cancelled(_))))
-    ] = Events1,
-    [
-        ?event(ID3, InvoiceID2, 1, ?invoice_ev(?invoice_created(?invoice_w_status(?unpaid())))),
-        ?event(ID4, InvoiceID2, 2, ?invoice_ev(?invoice_status_changed(?cancelled(_))))
-    ] = Events2,
-    IDs = [ID1, ID2, ID3, ID4],
-    IDs = lists:sort(IDs).
 
 -spec invoice_cancellation(config()) -> _ | no_return().
 
@@ -165,24 +114,15 @@ payment_success(C) ->
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, 1000, Client),
     timeout = next_event(InvoiceID, 2000, Client).
 
+%%
+
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
     Client = ?config(client),
-    {ok, Events} = hg_client:pull_events(_N = 1000, 1000, Client),
-    InvoiceSeqs = orddict:to_list(lists:foldl(
-        fun (?event(_ID, InvoiceID, Seq, _), Acc) ->
-            orddict:update(InvoiceID, fun (Seqs) -> Seqs ++ [Seq] end, [Seq], Acc)
-        end,
-        orddict:new(),
-        Events
-    )),
-    ok = lists:foreach(
-        fun (E = {InvoiceID, Seqs}) ->
-            E = {InvoiceID, lists:seq(1, length(Seqs))}
-        end,
-        InvoiceSeqs
-    ).
+    {ok, Events} = hg_client:pull_events(_N = 5000, 1000, Client),
+    ok = hg_eventsink_history:assert_total_order(Events),
+    ok = hg_eventsink_history:assert_contiguous_sequences(Events).
 
 %%
 
@@ -222,22 +162,10 @@ make_userinfo() ->
     #payproc_UserInfo{id = <<?MODULE_STRING>>}.
 
 make_invoice_params(Product, Cost) ->
-    make_invoice_params(Product, make_due_date(), Cost).
+    hg_ct_helper:make_invoice_params(<<?MODULE_STRING>>, Product, Cost).
 
 make_invoice_params(Product, Due, Cost) ->
-    make_invoice_params(Product, Due, Cost, []).
-
-make_invoice_params(Product, Due, Amount, Context) when is_integer(Amount) ->
-    make_invoice_params(Product, Due, {Amount, <<"RUB">>}, Context);
-make_invoice_params(Product, Due, {Amount, Currency}, Context) ->
-    #payproc_InvoiceParams{
-        shop_id  = <<"THRIFT-SHOP">>,
-        product  = Product,
-        amount   = Amount,
-        due      = format_datetime(Due),
-        currency = #domain_CurrencyRef{symbolic_code = Currency},
-        context  = term_to_binary(Context)
-    }.
+    hg_ct_helper:make_invoice_params(<<?MODULE_STRING>>, Product, Due, Cost).
 
 make_payment_params() ->
     {PaymentTool, Session} = make_payment_tool(),
@@ -263,13 +191,5 @@ make_payment_tool() ->
         <<"SESSION42">>
     }.
 
-make_due_date() ->
-    make_due_date(24 * 60 * 60).
-
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
-
-format_datetime(Datetime = {_, _}) ->
-    genlib_format:format_datetime_iso8601(Datetime);
-format_datetime(Timestamp) when is_integer(Timestamp) ->
-    format_datetime(genlib_time:unixtime_to_daytime(Timestamp)).

@@ -42,21 +42,19 @@
     {{ok, term()}, woody_client:context()} | no_return().
 
 handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
-    {InvoiceID, Context} = start(hg_utils:unique_id(), {InvoiceParams, UserInfo}, Context0),
-    {{ok, InvoiceID}, Context};
+    {ok, Context} = start(ID = hg_utils:unique_id(), {InvoiceParams, UserInfo}, Context0),
+    {{ok, ID}, Context};
 
 handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, InvoiceID, Context0),
-    InvoiceState = get_invoice_state(St),
-    {{ok, InvoiceState}, Context};
+    {{ok, get_invoice_state(St)}, Context};
 
 handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
     {History, Context} = get_public_history(UserInfo, InvoiceID, Range, Context0),
     {{ok, History}, Context};
 
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, _Opts) ->
-    {PaymentID, Context} = call(InvoiceID, {start_payment, PaymentParams, UserInfo}, Context0),
-    {{ok, PaymentID}, Context};
+    call(InvoiceID, {start_payment, PaymentParams, UserInfo}, Context0);
 
 handle_function('GetPayment', {UserInfo, UserInfo, PaymentID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, deduce_invoice_id(PaymentID), Context0),
@@ -68,25 +66,22 @@ handle_function('GetPayment', {UserInfo, UserInfo, PaymentID}, Context0, _Opts) 
     end;
 
 handle_function('Fulfill', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
-    {Result, Context} = call(InvoiceID, {fulfill, Reason, UserInfo}, Context0),
-    {{ok, Result}, Context};
+    call(InvoiceID, {fulfill, Reason, UserInfo}, Context0);
 
 handle_function('Rescind', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
-    {Result, Context} = call(InvoiceID, {rescind, Reason, UserInfo}, Context0),
-    {{ok, Result}, Context}.
+    call(InvoiceID, {rescind, Reason, UserInfo}, Context0).
 
 %%
 
 get_history(_UserInfo, InvoiceID, Context) ->
-    hg_machine:get_history(?NS, InvoiceID, opts(Context)).
+    map_error(hg_machine:get_history(?NS, InvoiceID, opts(Context))).
 
 get_history(_UserInfo, InvoiceID, AfterID, Limit, Context) ->
-    hg_machine:get_history(?NS, InvoiceID, AfterID, Limit, opts(Context)).
+    map_error(hg_machine:get_history(?NS, InvoiceID, AfterID, Limit, opts(Context))).
 
 get_state(UserInfo, InvoiceID, Context0) ->
     {{History, _LastID}, Context} = get_history(UserInfo, InvoiceID, Context0),
-    St = collapse_history(History),
-    {St, Context}.
+    {collapse_history(History), Context}.
 
 get_public_history(UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Context) ->
     hg_history:get_public_history(
@@ -102,10 +97,17 @@ publish_invoice_event(_Source, {_ID, _Dt, _Event}) ->
     false.
 
 start(ID, Args, Context) ->
-    hg_machine:start(?NS, ID, Args, opts(Context)).
+    map_error(hg_machine:start(?NS, ID, Args, opts(Context))).
 
 call(ID, Args, Context) ->
-    hg_machine:call(?NS, ID, Args, opts(Context)).
+    map_error(hg_machine:call(?NS, ID, Args, opts(Context))).
+
+map_error({{error, notfound}, Context}) ->
+    throw({#payproc_UserInvoiceNotFound{}, Context});
+map_error({{error, Reason}, _Context}) ->
+    error(Reason);
+map_error({Ok, Context}) ->
+    {Ok, Context}.
 
 opts(Context) ->
     #{client_context => Context}.
@@ -133,7 +135,7 @@ opts(Context) ->
 -type private_event() ::
     {payment_state_changed, payment_id(), payment_st()}.
 
--include("events.hrl").
+-include("invoice_events.hrl").
 
 -define(invalid_invoice_status(Invoice),
     #payproc_InvalidInvoiceStatus{status = Invoice#domain_Invoice.status}).
@@ -242,7 +244,7 @@ process_call({start_payment, PaymentParams, _UserInfo}, History, Context) ->
                 {public, ?invoice_ev(?payment_ev(?payment_started(Payment)))},
                 {private, {payment_state_changed, PaymentID, undefined}}
             ],
-            {respond({ok, PaymentID}, Events, St, hg_machine_action:instant()), Context};
+            {respond(PaymentID, Events, St, hg_machine_action:instant()), Context};
         {processing_payment, PaymentID, _} ->
             {raise(?payment_pending(PaymentID)), Context};
         _ ->
@@ -280,7 +282,7 @@ ok(Event, St, Action) ->
     {sequence_events(wrap_event_list(Event), St), Action}.
 
 respond(Response, Event, St, Action) ->
-    {Response, {sequence_events(wrap_event_list(Event), St), Action}}.
+    {{ok, Response}, {sequence_events(wrap_event_list(Event), St), Action}}.
 
 raise(Exception) ->
     raise(Exception, hg_machine_action:new()).
@@ -309,7 +311,7 @@ create_invoice(ID, V = #payproc_InvoiceParams{}, #payproc_UserInfo{id = UserID})
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
         owner           = #domain_PartyRef{id = UserID, revision = 1},
-        created_at      = get_datetime_utc(),
+        created_at      = hg_datetime:format_now(),
         status          = ?unpaid(),
         domain_revision = Revision,
         due             = V#payproc_InvoiceParams.due,
@@ -325,7 +327,7 @@ create_invoice(ID, V = #payproc_InvoiceParams{}, #payproc_UserInfo{id = UserID})
 create_payment(V = #payproc_InvoicePaymentParams{}, Invoice = #domain_Invoice{cost = Cost}) ->
     #domain_InvoicePayment{
         id           = create_payment_id(Invoice),
-        created_at   = get_datetime_utc(),
+        created_at   = hg_datetime:format_now(),
         status       = ?pending(),
         cost         = Cost,
         payer        = V#payproc_InvoicePaymentParams.payer
@@ -413,6 +415,3 @@ format_reason({Pre, V}) ->
     genlib:format("~s: ~s", [Pre, genlib:to_binary(V)]);
 format_reason(V) ->
     genlib:to_binary(V).
-
-get_datetime_utc() ->
-    genlib_format:format_datetime_iso8601(calendar:universal_time()).

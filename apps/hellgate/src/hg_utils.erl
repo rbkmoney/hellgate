@@ -1,7 +1,6 @@
 -module(hg_utils).
 
 -export([unique_id/0]).
--export([shift_datetime/2]).
 -export([logtag_process/2]).
 -export([get_hostname_ip/1]).
 
@@ -12,24 +11,6 @@
 unique_id() ->
     <<ID:64>> = snowflake:new(),
     genlib_format:format_int_base(ID, 62).
-
-%%
-
--type seconds() :: integer().
-
--type dt() :: calendar:datetime() | hg_base_thrift:'Timestamp'().
-
--spec shift_datetime(dt(), seconds()) -> dt().
-
-shift_datetime(Dt, Seconds) when is_binary(Dt) ->
-    format_dt(shift_datetime(parse_dt(Dt), Seconds));
-shift_datetime(Dt = {_, _}, Seconds) ->
-    calendar:gregorian_seconds_to_datetime(calendar:datetime_to_gregorian_seconds(Dt) + Seconds).
-
-format_dt(Dt) ->
-    genlib_format:format_datetime_iso8601(Dt).
-parse_dt(Dt) ->
-    genlib_format:parse_datetime_iso8601(Dt).
 
 %%
 

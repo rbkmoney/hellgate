@@ -1,22 +1,36 @@
 -module(hg_client).
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 
--export([new/2]).
--export([new/3]).
+-export([start/2]).
+-export([start_link/2]).
+-export([stop/1]).
+
+%% Invoicing
 
 -export([create_invoice/2]).
 -export([get_invoice/2]).
 -export([fulfill_invoice/3]).
 -export([rescind_invoice/3]).
 -export([start_payment/3]).
-
 -export([pull_invoice_event/2]).
 -export([pull_invoice_event/3]).
 
+%% Partying
+
+-export([create_party/2]).
+-export([get_party/2]).
+-export([block_party/3]).
+-export([unblock_party/3]).
+-export([suspend_party/2]).
+-export([activate_party/2]).
+-export([get_claim/3]).
+-export([pull_party_event/2]).
+-export([pull_party_event/3]).
+
+%% Eventsink
+
 -export([get_last_event_id/1]).
 -export([pull_events/3]).
-
--export_type([t/0]).
 
 %%
 
@@ -41,27 +55,41 @@
 
 -opaque t() :: pid().
 
+-export_type([t/0]).
+
+-type machine_id() :: hg_base_thrift:'ID'().
 -type user_info() :: hg_payment_processing_thrift:'UserInfo'().
+-type party_id() :: hg_domain_thrift:'PartyID'().
+-type claim_id() :: hg_payment_processing_thrift:'ClaimID'().
 -type invoice_id() :: hg_domain_thrift:'InvoiceID'().
 -type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
 -type event_id() :: hg_base_thrift:'EventID'().
 -type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: hg_payment_processing_thrift:'InvoicePaymentParams'().
 
--spec new(woody_t:url(), user_info()) -> t().
+-spec start(woody_t:url(), user_info()) -> t().
 
-new(RootUrl, UserInfo) ->
-    new(RootUrl, UserInfo, construct_context()).
+start(RootUrl, UserInfo) ->
+    start(start, RootUrl, UserInfo, construct_context()).
+
+-spec start_link(woody_t:url(), user_info()) -> t().
+
+start_link(RootUrl, UserInfo) ->
+    start(start_link, RootUrl, UserInfo, construct_context()).
+
+start(Mode, RootUrl, UserInfo, Context) ->
+    {ok, Pid} = gen_server:Mode(?MODULE, {RootUrl, UserInfo, Context}, []),
+    Pid.
 
 construct_context() ->
     ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
     woody_client:new_context(ReqID, ?MODULE).
 
--spec new(woody_t:url(), user_info(), woody_client:context()) -> t().
+-spec stop(t()) -> ok.
 
-new(RootUrl, UserInfo, Context) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, {RootUrl, UserInfo, Context}, []),
-    Pid.
+stop(Client) ->
+    _ = exit(Client, shutdown),
+    ok.
 
 %%
 
@@ -106,7 +134,65 @@ pull_invoice_event(InvoiceID, Client) ->
 
 pull_invoice_event(InvoiceID, Timeout, Client) ->
     % FIXME: infinity sounds dangerous
-    gen_server:call(Client, {pull_invoice_event, InvoiceID, Timeout}, infinity).
+    gen_server:call(Client, {pull_machine_event, {invoice, InvoiceID}, Timeout}, infinity).
+
+%%
+
+-spec create_party(party_id(), t()) ->
+    ok | woody_client:result_error().
+
+create_party(PartyID, Client) ->
+    call_party_mgmt(Client, 'Create', [PartyID]).
+
+-spec get_party(party_id(), t()) ->
+    {ok, hg_payment_processing_thrift:'PartyState'()} | woody_client:result_error().
+
+get_party(PartyID, Client) ->
+    call_party_mgmt(Client, 'Get', [PartyID]).
+
+-spec block_party(party_id(), binary(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+block_party(PartyID, Reason, Client) ->
+    call_party_mgmt(Client, 'Block', [PartyID, Reason]).
+
+-spec unblock_party(party_id(), binary(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+unblock_party(PartyID, Reason, Client) ->
+    call_party_mgmt(Client, 'Unblock', [PartyID, Reason]).
+
+-spec suspend_party(party_id(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+suspend_party(PartyID, Client) ->
+    call_party_mgmt(Client, 'Suspend', [PartyID]).
+
+-spec activate_party(party_id(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+activate_party(PartyID, Client) ->
+    call_party_mgmt(Client, 'Activate', [PartyID]).
+
+-spec get_claim(party_id(), claim_id(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+get_claim(PartyID, ID, Client) ->
+    call_party_mgmt(Client, 'GetClaim', [PartyID, ID]).
+
+-spec pull_party_event(party_id(), t()) ->
+    {ok, tuple()} | timeout | woody_client:result_error().
+
+pull_party_event(PartyID, Client) ->
+    pull_party_event(PartyID, ?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
+
+-spec pull_party_event(party_id(), timeout(), t()) ->
+    {ok, tuple()} | timeout | woody_client:result_error().
+
+pull_party_event(PartyID, Timeout, Client) ->
+    gen_server:call(Client, {pull_machine_event, {party, PartyID}, Timeout}, infinity).
+
+%%
 
 -spec get_last_event_id(t()) ->
     {ok, event_id()} | none | woody_client:result_error().
@@ -127,11 +213,16 @@ get_last_event_id(Client) ->
 pull_events(N, Timeout, Client) when N > 0 ->
     gen_server:call(Client, {pull_events, N, Timeout}, infinity).
 
+%%
+
 call_invoicing(Client, Function, Args) ->
-    gen_server:call(Client, {call_invoicing, Function, Args}).
+    gen_server:call(Client, {call_w_user_info, invoicing, Function, Args}).
+
+call_party_mgmt(Client, Function, Args) ->
+    gen_server:call(Client, {call_w_user_info, party_management, Function, Args}).
 
 call_eventsink(Client, Function, Args) ->
-    gen_server:call(Client, {call_eventsink, Function, Args}).
+    gen_server:call(Client, {call, eventsink, Function, Args}).
 
 %%
 
@@ -139,8 +230,8 @@ call_eventsink(Client, Function, Args) ->
     root_url                  :: woody_t:url(),
     user_info                 :: user_info(),
     context                   :: woody_client:context(),
-    last_event                :: event_id(),
-    last_invoice_events = #{} :: #{invoice_id() => event_id()}
+    last_sink_event           :: event_id(),
+    last_machine_events = #{} :: #{{atom(), machine_id()} => event_id()}
 }).
 
 -type cl() :: #cl{}.
@@ -155,17 +246,17 @@ init({RootUrl, UserInfo, Context}) ->
 -spec handle_call(term(), callref(), cl()) ->
     {reply, term(), cl()} | {noreply, cl()}.
 
-handle_call({call_invoicing, Function, Args}, _From, Client) ->
+handle_call({call_w_user_info, Service, Function, Args}, _From, Client) ->
     UserInfo = get_user_info(Client),
-    {Result, ClientNext} = issue_service_call(invoicing, Function, [UserInfo | Args], Client),
+    {Result, ClientNext} = issue_service_call(Service, Function, [UserInfo | Args], Client),
     {reply, Result, ClientNext};
 
-handle_call({call_eventsink, Function, Args}, _From, Client) ->
-    {Result, ClientNext} = issue_service_call(eventsink, Function, Args, Client),
+handle_call({call, Service, Function, Args}, _From, Client) ->
+    {Result, ClientNext} = issue_service_call(Service, Function, Args, Client),
     {reply, Result, ClientNext};
 
-handle_call({pull_invoice_event, InvoiceID, Timeout}, _From, Client) ->
-    {Result, ClientNext} = poll_next_event(InvoiceID, Timeout, Client),
+handle_call({pull_machine_event, MachineID, Timeout}, _From, Client) ->
+    {Result, ClientNext} = poll_next_machine_event(MachineID, Timeout, Client),
     {reply, Result, ClientNext};
 
 handle_call({pull_events, N, Timeout}, _From, Client) ->
@@ -206,43 +297,50 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %%
 
-poll_next_event(InvoiceID, Timeout, Client) ->
-    Call = fun (Range, Cl) ->
-        issue_service_call(invoicing, 'GetEvents', [get_user_info(Cl), InvoiceID, Range], Cl)
-    end,
-    case poll_events(get_last_invoice_event(InvoiceID, Client), 1, Call, Timeout, [], Client) of
+poll_next_machine_event(MachineID, Timeout, Client) ->
+    Call = get_events_call(MachineID),
+    case poll_events(get_last_machine_event(MachineID, Client), 1, Call, Timeout, [], Client) of
         {[], ClientNext} ->
             {timeout, ClientNext};
         {[Event], ClientNext} ->
-            {{ok, strip_event(Event)}, update_last_invoice_events(InvoiceID, Event, ClientNext)};
+            {{ok, strip_event(Event)}, update_last_machine_event(MachineID, Event, ClientNext)};
         Error ->
             Error
     end.
 
-get_last_invoice_event(InvoiceID, #cl{last_invoice_events = LastEvents}) ->
-    genlib_map:get(InvoiceID, LastEvents).
+get_events_call({invoice, InvoiceID}) ->
+    fun (Range, Cl) ->
+        issue_service_call(invoicing, 'GetEvents', [get_user_info(Cl), InvoiceID, Range], Cl)
+    end;
+get_events_call({party, PartyID}) ->
+    fun (Range, Cl) ->
+        issue_service_call(party_management, 'GetEvents', [get_user_info(Cl), PartyID, Range], Cl)
+    end.
 
-update_last_invoice_events(InvoiceID, Event, Client = #cl{last_invoice_events = LastEvents}) ->
+get_last_machine_event(MachineID, #cl{last_machine_events = LastEvents}) ->
+    genlib_map:get(MachineID, LastEvents).
+
+update_last_machine_event(MachineID, Event, Client = #cl{last_machine_events = LastEvents}) ->
     #payproc_Event{id = EventID} = Event,
-    Client#cl{last_invoice_events = LastEvents#{InvoiceID => EventID}}.
+    Client#cl{last_machine_events = LastEvents#{MachineID => EventID}}.
 
 poll_events(N, Timeout, Client) ->
     Call = fun (Range, Cl) -> issue_service_call(eventsink, 'GetEvents', [Range], Cl) end,
-    case poll_events(get_last_event(Client), N, Call, Timeout, [], Client) of
+    case poll_events(get_last_sink_event(Client), N, Call, Timeout, [], Client) of
         {Events, ClientNext} when is_list(Events) ->
-            {{ok, Events}, update_last_event(Events, ClientNext)};
+            {{ok, Events}, update_last_sink_event(Events, ClientNext)};
         Result ->
             Result
     end.
 
-get_last_event(#cl{last_event = EventID}) ->
+get_last_sink_event(#cl{last_sink_event = EventID}) ->
     EventID.
 
-update_last_event([], Client) ->
+update_last_sink_event([], Client) ->
     Client;
-update_last_event(Events, Client) ->
+update_last_sink_event(Events, Client) ->
     #payproc_Event{id = EventID} = lists:last(Events),
-    Client#cl{last_event = EventID}.
+    Client#cl{last_sink_event = EventID}.
 
 poll_events(_, _, _, Timeout, Acc, Client) when Timeout =< 0 ->
     {Acc, Client};
