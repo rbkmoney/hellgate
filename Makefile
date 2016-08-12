@@ -23,7 +23,7 @@ CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start dev
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
-all: submodules compile
+all: compile
 
 -include $(UTILS_PATH)/make_lib/utils_container.mk
 -include $(UTILS_PATH)/make_lib/utils_image.mk
@@ -40,11 +40,10 @@ submodules: $(SUBTARGETS)
 rebar-update:
 	$(REBAR) update
 
-compile: rebar-update
-	echo "GIT_SSH_COMMAND=$(GIT_SSH_COMMAND)"
+compile: submodules rebar-update
 	$(REBAR) compile
 
-xref:
+xref: submodules
 	$(REBAR) xref
 
 lint:
@@ -53,10 +52,10 @@ lint:
 dialyze:
 	$(REBAR) dialyzer
 
-start:
+start: submodules
 	$(REBAR) run
 
-devrel:
+devrel: submodules
 	$(REBAR) release
 
 release: distclean
@@ -70,6 +69,6 @@ distclean:
 	rm -rfv _build _builds _cache _steps _temp
 
 # CALL_W_CONTAINER
-test:
+test: submodules
 	$(REBAR) ct
 
