@@ -17,11 +17,6 @@ build('hellgate', 'docker-host', finalHook) {
   }
 
   pipeDefault() {
-    runStage('submodules') {
-      withGithubPrivkey {
-        sh 'make submodules'
-      }
-    }
     runStage('compile') {
       withGithubPrivkey {
         sh 'make wc_compile'
