@@ -203,7 +203,7 @@ process_payment(PaymentID, PaymentState0, St = #st{invoice = Invoice}, Context0)
             {ok(construct_payment_events(Payment, Trx, Events), St), Context};
         {{{error, Error = #domain_OperationError{}}, Trx}, Context} ->
             % payment finished with error
-            Event = {public, ?payment_ev(?payment_status_changed(PaymentID, ?failed(Error)))},
+            Event = {public, ?invoice_ev(?payment_ev(?payment_status_changed(PaymentID, ?failed(Error))))},
             {ok(construct_payment_events(Payment, Trx, [Event]), St), Context};
         {{{next, Action, PaymentState}, Trx}, Context} ->
             % payment progressing yet
