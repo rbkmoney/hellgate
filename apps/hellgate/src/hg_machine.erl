@@ -33,11 +33,6 @@
 -callback process_call(call(), history(), context()) ->
     {{response(), result()}, context()}.
 
-%% TODO feels like not the right place
--callback publish_event(id(), event()) ->
-    {true  , event_id(), PublicEvent :: term()} |
-    {false , event_id()}.
-
 -type context() :: #{
     client_context => woody_client:context()
 }.
@@ -59,12 +54,14 @@
 -export([get_history/3]).
 -export([get_history/5]).
 
--export([publish_event/3]).
-
 %% Dispatch
 
 -export([get_child_spec/1]).
 -export([get_service_handlers/1]).
+-export([get_handler_module/1]).
+
+%% FIXME feels like hack
+-export([unwrap_event/1]).
 
 -export([start_link/1]).
 -export([init/1]).
@@ -112,34 +109,27 @@ call(Ns, ID, Args, #{client_context := Context0}) ->
     end.
 
 -spec get_history(ns(), id(), opts()) ->
-    {history(), woody_client:context()}.
+    {{history(), event_id()}, woody_client:context()}.
 
 get_history(Ns, ID, Opts) ->
     get_history(Ns, ID, #'HistoryRange'{}, Opts).
 
 -spec get_history(ns(), id(), event_id(), undefined | non_neg_integer(), opts()) ->
-    {history(), woody_client:context()}.
+    {{history(), event_id()}, woody_client:context()}.
 
 get_history(Ns, ID, AfterID, Limit, Opts) ->
     get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}, Opts).
 
 get_history(Ns, ID, Range, #{client_context := Context0}) ->
+    LastID = #'HistoryRange'.'after',
     case call_automaton('GetHistory', [Ns, {id, ID}, Range], Context0) of
         {{ok, History}, Context} ->
-            {unwrap_history(History), Context};
+            {unwrap_history(History, LastID), Context};
         {{exception, Exception}, Context} ->
             throw({Exception, Context});
         {{error, Reason}, _} ->
             error(Reason)
     end.
-
--spec publish_event(ns(), id(), hg_state_processing_thrift:'Event'()) ->
-    {true  , event_id(), PublicEvent :: term()} |
-    {false , event_id()}.
-
-publish_event(Ns, ID, Event) ->
-    Module = get_handler_module(Ns),
-    Module:publish_event(ID, unwrap_event(Event)).
 
 %%
 
@@ -151,20 +141,20 @@ call_automaton(Function, Args, Context) ->
 
 %%
 
--type func() :: 'processSignal' | 'processCall'.
+-type func() :: 'ProcessSignal' | 'ProcessCall'.
 
 -spec handle_function(func(), woody_server_thrift_handler:args(), woody_client:context(), [ns()]) ->
     {{ok, term()}, woody_client:context()} | no_return().
 
-handle_function('processSignal', {Args}, Context0, [Ns]) ->
+handle_function('ProcessSignal', {Args}, Context0, [Ns]) ->
     _ = hg_utils:logtag_process(namespace, Ns),
     #'SignalArgs'{signal = {_Type, Signal}, history = History} = Args,
     {Result, Context} = dispatch_signal(Ns, Signal, History, Context0),
     {{ok, Result}, Context};
 
-handle_function('processCall', {Args}, Context0, [Ns]) ->
+handle_function('ProcessCall', {Args}, Context0, [Ns]) ->
     _ = hg_utils:logtag_process(namespace, Ns),
-    #'CallArgs'{call = Payload, history = History} = Args,
+    #'CallArgs'{arg = Payload, history = History} = Args,
     {Result, Context} = dispatch_call(Ns, Payload, History, Context0),
     {{ok, Result}, Context}.
 
@@ -187,7 +177,7 @@ dispatch_signal(Ns, #'InitSignal'{id = ID, arg = Payload}, [], Context0) ->
     {marshal_signal_result(Result), Context};
 
 dispatch_signal(Ns, #'TimeoutSignal'{}, History0, Context0) ->
-    History = unwrap_history(History0),
+    History = unwrap_events(History0),
     _ = lager:debug("dispatch timeout with history = ~p", [History]),
     Module = get_handler_module(Ns),
     {Result, #{client_context := Context}} = Module:process_signal(timeout, History, create_context(Context0)),
@@ -195,7 +185,7 @@ dispatch_signal(Ns, #'TimeoutSignal'{}, History0, Context0) ->
 
 dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, History0, Context0) ->
     Args = unwrap_args(Payload),
-    History = unwrap_history(History0),
+    History = unwrap_events(History0),
     _ = lager:debug("dispatch repair with args = ~p and history: ~p", [Args, History]),
     Module = get_handler_module(Ns),
     {Result, #{client_context := Context}} = Module:process_signal({repair, Args}, History, create_context(Context0)),
@@ -210,12 +200,12 @@ marshal_signal_result({Events, Action}) ->
 
 -spec dispatch_call(ns(), Call, hg_machine:history(), woody_client:context()) ->
     {Result, woody_client:context()} when
-        Call :: hg_state_processing_thrift:'Call'(),
+        Call :: hg_state_processing_thrift:'Args'(),
         Result :: hg_state_processing_thrift:'CallResult'().
 
 dispatch_call(Ns, Payload, History0, Context0) ->
     Args = unwrap_args(Payload),
-    History = unwrap_history(History0),
+    History = unwrap_events(History0),
     _ = lager:debug("dispatch call with args = ~p and history: ~p", [Args, History]),
     Module = get_handler_module(Ns),
     {Result, #{client_context := Context}} = Module:process_call(Args, History, create_context(Context0)),
@@ -285,7 +275,22 @@ get_handler_module(Ns) ->
 
 %%
 
-unwrap_history(History) ->
+-spec unwrap_event(hg_state_processing_thrift:'Event'()) ->
+    event().
+
+unwrap_event(#'Event'{id = ID, created_at = Dt, event_payload = Payload}) ->
+    {ID, Dt, unmarshal_term(Payload)}.
+
+%%
+
+unwrap_history(History, LastID) ->
+    lists:mapfoldl(
+        fun (E, _WasLastID) -> {ID, _, _} = V = unwrap_event(E), {V, ID} end,
+        LastID,
+        History
+    ).
+
+unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
 
 wrap_events(Events) ->
@@ -293,9 +298,6 @@ wrap_events(Events) ->
 
 wrap_event(Event) ->
     marshal_term(Event).
-
-unwrap_event(#'Event'{id = ID, created_at = Dt, event_payload = Payload}) ->
-    {ID, Dt, unmarshal_term(Payload)}.
 
 wrap_args(Args) ->
     marshal_term(Args).

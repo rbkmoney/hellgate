@@ -19,6 +19,10 @@
 -export([process_signal/3]).
 -export([process_call/3]).
 
+%% Event provider callbacks
+
+-behaviour(hg_event_provider).
+
 -export([publish_event/2]).
 
 %%
@@ -80,17 +84,22 @@ get_history(_UserInfo, InvoiceID, AfterID, Limit, Context) ->
     hg_machine:get_history(?NS, InvoiceID, AfterID, Limit, opts(Context)).
 
 get_state(UserInfo, InvoiceID, Context0) ->
-    {History, Context} = get_history(UserInfo, InvoiceID, Context0),
+    {{History, _LastID}, Context} = get_history(UserInfo, InvoiceID, Context0),
     St = collapse_history(History),
     {St, Context}.
 
 get_public_history(UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Context) ->
     hg_history:get_public_history(
         fun (ID, Lim, Ctx) -> get_history(UserInfo, InvoiceID, ID, Lim, Ctx) end,
-        fun (Event) -> publish_event(InvoiceID, Event) end,
+        fun (Event) -> publish_invoice_event({invoice, InvoiceID}, Event) end,
         AfterID, Limit,
         Context
     ).
+
+publish_invoice_event(Source, {ID, Dt, {public, Seq, Payload}}) ->
+    {true, #payproc_Event{id = ID, source = Source, created_at = Dt, sequence = Seq, payload = Payload}};
+publish_invoice_event(_Source, {_ID, _Dt, _Event}) ->
+    false.
 
 start(ID, Args, Context) ->
     hg_machine:start(?NS, ID, Args, opts(Context)).
@@ -132,19 +141,12 @@ opts(Context) ->
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
 -spec publish_event(invoice_id(), hg_machine:event(ev())) ->
-    {true, hg_machine:event_id(), hg_payment_processing_thrift:'Event'()} |
-    {false, hg_machine:event_id()}.
+    {true, hg_event_provider:public_event()} | false.
 
-publish_event(InvoiceID, {EventID, Dt, {public, Seq, Ev}}) ->
-    {true, EventID, #payproc_Event{
-        id         = EventID,
-        created_at = Dt,
-        source     = {invoice, InvoiceID},
-        sequence   = Seq,
-        payload    = Ev
-    }};
-publish_event(_InvoiceID, {EventID, _, _}) ->
-    {false, EventID}.
+publish_event(InvoiceID, {public, Seq, Ev}) ->
+    {true, {{invoice, InvoiceID}, Seq, Ev}};
+publish_event(_InvoiceID, _Event) ->
+    false.
 
 %%
 
