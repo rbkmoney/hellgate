@@ -60,8 +60,8 @@ init_per_suite(C) ->
         hg_ct_helper:start_app(hellgate, [
             {host, Host},
             {port, Port},
-            {automaton_service_url, <<"http://machinegun:8022/v1/automaton_service">>},
-            {eventsink_service_url, <<"http://machinegun:8024/v1/eventsink_service">>}
+            {automaton_service_url, <<"http://machinegun:8022/v1/automaton">>},
+            {eventsink_service_url, <<"http://machinegun:8022/v1/event_sink">>}
         ]),
     [{root_url, RootUrl}, {apps, lists:reverse(Apps)} | C].
 
