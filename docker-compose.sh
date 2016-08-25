@@ -12,8 +12,9 @@ services:
     depends_on:
       - machinegun
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/mg_prototype:3455e7b
-    command: /opt/mgun/bin/mgun foreground
+    image: dr.rbkmoney.com/rbkmoney/machinegun:cc5985c4b1ea385eba141995c37ebc67093a1fe7
+    volumes:
+      - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
 networks:
   default:
     driver: bridge
