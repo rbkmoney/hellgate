@@ -46,6 +46,7 @@ all() ->
         {group, party_creation},
         {group, party_revisioning},
         {group, party_blocking_suspension},
+        {group, claim_management},
 
         {group, consistent_history}
     ].
@@ -78,7 +79,7 @@ groups() ->
             party_activation,
             party_already_active
         ]},
-        {claim_revocation, [sequence], [
+        {claim_management, [sequence], [
             party_creation,
             party_claim_not_found_on_retrieval,
             party_claim_revocation
@@ -209,9 +210,9 @@ party_claim_revocation(C) ->
     PartyID = ?config(party_id, C),
     Reason = <<"The End is near">>,
     ID1 = assert_claim_accepted(hg_client:block_party(PartyID, Reason, Client), PartyID, Client),
-    {exception, ?party_blocked(Reason)} = hg_client:revoke_claim(PartyID, ID1, Client),
+    {exception, ?party_blocked(Reason)} = hg_client:revoke_claim(PartyID, ID1, <<>>, Client),
     ID2 = assert_claim_accepted(hg_client:unblock_party(PartyID, <<>>, Client), PartyID, Client),
-    {exception, ?invalid_claim_status(?accepted(_))} = hg_client:revoke_claim(PartyID, ID2, Client).
+    {exception, ?invalid_claim_status(?accepted(_))} = hg_client:revoke_claim(PartyID, ID2, <<>>, Client).
 
 party_claim_not_found_on_retrieval(C) ->
     Client = ?config(client, C),
