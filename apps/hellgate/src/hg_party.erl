@@ -37,6 +37,15 @@ handle_function('Get', {UserInfo, PartyID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
     {{ok, get_party_state(St)}, Context};
 
+handle_function('GetShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
+    {St, Context} = get_state(UserInfo, PartyID, Context0),
+    case get_shop(ID, St) of
+        Shop = #domain_Shop{} ->
+            {{ok, get_shop_state(Shop, St)}, Context};
+        undefined ->
+            throw({#payproc_ShopNotFound{}, Context})
+    end;
+
 handle_function('GetEvents', {UserInfo, PartyID, Range}, Context0, _Opts) ->
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
     {History, Context} = get_public_history(UserInfo, PartyID, AfterID, Limit, Context0),
@@ -56,7 +65,15 @@ handle_function('Activate', {UserInfo, PartyID}, Context0, _Opts) ->
 
 handle_function('GetClaim', {UserInfo, PartyID, ID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    {{ok, get_claim(ID, St)}, Context}.
+    case get_claim(ID, St) of
+        Claim = #payproc_Claim{} ->
+            {{ok, Claim}, Context};
+        undefined ->
+            throw({#payproc_ClaimNotFound{}, Context})
+    end;
+
+handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, Context0, _Opts) ->
+    call(PartyID, {revoke_claim, ID, Reason, UserInfo}, Context0).
 
 get_history(_UserInfo, PartyID, Context) ->
     assert_nonempty_history(
@@ -217,7 +234,12 @@ handle_call({activate, _UserInfo}, StEvents0 = {St0, _}, Context) ->
     ok = assert_suspended(St0),
     {ID, StEvents1 = {St1, _}} = create_claim([{suspension, ?active()}], StEvents0),
     Response = make_claim_result(get_claim(ID, St1)),
-    {respond(Response, StEvents1), Context}.
+    {respond(Response, StEvents1), Context};
+
+handle_call({revoke_claim, ID, Reason, _UserInfo}, StEvents0 = {St0, _}, Context) ->
+    ok = assert_operable(St0),
+    {ok, StEvents1} = revoke_claim(ID, Reason, StEvents0),
+    {respond(ok, StEvents1), Context}.
 
 %%
 
@@ -237,6 +259,9 @@ get_party(#st{party = Party}) ->
 get_party_state(#st{party = Party, revision = Revision}) ->
     #payproc_PartyState{party = Party, revision = Revision}.
 
+get_shop_state(Shop, #st{revision = Revision}) ->
+    #payproc_ShopState{shop = Shop, revision = Revision}.
+
 %%
 
 create_claim(Changeset, StEvents) ->
@@ -254,11 +279,19 @@ try_accept_claim(ID, StEvents) ->
     accept_claim(ID, StEvents).
 
 accept_claim(ID, StEvents = {St, _}) ->
+    _Claim = get_pending_claim(ID, StEvents),
+    Event = ?party_ev(?claim_status_changed(ID, ?accepted(St#st.revision + 1))),
+    {ok, apply_state_event(Event, StEvents)}.
+
+revoke_claim(ID, Reason, StEvents) ->
+    _Claim = get_pending_claim(ID, StEvents),
+    Event = ?party_ev(?claim_status_changed(ID, ?revoked(Reason))),
+    {ok, apply_state_event(Event, StEvents)}.
+
+get_pending_claim(ID, {St, _}) ->
     case get_claim(ID, St) of
-        #payproc_Claim{status = ?pending()} ->
-            Status = ?accepted(St#st.revision + 1),
-            Event = ?party_ev(?claim_status_changed(ID, Status)),
-            {ok, apply_state_event(Event, StEvents)};
+        Claim = #payproc_Claim{status = ?pending()} ->
+            Claim;
         #payproc_Claim{status = Status} ->
             raise(#payproc_InvalidClaimStatus{status = Status});
         undefined ->
@@ -270,17 +303,21 @@ make_claim_result(#payproc_Claim{id = ID, status = Status}) ->
 
 %%
 
-assert_unblocked(What) ->
-    assert_blocking(get_party(What), unblocked).
+assert_operable(St) ->
+    _ = assert_unblocked(St),
+    _ = assert_active(St).
 
-assert_blocked(What) ->
-    assert_blocking(get_party(What), blocked).
+assert_unblocked(St) ->
+    assert_blocking(get_party(St), unblocked).
 
-assert_active(What) ->
-    assert_suspension(get_party(What), active).
+assert_blocked(St) ->
+    assert_blocking(get_party(St), blocked).
 
-assert_suspended(What) ->
-    assert_suspension(get_party(What), suspended).
+assert_active(St) ->
+    assert_suspension(get_party(St), active).
+
+assert_suspended(St) ->
+    assert_suspension(get_party(St), suspended).
 
 assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
     ok;
@@ -350,6 +387,9 @@ merge_party_event(?claim_status_changed(ID, Status), St) ->
         _ ->
             St1
     end.
+
+get_shop(ID, #st{party = #domain_Party{shops = Shops}}) ->
+    maps:get(ID, Shops, undefined).
 
 get_claim(ID, #st{claims = Claims}) ->
     maps:get(ID, Claims, undefined).

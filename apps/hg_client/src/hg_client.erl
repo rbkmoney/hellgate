@@ -24,6 +24,7 @@
 -export([suspend_party/2]).
 -export([activate_party/2]).
 -export([get_claim/3]).
+-export([revoke_claim/4]).
 -export([pull_party_event/2]).
 -export([pull_party_event/3]).
 
@@ -179,6 +180,12 @@ activate_party(PartyID, Client) ->
 
 get_claim(PartyID, ID, Client) ->
     call_party_mgmt(Client, 'GetClaim', [PartyID, ID]).
+
+-spec revoke_claim(party_id(), claim_id(), binary(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+revoke_claim(PartyID, ID, Reason, Client) ->
+    call_party_mgmt(Client, 'RevokeClaim', [PartyID, ID, Reason]).
 
 -spec pull_party_event(party_id(), t()) ->
     {ok, tuple()} | timeout | woody_client:result_error().

@@ -22,6 +22,8 @@
     {approved, #payproc_ClaimAccepted{revision = Revision}}).
 -define(denied(Reason),
     {denied, #payproc_ClaimDenied{reason = Reason}}).
+-define(revoked(Reason),
+    {revoked, #payproc_ClaimRevoked{reason = Reason}}).
 
 -define(suspended(),
     {suspended, #domain_Suspended{}}).

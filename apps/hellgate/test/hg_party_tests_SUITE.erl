@@ -11,8 +11,11 @@
 -export([end_per_testcase/2]).
 
 -export([party_creation/1]).
+-export([party_not_found_on_retrieval/1]).
 -export([party_already_exists/1]).
 -export([party_retrieval/1]).
+-export([party_claim_revocation/1]).
+-export([party_claim_not_found_on_retrieval/1]).
 -export([party_revisioning/1]).
 -export([party_blocking/1]).
 -export([party_unblocking/1]).
@@ -52,6 +55,7 @@ all() ->
 groups() ->
     [
         {party_creation, [sequence], [
+            party_not_found_on_retrieval,
             party_creation,
             party_already_exists,
             party_retrieval
@@ -73,6 +77,11 @@ groups() ->
             party_unblocking,
             party_activation,
             party_already_active
+        ]},
+        {claim_revocation, [sequence], [
+            party_creation,
+            party_claim_not_found_on_retrieval,
+            party_claim_revocation
         ]},
         {consistent_history, [], [
             consistent_history
@@ -141,10 +150,18 @@ end_per_testcase(_Name, _C) ->
 -define(party_active(),
     #payproc_InvalidPartyStatus{status = {suspension, ?active()}}).
 
+-define(claim_result(ID, Status),
+    #payproc_ClaimResult{id = ID, status = Status}).
+-define(invalid_claim_status(Status),
+    #payproc_InvalidClaimStatus{status = Status}).
+
 -spec party_creation(config()) -> _ | no_return().
+-spec party_not_found_on_retrieval(config()) -> _ | no_return().
 -spec party_already_exists(config()) -> _ | no_return().
 -spec party_retrieval(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
+-spec party_claim_revocation(config()) -> _ | no_return().
+-spec party_claim_not_found_on_retrieval(config()) -> _ | no_return().
 -spec party_blocking(config()) -> _ | no_return().
 -spec party_unblocking(config()) -> _ | no_return().
 -spec party_already_blocked(config()) -> _ | no_return().
@@ -166,6 +183,11 @@ party_already_exists(C) ->
     PartyID = ?config(party_id, C),
     {exception, #payproc_PartyExists{}} = hg_client:create_party(PartyID, Client).
 
+party_not_found_on_retrieval(C) ->
+    Client = ?config(client, C),
+    PartyID = ?config(party_id, C),
+    {exception, #payproc_PartyNotFound{}} = hg_client:get_party(PartyID, Client).
+
 party_retrieval(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
@@ -177,21 +199,35 @@ party_revisioning(C) ->
     {ok, ?party_state(_Party1, Rev1)} = hg_client:get_party(PartyID, Client),
     {ok, _} = party_suspension(C),
     {ok, ?party_state(_Party2, Rev2)} = hg_client:get_party(PartyID, Client),
-    true = Rev2 > Rev1,
+    Rev2 = Rev1 + 1,
     {ok, _} = party_activation(C),
     {ok, ?party_state(_Party3, Rev3)} = hg_client:get_party(PartyID, Client),
-    true = Rev3 > Rev2.
+    Rev3 = Rev2 + 1.
+
+party_claim_revocation(C) ->
+    Client = ?config(client, C),
+    PartyID = ?config(party_id, C),
+    Reason = <<"The End is near">>,
+    ID1 = assert_claim_accepted(hg_client:block_party(PartyID, Reason, Client), PartyID, Client),
+    {exception, ?party_blocked(Reason)} = hg_client:revoke_claim(PartyID, ID1, Client),
+    ID2 = assert_claim_accepted(hg_client:unblock_party(PartyID, <<>>, Client), PartyID, Client),
+    {exception, ?invalid_claim_status(?accepted(_))} = hg_client:revoke_claim(PartyID, ID2, Client).
+
+party_claim_not_found_on_retrieval(C) ->
+    Client = ?config(client, C),
+    PartyID = ?config(party_id, C),
+    {exception, #payproc_ClaimNotFound{}} = hg_client:get_claim(PartyID, <<"no such id">>, Client).
 
 party_blocking(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
-    ok = assert_claim_accepted(hg_client:block_party(PartyID, <<"i said so">>, Client), PartyID, Client),
+    _ = assert_claim_accepted(hg_client:block_party(PartyID, <<"i said so">>, Client), PartyID, Client),
     {ok, ?party_state(?party_w_status(PartyID, ?blocked(_), _))} = hg_client:get_party(PartyID, Client).
 
 party_unblocking(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
-    ok = assert_claim_accepted(hg_client:unblock_party(PartyID, <<"enough">>, Client), PartyID, Client),
+    _ = assert_claim_accepted(hg_client:unblock_party(PartyID, <<"enough">>, Client), PartyID, Client),
     {ok, ?party_state(?party_w_status(PartyID, ?unblocked(_), _))} = hg_client:get_party(PartyID, Client).
 
 party_already_blocked(C) ->
@@ -212,13 +248,13 @@ party_blocked_on_suspend(C) ->
 party_suspension(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
-    ok = assert_claim_accepted(hg_client:suspend_party(PartyID, Client), PartyID, Client),
+    _ = assert_claim_accepted(hg_client:suspend_party(PartyID, Client), PartyID, Client),
     {ok, ?party_state(?party_w_status(PartyID, _, ?suspended()))} = hg_client:get_party(PartyID, Client).
 
 party_activation(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
-    ok = assert_claim_accepted(hg_client:activate_party(PartyID, Client), PartyID, Client),
+    _ = assert_claim_accepted(hg_client:activate_party(PartyID, Client), PartyID, Client),
     {ok, ?party_state(?party_w_status(PartyID, _, ?active()))} = hg_client:get_party(PartyID, Client).
 
 party_already_suspended(C) ->
@@ -232,11 +268,11 @@ party_already_active(C) ->
     {exception, ?party_active()} = hg_client:activate_party(PartyID, Client).
 
 assert_claim_accepted(Result, PartyID, Client) ->
-    {ok, #payproc_ClaimResult{id = ID, status = Status = ?accepted(_)}} = Result,
+    {ok, ?claim_result(ID, Status = ?accepted(_))} = Result,
     {ok, #payproc_Claim{status = Status}} = hg_client:get_claim(PartyID, ID, Client),
     ?claim_created(#payproc_Claim{id = ID}) = next_event(PartyID, Client),
     ?claim_status_changed(ID, Status) = next_event(PartyID, Client),
-    ok.
+    ID.
 
 %%
 
