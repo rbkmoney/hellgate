@@ -14,10 +14,11 @@
 -export([party_not_found_on_retrieval/1]).
 -export([party_already_exists/1]).
 -export([party_retrieval/1]).
--export([party_claim_acceptance/1]).
--export([party_claim_denial/1]).
--export([party_claim_revocation/1]).
--export([party_claim_not_found_on_retrieval/1]).
+-export([claim_acceptance/1]).
+-export([claim_denial/1]).
+-export([claim_revocation/1]).
+-export([claim_not_found_on_retrieval/1]).
+-export([no_pending_claim/1]).
 -export([party_revisioning/1]).
 -export([party_blocking/1]).
 -export([party_unblocking/1]).
@@ -83,10 +84,11 @@ groups() ->
         ]},
         {claim_management, [sequence], [
             party_creation,
-            party_claim_not_found_on_retrieval,
-            party_claim_revocation,
-            party_claim_acceptance,
-            party_claim_denial
+            claim_not_found_on_retrieval,
+            claim_revocation,
+            claim_acceptance,
+            claim_denial,
+            no_pending_claim
         ]},
         {consistent_history, [], [
             consistent_history
@@ -165,10 +167,11 @@ end_per_testcase(_Name, _C) ->
 -spec party_already_exists(config()) -> _ | no_return().
 -spec party_retrieval(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
--spec party_claim_revocation(config()) -> _ | no_return().
--spec party_claim_acceptance(config()) -> _ | no_return().
--spec party_claim_denial(config()) -> _ | no_return().
--spec party_claim_not_found_on_retrieval(config()) -> _ | no_return().
+-spec claim_revocation(config()) -> _ | no_return().
+-spec claim_acceptance(config()) -> _ | no_return().
+-spec claim_denial(config()) -> _ | no_return().
+-spec claim_not_found_on_retrieval(config()) -> _ | no_return().
+-spec no_pending_claim(config()) -> _ | no_return().
 -spec party_blocking(config()) -> _ | no_return().
 -spec party_unblocking(config()) -> _ | no_return().
 -spec party_already_blocked(config()) -> _ | no_return().
@@ -211,7 +214,7 @@ party_revisioning(C) ->
     {ok, ?party_state(_Party3, Rev3)} = hg_client:get_party(PartyID, Client),
     Rev3 = Rev2 + 1.
 
-party_claim_revocation(C) ->
+claim_revocation(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     Reason = <<"The End is near">>,
@@ -220,7 +223,7 @@ party_claim_revocation(C) ->
     ID2 = ensure_unblock_party(PartyID, <<>>, Client),
     {exception, ?invalid_claim_status(?accepted(_))} = hg_client:revoke_claim(PartyID, ID2, <<>>, Client).
 
-party_claim_acceptance(C) ->
+claim_acceptance(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     Reason = <<"And behold">>,
@@ -228,7 +231,7 @@ party_claim_acceptance(C) ->
     {exception, ?invalid_claim_status(?accepted(_))} = hg_client:accept_claim(PartyID, ID, Client),
     _ = ensure_unblock_party(PartyID, <<>>, Client).
 
-party_claim_denial(C) ->
+claim_denial(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     Reason = <<"I am about to destroy them">>,
@@ -236,10 +239,15 @@ party_claim_denial(C) ->
     {exception, ?invalid_claim_status(?accepted(_))} = hg_client:deny_claim(PartyID, ID, <<>>, Client),
     _ = ensure_unblock_party(PartyID, <<>>, Client).
 
-party_claim_not_found_on_retrieval(C) ->
+claim_not_found_on_retrieval(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     {exception, #payproc_ClaimNotFound{}} = hg_client:get_claim(PartyID, <<"no such id">>, Client).
+
+no_pending_claim(C) ->
+    Client = ?config(client, C),
+    PartyID = ?config(party_id, C),
+    {exception, #payproc_ClaimNotFound{}} = hg_client:get_pending_claim(PartyID, Client).
 
 party_blocking(C) ->
     Client = ?config(client, C),

@@ -72,6 +72,15 @@ handle_function('GetClaim', {UserInfo, PartyID, ID}, Context0, _Opts) ->
             throw({#payproc_ClaimNotFound{}, Context})
     end;
 
+handle_function('GetPendingClaim', {UserInfo, PartyID}, Context0, _Opts) ->
+    {St, Context} = get_state(UserInfo, PartyID, Context0),
+    case get_pending_claim(St) of
+        Claim = #payproc_Claim{} ->
+            {{ok, Claim}, Context};
+        undefined ->
+            throw({#payproc_ClaimNotFound{}, Context})
+    end;
+
 handle_function('AcceptClaim', {UserInfo, PartyID, ID}, Context, _Opts) ->
     call(PartyID, {accept_claim, ID, UserInfo}, Context);
 
@@ -405,6 +414,17 @@ get_shop(ID, #st{party = #domain_Party{shops = Shops}}) ->
 
 get_claim(ID, #st{claims = Claims}) ->
     maps:get(ID, Claims, undefined).
+
+get_pending_claim(#st{claims = Claims}) ->
+    % TODO cache it during history collapse
+    maps:fold(
+        fun
+            (_ID, Claim = #payproc_Claim{status = ?pending()}, undefined) -> Claim;
+            (_ID, #payproc_Claim{status = _Another}, Claim)               -> Claim
+        end,
+        undefined,
+        Claims
+    ).
 
 set_claim(Claim = #payproc_Claim{id = ID}, St = #st{claims = Claims}) ->
     St#st{claims = Claims#{ID => Claim}}.
