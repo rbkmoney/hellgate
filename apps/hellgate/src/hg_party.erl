@@ -59,10 +59,21 @@ handle_function('GetClaim', {UserInfo, PartyID, ID}, Context0, _Opts) ->
     {{ok, get_claim(ID, St)}, Context}.
 
 get_history(_UserInfo, PartyID, Context) ->
-    map_error(hg_machine:get_history(?NS, PartyID, opts(Context))).
+    assert_nonempty_history(
+        map_error(hg_machine:get_history(?NS, PartyID, opts(Context)))
+    ).
 
 get_history(_UserInfo, PartyID, AfterID, Limit, Context) ->
-    map_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, opts(Context))).
+    assert_nonempty_history(
+        map_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, opts(Context)))
+    ).
+
+%% TODO remove this hack as soon as machinegun learns to tell the difference between
+%%      nonexsitent machine and empty history
+assert_nonempty_history({{[], _LastID}, Context}) ->
+    throw({#payproc_PartyNotFound{}, Context});
+assert_nonempty_history({{[_ | _], _LastID}, _Context} = Result) ->
+    Result.
 
 get_state(UserInfo, PartyID, Context0) ->
     {{History, _LastID}, Context} = get_history(UserInfo, PartyID, Context0),
