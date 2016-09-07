@@ -14,6 +14,8 @@
 -export([party_not_found_on_retrieval/1]).
 -export([party_already_exists/1]).
 -export([party_retrieval/1]).
+-export([party_claim_acceptance/1]).
+-export([party_claim_denial/1]).
 -export([party_claim_revocation/1]).
 -export([party_claim_not_found_on_retrieval/1]).
 -export([party_revisioning/1]).
@@ -82,7 +84,9 @@ groups() ->
         {claim_management, [sequence], [
             party_creation,
             party_claim_not_found_on_retrieval,
-            party_claim_revocation
+            party_claim_revocation,
+            party_claim_acceptance,
+            party_claim_denial
         ]},
         {consistent_history, [], [
             consistent_history
@@ -162,6 +166,8 @@ end_per_testcase(_Name, _C) ->
 -spec party_retrieval(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
 -spec party_claim_revocation(config()) -> _ | no_return().
+-spec party_claim_acceptance(config()) -> _ | no_return().
+-spec party_claim_denial(config()) -> _ | no_return().
 -spec party_claim_not_found_on_retrieval(config()) -> _ | no_return().
 -spec party_blocking(config()) -> _ | no_return().
 -spec party_unblocking(config()) -> _ | no_return().
@@ -209,10 +215,26 @@ party_claim_revocation(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     Reason = <<"The End is near">>,
-    ID1 = assert_claim_accepted(hg_client:block_party(PartyID, Reason, Client), PartyID, Client),
+    ID1 = ensure_block_party(PartyID, Reason, Client),
     {exception, ?party_blocked(Reason)} = hg_client:revoke_claim(PartyID, ID1, <<>>, Client),
-    ID2 = assert_claim_accepted(hg_client:unblock_party(PartyID, <<>>, Client), PartyID, Client),
+    ID2 = ensure_unblock_party(PartyID, <<>>, Client),
     {exception, ?invalid_claim_status(?accepted(_))} = hg_client:revoke_claim(PartyID, ID2, <<>>, Client).
+
+party_claim_acceptance(C) ->
+    Client = ?config(client, C),
+    PartyID = ?config(party_id, C),
+    Reason = <<"And behold">>,
+    ID = ensure_block_party(PartyID, Reason, Client),
+    {exception, ?invalid_claim_status(?accepted(_))} = hg_client:accept_claim(PartyID, ID, Client),
+    _ = ensure_unblock_party(PartyID, <<>>, Client).
+
+party_claim_denial(C) ->
+    Client = ?config(client, C),
+    PartyID = ?config(party_id, C),
+    Reason = <<"I am about to destroy them">>,
+    ID = ensure_block_party(PartyID, Reason, Client),
+    {exception, ?invalid_claim_status(?accepted(_))} = hg_client:deny_claim(PartyID, ID, <<>>, Client),
+    _ = ensure_unblock_party(PartyID, <<>>, Client).
 
 party_claim_not_found_on_retrieval(C) ->
     Client = ?config(client, C),
@@ -267,6 +289,12 @@ party_already_active(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     {exception, ?party_active()} = hg_client:activate_party(PartyID, Client).
+
+ensure_block_party(PartyID, Reason, Client) ->
+    assert_claim_accepted(hg_client:block_party(PartyID, Reason, Client), PartyID, Client).
+
+ensure_unblock_party(PartyID, Reason, Client) ->
+    assert_claim_accepted(hg_client:unblock_party(PartyID, Reason, Client), PartyID, Client).
 
 assert_claim_accepted(Result, PartyID, Client) ->
     {ok, ?claim_result(ID, Status = ?accepted(_))} = Result,

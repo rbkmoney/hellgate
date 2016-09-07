@@ -72,8 +72,14 @@ handle_function('GetClaim', {UserInfo, PartyID, ID}, Context0, _Opts) ->
             throw({#payproc_ClaimNotFound{}, Context})
     end;
 
-handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, Context0, _Opts) ->
-    call(PartyID, {revoke_claim, ID, Reason, UserInfo}, Context0).
+handle_function('AcceptClaim', {UserInfo, PartyID, ID}, Context, _Opts) ->
+    call(PartyID, {accept_claim, ID, UserInfo}, Context);
+
+handle_function('DenyClaim', {UserInfo, PartyID, ID, Reason}, Context, _Opts) ->
+    call(PartyID, {deny_claim, ID, Reason, UserInfo}, Context);
+
+handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, Context, _Opts) ->
+    call(PartyID, {revoke_claim, ID, Reason, UserInfo}, Context).
 
 get_history(_UserInfo, PartyID, Context) ->
     assert_nonempty_history(
@@ -236,9 +242,17 @@ handle_call({activate, _UserInfo}, StEvents0 = {St0, _}, Context) ->
     Response = make_claim_result(get_claim(ID, St1)),
     {respond(Response, StEvents1), Context};
 
+handle_call({accept_claim, ID, _UserInfo}, StEvents0, Context) ->
+    {ok, StEvents1} = accept_claim(ID, StEvents0),
+    {respond(ok, StEvents1), Context};
+
+handle_call({deny_claim, ID, Reason, _UserInfo}, StEvents0, Context) ->
+    {ok, StEvents1} = finalize_claim(ID, ?denied(Reason), StEvents0),
+    {respond(ok, StEvents1), Context};
+
 handle_call({revoke_claim, ID, Reason, _UserInfo}, StEvents0 = {St0, _}, Context) ->
     ok = assert_operable(St0),
-    {ok, StEvents1} = revoke_claim(ID, Reason, StEvents0),
+    {ok, StEvents1} = finalize_claim(ID, ?revoked(Reason), StEvents0),
     {respond(ok, StEvents1), Context}.
 
 %%
@@ -279,19 +293,17 @@ try_accept_claim(ID, StEvents) ->
     accept_claim(ID, StEvents).
 
 accept_claim(ID, StEvents = {St, _}) ->
-    _Claim = get_pending_claim(ID, StEvents),
-    Event = ?party_ev(?claim_status_changed(ID, ?accepted(St#st.revision + 1))),
+    finalize_claim(ID, ?accepted(St#st.revision + 1), StEvents).
+
+finalize_claim(ID, Status, StEvents) ->
+    ok = assert_claim_pending(ID, StEvents),
+    Event = ?party_ev(?claim_status_changed(ID, Status)),
     {ok, apply_state_event(Event, StEvents)}.
 
-revoke_claim(ID, Reason, StEvents) ->
-    _Claim = get_pending_claim(ID, StEvents),
-    Event = ?party_ev(?claim_status_changed(ID, ?revoked(Reason))),
-    {ok, apply_state_event(Event, StEvents)}.
-
-get_pending_claim(ID, {St, _}) ->
+assert_claim_pending(ID, {St, _}) ->
     case get_claim(ID, St) of
-        Claim = #payproc_Claim{status = ?pending()} ->
-            Claim;
+        #payproc_Claim{status = ?pending()} ->
+            ok;
         #payproc_Claim{status = Status} ->
             raise(#payproc_InvalidClaimStatus{status = Status});
         undefined ->
