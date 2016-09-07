@@ -19,7 +19,7 @@
 -define(pending(),
     {pending, #payproc_ClaimPending{}}).
 -define(accepted(Revision),
-    {approved, #payproc_ClaimAccepted{revision = Revision}}).
+    {accepted, #payproc_ClaimAccepted{revision = Revision}}).
 -define(denied(Reason),
     {denied, #payproc_ClaimDenied{reason = Reason}}).
 -define(revoked(Reason),
