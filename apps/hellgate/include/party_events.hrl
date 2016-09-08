@@ -16,6 +16,9 @@
         #payproc_ClaimStatusChanged{id = ID, status = Status}}
 ).
 
+-define(shop_modification(ID, Modification),
+    {shop_modification, #payproc_ShopModificationUnit{id = ID, modification = Modification}}).
+
 -define(pending(),
     {pending, #payproc_ClaimPending{}}).
 -define(accepted(Revision),

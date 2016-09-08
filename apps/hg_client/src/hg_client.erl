@@ -23,6 +23,13 @@
 -export([unblock_party/3]).
 -export([suspend_party/2]).
 -export([activate_party/2]).
+-export([get_shop/3]).
+-export([create_shop/3]).
+-export([update_shop/4]).
+-export([block_shop/4]).
+-export([unblock_shop/4]).
+-export([suspend_shop/3]).
+-export([activate_shop/3]).
 -export([get_claim/3]).
 -export([get_pending_claim/2]).
 -export([accept_claim/3]).
@@ -64,10 +71,12 @@
 -type machine_id() :: hg_base_thrift:'ID'().
 -type user_info() :: hg_payment_processing_thrift:'UserInfo'().
 -type party_id() :: hg_domain_thrift:'PartyID'().
+-type shop_id() :: hg_domain_thrift:'ShopID'().
 -type claim_id() :: hg_payment_processing_thrift:'ClaimID'().
 -type invoice_id() :: hg_domain_thrift:'InvoiceID'().
 -type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
 -type event_id() :: hg_base_thrift:'EventID'().
+-type shop_params() :: hg_payment_processing_thrift:'ShopParams'().
 -type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: hg_payment_processing_thrift:'InvoicePaymentParams'().
 
@@ -177,6 +186,48 @@ suspend_party(PartyID, Client) ->
 
 activate_party(PartyID, Client) ->
     call_party_mgmt(Client, 'Activate', [PartyID]).
+
+-spec get_shop(party_id(), shop_id(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+get_shop(PartyID, ID, Client) ->
+    call_party_mgmt(Client, 'GetShop', [PartyID, ID]).
+
+-spec create_shop(party_id(), shop_params(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+create_shop(PartyID, Params, Client) ->
+    call_party_mgmt(Client, 'CreateShop', [PartyID, Params]).
+
+-spec update_shop(party_id(), shop_id(), hg_payment_processing_thrift:'ShopUpdate'(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+update_shop(PartyID, ID, Update, Client) ->
+    call_party_mgmt(Client, 'UpdateShop', [PartyID, ID, Update]).
+
+-spec block_shop(party_id(), shop_id(), binary(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+block_shop(PartyID, ID, Reason, Client) ->
+    call_party_mgmt(Client, 'BlockShop', [PartyID, ID, Reason]).
+
+-spec unblock_shop(party_id(), shop_id(), binary(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+unblock_shop(PartyID, ID, Reason, Client) ->
+    call_party_mgmt(Client, 'UnblockShop', [PartyID, ID, Reason]).
+
+-spec suspend_shop(party_id(), shop_id(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+suspend_shop(PartyID, ID, Client) ->
+    call_party_mgmt(Client, 'SuspendShop', [PartyID, ID]).
+
+-spec activate_shop(party_id(), shop_id(), t()) ->
+    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+
+activate_shop(PartyID, ID, Client) ->
+    call_party_mgmt(Client, 'ActivateShop', [PartyID, ID]).
 
 -spec get_claim(party_id(), claim_id(), t()) ->
     {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().

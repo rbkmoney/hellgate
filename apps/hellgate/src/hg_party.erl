@@ -39,7 +39,7 @@ handle_function('Get', {UserInfo, PartyID}, Context0, _Opts) ->
 
 handle_function('GetShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    case get_shop(ID, St) of
+    case get_shop(ID, get_party(St)) of
         Shop = #domain_Shop{} ->
             {{ok, get_shop_state(Shop, St)}, Context};
         undefined ->
@@ -62,6 +62,24 @@ handle_function('Suspend', {UserInfo, PartyID}, Context0, _Opts) ->
 
 handle_function('Activate', {UserInfo, PartyID}, Context0, _Opts) ->
     call(PartyID, {activate, UserInfo}, Context0);
+
+handle_function('CreateShop', {UserInfo, PartyID, Params}, Context0, _Opts) ->
+    call(PartyID, {create_shop, Params, UserInfo}, Context0);
+
+handle_function('UpdateShop', {UserInfo, PartyID, ID, Update}, Context0, _Opts) ->
+    call(PartyID, {update_shop, ID, Update, UserInfo}, Context0);
+
+handle_function('BlockShop', {UserInfo, PartyID, ID, Reason}, Context0, _Opts) ->
+    call(PartyID, {block_shop, ID, Reason, UserInfo}, Context0);
+
+handle_function('UnblockShop', {UserInfo, PartyID, ID, Reason}, Context0, _Opts) ->
+    call(PartyID, {unblock_shop, ID, Reason, UserInfo}, Context0);
+
+handle_function('SuspendShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
+    call(PartyID, {suspend_shop, ID, UserInfo}, Context0);
+
+handle_function('ActivateShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
+    call(PartyID, {activate_shop, ID, UserInfo}, Context0);
 
 handle_function('GetClaim', {UserInfo, PartyID, ID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
@@ -225,31 +243,60 @@ process_call(Call, History, Context) ->
 raise(What) ->
     throw({exception, What}).
 
-handle_call({block, Reason, _UserInfo}, StEvents0 = {St0, _}, Context) ->
-    ok = assert_unblocked(St0),
-    {ID, StEvents1 = {St1, _}} = create_claim([{blocking, ?blocked(Reason)}], StEvents0),
-    Response = make_claim_result(get_claim(ID, St1)),
-    {respond(Response, StEvents1), Context};
+handle_call({block, Reason, _UserInfo}, StEvents0, Context) ->
+    ok = assert_unblocked(StEvents0),
+    {ClaimID, StEvents1} = create_claim([{blocking, ?blocked(Reason)}], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
-handle_call({unblock, Reason, _UserInfo}, StEvents0 = {St0, _}, Context) ->
-    ok = assert_blocked(St0),
-    {ID, StEvents1 = {St1, _}} = create_claim([{blocking, ?unblocked(Reason)}], StEvents0),
-    Response = make_claim_result(get_claim(ID, St1)),
-    {respond(Response, StEvents1), Context};
+handle_call({unblock, Reason, _UserInfo}, StEvents0, Context) ->
+    ok = assert_blocked(StEvents0),
+    {ClaimID, StEvents1} = create_claim([{blocking, ?unblocked(Reason)}], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
-handle_call({suspend, _UserInfo}, StEvents0 = {St0, _}, Context) ->
-    ok = assert_unblocked(St0),
-    ok = assert_active(St0),
-    {ID, StEvents1 = {St1, _}} = create_claim([{suspension, ?suspended()}], StEvents0),
-    Response = make_claim_result(get_claim(ID, St1)),
-    {respond(Response, StEvents1), Context};
+handle_call({suspend, _UserInfo}, StEvents0, Context) ->
+    ok = assert_unblocked(StEvents0),
+    ok = assert_active(StEvents0),
+    {ClaimID, StEvents1} = create_claim([{suspension, ?suspended()}], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
-handle_call({activate, _UserInfo}, StEvents0 = {St0, _}, Context) ->
-    ok = assert_unblocked(St0),
-    ok = assert_suspended(St0),
-    {ID, StEvents1 = {St1, _}} = create_claim([{suspension, ?active()}], StEvents0),
-    Response = make_claim_result(get_claim(ID, St1)),
-    {respond(Response, StEvents1), Context};
+handle_call({activate, _UserInfo}, StEvents0, Context) ->
+    ok = assert_unblocked(StEvents0),
+    ok = assert_suspended(StEvents0),
+    {ClaimID, StEvents1} = create_claim([{suspension, ?active()}], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+
+handle_call({create_shop, Params, _UserInfo}, StEvents0, Context) ->
+    ok = assert_operable(StEvents0),
+    {ClaimID, StEvents1} = create_claim([{shop_creation, construct_shop(Params)}], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+
+handle_call({update_shop, ID, Update, _UserInfo}, StEvents0, Context) ->
+    ok = assert_operable(StEvents0),
+    ok = assert_shop_operable(ID, StEvents0),
+    {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {update, Update})], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+
+handle_call({block_shop, ID, Reason, _UserInfo}, StEvents0, Context) ->
+    ok = assert_shop_unblocked(ID, StEvents0),
+    {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {blocking, ?blocked(Reason)})], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+
+handle_call({unblock_shop, ID, Reason, _UserInfo}, StEvents0, Context) ->
+    ok = assert_shop_blocked(ID, StEvents0),
+    {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {blocking, ?unblocked(Reason)})], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+
+handle_call({suspend_shop, ID, _UserInfo}, StEvents0, Context) ->
+    ok = assert_shop_unblocked(ID, StEvents0),
+    ok = assert_shop_active(ID, StEvents0),
+    {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {suspension, ?suspended()})], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+
+handle_call({activate_shop, ID, _UserInfo}, StEvents0, Context) ->
+    ok = assert_shop_unblocked(ID, StEvents0),
+    ok = assert_shop_suspended(ID, StEvents0),
+    {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {suspension, ?active()})], StEvents0),
+    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
 handle_call({accept_claim, ID, _UserInfo}, StEvents0, Context) ->
     {ok, StEvents1} = accept_claim(ID, StEvents0),
@@ -259,8 +306,8 @@ handle_call({deny_claim, ID, Reason, _UserInfo}, StEvents0, Context) ->
     {ok, StEvents1} = finalize_claim(ID, ?denied(Reason), StEvents0),
     {respond(ok, StEvents1), Context};
 
-handle_call({revoke_claim, ID, Reason, _UserInfo}, StEvents0 = {St0, _}, Context) ->
-    ok = assert_operable(St0),
+handle_call({revoke_claim, ID, Reason, _UserInfo}, StEvents0, Context) ->
+    ok = assert_operable(StEvents0),
     {ok, StEvents1} = finalize_claim(ID, ?revoked(Reason), StEvents0),
     {respond(ok, StEvents1), Context}.
 
@@ -284,6 +331,18 @@ get_party_state(#st{party = Party, revision = Revision}) ->
 
 get_shop_state(Shop, #st{revision = Revision}) ->
     #payproc_ShopState{shop = Shop, revision = Revision}.
+
+%%
+
+construct_shop(ShopParams) ->
+    #domain_Shop{
+        id         = hg_utils:unique_id(),
+        blocking   = ?unblocked(<<>>),
+        suspension = ?active(),
+        category   = ShopParams#payproc_ShopParams.category,
+        details    = ShopParams#payproc_ShopParams.details,
+        contractor = ShopParams#payproc_ShopParams.contractor
+    }.
 
 %%
 
@@ -319,25 +378,27 @@ assert_claim_pending(ID, {St, _}) ->
             raise(#payproc_ClaimNotFound{})
     end.
 
-make_claim_result(#payproc_Claim{id = ID, status = Status}) ->
+get_claim_result(ID, {St, _}) ->
+    #payproc_Claim{id = ID, status = Status} = get_claim(ID, St),
     #payproc_ClaimResult{id = ID, status = Status}.
 
 %%
 
-assert_operable(St) ->
-    _ = assert_unblocked(St),
-    _ = assert_active(St).
+%% TODO there should be more concise way to express this assertions in terms of preconditions
+assert_operable(StEvents) ->
+    _ = assert_unblocked(StEvents),
+    _ = assert_active(StEvents).
 
-assert_unblocked(St) ->
+assert_unblocked({St, _}) ->
     assert_blocking(get_party(St), unblocked).
 
-assert_blocked(St) ->
+assert_blocked({St, _}) ->
     assert_blocking(get_party(St), blocked).
 
-assert_active(St) ->
+assert_active({St, _}) ->
     assert_suspension(get_party(St), active).
 
-assert_suspended(St) ->
+assert_suspended({St, _}) ->
     assert_suspension(get_party(St), suspended).
 
 assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
@@ -349,6 +410,44 @@ assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
     ok;
 assert_suspension(#domain_Party{suspension = Suspension}, _) ->
     raise(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
+
+assert_shop_operable(ID, StEvents) ->
+    _ = assert_shop_unblocked(ID, StEvents),
+    _ = assert_shop_active(ID, StEvents).
+
+assert_shop_unblocked(ID, {St, _}) ->
+    Shop = assert_shop(ID, get_party(St)),
+    assert_shop_blocking(Shop, unblocked).
+
+assert_shop_blocked(ID, {St, _}) ->
+    Shop = assert_shop(ID, get_party(St)),
+    assert_shop_blocking(Shop, blocked).
+
+assert_shop_active(ID, {St, _}) ->
+    Shop = assert_shop(ID, get_party(St)),
+    assert_shop_suspension(Shop, active).
+
+assert_shop_suspended(ID, {St, _}) ->
+    Shop = assert_shop(ID, get_party(St)),
+    assert_shop_suspension(Shop, suspended).
+
+assert_shop(ID, Party) ->
+    assert_shop(get_shop(ID, Party)).
+
+assert_shop(Shop = #domain_Shop{}) ->
+    Shop;
+assert_shop(undefined) ->
+    raise(#payproc_ShopNotFound{}).
+
+assert_shop_blocking(#domain_Shop{blocking = {Status, _}}, Status) ->
+    ok;
+assert_shop_blocking(#domain_Shop{blocking = Blocking}, _) ->
+    raise(#payproc_InvalidShopStatus{status = {blocking, Blocking}}).
+
+assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
+    ok;
+assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
+    raise(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
 %%
 
@@ -409,8 +508,11 @@ merge_party_event(?claim_status_changed(ID, Status), St) ->
             St1
     end.
 
-get_shop(ID, #st{party = #domain_Party{shops = Shops}}) ->
+get_shop(ID, #domain_Party{shops = Shops}) ->
     maps:get(ID, Shops, undefined).
+
+set_shop(Shop = #domain_Shop{id = ID}, Party = #domain_Party{shops = Shops}) ->
+    Party#domain_Party{shops = Shops#{ID => Shop}}.
 
 get_claim(ID, #st{claims = Claims}) ->
     maps:get(ID, Claims, undefined).
@@ -419,7 +521,7 @@ get_pending_claim(#st{claims = Claims}) ->
     % TODO cache it during history collapse
     maps:fold(
         fun
-            (_ID, Claim = #payproc_Claim{status = ?pending()}, undefined) -> Claim;
+            (_ID, #payproc_Claim{status = ?pending()} = Claim, undefined) -> Claim;
             (_ID, #payproc_Claim{status = _Another}, Claim)               -> Claim
         end,
         undefined,
@@ -430,9 +532,31 @@ set_claim(Claim = #payproc_Claim{id = ID}, St = #st{claims = Claims}) ->
     St#st{claims = Claims#{ID => Claim}}.
 
 merge_changeset(Changeset, St) ->
-    lists:foldl(fun merge_change/2, St, Changeset).
+    St#st{party = lists:foldl(fun merge_party_change/2, get_party(St), Changeset)}.
 
-merge_change({blocking, Blocking}, St = #st{party = Party}) ->
-    St#st{party = Party#domain_Party{blocking = Blocking}};
-merge_change({suspension, Suspension}, St = #st{party = Party}) ->
-    St#st{party = Party#domain_Party{suspension = Suspension}}.
+merge_party_change({blocking, Blocking}, Party) ->
+    Party#domain_Party{blocking = Blocking};
+merge_party_change({suspension, Suspension}, Party) ->
+    Party#domain_Party{suspension = Suspension};
+merge_party_change({shop_creation, Shop}, Party) ->
+    set_shop(Shop, Party);
+merge_party_change({shop_modification, #payproc_ShopModificationUnit{id = ID, modification = V}}, Party) ->
+    set_shop(merge_shop_change(V, get_shop(ID, Party)), Party).
+
+merge_shop_change({blocking, Blocking}, Shop) ->
+    Shop#domain_Shop{blocking = Blocking};
+merge_shop_change({suspension, Suspension}, Shop) ->
+    Shop#domain_Shop{suspension = Suspension};
+merge_shop_change({update, Update}, Shop) ->
+    fold_opt([
+        {Update#payproc_ShopUpdate.category   , fun (V, S) -> S#domain_Shop{category = V}   end},
+        {Update#payproc_ShopUpdate.details    , fun (V, S) -> S#domain_Shop{details = V}    end},
+        {Update#payproc_ShopUpdate.contractor , fun (V, S) -> S#domain_Shop{contractor = V} end}
+    ], Shop).
+
+fold_opt([], V) ->
+    V;
+fold_opt([{undefined, _} | Rest], V) ->
+    fold_opt(Rest, V);
+fold_opt([{E, Fun} | Rest], V) ->
+    fold_opt(Rest, Fun(E, V)).
