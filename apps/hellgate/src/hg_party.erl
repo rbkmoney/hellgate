@@ -299,16 +299,16 @@ handle_call({activate_shop, ID, _UserInfo}, StEvents0, Context) ->
     {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
 handle_call({accept_claim, ID, _UserInfo}, StEvents0, Context) ->
-    {ok, StEvents1} = accept_claim(ID, StEvents0),
+    {ID, StEvents1} = accept_claim(ID, StEvents0),
     {respond(ok, StEvents1), Context};
 
 handle_call({deny_claim, ID, Reason, _UserInfo}, StEvents0, Context) ->
-    {ok, StEvents1} = finalize_claim(ID, ?denied(Reason), StEvents0),
+    {ID, StEvents1} = finalize_claim(ID, ?denied(Reason), StEvents0),
     {respond(ok, StEvents1), Context};
 
 handle_call({revoke_claim, ID, Reason, _UserInfo}, StEvents0, Context) ->
     ok = assert_operable(StEvents0),
-    {ok, StEvents1} = finalize_claim(ID, ?revoked(Reason), StEvents0),
+    {ID, StEvents1} = finalize_claim(ID, ?revoked(Reason), StEvents0),
     {respond(ok, StEvents1), Context}.
 
 %%
@@ -346,19 +346,60 @@ construct_shop(ShopParams) ->
 
 %%
 
-create_claim(Changeset, StEvents) ->
-    Claim = #payproc_Claim{
-        id        = ID = hg_utils:unique_id(),
-        status    = ?pending(),
-        changeset = Changeset
-    },
-    Event = ?party_ev(?claim_created(Claim)),
-    {ok, StEvents1} = try_accept_claim(ID, apply_state_event(Event, StEvents)),
-    {ID, StEvents1}.
+create_claim(Changeset, StEvents = {St, _}) ->
+    ClaimPending = get_pending_claim(St),
+    case does_changeset_need_acceptance(Changeset) of
+        false when ClaimPending == undefined ->
+            submit_accept_claim(Changeset, StEvents);
+        false ->
+            ChangesetPending = ClaimPending#payproc_Claim.changeset,
+            case has_changeset_conflict(Changeset, ChangesetPending, St) of
+                false ->
+                    submit_accept_claim(Changeset, StEvents);
+                true ->
+                    resubmit_claim(Changeset, ClaimPending, StEvents)
+            end;
+        true when ClaimPending == undefined ->
+            submit_claim(Changeset, StEvents);
+        true ->
+            resubmit_claim(Changeset, ClaimPending, StEvents)
+    end.
 
-try_accept_claim(ID, StEvents) ->
-    % TODO acceptance criteria
-    accept_claim(ID, StEvents).
+submit_claim(Changeset, StEvents) ->
+    Claim = construct_claim(Changeset),
+    Event = ?party_ev(?claim_created(Claim)),
+    {Claim#payproc_Claim.id, apply_state_event(Event, StEvents)}.
+
+submit_accept_claim(Changeset, StEvents0) ->
+    {ID, StEvents1} = submit_claim(Changeset, StEvents0),
+    accept_claim(ID, StEvents1).
+
+resubmit_claim(Changeset, #payproc_Claim{id = ClaimID, changeset = ChangesetPending}, StEvents0) ->
+    % TODO meaningful revocation reason?
+    {_, StEvents1} = finalize_claim(ClaimID, ?revoked(<<>>), StEvents0),
+    ChangesetMerged = merge_changesets(Changeset, ChangesetPending),
+    submit_claim(ChangesetMerged, StEvents1).
+
+does_changeset_need_acceptance(Changeset) ->
+    lists:any(fun is_change_need_acceptance/1, Changeset).
+
+%% TODO refine acceptance criteria
+is_change_need_acceptance({blocking, _}) ->
+    false;
+is_change_need_acceptance({suspension, _}) ->
+    false;
+is_change_need_acceptance(?shop_modification(_, Modification)) ->
+    is_change_need_acceptance(Modification);
+is_change_need_acceptance(_) ->
+    true.
+
+has_changeset_conflict(Changeset, ChangesetPending, St) ->
+    apply_changeset(merge_changesets(ChangesetPending, Changeset), St) /=
+        apply_changeset(merge_changesets(Changeset, ChangesetPending), St).
+
+merge_changesets(Changeset, ChangesetBase) ->
+    %% TODO seems not quite usable
+    ChangesetBase ++ Changeset.
 
 accept_claim(ID, StEvents = {St, _}) ->
     finalize_claim(ID, ?accepted(St#st.revision + 1), StEvents).
@@ -366,7 +407,7 @@ accept_claim(ID, StEvents = {St, _}) ->
 finalize_claim(ID, Status, StEvents) ->
     ok = assert_claim_pending(ID, StEvents),
     Event = ?party_ev(?claim_status_changed(ID, Status)),
-    {ok, apply_state_event(Event, StEvents)}.
+    {ID, apply_state_event(Event, StEvents)}.
 
 assert_claim_pending(ID, {St, _}) ->
     case get_claim(ID, St) of
@@ -377,6 +418,13 @@ assert_claim_pending(ID, {St, _}) ->
         undefined ->
             raise(#payproc_ClaimNotFound{})
     end.
+
+construct_claim(Changeset) ->
+    #payproc_Claim{
+        id        = hg_utils:unique_id(),
+        status    = ?pending(),
+        changeset = Changeset
+    }.
 
 get_claim_result(ID, {St, _}) ->
     #payproc_Claim{id = ID, status = Status} = get_claim(ID, St),
@@ -503,7 +551,7 @@ merge_party_event(?claim_status_changed(ID, Status), St) ->
     case Status of
         ?accepted(Revision) ->
             St2 = St1#st{revision = Revision},
-            merge_changeset(Claim#payproc_Claim.changeset, St2);
+            apply_changeset(Claim#payproc_Claim.changeset, St2);
         _ ->
             St1
     end.
@@ -531,23 +579,23 @@ get_pending_claim(#st{claims = Claims}) ->
 set_claim(Claim = #payproc_Claim{id = ID}, St = #st{claims = Claims}) ->
     St#st{claims = Claims#{ID => Claim}}.
 
-merge_changeset(Changeset, St) ->
-    St#st{party = lists:foldl(fun merge_party_change/2, get_party(St), Changeset)}.
+apply_changeset(Changeset, St) ->
+    St#st{party = lists:foldl(fun apply_party_change/2, get_party(St), Changeset)}.
 
-merge_party_change({blocking, Blocking}, Party) ->
+apply_party_change({blocking, Blocking}, Party) ->
     Party#domain_Party{blocking = Blocking};
-merge_party_change({suspension, Suspension}, Party) ->
+apply_party_change({suspension, Suspension}, Party) ->
     Party#domain_Party{suspension = Suspension};
-merge_party_change({shop_creation, Shop}, Party) ->
+apply_party_change({shop_creation, Shop}, Party) ->
     set_shop(Shop, Party);
-merge_party_change({shop_modification, #payproc_ShopModificationUnit{id = ID, modification = V}}, Party) ->
-    set_shop(merge_shop_change(V, get_shop(ID, Party)), Party).
+apply_party_change({shop_modification, #payproc_ShopModificationUnit{id = ID, modification = V}}, Party) ->
+    set_shop(apply_shop_change(V, get_shop(ID, Party)), Party).
 
-merge_shop_change({blocking, Blocking}, Shop) ->
+apply_shop_change({blocking, Blocking}, Shop) ->
     Shop#domain_Shop{blocking = Blocking};
-merge_shop_change({suspension, Suspension}, Shop) ->
+apply_shop_change({suspension, Suspension}, Shop) ->
     Shop#domain_Shop{suspension = Suspension};
-merge_shop_change({update, Update}, Shop) ->
+apply_shop_change({update, Update}, Shop) ->
     fold_opt([
         {Update#payproc_ShopUpdate.category   , fun (V, S) -> S#domain_Shop{category = V}   end},
         {Update#payproc_ShopUpdate.details    , fun (V, S) -> S#domain_Shop{details = V}    end},

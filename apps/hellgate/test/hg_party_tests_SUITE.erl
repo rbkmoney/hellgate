@@ -212,6 +212,8 @@ end_per_testcase(_Name, _C) ->
 -define(shop_active(),
     #payproc_InvalidShopStatus{status = {suspension, ?active()}}).
 
+-define(claim(ID),
+    #payproc_Claim{id = ID}).
 -define(claim_result(ID, Status),
     #payproc_ClaimResult{id = ID, status = Status}).
 -define(invalid_claim_status(Status),
@@ -300,11 +302,16 @@ shop_creation(C) ->
             description = <<"Hot. Fancy. Almost free.">>
         }
     },
-    ClaimID = assert_claim_accepted(hg_client:create_shop(PartyID, Params, Client), PartyID, Client),
-    {ok, Claim} = hg_client:get_claim(PartyID, ClaimID, Client),
-    #domain_Shop{id = ShopID, suspension = ?active()} = get_modification(shop_creation, Claim),
-    {ok, ?shop_state(#domain_Shop{id = ShopID, details = Details})} =
-        hg_client:get_shop(PartyID, ShopID, Client).
+    Result = hg_client:create_shop(PartyID, Params, Client),
+    Claim = assert_claim_created(Result, PartyID, Client),
+    #payproc_Claim{changeset = [{shop_creation, #domain_Shop{id = ShopID}}]} = Claim,
+    {exception, #payproc_ShopNotFound{}} = hg_client:get_shop(PartyID, ShopID, Client),
+    ok = accept_claim(Claim, PartyID, Client),
+    {ok, ?shop_state(#domain_Shop{
+        id = ShopID,
+        suspension = ?active(),
+        details = Details
+    })} = hg_client:get_shop(PartyID, ShopID, Client).
 
 shop_update(C) ->
     Client = ?config(client, C),
@@ -317,24 +324,24 @@ shop_update(C) ->
         }
     },
     Result = hg_client:update_shop(PartyID, ShopID, Update, Client),
-    _ClaimID = assert_claim_accepted(Result, PartyID, Client),
-    {ok, ?shop_state(#domain_Shop{id = ShopID, details = Details})} =
-        hg_client:get_shop(PartyID, ShopID, Client).
+    Claim = assert_claim_created(Result, PartyID, Client),
+    ok = accept_claim(Claim, PartyID, Client),
+    {ok, ?shop_state(#domain_Shop{details = Details})} = hg_client:get_shop(PartyID, ShopID, Client).
 
 claim_revocation(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     Reason = <<"The End is near">>,
-    ID1 = ensure_block_party(PartyID, Reason, Client),
+    ?claim(ID1) = ensure_block_party(PartyID, Reason, Client),
     {exception, ?party_blocked(Reason)} = hg_client:revoke_claim(PartyID, ID1, <<>>, Client),
-    ID2 = ensure_unblock_party(PartyID, <<>>, Client),
+    ?claim(ID2) = ensure_unblock_party(PartyID, <<>>, Client),
     {exception, ?invalid_claim_status(?accepted(_))} = hg_client:revoke_claim(PartyID, ID2, <<>>, Client).
 
 claim_acceptance(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     Reason = <<"And behold">>,
-    ID = ensure_block_party(PartyID, Reason, Client),
+    ?claim(ID) = ensure_block_party(PartyID, Reason, Client),
     {exception, ?invalid_claim_status(?accepted(_))} = hg_client:accept_claim(PartyID, ID, Client),
     _ = ensure_unblock_party(PartyID, <<>>, Client).
 
@@ -342,7 +349,7 @@ claim_denial(C) ->
     Client = ?config(client, C),
     PartyID = ?config(party_id, C),
     Reason = <<"I am about to destroy them">>,
-    ID = ensure_block_party(PartyID, Reason, Client),
+    ?claim(ID) = ensure_block_party(PartyID, Reason, Client),
     {exception, ?invalid_claim_status(?accepted(_))} = hg_client:deny_claim(PartyID, ID, <<>>, Client),
     _ = ensure_unblock_party(PartyID, <<>>, Client).
 
@@ -472,21 +479,27 @@ get_some_shop(PartyID, Client) ->
     [ShopID | _] = maps:keys(Shops),
     maps:get(ShopID, Shops).
 
-get_modification(Tag, #payproc_Claim{changeset = Changeset}) ->
-    genlib_opts:get(Tag, Changeset).
-
 ensure_block_party(PartyID, Reason, Client) ->
     assert_claim_accepted(hg_client:block_party(PartyID, Reason, Client), PartyID, Client).
 
 ensure_unblock_party(PartyID, Reason, Client) ->
     assert_claim_accepted(hg_client:unblock_party(PartyID, Reason, Client), PartyID, Client).
 
-assert_claim_accepted(Result, PartyID, Client) ->
-    {ok, ?claim_result(ID, Status = ?accepted(_))} = Result,
-    {ok, #payproc_Claim{status = Status}} = hg_client:get_claim(PartyID, ID, Client),
-    ?claim_created(#payproc_Claim{id = ID}) = next_event(PartyID, Client),
-    ?claim_status_changed(ID, Status) = next_event(PartyID, Client),
-    ID.
+accept_claim(#payproc_Claim{id = ClaimID}, PartyID, Client) ->
+    ok = hg_client:accept_claim(PartyID, ClaimID, Client),
+    ?claim_status_changed(ClaimID, ?accepted(_)) = next_event(PartyID, Client),
+    ok.
+
+assert_claim_created({ok, ?claim_result(ClaimID, Status = ?pending())}, PartyID, Client) ->
+    {ok, Claim = #payproc_Claim{status = Status}} = hg_client:get_claim(PartyID, ClaimID, Client),
+    ?claim_created(#payproc_Claim{id = ClaimID}) = next_event(PartyID, Client),
+    Claim.
+
+assert_claim_accepted({ok, ?claim_result(ClaimID, Status = ?accepted(_))}, PartyID, Client) ->
+    {ok, Claim = #payproc_Claim{status = Status}} = hg_client:get_claim(PartyID, ClaimID, Client),
+    ?claim_created(#payproc_Claim{id = ClaimID}) = next_event(PartyID, Client),
+    ?claim_status_changed(ClaimID, Status) = next_event(PartyID, Client),
+    Claim.
 
 %%
 
