@@ -25,7 +25,7 @@ init([]) ->
 
 %%
 
--define(config(Key), begin element(2, lists:keyfind(Key, 1, C)) end).
+-define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
 
 %% tests descriptions
 
@@ -54,7 +54,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
-    [application:stop(App) || App <- ?config(apps)].
+    [application:stop(App) || App <- ?c(apps, C)].
 
 %% tests
 
@@ -68,59 +68,59 @@ end_per_suite(C) ->
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(_Name, C) ->
-    Client = hg_client:start_link(?config(root_url), make_userinfo()),
+    Client = hg_client_invoicing:start_link(make_userinfo(), hg_client_api:new(?c(root_url, C))),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [{client, Client}, {test_sup, SupPid} | C].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
 end_per_testcase(_Name, C) ->
-    _ = unlink(?config(test_sup)),
+    _ = unlink(?c(test_sup, C)),
     _ = application:set_env(hellgate, provider_proxy_url, undefined),
-    exit(?config(test_sup), shutdown).
+    exit(?c(test_sup, C), shutdown).
 
 -spec invoice_cancellation(config()) -> _ | no_return().
 
 invoice_cancellation(C) ->
-    Client = ?config(client),
+    Client = ?c(client, C),
     InvoiceParams = make_invoice_params(<<"rubberduck">>, 10000),
-    {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
-    {exception, #payproc_InvalidInvoiceStatus{}} = hg_client:fulfill_invoice(InvoiceID, <<"perfect">>, Client),
-    ok = hg_client:rescind_invoice(InvoiceID, <<"whynot">>, Client).
+    {ok, InvoiceID} = hg_client_invoicing:create(InvoiceParams, Client),
+    {exception, #payproc_InvalidInvoiceStatus{}} = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
+    ok = hg_client_invoicing:rescind(InvoiceID, <<"whynot">>, Client).
 
 -spec overdue_invoice_cancelled(config()) -> _ | no_return().
 
 overdue_invoice_cancelled(C) ->
-    Client = ?config(client),
+    Client = ?c(client, C),
     InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(1), 10000),
-    {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
+    {ok, InvoiceID} = hg_client_invoicing:create(InvoiceParams, Client),
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
 
 -spec payment_success(config()) -> _ | no_return().
 
 payment_success(C) ->
-    Client = ?config(client),
+    Client = ?c(client, C),
     ProxyUrl = start_service_handler(hg_dummy_provider, C),
     ok = application:set_env(hellgate, provider_proxy_url, ProxyUrl),
-    InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(5), 42000),
+    InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(2), 42000),
     PaymentParams = make_payment_params(),
-    {ok, InvoiceID} = hg_client:create_invoice(InvoiceParams, Client),
+    {ok, InvoiceID} = hg_client_invoicing:create(InvoiceParams, Client),
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),
-    {ok, PaymentID} = hg_client:start_payment(InvoiceID, PaymentParams, Client),
+    {ok, PaymentID} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
     ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
     ?payment_status_changed(PaymentID, ?succeeded()) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?paid()) = next_event(InvoiceID, 1000, Client),
-    timeout = next_event(InvoiceID, 2000, Client).
+    ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
+    timeout = next_event(InvoiceID, 1000, Client).
 
 %%
 
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
-    Client = ?config(client),
-    {ok, Events} = hg_client:pull_events(_N = 5000, 1000, Client),
+    Client = hg_client_eventsink:start_link(hg_client_api:new(?config(root_url, C))),
+    {ok, Events} = hg_client_eventsink:pull_events(5000, 1000, Client),
     ok = hg_eventsink_history:assert_total_order(Events),
     ok = hg_eventsink_history:assert_contiguous_sequences(Events).
 
@@ -130,7 +130,7 @@ next_event(InvoiceID, Client) ->
     next_event(InvoiceID, 3000, Client).
 
 next_event(InvoiceID, Timeout, Client) ->
-    case hg_client:pull_invoice_event(InvoiceID, Timeout, Client) of
+    case hg_client_invoicing:pull_event(InvoiceID, Timeout, Client) of
         {ok, Event} ->
             unwrap_event(Event);
         Result ->
@@ -150,7 +150,7 @@ start_service_handler(Module, C) ->
     Host = "localhost",
     Port = get_random_port(),
     ChildSpec = hg_test_proxy:get_child_spec(Module, Host, Port),
-    {ok, _} = supervisor:start_child(?config(test_sup), ChildSpec),
+    {ok, _} = supervisor:start_child(?c(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, Host, Port).
 
 get_random_port() ->

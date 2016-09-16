@@ -14,7 +14,7 @@
 
 %%
 
--define(config(Key), begin element(2, lists:keyfind(Key, 1, C)) end).
+-define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
 
 %% tests descriptions
 
@@ -52,14 +52,20 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
-    [application:stop(App) || App <- ?config(apps)].
+    [application:stop(App) || App <- ?c(apps, C)].
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(_Name, C) ->
+    RootUrl = ?c(root_url, C),
     UserInfo = #payproc_UserInfo{id = <<?MODULE_STRING>>},
-    Client = hg_client:start_link(?config(root_url), UserInfo),
-    [{client, Client} | C].
+    [
+        {eventsink_client, hg_client_eventsink:start_link(create_api(RootUrl))},
+        {invoicing_client, hg_client_invoicing:start_link(UserInfo, create_api(RootUrl))} | C
+    ].
+
+create_api(RootUrl) ->
+    hg_client_api:new(RootUrl).
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
@@ -82,20 +88,20 @@ end_per_testcase(_Name, _C) ->
 -spec no_events(config()) -> _ | no_return().
 
 no_events(C) ->
-    Client = ?config(client),
-    none = hg_client:get_last_event_id(Client).
+    none = hg_client_eventsink:get_last_event_id(?c(eventsink_client, C)).
 
 -spec events_observed(config()) -> _ | no_return().
 
 events_observed(C) ->
-    Client = ?config(client),
+    InvoicingClient = ?c(invoicing_client, C),
+    EventsinkClient = ?c(eventsink_client, C),
     InvoiceParams = hg_ct_helper:make_invoice_params(<<?MODULE_STRING>>, <<"rubberduck">>, 10000),
-    {ok, InvoiceID1} = hg_client:create_invoice(InvoiceParams, Client),
-    ok = hg_client:rescind_invoice(InvoiceID1, <<"die">>, Client),
-    {ok, InvoiceID2} = hg_client:create_invoice(InvoiceParams, Client),
-    ok = hg_client:rescind_invoice(InvoiceID2, <<"noway">>, Client),
-    {ok, Events1} = hg_client:pull_events(2, 3000, Client),
-    {ok, Events2} = hg_client:pull_events(2, 3000, Client),
+    {ok, InvoiceID1} = hg_client_invoicing:create(InvoiceParams, InvoicingClient),
+    ok = hg_client_invoicing:rescind(InvoiceID1, <<"die">>, InvoicingClient),
+    {ok, InvoiceID2} = hg_client_invoicing:create(InvoiceParams, InvoicingClient),
+    ok = hg_client_invoicing:rescind(InvoiceID2, <<"noway">>, InvoicingClient),
+    {ok, Events1} = hg_client_eventsink:pull_events(2, 3000, EventsinkClient),
+    {ok, Events2} = hg_client_eventsink:pull_events(2, 3000, EventsinkClient),
     [
         ?event(ID1, InvoiceID1, 1, ?invoice_ev(?invoice_created(_))),
         ?event(ID2, InvoiceID1, 2, ?invoice_ev(?invoice_status_changed(?cancelled(_))))
@@ -110,7 +116,6 @@ events_observed(C) ->
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
-    Client = ?config(client),
-    {ok, Events} = hg_client:pull_events(_N = 5000, 1000, Client),
+    {ok, Events} = hg_client_eventsink:pull_events(5000, 500, ?c(eventsink_client, C)),
     ok = hg_eventsink_history:assert_total_order(Events),
     ok = hg_eventsink_history:assert_contiguous_sequences(Events).

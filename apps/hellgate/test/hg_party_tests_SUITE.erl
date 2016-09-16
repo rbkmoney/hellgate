@@ -49,7 +49,7 @@
 
 %%
 
--define(config(Key), begin element(2, lists:keyfind(Key, 1, C)) end).
+-define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
 
 %% tests descriptions
 
@@ -140,34 +140,31 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
-    [application:stop(App) || App <- ?config(apps)].
+    [application:stop(App) || App <- ?c(apps, C)].
 
 %% tests
 
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 -include("party_events.hrl").
 
--define(config(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
-
 -spec init_per_group(group_name(), config()) -> config().
 
 init_per_group(shop_blocking_suspension, C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
+    Client = ?c(client, C),
     _ = shop_creation(C),
-    #domain_Shop{id = ShopID} = get_some_shop(PartyID, Client),
+    #domain_Shop{id = ShopID} = get_some_shop(Client),
     [{shop_id, ShopID} | C];
 
 init_per_group(Group, C) ->
-    Client = hg_client:start(?config(root_url), make_userinfo()),
     PartyID = list_to_binary(lists:concat([Group, ".", erlang:system_time()])),
+    Client = hg_client_party:start(make_userinfo(), PartyID, hg_client_api:new(?c(root_url, C))),
     [{party_id, PartyID}, {client, Client} | C].
 
 -spec end_per_group(group_name(), config()) -> _.
 
 end_per_group(_Group, C) ->
-    Client = ?config(client, C),
-    hg_client:stop(Client).
+    Client = ?c(client, C),
+    hg_client_party:stop(Client).
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -190,34 +187,46 @@ end_per_testcase(_Name, _C) ->
     #payproc_PartyState{party = Party}).
 -define(party_state(Party, Revision),
     #payproc_PartyState{party = Party, revision = Revision}).
-
 -define(shop_state(Shop),
     #payproc_ShopState{shop = Shop}).
 
+-define(party_not_found(),
+    {exception, #payproc_PartyNotFound{}}).
+-define(party_exists(),
+    {exception, #payproc_PartyExists{}}).
+-define(shop_not_found(),
+    {exception, #payproc_ShopNotFound{}}).
+-define(claim_not_found(),
+    {exception, #payproc_ClaimNotFound{}}).
+-define(invalid_claim_status(Status),
+    {exception, #payproc_InvalidClaimStatus{status = Status}}).
+
 -define(party_blocked(Reason),
-    #payproc_InvalidPartyStatus{status = {blocking, ?blocked(Reason)}}).
+    {exception, #payproc_InvalidPartyStatus{status = {blocking, ?blocked(Reason)}}}).
 -define(party_unblocked(Reason),
-    #payproc_InvalidPartyStatus{status = {blocking, ?unblocked(Reason)}}).
+    {exception, #payproc_InvalidPartyStatus{status = {blocking, ?unblocked(Reason)}}}).
 -define(party_suspended(),
-    #payproc_InvalidPartyStatus{status = {suspension, ?suspended()}}).
+    {exception, #payproc_InvalidPartyStatus{status = {suspension, ?suspended()}}}).
 -define(party_active(),
-    #payproc_InvalidPartyStatus{status = {suspension, ?active()}}).
+    {exception, #payproc_InvalidPartyStatus{status = {suspension, ?active()}}}).
 
 -define(shop_blocked(Reason),
-    #payproc_InvalidShopStatus{status = {blocking, ?blocked(Reason)}}).
+    {exception, #payproc_InvalidShopStatus{status = {blocking, ?blocked(Reason)}}}).
 -define(shop_unblocked(Reason),
-    #payproc_InvalidShopStatus{status = {blocking, ?unblocked(Reason)}}).
+    {exception, #payproc_InvalidShopStatus{status = {blocking, ?unblocked(Reason)}}}).
 -define(shop_suspended(),
-    #payproc_InvalidShopStatus{status = {suspension, ?suspended()}}).
+    {exception, #payproc_InvalidShopStatus{status = {suspension, ?suspended()}}}).
 -define(shop_active(),
-    #payproc_InvalidShopStatus{status = {suspension, ?active()}}).
+    {exception, #payproc_InvalidShopStatus{status = {suspension, ?active()}}}).
 
 -define(claim(ID),
     #payproc_Claim{id = ID}).
+-define(claim(ID, Status),
+    #payproc_Claim{id = ID, status = Status}).
+-define(claim(ID, Status, Changeset),
+    #payproc_Claim{id = ID, status = Status, changeset = Changeset}).
 -define(claim_result(ID, Status),
     #payproc_ClaimResult{id = ID, status = Status}).
--define(invalid_claim_status(Status),
-    #payproc_InvalidClaimStatus{status = Status}).
 
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
@@ -252,46 +261,40 @@ end_per_testcase(_Name, _C) ->
 -spec shop_already_active(config()) -> _ | no_return().
 
 party_creation(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ok = hg_client:create_party(PartyID, Client),
-    ?party_created(?party_w_status(PartyID, ?unblocked(_), ?active()), 1) = next_event(PartyID, Client),
-    PartyID.
+    Client = ?c(client, C),
+    PartyID = ?c(party_id, C),
+    ok = hg_client_party:create(Client),
+    ?party_created(?party_w_status(PartyID, ?unblocked(_), ?active()), 1) = next_event(Client).
 
 party_already_exists(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, #payproc_PartyExists{}} = hg_client:create_party(PartyID, Client).
+    Client = ?c(client, C),
+    ?party_exists() = hg_client_party:create(Client).
 
 party_not_found_on_retrieval(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, #payproc_PartyNotFound{}} = hg_client:get_party(PartyID, Client).
+    Client = ?c(client, C),
+    ?party_not_found() = hg_client_party:get(Client).
 
 party_retrieval(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {ok, ?party_state(#domain_Party{id = PartyID})} = hg_client:get_party(PartyID, Client).
+    Client = ?c(client, C),
+    PartyID = ?c(party_id, C),
+    {ok, ?party_state(#domain_Party{id = PartyID})} = hg_client_party:get(Client).
 
 party_revisioning(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {ok, ?party_state(_Party1, Rev1)} = hg_client:get_party(PartyID, Client),
+    Client = ?c(client, C),
+    {ok, ?party_state(_Party1, Rev1)} = hg_client_party:get(Client),
     {ok, _} = party_suspension(C),
-    {ok, ?party_state(_Party2, Rev2)} = hg_client:get_party(PartyID, Client),
+    {ok, ?party_state(_Party2, Rev2)} = hg_client_party:get(Client),
     Rev2 = Rev1 + 1,
     {ok, _} = party_activation(C),
-    {ok, ?party_state(_Party3, Rev3)} = hg_client:get_party(PartyID, Client),
+    {ok, ?party_state(_Party3, Rev3)} = hg_client_party:get(Client),
     Rev3 = Rev2 + 1.
 
 shop_not_found_on_retrieval(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, #payproc_ShopNotFound{}} = hg_client:get_shop(PartyID, <<"no such shop">>, Client).
+    Client = ?c(client, C),
+    ?shop_not_found() = hg_client_party:get_shop(<<"no such shop">>, Client).
 
 shop_creation(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
+    Client = ?c(client, C),
     Params = #payproc_ShopParams{
         category = #domain_CategoryObject{
             ref  = #domain_CategoryRef{id = 42},
@@ -302,203 +305,179 @@ shop_creation(C) ->
             description = <<"Hot. Fancy. Almost free.">>
         }
     },
-    Result = hg_client:create_shop(PartyID, Params, Client),
-    Claim = assert_claim_created(Result, PartyID, Client),
-    #payproc_Claim{changeset = [{shop_creation, #domain_Shop{id = ShopID}}]} = Claim,
-    {exception, #payproc_ShopNotFound{}} = hg_client:get_shop(PartyID, ShopID, Client),
-    ok = accept_claim(Claim, PartyID, Client),
+    Result = hg_client_party:create_shop(Params, Client),
+    Claim = assert_claim_created(Result, Client),
+    ?claim(_, ?pending(), [{shop_creation, #domain_Shop{id = ShopID}}]) = Claim,
+    ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
+    ok = accept_claim(Claim, Client),
     {ok, ?shop_state(#domain_Shop{
         id = ShopID,
         suspension = ?active(),
         details = Details
-    })} = hg_client:get_shop(PartyID, ShopID, Client).
+    })} = hg_client_party:get_shop(ShopID, Client).
 
 shop_update(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    #domain_Shop{id = ShopID} = get_some_shop(PartyID, Client),
+    Client = ?c(client, C),
+    #domain_Shop{id = ShopID} = get_some_shop(Client),
     Update = #payproc_ShopUpdate{
         details = Details = #domain_ShopDetails{
             name        = <<"BARBER SHOP">>,
             description = <<"Nice. Short. Clean.">>
         }
     },
-    Result = hg_client:update_shop(PartyID, ShopID, Update, Client),
-    Claim = assert_claim_created(Result, PartyID, Client),
-    ok = accept_claim(Claim, PartyID, Client),
-    {ok, ?shop_state(#domain_Shop{details = Details})} = hg_client:get_shop(PartyID, ShopID, Client).
+    Result = hg_client_party:update_shop(ShopID, Update, Client),
+    Claim = assert_claim_created(Result, Client),
+    ok = accept_claim(Claim, Client),
+    {ok, ?shop_state(#domain_Shop{details = Details})} = hg_client_party:get_shop(ShopID, Client).
 
 claim_revocation(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
+    Client = ?c(client, C),
     Reason = <<"The End is near">>,
-    ?claim(ID1) = ensure_block_party(PartyID, Reason, Client),
-    {exception, ?party_blocked(Reason)} = hg_client:revoke_claim(PartyID, ID1, <<>>, Client),
-    ?claim(ID2) = ensure_unblock_party(PartyID, <<>>, Client),
-    {exception, ?invalid_claim_status(?accepted(_))} = hg_client:revoke_claim(PartyID, ID2, <<>>, Client).
+    ?claim(ID1) = ensure_block_party(Reason, Client),
+    ?party_blocked(Reason) = hg_client_party:revoke_claim(ID1, <<>>, Client),
+    ?claim(ID2) = ensure_unblock_party(<<>>, Client),
+    ?invalid_claim_status(?accepted(_)) = hg_client_party:revoke_claim(ID2, <<>>, Client).
 
 claim_acceptance(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
+    Client = ?c(client, C),
     Reason = <<"And behold">>,
-    ?claim(ID) = ensure_block_party(PartyID, Reason, Client),
-    {exception, ?invalid_claim_status(?accepted(_))} = hg_client:accept_claim(PartyID, ID, Client),
-    _ = ensure_unblock_party(PartyID, <<>>, Client).
+    ?claim(ID) = ensure_block_party(Reason, Client),
+    ?invalid_claim_status(?accepted(_)) = hg_client_party:accept_claim(ID, Client),
+    _ = ensure_unblock_party(<<>>, Client).
 
 claim_denial(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
+    Client = ?c(client, C),
     Reason = <<"I am about to destroy them">>,
-    ?claim(ID) = ensure_block_party(PartyID, Reason, Client),
-    {exception, ?invalid_claim_status(?accepted(_))} = hg_client:deny_claim(PartyID, ID, <<>>, Client),
-    _ = ensure_unblock_party(PartyID, <<>>, Client).
+    ?claim(ID) = ensure_block_party(Reason, Client),
+    ?invalid_claim_status(?accepted(_)) = hg_client_party:deny_claim(ID, <<>>, Client),
+    _ = ensure_unblock_party(<<>>, Client).
 
 claim_not_found_on_retrieval(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, #payproc_ClaimNotFound{}} = hg_client:get_claim(PartyID, <<"no such id">>, Client).
+    Client = ?c(client, C),
+    ?claim_not_found() = hg_client_party:get_claim(<<"no such id">>, Client).
 
 no_pending_claim(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, #payproc_ClaimNotFound{}} = hg_client:get_pending_claim(PartyID, Client).
+    Client = ?c(client, C),
+    ?claim_not_found() = hg_client_party:get_pending_claim(Client).
 
 party_blocking(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    _ = assert_claim_accepted(hg_client:block_party(PartyID, <<"i said so">>, Client), PartyID, Client),
-    {ok, ?party_state(?party_w_status(PartyID, ?blocked(_), _))} = hg_client:get_party(PartyID, Client).
+    Client = ?c(client, C),
+    PartyID = ?c(party_id, C),
+    _ = assert_claim_accepted(hg_client_party:block(<<"i said so">>, Client), Client),
+    {ok, ?party_state(?party_w_status(PartyID, ?blocked(_), _))} = hg_client_party:get(Client).
 
 party_unblocking(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    _ = assert_claim_accepted(hg_client:unblock_party(PartyID, <<"enough">>, Client), PartyID, Client),
-    {ok, ?party_state(?party_w_status(PartyID, ?unblocked(_), _))} = hg_client:get_party(PartyID, Client).
+    Client = ?c(client, C),
+    PartyID = ?c(party_id, C),
+    _ = assert_claim_accepted(hg_client_party:unblock(<<"enough">>, Client), Client),
+    {ok, ?party_state(?party_w_status(PartyID, ?unblocked(_), _))} = hg_client_party:get(Client).
 
 party_already_blocked(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, ?party_blocked(_)} = hg_client:block_party(PartyID, <<"too much">>, Client).
+    Client = ?c(client, C),
+    ?party_blocked(_) = hg_client_party:block(<<"too much">>, Client).
 
 party_already_unblocked(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, ?party_unblocked(_)} = hg_client:unblock_party(PartyID, <<"too free">>, Client).
+    Client = ?c(client, C),
+    ?party_unblocked(_) = hg_client_party:unblock(<<"too free">>, Client).
 
 party_blocked_on_suspend(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, ?party_blocked(_)} = hg_client:suspend_party(PartyID, Client).
+    Client = ?c(client, C),
+    ?party_blocked(_) = hg_client_party:suspend(Client).
 
 party_suspension(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    _ = assert_claim_accepted(hg_client:suspend_party(PartyID, Client), PartyID, Client),
-    {ok, ?party_state(?party_w_status(PartyID, _, ?suspended()))} = hg_client:get_party(PartyID, Client).
+    Client = ?c(client, C),
+    PartyID = ?c(party_id, C),
+    _ = assert_claim_accepted(hg_client_party:suspend(Client), Client),
+    {ok, ?party_state(?party_w_status(PartyID, _, ?suspended()))} = hg_client_party:get(Client).
 
 party_activation(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    _ = assert_claim_accepted(hg_client:activate_party(PartyID, Client), PartyID, Client),
-    {ok, ?party_state(?party_w_status(PartyID, _, ?active()))} = hg_client:get_party(PartyID, Client).
+    Client = ?c(client, C),
+    PartyID = ?c(party_id, C),
+    _ = assert_claim_accepted(hg_client_party:activate(Client), Client),
+    {ok, ?party_state(?party_w_status(PartyID, _, ?active()))} = hg_client_party:get(Client).
 
 party_already_suspended(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, ?party_suspended()} = hg_client:suspend_party(PartyID, Client).
+    Client = ?c(client, C),
+    ?party_suspended() = hg_client_party:suspend(Client).
 
 party_already_active(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    {exception, ?party_active()} = hg_client:activate_party(PartyID, Client).
+    Client = ?c(client, C),
+    ?party_active() = hg_client_party:activate(Client).
 
 shop_blocking(C) ->
-    Client  = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    Result  = hg_client:block_shop(PartyID, ShopID, <<"i said so">>, Client),
-    _ = assert_claim_accepted(Result, PartyID, Client),
-    {ok, ?shop_state(?shop_w_status(ShopID, ?blocked(_), _))} = hg_client:get_shop(PartyID, ShopID, Client).
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    _ = assert_claim_accepted(hg_client_party:block_shop(ShopID, <<"i said so">>, Client), Client),
+    {ok, ?shop_state(?shop_w_status(ShopID, ?blocked(_), _))} = hg_client_party:get_shop(ShopID, Client).
 
 shop_unblocking(C) ->
-    Client  = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    Result  = hg_client:unblock_shop(PartyID, ShopID, <<"enough">>, Client),
-    _ = assert_claim_accepted(Result, PartyID, Client),
-    {ok, ?shop_state(?shop_w_status(ShopID, ?unblocked(_), _))} = hg_client:get_shop(PartyID, ShopID, Client).
+    Client  = ?c(client, C),
+    ShopID  = ?c(shop_id, C),
+    _ = assert_claim_accepted(hg_client_party:unblock_shop(ShopID, <<"enough">>, Client), Client),
+    {ok, ?shop_state(?shop_w_status(ShopID, ?unblocked(_), _))} = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_blocked(C) ->
-    Client  = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    {exception, ?shop_blocked(_)} = hg_client:block_shop(PartyID, ShopID, <<"too much">>, Client).
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    ?shop_blocked(_) = hg_client_party:block_shop(ShopID, <<"too much">>, Client).
 
 shop_already_unblocked(C) ->
-    Client  = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    {exception, ?shop_unblocked(_)} = hg_client:unblock_shop(PartyID, ShopID, <<"too free">>, Client).
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    ?shop_unblocked(_) = hg_client_party:unblock_shop(ShopID, <<"too free">>, Client).
 
 shop_blocked_on_suspend(C) ->
-    Client  = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    {exception, ?shop_blocked(_)} = hg_client:suspend_shop(PartyID, ShopID, Client).
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    ?shop_blocked(_) = hg_client_party:suspend_shop(ShopID, Client).
 
 shop_suspension(C) ->
-    Client = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    Result  = hg_client:suspend_shop(PartyID, ShopID, Client),
-    _ = assert_claim_accepted(Result, PartyID, Client),
-    {ok, ?shop_state(?shop_w_status(ShopID, _, ?suspended()))} = hg_client:get_shop(PartyID, ShopID, Client).
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    _ = assert_claim_accepted(hg_client_party:suspend_shop(ShopID, Client), Client),
+    {ok, ?shop_state(?shop_w_status(ShopID, _, ?suspended()))} = hg_client_party:get_shop(ShopID, Client).
 
 shop_activation(C) ->
-    Client  = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    Result  = hg_client:activate_shop(PartyID, ShopID, Client),
-    _ = assert_claim_accepted(Result, PartyID, Client),
-    {ok, ?shop_state(?shop_w_status(ShopID, _, ?active()))} = hg_client:get_shop(PartyID, ShopID, Client).
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    _ = assert_claim_accepted(hg_client_party:activate_shop(ShopID, Client), Client),
+    {ok, ?shop_state(?shop_w_status(ShopID, _, ?active()))} = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_suspended(C) ->
-    Client  = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    {exception, ?shop_suspended()} = hg_client:suspend_shop(PartyID, ShopID, Client).
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    ?shop_suspended() = hg_client_party:suspend_shop(ShopID, Client).
 
 shop_already_active(C) ->
-    Client  = ?config(client, C),
-    PartyID = ?config(party_id, C),
-    ShopID  = ?config(shop_id, C),
-    {exception, ?shop_active()} = hg_client:activate_shop(PartyID, ShopID, Client).
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    ?shop_active() = hg_client_party:activate_shop(ShopID, Client).
 
-get_some_shop(PartyID, Client) ->
-    {ok, ?party_state(#domain_Party{shops = Shops})} = hg_client:get_party(PartyID, Client),
+get_some_shop(Client) ->
+    {ok, ?party_state(#domain_Party{shops = Shops})} = hg_client_party:get(Client),
     [ShopID | _] = maps:keys(Shops),
     maps:get(ShopID, Shops).
 
-ensure_block_party(PartyID, Reason, Client) ->
-    assert_claim_accepted(hg_client:block_party(PartyID, Reason, Client), PartyID, Client).
+ensure_block_party(Reason, Client) ->
+    assert_claim_accepted(hg_client_party:block(Reason, Client), Client).
 
-ensure_unblock_party(PartyID, Reason, Client) ->
-    assert_claim_accepted(hg_client:unblock_party(PartyID, Reason, Client), PartyID, Client).
+ensure_unblock_party(Reason, Client) ->
+    assert_claim_accepted(hg_client_party:unblock(Reason, Client), Client).
 
-accept_claim(#payproc_Claim{id = ClaimID}, PartyID, Client) ->
-    ok = hg_client:accept_claim(PartyID, ClaimID, Client),
-    ?claim_status_changed(ClaimID, ?accepted(_)) = next_event(PartyID, Client),
+accept_claim(#payproc_Claim{id = ClaimID}, Client) ->
+    ok = hg_client_party:accept_claim(ClaimID, Client),
+    ?claim_status_changed(ClaimID, ?accepted(_)) = next_event(Client),
     ok.
 
-assert_claim_created({ok, ?claim_result(ClaimID, Status = ?pending())}, PartyID, Client) ->
-    {ok, Claim = #payproc_Claim{status = Status}} = hg_client:get_claim(PartyID, ClaimID, Client),
-    ?claim_created(#payproc_Claim{id = ClaimID}) = next_event(PartyID, Client),
+assert_claim_created({ok, ?claim_result(ClaimID, Status = ?pending())}, Client) ->
+    {ok, Claim = ?claim(ClaimID, Status)} = hg_client_party:get_claim(ClaimID, Client),
+    ?claim_created(?claim(ClaimID)) = next_event(Client),
     Claim.
 
-assert_claim_accepted({ok, ?claim_result(ClaimID, Status = ?accepted(_))}, PartyID, Client) ->
-    {ok, Claim = #payproc_Claim{status = Status}} = hg_client:get_claim(PartyID, ClaimID, Client),
-    ?claim_created(#payproc_Claim{id = ClaimID}) = next_event(PartyID, Client),
-    ?claim_status_changed(ClaimID, Status) = next_event(PartyID, Client),
+assert_claim_accepted({ok, ?claim_result(ClaimID, Status = ?accepted(_))}, Client) ->
+    {ok, Claim = ?claim(ClaimID, Status)} = hg_client_party:get_claim(ClaimID, Client),
+    ?claim_created(?claim(ClaimID)) = next_event(Client),
+    ?claim_status_changed(ClaimID, Status) = next_event(Client),
     Claim.
 
 %%
@@ -506,18 +485,15 @@ assert_claim_accepted({ok, ?claim_result(ClaimID, Status = ?accepted(_))}, Party
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
-    Client = ?config(client, C),
-    {ok, Events} = hg_client:pull_events(_N = 5000, 1000, Client),
+    Client = hg_client_eventsink:start_link(hg_client_api:new(?c(root_url, C))),
+    {ok, Events} = hg_client_eventsink:pull_events(_N = 5000, 1000, Client),
     ok = hg_eventsink_history:assert_total_order(Events),
     ok = hg_eventsink_history:assert_contiguous_sequences(Events).
 
 %%
 
-next_event(PartyID, Client) ->
-    next_event(PartyID, 3000, Client).
-
-next_event(PartyID, Timeout, Client) ->
-    case hg_client:pull_party_event(PartyID, Timeout, Client) of
+next_event(Client) ->
+    case hg_client_party:pull_event(Client) of
         {ok, Event} ->
             unwrap_event(Event);
         Result ->
