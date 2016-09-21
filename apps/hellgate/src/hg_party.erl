@@ -1,3 +1,7 @@
+%% References:
+%%  * https://github.com/rbkmoney/coredocs/blob/90a4eed/docs/domain/entities/party.md
+%%  * https://github.com/rbkmoney/coredocs/blob/90a4eed/docs/domain/entities/merchant.md
+
 -module(hg_party).
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 
