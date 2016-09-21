@@ -339,9 +339,7 @@ construct_shop(ShopParams, St0) ->
 
 get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->
     % TODO cache sequences on history collapse
-    integer_to_binary(
-        1 + lists:max([0 | lists:map(fun binary_to_integer/1, maps:keys(Shops))])
-    ).
+    get_next_id(maps:keys(Shops)).
 
 %%
 
@@ -444,9 +442,7 @@ construct_claim(Changeset, St) ->
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
-    integer_to_binary(
-        1 + lists:max([0 | lists:map(fun binary_to_integer/1, maps:keys(Claims))])
-    ).
+    get_next_id(maps:keys(Claims)).
 
 get_claim_result(ID, {St, _}) ->
     #payproc_Claim{id = ID, status = Status} = get_claim(ID, St),
@@ -648,3 +644,6 @@ fold_opt([{undefined, _} | Rest], V) ->
     fold_opt(Rest, V);
 fold_opt([{E, Fun} | Rest], V) ->
     fold_opt(Rest, Fun(E, V)).
+
+get_next_id(IDs) ->
+    integer_to_binary(1 + lists:max([0 | lists:map(fun binary_to_integer/1, IDs)])).
