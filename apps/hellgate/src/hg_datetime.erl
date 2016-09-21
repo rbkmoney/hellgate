@@ -14,17 +14,14 @@
 -spec format_dt(datetime()) -> binary().
 
 format_dt(Dt = {_, _}) ->
-    {ok, Result} = rfc3339:format(Dt),
-    Result.
+    hg_utils:unwrap_result(rfc3339:format(Dt)).
 
 -spec format_ts(unix_timestamp()) -> binary().
 
 format_ts(Ts) when is_integer(Ts) ->
-    {ok, Result} = rfc3339:format(Ts, seconds),
-    Result.
+    hg_utils:unwrap_result(rfc3339:format(Ts, seconds)).
 
 -spec format_now() -> binary().
 
 format_now() ->
-    {ok, Result} = rfc3339:format(erlang:system_time()),
-    Result.
+    hg_utils:unwrap_result(rfc3339:format(erlang:system_time())).

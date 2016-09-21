@@ -2,6 +2,7 @@
 
 -export([unique_id/0]).
 -export([logtag_process/2]).
+-export([unwrap_result/1]).
 -export([get_hostname_ip/1]).
 
 %%
@@ -19,6 +20,17 @@ unique_id() ->
 logtag_process(Key, Value) when is_atom(Key) ->
     % TODO preformat into binary?
     lager:md(orddict:store(Key, Value, lager:md())).
+
+%%
+
+-spec unwrap_result
+    ({ok, T}) -> T;
+    ({error, _}) -> no_return().
+
+unwrap_result({ok, V}) ->
+    V;
+unwrap_result({error, E}) ->
+    error(E).
 
 %%
 
