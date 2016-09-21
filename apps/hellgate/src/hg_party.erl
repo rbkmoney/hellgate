@@ -31,6 +31,10 @@
 
 %%
 
+-define(try_w_context(Exp, Ctx),
+    try {Exp, Ctx} catch {exception, E} -> throw({E, Ctx}) end
+).
+
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), []) ->
     {{ok, term()}, woody_client:context()} | no_return().
 
@@ -43,12 +47,7 @@ handle_function('Get', {UserInfo, PartyID}, Context0, _Opts) ->
 
 handle_function('GetShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    case get_shop(ID, get_party(St)) of
-        Shop = #domain_Shop{} ->
-            {{ok, get_shop_state(Shop, St)}, Context};
-        undefined ->
-            throw({#payproc_ShopNotFound{}, Context})
-    end;
+    ?try_w_context({ok, get_shop_state(ID, St)}, Context);
 
 handle_function('GetEvents', {UserInfo, PartyID, Range}, Context0, _Opts) ->
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
@@ -87,21 +86,11 @@ handle_function('ActivateShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
 
 handle_function('GetClaim', {UserInfo, PartyID, ID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    case get_claim(ID, St) of
-        Claim = #payproc_Claim{} ->
-            {{ok, Claim}, Context};
-        undefined ->
-            throw({#payproc_ClaimNotFound{}, Context})
-    end;
+    ?try_w_context({ok, get_claim(ID, St)}, Context);
 
 handle_function('GetPendingClaim', {UserInfo, PartyID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    case get_pending_claim(St) of
-        Claim = #payproc_Claim{} ->
-            {{ok, Claim}, Context};
-        undefined ->
-            throw({#payproc_ClaimNotFound{}, Context})
-    end;
+    ?try_w_context({ok, ensure_claim(get_pending_claim(St))}, Context);
 
 handle_function('AcceptClaim', {UserInfo, PartyID, ID}, Context, _Opts) ->
     call(PartyID, {accept_claim, ID, UserInfo}, Context);
@@ -333,8 +322,8 @@ get_party(#st{party = Party}) ->
 get_party_state(#st{party = Party, revision = Revision}) ->
     #payproc_PartyState{party = Party, revision = Revision}.
 
-get_shop_state(Shop, #st{revision = Revision}) ->
-    #payproc_ShopState{shop = Shop, revision = Revision}.
+get_shop_state(ID, #st{party = Party, revision = Revision}) ->
+    #payproc_ShopState{shop = get_shop(ID, Party), revision = Revision}.
 
 %%
 
@@ -443,9 +432,7 @@ assert_claim_pending(ID, {St, _}) ->
         #payproc_Claim{status = ?pending()} ->
             ok;
         #payproc_Claim{status = Status} ->
-            raise(#payproc_InvalidClaimStatus{status = Status});
-        undefined ->
-            raise(#payproc_ClaimNotFound{})
+            raise(#payproc_InvalidClaimStatus{status = Status})
     end.
 
 construct_claim(Changeset, St) ->
@@ -505,28 +492,20 @@ assert_shop_operable(ID, StEvents) ->
     _ = assert_shop_active(ID, StEvents).
 
 assert_shop_unblocked(ID, {St, _}) ->
-    Shop = assert_shop(ID, get_party(St)),
+    Shop = get_shop(ID, get_party(St)),
     assert_shop_blocking(Shop, unblocked).
 
 assert_shop_blocked(ID, {St, _}) ->
-    Shop = assert_shop(ID, get_party(St)),
+    Shop = get_shop(ID, get_party(St)),
     assert_shop_blocking(Shop, blocked).
 
 assert_shop_active(ID, {St, _}) ->
-    Shop = assert_shop(ID, get_party(St)),
+    Shop = get_shop(ID, get_party(St)),
     assert_shop_suspension(Shop, active).
 
 assert_shop_suspended(ID, {St, _}) ->
-    Shop = assert_shop(ID, get_party(St)),
+    Shop = get_shop(ID, get_party(St)),
     assert_shop_suspension(Shop, suspended).
-
-assert_shop(ID, Party) ->
-    assert_shop(get_shop(ID, Party)).
-
-assert_shop(Shop = #domain_Shop{}) ->
-    Shop;
-assert_shop(undefined) ->
-    raise(#payproc_ShopNotFound{}).
 
 assert_shop_blocking(#domain_Shop{blocking = {Status, _}}, Status) ->
     ok;
@@ -605,13 +584,18 @@ get_pending_st(St) ->
     end.
 
 get_shop(ID, #domain_Party{shops = Shops}) ->
-    maps:get(ID, Shops, undefined).
+    ensure_shop(maps:get(ID, Shops, undefined)).
 
 set_shop(Shop = #domain_Shop{id = ID}, Party = #domain_Party{shops = Shops}) ->
     Party#domain_Party{shops = Shops#{ID => Shop}}.
 
+ensure_shop(Shop = #domain_Shop{}) ->
+    Shop;
+ensure_shop(undefined) ->
+    raise(#payproc_ShopNotFound{}).
+
 get_claim(ID, #st{claims = Claims}) ->
-    maps:get(ID, Claims, undefined).
+    ensure_claim(maps:get(ID, Claims, undefined)).
 
 get_pending_claim(#st{claims = Claims}) ->
     % TODO cache it during history collapse
@@ -626,6 +610,11 @@ get_pending_claim(#st{claims = Claims}) ->
 
 set_claim(Claim = #payproc_Claim{id = ID}, St = #st{claims = Claims}) ->
     St#st{claims = Claims#{ID => Claim}}.
+
+ensure_claim(Claim = #payproc_Claim{}) ->
+    Claim;
+ensure_claim(undefined) ->
+    raise(#payproc_ClaimNotFound{}).
 
 apply_claim(#payproc_Claim{changeset = Changeset}, St) ->
     apply_changeset(Changeset, St).
