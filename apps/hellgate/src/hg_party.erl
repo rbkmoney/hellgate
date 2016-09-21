@@ -338,7 +338,7 @@ construct_shop(ShopParams) ->
     #domain_Shop{
         id         = hg_utils:unique_id(),
         blocking   = ?unblocked(<<>>),
-        suspension = ?active(),
+        suspension = ?suspended(),
         category   = ShopParams#payproc_ShopParams.category,
         details    = ShopParams#payproc_ShopParams.details,
         contractor = ShopParams#payproc_ShopParams.contractor
