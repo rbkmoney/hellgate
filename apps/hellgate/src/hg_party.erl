@@ -265,9 +265,9 @@ handle_call({activate, _UserInfo}, StEvents0, Context) ->
     {ClaimID, StEvents1} = create_claim([{suspension, ?active()}], StEvents0),
     {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
-handle_call({create_shop, Params, _UserInfo}, StEvents0, Context) ->
+handle_call({create_shop, Params, _UserInfo}, StEvents0 = {St0, _}, Context) ->
     ok = assert_operable(StEvents0),
-    {ClaimID, StEvents1} = create_claim([{shop_creation, construct_shop(Params)}], StEvents0),
+    {ClaimID, StEvents1} = create_claim([{shop_creation, construct_shop(Params, St0)}], StEvents0),
     {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
 handle_call({update_shop, ID, Update, _UserInfo}, StEvents0, Context) ->
@@ -334,15 +334,21 @@ get_shop_state(Shop, #st{revision = Revision}) ->
 
 %%
 
-construct_shop(ShopParams) ->
+construct_shop(ShopParams, St0) ->
     #domain_Shop{
-        id         = hg_utils:unique_id(),
+        id         = get_next_shop_id(get_pending_st(St0)),
         blocking   = ?unblocked(<<>>),
         suspension = ?suspended(),
         category   = ShopParams#payproc_ShopParams.category,
         details    = ShopParams#payproc_ShopParams.details,
         contractor = ShopParams#payproc_ShopParams.contractor
     }.
+
+get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->
+    % TODO cache sequences on history collapse
+    integer_to_binary(
+        1 + lists:max([0 | lists:map(fun binary_to_integer/1, maps:keys(Shops))])
+    ).
 
 %%
 
@@ -365,8 +371,8 @@ create_claim(Changeset, StEvents = {St, _}) ->
             resubmit_claim(Changeset, ClaimPending, StEvents)
     end.
 
-submit_claim(Changeset, StEvents) ->
-    Claim = construct_claim(Changeset),
+submit_claim(Changeset, StEvents = {St, _}) ->
+    Claim = construct_claim(Changeset, St),
     Event = ?party_ev(?claim_created(Claim)),
     {Claim#payproc_Claim.id, apply_state_event(Event, StEvents)}.
 
@@ -419,12 +425,18 @@ assert_claim_pending(ID, {St, _}) ->
             raise(#payproc_ClaimNotFound{})
     end.
 
-construct_claim(Changeset) ->
+construct_claim(Changeset, St) ->
     #payproc_Claim{
-        id        = hg_utils:unique_id(),
+        id        = get_next_claim_id(St),
         status    = ?pending(),
         changeset = Changeset
     }.
+
+get_next_claim_id(#st{claims = Claims}) ->
+    % TODO cache sequences on history collapse
+    integer_to_binary(
+        1 + lists:max([0 | lists:map(fun binary_to_integer/1, maps:keys(Claims))])
+    ).
 
 get_claim_result(ID, {St, _}) ->
     #payproc_Claim{id = ID, status = Status} = get_claim(ID, St),
@@ -550,10 +562,17 @@ merge_party_event(?claim_status_changed(ID, Status), St) ->
     St1 = set_claim(Claim#payproc_Claim{status = Status}, St),
     case Status of
         ?accepted(Revision) ->
-            St2 = St1#st{revision = Revision},
-            apply_changeset(Claim#payproc_Claim.changeset, St2);
+            apply_claim(Claim, St1#st{revision = Revision});
         _ ->
             St1
+    end.
+
+get_pending_st(St) ->
+    case get_pending_claim(St) of
+        undefined ->
+            St;
+        Claim ->
+            apply_claim(Claim, St)
     end.
 
 get_shop(ID, #domain_Party{shops = Shops}) ->
@@ -578,6 +597,9 @@ get_pending_claim(#st{claims = Claims}) ->
 
 set_claim(Claim = #payproc_Claim{id = ID}, St = #st{claims = Claims}) ->
     St#st{claims = Claims#{ID => Claim}}.
+
+apply_claim(#payproc_Claim{changeset = Changeset}, St) ->
+    apply_changeset(Changeset, St).
 
 apply_changeset(Changeset, St) ->
     St#st{party = lists:foldl(fun apply_party_change/2, get_party(St), Changeset)}.

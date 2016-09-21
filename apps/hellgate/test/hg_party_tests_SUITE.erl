@@ -102,6 +102,7 @@ groups() ->
             party_creation,
             shop_not_found_on_retrieval,
             shop_creation,
+            shop_activation,
             shop_update,
             {group, shop_blocking_suspension}
         ]},
@@ -150,10 +151,7 @@ end_per_suite(C) ->
 -spec init_per_group(group_name(), config()) -> config().
 
 init_per_group(shop_blocking_suspension, C) ->
-    Client = ?c(client, C),
-    _ = shop_creation(C),
-    #domain_Shop{id = ShopID} = get_some_shop(Client),
-    [{shop_id, ShopID} | C];
+    C;
 
 init_per_group(Group, C) ->
     PartyID = list_to_binary(lists:concat([Group, ".", erlang:system_time()])),
@@ -312,13 +310,13 @@ shop_creation(C) ->
     ok = accept_claim(Claim, Client),
     {ok, ?shop_state(#domain_Shop{
         id = ShopID,
-        suspension = ?active(),
+        suspension = ?suspended(),
         details = Details
     })} = hg_client_party:get_shop(ShopID, Client).
 
 shop_update(C) ->
     Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_some_shop(Client),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     Update = #payproc_ShopUpdate{
         details = Details = #domain_ShopDetails{
             name        = <<"BARBER SHOP">>,
@@ -406,54 +404,54 @@ party_already_active(C) ->
 
 shop_blocking(C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     _ = assert_claim_accepted(hg_client_party:block_shop(ShopID, <<"i said so">>, Client), Client),
     {ok, ?shop_state(?shop_w_status(ShopID, ?blocked(_), _))} = hg_client_party:get_shop(ShopID, Client).
 
 shop_unblocking(C) ->
     Client  = ?c(client, C),
-    ShopID  = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     _ = assert_claim_accepted(hg_client_party:unblock_shop(ShopID, <<"enough">>, Client), Client),
     {ok, ?shop_state(?shop_w_status(ShopID, ?unblocked(_), _))} = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_blocked(C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     ?shop_blocked(_) = hg_client_party:block_shop(ShopID, <<"too much">>, Client).
 
 shop_already_unblocked(C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     ?shop_unblocked(_) = hg_client_party:unblock_shop(ShopID, <<"too free">>, Client).
 
 shop_blocked_on_suspend(C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     ?shop_blocked(_) = hg_client_party:suspend_shop(ShopID, Client).
 
 shop_suspension(C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     _ = assert_claim_accepted(hg_client_party:suspend_shop(ShopID, Client), Client),
     {ok, ?shop_state(?shop_w_status(ShopID, _, ?suspended()))} = hg_client_party:get_shop(ShopID, Client).
 
 shop_activation(C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     _ = assert_claim_accepted(hg_client_party:activate_shop(ShopID, Client), Client),
     {ok, ?shop_state(?shop_w_status(ShopID, _, ?active()))} = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_suspended(C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     ?shop_suspended() = hg_client_party:suspend_shop(ShopID, Client).
 
 shop_already_active(C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
     ?shop_active() = hg_client_party:activate_shop(ShopID, Client).
 
-get_some_shop(Client) ->
+get_first_shop(Client) ->
     {ok, ?party_state(#domain_Party{shops = Shops})} = hg_client_party:get(Client),
     [ShopID | _] = maps:keys(Shops),
     maps:get(ShopID, Shops).
