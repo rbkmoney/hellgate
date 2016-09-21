@@ -15,11 +15,15 @@
 -export([party_already_exists/1]).
 -export([party_retrieval/1]).
 
+-export([claim_already_accepted_on_accept/1]).
+-export([claim_already_accepted_on_deny/1]).
+-export([claim_already_accepted_on_revoke/1]).
 -export([claim_acceptance/1]).
 -export([claim_denial/1]).
 -export([claim_revocation/1]).
 -export([claim_not_found_on_retrieval/1]).
 -export([no_pending_claim/1]).
+-export([complex_claim_acceptance/1]).
 
 -export([party_revisioning/1]).
 -export([party_blocking/1]).
@@ -120,9 +124,16 @@ groups() ->
         {claim_management, [sequence], [
             party_creation,
             claim_not_found_on_retrieval,
-            claim_revocation,
+            claim_already_accepted_on_revoke,
+            claim_already_accepted_on_accept,
+            claim_already_accepted_on_deny,
+            shop_creation,
+            shop_activation,
             claim_acceptance,
             claim_denial,
+            claim_revocation,
+            no_pending_claim,
+            complex_claim_acceptance,
             no_pending_claim
         ]},
         {consistent_history, [], [
@@ -234,11 +245,15 @@ end_per_testcase(_Name, _C) ->
 -spec shop_creation(config()) -> _ | no_return().
 -spec shop_update(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
--spec claim_revocation(config()) -> _ | no_return().
+-spec claim_already_accepted_on_revoke(config()) -> _ | no_return().
+-spec claim_already_accepted_on_accept(config()) -> _ | no_return().
+-spec claim_already_accepted_on_deny(config()) -> _ | no_return().
 -spec claim_acceptance(config()) -> _ | no_return().
 -spec claim_denial(config()) -> _ | no_return().
+-spec claim_revocation(config()) -> _ | no_return().
 -spec claim_not_found_on_retrieval(config()) -> _ | no_return().
 -spec no_pending_claim(config()) -> _ | no_return().
+-spec complex_claim_acceptance(config()) -> _ | no_return().
 -spec party_blocking(config()) -> _ | no_return().
 -spec party_unblocking(config()) -> _ | no_return().
 -spec party_already_blocked(config()) -> _ | no_return().
@@ -294,14 +309,8 @@ shop_not_found_on_retrieval(C) ->
 shop_creation(C) ->
     Client = ?c(client, C),
     Params = #payproc_ShopParams{
-        category = #domain_CategoryObject{
-            ref  = #domain_CategoryRef{id = 42},
-            data = #domain_Category{name = <<"TEST">>}
-        },
-        details  = Details = #domain_ShopDetails{
-            name        = <<"THRIFT SHOP">>,
-            description = <<"Hot. Fancy. Almost free.">>
-        }
+        category = make_category(42, <<"TEST">>),
+        details  = Details = make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_created(Result, Client),
@@ -317,18 +326,76 @@ shop_creation(C) ->
 shop_update(C) ->
     Client = ?c(client, C),
     #domain_Shop{id = ShopID} = get_first_shop(Client),
-    Update = #payproc_ShopUpdate{
-        details = Details = #domain_ShopDetails{
-            name        = <<"BARBER SHOP">>,
-            description = <<"Nice. Short. Clean.">>
-        }
-    },
+    Details = make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
+    Update = #payproc_ShopUpdate{details = Details},
     Result = hg_client_party:update_shop(ShopID, Update, Client),
     Claim = assert_claim_created(Result, Client),
     ok = accept_claim(Claim, Client),
     {ok, ?shop_state(#domain_Shop{details = Details})} = hg_client_party:get_shop(ShopID, Client).
 
+claim_acceptance(C) ->
+    Client = ?c(client, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
+    Update = #payproc_ShopUpdate{details = Details = make_shop_details(<<"McDolan">>)},
+    Result = hg_client_party:update_shop(ShopID, Update, Client),
+    Claim = assert_claim_created(Result, Client),
+    ok = accept_claim(Claim, Client),
+    {ok, ?shop_state(#domain_Shop{details = Details})} = hg_client_party:get_shop(ShopID, Client).
+
+claim_denial(C) ->
+    Client = ?c(client, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
+    {ok, ShopState} = hg_client_party:get_shop(ShopID, Client),
+    Update = #payproc_ShopUpdate{details = #domain_ShopDetails{name = <<"Pr0nHub">>}},
+    Result = hg_client_party:update_shop(ShopID, Update, Client),
+    Claim = assert_claim_created(Result, Client),
+    ok = deny_claim(Claim, Client),
+    {ok, ShopState} = hg_client_party:get_shop(ShopID, Client).
+
 claim_revocation(C) ->
+    Client = ?c(client, C),
+    {ok, PartyState} = hg_client_party:get(Client),
+    Params = #payproc_ShopParams{
+        category = make_category(42, <<"TEST">>),
+        details  = make_shop_details(<<"OOPS">>)
+    },
+    Result = hg_client_party:create_shop(Params, Client),
+    Claim = assert_claim_created(Result, Client),
+    ?claim(_, _, [{shop_creation, #domain_Shop{id = ShopID}}]) = Claim,
+    ok = revoke_claim(Claim, Client),
+    {ok, PartyState} = hg_client_party:get(Client),
+    ?shop_not_found() = hg_client_party:get_shop(ShopID, Client).
+
+complex_claim_acceptance(C) ->
+    Client = ?c(client, C),
+    Params1 = #payproc_ShopParams{
+        category = make_category(1, <<>>),
+        details  = Details1 = make_shop_details(<<"SHOP 1">>)
+    },
+    Params2 = #payproc_ShopParams{
+        category = make_category(2, <<>>),
+        details  = Details2 = make_shop_details(<<"SHOP 2">>)
+    },
+    Claim1 = assert_claim_created(hg_client_party:create_shop(Params1, Client), Client),
+    ?claim(ClaimID1, _, [
+        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}}
+    ]) = Claim1,
+    _ = assert_claim_accepted(hg_client_party:suspend(Client), Client),
+    {ok, Claim1} = hg_client_party:get_pending_claim(Client),
+    _ = assert_claim_accepted(hg_client_party:activate(Client), Client),
+    {ok, Claim1} = hg_client_party:get_pending_claim(Client),
+    Claim2 = assert_claim_created(hg_client_party:create_shop(Params2, Client), Client),
+    ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
+    {ok, Claim2} = hg_client_party:get_pending_claim(Client),
+    ?claim(_, _, [
+        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}},
+        {shop_creation, #domain_Shop{id = ShopID2, details = Details2}}
+    ]) = Claim2,
+    ok = accept_claim(Claim2, Client),
+    {ok, ?shop_state(#domain_Shop{details = Details1})} = hg_client_party:get_shop(ShopID1, Client),
+    {ok, ?shop_state(#domain_Shop{details = Details2})} = hg_client_party:get_shop(ShopID2, Client).
+
+claim_already_accepted_on_revoke(C) ->
     Client = ?c(client, C),
     Reason = <<"The End is near">>,
     ?claim(ID1) = ensure_block_party(Reason, Client),
@@ -336,14 +403,14 @@ claim_revocation(C) ->
     ?claim(ID2) = ensure_unblock_party(<<>>, Client),
     ?invalid_claim_status(?accepted(_)) = hg_client_party:revoke_claim(ID2, <<>>, Client).
 
-claim_acceptance(C) ->
+claim_already_accepted_on_accept(C) ->
     Client = ?c(client, C),
     Reason = <<"And behold">>,
     ?claim(ID) = ensure_block_party(Reason, Client),
     ?invalid_claim_status(?accepted(_)) = hg_client_party:accept_claim(ID, Client),
     _ = ensure_unblock_party(<<>>, Client).
 
-claim_denial(C) ->
+claim_already_accepted_on_deny(C) ->
     Client = ?c(client, C),
     Reason = <<"I am about to destroy them">>,
     ?claim(ID) = ensure_block_party(Reason, Client),
@@ -467,6 +534,16 @@ accept_claim(#payproc_Claim{id = ClaimID}, Client) ->
     ?claim_status_changed(ClaimID, ?accepted(_)) = next_event(Client),
     ok.
 
+deny_claim(#payproc_Claim{id = ClaimID}, Client) ->
+    ok = hg_client_party:deny_claim(ClaimID, Reason = <<"The Reason">>, Client),
+    ?claim_status_changed(ClaimID, ?denied(Reason)) = next_event(Client),
+    ok.
+
+revoke_claim(#payproc_Claim{id = ClaimID}, Client) ->
+    ok = hg_client_party:revoke_claim(ClaimID, <<>>, Client),
+    ?claim_status_changed(ClaimID, ?revoked(<<>>)) = next_event(Client),
+    ok.
+
 assert_claim_created({ok, ?claim_result(ClaimID, Status = ?pending())}, Client) ->
     {ok, Claim = ?claim(ClaimID, Status)} = hg_client_party:get_claim(ClaimID, Client),
     ?claim_created(?claim(ClaimID)) = next_event(Client),
@@ -507,3 +584,18 @@ unwrap_event(E) ->
 
 make_userinfo() ->
     #payproc_UserInfo{id = <<?MODULE_STRING>>}.
+
+make_category(ID, Name) ->
+    #domain_CategoryObject{
+        ref  = #domain_CategoryRef{id = ID},
+        data = #domain_Category{name = Name}
+    }.
+
+make_shop_details(Name) ->
+    make_shop_details(Name, undefined).
+
+make_shop_details(Name, Description) ->
+    #domain_ShopDetails{
+        name        = Name,
+        description = Description
+    }.
