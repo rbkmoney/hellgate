@@ -1,5 +1,5 @@
--ifndef(__hellgate_invoice_events__).
--define(__hellgate_invoice_events__, 42).
+-ifndef(__hellgate_party_events__).
+-define(__hellgate_party_events__, 42).
 
 -define(party_ev(Body), {party_event, Body}).
 
