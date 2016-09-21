@@ -358,20 +358,33 @@ get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->
 
 create_claim(Changeset, StEvents = {St, _}) ->
     ClaimPending = get_pending_claim(St),
+    % Test if we can safely accept proposed changes.
     case does_changeset_need_acceptance(Changeset) of
         false when ClaimPending == undefined ->
+            % We can and there is no pending claim, accept them right away.
             submit_accept_claim(Changeset, StEvents);
         false ->
-            ChangesetPending = ClaimPending#payproc_Claim.changeset,
-            case has_changeset_conflict(Changeset, ChangesetPending, St) of
-                false ->
-                    submit_accept_claim(Changeset, StEvents);
-                true ->
-                    resubmit_claim(Changeset, ClaimPending, StEvents)
-            end;
+            % We can but there is pending claim...
+            try_submit_accept_claim(Changeset, ClaimPending, StEvents);
         true when ClaimPending == undefined ->
+            % We can't and there is no pending claim, submit new pending claim with proposed changes.
             submit_claim(Changeset, StEvents);
         true ->
+            % We can't and there is in fact pending claim, revoke it and submit new claim with
+            % a combination of proposed changes and pending changes.
+            resubmit_claim(Changeset, ClaimPending, StEvents)
+    end.
+
+try_submit_accept_claim(Changeset, ClaimPending, StEvents = {St, _}) ->
+    ChangesetPending = ClaimPending#payproc_Claim.changeset,
+    % ...Test whether there's a conflict between pending changes and proposed changes.
+    case has_changeset_conflict(Changeset, ChangesetPending, St) of
+        false ->
+            % If there's none then we can accept proposed changes safely.
+            submit_accept_claim(Changeset, StEvents);
+        true ->
+            % If there is then we should revoke the pending claim and submit new claim with a
+            % combination of proposed changes and pending changes.
             resubmit_claim(Changeset, ClaimPending, StEvents)
     end.
 
@@ -404,11 +417,17 @@ is_change_need_acceptance(_) ->
     true.
 
 has_changeset_conflict(Changeset, ChangesetPending, St) ->
+    % NOTE We can safely assume that conflict is essentially the fact that two changesets are
+    %      overlapping. Provided that any change is free of side effects (like computing unique
+    %      identifiers), we can test if there's any overlapping by just applying changesets to the
+    %      current state in different order and comparing produced states. If they're the same then
+    %      there is no overlapping in changesets.
     apply_changeset(merge_changesets(ChangesetPending, Changeset), St) /=
         apply_changeset(merge_changesets(Changeset, ChangesetPending), St).
 
 merge_changesets(Changeset, ChangesetBase) ->
-    %% TODO seems not quite usable
+    % TODO Evaluating a possibility to drop server-side claim merges completely, since it's the
+    %      source of unwelcomed complexity. In the meantime this naïve implementation would suffice.
     ChangesetBase ++ Changeset.
 
 accept_claim(ID, StEvents = {St, _}) ->
