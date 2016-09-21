@@ -376,9 +376,8 @@ create_claim(Changeset, StEvents = {St, _}) ->
     end.
 
 try_submit_accept_claim(Changeset, ClaimPending, StEvents = {St, _}) ->
-    ChangesetPending = ClaimPending#payproc_Claim.changeset,
     % ...Test whether there's a conflict between pending changes and proposed changes.
-    case has_changeset_conflict(Changeset, ChangesetPending, St) of
+    case has_changeset_conflict(Changeset, get_claim_changeset(ClaimPending), St) of
         false ->
             % If there's none then we can accept proposed changes safely.
             submit_accept_claim(Changeset, StEvents);
@@ -391,17 +390,18 @@ try_submit_accept_claim(Changeset, ClaimPending, StEvents = {St, _}) ->
 submit_claim(Changeset, StEvents = {St, _}) ->
     Claim = construct_claim(Changeset, St),
     Event = ?party_ev(?claim_created(Claim)),
-    {Claim#payproc_Claim.id, apply_state_event(Event, StEvents)}.
+    {get_claim_id(Claim), apply_state_event(Event, StEvents)}.
 
 submit_accept_claim(Changeset, StEvents0) ->
     {ID, StEvents1} = submit_claim(Changeset, StEvents0),
     accept_claim(ID, StEvents1).
 
-resubmit_claim(Changeset, #payproc_Claim{id = ClaimID, changeset = ChangesetPending}, StEvents0) ->
-    % TODO meaningful revocation reason?
-    {_, StEvents1} = finalize_claim(ClaimID, ?revoked(<<>>), StEvents0),
-    ChangesetMerged = merge_changesets(Changeset, ChangesetPending),
-    submit_claim(ChangesetMerged, StEvents1).
+resubmit_claim(Changeset, ClaimPending, StEvents0) ->
+    ChangesetMerged = merge_changesets(Changeset, get_claim_changeset(ClaimPending)),
+    {ID, StEvents1} = submit_claim(ChangesetMerged, StEvents0),
+    Reason = <<"Superseded by ", ID/binary>>,
+    {_ , StEvents2} = finalize_claim(get_claim_id(ClaimPending), ?revoked(Reason), StEvents1),
+    {ID, StEvents2}.
 
 does_changeset_need_acceptance(Changeset) ->
     lists:any(fun is_change_need_acceptance/1, Changeset).
@@ -464,6 +464,12 @@ get_next_claim_id(#st{claims = Claims}) ->
 get_claim_result(ID, {St, _}) ->
     #payproc_Claim{id = ID, status = Status} = get_claim(ID, St),
     #payproc_ClaimResult{id = ID, status = Status}.
+
+get_claim_id(#payproc_Claim{id = ID}) ->
+    ID.
+
+get_claim_changeset(#payproc_Claim{changeset = Changeset}) ->
+    Changeset.
 
 %%
 
