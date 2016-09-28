@@ -123,6 +123,7 @@ payment_success(C) ->
     ShopID = ?c(shop_id, C),
     PartyID = ?c(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(2), 42000),
+    ok = hg_domain:update(hg_ct_helper:domain_fixture(proxy)),
     PaymentParams = make_payment_params(),
     {ok, InvoiceID} = hg_client_invoicing:create(InvoiceParams, Client),
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),

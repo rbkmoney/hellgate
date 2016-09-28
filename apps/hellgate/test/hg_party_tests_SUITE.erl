@@ -158,6 +158,7 @@ groups() ->
 
 init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate]),
+    dmt_client_poller:poll(),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.

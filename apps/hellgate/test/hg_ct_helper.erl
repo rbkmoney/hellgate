@@ -14,6 +14,11 @@
 -export([make_shop_details/1]).
 -export([make_shop_details/2]).
 
+-export([domain_fixture/1]).
+
+-include_lib("dmsl/include/dmsl_domain_thrift.hrl").
+-include_lib("dmsl/include/dmsl_domain_config_thrift.hrl").
+
 %%
 
 -type app_name() :: atom().
@@ -162,4 +167,58 @@ make_shop_details(Name, Description) ->
     #domain_ShopDetails{
         name        = Name,
         description = Description
+    }.
+
+-type ref() :: _.
+-type data() :: _.
+-spec domain_fixture(atom()) -> {ref(), data()}.
+
+domain_fixture(globals) ->
+    {
+        #domain_GlobalsRef{},
+        #domain_Globals{
+            party_prototype = #domain_PartyPrototypeRef{
+                id = 42
+            },
+            providers = {value, []}
+        }
+    };
+domain_fixture(party_prototype) ->
+    {
+        #domain_PartyPrototypeRef{
+            id = 42
+        },
+        #domain_PartyPrototype{
+            shop = #domain_ShopPrototype{
+                category = #'domain_CategoryRef'{
+                    id = 1
+                },
+                currency = #'domain_CurrencyRef'{
+                    symbolic_code = <<"RUB">>
+                }
+            },
+            default_services = #domain_ShopServices{}
+        }
+    };
+domain_fixture(currency) ->
+    {
+        #'domain_CurrencyRef'{
+            symbolic_code = <<"RUB">>
+        },
+        #'domain_Currency'{
+            name = <<"Russian rubles">>,
+            symbolic_code = <<"RUB">>,
+            numeric_code = 643,
+            exponent = 2
+        }
+    };
+domain_fixture(proxy) ->
+    {
+        #'domain_ProxyRef'{
+            id = 1
+        },
+        #'domain_ProxyDefinition'{
+            url = genlib_app:env(hellgate, provider_proxy_url, <<>>),
+            options = genlib_app:env(hellgate, provider_proxy_options, #{})
+        }
     }.

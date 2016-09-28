@@ -47,6 +47,10 @@ groups() ->
 
 init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate]),
+    ok = hg_domain:insert(hg_ct_helper:domain_fixture(currency)),
+    ok = hg_domain:insert(hg_ct_helper:domain_fixture(globals)),
+    ok = hg_domain:insert(hg_ct_helper:domain_fixture(party_prototype)),
+    ok = hg_domain:insert(hg_ct_helper:domain_fixture(proxy)),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.

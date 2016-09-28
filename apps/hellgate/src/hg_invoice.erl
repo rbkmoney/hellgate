@@ -403,6 +403,7 @@ sequence_event_({private, Ev}, Seq) ->
 
 create_invoice(ID, V = #payproc_InvoiceParams{}, PartyState) ->
     Revision = hg_domain:head(),
+    Currency = hg_domain:get(V#payproc_InvoiceParams.currency),
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
@@ -416,7 +417,7 @@ create_invoice(ID, V = #payproc_InvoiceParams{}, PartyState) ->
         context         = V#payproc_InvoiceParams.context,
         cost            = #domain_Cash{
             amount          = V#payproc_InvoiceParams.amount,
-            currency        = hg_domain:get(Revision, V#payproc_InvoiceParams.currency)
+            currency        = Currency
         }
     }.
 
