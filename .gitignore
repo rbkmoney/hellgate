@@ -8,4 +8,4 @@ erl_crash.dump
 .DS_Store
 Dockerfile
 docker-compose.yml
-
+/.idea/

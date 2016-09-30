@@ -376,12 +376,15 @@ try_submit_accept_claim(Changeset, ClaimPending, StEvents = {St, _}) ->
 
 submit_claim(Changeset, StEvents = {St, _}) ->
     Claim = construct_claim(Changeset, St),
+    submit_claim_event(Claim, StEvents).
+
+submit_accept_claim(Changeset, StEvents = {St, _}) ->
+    Claim = construct_claim(Changeset, St, ?accepted(St#st.revision + 1)),
+    submit_claim_event(Claim, StEvents).
+
+submit_claim_event(Claim, StEvents) ->
     Event = ?party_ev(?claim_created(Claim)),
     {get_claim_id(Claim), apply_state_event(Event, StEvents)}.
-
-submit_accept_claim(Changeset, StEvents0) ->
-    {ID, StEvents1} = submit_claim(Changeset, StEvents0),
-    accept_claim(ID, StEvents1).
 
 resubmit_claim(Changeset, ClaimPending, StEvents0) ->
     ChangesetMerged = merge_changesets(Changeset, get_claim_changeset(ClaimPending)),
@@ -434,9 +437,12 @@ assert_claim_pending(ID, {St, _}) ->
     end.
 
 construct_claim(Changeset, St) ->
+    construct_claim(Changeset, St, ?pending()).
+
+construct_claim(Changeset, St, Status) ->
     #payproc_Claim{
         id        = get_next_claim_id(St),
-        status    = ?pending(),
+        status    = Status,
         changeset = Changeset
     }.
 
@@ -560,16 +566,13 @@ merge_event(?party_ev(Ev), St) ->
 merge_party_event(?party_created(Party, Revision), St) ->
     St#st{party = Party, revision = Revision};
 merge_party_event(?claim_created(Claim), St) ->
-    set_claim(Claim, St);
+    St1 = set_claim(Claim, St),
+    apply_accepted_claim(Claim, St1);
 merge_party_event(?claim_status_changed(ID, Status), St) ->
     Claim = get_claim(ID, St),
-    St1 = set_claim(Claim#payproc_Claim{status = Status}, St),
-    case Status of
-        ?accepted(Revision) ->
-            apply_claim(Claim, St1#st{revision = Revision});
-        _ ->
-            St1
-    end.
+    Claim1 = Claim#payproc_Claim{status = Status},
+    St1 = set_claim(Claim1, St),
+    apply_accepted_claim(Claim1, St1).
 
 get_pending_st(St) ->
     case get_pending_claim(St) of
@@ -611,6 +614,11 @@ ensure_claim(Claim = #payproc_Claim{}) ->
     Claim;
 ensure_claim(undefined) ->
     raise(#payproc_ClaimNotFound{}).
+
+apply_accepted_claim(Claim = #payproc_Claim{status = ?accepted(Revision)}, St) ->
+    apply_claim(Claim, St#st{revision = Revision});
+apply_accepted_claim(_Claim, St) ->
+    St.
 
 apply_claim(#payproc_Claim{changeset = Changeset}, St) ->
     apply_changeset(Changeset, St).
