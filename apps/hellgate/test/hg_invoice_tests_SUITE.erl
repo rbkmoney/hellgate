@@ -110,7 +110,8 @@ payment_success(C) ->
     {ok, PaymentID} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
     ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
-    ?payment_status_changed(PaymentID, ?succeeded()) = next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, 1000, Client).
 
@@ -149,7 +150,8 @@ unwrap_event(E) ->
 start_service_handler(Module, C) ->
     Host = "localhost",
     Port = get_random_port(),
-    ChildSpec = hg_test_proxy:get_child_spec(Module, Host, Port),
+    Opts = #{hellgate_root_url => ?c(root_url, C)},
+    ChildSpec = hg_test_proxy:get_child_spec(Module, Host, Port, Opts),
     {ok, _} = supervisor:start_child(?c(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, Host, Port).
 

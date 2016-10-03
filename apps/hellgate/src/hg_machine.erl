@@ -1,6 +1,7 @@
 -module(hg_machine).
 
 -type id() :: hg_base_thrift:'ID'().
+-type ref() :: hg_state_processing_thrift:'Reference'().
 -type ns() :: hg_base_thrift:'Namespace'().
 -type args() :: _.
 
@@ -88,12 +89,12 @@
 start(Ns, ID, Args, #{client_context := Context0}) ->
     call_automaton('Start', [Ns, ID, wrap_args(Args)], Context0).
 
--spec call(ns(), id(), term(), opts()) ->
+-spec call(ns(), ref(), term(), opts()) ->
     {ok | {ok, term()} | {error, notfound | failed}, woody_client:context()} |
     no_return().
 
-call(Ns, ID, Args, #{client_context := Context0}) ->
-    case call_automaton('Call', [Ns, {id, ID}, wrap_args(Args)], Context0) of
+call(Ns, Ref, Args, #{client_context := Context0}) ->
+    case call_automaton('Call', [Ns, Ref, wrap_args(Args)], Context0) of
         {{ok, Response}, Context} ->
             % should be specific to a processing interface already
             case unmarshal_term(Response) of

@@ -1,142 +1,340 @@
+%%% Invoice payment submachine
+%%%
+%%% TODO
+%%%  - make proper submachine interface
+%%%  - distinguish between different error classes:
+%%%     - regular operation error
+%%%     - callback timeout
+%%%     - internal error ?
+%%%  - handle idempotent callbacks uniformly
+%%%     - get rid of matches against session status
+%%%  - tag machine with the provider trx
+%%%     - distinguish between trx tags and callback tags
+%%%     - tag namespaces
+%%%  - clean the mess with error handling
+%%%     - abuse transient error passthrough
+%%%     - remove ability to throw `TryLater` from `HandlePaymentCallback`
+%%%     - drop `TryLater` completely (?)
+%%%  - think about safe clamping of timers returned by some proxy
+
 -module(hg_invoice_payment).
 -include_lib("hg_proto/include/hg_domain_thrift.hrl").
 -include_lib("hg_proto/include/hg_proxy_provider_thrift.hrl").
+-include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 
 %% API
 
--export([process/4]).
+%% Machine like
 
-%% Machine callbacks
+-export([init/4]).
+-export([start_session/2]).
 
-% -behaviour(hg_machine).
+-export([process_signal/4]).
+-export([process_call/4]).
 
-% -export([init/2]).
-% -export([process_signal/2]).
-% -export([process_call/2]).
+-export([merge_event/2]).
 
 %%
 
--record(st, {
-    stage       :: process_payment | capture_payment,
-    proxy_ref   :: hg_domain_thrift:'ProxyRef'(),
-    proxy_state :: binary() | undefined
-}).
-
--type st() :: #st{}.
+-type st() :: {payment(), session()}.
+-export_type([st/0]).
 
 -type invoice()     :: hg_domain_thrift:'Invoice'().
 -type payment()     :: hg_domain_thrift:'InvoicePayment'().
--type payment_trx() :: hg_domain_thrift:'TransactionInfo'() | undefined.
--type error()       :: hg_domain_thrift:'OperationError'().
+-type payment_id()  :: hg_domain_thrift:'InvoicePaymentID'().
+-type target()      :: hg_proxy_provider_thrift:'Target'().
+-type proxy_state() :: hg_proxy_thrift:'ProxyState'().
 
--spec process(payment(), invoice(), binary() | undefined, hg_machine:context()) ->
-    {{ok, payment_trx()}, hg_machine:context()} |
-    {{{error, error()}, payment_trx()}, hg_machine:context()} |
-    {{{next, hg_machine_action:t(), binary()}, payment_trx()}, hg_machine:context()}.
+-type session() :: #{
+    target      => target(),
+    status      => active | suspended,
+    proxy_state => proxy_state() | undefined,
+    retry       => genlib_retry:strategy()
+}.
 
-process(Payment, Invoice, undefined, Context) ->
-    process_(Payment, Invoice, construct_state(Payment, Invoice), Context);
-process(Payment, Invoice, St, Context) when is_binary(St) ->
-    process_(Payment, Invoice, unmarshal_st(St), Context).
+%%
 
-process_(Payment, Invoice, St = #st{}, Context) ->
-    Proxy = get_proxy(Invoice, St),
-    PaymentInfo = construct_payment_info(Payment, Invoice, Proxy, St),
-    handle_state(Proxy, PaymentInfo, St, Context).
+-include("invoice_events.hrl").
 
-handle_state(Proxy, PaymentInfo, St = #st{stage = process_payment}, Context0) ->
-    % FIXME: dirty simulation of one-phase payment through the two-phase interaction
-    case handle_process_result(process_payment(Proxy, PaymentInfo, Context0), St) of
-        {{ok, Trx}, Context} ->
-            NextSt = St#st{stage = capture_payment, proxy_state = undefined},
-            {{{next, hg_machine_action:instant(), marshal_st(NextSt)}, Trx}, Context};
-        Result ->
-            Result
-    end;
-handle_state(Proxy, PaymentInfo, St = #st{stage = capture_payment}, Context) ->
-    handle_process_result(capture_payment(Proxy, PaymentInfo, Context), St).
+-type ev() ::
+    {invoice_payment_event, hg_payment_processing_thrift:'InvoicePaymentEvent'()} |
+    {session_event, session_ev()}.
 
-handle_process_result({#'ProcessResult'{intent = {_, Intent}, trx = Trx, next_state = ProxyStateNext}, Context}, St) ->
-    handle_process_result(Intent, Trx, St#st{proxy_state = ProxyStateNext}, Context).
+-type session_ev() ::
+    {started, session()} |
+    {proxy_state_changed, proxy_state()} |
+    {proxy_retry_changed, genlib_retry:strategy()} |
+    suspended |
+    activated.
 
-handle_process_result(#'FinishIntent'{status = {ok, _}}, Trx, _St, Context) ->
-    {{ok, Trx}, Context};
-handle_process_result(#'FinishIntent'{status = {failure, Error}}, Trx, _St, Context) ->
-    {{{error, map_error(Error)}, Trx}, Context};
-handle_process_result(#'SleepIntent'{timer = Timer}, Trx, StNext, Context) ->
-    {{{next, hg_machine_action:set_timer(Timer), marshal_st(StNext)}, Trx}, Context}.
+-define(session_ev(E), {session_event, E}).
 
-get_proxy(#domain_Invoice{domain_revision = Revision}, #st{proxy_ref = Ref}) ->
-    hg_domain:get(Revision, Ref).
+%%
 
-construct_payment_info(Payment, Invoice, Proxy, #st{proxy_state = ProxyState}) ->
-    #'PaymentInfo'{
-        invoice = Invoice,
-        payment = Payment,
-        options = Proxy#domain_Proxy.options,
-        state   = ProxyState
+-type opts() :: #{
+    invoice => invoice(),
+    proxy => _
+    %% TODO
+}.
+
+-spec init(payment_id(), _, opts(), hg_machine:context()) ->
+    {hg_machine:result(), hg_machine:context()}.
+
+init(PaymentID, PaymentParams, #{invoice := Invoice}, Context) ->
+    Payment = #domain_InvoicePayment{
+        id           = PaymentID,
+        created_at   = hg_datetime:format_now(),
+        status       = ?pending(),
+        cost         = Invoice#domain_Invoice.cost,
+        payer        = PaymentParams#payproc_InvoicePaymentParams.payer
+    },
+    Events = [?payment_ev(?payment_started(Payment))],
+    Action = hg_machine_action:new(),
+    {{Events, Action}, Context}.
+
+-spec start_session(target(), hg_machine:context()) ->
+    {hg_machine:result(), hg_machine:context()}.
+
+start_session(Target, Context) ->
+    Events = [?session_ev({started, create_session(Target)})],
+    Action = hg_machine_action:instant(),
+    {{Events, Action}, Context}.
+
+create_session(Target) ->
+    #{
+        target => Target,
+        status => active,
+        proxy_state => undefined,
+        retry => construct_retry_strategy(Target)
     }.
 
-map_error(#'Error'{code = Code, description = Description}) ->
+%%
+
+-spec process_signal(timeout, st(), opts(), hg_machine:context()) ->
+    {{next | done, hg_machine:result()}, hg_machine:context()}.
+
+process_signal(timeout, St, Options, Context) ->
+    case get_status(St) of
+        active ->
+            process(St, Options, Context);
+        suspended ->
+            {fail(construct_error(<<"provider_timeout">>), St), Context}
+    end.
+
+-spec process_call({callback, _}, st(), opts(), hg_machine:context()) ->
+    {{_, {next | done, hg_machine:result()}}, hg_machine:context()}. % FIXME
+
+process_call({callback, Payload}, St, Options, Context) ->
+    case get_status(St) of
+        suspended ->
+            handle_callback(Payload, St, Options, Context);
+        active ->
+            % there's ultimately no way how we could end up here
+            error(invalid_session_status)
+    end.
+
+process(St, Options, Context) ->
+    ProxyContext = construct_proxy_context(St, Options),
+    handle_process_result(issue_process_call(ProxyContext, Options, Context), St).
+
+handle_process_result({Result, Context}, St) ->
+    case Result of
+        {ok, ProxyResult} ->
+            {handle_proxy_result(ProxyResult, St), Context};
+        {exception, Exception} ->
+            {handle_exception(Exception, St), Context};
+        {error, Error} ->
+            {handle_error(Error, St), Context}
+    end.
+
+handle_callback(Payload, St, Options, Context) ->
+    ProxyContext = construct_proxy_context(St, Options),
+    handle_callback_result(issue_callback_call(Payload, ProxyContext, Options, Context), St).
+
+handle_callback_result({Result, Context}, St) ->
+    case Result of
+        {ok, #'CallbackResult'{result = ProxyResult, response = Response}} ->
+            {What, {Events, Action}} = handle_proxy_result(ProxyResult, St),
+            {{Response, {What, {[?session_ev(activated) | Events], Action}}}, Context};
+        {error, _} = Error ->
+            error({Error, Context})
+    end.
+
+handle_proxy_result(#'ProxyResult'{intent = {_, Intent}, trx = Trx, next_state = ProxyState}, St) ->
+    case bind_transaction(Trx, St) of
+        {ok, Events1} ->
+            {What, {Events2, Action}} = handle_proxy_intent(Intent, ProxyState, St),
+            {What, {Events1 ++ Events2, Action}};
+        {error, Error} ->
+            fail(Error, St)
+    end.
+
+bind_transaction(undefined, _St) ->
+    % no transaction yet
+    {ok, []};
+bind_transaction(Trx, {#domain_InvoicePayment{id = PaymentID, trx = undefined}, _}) ->
+    % got transaction, nothing bound so far
+    {ok, [?payment_ev(?payment_bound(PaymentID, Trx))]};
+bind_transaction(Trx, {#domain_InvoicePayment{trx = Trx}, _}) ->
+    % got the same transaction as one which has been bound previously
+    {ok, []};
+bind_transaction(Trx, {#domain_InvoicePayment{id = PaymentID, trx = TrxWas}, _}) ->
+    % got transaction which differs from the bound one
+    % verify against proxy contracts
+    case Trx#domain_TransactionInfo.id of
+        ID when ID =:= TrxWas#domain_TransactionInfo.id ->
+            {ok, [?payment_ev(?payment_bound(PaymentID, Trx))]};
+        _ ->
+            {error, construct_error(<<"proxy_contract_violated">>)}
+    end.
+
+handle_proxy_intent(#'FinishIntent'{status = {ok, _}}, _ProxyState, St) ->
+    PaymentID = get_payment_id(St),
+    Target = get_target(St),
+    Events = [?payment_ev(?payment_status_changed(PaymentID, Target))],
+    Action = hg_machine_action:new(),
+    {done, {Events, Action}};
+
+handle_proxy_intent(#'FinishIntent'{status = {failure, Error}}, _ProxyState, St) ->
+    fail(Error, St);
+
+handle_proxy_intent(#'SleepIntent'{timer = Timer}, ProxyState, _St) ->
+    Action = hg_machine_action:set_timer(Timer),
+    Events = [?session_ev({proxy_state_changed, ProxyState})],
+    {next, {Events, Action}};
+
+handle_proxy_intent(
+    #'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction},
+    ProxyState, St
+) ->
+    Action = try_set_timer(Timer, hg_machine_action:set_tag(Tag)),
+    Events = [
+        ?session_ev({proxy_state_changed, ProxyState}),
+        ?session_ev(suspended)
+        | try_emit_interaction_event(UserInteraction, St)
+    ],
+    {next, {Events, Action}}.
+
+try_set_timer(undefined, Action) ->
+    Action;
+try_set_timer(Timer, Action) ->
+    hg_machine_action:set_timer(Timer, Action).
+
+try_emit_interaction_event(undefined, _St) ->
+    [];
+try_emit_interaction_event(UserInteraction, St) ->
+    [?payment_ev(?payment_interaction_requested(get_payment_id(St), UserInteraction))].
+
+handle_exception(#'TryLater'{e = Error}, St) ->
+    case retry(St) of
+        {wait, Timeout, Events} ->
+            Action = hg_machine_action:set_timeout(Timeout),
+            {next, {Events, Action}};
+        finish ->
+            fail(construct_error(Error), St)
+    end.
+
+handle_error(_Error, St) ->
+    Error = construct_error(<<"internal_error">>),
+    fail(Error, St).
+
+retry({_Payment, #{retry := Retry}}) ->
+    case genlib_retry:next_step(Retry) of
+        {wait, Timeout, RetryNext} ->
+            {wait, Timeout div 1000, [?session_ev({proxy_retry_changed, RetryNext})]};
+        finish ->
+            finish
+    end.
+
+fail(Error, St) ->
+    Events = [?payment_ev(?payment_status_changed(get_payment_id(St), ?failed(Error)))],
+    Action = hg_machine_action:new(),
+    {done, {Events, Action}}.
+
+construct_retry_strategy(_Target) ->
+    Timecap = 30000,
+    Timeout = 10000,
+    genlib_retry:timecap(Timecap, genlib_retry:linear(infinity, Timeout)).
+
+construct_proxy_context({Payment, Session}, Options = #{proxy := Proxy}) ->
+    #'Context'{
+        session = construct_session(Session),
+        payment = construct_payment_info(Payment, Options),
+        options = Proxy#domain_Proxy.options
+    }.
+
+construct_session(#{target := Target, proxy_state := ProxyState}) ->
+    #'Session'{
+        target = Target,
+        state = ProxyState
+    }.
+
+construct_payment_info(Payment, #{invoice := Invoice}) ->
+    #'PaymentInfo'{
+        invoice = Invoice,
+        payment = Payment
+    }.
+
+construct_error(#'Error'{code = Code, description = Description}) ->
+    construct_error(Code, Description);
+construct_error(Code) when is_binary(Code) ->
+    construct_error(Code, undefined).
+
+construct_error(Code, Description) ->
     #domain_OperationError{code = Code, description = Description}.
 
 %%
 
-construct_state(Payment, Invoice) ->
-    #st{
-        stage     = process_payment,
-        proxy_ref = select_proxy(Payment, Invoice)
-    }.
+get_payment_id({Payment, _State}) ->
+    Payment#domain_InvoicePayment.id.
 
-select_proxy(_, _) ->
-    % FIXME: turbo routing
-    #domain_ProxyRef{id = 1}.
+get_status({_Payment, #{status := Status}}) ->
+    Status.
 
--spec marshal_st(st()) -> binary().
+get_target({_Payment, #{target := Target}}) ->
+    Target.
 
-marshal_st(St) ->
-    term_to_binary(St).
+%%
 
--spec unmarshal_st(binary()) -> st().
+-spec merge_event(ev(), st()) -> st().
 
-unmarshal_st(St) ->
-    binary_to_term(St).
+merge_event(?payment_ev(Event), St) ->
+    merge_public_event(Event, St);
+merge_event(?session_ev(Event), St) ->
+    merge_session_event(Event, St).
 
-%% Proxy provider client
+merge_public_event(?payment_started(Payment), undefined) ->
+    {Payment, undefined};
+merge_public_event(?payment_bound(_, Trx), {Payment, State}) ->
+    {Payment#domain_InvoicePayment{trx = Trx}, State};
+merge_public_event(?payment_status_changed(_, Status), {Payment, State}) ->
+    {Payment#domain_InvoicePayment{status = Status}, State}.
+
+%% TODO session_finished?
+merge_session_event({started, Session}, {Payment, _}) ->
+    {Payment, Session};
+merge_session_event({proxy_state_changed, ProxyState}, {Payment, Session}) ->
+    {Payment, Session#{proxy_state => ProxyState}};
+merge_session_event({proxy_retry_changed, Retry}, {Payment, Session}) ->
+    {Payment, Session#{retry => Retry}};
+merge_session_event(activated, {Payment, Session}) ->
+    {Payment, Session#{status => active}};
+merge_session_event(suspended, {Payment, Session}) ->
+    {Payment, Session#{status => suspended}}.
+
+%%
 
 -define(SERVICE, {hg_proxy_provider_thrift, 'ProviderProxy'}).
 
--type process_payment_result() :: hg_proxy_provider_thrift:'ProcessResult'().
+issue_process_call(ProxyContext, Opts, Context) ->
+    issue_call({?SERVICE, 'ProcessPayment', [ProxyContext]}, Opts, Context).
 
--spec process_payment(
-    hg_domain_thrift:'Proxy'(),
-    hg_proxy_provider_thrift:'PaymentInfo'(),
-    woody_client:context()
-) ->
-    {process_payment_result(), woody_client:context()}.
-process_payment(Proxy, PaymentInfo, Context) ->
-    call(Context, Proxy, {?SERVICE, 'ProcessPayment', [PaymentInfo]}).
+issue_callback_call(Payload, ProxyContext, Opts, Context) ->
+    issue_call({?SERVICE, 'HandlePaymentCallback', [Payload, ProxyContext]}, Opts, Context).
 
--spec capture_payment(
-    hg_domain_thrift:'Proxy'(),
-    hg_proxy_provider_thrift:'PaymentInfo'(),
-    woody_client:context()
-) ->
-    {process_payment_result(), woody_client:context()}.
-capture_payment(Proxy, PaymentInfo, Context) ->
-    call(Context, Proxy, {?SERVICE, 'CapturePayment', [PaymentInfo]}).
-
-call(Context = #{client_context := ClientContext0}, Proxy, Call) ->
-    Endpoint = get_call_options(Proxy),
-    try woody_client:call(ClientContext0, Call, Endpoint) of
-        {{ok, Result = #'ProcessResult'{}}, ClientContext} ->
-            {Result, Context#{client_context => ClientContext}}
-    catch
-        % TODO: support retry strategies
-        {#'TryLater'{e = _Error}, ClientContext} ->
-            Result = #'ProcessResult'{intent = {sleep, #'SleepIntent'{timer = {timeout, 10}}}},
-            {Result, Context#{client_context => ClientContext}}
-    end.
+issue_call(Call, #{proxy := Proxy}, Context = #{client_context := ClientContext}) ->
+    {Result, ClientContext1} = woody_client:call_safe(ClientContext, Call, get_call_options(Proxy)),
+    {Result, Context#{client_context := ClientContext1}}.
 
 get_call_options(#domain_Proxy{url = Url}) ->
     #{url => Url}.
