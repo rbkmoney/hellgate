@@ -551,12 +551,7 @@ assert_claim_pending({ok, ?claim_result(ClaimID, Status = ?pending())}, Client) 
 
 assert_claim_accepted({ok, ?claim_result(ClaimID, Status = ?accepted(_))}, Client) ->
     {ok, Claim = ?claim(ClaimID, Status)} = hg_client_party:get_claim(ClaimID, Client),
-    ?claim_created(EventClaim) = next_event(Client),
-    case EventClaim of
-        ?claim(ClaimID, ?accepted(_)) -> ok;
-        ?claim(ClaimID, ?pending()) ->
-            ?claim_status_changed(ClaimID, Status) = next_event(Client)
-    end,
+    ?claim_created(?claim(ClaimID, ?accepted(_))) = next_event(Client),
     Claim.
 
 %%
