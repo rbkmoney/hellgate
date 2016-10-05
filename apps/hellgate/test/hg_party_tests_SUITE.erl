@@ -49,6 +49,9 @@
 -export([shop_already_suspended/1]).
 -export([shop_already_active/1]).
 
+-export([shop_account_set_retrieval/1]).
+-export([shop_account_retrieval/1]).
+
 -export([consistent_history/1]).
 
 %%
@@ -69,6 +72,8 @@ all() ->
         {group, party_revisioning},
         {group, party_blocking_suspension},
         {group, shop_management},
+        {group, shop_account_lazy_creation},
+
         {group, claim_management},
 
         {group, consistent_history}
@@ -120,6 +125,12 @@ groups() ->
             shop_already_suspended,
             shop_activation,
             shop_already_active
+        ]},
+        {shop_account_lazy_creation, [sequence], [
+            party_creation,
+            shop_creation,
+            shop_account_set_retrieval,
+            shop_account_retrieval
         ]},
         {claim_management, [sequence], [
             party_creation,
@@ -272,6 +283,8 @@ end_per_testcase(_Name, _C) ->
 -spec shop_activation(config()) -> _ | no_return().
 -spec shop_already_suspended(config()) -> _ | no_return().
 -spec shop_already_active(config()) -> _ | no_return().
+-spec shop_account_set_retrieval(config()) -> _ | no_return().
+-spec shop_account_retrieval(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = ?c(client, C),
@@ -314,7 +327,7 @@ shop_creation(C) ->
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_created(Result, Client),
-    ?claim(_, ?pending(), [{shop_creation, #domain_Shop{id = ShopID}}]) = Claim,
+    ?claim(_, ?pending(), [{shop_creation, #domain_Shop{id = ShopID}}, _]) = Claim, %% @FIXE Shop modifiction with creating accounts is buried here
     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
     ok = accept_claim(Claim, Client),
     {ok, ?shop_state(#domain_Shop{
@@ -361,7 +374,7 @@ claim_revocation(C) ->
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_created(Result, Client),
-    ?claim(_, _, [{shop_creation, #domain_Shop{id = ShopID}}]) = Claim,
+    ?claim(_, _, [{shop_creation, #domain_Shop{id = ShopID}}, _]) = Claim,  %% @FIXE Shop modifiction with creating accounts is buried here
     ok = revoke_claim(Claim, Client),
     {ok, PartyState} = hg_client_party:get(Client),
     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client).
@@ -378,7 +391,7 @@ complex_claim_acceptance(C) ->
     },
     Claim1 = assert_claim_created(hg_client_party:create_shop(Params1, Client), Client),
     ?claim(ClaimID1, _, [
-        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}}
+        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}}, _
     ]) = Claim1,
     _ = assert_claim_accepted(hg_client_party:suspend(Client), Client),
     {ok, Claim1} = hg_client_party:get_pending_claim(Client),
@@ -388,9 +401,9 @@ complex_claim_acceptance(C) ->
     ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
     {ok, Claim2} = hg_client_party:get_pending_claim(Client),
     ?claim(_, _, [
-        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}},
-        {shop_creation, #domain_Shop{id = ShopID2, details = Details2}}
-    ]) = Claim2,
+        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}}, _,
+        {shop_creation, #domain_Shop{id = ShopID2, details = Details2}}, _
+    ]) = Claim2,  %% @FIXE Shop modifiction with creating accounts is buried here
     ok = accept_claim(Claim2, Client),
     {ok, ?shop_state(#domain_Shop{details = Details1})} = hg_client_party:get_shop(ShopID1, Client),
     {ok, ?shop_state(#domain_Shop{details = Details2})} = hg_client_party:get_shop(ShopID2, Client).
@@ -517,6 +530,20 @@ shop_already_active(C) ->
     Client = ?c(client, C),
     #domain_Shop{id = ShopID} = get_first_shop(Client),
     ?shop_active() = hg_client_party:activate_shop(ShopID, Client).
+
+shop_account_set_retrieval(C) ->
+    Client = ?c(client, C),
+    #domain_Shop{id = ShopID} = get_first_shop(Client),
+    {ok, S = #domain_ShopAccountSet{}} = hg_client_party:get_shop_account_set(ShopID, Client),
+    {save_config, S}.
+
+shop_account_retrieval(C) ->
+    Client = ?c(client, C),
+    io:format(user, "FUCKIGLY ~p~n~n~n", [?config(saved_config, C)]),
+    {shop_account_set_retrieval, #domain_ShopAccountSet{
+        guarantee = AccountID
+    }} = ?config(saved_config, C),
+    hg_client_party:get_shop_account(AccountID, Client).
 
 get_first_shop(Client) ->
     {ok, ?party_state(#domain_Party{shops = Shops})} = hg_client_party:get(Client),

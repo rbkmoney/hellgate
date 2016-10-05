@@ -37,4 +37,7 @@
 -define(unblocked(Reason),
     {unblocked, #domain_Unblocked{reason = Reason}}).
 
+-define(accounts_created(ShopAccountSet),
+    {accounts_created, #payproc_ShopAccountSetCreated{accounts = AccountShopSet}}).
+
 -endif.

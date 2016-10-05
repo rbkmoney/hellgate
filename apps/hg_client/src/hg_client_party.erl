@@ -23,6 +23,8 @@
 -export([accept_claim/2]).
 -export([deny_claim/3]).
 -export([revoke_claim/3]).
+-export([get_shop_account/2]).
+-export([get_shop_account_set/2]).
 -export([pull_event/1]).
 -export([pull_event/2]).
 
@@ -43,6 +45,8 @@
 -type shop_id() :: hg_domain_thrift:'ShopID'().
 -type claim_id() :: hg_payment_processing_thrift:'ClaimID'().
 -type shop_params() :: hg_payment_processing_thrift:'ShopParams'().
+-type shop_account_id() :: hg_domain_thrift:'ShopAccountID'().
+
 
 -spec start(user_info(), party_id(), hg_client_api:t()) -> pid().
 
@@ -173,6 +177,18 @@ deny_claim(ID, Reason, Client) ->
 
 revoke_claim(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'RevokeClaim', [ID, Reason]}).
+
+-spec get_shop_account(shop_account_id(), pid()) ->
+    {ok, hg_payment_processing_thrift:'ShopAccountState'()} | woody_client:result_error().
+
+get_shop_account(AccountID, Client) ->
+    gen_server:call(Client, {call, 'GetShopAccountState', [AccountID]}).
+
+-spec get_shop_account_set(shop_id(), pid()) ->
+    {ok, hg_domain_thrift:'ShopAccountSet'()} | woody_client:result_error().
+
+get_shop_account_set(ShopID, Client) ->
+    gen_server:call(Client, {call, 'GetShopAccountSet', [ShopID]}).
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 

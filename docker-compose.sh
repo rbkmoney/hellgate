@@ -11,10 +11,30 @@ services:
     command: /sbin/init
     depends_on:
       - machinegun
+      - shumway
   machinegun:
     image: dr.rbkmoney.com/rbkmoney/machinegun:cc5985c4b1ea385eba141995c37ebc67093a1fe7
     volumes:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
+  shumway:
+    image: dr.rbkmoney.com/rbkmoney/shumway:b9487a2313ede02780a90895eb74d43e57b931f6
+    entrypoint: |
+      java
+      -Xmx512m
+      -jar
+      /opt/shumway/shumway-0.0.1-SNAPSHOT.jar
+    command: |
+      --spring.datasource.url=jdbc:postgresql://shumway_psql:5432/shumway
+      --spring.datasource.username=shumway
+      --spring.datasource.password=shumway
+    depends_on:
+      - shumway_psql
+  shumway_psql:
+    image: dr.rbkmoney.com/rbkmoney/postgres:9.6
+    environment:
+      - POSTGRES_DATABASE=shumway
+      - POSTGRES_USER=shumway
+      - POSTGRES_PASSWORD=shumway
 networks:
   default:
     driver: bridge
