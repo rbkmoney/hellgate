@@ -160,8 +160,8 @@ opts(Context) ->
 
 -include("invoice_events.hrl").
 
--define(invalid_invoice_status(Invoice),
-    #payproc_InvalidInvoiceStatus{status = Invoice#domain_Invoice.status}).
+-define(invalid_invoice_status(Status),
+    #payproc_InvalidInvoiceStatus{status = Status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
@@ -189,30 +189,35 @@ namespace() ->
 init(ID, {InvoiceParams, UserInfo}, Context) ->
     Invoice = create_invoice(ID, InvoiceParams, UserInfo),
     Event = {public, ?invoice_ev(?invoice_created(Invoice))},
-    {ok(Event, #st{}, set_invoice_timer(Invoice)), Context}.
+    % TODO ugly, better to roll state and events simultaneously, hg_party-like
+    {ok(Event, #st{}, set_invoice_timer(#st{invoice = Invoice})), Context}.
+
+%%
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev()), hg_machine:context()) ->
     {hg_machine:result(ev()), woody_client:context()}.
 
-process_signal(timeout, History, Context) ->
-    St = #st{invoice = Invoice} = collapse_history(History),
-    Status = get_invoice_status(Invoice),
+process_signal(Signal, History, Context) ->
+    handle_signal(Signal, collapse_history(History), Context).
+
+handle_signal(timeout, St, Context) ->
     case get_pending_payment(St) of
         {PaymentID, PaymentSession} ->
             % there's a payment pending
             process_payment_signal(timeout, PaymentID, PaymentSession, St, Context);
-        undefined when Status == unpaid ->
+        undefined ->
             % invoice is expired
-            process_expiration(St, Context)
+            handle_expiration(St, Context)
     end;
 
-process_signal({repair, _}, History, Context) ->
-    St = #st{invoice = Invoice} = collapse_history(History),
-    {ok([], St, set_invoice_timer(Invoice)), Context}.
+handle_signal({repair, _}, St, Context) ->
+    {ok([], St, restore_timer(St)), Context}.
 
-process_expiration(St = #st{invoice = Invoice}, Context) ->
-    {ok, Event} = cancel_invoice(overdue, Invoice),
+handle_expiration(St, Context) ->
+    Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(overdue))))},
     {ok(Event, St), Context}.
+
+%%
 
 -type call() ::
     {start_payment, payment_params(), user_info()} |
@@ -226,40 +231,35 @@ process_expiration(St = #st{invoice = Invoice}, Context) ->
 -spec process_call(call(), hg_machine:history(ev()), woody_client:context()) ->
     {{response(), hg_machine:result(ev())}, woody_client:context()}.
 
-process_call({start_payment, PaymentParams, _UserInfo}, History, Context) ->
-    St = #st{invoice = Invoice} = collapse_history(History),
-    case get_invoice_status(Invoice) of
-        unpaid ->
-            case get_pending_payment(St) of
-                undefined ->
-                    start_payment(PaymentParams, St, Context);
-                {PaymentID, _} ->
-                    {raise(?payment_pending(PaymentID)), Context}
-            end;
-        _ ->
-            {raise(?invalid_invoice_status(Invoice)), Context}
-    end;
-
-process_call({fulfill, Reason, _UserInfo}, History, Context) ->
-    St = #st{invoice = Invoice} = collapse_history(History),
-    case fulfill_invoice(Reason, Invoice) of
-        {ok, Event} ->
-            {respond(ok, Event, St, set_invoice_timer(Invoice)), Context};
-        {error, Exception} ->
-            {raise(Exception, set_invoice_timer(Invoice)), Context}
-    end;
-
-process_call({rescind, Reason, _UserInfo}, History, Context) ->
-    St = #st{invoice = Invoice} = collapse_history(History),
-    case cancel_invoice({rescinded, Reason}, Invoice) of
-        {ok, Event} ->
-            {respond(ok, Event, St, set_invoice_timer(Invoice)), Context};
-        {error, Exception} ->
-            {raise(Exception, set_invoice_timer(Invoice)), Context}
-    end;
-
-process_call({callback, Callback}, History, Context) ->
+process_call(Call, History, Context) ->
     St = collapse_history(History),
+    try handle_call(Call, St, Context) catch
+        {exception, Exception} ->
+            {{{exception, Exception}, {[], restore_timer(St)}}, Context}
+    end.
+
+-spec raise(term()) -> no_return().
+
+raise(What) ->
+    throw({exception, What}).
+
+handle_call({start_payment, PaymentParams, _UserInfo}, St, Context) ->
+    _ = assert_invoice_status(unpaid, St),
+    _ = assert_no_pending_payment(St),
+    start_payment(PaymentParams, St, Context);
+
+handle_call({fulfill, Reason, _UserInfo}, St, Context) ->
+    _ = assert_invoice_status(paid, St),
+    Event = {public, ?invoice_ev(?invoice_status_changed(?fulfilled(format_reason(Reason))))},
+    {respond(ok, Event, St), Context};
+
+handle_call({rescind, Reason, _UserInfo}, St, Context) ->
+    _ = assert_invoice_status(unpaid, St),
+    _ = assert_no_pending_payment(St),
+    Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(Reason))))},
+    {respond(ok, Event, St), Context};
+
+handle_call({callback, Callback}, St, Context) ->
     dispatch_callback(Callback, St, Context).
 
 dispatch_callback({provider, Payload}, St, Context) ->
@@ -267,13 +267,37 @@ dispatch_callback({provider, Payload}, St, Context) ->
         {PaymentID, PaymentSession} ->
             process_payment_call({callback, Payload}, PaymentID, PaymentSession, St, Context);
         undefined ->
-            error(noimpl) % FIXME
+            raise(no_pending_payment) % FIXME
     end.
 
-set_invoice_timer(#domain_Invoice{status = ?unpaid(), due = Due}) when Due /= undefined ->
-    hg_machine_action:set_deadline(Due);
-set_invoice_timer(_Invoice) ->
-    hg_machine_action:new().
+assert_invoice_status(Status, #st{invoice = Invoice}) ->
+    assert_invoice_status(Status, Invoice);
+assert_invoice_status(Status, #domain_Invoice{status = {Status, _}}) ->
+    ok;
+assert_invoice_status(_Status, #domain_Invoice{status = Invalid}) ->
+    raise(?invalid_invoice_status(Invalid)).
+
+assert_no_pending_payment(St) ->
+    case get_pending_payment(St) of
+        undefined ->
+            ok;
+        {PaymentID, _} ->
+            raise(?payment_pending(PaymentID))
+    end.
+
+restore_timer(St) ->
+    set_invoice_timer(St).
+
+set_invoice_timer(St = #st{invoice = #domain_Invoice{status = Status, due = Due}}) ->
+    case get_pending_payment(St) of
+        undefined when Status == ?unpaid() ->
+            hg_machine_action:set_deadline(Due);
+        undefined ->
+            hg_machine_action:new();
+        {_, _} ->
+            % TODO how to restore timer properly then, magic number for now
+            hg_machine_action:set_timeout(10)
+    end.
 
 %%
 
@@ -282,7 +306,8 @@ start_payment(PaymentParams, St, Context) ->
     Opts = get_payment_opts(St),
     {{Events1, _}, Context1} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts, Context),
     {{Events2, Action}, Context2} = hg_invoice_payment:start_session(?processed(), Context1),
-    {respond(PaymentID, wrap_payment_events(PaymentID, Events1 ++ Events2), St, Action), Context2}.
+    Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
+    {respond(PaymentID, Events, St, Action), Context2}.
 
 process_payment_signal(Signal, PaymentID, PaymentSession, St = #st{invoice = Invoice}, Context) ->
     Opts = get_payment_opts(St),
@@ -299,7 +324,7 @@ process_payment_signal(Signal, PaymentID, PaymentSession, St = #st{invoice = Inv
                     Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],
                     {ok(wrap_payment_events(PaymentID, Events1) ++ Events2, St), Context1};
                 ?failed(_) ->
-                    {ok(wrap_payment_events(PaymentID, Events1), St, set_invoice_timer(Invoice)), Context1}
+                    {ok(wrap_payment_events(PaymentID, Events1), St, restore_timer(St)), Context1}
             end
     end.
 
@@ -313,12 +338,13 @@ process_payment_call(Call, PaymentID, PaymentSession, St = #st{invoice = Invoice
             case get_payment_status(Payment1) of
                 ?processed() ->
                     {{Events2, Action}, Context2} = hg_invoice_payment:start_session(?captured(), Context1),
-                    {respond(Response, wrap_payment_events(PaymentID, Events1 ++ Events2), St, Action), Context2};
+                    Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
+                    {respond(Response, Events, St, Action), Context2};
                 ?captured() ->
                     Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],
                     {respond(Response, wrap_payment_events(PaymentID, Events1) ++ Events2, St), Context1};
                 ?failed(_) ->
-                    {respond(Response, wrap_payment_events(PaymentID, Events1), St, set_invoice_timer(Invoice)), Context1}
+                    {respond(Response, wrap_payment_events(PaymentID, Events1), St, restore_timer(St)), Context1}
             end
     end.
 
@@ -347,11 +373,6 @@ respond(Response, Event, St) ->
     respond(Response, Event, St, hg_machine_action:new()).
 respond(Response, Event, St, Action) ->
     {{ok, Response}, {sequence_events(wrap_event_list(Event), St), Action}}.
-
-raise(Exception) ->
-    raise(Exception, hg_machine_action:new()).
-raise(Exception, Action) ->
-    {{exception, Exception}, {[], Action}}.
 
 wrap_event_list(Event) when is_tuple(Event) ->
     [Event];
@@ -404,21 +425,8 @@ deduce_invoice_id(PaymentID) ->
 get_invoice_id(#domain_Invoice{id = ID}) ->
     ID.
 
-get_invoice_status(#domain_Invoice{status = {Status, _}}) ->
-    Status.
-
 get_payment_status(#domain_InvoicePayment{status = Status}) ->
     Status.
-
-cancel_invoice(Reason, #domain_Invoice{status = ?unpaid()}) ->
-    {ok, {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(Reason))))}};
-cancel_invoice(_Reason, Invoice) ->
-    {error, ?invalid_invoice_status(Invoice)}.
-
-fulfill_invoice(Reason, #domain_Invoice{status = ?paid()}) ->
-    {ok, {public, ?invoice_ev(?invoice_status_changed(?fulfilled(format_reason(Reason))))}};
-fulfill_invoice(_Reason, Invoice) ->
-    {error, ?invalid_invoice_status(Invoice)}.
 
 %%
 

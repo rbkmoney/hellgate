@@ -196,7 +196,7 @@ handle_proxy_intent(#'FinishIntent'{status = {ok, _}}, _ProxyState, St) ->
     {done, {Events, Action}};
 
 handle_proxy_intent(#'FinishIntent'{status = {failure, Error}}, _ProxyState, St) ->
-    fail(Error, St);
+    fail(construct_error(Error), St);
 
 handle_proxy_intent(#'SleepIntent'{timer = Timer}, ProxyState, _St) ->
     Action = hg_machine_action:set_timer(Timer),
