@@ -66,7 +66,8 @@ publish_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event 
 call_event_sink(Function, Args, Context) ->
     Url = genlib_app:env(hellgate, eventsink_service_url),
     Service = {hg_state_processing_thrift, 'EventSink'},
-    woody_client:call(Context, {Service, Function, Args}, #{url => Url}).
+    EventsinkID = genlib_app:env(hellgate, eventsink_id),
+    woody_client:call(Context, {Service, Function, [EventsinkID | Args]}, #{url => Url}).
 
 -spec handle_error(woody_t:func(), term(), woody_client:context(), []) ->
     _.
