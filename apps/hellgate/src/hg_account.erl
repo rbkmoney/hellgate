@@ -7,25 +7,42 @@
 -include_lib("hg_proto/include/hg_domain_thrift.hrl").
 -include_lib("hg_proto/include/hg_accounter_thrift.hrl").
 
--type account() :: #accounter_Account{}.
+-type account() :: #{
+    account_id => AccountID :: integer(),
+    own_amount => OwnAmount :: integer(),
+    available_amount => AvailableAmount :: integer(),
+    currency_sym_code => CurrencySymCode :: binary()
+}.
+
 -type account_id() :: hg_domain_thrift:'AccountID'().
 -type currency_sym_code() :: hg_domain_thrift:'CurrencySymbolicCode'().
 
 -spec get_account_by_id(AccountID :: integer(), woody_client:context())->
-    {{ok, account(), woody_client:context()}}.
+    {account(), woody_client:context()}.
 
 get_account_by_id(AccountID, Context0) ->
     {{ok, Account}, Context} = call_accounter('GetAccountByID', [AccountID], Context0),
-    {Account, Context}.
+    #accounter_Account{
+        own_amount = OwnAmount,
+        available_amount = AvailableAmount,
+        currency_sym_code = CurrencySymCode
+    } = Account,
+    Result = #{
+        account_id => AccountID,
+        own_amount => OwnAmount,
+        available_amount => AvailableAmount,
+        currency_sym_code => CurrencySymCode
+    },
+    {Result, Context}.
 
 -spec create_account(currency_sym_code(), woody_client:context()) ->
-    {{ok, account_id(), woody_client:context()}}.
+    {account_id(), woody_client:context()}.
 
 create_account(CurrencySymCode, Context0) ->
     create_account(CurrencySymCode, undefined, Context0).
 
 -spec create_account(currency_sym_code(), binary() | undefined, woody_client:context()) ->
-    {{ok, account_id(), woody_client:context()}}.
+    {account_id(), woody_client:context()}.
 
 create_account(CurrencySymCode, Description, Context0) ->
     AccountPrototype = #accounter_AccountPrototype{

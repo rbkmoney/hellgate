@@ -278,7 +278,7 @@ handle_call({create_shop, Params, _UserInfo}, StEvents0 = {St0, _}, Context0) ->
     ShopID = get_next_shop_id(get_pending_st(St0)),
     {ClaimID, StEvents1} = create_claim(
         [
-            {shop_creation, construct_shop(ShopID, AccountShopSet, Params)},
+            {shop_creation, construct_shop(ShopID, Params)},
             ?shop_modification(ShopID, ?accounts_created(AccountShopSet))
         ],
         StEvents0
@@ -349,15 +349,14 @@ get_shop_state(ID, #st{party = Party, revision = Revision}) ->
 
 %%
 
-construct_shop(ShopID, AccountShopSet, ShopParams) ->
+construct_shop(ShopID, ShopParams) ->
     #domain_Shop{
         id         = ShopID,
         blocking   = ?unblocked(<<>>),
         suspension = ?suspended(),
         category   = ShopParams#payproc_ShopParams.category,
         details    = ShopParams#payproc_ShopParams.details,
-        contractor = ShopParams#payproc_ShopParams.contractor,
-        accounts   = AccountShopSet
+        contractor = ShopParams#payproc_ShopParams.contractor
     }.
 
 get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->
@@ -627,12 +626,15 @@ get_account_set(#domain_Shop{accounts = Accounts}) ->
 get_account_state(AccountID, St = #st{}, Context0) ->
     ok = ensure_account(AccountID, get_party(St)),
     {Account, Context0} = hg_account:get_account_by_id(AccountID, Context0),
-    #accounter_Account{
-        own_amount = OwnAmount,
-        available_amount = AvailableAmount,
-        currency_sym_code = _CurrencySymCode
+    #{
+        own_amount := OwnAmount,
+        available_amount := AvailableAmount,
+        currency_sym_code := CurrencySymCode
     } = Account,
-    Currency = #domain_Currency{},
+    CurrencyRef = #domain_CurrencyRef{
+        symbolic_code = CurrencySymCode
+    },
+    Currency = hg_domain:get(hg_domain:head(), CurrencyRef),
     #payproc_ShopAccountState{
         account_id = AccountID,
         own_amount = OwnAmount,
@@ -641,7 +643,7 @@ get_account_state(AccountID, St = #st{}, Context0) ->
     }.
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
-    case find_shop_account_set(AccountID, Shops) of
+    case find_shop_account_set(AccountID, maps:to_list(Shops)) of
         #domain_ShopAccountSet{} ->
             ok;
         undefined ->
@@ -650,7 +652,7 @@ ensure_account(AccountID, #domain_Party{shops = Shops}) ->
 
 find_shop_account_set(_ID, []) ->
     undefined;
-find_shop_account_set(ID, [#domain_Shop{accounts = Accounts} | Rest]) ->
+find_shop_account_set(ID, [{_, #domain_Shop{accounts = Accounts}} | Rest]) ->
     case Accounts of
         #domain_ShopAccountSet{general = ID} ->
             Accounts;

@@ -45,7 +45,7 @@
 -type shop_id() :: hg_domain_thrift:'ShopID'().
 -type claim_id() :: hg_payment_processing_thrift:'ClaimID'().
 -type shop_params() :: hg_payment_processing_thrift:'ShopParams'().
--type shop_account_id() :: hg_domain_thrift:'ShopAccountID'().
+-type shop_account_id() :: hg_domain_thrift:'AccountID'().
 
 
 -spec start(user_info(), party_id(), hg_client_api:t()) -> pid().

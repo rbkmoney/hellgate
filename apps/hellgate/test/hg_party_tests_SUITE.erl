@@ -327,7 +327,17 @@ shop_creation(C) ->
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_created(Result, Client),
-    ?claim(_, ?pending(), [{shop_creation, #domain_Shop{id = ShopID}}, _]) = Claim, %% @FIXE Shop modifiction with creating accounts is buried here
+    ?claim(
+        _,
+        ?pending(),
+        [
+            {shop_creation, #domain_Shop{id = ShopID}},
+            {shop_modification, #payproc_ShopModificationUnit{
+                id = ShopID,
+                modification = {accounts_created, _}
+            }}
+        ]
+    ) = Claim,
     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
     ok = accept_claim(Claim, Client),
     {ok, ?shop_state(#domain_Shop{
@@ -374,7 +384,17 @@ claim_revocation(C) ->
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_created(Result, Client),
-    ?claim(_, _, [{shop_creation, #domain_Shop{id = ShopID}}, _]) = Claim,  %% @FIXE Shop modifiction with creating accounts is buried here
+    ?claim(
+        _,
+        _,
+        [
+            {shop_creation, #domain_Shop{id = ShopID}},
+            {shop_modification, #payproc_ShopModificationUnit{
+                id = ShopID,
+                modification = {accounts_created, _}
+            }}
+        ]
+    ) = Claim,
     ok = revoke_claim(Claim, Client),
     {ok, PartyState} = hg_client_party:get(Client),
     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client).
@@ -401,9 +421,17 @@ complex_claim_acceptance(C) ->
     ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
     {ok, Claim2} = hg_client_party:get_pending_claim(Client),
     ?claim(_, _, [
-        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}}, _,
-        {shop_creation, #domain_Shop{id = ShopID2, details = Details2}}, _
-    ]) = Claim2,  %% @FIXE Shop modifiction with creating accounts is buried here
+        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}},
+        {shop_modification, #payproc_ShopModificationUnit{
+            id = ShopID1,
+            modification = {accounts_created, _}
+        }},
+        {shop_creation, #domain_Shop{id = ShopID2, details = Details2}},
+        {shop_modification, #payproc_ShopModificationUnit{
+            id = ShopID2,
+            modification = {accounts_created, _}
+        }}
+    ]) = Claim2,
     ok = accept_claim(Claim2, Client),
     {ok, ?shop_state(#domain_Shop{details = Details1})} = hg_client_party:get_shop(ShopID1, Client),
     {ok, ?shop_state(#domain_Shop{details = Details2})} = hg_client_party:get_shop(ShopID2, Client).
@@ -539,7 +567,6 @@ shop_account_set_retrieval(C) ->
 
 shop_account_retrieval(C) ->
     Client = ?c(client, C),
-    io:format(user, "FUCKIGLY ~p~n~n~n", [?config(saved_config, C)]),
     {shop_account_set_retrieval, #domain_ShopAccountSet{
         guarantee = AccountID
     }} = ?config(saved_config, C),
