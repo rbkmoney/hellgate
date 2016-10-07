@@ -48,10 +48,11 @@ init([]) ->
     }}.
 
 get_api_child_spec(MachineHandlers) ->
+    {ok, Ip} = inet:parse_address(genlib_app:env(?MODULE, ip, "::")),
     woody_server:child_spec(
         ?MODULE,
         #{
-            ip => hg_utils:get_hostname_ip(genlib_app:env(?MODULE, host, "0.0.0.0")),
+            ip => Ip,
             port => genlib_app:env(?MODULE, port, 8022),
             net_opts => [],
             event_handler => hg_woody_event_handler,
