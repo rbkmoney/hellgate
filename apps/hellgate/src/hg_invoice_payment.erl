@@ -2,6 +2,7 @@
 %%%
 %%% TODO
 %%%  - make proper submachine interface
+%%%     - `init` / `start_session` should provide `next` or `done` to the caller
 %%%  - distinguish between different error classes:
 %%%     - regular operation error
 %%%     - callback timeout
