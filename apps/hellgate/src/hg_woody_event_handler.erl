@@ -8,15 +8,20 @@
 -spec handle_event(EventType, RpcID, EventMeta)
     -> _ when
         EventType :: woody_event_handler:event_type(),
-        RpcID ::  woody_t:rpc_id(),
+        RpcID     ::  woody_t:rpc_id() | undefined,
         EventMeta :: woody_event_handler:event_meta_type().
 
 handle_event(EventType, RpcID, #{status := error, class := Class, reason := Reason, stack := Stack}) ->
     lager:error(
-        maps:to_list(RpcID),
+        construct_md(RpcID),
         "[server] ~s with ~s:~p at ~s",
         [EventType, Class, Reason, genlib_format:format_stacktrace(Stack, [newlines])]
     );
 
 handle_event(EventType, RpcID, EventMeta) ->
-    lager:debug(maps:to_list(RpcID), "[server] ~s: ~p", [EventType, EventMeta]).
+    lager:debug(construct_md(RpcID), "[server] ~s: ~p", [EventType, EventMeta]).
+
+construct_md(undefined) ->
+    [];
+construct_md(Map = #{}) ->
+    maps:to_list(Map).
