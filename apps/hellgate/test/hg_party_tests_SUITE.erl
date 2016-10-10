@@ -326,7 +326,7 @@ shop_creation(C) ->
         details  = Details = make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>)
     },
     Result = hg_client_party:create_shop(Params, Client),
-    Claim = assert_claim_created(Result, Client),
+    Claim = assert_claim_pending(Result, Client),
     ?claim(
         _,
         ?pending(),
@@ -352,7 +352,7 @@ shop_update(C) ->
     Details = make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
     Update = #payproc_ShopUpdate{details = Details},
     Result = hg_client_party:update_shop(ShopID, Update, Client),
-    Claim = assert_claim_created(Result, Client),
+    Claim = assert_claim_pending(Result, Client),
     ok = accept_claim(Claim, Client),
     {ok, ?shop_state(#domain_Shop{details = Details})} = hg_client_party:get_shop(ShopID, Client).
 
@@ -361,7 +361,7 @@ claim_acceptance(C) ->
     #domain_Shop{id = ShopID} = get_first_shop(Client),
     Update = #payproc_ShopUpdate{details = Details = make_shop_details(<<"McDolan">>)},
     Result = hg_client_party:update_shop(ShopID, Update, Client),
-    Claim = assert_claim_created(Result, Client),
+    Claim = assert_claim_pending(Result, Client),
     ok = accept_claim(Claim, Client),
     {ok, ?shop_state(#domain_Shop{details = Details})} = hg_client_party:get_shop(ShopID, Client).
 
@@ -371,7 +371,7 @@ claim_denial(C) ->
     {ok, ShopState} = hg_client_party:get_shop(ShopID, Client),
     Update = #payproc_ShopUpdate{details = #domain_ShopDetails{name = <<"Pr0nHub">>}},
     Result = hg_client_party:update_shop(ShopID, Update, Client),
-    Claim = assert_claim_created(Result, Client),
+    Claim = assert_claim_pending(Result, Client),
     ok = deny_claim(Claim, Client),
     {ok, ShopState} = hg_client_party:get_shop(ShopID, Client).
 
@@ -383,7 +383,7 @@ claim_revocation(C) ->
         details  = make_shop_details(<<"OOPS">>)
     },
     Result = hg_client_party:create_shop(Params, Client),
-    Claim = assert_claim_created(Result, Client),
+    Claim = assert_claim_pending(Result, Client),
     ?claim(
         _,
         _,
@@ -409,7 +409,7 @@ complex_claim_acceptance(C) ->
         category = make_category(2, <<>>),
         details  = Details2 = make_shop_details(<<"SHOP 2">>)
     },
-    Claim1 = assert_claim_created(hg_client_party:create_shop(Params1, Client), Client),
+    Claim1 = assert_claim_pending(hg_client_party:create_shop(Params1, Client), Client),
     ?claim(ClaimID1, _, [
         {shop_creation, #domain_Shop{id = ShopID1, details = Details1}}, _
     ]) = Claim1,
@@ -417,7 +417,7 @@ complex_claim_acceptance(C) ->
     {ok, Claim1} = hg_client_party:get_pending_claim(Client),
     _ = assert_claim_accepted(hg_client_party:activate(Client), Client),
     {ok, Claim1} = hg_client_party:get_pending_claim(Client),
-    Claim2 = assert_claim_created(hg_client_party:create_shop(Params2, Client), Client),
+    Claim2 = assert_claim_pending(hg_client_party:create_shop(Params2, Client), Client),
     ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
     {ok, Claim2} = hg_client_party:get_pending_claim(Client),
     ?claim(_, _, [
@@ -598,15 +598,14 @@ revoke_claim(#payproc_Claim{id = ClaimID}, Client) ->
     ?claim_status_changed(ClaimID, ?revoked(<<>>)) = next_event(Client),
     ok.
 
-assert_claim_created({ok, ?claim_result(ClaimID, Status = ?pending())}, Client) ->
+assert_claim_pending({ok, ?claim_result(ClaimID, Status = ?pending())}, Client) ->
     {ok, Claim = ?claim(ClaimID, Status)} = hg_client_party:get_claim(ClaimID, Client),
     ?claim_created(?claim(ClaimID)) = next_event(Client),
     Claim.
 
 assert_claim_accepted({ok, ?claim_result(ClaimID, Status = ?accepted(_))}, Client) ->
     {ok, Claim = ?claim(ClaimID, Status)} = hg_client_party:get_claim(ClaimID, Client),
-    ?claim_created(?claim(ClaimID)) = next_event(Client),
-    ?claim_status_changed(ClaimID, Status) = next_event(Client),
+    ?claim_created(?claim(ClaimID, ?accepted(_))) = next_event(Client),
     Claim.
 
 %%
