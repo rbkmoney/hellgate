@@ -9,6 +9,8 @@
 %%%           - simpler flow control (?)
 %%%           - event publishing (?)
 %%%           - timer preservation on calls (?)
+%%%  - do not make payment ids so complex, a sequence would suffice
+%%%     - alter `Invoicing.GetPayment` signature
 
 -module(hg_invoice).
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
