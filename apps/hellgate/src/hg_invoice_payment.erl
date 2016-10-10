@@ -136,7 +136,7 @@ handle_process_result({Result, Context}, St) ->
         {exception, Exception} ->
             {handle_exception(Exception, St), Context};
         {error, Error} ->
-            {handle_error(Error, St), Context}
+            error(Error)
     end.
 
 handle_callback(Payload, St, Options, Context) ->
@@ -153,31 +153,27 @@ handle_callback_result({Result, Context}, St) ->
     end.
 
 handle_proxy_result(#'ProxyResult'{intent = {_, Intent}, trx = Trx, next_state = ProxyState}, St) ->
-    case bind_transaction(Trx, St) of
-        {ok, Events1} ->
-            {What, {Events2, Action}} = handle_proxy_intent(Intent, ProxyState, St),
-            {What, {Events1 ++ Events2, Action}};
-        {error, Error} ->
-            fail(Error, St)
-    end.
+    Events1 = bind_transaction(Trx, St),
+    {What, {Events2, Action}} = handle_proxy_intent(Intent, ProxyState, St),
+    {What, {Events1 ++ Events2, Action}}.
 
 bind_transaction(undefined, _St) ->
     % no transaction yet
-    {ok, []};
+    [];
 bind_transaction(Trx, {#domain_InvoicePayment{id = PaymentID, trx = undefined}, _}) ->
     % got transaction, nothing bound so far
-    {ok, [?payment_ev(?payment_bound(PaymentID, Trx))]};
+    [?payment_ev(?payment_bound(PaymentID, Trx))];
 bind_transaction(Trx, {#domain_InvoicePayment{trx = Trx}, _}) ->
     % got the same transaction as one which has been bound previously
-    {ok, []};
+    [];
 bind_transaction(Trx, {#domain_InvoicePayment{id = PaymentID, trx = TrxWas}, _}) ->
     % got transaction which differs from the bound one
     % verify against proxy contracts
     case Trx#domain_TransactionInfo.id of
         ID when ID =:= TrxWas#domain_TransactionInfo.id ->
-            {ok, [?payment_ev(?payment_bound(PaymentID, Trx))]};
+            [?payment_ev(?payment_bound(PaymentID, Trx))];
         _ ->
-            {error, construct_error(<<"proxy_contract_violated">>)}
+            error(proxy_contract_violated)
     end.
 
 handle_proxy_intent(#'FinishIntent'{status = {ok, _}}, _ProxyState, St) ->
@@ -225,10 +221,6 @@ handle_exception(#'TryLater'{e = Error}, St) ->
         finish ->
             fail(construct_error(Error), St)
     end.
-
-handle_error(_Error, St) ->
-    Error = construct_error(<<"internal_error">>),
-    fail(Error, St).
 
 retry({_Payment, #{retry := Retry}}) ->
     case genlib_retry:next_step(Retry) of
