@@ -96,17 +96,9 @@ init(PaymentID, PaymentParams, #{invoice := Invoice}, Context) ->
     {hg_machine:result(), hg_machine:context()}.
 
 start_session(Target, Context) ->
-    Events = [?session_ev({started, create_session(Target)})],
+    Events = [?session_ev({started, Target})],
     Action = hg_machine_action:instant(),
     {{Events, Action}, Context}.
-
-create_session(Target) ->
-    #{
-        target => Target,
-        status => active,
-        proxy_state => undefined,
-        retry => construct_retry_strategy(Target)
-    }.
 
 %%
 
@@ -311,8 +303,8 @@ merge_public_event(?payment_status_changed(_, Status), {Payment, State}) ->
     {Payment#domain_InvoicePayment{status = Status}, State}.
 
 %% TODO session_finished?
-merge_session_event({started, Session}, {Payment, _}) ->
-    {Payment, Session};
+merge_session_event({started, Target}, {Payment, _}) ->
+    {Payment, create_session(Target)};
 merge_session_event({proxy_state_changed, ProxyState}, {Payment, Session}) ->
     {Payment, Session#{proxy_state => ProxyState}};
 merge_session_event({proxy_retry_changed, Retry}, {Payment, Session}) ->
@@ -321,6 +313,14 @@ merge_session_event(activated, {Payment, Session}) ->
     {Payment, Session#{status => active}};
 merge_session_event(suspended, {Payment, Session}) ->
     {Payment, Session#{status => suspended}}.
+
+create_session(Target) ->
+    #{
+        target => Target,
+        status => active,
+        proxy_state => undefined,
+        retry => construct_retry_strategy(Target)
+    }.
 
 %%
 
