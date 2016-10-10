@@ -63,11 +63,12 @@ get_history_last_id(History, _LastID) ->
 publish_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event = Event}) ->
     hg_event_provider:publish_event(Ns, ID, SourceID, hg_machine:unwrap_event(Event)).
 
+-define(EVENTSINK_ID, <<"payproc">>).
+
 call_event_sink(Function, Args, Context) ->
     Url = genlib_app:env(hellgate, eventsink_service_url),
     Service = {hg_state_processing_thrift, 'EventSink'},
-    EventsinkID = genlib_app:env(hellgate, eventsink_id),
-    woody_client:call(Context, {Service, Function, [EventsinkID | Args]}, #{url => Url}).
+    woody_client:call(Context, {Service, Function, [?EVENTSINK_ID | Args]}, #{url => Url}).
 
 -spec handle_error(woody_t:func(), term(), woody_client:context(), []) ->
     _.

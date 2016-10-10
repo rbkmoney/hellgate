@@ -38,8 +38,7 @@ start_app(hellgate = AppName) ->
         {host, Host},
         {port, Port},
         {automaton_service_url, <<"http://machinegun:8022/v1/automaton">>},
-        {eventsink_service_url, <<"http://machinegun:8022/v1/event_sink">>},
-        {eventsink_id         , <<"payproc">>}
+        {eventsink_service_url, <<"http://machinegun:8022/v1/event_sink">>}
     ]), #{
         hellgate_root_url => RootUrl
     }};
