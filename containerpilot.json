@@ -1,13 +1,13 @@
 {
-  "consul": "{{ .CONSUL_ADDR }}:8500",
+  "consul": "{{ .CONSUL_ADDR }}",
   "services": [
     {
-      "name": "hellgate",
+      "name": "{{if .SERVICE_NAME}}{{ .SERVICE_NAME }}{{else}}hellgate{{end}}",
       "port": 8022,
       "health": "/usr/bin/curl --silent --show-error --output /dev/null localhost:8022",
       "poll": 1,
       "ttl": 2,
-      "interfaces": ["eth0"]
+      "interfaces": ["inet6", "inet"]
     }
   ]
 }
