@@ -34,18 +34,24 @@ build('hellgate', 'docker-host', finalHook) {
     runStage('test') {
       sh "make wdeps_test"
     }
+    runStage('make release') {
+      withGithubPrivkey {
+        sh "make wc_release"
+      }
+    }
+    runStage('build image') {
+      sh "make build_image"
+    }
 
-    if (env.BRANCH_NAME == 'master') {
-      runStage('make release') {
-        withGithubPrivkey {
-          sh "make wc_release"
+    try {
+      if (env.BRANCH_NAME == 'master') {
+        runStage('push image') {
+          sh "make push_image"
         }
       }
-      runStage('build image') {
-        sh "make build_image"
-      }
-      runStage('push image') {
-        sh "make push_image"
+    } finally {
+      runStage('rm local image') {
+        sh 'make rm_local_image'
       }
     }
   }
