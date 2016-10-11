@@ -356,7 +356,8 @@ construct_shop(ShopID, ShopParams) ->
         suspension = ?suspended(),
         category   = ShopParams#payproc_ShopParams.category,
         details    = ShopParams#payproc_ShopParams.details,
-        contractor = ShopParams#payproc_ShopParams.contractor
+        contractor = ShopParams#payproc_ShopParams.contractor,
+        services   = #domain_ShopServices{}
     }.
 
 get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->

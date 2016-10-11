@@ -178,7 +178,8 @@ make_payment_params(PaymentTool, Session) ->
         payer = #domain_Payer{
             payment_tool = PaymentTool,
             session = Session,
-            client_info = #domain_ClientInfo{}
+            client_info = #domain_ClientInfo{},
+            contact_info = #domain_ContactInfo{}
         }
     }.
 

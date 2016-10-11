@@ -100,7 +100,10 @@ make_invoice_params(ShopID, Product, Due, {Amount, Currency}, Context) ->
         amount   = Amount,
         due      = hg_datetime:format_ts(Due),
         currency = #domain_CurrencyRef{symbolic_code = Currency},
-        context  = term_to_binary(Context)
+        context  = #'Content'{
+            type = <<"application/octet-stream">>,
+            data = term_to_binary(Context)
+        }
     }.
 
 make_due_date() ->
