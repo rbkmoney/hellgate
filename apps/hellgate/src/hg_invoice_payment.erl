@@ -245,7 +245,7 @@ construct_proxy_context({Payment, Session}, Options = #{proxy := Proxy}) ->
     #'Context'{
         session = construct_session(Session),
         payment = construct_payment_info(Payment, Options),
-        options = Proxy#domain_Proxy.options
+        options = Proxy#domain_ProxyDefinition.options
     }.
 
 construct_session(#{target := Target, proxy_state := ProxyState}) ->
@@ -266,7 +266,7 @@ construct_error(Code) when is_binary(Code) ->
     construct_error(Code, undefined).
 
 construct_error(Code, Description) ->
-    #domain_OperationError{code = Code, description = Description}.
+    #'Error'{code = Code, description = Description}.
 
 %%
 
@@ -329,5 +329,5 @@ issue_call(Call, #{proxy := Proxy}, Context = #{client_context := ClientContext}
     {Result, ClientContext1} = woody_client:call_safe(ClientContext, Call, get_call_options(Proxy)),
     {Result, Context#{client_context := ClientContext1}}.
 
-get_call_options(#domain_Proxy{url = Url}) ->
+get_call_options(#domain_ProxyDefinition{url = Url}) ->
     #{url => Url}.

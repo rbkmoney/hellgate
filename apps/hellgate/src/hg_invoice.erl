@@ -405,7 +405,7 @@ create_invoice(ID, V = #payproc_InvoiceParams{}, #payproc_UserInfo{id = UserID})
         product         = V#payproc_InvoiceParams.product,
         description     = V#payproc_InvoiceParams.description,
         context         = V#payproc_InvoiceParams.context,
-        cost            = #domain_Funds{
+        cost            = #domain_Cash{
             amount          = V#payproc_InvoiceParams.amount,
             currency        = hg_domain:get(Revision, V#payproc_InvoiceParams.currency)
         }

@@ -60,8 +60,7 @@ get_fixture() ->
         ),
         ?object('ProxyObject',
             #domain_ProxyRef{id = 1},
-            #domain_Proxy{
-                type    = provider,
+            #domain_ProxyDefinition{
                 url     = genlib_app:env(hellgate, provider_proxy_url),
                 options = genlib_app:env(hellgate, provider_proxy_options, #{})
             }
