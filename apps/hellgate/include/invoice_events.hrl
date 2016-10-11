@@ -26,9 +26,12 @@
     {invoice_payment_status_changed,
         #payproc_InvoicePaymentStatusChanged{payment_id = PaymentID, status = Status}}
 ).
--define(payment_state_changed(PaymentID),
-    {invoice_payment_state_changed,
-        #payproc_InvoicePaymentStateChanged{payment_id = PaymentID}}
+-define(payment_interaction_requested(PaymentID, UserInteraction),
+    {invoice_payment_interaction_requested,
+        #payproc_InvoicePaymentInteractionRequested{
+            payment_id = PaymentID,
+            interaction = UserInteraction
+        }}
 ).
 
 -define(paid(),
@@ -42,8 +45,10 @@
 
 -define(pending(),
     {pending, #domain_InvoicePaymentPending{}}).
--define(succeeded(),
-    {succeeded, #domain_InvoicePaymentSucceeded{}}).
+-define(processed(),
+    {processed, #domain_InvoicePaymentProcessed{}}).
+-define(captured(),
+    {captured, #domain_InvoicePaymentCaptured{}}).
 -define(failed(Error),
     {failed, #domain_InvoicePaymentFailed{err = Error}}).
 

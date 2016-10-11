@@ -32,4 +32,8 @@ get_service_spec(invoicing, #{}) ->
 
 get_service_spec(processor, #{namespace := Ns}) when is_binary(Ns) ->
     Service = {hg_state_processing_thrift, 'Processor'},
-    {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), Service}.
+    {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), Service};
+
+get_service_spec(proxy_host_provider, #{}) ->
+    Service = {hg_proxy_provider_thrift, 'ProviderProxyHost'},
+    {?VERSION_PREFIX ++ "/proxyhost/provider", Service}.

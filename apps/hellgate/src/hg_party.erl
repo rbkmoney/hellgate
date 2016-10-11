@@ -148,7 +148,7 @@ start(ID, Args, Context) ->
     map_start_error(hg_machine:start(?NS, ID, Args, opts(Context))).
 
 call(ID, Args, Context) ->
-    map_error(hg_machine:call(?NS, ID, Args, opts(Context))).
+    map_error(hg_machine:call(?NS, {id, ID}, Args, opts(Context))).
 
 map_start_error({{error, exists}, Context}) ->
     throw({#payproc_PartyExists{}, Context});
