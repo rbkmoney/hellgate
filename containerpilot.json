@@ -2,7 +2,7 @@
   "consul": "{{ .CONSUL_ADDR }}",
   "services": [
     {
-      "name": "{{if .SERVICE_NAME}}{{ .SERVICE_NAME }}{{else}}hellgate{{end}}",
+      "name": "{{ .SERVICE_NAME }}",
       "port": 8022,
       "health": "/usr/bin/curl --silent --show-error --output /dev/null localhost:8022",
       "poll": 1,
