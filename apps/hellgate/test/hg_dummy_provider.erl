@@ -52,14 +52,13 @@ process_payment(?processed(), undefined, _, _, Context) ->
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _, Context) ->
     {{ok, finish(PaymentInfo)}, Context};
 
-process_payment(?captured(), undefined, _, Opts, Context) ->
-    Tag = hg_utils:unique_id(),
-    _Pid = spawn(fun () -> callback(Tag, <<"payload">>, <<"sure">>, Opts, 1000) end),
+process_payment(?captured(), undefined, PaymentInfo, _Opts, Context) ->
+    Tag = (PaymentInfo#'PaymentInfo'.payment)#'domain_InvoicePayment'.id,
     {{ok, suspend(Tag, 3, <<"suspended">>)}, Context};
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _, Context) ->
     {{ok, finish(PaymentInfo)}, Context}.
 
-handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _, _, Context) ->
+handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts, Context) ->
     {{ok, respond(<<"sure">>, sleep(1, <<"sleeping">>))}, Context}.
 
 finish(#'PaymentInfo'{payment = Payment}) ->
@@ -89,9 +88,3 @@ respond(Response, Result) ->
         result = Result
     }.
 
-callback(Tag, Payload, Expect, #{hellgate_root_url := RootUrl}, Timeout) ->
-    _ = timer:sleep(Timeout),
-    {ok, Expect} = hg_client_api:call(
-        proxy_host_provider, 'ProcessCallback', [Tag, Payload],
-        hg_client_api:new(RootUrl)
-    ).

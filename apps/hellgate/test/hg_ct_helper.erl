@@ -32,7 +32,7 @@ start_app(lager = AppName) ->
         {error_logger_hwm, 600},
         {suppress_application_start_stop, true},
         {handlers, [
-            {lager_common_test_backend, [debug, false]}
+            {lager_common_test_backend, info}
         ]}
     ]), #{}};
 

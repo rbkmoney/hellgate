@@ -302,11 +302,14 @@ restore_timer(St) ->
 set_invoice_timer(St = #st{invoice = #domain_Invoice{status = Status, due = Due}}) ->
     case get_pending_payment(St) of
         undefined when Status == ?unpaid() ->
+            lager:info("RESTORE_TIMER: set_deadline(~p)", [Due]),
             hg_machine_action:set_deadline(Due);
         undefined ->
+            lager:info("RESTORE_TIMER: new(), due = ~p", [Due]),
             hg_machine_action:new();
         {_, _} ->
             % TODO how to restore timer properly then, magic number for now
+            lager:info("RESTORE_TIMER: set_timeout(10), due = ~p", [Due]),
             hg_machine_action:set_timeout(10)
     end.
 
@@ -320,7 +323,7 @@ start_payment(PaymentParams, St, Context) ->
     Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
     {respond(PaymentID, Events, St, Action), Context2}.
 
-process_payment_signal(Signal, PaymentID, PaymentSession, St = #st{invoice = Invoice}, Context) ->
+process_payment_signal(Signal, PaymentID, PaymentSession, St, Context) ->
     Opts = get_payment_opts(St),
     case hg_invoice_payment:process_signal(Signal, PaymentSession, Opts, Context) of
         {{next, {Events, Action}}, Context1} ->
@@ -335,11 +338,13 @@ process_payment_signal(Signal, PaymentID, PaymentSession, St = #st{invoice = Inv
                     Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],
                     {ok(wrap_payment_events(PaymentID, Events1) ++ Events2, St), Context1};
                 ?failed(_) ->
-                    {ok(wrap_payment_events(PaymentID, Events1), St, restore_timer(St)), Context1}
+                    %% TODO: fix this dirty hack
+                    TmpPayments = lists:keydelete(PaymentID, 1, St#st.payments),
+                    {ok(wrap_payment_events(PaymentID, Events1), St, restore_timer(St#st{payments = TmpPayments})), Context1}
             end
     end.
 
-process_payment_call(Call, PaymentID, PaymentSession, St = #st{invoice = Invoice}, Context) ->
+process_payment_call(Call, PaymentID, PaymentSession, St, Context) ->
     Opts = get_payment_opts(St),
     case hg_invoice_payment:process_call(Call, PaymentSession, Opts, Context) of
         {{Response, {next, {Events, Action}}}, Context1} ->
@@ -355,7 +360,12 @@ process_payment_call(Call, PaymentID, PaymentSession, St = #st{invoice = Invoice
                     Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],
                     {respond(Response, wrap_payment_events(PaymentID, Events1) ++ Events2, St), Context1};
                 ?failed(_) ->
-                    {respond(Response, wrap_payment_events(PaymentID, Events1), St, restore_timer(St)), Context1}
+                    %% TODO: fix this dirty hack
+                    TmpPayments = lists:keydelete(PaymentID, 1, St#st.payments),
+                    {
+                        respond(Response, wrap_payment_events(PaymentID, Events1), St, restore_timer(St#st{payments = TmpPayments})),
+                        Context1
+                    }
             end
     end.
 
