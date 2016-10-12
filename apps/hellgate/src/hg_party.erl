@@ -669,7 +669,7 @@ find_shop_account_set(ID, [{_, #domain_Shop{accounts = Accounts}} | Rest]) ->
             Accounts;
         #domain_ShopAccountSet{guarantee = ID} ->
             Accounts;
-        undefined -> find_shop_account_set(ID, Rest)
+        _ -> find_shop_account_set(ID, Rest)
     end.
 
 get_claim(ID, #st{claims = Claims}) ->
