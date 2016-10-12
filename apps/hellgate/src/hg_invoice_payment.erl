@@ -17,6 +17,7 @@
 %%%     - remove ability to throw `TryLater` from `HandlePaymentCallback`
 %%%     - drop `TryLater` completely (?)
 %%%  - think about safe clamping of timers returned by some proxy
+%%%  - why don't user interaction events imprint anything on the state?
 
 -module(hg_invoice_payment).
 -include_lib("hg_proto/include/hg_domain_thrift.hrl").
@@ -293,7 +294,9 @@ merge_public_event(?payment_started(Payment), undefined) ->
 merge_public_event(?payment_bound(_, Trx), {Payment, State}) ->
     {Payment#domain_InvoicePayment{trx = Trx}, State};
 merge_public_event(?payment_status_changed(_, Status), {Payment, State}) ->
-    {Payment#domain_InvoicePayment{status = Status}, State}.
+    {Payment#domain_InvoicePayment{status = Status}, State};
+merge_public_event(?payment_interaction_requested(_, _), {Payment, State}) ->
+    {Payment, State}.
 
 %% TODO session_finished?
 merge_session_event({started, Target}, {Payment, _}) ->
