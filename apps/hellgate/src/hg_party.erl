@@ -350,6 +350,7 @@ get_shop_state(ID, #st{party = Party, revision = Revision}) ->
 %%
 
 construct_shop(ShopID, ShopParams) ->
+    ShopServices = get_default_shop_services(),
     #domain_Shop{
         id         = ShopID,
         blocking   = ?unblocked(<<>>),
@@ -357,7 +358,7 @@ construct_shop(ShopID, ShopParams) ->
         category   = ShopParams#payproc_ShopParams.category,
         details    = ShopParams#payproc_ShopParams.details,
         contractor = ShopParams#payproc_ShopParams.contractor,
-        services   = #domain_ShopServices{}
+        services   = ShopServices
     }.
 
 get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->
@@ -756,3 +757,13 @@ create_account_shop_set(
         guarantee = GuaranteeID
     },
     {ShopAccountSet, Context#{client_context => ClientContext}}.
+
+get_default_shop_services() ->
+    Head = hg_domain:head(),
+    #domain_Globals{
+        party_prototype = PartyPrototypeRef
+    } = hg_domain:get(Head, #domain_GlobalsRef{}),
+    #domain_PartyPrototype{
+        default_services = ShopServices
+    } = hg_domain:get(Head, PartyPrototypeRef),
+    ShopServices.

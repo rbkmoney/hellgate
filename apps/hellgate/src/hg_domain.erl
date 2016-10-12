@@ -37,6 +37,10 @@ get(Revision, Ref) ->
 
 type_to_name(#domain_CurrencyRef{}) ->
     currency;
+type_to_name(#domain_GlobalsRef{}) ->
+    globals;
+type_to_name(#domain_PartyPrototypeRef{}) ->
+    party_prototype;
 type_to_name(#domain_ProxyRef{}) ->
     proxy.
 
@@ -49,6 +53,23 @@ type_to_name(#domain_ProxyRef{}) ->
 
 get_fixture() ->
     #{
+        ?object('Globals',
+            #domain_GlobalsRef{},
+            #domain_Globals{
+                party_prototype = #domain_PartyPrototypeRef{
+                    id = 42
+                }
+            }
+        ),
+        ?object('PartyPrototype',
+            #domain_PartyPrototypeRef{
+                id = 42
+            },
+            #domain_PartyPrototype{
+                shop = #domain_ShopPrototype{},
+                default_services = #domain_ShopServices{}
+            }
+        ),
         ?object('CurrencyObject',
             #domain_CurrencyRef{symbolic_code = <<"RUB">>},
             #domain_Currency{
