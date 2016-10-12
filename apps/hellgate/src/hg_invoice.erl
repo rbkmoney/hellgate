@@ -302,14 +302,11 @@ restore_timer(St) ->
 set_invoice_timer(St = #st{invoice = #domain_Invoice{status = Status, due = Due}}) ->
     case get_pending_payment(St) of
         undefined when Status == ?unpaid() ->
-            lager:info("RESTORE_TIMER: set_deadline(~p)", [Due]),
             hg_machine_action:set_deadline(Due);
         undefined ->
-            lager:info("RESTORE_TIMER: new(), due = ~p", [Due]),
             hg_machine_action:new();
         {_, _} ->
             % TODO how to restore timer properly then, magic number for now
-            lager:info("RESTORE_TIMER: set_timeout(10), due = ~p", [Due]),
             hg_machine_action:set_timeout(10)
     end.
 
@@ -470,16 +467,19 @@ get_payment_session(PaymentID, #st{payments = Payments}) ->
 set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
     St#st{payments = lists:keystore(PaymentID, 1, Payments, {PaymentID, PaymentSession})}.
 
-get_pending_payment(#st{payments = [V = {_PaymentID, {Payment, _}} | _]}) ->
+get_pending_payment(#st{payments = Payments}) ->
+    find_pending_payment(Payments).
+
+find_pending_payment([V = {_PaymentID, {Payment, _}} | Rest]) ->
     case get_payment_status(Payment) of
         ?pending() ->
             V;
         ?processed() ->
             V;
         _ ->
-            undefined
+            find_pending_payment(Rest)
     end;
-get_pending_payment(#st{}) ->
+find_pending_payment([]) ->
     undefined.
 
 get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->

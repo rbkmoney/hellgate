@@ -10,9 +10,10 @@
 
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancelled/1]).
+-export([invoice_cancelled_after_payment_timeout/1]).
 -export([payment_success/1]).
 -export([payment_success_on_second_try/1]).
--export([invoice_success_on_second_payment/1]).
+-export([invoice_success_on_third_payment/1]).
 -export([consistent_history/1]).
 
 %%
@@ -39,13 +40,14 @@ init([]) ->
 
 all() ->
     [
-%%         invoice_cancellation,
-%%         overdue_invoice_cancelled,
-%%         payment_success,
-%%         payment_success_on_second_try,
-        invoice_success_on_second_payment
+        invoice_cancellation,
+        overdue_invoice_cancelled,
+        invoice_cancelled_after_payment_timeout,
+        payment_success,
+        payment_success_on_second_try,
+        invoice_success_on_third_payment,
 
-%%         consistent_history
+        consistent_history
     ].
 
 %% starting/stopping
@@ -114,11 +116,22 @@ overdue_invoice_cancelled(C) ->
     {ok, InvoiceID} = start_invoice(C, <<"rubberduck">>, make_due_date(1), 10000),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
 
+-spec invoice_cancelled_after_payment_timeout(config()) -> _ | no_return().
+
+invoice_cancelled_after_payment_timeout(C) ->
+    Client = ?c(client, C),
+    InvoiceParams = make_invoice_params(<<"rubberdusk">>, make_due_date(7), 1000),
+    {ok, InvoiceID} = start_invoice(C, InvoiceParams),
+    PaymentParams = make_payment_params(),
+    {ok, PaymentID} = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, 5000, Client),
+    ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, 5000, Client).
+
 -spec payment_success(config()) -> _ | no_return().
 
 payment_success(C) ->
     Client = ?c(client, C),
-    {ok, InvoiceID} = start_invoice(C, <<"rubberdick">>, make_due_date(20), 42000),
+    {ok, InvoiceID} = start_invoice(C, <<"rubberduck">>, make_due_date(10), 42000),
     PaymentParams = make_payment_params(),
     {ok, PaymentID} = attach_payment(InvoiceID, PaymentParams, Client),
     %% simulate user interaction
@@ -154,23 +167,26 @@ payment_success_on_second_try(C) ->
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, 1000, Client).
 
--spec invoice_success_on_second_payment(config()) -> _ | no_return().
+-spec invoice_success_on_third_payment(config()) -> _ | no_return().
 
-invoice_success_on_second_payment(C) ->
+invoice_success_on_third_payment(C) ->
     Client = ?c(client, C),
-    {ok, InvoiceID} = start_invoice(C, <<"rubberdick">>, make_due_date(600), 42000),
+    {ok, InvoiceID} = start_invoice(C, <<"rubberdock">>, make_due_date(60), 42000),
     PaymentParams = make_payment_params(),
     {ok, PaymentID_1} = attach_payment(InvoiceID, PaymentParams, Client),
-    %% wait for payment timeout
-    ?payment_status_changed(PaymentID_1, ?failed(_)) = next_event(InvoiceID, 20000, Client),
+    %% wait for payment timeout and start new one after
+    ?payment_status_changed(PaymentID_1, ?failed(_)) = next_event(InvoiceID, 5000, Client),
     {ok, PaymentID_2} = attach_payment(InvoiceID, PaymentParams, Client),
-    %% simulate user interaction
-    GoodTag = PaymentID_2,
+    %% wait for payment timeout and start new one after
+    ?payment_status_changed(PaymentID_2, ?failed(_)) = next_event(InvoiceID, 5000, Client),
+    {ok, PaymentID_3} = attach_payment(InvoiceID, PaymentParams, Client),
+    %% simulate user interaction FTW!
+    GoodTag = PaymentID_3,
     assert_call_succeed(hg_client_api:call(
          proxy_host_provider, 'ProcessCallback', [GoodTag, <<"payload">>],
          hg_client_api:new( ?c(root_url, C))
     )),
-    ?payment_status_changed(PaymentID_2, ?captured()) = next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID_3, ?captured()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, 1000, Client).
 %%
@@ -283,15 +299,7 @@ start_invoice(C, Product, Due, Amount) ->
 
 attach_payment(InvoiceID, PaymentParams, Client) ->
     {ok, PaymentID} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
-    Tmp1 = next_event(InvoiceID, Client),
-    lager:info("ATTACH PAYMENT #1: ~p", [Tmp1]),
-    ?payment_started(?payment_w_status(?pending())) = Tmp1,
-
-    Tmp2 = next_event(InvoiceID, Client),
-    lager:info("ATTACH PAYMENT #2: ~p", [Tmp2]),
-    ?payment_bound(PaymentID, ?trx_info(PaymentID)) = Tmp2,
-
-    Tmp3 = next_event(InvoiceID, Client),
-    lager:info("ATTACH PAYMENT #3: ~p", [Tmp3]),
-    ?payment_status_changed(PaymentID, ?processed()) = Tmp3,
+    ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
+    ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, Client),
     {ok, PaymentID}.
