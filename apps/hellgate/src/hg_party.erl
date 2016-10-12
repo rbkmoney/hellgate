@@ -2,6 +2,12 @@
 %%  * https://github.com/rbkmoney/coredocs/blob/90a4eed/docs/domain/entities/party.md
 %%  * https://github.com/rbkmoney/coredocs/blob/90a4eed/docs/domain/entities/merchant.md
 
+
+%% @TODO
+%% * Deal with default shop services (will need to change thrift-protocol as well)
+%% * Access check before shop creation is weird (think about adding context)
+%% * Create accounts after shop claim confirmation
+
 -module(hg_party).
 -include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
 -include_lib("hg_proto/include/hg_accounter_thrift.hrl").
