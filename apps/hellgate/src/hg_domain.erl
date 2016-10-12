@@ -21,6 +21,8 @@
 -type data() :: _.
 -type object() :: ref().
 
+-export_type([revision/0]).
+
 -spec head() -> revision().
 
 head() ->
