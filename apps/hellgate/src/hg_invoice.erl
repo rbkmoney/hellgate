@@ -337,7 +337,10 @@ process_payment_signal(Signal, PaymentID, PaymentSession, St, Context) ->
                 ?failed(_) ->
                     %% TODO: fix this dirty hack
                     TmpPayments = lists:keydelete(PaymentID, 1, St#st.payments),
-                    {ok(wrap_payment_events(PaymentID, Events1), St, restore_timer(St#st{payments = TmpPayments})), Context1}
+                    {
+                        ok(wrap_payment_events(PaymentID, Events1), St, restore_timer(St#st{payments = TmpPayments})),
+                        Context1
+                    }
             end
     end.
 
@@ -360,7 +363,12 @@ process_payment_call(Call, PaymentID, PaymentSession, St, Context) ->
                     %% TODO: fix this dirty hack
                     TmpPayments = lists:keydelete(PaymentID, 1, St#st.payments),
                     {
-                        respond(Response, wrap_payment_events(PaymentID, Events1), St, restore_timer(St#st{payments = TmpPayments})),
+                        respond(
+                            Response,
+                            wrap_payment_events(PaymentID, Events1),
+                            St,
+                            restore_timer(St#st{payments = TmpPayments})
+                        ),
                         Context1
                     }
             end
