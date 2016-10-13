@@ -110,11 +110,12 @@ handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, Context, _Opts) 
 
 handle_function('GetShopAccountState', {UserInfo, PartyID, AccountID}, Context0, _Opts) ->
     {St, Context1} = get_state(UserInfo, PartyID, Context0),
-    {AccountState, Context} = ?try_w_context(
-        get_account_state(AccountID, St, Context1),
-        Context1
-    ),
-    {{ok, AccountState}, Context};
+    try
+        {AccountState, Context} = get_account_state(AccountID, St, Context1),
+        {{ok, AccountState}, Context}
+    catch
+        {exception, E} -> throw({E, Context1})
+    end;
 
 handle_function('GetShopAccountSet', {UserInfo, PartyID, ShopID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
@@ -636,7 +637,7 @@ get_account_set(#domain_Shop{accounts = Accounts}) ->
 
 get_account_state(AccountID, St = #st{}, Context0) ->
     ok = ensure_account(AccountID, get_party(St)),
-    {Account, Context0} = hg_account:get_account_by_id(AccountID, Context0),
+    {Account, Context} = hg_account:get_account_by_id(AccountID, Context0),
     #{
         own_amount := OwnAmount,
         available_amount := AvailableAmount,
@@ -646,12 +647,12 @@ get_account_state(AccountID, St = #st{}, Context0) ->
         symbolic_code = CurrencySymCode
     },
     Currency = hg_domain:get(hg_domain:head(), CurrencyRef),
-    #payproc_ShopAccountState{
+    {#payproc_ShopAccountState{
         account_id = AccountID,
         own_amount = OwnAmount,
         available_amount = AvailableAmount,
         currency = Currency
-    }.
+    }, Context}.
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
     case find_shop_account_set(AccountID, maps:to_list(Shops)) of

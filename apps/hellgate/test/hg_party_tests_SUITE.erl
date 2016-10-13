@@ -570,7 +570,9 @@ shop_account_retrieval(C) ->
     {shop_account_set_retrieval, #domain_ShopAccountSet{
         guarantee = AccountID
     }} = ?config(saved_config, C),
-    hg_client_party:get_shop_account(AccountID, Client).
+    {ok, #payproc_ShopAccountState{
+        account_id = AccountID
+    }} = hg_client_party:get_shop_account(AccountID, Client).
 
 get_first_shop(Client) ->
     {ok, ?party_state(#domain_Party{shops = Shops})} = hg_client_party:get(Client),
