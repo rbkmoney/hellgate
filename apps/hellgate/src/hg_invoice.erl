@@ -13,7 +13,7 @@
 %%%     - alter `Invoicing.GetPayment` signature
 
 -module(hg_invoice).
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -define(NS, <<"invoice">>).
 
@@ -88,7 +88,7 @@ handle_function('Rescind', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
 
 %%
 
--type tag()               :: hg_base_thrift:'Tag'().
+-type tag()               :: dmsl_base_thrift:'Tag'().
 -type callback()          :: _. %% FIXME
 -type callback_response() :: _. %% FIXME
 
@@ -144,17 +144,17 @@ opts(Context) ->
 
 %%
 
--type invoice() :: hg_domain_thrift:'Invoice'().
--type invoice_id() :: hg_domain_thrift:'InvoiceID'().
--type user_info() :: hg_payment_processing_thrift:'UserInfo'().
--type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
--type payment_params() :: hg_payment_processing_thrift:'InvoicePaymentParams'().
--type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
+-type invoice() :: dmsl_domain_thrift:'Invoice'().
+-type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
+-type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
+-type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
+-type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
+-type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type payment_st() :: hg_invoice_payment:st().
 -type sequence() :: pos_integer().
 
 -type ev() ::
-    {public, sequence(), hg_payment_processing_thrift:'EventPayload'()} |
+    {public, sequence(), dmsl_payment_processing_thrift:'EventPayload'()} |
     {private, sequence(), private_event()}.
 
 -type private_event() ::

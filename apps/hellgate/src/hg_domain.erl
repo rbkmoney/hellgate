@@ -1,5 +1,5 @@
 -module(hg_domain).
--include_lib("hg_proto/include/hg_domain_thrift.hrl").
+-include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 
 %%
 
@@ -18,7 +18,7 @@
 head() ->
     42.
 
--spec all(revision()) -> hg_domain_thrift:'Domain'().
+-spec all(revision()) -> dmsl_domain_thrift:'Domain'().
 
 all(_Revision) ->
     get_fixture().

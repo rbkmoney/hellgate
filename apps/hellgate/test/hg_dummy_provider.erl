@@ -13,11 +13,11 @@
     hg_proto:service_spec().
 
 get_service_spec() ->
-    {"/test/proxy/provider/dummy", {hg_proxy_provider_thrift, 'ProviderProxy'}}.
+    {"/test/proxy/provider/dummy", {dmsl_proxy_provider_thrift, 'ProviderProxy'}}.
 
 %%
 
--include_lib("hg_proto/include/hg_proxy_provider_thrift.hrl").
+-include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("hellgate/include/invoice_events.hrl").
 
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), #{}) ->

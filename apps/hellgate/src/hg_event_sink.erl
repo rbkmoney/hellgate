@@ -9,11 +9,11 @@
 
 %%
 
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
--include_lib("hg_proto/include/hg_state_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_state_processing_thrift.hrl").
 
--type event_id() :: hg_base_thrift:'EventID'().
--type event()    :: hg_payment_processing_thrift:'Event'().
+-type event_id() :: dmsl_base_thrift:'EventID'().
+-type event()    :: dmsl_payment_processing_thrift:'Event'().
 
 -spec handle_function
     ('GetEvents', woody_server_thrift_handler:args(), woody_client:context(), []) ->
@@ -67,7 +67,7 @@ publish_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event 
 
 call_event_sink(Function, Args, Context) ->
     Url = genlib_app:env(hellgate, eventsink_service_url),
-    Service = {hg_state_processing_thrift, 'EventSink'},
+    Service = {dmsl_state_processing_thrift, 'EventSink'},
     woody_client:call(Context, {Service, Function, [?EVENTSINK_ID | Args]}, #{url => Url}).
 
 -spec handle_error(woody_t:func(), term(), woody_client:context(), []) ->

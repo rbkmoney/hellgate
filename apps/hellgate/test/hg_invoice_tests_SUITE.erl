@@ -58,7 +58,7 @@ end_per_suite(C) ->
 
 %% tests
 
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include("invoice_events.hrl").
 
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).

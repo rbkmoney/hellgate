@@ -69,11 +69,11 @@ start_apps(Apps) ->
 
 %%
 
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
--type shop_id()        :: hg_domain_thrift:'ShopID'().
+-type shop_id()        :: dmsl_domain_thrift:'ShopID'().
 -type cost()           :: integer() | {integer(), binary()}.
--type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
+-type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type timestamp()      :: integer().
 
 -spec make_invoice_params(shop_id(), binary(), cost()) ->

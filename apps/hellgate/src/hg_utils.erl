@@ -7,7 +7,7 @@
 
 %%
 
--spec unique_id() -> hg_base_thrift:'ID'().
+-spec unique_id() -> dmsl_base_thrift:'ID'().
 
 unique_id() ->
     <<ID:64>> = snowflake:new(),

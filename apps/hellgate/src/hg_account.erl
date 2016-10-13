@@ -4,8 +4,8 @@
 -export([create_account/2]).
 -export([create_account/3]).
 
--include_lib("hg_proto/include/hg_domain_thrift.hrl").
--include_lib("hg_proto/include/hg_accounter_thrift.hrl").
+-include_lib("dmsl/include/dmsl_domain_thrift.hrl").
+-include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
 
 -type account() :: #{
     account_id => AccountID :: integer(),
@@ -14,8 +14,8 @@
     currency_sym_code => CurrencySymCode :: binary()
 }.
 
--type account_id() :: hg_domain_thrift:'AccountID'().
--type currency_sym_code() :: hg_domain_thrift:'CurrencySymbolicCode'().
+-type account_id() :: dmsl_domain_thrift:'AccountID'().
+-type currency_sym_code() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
 
 -spec get_account_by_id(AccountID :: integer(), woody_client:context())->
     {account(), woody_client:context()}.
@@ -54,5 +54,5 @@ create_account(CurrencySymCode, Description, Context0) ->
 
 call_accounter(Function, Args, Context) ->
     Url = genlib_app:env(hellgate, accounter_service_url),
-    Service = {hg_accounter_thrift, 'Accounter'},
+    Service = {dmsl_accounter_thrift, 'Accounter'},
     woody_client:call(Context, {Service, Function, Args}, #{url => Url}).

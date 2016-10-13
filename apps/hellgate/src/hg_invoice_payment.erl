@@ -19,9 +19,9 @@
 %%%  - think about safe clamping of timers returned by some proxy
 
 -module(hg_invoice_payment).
--include_lib("hg_proto/include/hg_domain_thrift.hrl").
--include_lib("hg_proto/include/hg_proxy_provider_thrift.hrl").
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_domain_thrift.hrl").
+-include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 %% API
 
@@ -40,11 +40,11 @@
 -type st() :: {payment(), session()}.
 -export_type([st/0]).
 
--type invoice()     :: hg_domain_thrift:'Invoice'().
--type payment()     :: hg_domain_thrift:'InvoicePayment'().
--type payment_id()  :: hg_domain_thrift:'InvoicePaymentID'().
--type target()      :: hg_proxy_provider_thrift:'Target'().
--type proxy_state() :: hg_proxy_thrift:'ProxyState'().
+-type invoice()     :: dmsl_domain_thrift:'Invoice'().
+-type payment()     :: dmsl_domain_thrift:'InvoicePayment'().
+-type payment_id()  :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type target()      :: dmsl_proxy_provider_thrift:'Target'().
+-type proxy_state() :: dmsl_proxy_thrift:'ProxyState'().
 
 -type session() :: #{
     target      => target(),
@@ -58,7 +58,7 @@
 -include("invoice_events.hrl").
 
 -type ev() ::
-    {invoice_payment_event, hg_payment_processing_thrift:'InvoicePaymentEvent'()} |
+    {invoice_payment_event, dmsl_payment_processing_thrift:'InvoicePaymentEvent'()} |
     {session_event, session_ev()}.
 
 -type session_ev() ::
@@ -317,7 +317,7 @@ create_session(Target) ->
 
 %%
 
--define(SERVICE, {hg_proxy_provider_thrift, 'ProviderProxy'}).
+-define(SERVICE, {dmsl_proxy_provider_thrift, 'ProviderProxy'}).
 
 issue_process_call(ProxyContext, Opts, Context) ->
     issue_call({?SERVICE, 'ProcessPayment', [ProxyContext]}, Opts, Context).

@@ -19,21 +19,21 @@ get_service_spec(Name) ->
 -spec get_service_spec(Name :: atom(), Opts :: #{}) -> service_spec().
 
 get_service_spec(eventsink, #{}) ->
-    Service = {hg_payment_processing_thrift, 'EventSink'},
+    Service = {dmsl_payment_processing_thrift, 'EventSink'},
     {?VERSION_PREFIX ++ "/processing/eventsink", Service};
 
 get_service_spec(party_management, #{}) ->
-    Service = {hg_payment_processing_thrift, 'PartyManagement'},
+    Service = {dmsl_payment_processing_thrift, 'PartyManagement'},
     {?VERSION_PREFIX ++ "/processing/partymgmt", Service};
 
 get_service_spec(invoicing, #{}) ->
-    Service = {hg_payment_processing_thrift, 'Invoicing'},
+    Service = {dmsl_payment_processing_thrift, 'Invoicing'},
     {?VERSION_PREFIX ++ "/processing/invoicing", Service};
 
 get_service_spec(processor, #{namespace := Ns}) when is_binary(Ns) ->
-    Service = {hg_state_processing_thrift, 'Processor'},
+    Service = {dmsl_state_processing_thrift, 'Processor'},
     {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), Service};
 
 get_service_spec(proxy_host_provider, #{}) ->
-    Service = {hg_proxy_provider_thrift, 'ProviderProxyHost'},
+    Service = {dmsl_proxy_provider_thrift, 'ProviderProxyHost'},
     {?VERSION_PREFIX ++ "/proxyhost/provider", Service}.

@@ -9,8 +9,8 @@
 %% * Create accounts after shop claim confirmation
 
 -module(hg_party).
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
--include_lib("hg_proto/include/hg_accounter_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
 
 -define(NS, <<"party">>).
 
@@ -173,18 +173,18 @@ opts(Context) ->
 
 %%
 
--type party_id()   :: hg_domain_thrift:'PartyID'().
--type party()      :: hg_domain_thrift:'Party'().
--type claim_id()   :: hg_payment_processing_thrift:'ClaimID'().
--type claim()      :: hg_payment_processing_thrift:'Claim'().
--type user_info()  :: hg_payment_processing_thrift:'UserInfo'().
--type revision()   :: hg_domain_thrift:'DataRevision'().
+-type party_id()   :: dmsl_domain_thrift:'PartyID'().
+-type party()      :: dmsl_domain_thrift:'Party'().
+-type claim_id()   :: dmsl_payment_processing_thrift:'ClaimID'().
+-type claim()      :: dmsl_payment_processing_thrift:'Claim'().
+-type user_info()  :: dmsl_payment_processing_thrift:'UserInfo'().
+-type revision()   :: dmsl_domain_thrift:'DataRevision'().
 -type sequence()   :: pos_integer().
 
 -type ev() ::
     {sequence(), public_event() | private_event()}.
 
--type public_event() :: hg_payment_processing_thrift:'EventPayload'().
+-type public_event() :: dmsl_payment_processing_thrift:'EventPayload'().
 -type private_event() :: none().
 
 -include("party_events.hrl").

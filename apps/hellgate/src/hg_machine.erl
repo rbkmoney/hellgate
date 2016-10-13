@@ -1,14 +1,14 @@
 -module(hg_machine).
 
--type id() :: hg_base_thrift:'ID'().
--type ref() :: hg_state_processing_thrift:'Reference'().
--type ns() :: hg_base_thrift:'Namespace'().
+-type id() :: dmsl_base_thrift:'ID'().
+-type ref() :: dmsl_state_processing_thrift:'Reference'().
+-type ns() :: dmsl_base_thrift:'Namespace'().
 -type args() :: _.
 
 -type event() :: event(_).
 -type event(T) :: {event_id(), timestamp(), T}.
--type event_id() :: hg_base_thrift:'EventID'().
--type timestamp() :: hg_base_thrift:'Timestamp'().
+-type event_id() :: dmsl_base_thrift:'EventID'().
+-type timestamp() :: dmsl_base_thrift:'Timestamp'().
 
 -type history() :: history(_).
 -type history(T) :: [event(T)].
@@ -75,7 +75,7 @@
 
 %%
 
--include_lib("hg_proto/include/hg_state_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_state_processing_thrift.hrl").
 
 -type opts() :: #{
     client_context => woody_client:context()
@@ -133,7 +133,7 @@ get_history(Ns, ID, Range, #{client_context := Context0}) ->
 call_automaton(Function, Args, Context0) ->
     % TODO: hg_config module, aware of config entry semantics
     Url = genlib_app:env(hellgate, automaton_service_url),
-    Service = {hg_state_processing_thrift, 'Automaton'},
+    Service = {dmsl_state_processing_thrift, 'Automaton'},
     try woody_client:call(Context0, {Service, Function, Args}, #{url => Url}) catch
         {{exception, #'MachineAlreadyExists'{}}, Context} ->
             {{error, exists}, Context};
@@ -167,11 +167,11 @@ handle_function('ProcessCall', {Args}, Context0, [Ns]) ->
 -spec dispatch_signal(ns(), Signal, hg_machine:history(), woody_client:context()) ->
     {Result, woody_client:context()} when
         Signal ::
-            hg_state_processing_thrift:'InitSignal'() |
-            hg_state_processing_thrift:'TimeoutSignal'() |
-            hg_state_processing_thrift:'RepairSignal'(),
+            dmsl_state_processing_thrift:'InitSignal'() |
+            dmsl_state_processing_thrift:'TimeoutSignal'() |
+            dmsl_state_processing_thrift:'RepairSignal'(),
         Result ::
-            hg_state_processing_thrift:'SignalResult'().
+            dmsl_state_processing_thrift:'SignalResult'().
 
 dispatch_signal(Ns, #'InitSignal'{id = ID, arg = Payload}, [], Context0) ->
     Args = unwrap_args(Payload),
@@ -204,8 +204,8 @@ marshal_signal_result({Events, Action}) ->
 
 -spec dispatch_call(ns(), Call, hg_machine:history(), woody_client:context()) ->
     {Result, woody_client:context()} when
-        Call :: hg_state_processing_thrift:'Args'(),
-        Result :: hg_state_processing_thrift:'CallResult'().
+        Call :: dmsl_state_processing_thrift:'Args'(),
+        Result :: dmsl_state_processing_thrift:'CallResult'().
 
 dispatch_call(Ns, Payload, History0, Context0) ->
     Args = unwrap_args(Payload),
@@ -279,7 +279,7 @@ get_handler_module(Ns) ->
 
 %%
 
--spec unwrap_event(hg_state_processing_thrift:'Event'()) ->
+-spec unwrap_event(dmsl_state_processing_thrift:'Event'()) ->
     event().
 
 unwrap_event(#'Event'{id = ID, created_at = Dt, event_payload = Payload}) ->

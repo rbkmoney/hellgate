@@ -1,5 +1,5 @@
 -module(hg_client_invoicing).
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([start/2]).
 -export([start_link/2]).
@@ -25,11 +25,11 @@
 
 %%
 
--type user_info() :: hg_payment_processing_thrift:'UserInfo'().
--type invoice_id() :: hg_domain_thrift:'InvoiceID'().
--type payment_id() :: hg_domain_thrift:'InvoicePaymentID'().
--type invoice_params() :: hg_payment_processing_thrift:'InvoiceParams'().
--type payment_params() :: hg_payment_processing_thrift:'InvoicePaymentParams'().
+-type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
+-type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
+-type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
+-type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 
 -spec start(user_info(), hg_client_api:t()) -> pid().
 
@@ -60,7 +60,7 @@ create(InvoiceParams, Client) ->
     gen_server:call(Client, {call, 'Create', [InvoiceParams]}).
 
 -spec get(invoice_id(), pid()) ->
-    {ok, hg_payment_processing_thrift:'InvoiceState'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'InvoiceState'()} | woody_client:result_error().
 
 get(InvoiceID, Client) ->
     gen_server:call(Client, {call, 'Get', [InvoiceID]}).

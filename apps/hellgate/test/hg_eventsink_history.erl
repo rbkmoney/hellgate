@@ -5,9 +5,9 @@
 
 %%
 
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
--type history() :: [hg_payment_processing_thrift:'Event'()].
+-type history() :: [dmsl_payment_processing_thrift:'Event'()].
 
 -define(event(ID, Source, Seq, Payload),
     #payproc_Event{

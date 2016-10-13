@@ -167,7 +167,7 @@ end_per_suite(C) ->
 
 %% tests
 
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include("party_events.hrl").
 
 -spec init_per_group(group_name(), config()) -> config().

@@ -1,5 +1,5 @@
 -module(hg_client_eventsink).
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([start/1]).
 -export([start_link/1]).
@@ -20,7 +20,7 @@
 
 %%
 
--type event_id() :: hg_base_thrift:'EventID'().
+-type event_id() :: dmsl_base_thrift:'EventID'().
 
 -spec start(hg_client_api:t()) -> pid().
 

@@ -1,5 +1,5 @@
 -module(hg_client_event_poller).
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([new/3]).
 -export([poll/4]).
@@ -8,7 +8,7 @@
 
 %%
 
--type events() :: [hg_payment_processing_thrift:'Event'()].
+-type events() :: [dmsl_payment_processing_thrift:'Event'()].
 
 -type api_call() :: {Name :: atom(), woody_t:func(), [_]}.
 -opaque t() :: {api_call(), undefined | integer()}.

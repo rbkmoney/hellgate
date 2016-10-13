@@ -4,7 +4,7 @@
 %%%  - designate an exception when specified tag is missing
 
 -module(hg_proxy_host_provider).
--include_lib("hg_proto/include/hg_proxy_provider_thrift.hrl").
+-include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 
 %% Woody handler
 
@@ -14,8 +14,8 @@
 
 %%
 
--type tag()      :: hg_base_thrift:'Tag'().
--type callback() :: hg_proxy_provider_thrift:'Callback'().
+-type tag()      :: dmsl_base_thrift:'Tag'().
+-type callback() :: dmsl_proxy_provider_thrift:'Callback'().
 
 -spec handle_function('ProcessCallback', {tag(), callback()}, woody_client:context(), _) ->
     {{ok, term()}, woody_client:context()} | no_return().

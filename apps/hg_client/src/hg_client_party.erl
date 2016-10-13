@@ -1,5 +1,5 @@
 -module(hg_client_party).
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([start/3]).
 -export([start_link/3]).
@@ -40,12 +40,12 @@
 
 %%
 
--type user_info() :: hg_payment_processing_thrift:'UserInfo'().
--type party_id() :: hg_domain_thrift:'PartyID'().
--type shop_id() :: hg_domain_thrift:'ShopID'().
--type claim_id() :: hg_payment_processing_thrift:'ClaimID'().
--type shop_params() :: hg_payment_processing_thrift:'ShopParams'().
--type shop_account_id() :: hg_domain_thrift:'AccountID'().
+-type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
+-type party_id() :: dmsl_domain_thrift:'PartyID'().
+-type shop_id() :: dmsl_domain_thrift:'ShopID'().
+-type claim_id() :: dmsl_payment_processing_thrift:'ClaimID'().
+-type shop_params() :: dmsl_payment_processing_thrift:'ShopParams'().
+-type shop_account_id() :: dmsl_domain_thrift:'AccountID'().
 
 
 -spec start(user_info(), party_id(), hg_client_api:t()) -> pid().
@@ -77,115 +77,115 @@ create(Client) ->
     gen_server:call(Client, {call, 'Create', []}).
 
 -spec get(pid()) ->
-    {ok, hg_payment_processing_thrift:'PartyState'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'PartyState'()} | woody_client:result_error().
 
 get(Client) ->
     gen_server:call(Client, {call, 'Get', []}).
 
 -spec block(binary(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 block(Reason, Client) ->
     gen_server:call(Client, {call, 'Block', [Reason]}).
 
 -spec unblock(binary(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 unblock(Reason, Client) ->
     gen_server:call(Client, {call, 'Unblock', [Reason]}).
 
 -spec suspend(pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 suspend(Client) ->
     gen_server:call(Client, {call, 'Suspend', []}).
 
 -spec activate(pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 activate(Client) ->
     gen_server:call(Client, {call, 'Activate', []}).
 
 -spec get_shop(shop_id(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 get_shop(ID, Client) ->
     gen_server:call(Client, {call, 'GetShop', [ID]}).
 
 -spec create_shop(shop_params(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 create_shop(Params, Client) ->
     gen_server:call(Client, {call, 'CreateShop', [Params]}).
 
--spec update_shop(shop_id(), hg_payment_processing_thrift:'ShopUpdate'(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+-spec update_shop(shop_id(), dmsl_payment_processing_thrift:'ShopUpdate'(), pid()) ->
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 update_shop(ID, Update, Client) ->
     gen_server:call(Client, {call, 'UpdateShop', [ID, Update]}).
 
 -spec block_shop(shop_id(), binary(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 block_shop(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'BlockShop', [ID, Reason]}).
 
 -spec unblock_shop(shop_id(), binary(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 unblock_shop(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'UnblockShop', [ID, Reason]}).
 
 -spec suspend_shop(shop_id(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 suspend_shop(ID, Client) ->
     gen_server:call(Client, {call, 'SuspendShop', [ID]}).
 
 -spec activate_shop(shop_id(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 activate_shop(ID, Client) ->
     gen_server:call(Client, {call, 'ActivateShop', [ID]}).
 
 -spec get_claim(claim_id(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 get_claim(ID, Client) ->
     gen_server:call(Client, {call, 'GetClaim', [ID]}).
 
 -spec get_pending_claim(pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 get_pending_claim(Client) ->
     gen_server:call(Client, {call, 'GetPendingClaim', []}).
 
 -spec accept_claim(claim_id(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 accept_claim(ID, Client) ->
     gen_server:call(Client, {call, 'AcceptClaim', [ID]}).
 
 -spec deny_claim(claim_id(), binary(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 deny_claim(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'DenyClaim', [ID, Reason]}).
 
 -spec revoke_claim(claim_id(), binary(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
 
 revoke_claim(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'RevokeClaim', [ID, Reason]}).
 
 -spec get_shop_account(shop_account_id(), pid()) ->
-    {ok, hg_payment_processing_thrift:'ShopAccountState'()} | woody_client:result_error().
+    {ok, dmsl_payment_processing_thrift:'ShopAccountState'()} | woody_client:result_error().
 
 get_shop_account(AccountID, Client) ->
     gen_server:call(Client, {call, 'GetShopAccountState', [AccountID]}).
 
 -spec get_shop_account_set(shop_id(), pid()) ->
-    {ok, hg_domain_thrift:'ShopAccountSet'()} | woody_client:result_error().
+    {ok, dmsl_domain_thrift:'ShopAccountSet'()} | woody_client:result_error().
 
 get_shop_account_set(ShopID, Client) ->
     gen_server:call(Client, {call, 'GetShopAccountSet', [ShopID]}).

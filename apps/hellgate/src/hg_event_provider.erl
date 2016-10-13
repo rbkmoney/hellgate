@@ -1,12 +1,12 @@
 -module(hg_event_provider).
 
--include_lib("hg_proto/include/hg_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -type public_event() :: {source(), sequence(), payload()}.
 
--type source()   :: hg_payment_processing_thrift:'EventSource'().
+-type source()   :: dmsl_payment_processing_thrift:'EventSource'().
 -type sequence() :: pos_integer().
--type payload()  :: hg_payment_processing_thrift:'EventPayload'().
+-type payload()  :: dmsl_payment_processing_thrift:'EventPayload'().
 
 -export_type([public_event/0]).
 
@@ -17,8 +17,8 @@
 
 %%
 
--type event_id() :: hg_base_thrift:'EventID'().
--type event()    :: hg_payment_processing_thrift:'Event'().
+-type event_id() :: dmsl_base_thrift:'EventID'().
+-type event()    :: dmsl_payment_processing_thrift:'Event'().
 
 -spec publish_event(hg_machine:ns(), event_id(), hg_machine:id(), hg_machine:event()) ->
     {true, event()} | false.
