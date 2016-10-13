@@ -152,6 +152,7 @@ opts(Context) ->
 
 %%
 
+-type party_state() :: dmsl_payment_processing_thrift:'PartyState'().
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
@@ -193,7 +194,7 @@ publish_event(_InvoiceID, _Event) ->
 namespace() ->
     ?NS.
 
--spec init(invoice_id(), {invoice_params(), user_info()}, hg_machine:context()) ->
+-spec init(invoice_id(), {invoice_params(), party_state(), user_info()}, hg_machine:context()) ->
     {hg_machine:result(ev()), hg_machine:context()}.
 
 init(ID, {InvoiceParams, PartyState, _UserInfo}, Context) ->
