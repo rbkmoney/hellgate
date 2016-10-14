@@ -78,9 +78,9 @@ start_apps(Apps) ->
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/party_events.hrl").
 
--type party_id()       :: hg_domain_thrift:'PartyID'().
--type shop_id()        :: hg_domain_thrift:'ShopID'().
--type shop()           :: hg_domain_thrift:'Shop'().
+-type party_id()       :: dmsl_domain_thrift:'PartyID'().
+-type shop_id()        :: dmsl_domain_thrift:'ShopID'().
+-type shop()           :: dmsl_domain_thrift:'Shop'().
 -type cost()           :: integer() | {integer(), binary()}.
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type timestamp()      :: integer().
@@ -143,20 +143,20 @@ make_due_date() ->
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
 
--spec make_category_ref(hg_domain_thrift:'ObjectID'()) ->
-    hg_domain_thrift:'CategoryRef'().
+-spec make_category_ref(dmsl_domain_thrift:'ObjectID'()) ->
+    dmsl_domain_thrift:'CategoryRef'().
 
 make_category_ref(ID) ->
     #domain_CategoryRef{id = ID}.
 
 -spec make_shop_details(binary()) ->
-    hg_domain_thrift:'ShopDetails'().
+    dmsl_domain_thrift:'ShopDetails'().
 
 make_shop_details(Name) ->
     make_shop_details(Name, undefined).
 
 -spec make_shop_details(binary(), binary()) ->
-    hg_domain_thrift:'ShopDetails'().
+    dmsl_domain_thrift:'ShopDetails'().
 
 make_shop_details(Name, Description) ->
     #domain_ShopDetails{

@@ -44,14 +44,14 @@
 %%
 
 -spec get(user_info(), party_id(), woody_client:context()) ->
-    {hg_payment_processing_thrift:'PartyState'(), woody_client:context()} | no_return().
+    {dmsl_payment_processing_thrift:'PartyState'(), woody_client:context()} | no_return().
 
 get(UserInfo, PartyID, Context0) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
     {get_party_state(St), Context}.
 
 -spec checkout(user_info(), party_id(), revision(), woody_client:context()) ->
-    {hg_domain_thrift:'Party'(), woody_client:context()} | no_return().
+    {dmsl_domain_thrift:'Party'(), woody_client:context()} | no_return().
 
 checkout(UserInfo, PartyID, Revision, Context0) ->
     {{History, _LastID}, Context} = get_history(UserInfo, PartyID, Context0),
