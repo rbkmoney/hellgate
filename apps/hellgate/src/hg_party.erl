@@ -14,6 +14,11 @@
 
 -define(NS, <<"party">>).
 
+%% Public
+
+-export([get/3]).
+-export([checkout/4]).
+
 %% Woody handler
 
 -behaviour(woody_server_thrift_handler).
@@ -35,6 +40,27 @@
 -behaviour(hg_event_provider).
 
 -export([publish_event/2]).
+
+%%
+
+-spec get(user_info(), party_id(), woody_client:context()) ->
+    {hg_payment_processing_thrift:'PartyState'(), woody_client:context()} | no_return().
+
+get(UserInfo, PartyID, Context0) ->
+    {St, Context} = get_state(UserInfo, PartyID, Context0),
+    {get_party_state(St), Context}.
+
+-spec checkout(user_info(), party_id(), revision(), woody_client:context()) ->
+    {hg_domain_thrift:'Party'(), woody_client:context()} | no_return().
+
+checkout(UserInfo, PartyID, Revision, Context0) ->
+    {{History, _LastID}, Context} = get_history(UserInfo, PartyID, Context0),
+    case checkout_history(History, Revision) of
+        {ok, St} ->
+            {get_party(St), Context};
+        {error, Reason} ->
+            throw(Reason)
+    end.
 
 %%
 
@@ -588,6 +614,21 @@ respond_w_exception(Exception, Action) ->
 
 collapse_history(History) ->
     lists:foldl(fun ({_ID, _, Ev}, St) -> merge_history(Ev, St) end, #st{}, History).
+
+-spec checkout_history([ev()], revision()) -> {ok, st()} | {error, revision_not_found}.
+
+checkout_history(History, Revision) ->
+    checkout_history(History, Revision, #st{}).
+
+checkout_history([{_ID, _, Ev} | Rest], Revision, St0) ->
+    case merge_history(Ev, St0) of
+        St = #st{revision = Revision} ->
+            {ok, St};
+        St ->
+            checkout_history(Rest, Revision, St)
+    end;
+checkout_history([], _, _) ->
+    {error, revision_not_found}.
 
 merge_history({Seq, Event}, St) ->
     merge_event(Event, St#st{sequence = Seq}).

@@ -4,9 +4,15 @@
 -export([start_app/2]).
 -export([start_apps/1]).
 
--export([make_invoice_params/3]).
+-export([create_party_and_shop/1]).
+
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
+-export([make_invoice_params/6]).
+
+-export([make_category_ref/1]).
+-export([make_shop_details/1]).
+-export([make_shop_details/2]).
 
 %%
 
@@ -70,31 +76,56 @@ start_apps(Apps) ->
 %%
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("hellgate/include/party_events.hrl").
 
--type shop_id()        :: dmsl_domain_thrift:'ShopID'().
+-type party_id()       :: hg_domain_thrift:'PartyID'().
+-type shop_id()        :: hg_domain_thrift:'ShopID'().
+-type shop()           :: hg_domain_thrift:'Shop'().
 -type cost()           :: integer() | {integer(), binary()}.
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type timestamp()      :: integer().
 
--spec make_invoice_params(shop_id(), binary(), cost()) ->
+-spec create_party_and_shop(Client :: pid()) ->
+    shop().
+
+create_party_and_shop(Client) ->
+    ok = hg_client_party:create(Client),
+    {ok, #payproc_ClaimResult{id = ClaimID, status = ?pending()}} =
+        hg_client_party:create_shop(make_shop_params(42, <<"THRIFT SHOP">>), Client),
+    ok = hg_client_party:accept_claim(ClaimID, Client),
+    {ok, #payproc_PartyState{party = #domain_Party{shops = Shops}}} =
+        hg_client_party:get(Client),
+    [{ShopID, _Shop} | _] = maps:to_list(Shops),
+    {ok, #payproc_ClaimResult{status = ?accepted(_)}} =
+        hg_client_party:activate_shop(ShopID, Client),
+    ShopID.
+
+make_shop_params(CategoryID, Name) ->
+    #payproc_ShopParams{
+        category = make_category_ref(CategoryID),
+        details  = make_shop_details(Name)
+    }.
+
+-spec make_invoice_params(party_id(), shop_id(), binary(), cost()) ->
     invoice_params().
 
-make_invoice_params(ShopID, Product, Cost) ->
-    make_invoice_params(ShopID, Product, make_due_date(), Cost).
+make_invoice_params(PartyID, ShopID, Product, Cost) ->
+    make_invoice_params(PartyID, ShopID, Product, make_due_date(), Cost).
 
--spec make_invoice_params(shop_id(), binary(), timestamp(), cost()) ->
+-spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cost()) ->
     invoice_params().
 
-make_invoice_params(ShopID, Product, Due, Cost) ->
-    make_invoice_params(ShopID, Product, Due, Cost, []).
+make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
+    make_invoice_params(PartyID, ShopID, Product, Due, Cost, []).
 
--spec make_invoice_params(shop_id(), binary(), timestamp(), cost(), term()) ->
+-spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cost(), term()) ->
     invoice_params().
 
-make_invoice_params(ShopID, Product, Due, Amount, Context) when is_integer(Amount) ->
-    make_invoice_params(ShopID, Product, Due, {Amount, <<"RUB">>}, Context);
-make_invoice_params(ShopID, Product, Due, {Amount, Currency}, Context) ->
+make_invoice_params(PartyID, ShopID, Product, Due, Amount, Context) when is_integer(Amount) ->
+    make_invoice_params(PartyID, ShopID, Product, Due, {Amount, <<"RUB">>}, Context);
+make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}, Context) ->
     #payproc_InvoiceParams{
+        party_id = PartyID,
         shop_id  = ShopID,
         product  = Product,
         amount   = Amount,
@@ -111,3 +142,24 @@ make_due_date() ->
 
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
+
+-spec make_category_ref(hg_domain_thrift:'ObjectID'()) ->
+    hg_domain_thrift:'CategoryRef'().
+
+make_category_ref(ID) ->
+    #domain_CategoryRef{id = ID}.
+
+-spec make_shop_details(binary()) ->
+    hg_domain_thrift:'ShopDetails'().
+
+make_shop_details(Name) ->
+    make_shop_details(Name, undefined).
+
+-spec make_shop_details(binary(), binary()) ->
+    hg_domain_thrift:'ShopDetails'().
+
+make_shop_details(Name, Description) ->
+    #domain_ShopDetails{
+        name        = Name,
+        description = Description
+    }.

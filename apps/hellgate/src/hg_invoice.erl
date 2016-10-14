@@ -11,6 +11,9 @@
 %%%           - timer preservation on calls (?)
 %%%  - do not make payment ids so complex, a sequence would suffice
 %%%     - alter `Invoicing.GetPayment` signature
+%%%  - if a party or shop is blocked / suspended, is it an `InvalidStatus` or 503?
+%%%    let'em enjoy unexpected exception in the meantime :)
+%%%  - unify somehow with operability assertions from hg_party
 
 -module(hg_invoice).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
@@ -57,8 +60,13 @@
     {{ok, term()}, woody_client:context()} | no_return().
 
 handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
-    {ok, Context} = start(ID = hg_utils:unique_id(), {InvoiceParams, UserInfo}, Context0),
-    {{ok, ID}, Context};
+    ID = hg_utils:unique_id(),
+    #payproc_InvoiceParams{party_id = PartyID, shop_id = ShopID} = InvoiceParams,
+    {PartyState, Context1} = hg_party:get(UserInfo, PartyID, Context0),
+    Party = assert_party_operable(get_party(PartyState), Context1),
+    _Shop = assert_shop_operable(get_shop(ShopID, Party), Context1),
+    {ok, Context2} = start(ID, {InvoiceParams, PartyState, UserInfo}, Context1),
+    {{ok, ID}, Context2};
 
 handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, InvoiceID, Context0),
@@ -71,8 +79,8 @@ handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, _Opts) ->
     call(InvoiceID, {start_payment, PaymentParams, UserInfo}, Context0);
 
-handle_function('GetPayment', {UserInfo, UserInfo, PaymentID}, Context0, _Opts) ->
-    {St, Context} = get_state(UserInfo, deduce_invoice_id(PaymentID), Context0),
+handle_function('GetPayment', {UserInfo, InvoiceID, PaymentID}, Context0, _Opts) ->
+    {St, Context} = get_state(UserInfo, InvoiceID, Context0),
     case get_payment_session(PaymentID, St) of
         {Payment = #domain_InvoicePayment{}, _} ->
             {{ok, Payment}, Context};
@@ -186,10 +194,10 @@ namespace() ->
     ?NS.
 
 -spec init(invoice_id(), {invoice_params(), user_info()}, hg_machine:context()) ->
-    {hg_machine:result(ev()), woody_client:context()}.
+    {hg_machine:result(ev()), hg_machine:context()}.
 
-init(ID, {InvoiceParams, UserInfo}, Context) ->
-    Invoice = create_invoice(ID, InvoiceParams, UserInfo),
+init(ID, {InvoiceParams, PartyState, _UserInfo}, Context) ->
+    Invoice = create_invoice(ID, InvoiceParams, PartyState),
     Event = {public, ?invoice_ev(?invoice_created(Invoice))},
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     {ok(Event, #st{}, set_invoice_timer(#st{invoice = Invoice})), Context}.
@@ -197,7 +205,7 @@ init(ID, {InvoiceParams, UserInfo}, Context) ->
 %%
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev()), hg_machine:context()) ->
-    {hg_machine:result(ev()), woody_client:context()}.
+    {hg_machine:result(ev()), hg_machine:context()}.
 
 process_signal(Signal, History, Context) ->
     handle_signal(Signal, collapse_history(History), Context).
@@ -392,12 +400,12 @@ sequence_event_({private, Ev}, Seq) ->
 
 %%
 
-create_invoice(ID, V = #payproc_InvoiceParams{}, #payproc_UserInfo{id = UserID}) ->
+create_invoice(ID, V = #payproc_InvoiceParams{}, PartyState) ->
     Revision = hg_domain:head(),
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
-        owner           = #domain_PartyRef{id = UserID, revision = 1},
+        owner           = construct_party_ref(PartyState),
         created_at      = hg_datetime:format_now(),
         status          = ?unpaid(),
         domain_revision = Revision,
@@ -411,21 +419,8 @@ create_invoice(ID, V = #payproc_InvoiceParams{}, #payproc_UserInfo{id = UserID})
         }
     }.
 
-create_payment_id(#st{invoice = Invoice, payments = Payments}) ->
-    InvoiceID = get_invoice_id(Invoice),
-    PaymentID = integer_to_binary(length(Payments) + 1),
-    <<InvoiceID/binary, ":", PaymentID/binary>>.
-
-deduce_invoice_id(PaymentID) ->
-    case binary:split(PaymentID, <<":">>) of
-        [InvoiceID, _] ->
-            InvoiceID;
-        _ ->
-            <<>>
-    end.
-
-get_invoice_id(#domain_Invoice{id = ID}) ->
-    ID.
+create_payment_id(#st{payments = Payments}) ->
+    integer_to_binary(length(Payments) + 1).
 
 get_payment_status(#domain_InvoicePayment{status = Status}) ->
     Status.
@@ -485,3 +480,38 @@ format_reason({Pre, V}) ->
     genlib:format("~s: ~s", [Pre, genlib:to_binary(V)]);
 format_reason(V) ->
     genlib:to_binary(V).
+
+%%
+
+get_party(#payproc_PartyState{party = Party}) ->
+    Party.
+
+construct_party_ref(#payproc_PartyState{party = #domain_Party{id = ID}, revision = Revision}) ->
+    #domain_PartyRef{id = ID, revision = Revision}.
+
+get_shop(ID, #domain_Party{shops = Shops}) ->
+    maps:get(ID, Shops, undefined).
+
+assert_party_operable(#domain_Party{blocking = Blocking, suspension = Suspension} = V, Context) ->
+    _ = assert_party_unblocked(Blocking, Context),
+    _ = assert_party_active(Suspension, Context),
+    V.
+
+assert_party_unblocked(V = {Status, _}, Context) ->
+    Status == unblocked orelse throw({#payproc_InvalidPartyStatus{status = {blocking, V}}, Context}).
+
+assert_party_active(V = {Status, _}, Context) ->
+    Status == active orelse throw({#payproc_InvalidPartyStatus{status = {suspension, V}}, Context}).
+
+assert_shop_operable(undefined, Context) ->
+    throw({#payproc_ShopNotFound{}, Context});
+assert_shop_operable(#domain_Shop{blocking = Blocking, suspension = Suspension} = V, Context) ->
+    _ = assert_shop_unblocked(Blocking, Context),
+    _ = assert_shop_active(Suspension, Context),
+    V.
+
+assert_shop_unblocked(V = {Status, _}, Context) ->
+    Status == unblocked orelse throw({#payproc_InvalidShopStatus{status = {blocking, V}}, Context}).
+
+assert_shop_active(V = {Status, _}, Context) ->
+    Status == active orelse throw({#payproc_InvalidShopStatus{status = {suspension, V}}, Context}).

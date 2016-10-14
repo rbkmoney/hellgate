@@ -1,5 +1,6 @@
 -module(hg_invoice_tests_SUITE).
 -include_lib("common_test/include/ct.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([all/0]).
 -export([init_per_suite/1]).
@@ -49,7 +50,16 @@ all() ->
 
 init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate]),
-    [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
+    RootUrl = maps:get(hellgate_root_url, Ret),
+    PartyID = hg_utils:unique_id(),
+    Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(RootUrl)),
+    ShopID = hg_ct_helper:create_party_and_shop(Client),
+    [
+        {party_id, PartyID},
+        {shop_id, ShopID},
+        {root_url, RootUrl},
+        {apps, Apps} | C
+    ].
 
 -spec end_per_suite(config()) -> _.
 
@@ -58,17 +68,20 @@ end_per_suite(C) ->
 
 %% tests
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include("invoice_events.hrl").
 
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 
+-define(invalid_invoice_status(Status),
+    {exception, #payproc_InvalidInvoiceStatus{status = Status}}).
+
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(_Name, C) ->
-    Client = hg_client_invoicing:start_link(make_userinfo(), hg_client_api:new(?c(root_url, C))),
+    PartyID = ?c(party_id, C),
+    Client = hg_client_invoicing:start_link(make_userinfo(PartyID), hg_client_api:new(?c(root_url, C))),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [{client, Client}, {test_sup, SupPid} | C].
 
@@ -83,16 +96,20 @@ end_per_testcase(_Name, C) ->
 
 invoice_cancellation(C) ->
     Client = ?c(client, C),
-    InvoiceParams = make_invoice_params(<<"rubberduck">>, 10000),
+    ShopID = ?c(shop_id, C),
+    PartyID = ?c(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     {ok, InvoiceID} = hg_client_invoicing:create(InvoiceParams, Client),
-    {exception, #payproc_InvalidInvoiceStatus{}} = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
+    ?invalid_invoice_status(_) = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
     ok = hg_client_invoicing:rescind(InvoiceID, <<"whynot">>, Client).
 
 -spec overdue_invoice_cancelled(config()) -> _ | no_return().
 
 overdue_invoice_cancelled(C) ->
     Client = ?c(client, C),
-    InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(1), 10000),
+    ShopID = ?c(shop_id, C),
+    PartyID = ?c(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(1), 10000),
     {ok, InvoiceID} = hg_client_invoicing:create(InvoiceParams, Client),
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
@@ -103,7 +120,9 @@ payment_success(C) ->
     Client = ?c(client, C),
     ProxyUrl = start_service_handler(hg_dummy_provider, C),
     ok = application:set_env(hellgate, provider_proxy_url, ProxyUrl),
-    InvoiceParams = make_invoice_params(<<"rubberduck">>, make_due_date(2), 42000),
+    ShopID = ?c(shop_id, C),
+    PartyID = ?c(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(2), 42000),
     PaymentParams = make_payment_params(),
     {ok, InvoiceID} = hg_client_invoicing:create(InvoiceParams, Client),
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),
@@ -148,26 +167,26 @@ unwrap_event(E) ->
 %%
 
 start_service_handler(Module, C) ->
-    Host = "localhost",
+    IP = "127.0.0.1",
     Port = get_random_port(),
     Opts = #{hellgate_root_url => ?c(root_url, C)},
-    ChildSpec = hg_test_proxy:get_child_spec(Module, Host, Port, Opts),
+    ChildSpec = hg_test_proxy:get_child_spec(Module, IP, Port, Opts),
     {ok, _} = supervisor:start_child(?c(test_sup, C), ChildSpec),
-    hg_test_proxy:get_url(Module, Host, Port).
+    hg_test_proxy:get_url(Module, IP, Port).
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
 
 %%
 
-make_userinfo() ->
-    #payproc_UserInfo{id = <<?MODULE_STRING>>}.
+make_userinfo(PartyID) ->
+    #payproc_UserInfo{id = PartyID}.
 
-make_invoice_params(Product, Cost) ->
-    hg_ct_helper:make_invoice_params(<<?MODULE_STRING>>, Product, Cost).
+make_invoice_params(PartyID, ShopID, Product, Cost) ->
+    hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).
 
-make_invoice_params(Product, Due, Cost) ->
-    hg_ct_helper:make_invoice_params(<<?MODULE_STRING>>, Product, Due, Cost).
+make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
+    hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cost).
 
 make_payment_params() ->
     {PaymentTool, Session} = make_payment_tool(),

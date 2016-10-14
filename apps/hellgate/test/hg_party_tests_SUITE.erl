@@ -322,8 +322,8 @@ shop_not_found_on_retrieval(C) ->
 shop_creation(C) ->
     Client = ?c(client, C),
     Params = #payproc_ShopParams{
-        category = make_category_ref(42),
-        details  = Details = make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>)
+        category = hg_ct_helper:make_category_ref(42),
+        details  = Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_pending(Result, Client),
@@ -349,7 +349,7 @@ shop_creation(C) ->
 shop_update(C) ->
     Client = ?c(client, C),
     #domain_Shop{id = ShopID} = get_first_shop(Client),
-    Details = make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
+    Details = hg_ct_helper:make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
     Update = #payproc_ShopUpdate{details = Details},
     Result = hg_client_party:update_shop(ShopID, Update, Client),
     Claim = assert_claim_pending(Result, Client),
@@ -359,7 +359,7 @@ shop_update(C) ->
 claim_acceptance(C) ->
     Client = ?c(client, C),
     #domain_Shop{id = ShopID} = get_first_shop(Client),
-    Update = #payproc_ShopUpdate{details = Details = make_shop_details(<<"McDolan">>)},
+    Update = #payproc_ShopUpdate{details = Details = hg_ct_helper:make_shop_details(<<"McDolan">>)},
     Result = hg_client_party:update_shop(ShopID, Update, Client),
     Claim = assert_claim_pending(Result, Client),
     ok = accept_claim(Claim, Client),
@@ -379,8 +379,8 @@ claim_revocation(C) ->
     Client = ?c(client, C),
     {ok, PartyState} = hg_client_party:get(Client),
     Params = #payproc_ShopParams{
-        category = make_category_ref(42),
-        details  = make_shop_details(<<"OOPS">>)
+        category = hg_ct_helper:make_category_ref(42),
+        details  = hg_ct_helper:make_shop_details(<<"OOPS">>)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_pending(Result, Client),
@@ -402,12 +402,12 @@ claim_revocation(C) ->
 complex_claim_acceptance(C) ->
     Client = ?c(client, C),
     Params1 = #payproc_ShopParams{
-        category = make_category_ref(1),
-        details  = Details1 = make_shop_details(<<"SHOP 1">>)
+        category = hg_ct_helper:make_category_ref(1),
+        details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP 1">>)
     },
     Params2 = #payproc_ShopParams{
-        category = make_category_ref(2),
-        details  = Details2 = make_shop_details(<<"SHOP 2">>)
+        category = hg_ct_helper:make_category_ref(2),
+        details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP 2">>)
     },
     Claim1 = assert_claim_pending(hg_client_party:create_shop(Params1, Client), Client),
     ?claim(ClaimID1, _, [
@@ -637,15 +637,3 @@ unwrap_event(E) ->
 
 make_userinfo() ->
     #payproc_UserInfo{id = <<?MODULE_STRING>>}.
-
-make_category_ref(ID) ->
-    #domain_CategoryRef{id = ID}.
-
-make_shop_details(Name) ->
-    make_shop_details(Name, undefined).
-
-make_shop_details(Name, Description) ->
-    #domain_ShopDetails{
-        name        = Name,
-        description = Description
-    }.

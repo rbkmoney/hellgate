@@ -1,6 +1,6 @@
 -module(hg_test_proxy).
 
--type host() :: inet:hostname() | inet:ip_address().
+-type ip() :: string().
 
 -callback get_service_spec() -> hg_proto:service_spec().
 
@@ -10,21 +10,22 @@
 
 %%
 
--spec get_child_spec(module(), host(), inet:port_number()) ->
+-spec get_child_spec(module(), ip(), inet:port_number()) ->
     supervisor:child_spec().
 
 get_child_spec(Module, Host, Port) ->
     get_child_spec(Module, Host, Port, []).
 
--spec get_child_spec(module(), host(), inet:port_number(), #{}) ->
+-spec get_child_spec(module(), ip(), inet:port_number(), #{}) ->
     supervisor:child_spec().
 
-get_child_spec(Module, Host, Port, Args) ->
+get_child_spec(Module, IPStr, Port, Args) ->
+    {ok, IP} = inet:parse_address(IPStr),
     {Path, Service} = Module:get_service_spec(),
     woody_server:child_spec(
         ?MODULE,
         #{
-            ip => hg_utils:get_hostname_ip(Host),
+            ip => IP,
             port => Port,
             net_opts => [],
             event_handler => hg_woody_event_handler,
@@ -32,7 +33,7 @@ get_child_spec(Module, Host, Port, Args) ->
         }
     ).
 
--spec get_url(module(), host(), inet:port_number()) ->
+-spec get_url(module(), ip(), inet:port_number()) ->
     supervisor:child_spec().
 
 get_url(Module, Host, Port) ->

@@ -161,19 +161,19 @@ get_pending_claim(Client) ->
     gen_server:call(Client, {call, 'GetPendingClaim', []}).
 
 -spec accept_claim(claim_id(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    ok | woody_client:result_error().
 
 accept_claim(ID, Client) ->
     gen_server:call(Client, {call, 'AcceptClaim', [ID]}).
 
 -spec deny_claim(claim_id(), binary(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    ok | woody_client:result_error().
 
 deny_claim(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'DenyClaim', [ID, Reason]}).
 
 -spec revoke_claim(claim_id(), binary(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    ok | woody_client:result_error().
 
 revoke_claim(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'RevokeClaim', [ID, Reason]}).

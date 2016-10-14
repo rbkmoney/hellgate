@@ -58,10 +58,12 @@ end_per_suite(C) ->
 
 init_per_testcase(_Name, C) ->
     RootUrl = ?c(root_url, C),
-    UserInfo = #payproc_UserInfo{id = <<?MODULE_STRING>>},
+    PartyID = hg_utils:unique_id(),
+    UserInfo = #payproc_UserInfo{id = PartyID},
     [
+        {party_id, PartyID},
         {eventsink_client, hg_client_eventsink:start_link(create_api(RootUrl))},
-        {invoicing_client, hg_client_invoicing:start_link(UserInfo, create_api(RootUrl))} | C
+        {partymgmt_client, hg_client_party:start_link(UserInfo, PartyID, create_api(RootUrl))} | C
     ].
 
 create_api(RootUrl) ->
@@ -74,12 +76,12 @@ end_per_testcase(_Name, _C) ->
 
 %% tests
 
--include("invoice_events.hrl").
+-include("party_events.hrl").
 
 -define(event(ID, InvoiceID, Seq, Payload),
     #payproc_Event{
         id = ID,
-        source = {invoice, InvoiceID},
+        source = {party, InvoiceID},
         sequence = Seq,
         payload = Payload
     }
@@ -93,24 +95,13 @@ no_events(C) ->
 -spec events_observed(config()) -> _ | no_return().
 
 events_observed(C) ->
-    InvoicingClient = ?c(invoicing_client, C),
     EventsinkClient = ?c(eventsink_client, C),
-    InvoiceParams = hg_ct_helper:make_invoice_params(<<?MODULE_STRING>>, <<"rubberduck">>, 10000),
-    {ok, InvoiceID1} = hg_client_invoicing:create(InvoiceParams, InvoicingClient),
-    ok = hg_client_invoicing:rescind(InvoiceID1, <<"die">>, InvoicingClient),
-    {ok, InvoiceID2} = hg_client_invoicing:create(InvoiceParams, InvoicingClient),
-    ok = hg_client_invoicing:rescind(InvoiceID2, <<"noway">>, InvoicingClient),
-    {ok, Events1} = hg_client_eventsink:pull_events(2, 3000, EventsinkClient),
-    {ok, Events2} = hg_client_eventsink:pull_events(2, 3000, EventsinkClient),
-    [
-        ?event(ID1, InvoiceID1, 1, ?invoice_ev(?invoice_created(_))),
-        ?event(ID2, InvoiceID1, 2, ?invoice_ev(?invoice_status_changed(?cancelled(_))))
-    ] = Events1,
-    [
-        ?event(ID3, InvoiceID2, 1, ?invoice_ev(?invoice_created(_))),
-        ?event(ID4, InvoiceID2, 2, ?invoice_ev(?invoice_status_changed(?cancelled(_))))
-    ] = Events2,
-    IDs = [ID1, ID2, ID3, ID4],
+    PartyMgmtClient = ?c(partymgmt_client, C),
+    PartyID = ?c(party_id, C),
+    _ShopID = hg_ct_helper:create_party_and_shop(PartyMgmtClient),
+    {ok, Events} = hg_client_eventsink:pull_events(10, 3000, EventsinkClient),
+    [?event(_ID, PartyID, 1, ?party_ev(?party_created(_, _))) | _] = Events,
+    IDs = [ID || ?event(ID, _, _, _) <- Events],
     IDs = lists:sort(IDs).
 
 -spec consistent_history(config()) -> _ | no_return().
