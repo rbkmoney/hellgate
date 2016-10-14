@@ -34,9 +34,8 @@ all(Revision) ->
 -spec get(revision(), ref()) -> data().
 
 get(Revision, Ref) ->
-    Tag = tag(Ref),
-    #'VersionedObject'{object = {Tag, Obj}} = dmt_client:checkout_object({version, Revision}, tag_ref(Ref)),
-    get_data(Obj).
+    #'VersionedObject'{object = {_Tag, {_Name, _Ref, Data}}} = dmt_client:checkout_object({version, Revision}, Ref),
+    Data.
 
 -spec commit(revision(), dmt:commit()) -> ok.
 
@@ -54,11 +53,11 @@ get(Ref) ->
 
 -spec insert({ref(), data()}) -> ok.
 
-insert({Ref, Data}) ->
+insert(Object) ->
     Commit = #'Commit'{
         ops = [
             {insert, #'InsertOp'{
-                object = domain_obj(Ref, Data)
+                object = Object
             }}
         ]
     },
@@ -66,44 +65,14 @@ insert({Ref, Data}) ->
 
 -spec update({ref(), data()}) -> ok.
 
-update({Ref, NewData}) ->
-    OldData = get(head(), Ref),
+update({Tag, {ObjectName, Ref, _Data}} = NewObject) ->
+    OldData = get(head(), {Tag, Ref}),
     Commit = #'Commit'{
         ops = [
             {update, #'UpdateOp'{
-                old_object = domain_obj(Ref, OldData),
-                new_object = domain_obj(Ref, NewData)
+                old_object = {Tag, {ObjectName, Ref, OldData}},
+                new_object = NewObject
             }}
         ]
     },
     commit(head(), Commit).
-
-
-%% todo: use dmt_core's intraspection
-tag(Ref) ->
-    RecName = element(1, Ref),
-    {struct, union, Fields} = dmsl_domain_thrift:struct_info('Reference'),
-    Field = lists:keyfind({struct, struct, {dmsl_domain_thrift, struct_name(RecName)}}, 3, Fields),
-    element(4, Field).
-
-tag_ref(Ref) ->
-    {tag(Ref), Ref}.
-
-domain_obj(Ref) ->
-    {struct, union, Fields} = dmsl_domain_thrift:struct_info('DomainObject'),
-    {_, _, {_, _, {dmsl_domain_thrift, DomainObject}}, _, _} = lists:keyfind(tag(Ref), 4, Fields),
-    DomainObject.
-
-domain_obj(Ref, Data) ->
-    {tag(Ref), {rec_name(domain_obj(Ref)), Ref, Data}}.
-
-get_data(Object) ->
-    element(3, Object).
-
-struct_name([$d, $o, $m, $a, $i, $n, $_ | Rest]) ->
-    list_to_atom(Rest);
-struct_name(RecordName) ->
-    struct_name(atom_to_list(RecordName)).
-
-rec_name(StructName) ->
-    list_to_atom("domain_" ++ atom_to_list(StructName)).

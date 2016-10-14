@@ -174,21 +174,21 @@ make_shop_details(Name, Description) ->
 -spec domain_fixture(atom()) -> {ref(), data()}.
 
 domain_fixture(globals) ->
-    {
-        #domain_GlobalsRef{},
-        #domain_Globals{
+    {globals, #'domain_GlobalsObject'{
+        ref = #domain_GlobalsRef{},
+        data = #domain_Globals{
             party_prototype = #domain_PartyPrototypeRef{
                 id = 42
             },
             providers = {value, []}
         }
-    };
+    }};
 domain_fixture(party_prototype) ->
-    {
-        #domain_PartyPrototypeRef{
+    {party_prototype, #'domain_PartyPrototypeObject'{
+        ref = #domain_PartyPrototypeRef{
             id = 42
         },
-        #domain_PartyPrototype{
+        data = #domain_PartyPrototype{
             shop = #domain_ShopPrototype{
                 category = #'domain_CategoryRef'{
                     id = 1
@@ -199,26 +199,26 @@ domain_fixture(party_prototype) ->
             },
             default_services = #domain_ShopServices{}
         }
-    };
+    }};
 domain_fixture(currency) ->
-    {
-        #'domain_CurrencyRef'{
+    {currency, #'domain_CurrencyObject'{
+        ref = #'domain_CurrencyRef'{
             symbolic_code = <<"RUB">>
         },
-        #'domain_Currency'{
+        data = #'domain_Currency'{
             name = <<"Russian rubles">>,
             symbolic_code = <<"RUB">>,
             numeric_code = 643,
             exponent = 2
         }
-    };
+    }};
 domain_fixture(proxy) ->
-    {
-        #'domain_ProxyRef'{
+    {proxy, #'domain_ProxyObject'{
+        ref = #'domain_ProxyRef'{
             id = 1
         },
-        #'domain_ProxyDefinition'{
+        data = #'domain_ProxyDefinition'{
             url = genlib_app:env(hellgate, provider_proxy_url, <<>>),
             options = genlib_app:env(hellgate, provider_proxy_options, #{})
         }
-    }.
+    }}.

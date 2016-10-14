@@ -687,7 +687,7 @@ get_account_state(AccountID, St = #st{}, Context0) ->
     CurrencyRef = #domain_CurrencyRef{
         symbolic_code = CurrencySymCode
     },
-    Currency = hg_domain:get(hg_domain:head(), CurrencyRef),
+    Currency = hg_domain:get(hg_domain:head(), {currency, CurrencyRef}),
     {#payproc_ShopAccountState{
         account_id = AccountID,
         own_amount = OwnAmount,
@@ -810,8 +810,8 @@ get_default_shop_services() ->
     Head = hg_domain:head(),
     #domain_Globals{
         party_prototype = PartyPrototypeRef
-    } = hg_domain:get(Head, #domain_GlobalsRef{}),
+    } = hg_domain:get(Head, {globals, #domain_GlobalsRef{}}),
     #domain_PartyPrototype{
         default_services = ShopServices
-    } = hg_domain:get(Head, PartyPrototypeRef),
+    } = hg_domain:get(Head, {party_prototype, PartyPrototypeRef}),
     ShopServices.

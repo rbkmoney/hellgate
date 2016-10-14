@@ -15,7 +15,6 @@
         cowboy,
         woody,
         hg_proto,
-        dmsl,
         dmt_client
     ]},
     {env, []},

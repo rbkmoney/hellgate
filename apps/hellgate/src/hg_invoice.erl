@@ -370,7 +370,7 @@ wrap_payment_events(PaymentID, Events) ->
 get_payment_opts(#st{invoice = Invoice = #domain_Invoice{domain_revision = Revision}}) ->
     #{
         invoice => Invoice,
-        proxy => hg_domain:get(Revision, #domain_ProxyRef{id = 1})
+        proxy => hg_domain:get(Revision, {proxy, #domain_ProxyRef{id = 1}})
     }.
 
 %%
@@ -403,7 +403,7 @@ sequence_event_({private, Ev}, Seq) ->
 
 create_invoice(ID, V = #payproc_InvoiceParams{}, PartyState) ->
     Revision = hg_domain:head(),
-    Currency = hg_domain:get(V#payproc_InvoiceParams.currency),
+    Currency = hg_domain:get({currency, V#payproc_InvoiceParams.currency}),
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
