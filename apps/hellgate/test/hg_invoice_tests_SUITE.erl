@@ -31,6 +31,8 @@ init([]) ->
 
 -define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
 
+-define(COWBOY_PORT, 9988).
+
 %% tests descriptions
 
 -type config() :: [{atom(), term()}].
@@ -60,16 +62,22 @@ init_per_suite(C) ->
     PartyID = hg_utils:unique_id(),
     Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(RootUrl)),
     ShopID = hg_ct_helper:create_party_and_shop(Client),
+    Dispatch = cowboy_router:compile([{'_', [{"/", hg_dummy_provider, []}]}]),
+    {ok, _} = cowboy:start_http(dummy_provider_http_listener, 100, [{port, ?COWBOY_PORT}], [
+        {env, [{dispatch, Dispatch}]}
+    ]),
     [
         {party_id, PartyID},
         {shop_id, ShopID},
         {root_url, RootUrl},
-        {apps, Apps} | C
+        {apps, Apps}
+        | C
     ].
 
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
+    cowboy:stop_listener(dummy_provider_http_listener),
     [application:stop(App) || App <- ?c(apps, C)].
 
 %% tests
@@ -120,9 +128,8 @@ overdue_invoice_cancelled(C) ->
 
 invoice_cancelled_after_payment_timeout(C) ->
     Client = ?c(client, C),
-    InvoiceParams = make_invoice_params(<<"rubberdusk">>, make_due_date(7), 1000),
-    {ok, InvoiceID} = start_invoice(C, InvoiceParams),
-    PaymentParams = make_3ds_payment_params(),
+    {ok, InvoiceID} = start_invoice(C, <<"rubberdusk">>, make_due_date(7), 1000),
+    PaymentParams = make_tds_payment_params(),
     {ok, PaymentID} = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
     %% wait for payment timeout
@@ -145,20 +152,14 @@ payment_success(C) ->
 payment_success_on_second_try(C) ->
     Client = ?c(client, C),
     {ok, InvoiceID} = start_invoice(C, <<"rubberdick">>, make_due_date(20), 42000),
-    PaymentParams = make_3ds_payment_params(),
+    PaymentParams = make_tds_payment_params(),
     {ok, PaymentID} = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_interaction_requested(PaymentID, UserInteraction) = next_event(InvoiceID, Client),
-    {'redirect', {'get_request', #'BrowserGetRequest'{uri = GoodTag}}} = UserInteraction,
     %% simulate user interaction
     BadTag = <<"666">>,
-    assert_call_failed(hg_client_api:call(
-         proxy_host_provider, 'ProcessCallback', [BadTag, <<"payload">>],
-         hg_client_api:new( ?c(root_url, C))
-    )),
-    assert_call_succeed(hg_client_api:call(
-         proxy_host_provider, 'ProcessCallback', [GoodTag, <<"payload">>],
-         hg_client_api:new( ?c(root_url, C))
-    )),
+    assert_failed_post_requiest(BadTag),
+    GoodTag = get_tag(UserInteraction),
+    assert_success_post_requiest(GoodTag),
     ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, 1000, Client).
@@ -168,7 +169,7 @@ payment_success_on_second_try(C) ->
 invoice_success_on_third_payment(C) ->
     Client = ?c(client, C),
     {ok, InvoiceID} = start_invoice(C, <<"rubberdock">>, make_due_date(60), 42000),
-    PaymentParams = make_3ds_payment_params(),
+    PaymentParams = make_tds_payment_params(),
     {ok, PaymentID_1} = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_interaction_requested(PaymentID_1, _) = next_event(InvoiceID, Client),
     %% wait for payment timeout and start new one after
@@ -179,12 +180,9 @@ invoice_success_on_third_payment(C) ->
     ?payment_status_changed(PaymentID_2, ?failed(_)) = next_event(InvoiceID, 5000, Client),
     {ok, PaymentID_3} = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_interaction_requested(PaymentID_3, UserInteraction) = next_event(InvoiceID, Client),
-    {'redirect', {'get_request', #'BrowserGetRequest'{uri = GoodTag}}} = UserInteraction,
+    GoodTag = get_tag(UserInteraction),
     %% simulate user interaction FTW!
-    assert_call_succeed(hg_client_api:call(
-         proxy_host_provider, 'ProcessCallback', [GoodTag, <<"payload">>],
-         hg_client_api:new( ?c(root_url, C))
-    )),
+    assert_success_post_requiest(GoodTag),
     ?payment_status_changed(PaymentID_3, ?captured()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, 1000, Client).
@@ -242,8 +240,8 @@ make_invoice_params(PartyID, ShopID, Product, Cost) ->
 make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cost).
 
-make_3ds_payment_params() ->
-    {PaymentTool, Session} = hg_ct_helper:make_3ds_payment_tool(),
+make_tds_payment_params() ->
+    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
     make_payment_params(PaymentTool, Session).
 
 make_payment_params() ->
@@ -263,21 +261,8 @@ make_payment_params(PaymentTool, Session) ->
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
 
-assert_call_succeed({ok, _}) ->
-    ok;
-assert_call_succeed({{ok, _}, _}) ->
-    ok;
-assert_call_succeed({Error, _}) ->
-    error(Error).
-
-assert_call_failed({{exception, _}, _}) ->
-    ok;
-assert_call_failed({{error, _}, _}) ->
-    ok;
-assert_call_failed({Success, _}) ->
-    error(Success).
-
 start_invoice(C, Product, Due, Amount) ->
+    Client = ?c(client, C),
     ProxyUrl = start_service_handler(hg_dummy_provider, C),
     ok = application:set_env(hellgate, provider_proxy_url, ProxyUrl),
     Client = ?c(client, C),
@@ -295,3 +280,19 @@ attach_payment(InvoiceID, PaymentParams, Client) ->
     ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
     ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, Client),
     {ok, PaymentID}.
+
+assert_success_post_requiest(Body) ->
+    {ok, 200, _RespHeaders, _ClientRef} = post_requiest(Body).
+
+assert_failed_post_requiest(Body) ->
+    {ok, 500, _RespHeaders, _ClientRef} = post_requiest(Body).
+
+post_requiest(Body) ->
+    Method = post,
+    URL = genlib:to_binary(["http://localhost:", integer_to_list(?COWBOY_PORT)]),
+    Headers = [],
+    Options = [],
+    hackney:request(Method, URL, Headers, Body, Options).
+
+get_tag({'redirect', {'get_request', #'BrowserGetRequest'{uri = Tag}}}) ->
+    Tag.

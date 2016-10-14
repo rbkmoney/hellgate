@@ -7,6 +7,10 @@
 
 -export([get_service_spec/0]).
 
+%% cowboy http callbacks
+-export([init/3]).
+-export([handle/2]).
+-export([terminate/3]).
 %%
 
 -spec get_service_spec() ->
@@ -18,8 +22,6 @@ get_service_spec() ->
 %%
 
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
--include_lib("hg_proto/include/hg_proxy_provider_thrift.hrl").
--include_lib("hg_proto/include/hg_user_interaction_thrift.hrl").
 -include_lib("hellgate/include/invoice_events.hrl").
 
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), #{}) ->
@@ -49,13 +51,31 @@ handle_function(
 ) ->
     handle_callback(Payload, Target, State, PaymentInfo, Opts, Context).
 
+-spec init(atom(), cowboy_req:req(), list()) -> {ok, cowboy_req:req(), state}.
+
+init(_Transport, Req, []) ->
+    {ok, Req, undefined}.
+
+-spec handle(cowboy_req:req(), state) -> {ok, cowboy_req:req(), state}.
+
+handle(Req, State) ->
+    {Method, Req2} = cowboy_req:method(Req),
+    {ok, Req3} = handle_user_interaction_response(Method, Req2),
+    {ok, Req3, State}.
+
+-spec terminate(term(), cowboy_req:req(), state) -> ok.
+
+terminate(_Reason, _Req, _State) ->
+    ok.
+
+
 process_payment(?processed(), undefined, _, _, Context) ->
     {{ok, sleep(1, <<"sleeping">>)}, Context};
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _, Context) ->
     {{ok, finish(PaymentInfo)}, Context};
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts, Context) ->
-    Token3DS = hg_ct_helper:bank_card_3ds_token(),
+    Token3DS = hg_ct_helper:bank_card_tds_token(),
     case get_payment_token(PaymentInfo) of
         Token3DS ->
             Tag = hg_utils:unique_id(),
@@ -104,3 +124,24 @@ get_payment_token(#'PaymentInfo'{payment = Payment}) ->
     #domain_InvoicePayment{payer = #domain_Payer{payment_tool = PaymentTool}} = Payment,
     {'bank_card', #domain_BankCard{token = Token}} = PaymentTool,
     Token.
+
+handle_user_interaction_response(<<"POST">>, Req) ->
+    {ok, Tag, _Garbage} = cowboy_req:body(Req),
+    RespCode = callback_to_hell(Tag),
+    cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<"">>, Req);
+handle_user_interaction_response(<<"GET">>, Req) ->
+    %% Method not allowed.
+    cowboy_req:reply(405, Req).
+
+callback_to_hell(Tag) ->
+    case hg_client_api:call(
+        proxy_host_provider, 'ProcessCallback', [Tag, <<"payload">>],
+        hg_client_api:new(hg_ct_helper:get_hellgate_url())
+    ) of
+        {ok, _} -> 200;
+        {{ok, _}, _} -> 200;
+        {{error, _}, _} -> 500;
+        {{exception, _}, _} -> 500;
+        %% WTF IS THIS?!
+        _ -> 666
+    end.
