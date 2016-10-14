@@ -15,7 +15,9 @@ services:
       - shumway
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:3f6ba2c78d2e16b0ad944382c3e8129ea2fc4e20
+    image: dr.rbkmoney.com/rbkmoney/dominant:afee5aa9a904ec570e55356d18af484fb6d277db
+    environment:
+      - SERVICE_NAME=dominant
     depends_on:
       - machinegun
 
