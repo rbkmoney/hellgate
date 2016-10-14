@@ -14,7 +14,7 @@
         rfc3339,
         cowboy,
         woody,
-        dmsl
+        hg_proto
     ]},
     {env, []},
     {modules, []},

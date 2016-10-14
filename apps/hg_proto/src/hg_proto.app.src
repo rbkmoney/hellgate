@@ -5,6 +5,7 @@
     {applications, [
         kernel,
         stdlib,
-        thrift
+        thrift,
+        dmsl
     ]}
 ]}.
