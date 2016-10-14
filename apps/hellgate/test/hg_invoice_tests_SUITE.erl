@@ -122,8 +122,10 @@ invoice_cancelled_after_payment_timeout(C) ->
     Client = ?c(client, C),
     InvoiceParams = make_invoice_params(<<"rubberdusk">>, make_due_date(7), 1000),
     {ok, InvoiceID} = start_invoice(C, InvoiceParams),
-    PaymentParams = make_payment_params(),
+    PaymentParams = make_3ds_payment_params(),
     {ok, PaymentID} = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
+    %% wait for payment timeout
     ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, 5000, Client),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, 5000, Client).
 
@@ -134,13 +136,6 @@ payment_success(C) ->
     {ok, InvoiceID} = start_invoice(C, <<"rubberduck">>, make_due_date(10), 42000),
     PaymentParams = make_payment_params(),
     {ok, PaymentID} = attach_payment(InvoiceID, PaymentParams, Client),
-    %% simulate user interaction
-    Tag = PaymentID,
-    Payload = <<"payload">>,
-    assert_call_succeed(hg_client_api:call(
-         proxy_host_provider, 'ProcessCallback', [Tag, Payload],
-         hg_client_api:new( ?c(root_url, C))
-    )),
     ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, 1000, Client).
@@ -150,15 +145,16 @@ payment_success(C) ->
 payment_success_on_second_try(C) ->
     Client = ?c(client, C),
     {ok, InvoiceID} = start_invoice(C, <<"rubberdick">>, make_due_date(20), 42000),
-    PaymentParams = make_payment_params(),
+    PaymentParams = make_3ds_payment_params(),
     {ok, PaymentID} = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_interaction_requested(PaymentID, UserInteraction) = next_event(InvoiceID, Client),
+    {'redirect', {'get_request', #'BrowserGetRequest'{uri = GoodTag}}} = UserInteraction,
     %% simulate user interaction
     BadTag = <<"666">>,
     assert_call_failed(hg_client_api:call(
          proxy_host_provider, 'ProcessCallback', [BadTag, <<"payload">>],
          hg_client_api:new( ?c(root_url, C))
     )),
-    GoodTag = PaymentID,
     assert_call_succeed(hg_client_api:call(
          proxy_host_provider, 'ProcessCallback', [GoodTag, <<"payload">>],
          hg_client_api:new( ?c(root_url, C))
@@ -172,16 +168,19 @@ payment_success_on_second_try(C) ->
 invoice_success_on_third_payment(C) ->
     Client = ?c(client, C),
     {ok, InvoiceID} = start_invoice(C, <<"rubberdock">>, make_due_date(60), 42000),
-    PaymentParams = make_payment_params(),
+    PaymentParams = make_3ds_payment_params(),
     {ok, PaymentID_1} = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_interaction_requested(PaymentID_1, _) = next_event(InvoiceID, Client),
     %% wait for payment timeout and start new one after
     ?payment_status_changed(PaymentID_1, ?failed(_)) = next_event(InvoiceID, 5000, Client),
     {ok, PaymentID_2} = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_interaction_requested(PaymentID_2, _) = next_event(InvoiceID, Client),
     %% wait for payment timeout and start new one after
     ?payment_status_changed(PaymentID_2, ?failed(_)) = next_event(InvoiceID, 5000, Client),
     {ok, PaymentID_3} = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_interaction_requested(PaymentID_3, UserInteraction) = next_event(InvoiceID, Client),
+    {'redirect', {'get_request', #'BrowserGetRequest'{uri = GoodTag}}} = UserInteraction,
     %% simulate user interaction FTW!
-    GoodTag = PaymentID_3,
     assert_call_succeed(hg_client_api:call(
          proxy_host_provider, 'ProcessCallback', [GoodTag, <<"payload">>],
          hg_client_api:new( ?c(root_url, C))
@@ -243,8 +242,12 @@ make_invoice_params(PartyID, ShopID, Product, Cost) ->
 make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cost).
 
+make_3ds_payment_params() ->
+    {PaymentTool, Session} = hg_ct_helper:make_3ds_payment_tool(),
+    make_payment_params(PaymentTool, Session).
+
 make_payment_params() ->
-    {PaymentTool, Session} = make_payment_tool(),
+    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
     make_payment_params(PaymentTool, Session).
 
 make_payment_params(PaymentTool, Session) ->
@@ -255,17 +258,6 @@ make_payment_params(PaymentTool, Session) ->
             client_info = #domain_ClientInfo{},
             contact_info = #domain_ContactInfo{}
         }
-    }.
-
-make_payment_tool() ->
-    {
-        {bank_card, #domain_BankCard{
-            token          = <<"TOKEN42">>,
-            payment_system = visa,
-            bin            = <<"424242">>,
-            masked_pan     = <<"4242">>
-        }},
-        <<"SESSION42">>
     }.
 
 make_due_date(LifetimeSeconds) ->

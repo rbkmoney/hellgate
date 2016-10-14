@@ -14,12 +14,18 @@
 -export([make_shop_details/1]).
 -export([make_shop_details/2]).
 
+-export([bank_card_3ds_token/0]).
+-export([bank_card_simple_token/0]).
+-export([make_3ds_payment_tool/0]).
+-export([make_simple_payment_tool/0]).
+
 -export([domain_fixture/1]).
 
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 -include_lib("dmsl/include/dmsl_domain_config_thrift.hrl").
 
 %%
+
 
 -type app_name() :: atom().
 
@@ -167,6 +173,42 @@ make_shop_details(Name, Description) ->
     #domain_ShopDetails{
         name        = Name,
         description = Description
+    }.
+
+-spec bank_card_3ds_token() -> string().
+
+bank_card_3ds_token() ->
+    <<"TOKEN666">>.
+
+-spec bank_card_simple_token() -> string().
+
+bank_card_simple_token() ->
+    <<"TOKEN42">>.
+
+-spec make_3ds_payment_tool() -> hg_domain_thrift:'PaymentTool'().
+
+make_3ds_payment_tool() ->
+    {
+        {bank_card, #domain_BankCard{
+            token          = bank_card_3ds_token(),
+            payment_system = visa,
+            bin            = <<"666666">>,
+            masked_pan     = <<"666">>
+        }},
+        <<"SESSION666">>
+    }.
+
+-spec make_simple_payment_tool() -> hg_domain_thrift:'PaymentTool'().
+
+make_simple_payment_tool() ->
+    {
+        {bank_card, #domain_BankCard{
+            token          = bank_card_simple_token(),
+            payment_system = visa,
+            bin            = <<"424242">>,
+            masked_pan     = <<"4242">>
+        }},
+        <<"SESSION42">>
     }.
 
 -type ref() :: _.
