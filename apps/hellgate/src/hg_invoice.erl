@@ -64,7 +64,8 @@ handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
     #payproc_InvoiceParams{party_id = PartyID, shop_id = ShopID} = InvoiceParams,
     {PartyState, Context1} = hg_party:get(UserInfo, PartyID, Context0),
     Party = assert_party_operable(get_party(PartyState), Context1),
-    _Shop = assert_shop_operable(get_shop(ShopID, Party), Context1),
+    Shop = assert_shop_operable(get_shop(ShopID, Party), Context1),
+    ok = validate_invoice_params(InvoiceParams, Shop, Context1),
     {ok, Context2} = start(ID, {InvoiceParams, PartyState, UserInfo}, Context1),
     {{ok, ID}, Context2};
 
@@ -512,6 +513,9 @@ construct_party_ref(#payproc_PartyState{party = #domain_Party{id = ID}, revision
 get_shop(ID, #domain_Party{shops = Shops}) ->
     maps:get(ID, Shops, undefined).
 
+get_shop_currency(#domain_Shop{accounts = #domain_ShopAccountSet{currency = Currency}}) ->
+    Currency.
+
 assert_party_operable(#domain_Party{blocking = Blocking, suspension = Suspension} = V, Context) ->
     _ = assert_party_unblocked(Blocking, Context),
     _ = assert_party_active(Suspension, Context),
@@ -535,3 +539,27 @@ assert_shop_unblocked(V = {Status, _}, Context) ->
 
 assert_shop_active(V = {Status, _}, Context) ->
     Status == active orelse throw({#payproc_InvalidShopStatus{status = {suspension, V}}, Context}).
+
+%%
+
+validate_invoice_params(
+    #payproc_InvoiceParams{
+        currency = Currency,
+        amount = Amount
+    },
+    Shop,
+    Context
+) ->
+    _ = validate_amount(Amount, Context),
+    _ = validate_currency(Currency, get_shop_currency(Shop), Context),
+    ok.
+
+validate_amount(Amount, _) when Amount > 0 ->
+    ok;
+validate_amount(_, Context) ->
+    throw({#'InvalidRequest'{errors = [<<"Invalid amount">>]}, Context}).
+
+validate_currency(Currency, Currency, _) ->
+    ok;
+validate_currency(_, _, Context) ->
+    throw({#'InvalidRequest'{errors = [<<"Invalid currency">>]}, Context}).

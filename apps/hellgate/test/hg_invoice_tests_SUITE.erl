@@ -8,6 +8,8 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
+-export([invalid_invoice_amount/1]).
+-export([invalid_invoice_currency/1]).
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancelled/1]).
 -export([invoice_cancelled_after_payment_timeout/1]).
@@ -40,6 +42,8 @@ init([]) ->
 
 all() ->
     [
+        invalid_invoice_amount,
+        invalid_invoice_currency,
         invoice_cancellation,
         overdue_invoice_cancelled,
         invoice_cancelled_after_payment_timeout,
@@ -104,6 +108,24 @@ end_per_testcase(_Name, C) ->
     _ = unlink(?c(test_sup, C)),
     _ = application:unset_env(hellgate, provider_proxy_url),
     exit(?c(test_sup, C), shutdown).
+
+-spec invalid_invoice_amount(config()) -> _ | no_return().
+
+invalid_invoice_amount(C) ->
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    PartyID = ?c(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
+    {exception, #'InvalidRequest'{}} = hg_client_invoicing:create(InvoiceParams, Client).
+
+-spec invalid_invoice_currency(config()) -> _ | no_return().
+
+invalid_invoice_currency(C) ->
+    Client = ?c(client, C),
+    ShopID = ?c(shop_id, C),
+    PartyID = ?c(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100, <<"KEK">>}),
+    {exception, #'InvalidRequest'{}} = hg_client_invoicing:create(InvoiceParams, Client).
 
 -spec invoice_cancellation(config()) -> _ | no_return().
 
