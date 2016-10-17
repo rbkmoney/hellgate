@@ -295,7 +295,9 @@ party_creation(C) ->
     Client = ?c(client, C),
     PartyID = ?c(party_id, C),
     ok = hg_client_party:create(Client),
-    ?party_created(?party_w_status(PartyID, ?unblocked(_), ?active()), 1) = next_event(Client).
+    ?party_created(?party_w_status(PartyID, ?unblocked(_), ?active()), 1) = next_event(Client),
+    ?claim_created(?claim(_, ?accepted(_), [_ | _])) = next_event(Client),
+    #domain_Shop{} = get_first_shop(Client).
 
 party_already_exists(C) ->
     Client = ?c(client, C),

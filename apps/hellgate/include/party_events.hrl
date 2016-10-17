@@ -16,6 +16,8 @@
         #payproc_ClaimStatusChanged{id = ID, status = Status}}
 ).
 
+-define(shop_creation(Shop),
+    {shop_creation, Shop}).
 -define(shop_modification(ID, Modification),
     {shop_modification, #payproc_ShopModificationUnit{id = ID, modification = Modification}}).
 
@@ -38,6 +40,6 @@
     {unblocked, #domain_Unblocked{reason = Reason}}).
 
 -define(accounts_created(ShopAccountSet),
-    {accounts_created, #payproc_ShopAccountSetCreated{accounts = AccountShopSet}}).
+    {accounts_created, #payproc_ShopAccountSetCreated{accounts = ShopAccountSet}}).
 
 -endif.

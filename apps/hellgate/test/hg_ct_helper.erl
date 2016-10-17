@@ -241,6 +241,9 @@ domain_fixture(party_prototype) ->
                 },
                 currency = #'domain_CurrencyRef'{
                     symbolic_code = <<"RUB">>
+                },
+                details  = #domain_ShopDetails{
+                    name = <<"SUPER DEFAULT SHOP">>
                 }
             },
             default_services = #domain_ShopServices{}
@@ -256,6 +259,16 @@ domain_fixture(currency) ->
             symbolic_code = <<"RUB">>,
             numeric_code = 643,
             exponent = 2
+        }
+    }};
+domain_fixture(category) ->
+    {category, #'domain_CategoryObject'{
+        ref = #'domain_CategoryRef'{
+            id = 1
+        },
+        data = #'domain_Category'{
+            name = <<"Categories">>,
+            description = <<"Goods sold by category providers">>
         }
     }};
 domain_fixture(proxy) ->

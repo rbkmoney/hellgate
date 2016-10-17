@@ -249,9 +249,13 @@ namespace() ->
 -spec init(party_id(), {user_info()}, hg_machine:context()) ->
     {hg_machine:result(ev()), hg_machine:context()}.
 
-init(ID, {_UserInfo}, Context) ->
+init(ID, {_UserInfo}, Context0) ->
     {ok, StEvents} = create_party(ID, {#st{}, []}),
-    {ok(StEvents), Context}.
+    Revision = hg_domain:head(),
+    ShopParams = get_shop_prototype_params(Revision),
+    {Changeset, Context} = create_shop(ShopParams, Revision, StEvents, Context0),
+    {_ClaimID, StEvents1} = submit_accept_claim(Changeset, StEvents),
+    {ok(StEvents1), Context}.
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev()), hg_machine:context()) ->
     {hg_machine:result(ev()), hg_machine:context()}.
@@ -305,17 +309,11 @@ handle_call({activate, _UserInfo}, StEvents0, Context) ->
     {ClaimID, StEvents1} = create_claim([{suspension, ?active()}], StEvents0),
     {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
-handle_call({create_shop, Params, _UserInfo}, StEvents0 = {St0, _}, Context0) ->
+handle_call({create_shop, Params, _UserInfo}, StEvents0, Context0) ->
     ok = assert_operable(StEvents0),
-    {AccountShopSet, Context} = create_account_shop_set(StEvents0, Context0),
-    ShopID = get_next_shop_id(get_pending_st(St0)),
-    {ClaimID, StEvents1} = create_claim(
-        [
-            {shop_creation, construct_shop(ShopID, Params)},
-            ?shop_modification(ShopID, ?accounts_created(AccountShopSet))
-        ],
-        StEvents0
-    ),
+    Revision = hg_domain:head(),
+    {Changeset, Context} = create_shop(Params, Revision, StEvents0, Context0),
+    {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
 
 handle_call({update_shop, ID, Update, _UserInfo}, StEvents0, Context) ->
@@ -382,8 +380,17 @@ get_shop_state(ID, #st{party = Party, revision = Revision}) ->
 
 %%
 
-construct_shop(ShopID, ShopParams) ->
-    ShopServices = get_default_shop_services(),
+create_shop(ShopParams, Revision, {St, _}, Context) ->
+    ShopID = get_next_shop_id(get_pending_st(St)),
+    Shop   = construct_shop(ShopID, ShopParams, Revision),
+    {ShopAccountSet, Context1} = create_shop_account_set(Revision, Context),
+    {[
+        ?shop_creation(Shop),
+        ?shop_modification(ShopID, ?accounts_created(ShopAccountSet))
+    ], Context1}.
+
+construct_shop(ShopID, ShopParams, Revision) ->
+    ShopServices = get_shop_services(Revision),
     #domain_Shop{
         id         = ShopID,
         blocking   = ?unblocked(<<>>),
@@ -785,33 +792,56 @@ fold_opt([{E, Fun} | Rest], V) ->
 get_next_id(IDs) ->
     integer_to_binary(1 + lists:max([0 | lists:map(fun binary_to_integer/1, IDs)])).
 
-create_account_shop_set(
-    _Party,
+create_shop_account_set(
+    Revision,
     Context = #{
         client_context := ClientContext0
     }
 ) ->
-    CurrencyRef = #domain_CurrencyRef{
-        symbolic_code = <<"RUB">>
-    }, %%% @FIXME use shop prototype instead
+    ShopPrototype = get_shop_prototype(Revision),
+    CurrencyRef = ShopPrototype#domain_ShopPrototype.currency,
     #domain_CurrencyRef{
         symbolic_code = SymbolicCode
     } = CurrencyRef,
     {GuaranteeID, ClientContext1} = hg_account:create_account(SymbolicCode, ClientContext0),
     {GeneralID, ClientContext} = hg_account:create_account(SymbolicCode, ClientContext1),
-    ShopAccountSet = #domain_ShopAccountSet {
+    ShopAccountSet = #domain_ShopAccountSet{
         currency = CurrencyRef,
         general = GeneralID,
         guarantee = GuaranteeID
     },
     {ShopAccountSet, Context#{client_context => ClientContext}}.
 
-get_default_shop_services() ->
-    Head = hg_domain:head(),
-    #domain_Globals{
-        party_prototype = PartyPrototypeRef
-    } = hg_domain:get(Head, {globals, #domain_GlobalsRef{}}),
-    #domain_PartyPrototype{
-        default_services = ShopServices
-    } = hg_domain:get(Head, {party_prototype, PartyPrototypeRef}),
-    ShopServices.
+get_shop_prototype_params(Revision) ->
+    ShopPrototype = get_shop_prototype(Revision),
+    #payproc_ShopParams{
+        category = ShopPrototype#domain_ShopPrototype.category,
+        details = ShopPrototype#domain_ShopPrototype.details
+    }.
+
+get_shop_services(Revision) ->
+    PartyPrototype = get_party_prototype(Revision),
+    lock_verion(PartyPrototype#domain_PartyPrototype.default_services, Revision).
+
+get_party_prototype(Revision) ->
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    hg_domain:get(Revision, {party_prototype, Globals#domain_Globals.party_prototype}).
+
+get_shop_prototype(Revision) ->
+    PartyPrototype = get_party_prototype(Revision),
+    PartyPrototype#domain_PartyPrototype.shop.
+
+lock_verion(
+    Services = #domain_ShopServices{
+        payments = Payments
+    },
+    Revision
+) ->
+    Services#domain_ShopServices{
+        payments = do_lock_version(Payments, Revision)
+    }.
+
+do_lock_version(Payments = #domain_PaymentsService{}, Revision) ->
+    Payments#domain_PaymentsService{domain_revision = Revision};
+do_lock_version(undefined, _Revision) ->
+    undefined.
