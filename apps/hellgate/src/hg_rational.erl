@@ -33,7 +33,7 @@ new(_, 0) ->
 -spec to_integer(t()) -> integer().
 
 to_integer({P, Q}) when P > 0 ->
-    P div Q + if 2 * (P rem Q) > Q -> 1; true -> 0 end;
+    P div Q + case 2 * (P rem Q) > Q of true -> 1; false -> 0 end;
 to_integer({P, Q}) ->
     -to_integer({-P, Q}).
 
