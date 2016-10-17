@@ -15,9 +15,8 @@ services:
       - shumway
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:afee5aa9a904ec570e55356d18af484fb6d277db
-    environment:
-      - SERVICE_NAME=dominant
+    image: dr.rbkmoney.com/rbkmoney/dominant:db64a672156ebf0355852d8dd04a1cab2a923a8a
+    command: /opt/dominant/bin/dominant foreground
     depends_on:
       - machinegun
 
@@ -40,6 +39,8 @@ services:
       --spring.datasource.password=shumway
     depends_on:
       - shumway_psql
+    restart: always
+
   shumway_psql:
     image: dr.rbkmoney.com/rbkmoney/postgres:9.6
     environment:
