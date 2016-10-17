@@ -56,6 +56,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
+    hg_domain:cleanup(),
     [application:stop(App) || App <- ?c(apps, C)].
 
 -spec init_per_testcase(test_case_name(), config()) -> config().

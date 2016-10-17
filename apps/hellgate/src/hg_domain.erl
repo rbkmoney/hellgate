@@ -12,12 +12,14 @@
 -export([insert/1]).
 -export([update/1]).
 -export([get/1]).
+-export([cleanup/0]).
 
 %%
 
 -type revision() :: pos_integer().
 -type ref() :: _.
 -type data() :: _.
+-type object() :: ref().
 
 -spec head() -> revision().
 
@@ -76,3 +78,22 @@ update({Tag, {ObjectName, Ref, _Data}} = NewObject) ->
         ]
     },
     commit(head(), Commit).
+
+-spec remove([object()]) -> ok.
+
+remove(Objects) ->
+    Commit = #'Commit'{
+        ops = [
+            {remove, #'RemoveOp'{
+                object = Object
+            }} ||
+            Object <- Objects
+        ]
+    },
+    commit(head(), Commit).
+
+-spec cleanup() -> ok.
+
+cleanup() ->
+    Domain = all(head()),
+    remove(maps:values(Domain)).

@@ -57,6 +57,10 @@ all() ->
 init_per_suite(C) ->
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate, {cowboy, CowboySpec}]),
+    ok = hg_domain:insert(hg_ct_helper:domain_fixture(currency)),
+    ok = hg_domain:insert(hg_ct_helper:domain_fixture(globals)),
+    ok = hg_domain:insert(hg_ct_helper:domain_fixture(party_prototype)),
+    ok = hg_domain:insert(hg_ct_helper:domain_fixture(proxy)),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(RootUrl)),
@@ -72,6 +76,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
+    hg_domain:cleanup(),
     [application:stop(App) || App <- ?c(apps, C)].
 
 %% tests
@@ -97,7 +102,7 @@ init_per_testcase(_Name, C) ->
 
 end_per_testcase(_Name, C) ->
     _ = unlink(?c(test_sup, C)),
-    _ = application:set_env(hellgate, provider_proxy_url, undefined),
+    _ = application:unset_env(hellgate, provider_proxy_url),
     exit(?c(test_sup, C), shutdown).
 
 -spec invoice_cancellation(config()) -> _ | no_return().
