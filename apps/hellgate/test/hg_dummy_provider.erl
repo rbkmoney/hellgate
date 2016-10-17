@@ -6,6 +6,7 @@
 -behaviour(hg_test_proxy).
 
 -export([get_service_spec/0]).
+-export([get_http_cowboy_spec/0]).
 
 %% cowboy http callbacks
 -export([init/3]).
@@ -13,11 +14,24 @@
 -export([terminate/3]).
 %%
 
+-define(COWBOY_PORT, 9988).
+
 -spec get_service_spec() ->
     hg_proto:service_spec().
 
 get_service_spec() ->
     {"/test/proxy/provider/dummy", {dmsl_proxy_provider_thrift, 'ProviderProxy'}}.
+
+-spec get_http_cowboy_spec() -> #{}.
+
+get_http_cowboy_spec() ->
+    Dispatch = cowboy_router:compile([{'_', [{"/", ?MODULE, []}]}]),
+    #{
+        listener_ref => ?MODULE,
+        acceptors_count => 10,
+        transport_opts => [{port, ?COWBOY_PORT}],
+        proto_opts => [{env, [{dispatch, Dispatch}]}]
+    }.
 
 %%
 
@@ -79,8 +93,14 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts, Context) ->
     case get_payment_token(PaymentInfo) of
         Token3DS ->
             Tag = hg_utils:unique_id(),
-            %% We pass tag as uri, but in actual workflow proxy should pack it somehow for payform
-            UserInteraction = {'redirect', {'get_request', #'BrowserGetRequest'{uri = Tag}}},
+            Uri = genlib:to_binary("http://127.0.0.1:" ++ integer_to_list(?COWBOY_PORT)),
+            UserInteraction = {
+                'redirect',
+                {
+                    'post_request',
+                    #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
+                }
+            },
             {{ok, suspend(Tag, 3, <<"suspended">>, UserInteraction)}, Context};
         _ ->
             %% simple workflow without 3DS
@@ -126,10 +146,11 @@ get_payment_token(#'PaymentInfo'{payment = Payment}) ->
     Token.
 
 handle_user_interaction_response(<<"POST">>, Req) ->
-    {ok, Tag, _Garbage} = cowboy_req:body(Req),
+    {ok, Body, _Garbage} = cowboy_req:body(Req),
+    Tag = maps:get(<<"tag">>, binary_to_term(Body)),
     RespCode = callback_to_hell(Tag),
     cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<"">>, Req);
-handle_user_interaction_response(<<"GET">>, Req) ->
+handle_user_interaction_response(_, Req) ->
     %% Method not allowed.
     cowboy_req:reply(405, Req).
 
@@ -141,7 +162,5 @@ callback_to_hell(Tag) ->
         {ok, _} -> 200;
         {{ok, _}, _} -> 200;
         {{error, _}, _} -> 500;
-        {{exception, _}, _} -> 500;
-        %% WTF IS THIS?!
-        _ -> 666
+        {{exception, _}, _} -> 500
     end.

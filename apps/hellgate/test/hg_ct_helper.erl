@@ -66,6 +66,16 @@ start_app(AppName) ->
 
 -spec start_app(app_name(), list()) -> [app_name()].
 
+start_app(cowboy = AppName, Env) ->
+    #{
+        listener_ref := Ref,
+        acceptors_count := Count,
+        transport_opts := TransOpt,
+        proto_opts := ProtoOpt
+    } = Env,
+    cowboy:start_http(Ref, Count, TransOpt, ProtoOpt),
+    [AppName];
+
 start_app(AppName, Env) ->
     genlib_app:start_application_with(AppName, Env).
 
@@ -263,7 +273,6 @@ domain_fixture(proxy) ->
 
 get_hellgate_url() ->
     "http://" ++ ?HELLGATE_HOST ++ ":" ++ integer_to_list(?HELLGATE_PORT).
-
 
 make_due_date() ->
     make_due_date(24 * 60 * 60).
