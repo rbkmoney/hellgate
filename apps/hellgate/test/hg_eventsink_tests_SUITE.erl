@@ -47,16 +47,13 @@ groups() ->
 
 init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate]),
-    ok = hg_domain:insert(hg_ct_helper:domain_fixture(currency)),
-    ok = hg_domain:insert(hg_ct_helper:domain_fixture(globals)),
-    ok = hg_domain:insert(hg_ct_helper:domain_fixture(party_prototype)),
-    ok = hg_domain:insert(hg_ct_helper:domain_fixture(proxy)),
+    ok = hg_domain:insert(hg_ct_helper:get_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
-    hg_domain:cleanup(),
+    ok = hg_domain:cleanup(),
     [application:stop(App) || App <- ?c(apps, C)].
 
 -spec init_per_testcase(test_case_name(), config()) -> config().

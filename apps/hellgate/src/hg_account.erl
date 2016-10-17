@@ -4,7 +4,6 @@
 -export([create_account/2]).
 -export([create_account/3]).
 
--include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 -include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
 
 -type account() :: #{

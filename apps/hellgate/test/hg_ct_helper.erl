@@ -20,10 +20,9 @@
 -export([make_simple_payment_tool/0]).
 -export([get_hellgate_url/0]).
 
--export([domain_fixture/1]).
+-export([get_domain_fixture/0]).
 
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
--include_lib("dmsl/include/dmsl_domain_config_thrift.hrl").
 
 %%
 
@@ -215,73 +214,6 @@ make_simple_payment_tool() ->
         <<"SESSION42">>
     }.
 
--type ref() :: _.
--type data() :: _.
--spec domain_fixture(atom()) -> {ref(), data()}.
-
-domain_fixture(globals) ->
-    {globals, #'domain_GlobalsObject'{
-        ref = #domain_GlobalsRef{},
-        data = #domain_Globals{
-            party_prototype = #domain_PartyPrototypeRef{
-                id = 42
-            },
-            providers = {value, []}
-        }
-    }};
-domain_fixture(party_prototype) ->
-    {party_prototype, #'domain_PartyPrototypeObject'{
-        ref = #domain_PartyPrototypeRef{
-            id = 42
-        },
-        data = #domain_PartyPrototype{
-            shop = #domain_ShopPrototype{
-                category = #'domain_CategoryRef'{
-                    id = 1
-                },
-                currency = #'domain_CurrencyRef'{
-                    symbolic_code = <<"RUB">>
-                },
-                details  = #domain_ShopDetails{
-                    name = <<"SUPER DEFAULT SHOP">>
-                }
-            },
-            default_services = #domain_ShopServices{}
-        }
-    }};
-domain_fixture(currency) ->
-    {currency, #'domain_CurrencyObject'{
-        ref = #'domain_CurrencyRef'{
-            symbolic_code = <<"RUB">>
-        },
-        data = #'domain_Currency'{
-            name = <<"Russian rubles">>,
-            symbolic_code = <<"RUB">>,
-            numeric_code = 643,
-            exponent = 2
-        }
-    }};
-domain_fixture(category) ->
-    {category, #'domain_CategoryObject'{
-        ref = #'domain_CategoryRef'{
-            id = 1
-        },
-        data = #'domain_Category'{
-            name = <<"Categories">>,
-            description = <<"Goods sold by category providers">>
-        }
-    }};
-domain_fixture(proxy) ->
-    {proxy, #'domain_ProxyObject'{
-        ref = #'domain_ProxyRef'{
-            id = 1
-        },
-        data = #'domain_ProxyDefinition'{
-            url = genlib_app:env(hellgate, provider_proxy_url, <<>>),
-            options = genlib_app:env(hellgate, provider_proxy_options, #{})
-        }
-    }}.
-
 -spec get_hellgate_url() -> string().
 
 get_hellgate_url() ->
@@ -292,3 +224,211 @@ make_due_date() ->
 
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
+
+%%
+
+-spec get_domain_fixture() -> [hg_domain:object()].
+
+-define(cur(ID), #domain_CurrencyRef{symbolic_code = ID}).
+-define(pmt(C, T), #domain_PaymentMethodRef{id = {C, T}}).
+-define(cat(ID), #domain_CategoryRef{id = ID}).
+-define(prx(ID), #domain_ProxyRef{id = ID}).
+-define(prv(ID), #domain_ProviderRef{id = ID}).
+-define(trm(ID), #domain_TerminalRef{id = ID}).
+-define(pst(ID), #domain_PaymentsServiceTermsRef{id = ID}).
+
+-define(trmacc(Cur, Rec, Com),
+    #domain_TerminalAccountSet{currency = ?cur(Cur), receipt = Rec, compensation = Com}).
+
+-define(cfpost(S, A1, D, A2, V),
+    #domain_CashFlowPosting{
+        source      = #domain_CashFlowAccount{party = S, designation = genlib:to_binary(A1)},
+        destination = #domain_CashFlowAccount{party = D, designation = genlib:to_binary(A2)},
+        volume      = V
+    }
+).
+
+-define(fixed(A),
+    {fixed, #domain_CashVolumeFixed{amount = A}}).
+-define(share(P, Q, C),
+    {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C}}).
+
+get_domain_fixture() ->
+    [
+        {globals, #domain_GlobalsObject{
+            ref = #domain_GlobalsRef{},
+            data = #domain_Globals{
+                party_prototype = #domain_PartyPrototypeRef{id = 42},
+                providers = {value, [?prv(1), ?prv(2)]},
+                system_accounts = {predicates, []}
+            }
+        }},
+        {party_prototype, #domain_PartyPrototypeObject{
+            ref = #domain_PartyPrototypeRef{id = 42},
+            data = #domain_PartyPrototype{
+                shop = #domain_ShopPrototype{
+                    category = ?cat(1),
+                    currency = ?cur(<<"RUB">>),
+                    details  = #domain_ShopDetails{
+                        name = <<"SUPER DEFAULT SHOP">>
+                    }
+                },
+                default_services = #domain_ShopServices{
+                    payments = #domain_PaymentsService{
+                        domain_revision = 0,
+                        terms = ?pst(1)
+                    }
+                }
+            }
+        }},
+        {payments_service_terms, #domain_PaymentsServiceTermsObject{
+            ref = ?pst(1),
+            data = #domain_PaymentsServiceTerms{
+                payment_methods = {value, ordsets:from_list([
+                    ?pmt(bank_card, visa),
+                    ?pmt(bank_card, mastercard)
+                ])},
+                limits = {predicates, [
+                    #domain_AmountLimitPredicate{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, #domain_AmountLimit{
+                            min = {inclusive, 1000},
+                            max = {exclusive, 4200000}
+                        }}
+                    },
+                    #domain_AmountLimitPredicate{
+                        if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                        then_ = {value, #domain_AmountLimit{
+                            min = {inclusive, 200},
+                            max = {exclusive, 313370}
+                        }}
+                    }
+                ]},
+                fees = {predicates, [
+                    #domain_CashFlowPredicate{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, [
+                            ?cfpost(merchant, general, system, compensation, ?share(45, 1000, payment_amount))
+                        ]}
+                    },
+                    #domain_CashFlowPredicate{
+                        if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                        then_ = {value, [
+                            ?cfpost(merchant, general, system, compensation, ?share(65, 1000, payment_amount))
+                        ]}
+                    }
+                ]}
+            }
+        }},
+        {currency, #domain_CurrencyObject{
+            ref = ?cur(<<"RUB">>),
+            data = #domain_Currency{
+                name = <<"Russian rubles">>,
+                numeric_code = 643,
+                symbolic_code = <<"RUB">>,
+                exponent = 2
+            }
+        }},
+        {currency, #domain_CurrencyObject{
+            ref = ?cur(<<"USD">>),
+            data = #domain_Currency{
+                name = <<"US Dollars">>,
+                numeric_code = 840,
+                symbolic_code = <<"USD">>,
+                exponent = 2
+            }
+        }},
+        {category, #domain_CategoryObject{
+            ref = ?cat(1),
+            data = #domain_Category{
+                name = <<"Categories">>,
+                description = <<"Goods sold by category providers">>
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(1),
+            data = #domain_Provider{
+                name = <<"Brovider">>,
+                description = <<"A provider but bro">>,
+                terminal = {value, [?trm(1), ?trm(2)]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"brovider">>
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(1),
+            data = #domain_Terminal{
+                name = <<"Brominal 1">>,
+                description = <<"Brominal 1">>,
+                payment_method = #domain_PaymentMethodRef{id = {bank_card, visa}},
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
+                    ?cfpost(system, compensation, provider, compensation, ?share(18, 1000, payment_amount))
+                ],
+                accounts = ?trmacc(<<"USD">>, 10001, 10002),
+                options = #{
+                    <<"override">> => <<"Brominal 1">>
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(2),
+            data = #domain_Terminal{
+                name = <<"Brominal 2">>,
+                description = <<"Brominal 2">>,
+                payment_method = #domain_PaymentMethodRef{id = {bank_card, mastercard}},
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
+                    ?cfpost(system, compensation, provider, compensation, ?share(19, 1000, payment_amount))
+                ],
+                accounts = ?trmacc(<<"RUB">>, 10003, 10004),
+                options = #{
+                    <<"override">> => <<"Brominal 2">>
+                }
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = #domain_ProviderRef{id = 2},
+            data = #domain_Provider{
+                name = <<"Drovider">>,
+                description = <<"I'm out of ideas of what to write here">>,
+                terminal = {value, [?trm(3)]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"drovider">>
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(3),
+            data = #domain_Terminal{
+                name = <<"Drominal 1">>,
+                description = <<"Drominal 1">>,
+                payment_method = #domain_PaymentMethodRef{id = {bank_card, visa}},
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
+                    ?cfpost(system, compensation, provider, compensation, ?share(16, 1000, payment_amount))
+                ],
+                accounts = ?trmacc(<<"RUB">>, 10005, 10006),
+                options = #{
+                    <<"override">> => <<"Drominal 1">>
+                }
+            }
+        }},
+        {proxy, #domain_ProxyObject{
+            ref = ?prx(1),
+            data = #domain_ProxyDefinition{
+                url     = <<>>,
+                options = #{}
+            }
+        }}
+    ].

@@ -18,6 +18,10 @@
     {invoice_payment_started,
         #payproc_InvoicePaymentStarted{payment = Payment}}
 ).
+-define(payment_started(Payment, Route, CashFlow),
+    {invoice_payment_started,
+        #payproc_InvoicePaymentStarted{payment = Payment, route = Route, cash_flow = CashFlow}}
+).
 -define(payment_bound(PaymentID, Trx),
     {invoice_payment_bound,
         #payproc_InvoicePaymentBound{payment_id = PaymentID, trx = Trx}}

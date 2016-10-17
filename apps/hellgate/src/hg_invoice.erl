@@ -14,6 +14,14 @@
 %%%  - if a party or shop is blocked / suspended, is it an `InvalidStatus` or 503?
 %%%    let'em enjoy unexpected exception in the meantime :)
 %%%  - unify somehow with operability assertions from hg_party
+%%%  - it is inadequately painful to handle rolling context correctly
+%%%     - some kind of an api client process akin to the `hg_client_api`?
+%%%  - should party blocking / suspension be version-locked? probably _not_
+%%%  - we should probably check access rights and operability without going into
+%%%    invoice machine
+%%%  - looks like payment state is a better place to put version lock
+%%%  - if someone has access to a party then it has access to an invoice
+%%%    belonging to this party
 
 -module(hg_invoice).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
@@ -62,38 +70,61 @@
 handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
     ID = hg_utils:unique_id(),
     #payproc_InvoiceParams{party_id = PartyID, shop_id = ShopID} = InvoiceParams,
-    {PartyState, Context1} = hg_party:get(UserInfo, PartyID, Context0),
-    Party = assert_party_operable(get_party(PartyState), Context1),
-    Shop = assert_shop_operable(get_shop(ShopID, Party), Context1),
+    {PartyState, Context1} = get_party(UserInfo, PartyID, Context0),
+    Shop = validate_party_shop(ShopID, PartyState, Context1),
     ok = validate_invoice_params(InvoiceParams, Shop, Context1),
-    {ok, Context2} = start(ID, {InvoiceParams, PartyState, UserInfo}, Context1),
+    {ok, Context2} = start(ID, {InvoiceParams, construct_party_ref(PartyState)}, Context1),
     {{ok, ID}, Context2};
 
 handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
-    {St, Context} = get_state(UserInfo, InvoiceID, Context0),
-    {{ok, get_invoice_state(St)}, Context};
+    {St, Context1} = get_state(UserInfo, InvoiceID, Context0),
+    {_PartyState, Context2} = get_party(UserInfo, get_party_ref(St), Context1),
+    {{ok, get_invoice_state(St)}, Context2};
 
 handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
+    %% TODO access control
     {History, Context} = get_public_history(UserInfo, InvoiceID, Range, Context0),
     {{ok, History}, Context};
 
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, _Opts) ->
-    call(InvoiceID, {start_payment, PaymentParams, UserInfo}, Context0);
+    {St0, Context1} = get_initial_state(UserInfo, InvoiceID, Context0),
+    {PartyState, Context2} = get_party(UserInfo, get_party_ref(St0), Context1),
+    _Shop = validate_party_shop(get_shop_id(St0), PartyState, Context2),
+    call(InvoiceID, {start_payment, PaymentParams}, Context2);
 
 handle_function('GetPayment', {UserInfo, InvoiceID, PaymentID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, InvoiceID, Context0),
     case get_payment_session(PaymentID, St) of
-        {Payment = #domain_InvoicePayment{}, _} ->
+        PaymentSession when PaymentSession /= undefined ->
+            Payment = hg_invoice_payment:get_payment(PaymentSession),
             {{ok, Payment}, Context};
         undefined ->
             throw({#payproc_InvoicePaymentNotFound{}, Context})
     end;
 
-handle_function('Fulfill', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
-    call(InvoiceID, {fulfill, Reason, UserInfo}, Context0);
+handle_function('Fulfill', {_UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
+    %% TODO access control
+    call(InvoiceID, {fulfill, Reason}, Context0);
 
-handle_function('Rescind', {UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
-    call(InvoiceID, {rescind, Reason, UserInfo}, Context0).
+handle_function('Rescind', {_UserInfo, InvoiceID, Reason}, Context0, _Opts) ->
+    %% TODO access control
+    call(InvoiceID, {rescind, Reason}, Context0).
+
+get_party(UserInfo, #domain_PartyRef{id = PartyID}, Context) ->
+    get_party(UserInfo, PartyID, Context);
+get_party(UserInfo, PartyID, Context) ->
+    hg_party:get(UserInfo, PartyID, Context).
+
+validate_party_shop(ShopID, #payproc_PartyState{party = Party}, Context) ->
+    _ = assert_party_operable(Party, Context),
+    _ = assert_shop_operable(Shop = get_party_shop(ShopID, Party), Context),
+    Shop.
+
+construct_party_ref(#payproc_PartyState{party = #domain_Party{id = ID}, revision = Revision}) ->
+    #domain_PartyRef{id = ID, revision = Revision}.
+
+get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
+    #payproc_InvoiceState{invoice = Invoice, payments = Payments}.
 
 %%
 
@@ -117,6 +148,10 @@ get_history(_UserInfo, InvoiceID, AfterID, Limit, Context) ->
 
 get_state(UserInfo, InvoiceID, Context0) ->
     {{History, _LastID}, Context} = get_history(UserInfo, InvoiceID, Context0),
+    {collapse_history(History), Context}.
+
+get_initial_state(UserInfo, InvoiceID, Context0) ->
+    {{History, _LastID}, Context} = get_history(UserInfo, InvoiceID, undefined, 1, Context0),
     {collapse_history(History), Context}.
 
 get_public_history(UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}, Context) ->
@@ -153,7 +188,7 @@ opts(Context) ->
 
 %%
 
--type party_state() :: dmsl_payment_processing_thrift:'PartyState'().
+-type party_ref() :: dmsl_domain_thrift:'PartyRef'().
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
@@ -195,11 +230,11 @@ publish_event(_InvoiceID, _Event) ->
 namespace() ->
     ?NS.
 
--spec init(invoice_id(), {invoice_params(), party_state(), user_info()}, hg_machine:context()) ->
+-spec init(invoice_id(), {invoice_params(), party_ref()}, hg_machine:context()) ->
     {hg_machine:result(ev()), hg_machine:context()}.
 
-init(ID, {InvoiceParams, PartyState, _UserInfo}, Context) ->
-    Invoice = create_invoice(ID, InvoiceParams, PartyState),
+init(ID, {InvoiceParams, PartyRef}, Context) ->
+    Invoice = create_invoice(ID, InvoiceParams, PartyRef),
     Event = {public, ?invoice_ev(?invoice_created(Invoice))},
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     {ok(Event, #st{}, set_invoice_timer(#st{invoice = Invoice})), Context}.
@@ -255,17 +290,17 @@ process_call(Call, History, Context) ->
 raise(What) ->
     throw({exception, What}).
 
-handle_call({start_payment, PaymentParams, _UserInfo}, St, Context) ->
+handle_call({start_payment, PaymentParams}, St, Context) ->
     _ = assert_invoice_status(unpaid, St),
     _ = assert_no_pending_payment(St),
     start_payment(PaymentParams, St, Context);
 
-handle_call({fulfill, Reason, _UserInfo}, St, Context) ->
+handle_call({fulfill, Reason}, St, Context) ->
     _ = assert_invoice_status(paid, St),
     Event = {public, ?invoice_ev(?invoice_status_changed(?fulfilled(format_reason(Reason))))},
     {respond(ok, Event, St), Context};
 
-handle_call({rescind, Reason, _UserInfo}, St, Context) ->
+handle_call({rescind, Reason}, St, Context) ->
     _ = assert_invoice_status(unpaid, St),
     _ = assert_no_pending_payment(St),
     Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(Reason))))},
@@ -313,22 +348,24 @@ set_invoice_timer(St = #st{invoice = #domain_Invoice{status = Status, due = Due}
 
 %%
 
-start_payment(PaymentParams, St, Context) ->
+start_payment(PaymentParams, St, Context0) ->
     PaymentID = create_payment_id(St),
-    Opts = get_payment_opts(St),
+    {Party, Context} = checkout_party(St, Context0),
+    Opts = get_payment_opts(Party, St),
     {{Events1, _}, Context1} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts, Context),
     {{Events2, Action}, Context2} = hg_invoice_payment:start_session(?processed(), Context1),
     Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
     {respond(PaymentID, Events, St, Action), Context2}.
 
-process_payment_signal(Signal, PaymentID, PaymentSession, St, Context) ->
-    Opts = get_payment_opts(St),
+process_payment_signal(Signal, PaymentID, PaymentSession, St, Context0) ->
+    {Party, Context} = checkout_party(St, Context0),
+    Opts = get_payment_opts(Party, St),
     case hg_invoice_payment:process_signal(Signal, PaymentSession, Opts, Context) of
         {{next, {Events, Action}}, Context1} ->
             {ok(wrap_payment_events(PaymentID, Events), St, Action), Context1};
         {{done, {Events1, _}}, Context1} ->
-            {Payment1, _} = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
-            case get_payment_status(Payment1) of
+            PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
+            case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
                     {{Events2, Action}, Context2} = hg_invoice_payment:start_session(?captured(), Context1),
                     {ok(wrap_payment_events(PaymentID, Events1 ++ Events2), St, Action), Context2};
@@ -345,14 +382,15 @@ process_payment_signal(Signal, PaymentID, PaymentSession, St, Context) ->
             end
     end.
 
-process_payment_call(Call, PaymentID, PaymentSession, St, Context) ->
-    Opts = get_payment_opts(St),
+process_payment_call(Call, PaymentID, PaymentSession, St, Context0) ->
+    {Party, Context} = checkout_party(St, Context0),
+    Opts = get_payment_opts(Party, St),
     case hg_invoice_payment:process_call(Call, PaymentSession, Opts, Context) of
         {{Response, {next, {Events, Action}}}, Context1} ->
             {respond(Response, wrap_payment_events(PaymentID, Events), St, Action), Context1};
         {{Response, {done, {Events1, _}}}, Context1} ->
-            {Payment1, _} = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
-            case get_payment_status(Payment1) of
+            PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
+            case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
                     {{Events2, Action}, Context2} = hg_invoice_payment:start_session(?captured(), Context1),
                     Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
@@ -383,11 +421,18 @@ wrap_payment_events(PaymentID, Events) ->
             {private, {{payment, PaymentID}, E}}
     end, Events).
 
-get_payment_opts(#st{invoice = Invoice = #domain_Invoice{domain_revision = Revision}}) ->
+get_payment_opts(Party, #st{invoice = Invoice}) ->
     #{
-        invoice => Invoice,
-        proxy => hg_domain:get(Revision, {proxy, #domain_ProxyRef{id = 1}})
+        party => Party,
+        invoice => Invoice
     }.
+
+%%
+
+checkout_party(St, Context = #{client_context := ClientContext}) ->
+    #domain_PartyRef{id = PartyID, revision = Revision} = get_party_ref(St),
+    {Result, ClientContext1} = hg_party:checkout(PartyID, Revision, ClientContext),
+    {Result, Context#{client_context := ClientContext1}}.
 
 %%
 
@@ -417,13 +462,13 @@ sequence_event_({private, Ev}, Seq) ->
 
 %%
 
-create_invoice(ID, V = #payproc_InvoiceParams{}, PartyState) ->
+create_invoice(ID, V = #payproc_InvoiceParams{}, PartyRef) ->
     Revision = hg_domain:head(),
-    Currency = hg_domain:get({currency, V#payproc_InvoiceParams.currency}),
+    Currency = hg_domain:get(Revision, {currency, V#payproc_InvoiceParams.currency}),
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
-        owner           = construct_party_ref(PartyState),
+        owner           = PartyRef,
         created_at      = hg_datetime:format_now(),
         status          = ?unpaid(),
         domain_revision = Revision,
@@ -465,6 +510,12 @@ merge_invoice_event(?invoice_created(Invoice), St) ->
 merge_invoice_event(?invoice_status_changed(Status), St = #st{invoice = I}) ->
     St#st{invoice = I#domain_Invoice{status = Status}}.
 
+get_party_ref(#st{invoice = #domain_Invoice{owner = PartyRef}}) ->
+    PartyRef.
+
+get_shop_id(#st{invoice = #domain_Invoice{shop_id = ShopID}}) ->
+    ShopID.
+
 get_payment_session(PaymentID, #st{payments = Payments}) ->
     case lists:keyfind(PaymentID, 1, Payments) of
         {PaymentID, PaymentSession} ->
@@ -479,8 +530,8 @@ set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
 get_pending_payment(#st{payments = Payments}) ->
     find_pending_payment(Payments).
 
-find_pending_payment([V = {_PaymentID, {Payment, _}} | Rest]) ->
-    case get_payment_status(Payment) of
+find_pending_payment([V = {_PaymentID, PaymentSession} | Rest]) ->
+    case get_payment_status(hg_invoice_payment:get_payment(PaymentSession)) of
         ?pending() ->
             V;
         ?processed() ->
@@ -490,9 +541,6 @@ find_pending_payment([V = {_PaymentID, {Payment, _}} | Rest]) ->
     end;
 find_pending_payment([]) ->
     undefined.
-
-get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
-    #payproc_InvoiceState{invoice = Invoice, payments = Payments}.
 
 %%
 
@@ -504,13 +552,7 @@ format_reason(V) ->
 
 %%
 
-get_party(#payproc_PartyState{party = Party}) ->
-    Party.
-
-construct_party_ref(#payproc_PartyState{party = #domain_Party{id = ID}, revision = Revision}) ->
-    #domain_PartyRef{id = ID, revision = Revision}.
-
-get_shop(ID, #domain_Party{shops = Shops}) ->
+get_party_shop(ID, #domain_Party{shops = Shops}) ->
     maps:get(ID, Shops, undefined).
 
 get_shop_currency(#domain_Shop{accounts = #domain_ShopAccountSet{currency = Currency}}) ->

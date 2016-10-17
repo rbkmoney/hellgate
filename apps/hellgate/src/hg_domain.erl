@@ -11,17 +11,20 @@
 
 -export([insert/1]).
 -export([update/1]).
--export([get/1]).
+-export([remove/1]).
 -export([cleanup/0]).
 
 %%
 
 -type revision() :: pos_integer().
--type ref() :: _.
+-type ref() :: dmsl_domain_thrift:'Reference'().
+-type object() :: dmsl_domain_thrift:'DomainObject'().
 -type data() :: _.
--type object() :: ref().
 
 -export_type([revision/0]).
+-export_type([ref/0]).
+-export_type([object/0]).
+-export_type([data/0]).
 
 -spec head() -> revision().
 
@@ -38,7 +41,8 @@ all(Revision) ->
 -spec get(revision(), ref()) -> data().
 
 get(Revision, Ref) ->
-    #'VersionedObject'{object = {_Tag, {_Name, _Ref, Data}}} = dmt_client:checkout_object({version, Revision}, Ref),
+    #'VersionedObject'{object = Object} = dmt_client:checkout_object({version, Revision}, Ref),
+    {_Tag, {_Name, _Ref, Data}} = Object,
     Data.
 
 -spec commit(revision(), dmt:commit()) -> ok.
@@ -50,46 +54,49 @@ commit(Revision, Commit) ->
 
 %% convenience shortcuts, use carefully
 
--spec get(ref()) -> data().
+-spec insert(object() | [object()]) -> ok.
 
-get(Ref) ->
-    get(head(), Ref).
-
--spec insert({ref(), data()}) -> ok.
-
-insert(Object) ->
+insert(Object) when not is_list(Object) ->
+    insert([Object]);
+insert(Objects) ->
     Commit = #'Commit'{
         ops = [
             {insert, #'InsertOp'{
                 object = Object
-            }}
+            }} ||
+                Object <- Objects
         ]
     },
     commit(head(), Commit).
 
--spec update({ref(), data()}) -> ok.
+-spec update(object() | [object()]) -> ok.
 
-update({Tag, {ObjectName, Ref, _Data}} = NewObject) ->
-    OldData = get(head(), {Tag, Ref}),
+update(NewObject) when not is_list(NewObject) ->
+    update([NewObject]);
+update(NewObjects) ->
     Commit = #'Commit'{
         ops = [
             {update, #'UpdateOp'{
                 old_object = {Tag, {ObjectName, Ref, OldData}},
                 new_object = NewObject
             }}
+                || NewObject = {Tag, {ObjectName, Ref, _Data}} <- NewObjects,
+                    OldData <- [get(head(), {Tag, Ref})]
         ]
     },
     commit(head(), Commit).
 
--spec remove([object()]) -> ok.
+-spec remove(object() | [object()]) -> ok.
 
+remove(Object) when not is_list(Object) ->
+    remove([Object]);
 remove(Objects) ->
     Commit = #'Commit'{
         ops = [
             {remove, #'RemoveOp'{
                 object = Object
             }} ||
-            Object <- Objects
+                Object <- Objects
         ]
     },
     commit(head(), Commit).

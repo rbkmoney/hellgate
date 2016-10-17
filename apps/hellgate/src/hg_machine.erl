@@ -113,7 +113,7 @@ call(Ns, Ref, Args, #{client_context := Context0}) ->
 get_history(Ns, ID, Opts) ->
     get_history(Ns, ID, #'HistoryRange'{}, Opts).
 
--spec get_history(ns(), id(), event_id(), undefined | non_neg_integer(), opts()) ->
+-spec get_history(ns(), id(), undefined | event_id(), undefined | non_neg_integer(), opts()) ->
     {{history(), event_id()} | {error, notfound | failed}, woody_client:context()} | no_return().
 
 get_history(Ns, ID, AfterID, Limit, Opts) ->

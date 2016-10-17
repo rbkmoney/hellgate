@@ -17,7 +17,7 @@
 %% Public
 
 -export([get/3]).
--export([checkout/4]).
+-export([checkout/3]).
 
 %% Woody handler
 
@@ -50,16 +50,16 @@ get(UserInfo, PartyID, Context0) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
     {get_party_state(St), Context}.
 
--spec checkout(user_info(), party_id(), revision(), woody_client:context()) ->
-    {dmsl_domain_thrift:'Party'(), woody_client:context()} | no_return().
+-spec checkout(party_id(), revision(), woody_client:context()) ->
+    {dmsl_domain_thrift:'Party'(), woody_client:context()}.
 
-checkout(UserInfo, PartyID, Revision, Context0) ->
-    {{History, _LastID}, Context} = get_history(UserInfo, PartyID, Context0),
+checkout(PartyID, Revision, Context0) ->
+    {{History, _LastID}, Context} = get_history(PartyID, Context0),
     case checkout_history(History, Revision) of
         {ok, St} ->
             {get_party(St), Context};
         {error, Reason} ->
-            throw(Reason)
+            error(Reason)
     end.
 
 %%
@@ -148,12 +148,12 @@ handle_function('GetShopAccountSet', {UserInfo, PartyID, ShopID}, Context0, _Opt
     ?try_w_context({ok, get_account_set(ShopID, St)}, Context).
 
 
-get_history(_UserInfo, PartyID, Context) ->
+get_history(PartyID, Context) ->
     assert_nonempty_history(
         map_error(hg_machine:get_history(?NS, PartyID, opts(Context)))
     ).
 
-get_history(_UserInfo, PartyID, AfterID, Limit, Context) ->
+get_history(PartyID, AfterID, Limit, Context) ->
     assert_nonempty_history(
         map_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, opts(Context)))
     ).
@@ -165,13 +165,13 @@ assert_nonempty_history({{[], _LastID}, Context}) ->
 assert_nonempty_history({{[_ | _], _LastID}, _Context} = Result) ->
     Result.
 
-get_state(UserInfo, PartyID, Context0) ->
-    {{History, _LastID}, Context} = get_history(UserInfo, PartyID, Context0),
+get_state(_UserInfo, PartyID, Context0) ->
+    {{History, _LastID}, Context} = get_history(PartyID, Context0),
     {collapse_history(History), Context}.
 
-get_public_history(UserInfo, PartyID, AfterID, Limit, Context) ->
+get_public_history(_UserInfo, PartyID, AfterID, Limit, Context) ->
     hg_history:get_public_history(
-        fun (ID, Lim, Ctx) -> get_history(UserInfo, PartyID, ID, Lim, Ctx) end,
+        fun (ID, Lim, Ctx) -> get_history(PartyID, ID, Lim, Ctx) end,
         fun (Event) -> publish_party_event({party, PartyID}, Event) end,
         AfterID, Limit,
         Context

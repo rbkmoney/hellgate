@@ -101,7 +101,7 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts, Context) ->
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
                 }
             },
-            {{ok, suspend(Tag, 3, <<"suspended">>, UserInteraction)}, Context};
+            {{ok, suspend(Tag, 2, <<"suspended">>, UserInteraction)}, Context};
         _ ->
             %% simple workflow without 3DS
             {{ok, sleep(1, <<"sleeping">>)}, Context}
@@ -146,10 +146,11 @@ get_payment_token(#'PaymentInfo'{payment = Payment}) ->
     Token.
 
 handle_user_interaction_response(<<"POST">>, Req) ->
-    {ok, Body, _Garbage} = cowboy_req:body(Req),
-    Tag = maps:get(<<"tag">>, binary_to_term(Body)),
+    {ok, Body, Req2} = cowboy_req:body(Req),
+    Form = cow_qs:parse_qs(Body),
+    {_, Tag} = lists:keyfind(<<"tag">>, 1, Form),
     RespCode = callback_to_hell(Tag),
-    cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<"">>, Req);
+    cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<>>, Req2);
 handle_user_interaction_response(_, Req) ->
     %% Method not allowed.
     cowboy_req:reply(405, Req).
