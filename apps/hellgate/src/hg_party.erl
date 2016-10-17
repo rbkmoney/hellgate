@@ -253,7 +253,7 @@ init(ID, {_UserInfo}, Context0) ->
     {ok, StEvents} = create_party(ID, {#st{}, []}),
     Revision = hg_domain:head(),
     ShopParams = get_shop_prototype_params(Revision),
-    {Changeset, Context} = create_shop(ShopParams, Revision, StEvents, Context0),
+    {Changeset, Context} = create_shop(ShopParams, ?active(), Revision, StEvents, Context0),
     {_ClaimID, StEvents1} = submit_accept_claim(Changeset, StEvents),
     {ok(StEvents1), Context}.
 
@@ -380,21 +380,24 @@ get_shop_state(ID, #st{party = Party, revision = Revision}) ->
 
 %%
 
-create_shop(ShopParams, Revision, {St, _}, Context) ->
+create_shop(ShopParams, Revision, StEvents, Context) ->
+    create_shop(ShopParams, ?suspended(), Revision, StEvents, Context).
+
+create_shop(ShopParams, Suspension, Revision, {St, _}, Context) ->
     ShopID = get_next_shop_id(get_pending_st(St)),
-    Shop   = construct_shop(ShopID, ShopParams, Revision),
+    Shop   = construct_shop(ShopID, ShopParams, Suspension, Revision),
     {ShopAccountSet, Context1} = create_shop_account_set(Revision, Context),
     {[
         ?shop_creation(Shop),
         ?shop_modification(ShopID, ?accounts_created(ShopAccountSet))
     ], Context1}.
 
-construct_shop(ShopID, ShopParams, Revision) ->
+construct_shop(ShopID, ShopParams, Suspension, Revision) ->
     ShopServices = get_shop_services(Revision),
     #domain_Shop{
         id         = ShopID,
         blocking   = ?unblocked(<<>>),
-        suspension = ?suspended(),
+        suspension = Suspension,
         category   = ShopParams#payproc_ShopParams.category,
         details    = ShopParams#payproc_ShopParams.details,
         contractor = ShopParams#payproc_ShopParams.contractor,

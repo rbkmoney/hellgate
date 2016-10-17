@@ -110,21 +110,9 @@ start_apps(Apps) ->
 
 create_party_and_shop(Client) ->
     ok = hg_client_party:create(Client),
-    {ok, #payproc_ClaimResult{id = ClaimID, status = ?pending()}} =
-        hg_client_party:create_shop(make_shop_params(42, <<"THRIFT SHOP">>), Client),
-    ok = hg_client_party:accept_claim(ClaimID, Client),
-    {ok, #payproc_PartyState{party = #domain_Party{shops = Shops}}} =
-        hg_client_party:get(Client),
-    [{ShopID, _Shop} | _] = maps:to_list(Shops),
-    {ok, #payproc_ClaimResult{status = ?accepted(_)}} =
-        hg_client_party:activate_shop(ShopID, Client),
+    {ok, #payproc_PartyState{party = #domain_Party{shops = Shops}}} = hg_client_party:get(Client),
+    [{ShopID, _Shop}] = maps:to_list(Shops),
     ShopID.
-
-make_shop_params(CategoryID, Name) ->
-    #payproc_ShopParams{
-        category = make_category_ref(CategoryID),
-        details  = make_shop_details(Name)
-    }.
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), cost()) ->
     invoice_params().
