@@ -247,7 +247,7 @@ process(St, Options, Context) ->
 
 handle_process_result({Result, Context}, St) ->
     case Result of
-        {ok, ProxyResult} ->
+        ProxyResult = #'ProxyResult'{} ->
             {handle_proxy_result(ProxyResult, St), Context};
         {exception, Exception} ->
             {handle_exception(Exception, St), Context};
@@ -261,7 +261,7 @@ handle_callback(Payload, St, Options, Context) ->
 
 handle_callback_result({Result, Context}, St) ->
     case Result of
-        {ok, #'CallbackResult'{result = ProxyResult, response = Response}} ->
+        #'CallbackResult'{result = ProxyResult, response = Response} ->
             {What, {Events, Action}} = handle_proxy_result(ProxyResult, St),
             {{Response, {What, {[?session_ev(activated) | Events], Action}}}, Context};
         {error, _} = Error ->

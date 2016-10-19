@@ -18,14 +18,14 @@
 -type callback() :: dmsl_proxy_provider_thrift:'Callback'().
 
 -spec handle_function('ProcessCallback', {tag(), callback()}, woody_client:context(), _) ->
-    {{ok, term()}, woody_client:context()} | no_return().
+    {term(), woody_client:context()} | no_return().
 
 handle_function('ProcessCallback', {Tag, Callback}, Context, _) ->
     map_error(hg_invoice:process_callback(Tag, {provider, Callback}, Context)).
 
+map_error({{ok, Result}, Context}) ->
+    {Result, Context};
 map_error({{error, notfound}, Context}) ->
     throw({#'InvalidRequest'{errors = [<<"notfound">>]}, Context});
 map_error({{error, Reason}, _Context}) ->
-    error(Reason);
-map_error({Ok, Context}) ->
-    {Ok, Context}.
+    error(Reason).

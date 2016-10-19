@@ -20,7 +20,7 @@
     {account(), woody_client:context()}.
 
 get_account_by_id(AccountID, Context0) ->
-    {{ok, Account}, Context} = call_accounter('GetAccountByID', [AccountID], Context0),
+    {Account, Context} = call_accounter('GetAccountByID', [AccountID], Context0),
     #accounter_Account{
         own_amount = OwnAmount,
         available_amount = AvailableAmount,
@@ -48,8 +48,7 @@ create_account(CurrencySymCode, Description, Context0) ->
         currency_sym_code = CurrencySymCode,
         description = Description
     },
-    {{ok, AccountID}, Context} = call_accounter('CreateAccount', [AccountPrototype], Context0),
-    {AccountID, Context}.
+    call_accounter('CreateAccount', [AccountPrototype], Context0).
 
 call_accounter(Function, Args, Context) ->
     Url = genlib_app:env(hellgate, accounter_service_url),

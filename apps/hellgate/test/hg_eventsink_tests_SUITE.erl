@@ -101,7 +101,7 @@ events_observed(C) ->
     PartyMgmtClient = ?c(partymgmt_client, C),
     PartyID = ?c(party_id, C),
     _ShopID = hg_ct_helper:create_party_and_shop(PartyMgmtClient),
-    {ok, Events} = hg_client_eventsink:pull_events(10, 3000, EventsinkClient),
+    Events = hg_client_eventsink:pull_events(10, 3000, EventsinkClient),
     [?event(_ID, PartyID, 1, ?party_ev(?party_created(_, _))) | _] = Events,
     IDs = [ID || ?event(ID, _, _, _) <- Events],
     IDs = lists:sort(IDs).
@@ -109,6 +109,6 @@ events_observed(C) ->
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
-    {ok, Events} = hg_client_eventsink:pull_events(5000, 500, ?c(eventsink_client, C)),
+    Events = hg_client_eventsink:pull_events(5000, 500, ?c(eventsink_client, C)),
     ok = hg_eventsink_history:assert_total_order(Events),
     ok = hg_eventsink_history:assert_contiguous_sequences(Events).

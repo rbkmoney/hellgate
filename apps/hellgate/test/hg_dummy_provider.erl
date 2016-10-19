@@ -39,7 +39,7 @@ get_http_cowboy_spec() ->
 -include_lib("hellgate/include/invoice_events.hrl").
 
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), #{}) ->
-    {{ok, term()}, woody_client:context()} | no_return().
+    {term(), woody_client:context()} | no_return().
 
 handle_function(
     'ProcessPayment',
@@ -65,28 +65,10 @@ handle_function(
 ) ->
     handle_callback(Payload, Target, State, PaymentInfo, Opts, Context).
 
--spec init(atom(), cowboy_req:req(), list()) -> {ok, cowboy_req:req(), state}.
-
-init(_Transport, Req, []) ->
-    {ok, Req, undefined}.
-
--spec handle(cowboy_req:req(), state) -> {ok, cowboy_req:req(), state}.
-
-handle(Req, State) ->
-    {Method, Req2} = cowboy_req:method(Req),
-    {ok, Req3} = handle_user_interaction_response(Method, Req2),
-    {ok, Req3, State}.
-
--spec terminate(term(), cowboy_req:req(), state) -> ok.
-
-terminate(_Reason, _Req, _State) ->
-    ok.
-
-
 process_payment(?processed(), undefined, _, _, Context) ->
-    {{ok, sleep(1, <<"sleeping">>)}, Context};
+    {sleep(1, <<"sleeping">>), Context};
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _, Context) ->
-    {{ok, finish(PaymentInfo)}, Context};
+    {finish(PaymentInfo), Context};
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts, Context) ->
     Token3DS = hg_ct_helper:bank_card_tds_token(),
@@ -101,16 +83,16 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts, Context) ->
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
                 }
             },
-            {{ok, suspend(Tag, 2, <<"suspended">>, UserInteraction)}, Context};
+            {suspend(Tag, 2, <<"suspended">>, UserInteraction), Context};
         _ ->
             %% simple workflow without 3DS
-            {{ok, sleep(1, <<"sleeping">>)}, Context}
+            {sleep(1, <<"sleeping">>), Context}
     end;
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _, Context) ->
-    {{ok, finish(PaymentInfo)}, Context}.
+    {finish(PaymentInfo), Context}.
 
 handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts, Context) ->
-    {{ok, respond(<<"sure">>, sleep(1, <<"sleeping">>))}, Context}.
+    {respond(<<"sure">>, sleep(1, <<"sleeping">>)), Context}.
 
 finish(#'PaymentInfo'{payment = Payment}) ->
     #'ProxyResult'{
@@ -145,6 +127,25 @@ get_payment_token(#'PaymentInfo'{payment = Payment}) ->
     {'bank_card', #domain_BankCard{token = Token}} = PaymentTool,
     Token.
 
+%%
+
+-spec init(atom(), cowboy_req:req(), list()) -> {ok, cowboy_req:req(), state}.
+
+init(_Transport, Req, []) ->
+    {ok, Req, undefined}.
+
+-spec handle(cowboy_req:req(), state) -> {ok, cowboy_req:req(), state}.
+
+handle(Req, State) ->
+    {Method, Req2} = cowboy_req:method(Req),
+    {ok, Req3} = handle_user_interaction_response(Method, Req2),
+    {ok, Req3, State}.
+
+-spec terminate(term(), cowboy_req:req(), state) -> ok.
+
+terminate(_Reason, _Req, _State) ->
+    ok.
+
 handle_user_interaction_response(<<"POST">>, Req) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     Form = cow_qs:parse_qs(Body),
@@ -160,8 +161,10 @@ callback_to_hell(Tag) ->
         proxy_host_provider, 'ProcessCallback', [Tag, <<"payload">>],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ) of
-        {ok, _} -> 200;
-        {{ok, _}, _} -> 200;
-        {{error, _}, _} -> 500;
-        {{exception, _}, _} -> 500
+        {Response, _} when is_binary(Response) ->
+            200;
+        {{error, _}, _} ->
+            500;
+        {{exception, _}, _} ->
+            500
     end.

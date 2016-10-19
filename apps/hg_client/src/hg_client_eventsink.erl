@@ -45,12 +45,12 @@ stop(Client) ->
 %%
 
 -spec get_last_event_id(pid()) ->
-    {ok, event_id()} | none | woody_client:result_error().
+    event_id() | none | woody_client:result_error().
 
 get_last_event_id(Client) ->
     case gen_server:call(Client, {call, 'GetLastEventID', []}) of
-        {ok, EventID} ->
-            {ok, EventID};
+        EventID when is_integer(EventID) ->
+            EventID;
         {exception, #payproc_NoLastEvent{}} ->
             none;
         Error ->
@@ -58,7 +58,7 @@ get_last_event_id(Client) ->
     end.
 
 -spec pull_events(pos_integer(), timeout(), pid()) ->
-    {ok, [tuple()]} | woody_client:result_error().
+    [tuple()] | woody_client:result_error().
 
 pull_events(N, Timeout, Client) when N > 0 ->
     gen_server:call(Client, {pull_events, N, Timeout}, infinity).

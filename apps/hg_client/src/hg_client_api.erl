@@ -30,7 +30,7 @@ construct_context() ->
     woody_client:new_context(ReqID, ?MODULE).
 
 -spec call(Name :: atom(), woody_t:func(), [any()], t()) ->
-    {ok | {ok, _Response} | {exception, _} | {error, _}, t()}.
+    {ok | _Response | {exception, _} | {error, _}, t()}.
 
 call(ServiceName, Function, Args, {RootUrl, Context}) ->
     {Path, Service} = hg_proto:get_service_spec(ServiceName),

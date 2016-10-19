@@ -95,7 +95,7 @@ start(Ns, ID, Args, #{client_context := Context0}) ->
 
 call(Ns, Ref, Args, #{client_context := Context0}) ->
     case call_automaton('Call', [Ns, Ref, wrap_args(Args)], Context0) of
-        {{ok, Response}, Context} ->
+        {Response, Context} when is_binary(Response) ->
             % should be specific to a processing interface already
             case unmarshal_term(Response) of
                 {ok, _} = Ok ->
@@ -103,18 +103,18 @@ call(Ns, Ref, Args, #{client_context := Context0}) ->
                 {exception, Exception} ->
                     throw({Exception, Context})
             end;
-        {Error, Context} ->
+        {Error = {error, _}, Context} ->
             {Error, Context}
     end.
 
 -spec get_history(ns(), id(), opts()) ->
-    {{history(), event_id()} | {error, notfound | failed}, woody_client:context()} | no_return().
+    {{ok, {history(), event_id()}} | {error, notfound | failed}, woody_client:context()} | no_return().
 
 get_history(Ns, ID, Opts) ->
     get_history(Ns, ID, #'HistoryRange'{}, Opts).
 
 -spec get_history(ns(), id(), undefined | event_id(), undefined | non_neg_integer(), opts()) ->
-    {{history(), event_id()} | {error, notfound | failed}, woody_client:context()} | no_return().
+    {{ok, {history(), event_id()}} | {error, notfound | failed}, woody_client:context()} | no_return().
 
 get_history(Ns, ID, AfterID, Limit, Opts) ->
     get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}, Opts).
@@ -122,8 +122,8 @@ get_history(Ns, ID, AfterID, Limit, Opts) ->
 get_history(Ns, ID, Range, #{client_context := Context0}) ->
     LastID = #'HistoryRange'.'after',
     case call_automaton('GetHistory', [Ns, {id, ID}, Range], Context0) of
-        {{ok, History}, Context} ->
-            {unwrap_history(History, LastID), Context};
+        {History, Context} when is_list(History) ->
+            {{ok, unwrap_history(History, LastID)}, Context};
         {Error, Context} ->
             {Error, Context}
     end.
@@ -148,19 +148,17 @@ call_automaton(Function, Args, Context0) ->
 -type func() :: 'ProcessSignal' | 'ProcessCall'.
 
 -spec handle_function(func(), woody_server_thrift_handler:args(), woody_client:context(), [ns()]) ->
-    {{ok, term()}, woody_client:context()} | no_return().
+    {term(), woody_client:context()} | no_return().
 
 handle_function('ProcessSignal', {Args}, Context0, [Ns]) ->
     _ = hg_utils:logtag_process(namespace, Ns),
     #'SignalArgs'{signal = {_Type, Signal}, history = History} = Args,
-    {Result, Context} = dispatch_signal(Ns, Signal, History, Context0),
-    {{ok, Result}, Context};
+    dispatch_signal(Ns, Signal, History, Context0);
 
 handle_function('ProcessCall', {Args}, Context0, [Ns]) ->
     _ = hg_utils:logtag_process(namespace, Ns),
     #'CallArgs'{arg = Payload, history = History} = Args,
-    {Result, Context} = dispatch_call(Ns, Payload, History, Context0),
-    {{ok, Result}, Context}.
+    dispatch_call(Ns, Payload, History, Context0).
 
 %%
 

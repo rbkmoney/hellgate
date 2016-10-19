@@ -54,13 +54,13 @@ stop(Client) ->
 %%
 
 -spec create(invoice_params(), pid()) ->
-    {ok, invoice_id()} | woody_client:result_error().
+    invoice_id() | woody_client:result_error().
 
 create(InvoiceParams, Client) ->
     gen_server:call(Client, {call, 'Create', [InvoiceParams]}).
 
 -spec get(invoice_id(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'InvoiceState'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'InvoiceState'() | woody_client:result_error().
 
 get(InvoiceID, Client) ->
     gen_server:call(Client, {call, 'Get', [InvoiceID]}).
@@ -78,7 +78,7 @@ rescind(InvoiceID, Reason, Client) ->
     gen_server:call(Client, {call, 'Rescind', [InvoiceID, Reason]}).
 
 -spec start_payment(invoice_id(), payment_params(), pid()) ->
-    {ok, payment_id()} | woody_client:result_error().
+    payment_id() | woody_client:result_error().
 
 start_payment(InvoiceID, PaymentParams, Client) ->
     gen_server:call(Client, {call, 'StartPayment', [InvoiceID, PaymentParams]}).
@@ -86,13 +86,13 @@ start_payment(InvoiceID, PaymentParams, Client) ->
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
 -spec pull_event(invoice_id(), pid()) ->
-    {ok, tuple()} | timeout | woody_client:result_error().
+    tuple() | timeout | woody_client:result_error().
 
 pull_event(InvoiceID, Client) ->
     pull_event(InvoiceID, ?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
 
 -spec pull_event(invoice_id(), timeout(), pid()) ->
-    {ok, tuple()} | timeout | woody_client:result_error().
+    tuple() | timeout | woody_client:result_error().
 
 pull_event(InvoiceID, Timeout, Client) ->
     % FIXME: infinity sounds dangerous
@@ -127,9 +127,9 @@ handle_call({pull_event, InvoiceID, Timeout}, _From, St = #st{client = Client}) 
     {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(1, Timeout, Client, Poller),
     StNext = set_poller(InvoiceID, PollerNext, St#st{client = ClientNext}),
     case Result of
-        {ok, []} ->
+        [] ->
             {reply, timeout, StNext};
-        {ok, [#payproc_Event{payload = Payload}]} ->
+        [#payproc_Event{payload = Payload}] ->
             {reply, {ok, Payload}, StNext};
         Error ->
             {reply, Error, StNext}

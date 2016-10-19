@@ -110,7 +110,7 @@ start_apps(Apps) ->
 
 create_party_and_shop(Client) ->
     ok = hg_client_party:create(Client),
-    {ok, #payproc_PartyState{party = #domain_Party{shops = Shops}}} = hg_client_party:get(Client),
+    #payproc_PartyState{party = #domain_Party{shops = Shops}} = hg_client_party:get(Client),
     [{ShopID, _Shop}] = maps:to_list(Shops),
     ShopID.
 

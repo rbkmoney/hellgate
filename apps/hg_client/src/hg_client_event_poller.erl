@@ -20,7 +20,7 @@ new(Name, Function, Args) ->
     {{Name, Function, Args}, undefined}.
 
 -spec poll(pos_integer(), pos_integer(), hg_client_api:t(), t()) ->
-    {{ok, events()} | {exception | error, _}, hg_client_api:t(), t()}.
+    {events() | {exception | error, _}, hg_client_api:t(), t()}.
 
 -define(POLL_INTERVAL, 1000).
 
@@ -28,15 +28,15 @@ poll(N, Timeout, Client, St) ->
     poll(N, Timeout, [], Client, St, St).
 
 poll(_, Timeout, Acc, Client, _, St) when Timeout =< 0 ->
-    {{ok, Acc}, Client, St};
+    {Acc, Client, St};
 poll(N, Timeout, Acc, Client, StWas, {Call = {Name, Function, Args}, After}) ->
     StartTs = genlib_time:ticks(),
     Range = construct_range(After, N, Acc),
     {Result, ClientNext} = hg_client_api:call(Name, Function, Args ++ [Range], Client),
     case Result of
-        {ok, Events} when length(Events) == N ->
-            {{ok, Acc ++ Events}, ClientNext, {Call, get_last_event_id(After, Events)}};
-        {ok, Events} ->
+        Events when length(Events) == N ->
+            {Acc ++ Events, ClientNext, {Call, get_last_event_id(After, Events)}};
+        Events when is_list(Events) ->
             StNext = {Call, get_last_event_id(After, Events)},
             TimeoutLeft = wait_timeout(StartTs, Timeout),
             poll(N - length(Events), TimeoutLeft, Acc ++ Events, ClientNext, StWas, StNext);

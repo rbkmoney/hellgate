@@ -17,14 +17,13 @@
 
 -spec handle_function
     ('GetEvents', woody_server_thrift_handler:args(), woody_client:context(), []) ->
-        {{ok, [event()]}, woody_client:context()} | no_return();
+        {[event()], woody_client:context()} | no_return();
     ('GetLastEventID', woody_server_thrift_handler:args(), woody_client:context(), []) ->
-        {{ok, event_id()}, woody_client:context()} | no_return().
+        {event_id(), woody_client:context()} | no_return().
 
 handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, Context0, _Opts) ->
     try
-        {History, Context} = get_public_history(After, Limit, Context0),
-        {{ok, History}, Context}
+        get_public_history(After, Limit, Context0)
     catch
         {{exception, #'EventNotFound'{}}, Context1} ->
             throw({#payproc_EventNotFound{}, Context1})
@@ -33,7 +32,7 @@ handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit
 handle_function('GetLastEventID', {}, Context0, _Opts) ->
     case get_history_range(undefined, 1, backward, Context0) of
         {{[#'SinkEvent'{id = ID}], _LastID}, Context} ->
-            {{ok, ID}, Context};
+            {ID, Context};
         {{[], _LastID}, Context} ->
             throw({#payproc_NoLastEvent{}, Context})
     end.
@@ -51,7 +50,7 @@ get_history_range(After, Limit, Context0) ->
 
 get_history_range(After, Limit, Direction, Context0) ->
     HistoryRange = #'HistoryRange'{'after' = After, limit = Limit, direction = Direction},
-    {{ok, History}, Context} = call_event_sink('GetHistory', [HistoryRange], Context0),
+    {History, Context} = call_event_sink('GetHistory', [HistoryRange], Context0),
     {{History, get_history_last_id(History, After)}, Context}.
 
 get_history_last_id([], LastID) ->

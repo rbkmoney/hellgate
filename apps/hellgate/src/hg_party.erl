@@ -69,23 +69,22 @@ checkout(PartyID, Revision, Context0) ->
 ).
 
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), []) ->
-    {{ok, term()}, woody_client:context()} | no_return().
+    {term(), woody_client:context()} | no_return().
 
 handle_function('Create', {UserInfo, PartyID}, Context0, _Opts) ->
     start(PartyID, {UserInfo}, Context0);
 
 handle_function('Get', {UserInfo, PartyID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    {{ok, get_party_state(St)}, Context};
+    {get_party_state(St), Context};
 
 handle_function('GetShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    ?try_w_context({ok, get_shop_state(ID, St)}, Context);
+    ?try_w_context(get_shop_state(ID, St), Context);
 
 handle_function('GetEvents', {UserInfo, PartyID, Range}, Context0, _Opts) ->
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
-    {History, Context} = get_public_history(UserInfo, PartyID, AfterID, Limit, Context0),
-    {{ok, History}, Context};
+    get_public_history(UserInfo, PartyID, AfterID, Limit, Context0);
 
 handle_function('Block', {UserInfo, PartyID, Reason}, Context0, _Opts) ->
     call(PartyID, {block, Reason, UserInfo}, Context0);
@@ -119,11 +118,11 @@ handle_function('ActivateShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
 
 handle_function('GetClaim', {UserInfo, PartyID, ID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    ?try_w_context({ok, get_claim(ID, St)}, Context);
+    ?try_w_context(get_claim(ID, St), Context);
 
 handle_function('GetPendingClaim', {UserInfo, PartyID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    ?try_w_context({ok, ensure_claim(get_pending_claim(St))}, Context);
+    ?try_w_context(ensure_claim(get_pending_claim(St)), Context);
 
 handle_function('AcceptClaim', {UserInfo, PartyID, ID}, Context, _Opts) ->
     call(PartyID, {accept_claim, ID, UserInfo}, Context);
@@ -137,15 +136,14 @@ handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, Context, _Opts) 
 handle_function('GetShopAccountState', {UserInfo, PartyID, AccountID}, Context0, _Opts) ->
     {St, Context1} = get_state(UserInfo, PartyID, Context0),
     try
-        {AccountState, Context} = get_account_state(AccountID, St, Context1),
-        {{ok, AccountState}, Context}
+        get_account_state(AccountID, St, Context1)
     catch
         {exception, E} -> throw({E, Context1})
     end;
 
 handle_function('GetShopAccountSet', {UserInfo, PartyID, ShopID}, Context0, _Opts) ->
     {St, Context} = get_state(UserInfo, PartyID, Context0),
-    ?try_w_context({ok, get_account_set(ShopID, St)}, Context).
+    ?try_w_context(get_account_set(ShopID, St), Context).
 
 
 get_history(PartyID, Context) ->
@@ -183,17 +181,17 @@ start(ID, Args, Context) ->
 call(ID, Args, Context) ->
     map_error(hg_machine:call(?NS, {id, ID}, Args, opts(Context))).
 
+map_start_error({ok, Context}) ->
+    {ok, Context};
 map_start_error({{error, exists}, Context}) ->
-    throw({#payproc_PartyExists{}, Context});
-map_start_error({Ok, Context}) ->
-    {Ok, Context}.
+    throw({#payproc_PartyExists{}, Context}).
 
+map_error({{ok, Result}, Context}) ->
+    {Result, Context};
 map_error({{error, notfound}, Context}) ->
     throw({#payproc_PartyNotFound{}, Context});
 map_error({{error, Reason}, _Context}) ->
-    error(Reason);
-map_error({Ok, Context}) ->
-    {Ok, Context}.
+    error(Reason).
 
 opts(Context) ->
     #{client_context => Context}.

@@ -77,85 +77,85 @@ create(Client) ->
     gen_server:call(Client, {call, 'Create', []}).
 
 -spec get(pid()) ->
-    {ok, dmsl_payment_processing_thrift:'PartyState'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'PartyState'() | woody_client:result_error().
 
 get(Client) ->
     gen_server:call(Client, {call, 'Get', []}).
 
 -spec block(binary(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 block(Reason, Client) ->
     gen_server:call(Client, {call, 'Block', [Reason]}).
 
 -spec unblock(binary(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 unblock(Reason, Client) ->
     gen_server:call(Client, {call, 'Unblock', [Reason]}).
 
 -spec suspend(pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 suspend(Client) ->
     gen_server:call(Client, {call, 'Suspend', []}).
 
 -spec activate(pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 activate(Client) ->
     gen_server:call(Client, {call, 'Activate', []}).
 
 -spec get_shop(shop_id(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 get_shop(ID, Client) ->
     gen_server:call(Client, {call, 'GetShop', [ID]}).
 
 -spec create_shop(shop_params(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 create_shop(Params, Client) ->
     gen_server:call(Client, {call, 'CreateShop', [Params]}).
 
 -spec update_shop(shop_id(), dmsl_payment_processing_thrift:'ShopUpdate'(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 update_shop(ID, Update, Client) ->
     gen_server:call(Client, {call, 'UpdateShop', [ID, Update]}).
 
 -spec block_shop(shop_id(), binary(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 block_shop(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'BlockShop', [ID, Reason]}).
 
 -spec unblock_shop(shop_id(), binary(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 unblock_shop(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'UnblockShop', [ID, Reason]}).
 
 -spec suspend_shop(shop_id(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 suspend_shop(ID, Client) ->
     gen_server:call(Client, {call, 'SuspendShop', [ID]}).
 
 -spec activate_shop(shop_id(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 activate_shop(ID, Client) ->
     gen_server:call(Client, {call, 'ActivateShop', [ID]}).
 
 -spec get_claim(claim_id(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 get_claim(ID, Client) ->
     gen_server:call(Client, {call, 'GetClaim', [ID]}).
 
 -spec get_pending_claim(pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ClaimResult'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 get_pending_claim(Client) ->
     gen_server:call(Client, {call, 'GetPendingClaim', []}).
@@ -179,13 +179,13 @@ revoke_claim(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'RevokeClaim', [ID, Reason]}).
 
 -spec get_shop_account(shop_account_id(), pid()) ->
-    {ok, dmsl_payment_processing_thrift:'ShopAccountState'()} | woody_client:result_error().
+    dmsl_payment_processing_thrift:'ShopAccountState'() | woody_client:result_error().
 
 get_shop_account(AccountID, Client) ->
     gen_server:call(Client, {call, 'GetShopAccountState', [AccountID]}).
 
 -spec get_shop_account_set(shop_id(), pid()) ->
-    {ok, dmsl_domain_thrift:'ShopAccountSet'()} | woody_client:result_error().
+    dmsl_domain_thrift:'ShopAccountSet'() | woody_client:result_error().
 
 get_shop_account_set(ShopID, Client) ->
     gen_server:call(Client, {call, 'GetShopAccountSet', [ShopID]}).
@@ -193,13 +193,13 @@ get_shop_account_set(ShopID, Client) ->
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
 -spec pull_event(pid()) ->
-    {ok, tuple()} | timeout | woody_client:result_error().
+    tuple() | timeout | woody_client:result_error().
 
 pull_event(Client) ->
     pull_event(?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
 
 -spec pull_event(timeout(), pid()) ->
-    {ok, tuple()} | timeout | woody_client:result_error().
+    tuple() | timeout | woody_client:result_error().
 
 pull_event(Timeout, Client) ->
     gen_server:call(Client, {pull_event, Timeout}, infinity).
@@ -239,10 +239,10 @@ handle_call({pull_event, Timeout}, _From, St = #st{poller = Poller, client = Cli
     {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(1, Timeout, Client, Poller),
     StNext = St#st{poller = PollerNext, client = ClientNext},
     case Result of
-        {ok, []} ->
+        [] ->
             {reply, timeout, StNext};
-        {ok, [#payproc_Event{payload = Payload}]} ->
-            {reply, {ok, Payload}, StNext};
+        [#payproc_Event{payload = Payload}] ->
+            {reply, Payload, StNext};
         Error ->
             {reply, Error, StNext}
     end;

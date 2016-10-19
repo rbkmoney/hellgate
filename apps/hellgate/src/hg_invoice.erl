@@ -65,7 +65,7 @@
 %%
 
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), []) ->
-    {{ok, term()}, woody_client:context()} | no_return().
+    {term(), woody_client:context()} | no_return().
 
 handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
     ID = hg_utils:unique_id(),
@@ -74,17 +74,16 @@ handle_function('Create', {UserInfo, InvoiceParams}, Context0, _Opts) ->
     Shop = validate_party_shop(ShopID, PartyState, Context1),
     ok = validate_invoice_params(InvoiceParams, Shop, Context1),
     {ok, Context2} = start(ID, {InvoiceParams, construct_party_ref(PartyState)}, Context1),
-    {{ok, ID}, Context2};
+    {ID, Context2};
 
 handle_function('Get', {UserInfo, InvoiceID}, Context0, _Opts) ->
     {St, Context1} = get_state(UserInfo, InvoiceID, Context0),
     {_PartyState, Context2} = get_party(UserInfo, get_party_ref(St), Context1),
-    {{ok, get_invoice_state(St)}, Context2};
+    {get_invoice_state(St), Context2};
 
 handle_function('GetEvents', {UserInfo, InvoiceID, Range}, Context0, _Opts) ->
     %% TODO access control
-    {History, Context} = get_public_history(UserInfo, InvoiceID, Range, Context0),
-    {{ok, History}, Context};
+    get_public_history(UserInfo, InvoiceID, Range, Context0);
 
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, Context0, _Opts) ->
     {St0, Context1} = get_initial_state(UserInfo, InvoiceID, Context0),
@@ -96,8 +95,7 @@ handle_function('GetPayment', {UserInfo, InvoiceID, PaymentID}, Context0, _Opts)
     {St, Context} = get_state(UserInfo, InvoiceID, Context0),
     case get_payment_session(PaymentID, St) of
         PaymentSession when PaymentSession /= undefined ->
-            Payment = hg_invoice_payment:get_payment(PaymentSession),
-            {{ok, Payment}, Context};
+            {hg_invoice_payment:get_payment(PaymentSession), Context};
         undefined ->
             throw({#payproc_InvoicePaymentNotFound{}, Context})
     end;
@@ -171,17 +169,22 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
     end.
 
 start(ID, Args, Context) ->
-    map_error(hg_machine:start(?NS, ID, Args, opts(Context))).
+    map_start_error(hg_machine:start(?NS, ID, Args, opts(Context))).
 
 call(ID, Args, Context) ->
     map_error(hg_machine:call(?NS, {id, ID}, Args, opts(Context))).
 
+map_error({{ok, Result}, Context}) ->
+    {Result, Context};
 map_error({{error, notfound}, Context}) ->
     throw({#payproc_UserInvoiceNotFound{}, Context});
 map_error({{error, Reason}, _Context}) ->
-    error(Reason);
-map_error({Ok, Context}) ->
-    {Ok, Context}.
+    error(Reason).
+
+map_start_error({ok, Context}) ->
+    {ok, Context};
+map_start_error({{error, Reason}, _Context}) ->
+    error(Reason).
 
 opts(Context) ->
     #{client_context => Context}.
