@@ -47,9 +47,14 @@ all(Revision) ->
 -spec get(revision(), ref()) -> data().
 
 get(Revision, Ref) ->
-    #'VersionedObject'{object = Object} = dmt_client:checkout_object({version, Revision}, Ref),
-    {_Tag, {_Name, _Ref, Data}} = Object,
-    Data.
+    try
+        #'VersionedObject'{object = Object} = dmt_client:checkout_object({version, Revision}, Ref),
+        {_Tag, {_Name, _Ref, Data}} = Object,
+        Data
+    catch
+        throw:object_not_found ->
+            error({object_not_found, {Revision, Ref}})
+    end.
 
 -spec commit(revision(), dmt:commit()) -> ok.
 
