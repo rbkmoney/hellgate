@@ -43,8 +43,8 @@ get_http_cowboy_spec() ->
 
 handle_function(
     'ProcessPayment',
-    {#'Context'{
-        session = #'Session'{target = Target, state = State},
+    {#prxprv_Context{
+        session = #prxprv_Session{target = Target, state = State},
         payment = PaymentInfo,
         options = _
     }},
@@ -55,8 +55,8 @@ handle_function(
 
 handle_function(
     'HandlePaymentCallback',
-    {Payload, #'Context'{
-        session = #'Session'{target = Target, state = State},
+    {Payload, #prxprv_Context{
+        session = #prxprv_Session{target = Target, state = State},
         payment = PaymentInfo,
         options = _
     }},
@@ -94,20 +94,20 @@ process_payment(?captured(), <<"sleeping">>, PaymentInfo, _, Context) ->
 handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts, Context) ->
     {respond(<<"sure">>, sleep(1, <<"sleeping">>)), Context}.
 
-finish(#'PaymentInfo'{payment = Payment}) ->
-    #'ProxyResult'{
+finish(#prxprv_PaymentInfo{payment = Payment}) ->
+    #prxprv_ProxyResult{
         intent = {finish, #'FinishIntent'{status = {ok, #'Ok'{}}}},
-        trx    = #domain_TransactionInfo{id = Payment#domain_InvoicePayment.id}
+        trx    = #domain_TransactionInfo{id = Payment#prxprv_InvoicePayment.id}
     }.
 
 sleep(Timeout, State) ->
-    #'ProxyResult'{
+    #prxprv_ProxyResult{
         intent     = {sleep, #'SleepIntent'{timer = {timeout, Timeout}}},
         next_state = State
     }.
 
 suspend(Tag, Timeout, State, UserInteraction) ->
-    #'ProxyResult'{
+    #prxprv_ProxyResult{
         intent     = {suspend, #'SuspendIntent'{
             tag     = Tag,
             timeout = {timeout, Timeout},
@@ -117,13 +117,13 @@ suspend(Tag, Timeout, State, UserInteraction) ->
     }.
 
 respond(Response, Result) ->
-    #'CallbackResult'{
+    #prxprv_CallbackResult{
         response = Response,
         result = Result
     }.
 
-get_payment_token(#'PaymentInfo'{payment = Payment}) ->
-    #domain_InvoicePayment{payer = #domain_Payer{payment_tool = PaymentTool}} = Payment,
+get_payment_token(#prxprv_PaymentInfo{payment = Payment}) ->
+    #prxprv_InvoicePayment{payer = #domain_Payer{payment_tool = PaymentTool}} = Payment,
     {'bank_card', #domain_BankCard{token = Token}} = PaymentTool,
     Token.
 

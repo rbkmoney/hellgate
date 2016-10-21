@@ -247,7 +247,7 @@ process(St, Options, Context) ->
 
 handle_process_result({Result, Context}, St) ->
     case Result of
-        ProxyResult = #'ProxyResult'{} ->
+        ProxyResult = #prxprv_ProxyResult{} ->
             {handle_proxy_result(ProxyResult, St), Context};
         {exception, Exception} ->
             {handle_exception(Exception, St), Context};
@@ -261,14 +261,14 @@ handle_callback(Payload, St, Options, Context) ->
 
 handle_callback_result({Result, Context}, St) ->
     case Result of
-        #'CallbackResult'{result = ProxyResult, response = Response} ->
+        #prxprv_CallbackResult{result = ProxyResult, response = Response} ->
             {What, {Events, Action}} = handle_proxy_result(ProxyResult, St),
             {{Response, {What, {[?session_ev(activated) | Events], Action}}}, Context};
         {error, _} = Error ->
             error({Error, Context})
     end.
 
-handle_proxy_result(#'ProxyResult'{intent = {_, Intent}, trx = Trx, next_state = ProxyState}, St) ->
+handle_proxy_result(#prxprv_ProxyResult{intent = {_, Intent}, trx = Trx, next_state = ProxyState}, St) ->
     Events1 = bind_transaction(Trx, St),
     {What, {Events2, Action}} = handle_proxy_intent(Intent, ProxyState, St),
     {What, {Events1 ++ Events2, Action}}.
@@ -357,22 +357,80 @@ construct_retry_strategy(_Target) ->
     genlib_retry:timecap(Timecap, genlib_retry:linear(infinity, Timeout)).
 
 construct_proxy_context(#st{payment = Payment, route = Route, session = Session}, Options) ->
-    #'Context'{
+    #prxprv_Context{
         session = construct_session(Session),
         payment = construct_payment_info(Payment, Options),
         options = collect_proxy_options(Route, Options)
     }.
 
 construct_session(#{target := Target, proxy_state := ProxyState}) ->
-    #'Session'{
+    #prxprv_Session{
         target = Target,
         state = ProxyState
     }.
 
-construct_payment_info(Payment, #{invoice := Invoice}) ->
-    #'PaymentInfo'{
-        invoice = Invoice,
-        payment = Payment
+construct_payment_info(Payment, Options) ->
+    #prxprv_PaymentInfo{
+        shop = construct_proxy_shop(Options),
+        invoice = construct_proxy_invoice(Options),
+        payment = construct_proxy_payment(Payment)
+    }.
+
+construct_proxy_payment(#domain_InvoicePayment{
+    id = ID,
+    created_at = CreatedAt,
+    trx = Trx,
+    payer = Payer,
+    cost = Cost
+}) ->
+    #prxprv_InvoicePayment{
+        id = ID,
+        created_at = CreatedAt,
+        trx = Trx,
+        payer = Payer,
+        cost = construct_proxy_cash(Cost)
+    }.
+
+construct_proxy_invoice(#{invoice := #domain_Invoice{
+    id = InvoiceID,
+    created_at = CreatedAt,
+    due = Due,
+    product = Product,
+    description = Description,
+    cost = Cost
+}}) ->
+    #prxprv_Invoice{
+        id = InvoiceID,
+        created_at =  CreatedAt,
+        due =  Due,
+        product = Product,
+        description =  Description,
+        cost = construct_proxy_cash(Cost)
+    }.
+
+construct_proxy_shop(Options = #{invoice := Invoice}) ->
+    #domain_Shop{
+        id = ShopID,
+        details = ShopDetails,
+        category = ShopCategoryRef
+    } = get_shop(Options),
+    ShopCategory = hg_domain:get(
+        get_invoice_revision(Invoice),
+        {category, ShopCategoryRef}
+    ),
+    #prxprv_Shop{
+        id = ShopID,
+        category = ShopCategory,
+        details = ShopDetails
+    }.
+
+construct_proxy_cash(#domain_Cash{
+    amount = Amount,
+    currency = Currency
+}) ->
+    #prxprv_Cash{
+        amount = Amount,
+        currency = Currency
     }.
 
 collect_proxy_options(
