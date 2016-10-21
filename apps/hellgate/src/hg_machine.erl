@@ -97,12 +97,7 @@ call(Ns, Ref, Args, #{client_context := Context0}) ->
     case call_automaton('Call', [Ns, Ref, wrap_args(Args)], Context0) of
         {Response, Context} when is_binary(Response) ->
             % should be specific to a processing interface already
-            case unmarshal_term(Response) of
-                {ok, _} = Ok ->
-                    {Ok, Context};
-                {exception, Exception} ->
-                    throw({Exception, Context})
-            end;
+            {unmarshal_term(Response), Context};
         {Error = {error, _}, Context} ->
             {Error, Context}
     end.
