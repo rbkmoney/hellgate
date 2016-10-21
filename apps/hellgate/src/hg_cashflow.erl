@@ -77,6 +77,6 @@ splice_postings([]) ->
 splice_posting({S0, D0, A0, C0}, Rest) ->
     % Postings with the same source and destination pairs should be accumulated
     % together.
-    {Ps, Rest1} = lists:splitwith(fun ({S, D, _, C}) -> S == S0 andalso D == D0 andalso C == C0 end, Rest),
+    {Ps, Rest1} = lists:partition(fun ({S, D, _, C}) -> S == S0 andalso D == D0 andalso C == C0 end, Rest),
     ASum = lists:foldl(fun ({_, _, A, _}, Acc) -> A + Acc end, A0, Ps),
     {[{S0, D0, ASum, C0}], Rest1}.
