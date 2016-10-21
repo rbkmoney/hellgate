@@ -1,3 +1,10 @@
+%%% Accounting
+%%%
+%%% TODO
+%%%  - Brittle posting id assignment, it should be a level upper, maybe even in
+%%%    `hg_cashflow`.
+%%%  - Stuff cash flow details in the posting description fields.
+
 -module(hg_accounting).
 
 -export([get_account/2]).
