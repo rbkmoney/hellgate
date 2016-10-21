@@ -27,12 +27,12 @@ services:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
 
   shumway:
-    image: dr.rbkmoney.com/rbkmoney/shumway:b9487a2313ede02780a90895eb74d43e57b931f6
+    image: dr.rbkmoney.com/rbkmoney/shumway:cd00af9d70b28a7851295fca39bdeded5a3606b0
     entrypoint: |
       java
       -Xmx512m
       -jar
-      /opt/shumway/shumway-0.0.1-SNAPSHOT.jar
+      /opt/shumway/shumway.jar
     command: |
       --spring.datasource.url=jdbc:postgresql://shumway_psql:5432/shumway
       --spring.datasource.username=shumway

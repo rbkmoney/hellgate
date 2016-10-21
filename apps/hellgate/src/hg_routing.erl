@@ -10,22 +10,21 @@
 -type t() :: dmsl_domain_thrift:'InvoicePaymentRoute'().
 -type varset() :: #{}. % FIXME
 
--spec choose(hg_domain:revision(), varset()) ->
+-spec choose(varset(), hg_domain:revision()) ->
     t() | undefined.
 
-choose(Revision, VS) ->
+choose(VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     Providers = collect_providers(Globals, VS, Revision),
-    {ProviderRef, TerminalRef} = choose_provider_terminal(Providers, VS),
+    choose_provider_terminal(Providers, VS).
+
+choose_provider_terminal([{ProviderRef, [TerminalRef | _]} | _], _) ->
     #domain_InvoicePaymentRoute{
         provider = ProviderRef,
         terminal = TerminalRef
-    }.
-
+    };
 choose_provider_terminal([{_ProviderRef, []} | Rest], VS) ->
     choose_provider_terminal(Rest, VS);
-choose_provider_terminal([{ProviderRef, [TerminalRef | _]} | _], _) ->
-    {ProviderRef, TerminalRef};
 choose_provider_terminal([], _) ->
     undefined.
 

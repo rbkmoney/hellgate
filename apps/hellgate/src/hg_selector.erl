@@ -5,7 +5,6 @@
 %%%  - Decide on semantics
 %%%     - First satisfiable predicate wins?
 %%%       If not, it would be harder to join / overlay selectors
-%%%  - Payment tool condition tests look somewhat odd
 %%%  - Domain revision is out of place. An `Opts`, anyone?
 
 -module(hg_selector).

@@ -47,7 +47,7 @@ groups() ->
 
 init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate]),
-    ok = hg_domain:insert(hg_ct_helper:get_domain_fixture()),
+    ok = hg_domain:insert(hg_ct_helper:construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.

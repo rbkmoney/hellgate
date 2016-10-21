@@ -686,7 +686,7 @@ get_account_set(#domain_Shop{accounts = Accounts}) ->
 
 get_account_state(AccountID, St = #st{}, Context0) ->
     ok = ensure_account(AccountID, get_party(St)),
-    {Account, Context} = hg_account:get_account_by_id(AccountID, Context0),
+    {Account, Context} = hg_accounting:get_account(AccountID, Context0),
     #{
         own_amount := OwnAmount,
         available_amount := AvailableAmount,
@@ -804,8 +804,8 @@ create_shop_account_set(
     #domain_CurrencyRef{
         symbolic_code = SymbolicCode
     } = CurrencyRef,
-    {GuaranteeID, ClientContext1} = hg_account:create_account(SymbolicCode, ClientContext0),
-    {GeneralID, ClientContext} = hg_account:create_account(SymbolicCode, ClientContext1),
+    {GuaranteeID, ClientContext1} = hg_accounting:create_account(SymbolicCode, ClientContext0),
+    {GeneralID, ClientContext} = hg_accounting:create_account(SymbolicCode, ClientContext1),
     ShopAccountSet = #domain_ShopAccountSet{
         currency = CurrencyRef,
         general = GeneralID,

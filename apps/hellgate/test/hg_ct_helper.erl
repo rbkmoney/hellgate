@@ -20,7 +20,7 @@
 -export([make_simple_payment_tool/0]).
 -export([get_hellgate_url/0]).
 
--export([get_domain_fixture/0]).
+-export([construct_domain_fixture/0]).
 
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 
@@ -215,7 +215,7 @@ make_due_date(LifetimeSeconds) ->
 
 %%
 
--spec get_domain_fixture() -> [hg_domain:object()].
+-spec construct_domain_fixture() -> [hg_domain:object()].
 
 -define(cur(ID), #domain_CurrencyRef{symbolic_code = ID}).
 -define(pmt(C, T), #domain_PaymentMethodRef{id = {C, T}}).
@@ -224,6 +224,7 @@ make_due_date(LifetimeSeconds) ->
 -define(prv(ID), #domain_ProviderRef{id = ID}).
 -define(trm(ID), #domain_TerminalRef{id = ID}).
 -define(pst(ID), #domain_PaymentsServiceTermsRef{id = ID}).
+-define(sas(ID), #domain_SystemAccountSetRef{id = ID}).
 
 -define(trmacc(Cur, Rec, Com),
     #domain_TerminalAccountSet{currency = ?cur(Cur), receipt = Rec, compensation = Com}).
@@ -241,14 +242,40 @@ make_due_date(LifetimeSeconds) ->
 -define(share(P, Q, C),
     {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C}}).
 
-get_domain_fixture() ->
+construct_domain_fixture() ->
+    Context = construct_context(),
+    {Accounts, _Context} = lists:foldl(
+        fun ({N, CurrencyCode}, {M, C0}) ->
+            {AccountID, C1} = hg_accounting:create_account(CurrencyCode, C0),
+            {M#{N => AccountID}, C1}
+        end,
+        {#{}, Context},
+        [
+            {system_compensation     , <<"RUB">>},
+            {terminal_1_receipt      , <<"USD">>},
+            {terminal_1_compensation , <<"USD">>},
+            {terminal_2_receipt      , <<"RUB">>},
+            {terminal_2_compensation , <<"RUB">>},
+            {terminal_3_receipt      , <<"RUB">>},
+            {terminal_3_compensation , <<"RUB">>}
+        ]
+    ),
     [
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
                 party_prototype = #domain_PartyPrototypeRef{id = 42},
                 providers = {value, [?prv(1), ?prv(2)]},
-                system_accounts = {predicates, []}
+                system_accounts = {value, [?sas(1)]}
+            }
+        }},
+        {system_account_set, #domain_SystemAccountSetObject{
+            ref = ?sas(1),
+            data = #domain_SystemAccountSet{
+                name = <<"Primaries">>,
+                description = <<"Primaries">>,
+                currency = ?cur(<<"RUB">>),
+                compensation = maps:get(system_compensation, Accounts)
             }
         }},
         {party_prototype, #domain_PartyPrototypeObject{
@@ -358,7 +385,11 @@ get_domain_fixture() ->
                     ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
                     ?cfpost(system, compensation, provider, compensation, ?share(18, 1000, payment_amount))
                 ],
-                accounts = ?trmacc(<<"USD">>, 10001, 10002),
+                accounts = ?trmacc(
+                    <<"USD">>,
+                    maps:get(terminal_1_receipt, Accounts),
+                    maps:get(terminal_1_compensation, Accounts)
+                ),
                 options = #{
                     <<"override">> => <<"Brominal 1">>
                 }
@@ -375,7 +406,11 @@ get_domain_fixture() ->
                     ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
                     ?cfpost(system, compensation, provider, compensation, ?share(19, 1000, payment_amount))
                 ],
-                accounts = ?trmacc(<<"RUB">>, 10003, 10004),
+                accounts = ?trmacc(
+                    <<"RUB">>,
+                    maps:get(terminal_2_receipt, Accounts),
+                    maps:get(terminal_2_compensation, Accounts)
+                ),
                 options = #{
                     <<"override">> => <<"Brominal 2">>
                 }
@@ -406,7 +441,11 @@ get_domain_fixture() ->
                     ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
                     ?cfpost(system, compensation, provider, compensation, ?share(16, 1000, payment_amount))
                 ],
-                accounts = ?trmacc(<<"RUB">>, 10005, 10006),
+                accounts = ?trmacc(
+                    <<"RUB">>,
+                    maps:get(terminal_3_receipt, Accounts),
+                    maps:get(terminal_3_compensation, Accounts)
+                ),
                 options = #{
                     <<"override">> => <<"Drominal 1">>
                 }
@@ -420,3 +459,7 @@ get_domain_fixture() ->
             }
         }}
     ].
+
+construct_context() ->
+    ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
+    woody_client:new_context(ReqID, hg_client_api).
