@@ -323,7 +323,10 @@ handle_callback_result({Result, Context}, Options, St) ->
             error(Error)
     end.
 
-handle_proxy_result(#prxprv_ProxyResult{intent = {_, Intent}, trx = Trx, next_state = ProxyState}, St, Options, Context) ->
+handle_proxy_result(
+    #prxprv_ProxyResult{intent = {_, Intent}, trx = Trx, next_state = ProxyState},
+    St, Options, Context
+) ->
     Events1 = bind_transaction(Trx, St),
     {{What, {Events2, Action}}, Context1} = handle_proxy_intent(Intent, ProxyState, St, Options, Context),
     {{What, {Events1 ++ Events2, Action}}, Context1}.
