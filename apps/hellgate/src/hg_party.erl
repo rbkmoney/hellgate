@@ -690,10 +690,10 @@ get_account_state(AccountID, St = #st{}, Context0) ->
     #{
         own_amount := OwnAmount,
         available_amount := AvailableAmount,
-        currency_sym_code := CurrencySymCode
+        currency_code := CurrencyCode
     } = Account,
     CurrencyRef = #domain_CurrencyRef{
-        symbolic_code = CurrencySymCode
+        symbolic_code = CurrencyCode
     },
     Currency = hg_domain:get(hg_domain:head(), {currency, CurrencyRef}),
     {#payproc_ShopAccountState{
