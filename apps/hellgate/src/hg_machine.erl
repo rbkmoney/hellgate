@@ -84,21 +84,21 @@
 %%
 
 -spec start(ns(), id(), term(), opts()) ->
-    {ok | {error, exists}, woody_client:context()}.
+    {{ok, term()} | {error, exists | term()}, woody_client:context()}.
 
 start(Ns, ID, Args, #{client_context := Context0}) ->
     call_automaton('Start', [Ns, ID, wrap_args(Args)], Context0).
 
 -spec call(ns(), ref(), term(), opts()) ->
-    {ok | {ok, term()} | {error, notfound | failed}, woody_client:context()} |
+    {{ok, term()} | {error, notfound | failed}, woody_client:context()} |
     no_return().
 
 call(Ns, Ref, Args, #{client_context := Context0}) ->
     case call_automaton('Call', [Ns, Ref, wrap_args(Args)], Context0) of
-        {Response, Context} when is_binary(Response) ->
+        {{ok, Response}, Context} when is_binary(Response) ->
             % should be specific to a processing interface already
-            {unmarshal_term(Response), Context};
-        {Error = {error, _}, Context} ->
+            {{ok, unmarshal_term(Response)}, Context};
+        {{error, _} = Error, Context} ->
             {Error, Context}
     end.
 
@@ -117,7 +117,7 @@ get_history(Ns, ID, AfterID, Limit, Opts) ->
 get_history(Ns, ID, Range, #{client_context := Context0}) ->
     LastID = #'HistoryRange'.'after',
     case call_automaton('GetHistory', [Ns, {id, ID}, Range], Context0) of
-        {History, Context} when is_list(History) ->
+        {{ok, History}, Context} when is_list(History) ->
             {{ok, unwrap_history(History, LastID)}, Context};
         {Error, Context} ->
             {Error, Context}
@@ -129,7 +129,10 @@ call_automaton(Function, Args, Context0) ->
     % TODO: hg_config module, aware of config entry semantics
     Url = genlib_app:env(hellgate, automaton_service_url),
     Service = {dmsl_state_processing_thrift, 'Automaton'},
-    try woody_client:call(Context0, {Service, Function, Args}, #{url => Url}) catch
+    try
+        {Result, Context1} = woody_client:call(Context0, {Service, Function, Args}, #{url => Url}),
+        {{ok, Result}, Context1}
+    catch
         {{exception, #'MachineAlreadyExists'{}}, Context} ->
             {{error, exists}, Context};
         {{exception, #'MachineNotFound'{}}, Context} ->

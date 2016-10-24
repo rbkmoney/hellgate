@@ -145,10 +145,10 @@ process_callback(Tag, Callback, Context) ->
 %%
 
 get_history(_UserInfo, InvoiceID, Context) ->
-    map_error(hg_machine:get_history(?NS, InvoiceID, opts(Context))).
+    map_history_error(hg_machine:get_history(?NS, InvoiceID, opts(Context))).
 
 get_history(_UserInfo, InvoiceID, AfterID, Limit, Context) ->
-    map_error(hg_machine:get_history(?NS, InvoiceID, AfterID, Limit, opts(Context))).
+    map_history_error(hg_machine:get_history(?NS, InvoiceID, AfterID, Limit, opts(Context))).
 
 get_state(UserInfo, InvoiceID, Context0) ->
     {{History, _LastID}, Context} = get_history(UserInfo, InvoiceID, Context0),
@@ -180,16 +180,26 @@ start(ID, Args, Context) ->
 call(ID, Args, Context) ->
     map_error(hg_machine:call(?NS, {id, ID}, Args, opts(Context))).
 
-map_error({{ok, Result}, Context}) ->
-    {Result, Context};
+map_error({{ok, CallResult}, Context}) ->
+    case CallResult of
+        {exception, Reason} ->
+            throw({Reason, Context});
+        {ok, Result} ->
+            {Result, Context}
+    end;
 map_error({{error, notfound}, Context}) ->
     throw({#payproc_UserInvoiceNotFound{}, Context});
-map_error({{exception, Reason}, Context}) ->
-    throw({Reason, Context});
 map_error({{error, Reason}, _Context}) ->
     error(Reason).
 
-map_start_error({ok, Context}) ->
+map_history_error({{ok, Result}, Context}) ->
+    {Result, Context};
+map_history_error({{error, notfound}, Context}) ->
+    throw({#payproc_PartyNotFound{}, Context});
+map_history_error({{error, Reason}, _Context}) ->
+    error(Reason).
+
+map_start_error({{ok, _}, Context}) ->
     {ok, Context};
 map_start_error({{error, Reason}, _Context}) ->
     error(Reason).

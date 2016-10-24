@@ -147,14 +147,10 @@ handle_function('GetShopAccountSet', {UserInfo, PartyID, ShopID}, Context0, _Opt
 
 
 get_history(PartyID, Context) ->
-    assert_nonempty_history(
-        map_error(hg_machine:get_history(?NS, PartyID, opts(Context)))
-    ).
+    map_history_error(hg_machine:get_history(?NS, PartyID, opts(Context))).
 
 get_history(PartyID, AfterID, Limit, Context) ->
-    assert_nonempty_history(
-        map_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, opts(Context)))
-    ).
+    map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, opts(Context))).
 
 %% TODO remove this hack as soon as machinegun learns to tell the difference between
 %%      nonexsitent machine and empty history
@@ -181,17 +177,27 @@ start(ID, Args, Context) ->
 call(ID, Args, Context) ->
     map_error(hg_machine:call(?NS, {id, ID}, Args, opts(Context))).
 
-map_start_error({ok, Context}) ->
+map_start_error({{ok, _}, Context}) ->
     {ok, Context};
 map_start_error({{error, exists}, Context}) ->
     throw({#payproc_PartyExists{}, Context}).
 
-map_error({{ok, Result}, Context}) ->
-    {Result, Context};
+map_history_error({{ok, Result}, Context}) ->
+    assert_nonempty_history({Result, Context});
+map_history_error({{error, notfound}, Context}) ->
+    throw({#payproc_PartyNotFound{}, Context});
+map_history_error({{error, Reason}, _Context}) ->
+    error(Reason).
+
+map_error({{ok, CallResult}, Context}) ->
+    case CallResult of
+        {exception, Reason} ->
+            throw({Reason, Context});
+        {ok, Result} ->
+            {Result, Context}
+    end;
 map_error({{error, notfound}, Context}) ->
     throw({#payproc_PartyNotFound{}, Context});
-map_error({{exception, Reason}, Context}) ->
-    throw({Reason, Context});
 map_error({{error, Reason}, _Context}) ->
     error(Reason).
 
