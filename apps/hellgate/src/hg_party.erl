@@ -198,8 +198,6 @@ map_error({{ok, CallResult}, Context}) ->
     end;
 map_error({{error, notfound}, Context}) ->
     throw({#payproc_PartyNotFound{}, Context});
-map_error({{exception, Reason}, Context}) ->
-    throw({Reason, Context});
 map_error({{error, Reason}, _Context}) ->
     error(Reason).
 
