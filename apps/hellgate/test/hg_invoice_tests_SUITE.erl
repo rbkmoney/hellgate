@@ -84,8 +84,10 @@ end_per_suite(C) ->
 
 -include("invoice_events.hrl").
 
+-define(invoice_state(Invoice, Payments), #payproc_InvoiceState{invoice = Invoice, payments = Payments}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
+-define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 
 -define(invalid_invoice_status(Status),
@@ -166,7 +168,11 @@ payment_success(C) ->
     PaymentParams = make_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client).
+    ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?paid()),
+        [?payment_w_status(PaymentID, ?captured())]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_success_on_second_try(config()) -> _ | no_return().
 

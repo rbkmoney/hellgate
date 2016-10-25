@@ -122,7 +122,13 @@ construct_party_ref(#payproc_PartyState{party = #domain_Party{id = ID}, revision
     #domain_PartyRef{id = ID, revision = Revision}.
 
 get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
-    #payproc_InvoiceState{invoice = Invoice, payments = Payments}.
+    #payproc_InvoiceState{
+        invoice = Invoice,
+        payments = [
+            hg_invoice_payment:get_payment(PaymentSession) ||
+                {_PaymentID, PaymentSession} <- Payments
+        ]
+    }.
 
 %%
 
