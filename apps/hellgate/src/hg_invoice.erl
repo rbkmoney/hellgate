@@ -182,10 +182,10 @@ call(ID, Args, Context) ->
 
 map_error({{ok, CallResult}, Context}) ->
     case CallResult of
-        {exception, Reason} ->
-            throw({Reason, Context});
         {ok, Result} ->
-            {Result, Context}
+            {Result, Context};
+        {exception, Reason} ->
+            throw({Reason, Context})
     end;
 map_error({{error, notfound}, Context}) ->
     throw({#payproc_UserInvoiceNotFound{}, Context});
