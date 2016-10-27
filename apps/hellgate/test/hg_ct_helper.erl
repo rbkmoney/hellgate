@@ -8,7 +8,6 @@
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
--export([make_invoice_params/6]).
 
 -export([make_category_ref/1]).
 -export([make_shop_details/1]).
@@ -53,9 +52,11 @@ start_app(hellgate = AppName) ->
     {start_app(AppName, [
         {host, ?HELLGATE_HOST},
         {port, ?HELLGATE_PORT},
-        {automaton_service_url, <<"http://machinegun:8022/v1/automaton">>},
-        {eventsink_service_url, <<"http://machinegun:8022/v1/event_sink">>},
-        {accounter_service_url, <<"http://shumway:8022/accounter">>}
+        {service_urls, #{
+            'Automaton' => <<"http://machinegun:8022/v1/automaton">>,
+            'EventSink' => <<"http://machinegun:8022/v1/event_sink">>,
+            'Accounter' => <<"http://shumway:8022/accounter">>
+        }}
     ]), #{
         hellgate_root_url => get_hellgate_url()
     }};
@@ -123,15 +124,9 @@ make_invoice_params(PartyID, ShopID, Product, Cost) ->
 -spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cost()) ->
     invoice_params().
 
-make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
-    make_invoice_params(PartyID, ShopID, Product, Due, Cost, []).
-
--spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cost(), term()) ->
-    invoice_params().
-
-make_invoice_params(PartyID, ShopID, Product, Due, Amount, Context) when is_integer(Amount) ->
-    make_invoice_params(PartyID, ShopID, Product, Due, {Amount, <<"RUB">>}, Context);
-make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}, Context) ->
+make_invoice_params(PartyID, ShopID, Product, Due, Amount) when is_integer(Amount) ->
+    make_invoice_params(PartyID, ShopID, Product, Due, {Amount, <<"RUB">>});
+make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}) ->
     #payproc_InvoiceParams{
         party_id = PartyID,
         shop_id  = ShopID,
@@ -141,7 +136,7 @@ make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}, Context) 
         currency = #domain_CurrencyRef{symbolic_code = Currency},
         context  = #'Content'{
             type = <<"application/octet-stream">>,
-            data = term_to_binary(Context)
+            data = <<"some_merchant_specific_data">>
         }
     }.
 
@@ -244,12 +239,13 @@ make_due_date(LifetimeSeconds) ->
 
 construct_domain_fixture() ->
     Context = construct_context(),
-    {Accounts, _Context} = lists:foldl(
-        fun ({N, CurrencyCode}, {M, C0}) ->
-            {AccountID, C1} = hg_accounting:create_account(CurrencyCode, C0),
-            {M#{N => AccountID}, C1}
+    hg_context:set(Context),
+    Accounts = lists:foldl(
+        fun ({N, CurrencyCode}, M) ->
+            AccountID = hg_accounting:create_account(CurrencyCode),
+            M#{N => AccountID}
         end,
-        {#{}, Context},
+        #{},
         [
             {system_compensation     , <<"RUB">>},
             {terminal_1_receipt      , <<"USD">>},
@@ -260,6 +256,7 @@ construct_domain_fixture() ->
             {terminal_3_compensation , <<"RUB">>}
         ]
     ),
+    hg_context:cleanup(),
     [
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},

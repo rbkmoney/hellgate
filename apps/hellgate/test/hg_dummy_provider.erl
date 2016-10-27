@@ -1,7 +1,7 @@
 -module(hg_dummy_provider).
--behaviour(woody_server_thrift_handler).
+-behaviour(hg_woody_wrapper).
 
--export([handle_function/4]).
+-export([handle_function/3]).
 
 -behaviour(hg_test_proxy).
 
@@ -38,8 +38,8 @@ get_http_cowboy_spec() ->
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("hellgate/include/invoice_events.hrl").
 
--spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), #{}) ->
-    {term(), woody_client:context()} | no_return().
+-spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+    term() | no_return().
 
 handle_function(
     'ProcessPayment',
@@ -48,10 +48,9 @@ handle_function(
         payment = PaymentInfo,
         options = _
     }},
-    Context,
     Opts
 ) ->
-    process_payment(Target, State, PaymentInfo, Opts, Context);
+    process_payment(Target, State, PaymentInfo, Opts);
 
 handle_function(
     'HandlePaymentCallback',
@@ -60,17 +59,16 @@ handle_function(
         payment = PaymentInfo,
         options = _
     }},
-    Context,
     Opts
 ) ->
-    handle_callback(Payload, Target, State, PaymentInfo, Opts, Context).
+    handle_callback(Payload, Target, State, PaymentInfo, Opts).
 
-process_payment(?processed(), undefined, _, _, Context) ->
-    {sleep(1, <<"sleeping">>), Context};
-process_payment(?processed(), <<"sleeping">>, PaymentInfo, _, Context) ->
-    {finish(PaymentInfo), Context};
+process_payment(?processed(), undefined, _, _) ->
+    sleep(1, <<"sleeping">>);
+process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
+    finish(PaymentInfo);
 
-process_payment(?captured(), undefined, PaymentInfo, _Opts, Context) ->
+process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
     Token3DS = hg_ct_helper:bank_card_tds_token(),
     case get_payment_token(PaymentInfo) of
         Token3DS ->
@@ -83,16 +81,16 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts, Context) ->
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
                 }
             },
-            {suspend(Tag, 2, <<"suspended">>, UserInteraction), Context};
+            suspend(Tag, 2, <<"suspended">>, UserInteraction);
         _ ->
             %% simple workflow without 3DS
-            {sleep(1, <<"sleeping">>), Context}
+            sleep(1, <<"sleeping">>)
     end;
-process_payment(?captured(), <<"sleeping">>, PaymentInfo, _, Context) ->
-    {finish(PaymentInfo), Context}.
+process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
+        finish(PaymentInfo).
 
-handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts, Context) ->
-    {respond(<<"sure">>, sleep(1, <<"sleeping">>)), Context}.
+handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
+    respond(<<"sure">>, sleep(1, <<"sleeping">>)).
 
 finish(#prxprv_PaymentInfo{payment = Payment}) ->
     #prxprv_ProxyResult{

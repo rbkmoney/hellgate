@@ -14,7 +14,7 @@
     supervisor:child_spec().
 
 get_child_spec(Module, Host, Port) ->
-    get_child_spec(Module, Host, Port, []).
+    get_child_spec(Module, Host, Port, #{}).
 
 -spec get_child_spec(module(), ip(), inet:port_number(), #{}) ->
     supervisor:child_spec().
@@ -29,7 +29,7 @@ get_child_spec(Module, IPStr, Port, Args) ->
             port => Port,
             net_opts => [],
             event_handler => hg_woody_event_handler,
-            handlers => [{Path, {Service, Module, Args}}]
+            handlers => [{Path, {Service, hg_woody_wrapper, Args#{handler => Module}}}]
         }
     ).
 

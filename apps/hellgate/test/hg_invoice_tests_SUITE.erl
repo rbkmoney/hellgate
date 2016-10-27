@@ -105,7 +105,6 @@ init_per_testcase(_Name, C) ->
 
 end_per_testcase(_Name, C) ->
     _ = unlink(?c(test_sup, C)),
-    _ = application:unset_env(hellgate, provider_proxy_url),
     exit(?c(test_sup, C), shutdown).
 
 -spec invalid_invoice_amount(config()) -> _ | no_return().

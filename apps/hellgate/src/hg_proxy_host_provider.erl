@@ -6,31 +6,31 @@
 -module(hg_proxy_host_provider).
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 
-%% Woody handler
+%% Woody handler called by hg_woody_wrapper
 
--behaviour(woody_server_thrift_handler).
+-behaviour(hg_woody_wrapper).
 
--export([handle_function/4]).
+-export([handle_function/3]).
 
 %%
 
 -type tag()      :: dmsl_base_thrift:'Tag'().
 -type callback() :: dmsl_proxy_provider_thrift:'Callback'().
 
--spec handle_function('ProcessCallback', {tag(), callback()}, woody_client:context(), _) ->
-    {term(), woody_client:context()} | no_return().
+-spec handle_function('ProcessCallback', {tag(), callback()}, hg_woody_wrapper:handler_opts()) ->
+    term() | no_return().
 
-handle_function('ProcessCallback', {Tag, Callback}, Context, _) ->
-    map_error(hg_invoice:process_callback(Tag, {provider, Callback}, Context)).
+handle_function('ProcessCallback', {Tag, Callback}, _) ->
+    map_error(hg_invoice:process_callback(Tag, {provider, Callback})).
 
-map_error({{ok, CallResult}, Context}) ->
+map_error({ok, CallResult}) ->
     case CallResult of
         {ok, Result} ->
-            {Result, Context};
+            Result;
         {exception, Reason} ->
-            throw({Reason, Context})
+            throw(Reason)
     end;
-map_error({{error, notfound}, Context}) ->
-    throw({#'InvalidRequest'{errors = [<<"notfound">>]}, Context});
-map_error({{error, Reason}, _Context}) ->
+map_error({error, notfound}) ->
+    throw(#'InvalidRequest'{errors = [<<"notfound">>]});
+map_error({error, Reason}) ->
     error(Reason).

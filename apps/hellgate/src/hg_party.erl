@@ -16,14 +16,14 @@
 
 %% Public
 
--export([get/3]).
--export([checkout/3]).
+-export([get/2]).
+-export([checkout/2]).
 
-%% Woody handler
+%% Woody handler called by hg_woody_wrapper
 
--behaviour(woody_server_thrift_handler).
+-behaviour(hg_woody_wrapper).
 
--export([handle_function/4]).
+-export([handle_function/3]).
 
 %% Machine callbacks
 
@@ -31,9 +31,9 @@
 
 -export([namespace/0]).
 
--export([init/3]).
--export([process_signal/3]).
--export([process_call/3]).
+-export([init/2]).
+-export([process_signal/2]).
+-export([process_call/2]).
 
 %% Event provider callbacks
 
@@ -43,166 +43,154 @@
 
 %%
 
--spec get(user_info(), party_id(), woody_client:context()) ->
-    {dmsl_payment_processing_thrift:'PartyState'(), woody_client:context()} | no_return().
+-spec get(user_info(), party_id()) ->
+    dmsl_payment_processing_thrift:'PartyState'() | no_return().
 
-get(UserInfo, PartyID, Context0) ->
-    {St, Context} = get_state(UserInfo, PartyID, Context0),
-    {get_party_state(St), Context}.
+get(UserInfo, PartyID) ->
+    St = get_state(UserInfo, PartyID),
+    get_party_state(St).
 
--spec checkout(party_id(), revision(), woody_client:context()) ->
-    {dmsl_domain_thrift:'Party'(), woody_client:context()}.
+-spec checkout(party_id(), revision()) ->
+    dmsl_domain_thrift:'Party'().
 
-checkout(PartyID, Revision, Context0) ->
-    {{History, _LastID}, Context} = get_history(PartyID, Context0),
+checkout(PartyID, Revision) ->
+    {History, _LastID} = get_history(PartyID),
     case checkout_history(History, Revision) of
         {ok, St} ->
-            {get_party(St), Context};
+            get_party(St);
         {error, Reason} ->
             error(Reason)
     end.
 
 %%
 
--define(try_w_context(Exp, Ctx),
-    try {Exp, Ctx} catch {exception, E} -> throw({E, Ctx}) end
-).
+-spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+    term()| no_return().
 
--spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), woody_client:context(), []) ->
-    {term(), woody_client:context()} | no_return().
+handle_function('Create', {UserInfo, PartyID}, _Opts) ->
+    start(PartyID, {UserInfo});
 
-handle_function('Create', {UserInfo, PartyID}, Context0, _Opts) ->
-    start(PartyID, {UserInfo}, Context0);
+handle_function('Get', {UserInfo, PartyID}, _Opts) ->
+    St = get_state(UserInfo, PartyID),
+    get_party_state(St);
 
-handle_function('Get', {UserInfo, PartyID}, Context0, _Opts) ->
-    {St, Context} = get_state(UserInfo, PartyID, Context0),
-    {get_party_state(St), Context};
+handle_function('GetShop', {UserInfo, PartyID, ID}, _Opts) ->
+    St = get_state(UserInfo, PartyID),
+    get_shop_state(ID, St);
 
-handle_function('GetShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
-    {St, Context} = get_state(UserInfo, PartyID, Context0),
-    ?try_w_context(get_shop_state(ID, St), Context);
-
-handle_function('GetEvents', {UserInfo, PartyID, Range}, Context0, _Opts) ->
+handle_function('GetEvents', {UserInfo, PartyID, Range}, _Opts) ->
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
-    get_public_history(UserInfo, PartyID, AfterID, Limit, Context0);
+    get_public_history(UserInfo, PartyID, AfterID, Limit);
 
-handle_function('Block', {UserInfo, PartyID, Reason}, Context0, _Opts) ->
-    call(PartyID, {block, Reason, UserInfo}, Context0);
+handle_function('Block', {UserInfo, PartyID, Reason}, _Opts) ->
+    call(PartyID, {block, Reason, UserInfo});
 
-handle_function('Unblock', {UserInfo, PartyID, Reason}, Context0, _Opts) ->
-    call(PartyID, {unblock, Reason, UserInfo}, Context0);
+handle_function('Unblock', {UserInfo, PartyID, Reason}, _Opts) ->
+    call(PartyID, {unblock, Reason, UserInfo});
 
-handle_function('Suspend', {UserInfo, PartyID}, Context0, _Opts) ->
-    call(PartyID, {suspend, UserInfo}, Context0);
+handle_function('Suspend', {UserInfo, PartyID}, _Opts) ->
+    call(PartyID, {suspend, UserInfo});
 
-handle_function('Activate', {UserInfo, PartyID}, Context0, _Opts) ->
-    call(PartyID, {activate, UserInfo}, Context0);
+handle_function('Activate', {UserInfo, PartyID}, _Opts) ->
+    call(PartyID, {activate, UserInfo});
 
-handle_function('CreateShop', {UserInfo, PartyID, Params}, Context0, _Opts) ->
-    call(PartyID, {create_shop, Params, UserInfo}, Context0);
+handle_function('CreateShop', {UserInfo, PartyID, Params}, _Opts) ->
+    call(PartyID, {create_shop, Params, UserInfo});
 
-handle_function('UpdateShop', {UserInfo, PartyID, ID, Update}, Context0, _Opts) ->
-    call(PartyID, {update_shop, ID, Update, UserInfo}, Context0);
+handle_function('UpdateShop', {UserInfo, PartyID, ID, Update}, _Opts) ->
+    call(PartyID, {update_shop, ID, Update, UserInfo});
 
-handle_function('BlockShop', {UserInfo, PartyID, ID, Reason}, Context0, _Opts) ->
-    call(PartyID, {block_shop, ID, Reason, UserInfo}, Context0);
+handle_function('BlockShop', {UserInfo, PartyID, ID, Reason}, _Opts) ->
+    call(PartyID, {block_shop, ID, Reason, UserInfo});
 
-handle_function('UnblockShop', {UserInfo, PartyID, ID, Reason}, Context0, _Opts) ->
-    call(PartyID, {unblock_shop, ID, Reason, UserInfo}, Context0);
+handle_function('UnblockShop', {UserInfo, PartyID, ID, Reason}, _Opts) ->
+    call(PartyID, {unblock_shop, ID, Reason, UserInfo});
 
-handle_function('SuspendShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
-    call(PartyID, {suspend_shop, ID, UserInfo}, Context0);
+handle_function('SuspendShop', {UserInfo, PartyID, ID}, _Opts) ->
+    call(PartyID, {suspend_shop, ID, UserInfo});
 
-handle_function('ActivateShop', {UserInfo, PartyID, ID}, Context0, _Opts) ->
-    call(PartyID, {activate_shop, ID, UserInfo}, Context0);
+handle_function('ActivateShop', {UserInfo, PartyID, ID}, _Opts) ->
+    call(PartyID, {activate_shop, ID, UserInfo});
 
-handle_function('GetClaim', {UserInfo, PartyID, ID}, Context0, _Opts) ->
-    {St, Context} = get_state(UserInfo, PartyID, Context0),
-    ?try_w_context(get_claim(ID, St), Context);
+handle_function('GetClaim', {UserInfo, PartyID, ID}, _Opts) ->
+    St = get_state(UserInfo, PartyID),
+    get_claim(ID, St);
 
-handle_function('GetPendingClaim', {UserInfo, PartyID}, Context0, _Opts) ->
-    {St, Context} = get_state(UserInfo, PartyID, Context0),
-    ?try_w_context(ensure_claim(get_pending_claim(St)), Context);
+handle_function('GetPendingClaim', {UserInfo, PartyID}, _Opts) ->
+    St = get_state(UserInfo, PartyID),
+    ensure_claim(get_pending_claim(St));
 
-handle_function('AcceptClaim', {UserInfo, PartyID, ID}, Context, _Opts) ->
-    call(PartyID, {accept_claim, ID, UserInfo}, Context);
+handle_function('AcceptClaim', {UserInfo, PartyID, ID}, _Opts) ->
+    call(PartyID, {accept_claim, ID, UserInfo});
 
-handle_function('DenyClaim', {UserInfo, PartyID, ID, Reason}, Context, _Opts) ->
-    call(PartyID, {deny_claim, ID, Reason, UserInfo}, Context);
+handle_function('DenyClaim', {UserInfo, PartyID, ID, Reason}, _Opts) ->
+    call(PartyID, {deny_claim, ID, Reason, UserInfo});
 
-handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, Context, _Opts) ->
-    call(PartyID, {revoke_claim, ID, Reason, UserInfo}, Context);
+handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, _Opts) ->
+    call(PartyID, {revoke_claim, ID, Reason, UserInfo});
 
-handle_function('GetShopAccountState', {UserInfo, PartyID, AccountID}, Context0, _Opts) ->
-    {St, Context1} = get_state(UserInfo, PartyID, Context0),
-    try
-        get_account_state(AccountID, St, Context1)
-    catch
-        {exception, E} -> throw({E, Context1})
-    end;
+handle_function('GetShopAccountState', {UserInfo, PartyID, AccountID}, _Opts) ->
+    St = get_state(UserInfo, PartyID),
+    get_account_state(AccountID, St);
 
-handle_function('GetShopAccountSet', {UserInfo, PartyID, ShopID}, Context0, _Opts) ->
-    {St, Context} = get_state(UserInfo, PartyID, Context0),
-    ?try_w_context(get_account_set(ShopID, St), Context).
+handle_function('GetShopAccountSet', {UserInfo, PartyID, ShopID}, _Opts) ->
+    St = get_state(UserInfo, PartyID),
+    get_account_set(ShopID, St).
 
 
-get_history(PartyID, Context) ->
-    map_history_error(hg_machine:get_history(?NS, PartyID, opts(Context))).
+get_history(PartyID) ->
+    map_history_error(hg_machine:get_history(?NS, PartyID)).
 
-get_history(PartyID, AfterID, Limit, Context) ->
-    map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, opts(Context))).
+get_history(PartyID, AfterID, Limit) ->
+    map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
 
 %% TODO remove this hack as soon as machinegun learns to tell the difference between
 %%      nonexsitent machine and empty history
-assert_nonempty_history({{[], _LastID}, Context}) ->
-    throw({#payproc_PartyNotFound{}, Context});
-assert_nonempty_history({{[_ | _], _LastID}, _Context} = Result) ->
+assert_nonempty_history({[], _LastID}) ->
+    throw(#payproc_PartyNotFound{});
+assert_nonempty_history({[_ | _], _LastID} = Result) ->
     Result.
 
-get_state(_UserInfo, PartyID, Context0) ->
-    {{History, _LastID}, Context} = get_history(PartyID, Context0),
-    {collapse_history(History), Context}.
+get_state(_UserInfo, PartyID) ->
+    {History, _LastID} = get_history(PartyID),
+    collapse_history(History).
 
-get_public_history(_UserInfo, PartyID, AfterID, Limit, Context) ->
+get_public_history(_UserInfo, PartyID, AfterID, Limit) ->
     hg_history:get_public_history(
-        fun (ID, Lim, Ctx) -> get_history(PartyID, ID, Lim, Ctx) end,
+        fun (ID, Lim) -> get_history(PartyID, ID, Lim) end,
         fun (Event) -> publish_party_event({party, PartyID}, Event) end,
-        AfterID, Limit,
-        Context
+        AfterID, Limit
     ).
 
-start(ID, Args, Context) ->
-    map_start_error(hg_machine:start(?NS, ID, Args, opts(Context))).
+start(ID, Args) ->
+    map_start_error(hg_machine:start(?NS, ID, Args)).
 
-call(ID, Args, Context) ->
-    map_error(hg_machine:call(?NS, {id, ID}, Args, opts(Context))).
+call(ID, Args) ->
+    map_error(hg_machine:call(?NS, {id, ID}, Args)).
 
-map_start_error({{ok, _}, Context}) ->
-    {ok, Context};
-map_start_error({{error, exists}, Context}) ->
-    throw({#payproc_PartyExists{}, Context}).
+map_start_error({ok, _}) ->
+    ok;
+map_start_error({error, exists}) ->
+    throw(#payproc_PartyExists{}).
 
-map_history_error({{ok, Result}, Context}) ->
-    assert_nonempty_history({Result, Context});
-map_history_error({{error, notfound}, Context}) ->
-    throw({#payproc_PartyNotFound{}, Context});
-map_history_error({{error, Reason}, _Context}) ->
+map_history_error({ok, Result}) ->
+    assert_nonempty_history(Result);
+map_history_error({error, notfound}) ->
+    throw(#payproc_PartyNotFound{});
+map_history_error({error, Reason}) ->
     error(Reason).
 
-map_error({{ok, CallResult}, Context}) ->
+map_error({ok, CallResult}) ->
     case CallResult of
         {ok, Result} ->
-            {Result, Context};
+            Result;
         {exception, Reason} ->
-            throw({Reason, Context})
+            throw(Reason)
     end;
-map_error({{error, notfound}, Context}) ->
-    throw({#payproc_PartyNotFound{}, Context});
-map_error({{error, Reason}, _Context}) ->
+map_error({error, notfound}) ->
+    throw(#payproc_PartyNotFound{});
+map_error({error, Reason}) ->
     error(Reason).
-
-opts(Context) ->
-    #{client_context => Context}.
 
 %%
 
@@ -252,25 +240,25 @@ publish_event(_InvoiceID, _) ->
 namespace() ->
     ?NS.
 
--spec init(party_id(), {user_info()}, hg_machine:context()) ->
-    {hg_machine:result(ev()), hg_machine:context()}.
+-spec init(party_id(), {user_info()}) ->
+    hg_machine:result(ev()).
 
-init(ID, {_UserInfo}, Context0) ->
+init(ID, {_UserInfo}) ->
     {ok, StEvents} = create_party(ID, {#st{}, []}),
     Revision = hg_domain:head(),
     ShopParams = get_shop_prototype_params(Revision),
-    {Changeset, Context} = create_shop(ShopParams, ?active(), Revision, StEvents, Context0),
+    Changeset = create_shop(ShopParams, ?active(), Revision, StEvents),
     {_ClaimID, StEvents1} = submit_accept_claim(Changeset, StEvents),
-    {ok(StEvents1), Context}.
+    ok(StEvents1).
 
--spec process_signal(hg_machine:signal(), hg_machine:history(ev()), hg_machine:context()) ->
-    {hg_machine:result(ev()), hg_machine:context()}.
+-spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
+    hg_machine:result(ev()).
 
-process_signal(timeout, _History, Context) ->
-    {ok(), Context};
+process_signal(timeout, _History) ->
+    ok();
 
-process_signal({repair, _}, _History, Context) ->
-    {ok(), Context}.
+process_signal({repair, _}, _History) ->
+    ok().
 
 -type call() ::
     {suspend | activate, user_info()}.
@@ -278,14 +266,16 @@ process_signal({repair, _}, _History, Context) ->
 -type response() ::
     ok | {ok, term()} | {exception, term()}.
 
--spec process_call(call(), hg_machine:history(ev()), hg_machine:context()) ->
-    {{response(), hg_machine:result(ev())}, hg_machine:context()}.
+-spec process_call(call(), hg_machine:history(ev())) ->
+    {response(), hg_machine:result(ev())}.
 
-process_call(Call, History, Context) ->
+process_call(Call, History) ->
     St = collapse_history(History),
-    try handle_call(Call, {St, []}, Context) catch
+    try
+        handle_call(Call, {St, []})
+    catch
         {exception, Exception} ->
-            {respond_w_exception(Exception), Context}
+            respond_w_exception(Exception)
     end.
 
 -spec raise(term()) -> no_return().
@@ -293,75 +283,75 @@ process_call(Call, History, Context) ->
 raise(What) ->
     throw({exception, What}).
 
-handle_call({block, Reason, _UserInfo}, StEvents0, Context) ->
+handle_call({block, Reason, _UserInfo}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
     {ClaimID, StEvents1} = create_claim([{blocking, ?blocked(Reason)}], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({unblock, Reason, _UserInfo}, StEvents0, Context) ->
+handle_call({unblock, Reason, _UserInfo}, StEvents0) ->
     ok = assert_blocked(StEvents0),
     {ClaimID, StEvents1} = create_claim([{blocking, ?unblocked(Reason)}], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({suspend, _UserInfo}, StEvents0, Context) ->
+handle_call({suspend, _UserInfo}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
     ok = assert_active(StEvents0),
     {ClaimID, StEvents1} = create_claim([{suspension, ?suspended()}], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({activate, _UserInfo}, StEvents0, Context) ->
+handle_call({activate, _UserInfo}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
     ok = assert_suspended(StEvents0),
     {ClaimID, StEvents1} = create_claim([{suspension, ?active()}], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_shop, Params, _UserInfo}, StEvents0, Context0) ->
+handle_call({create_shop, Params, _UserInfo}, StEvents0) ->
     ok = assert_operable(StEvents0),
     Revision = hg_domain:head(),
-    {Changeset, Context} = create_shop(Params, Revision, StEvents0, Context0),
+    Changeset = create_shop(Params, Revision, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({update_shop, ID, Update, _UserInfo}, StEvents0, Context) ->
+handle_call({update_shop, ID, Update, _UserInfo}, StEvents0) ->
     ok = assert_operable(StEvents0),
     ok = assert_shop_operable(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {update, Update})], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({block_shop, ID, Reason, _UserInfo}, StEvents0, Context) ->
+handle_call({block_shop, ID, Reason, _UserInfo}, StEvents0) ->
     ok = assert_shop_unblocked(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {blocking, ?blocked(Reason)})], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({unblock_shop, ID, Reason, _UserInfo}, StEvents0, Context) ->
+handle_call({unblock_shop, ID, Reason, _UserInfo}, StEvents0) ->
     ok = assert_shop_blocked(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {blocking, ?unblocked(Reason)})], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({suspend_shop, ID, _UserInfo}, StEvents0, Context) ->
+handle_call({suspend_shop, ID, _UserInfo}, StEvents0) ->
     ok = assert_shop_unblocked(ID, StEvents0),
     ok = assert_shop_active(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {suspension, ?suspended()})], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({activate_shop, ID, _UserInfo}, StEvents0, Context) ->
+handle_call({activate_shop, ID, _UserInfo}, StEvents0) ->
     ok = assert_shop_unblocked(ID, StEvents0),
     ok = assert_shop_suspended(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {suspension, ?active()})], StEvents0),
-    {respond(get_claim_result(ClaimID, StEvents1), StEvents1), Context};
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({accept_claim, ID, _UserInfo}, StEvents0, Context) ->
+handle_call({accept_claim, ID, _UserInfo}, StEvents0) ->
     {ID, StEvents1} = accept_claim(ID, StEvents0),
-    {respond(ok, StEvents1), Context};
+    respond(ok, StEvents1);
 
-handle_call({deny_claim, ID, Reason, _UserInfo}, StEvents0, Context) ->
+handle_call({deny_claim, ID, Reason, _UserInfo}, StEvents0) ->
     {ID, StEvents1} = finalize_claim(ID, ?denied(Reason), StEvents0),
-    {respond(ok, StEvents1), Context};
+    respond(ok, StEvents1);
 
-handle_call({revoke_claim, ID, Reason, _UserInfo}, StEvents0, Context) ->
+handle_call({revoke_claim, ID, Reason, _UserInfo}, StEvents0) ->
     ok = assert_operable(StEvents0),
     {ID, StEvents1} = finalize_claim(ID, ?revoked(Reason), StEvents0),
-    {respond(ok, StEvents1), Context}.
+    respond(ok, StEvents1).
 
 %%
 
@@ -386,17 +376,17 @@ get_shop_state(ID, #st{party = Party, revision = Revision}) ->
 
 %%
 
-create_shop(ShopParams, Revision, StEvents, Context) ->
-    create_shop(ShopParams, ?suspended(), Revision, StEvents, Context).
+create_shop(ShopParams, Revision, StEvents) ->
+    create_shop(ShopParams, ?suspended(), Revision, StEvents).
 
-create_shop(ShopParams, Suspension, Revision, {St, _}, Context) ->
+create_shop(ShopParams, Suspension, Revision, {St, _}) ->
     ShopID = get_next_shop_id(get_pending_st(St)),
     Shop   = construct_shop(ShopID, ShopParams, Suspension, Revision),
-    {ShopAccountSet, Context1} = create_shop_account_set(Revision, Context),
-    {[
+    ShopAccountSet = create_shop_account_set(Revision),
+    [
         ?shop_creation(Shop),
         ?shop_modification(ShopID, ?accounts_created(ShopAccountSet))
-    ], Context1}.
+    ].
 
 construct_shop(ShopID, ShopParams, Suspension, Revision) ->
     ShopServices = get_shop_services(Revision),
@@ -692,9 +682,9 @@ get_account_set(#domain_Shop{accounts = undefined}) ->
 get_account_set(#domain_Shop{accounts = Accounts}) ->
     Accounts.
 
-get_account_state(AccountID, St = #st{}, Context0) ->
+get_account_state(AccountID, St = #st{}) ->
     ok = ensure_account(AccountID, get_party(St)),
-    {Account, Context} = hg_accounting:get_account(AccountID, Context0),
+    Account = hg_accounting:get_account(AccountID),
     #{
         own_amount := OwnAmount,
         available_amount := AvailableAmount,
@@ -704,12 +694,12 @@ get_account_state(AccountID, St = #st{}, Context0) ->
         symbolic_code = CurrencyCode
     },
     Currency = hg_domain:get(hg_domain:head(), {currency, CurrencyRef}),
-    {#payproc_ShopAccountState{
+    #payproc_ShopAccountState{
         account_id = AccountID,
         own_amount = OwnAmount,
         available_amount = AvailableAmount,
         currency = Currency
-    }, Context}.
+    }.
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
     case find_shop_account_set(AccountID, maps:to_list(Shops)) of
@@ -801,25 +791,19 @@ fold_opt([{E, Fun} | Rest], V) ->
 get_next_id(IDs) ->
     integer_to_binary(1 + lists:max([0 | lists:map(fun binary_to_integer/1, IDs)])).
 
-create_shop_account_set(
-    Revision,
-    Context = #{
-        client_context := ClientContext0
-    }
-) ->
+create_shop_account_set(Revision) ->
     ShopPrototype = get_shop_prototype(Revision),
     CurrencyRef = ShopPrototype#domain_ShopPrototype.currency,
     #domain_CurrencyRef{
         symbolic_code = SymbolicCode
     } = CurrencyRef,
-    {GuaranteeID, ClientContext1} = hg_accounting:create_account(SymbolicCode, ClientContext0),
-    {GeneralID, ClientContext} = hg_accounting:create_account(SymbolicCode, ClientContext1),
-    ShopAccountSet = #domain_ShopAccountSet{
+    GuaranteeID = hg_accounting:create_account(SymbolicCode),
+    GeneralID = hg_accounting:create_account(SymbolicCode),
+    #domain_ShopAccountSet{
         currency = CurrencyRef,
         general = GeneralID,
         guarantee = GuaranteeID
-    },
-    {ShopAccountSet, Context#{client_context => ClientContext}}.
+    }.
 
 get_shop_prototype_params(Revision) ->
     ShopPrototype = get_shop_prototype(Revision),

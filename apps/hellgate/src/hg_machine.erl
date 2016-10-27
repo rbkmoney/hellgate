@@ -19,20 +19,20 @@
 -callback namespace() ->
     ns().
 
--callback init(id(), args(), context()) ->
-    {result(), context()}.
+-callback init(id(), args()) ->
+    result().
 
 -type signal() ::
     timeout | {repair, args()}.
 
--callback process_signal(signal(), history(), context()) ->
-    {result(), context()}.
+-callback process_signal(signal(), history()) ->
+    result().
 
 -type call() :: _.
 -type response() :: ok | {ok, term()} | {exception, term()}.
 
--callback process_call(call(), history(), context()) ->
-    {{response(), result()}, context()}.
+-callback process_call(call(), history()) ->
+    {response(), result()}.
 
 -type context() :: #{
     client_context => woody_client:context()
@@ -50,10 +50,10 @@
 -export_type([result/1]).
 -export_type([context/0]).
 
--export([start/4]).
--export([call/4]).
--export([get_history/3]).
--export([get_history/5]).
+-export([start/3]).
+-export([call/3]).
+-export([get_history/2]).
+-export([get_history/4]).
 
 %% Dispatch
 
@@ -67,101 +67,98 @@
 -export([start_link/1]).
 -export([init/1]).
 
-%% Woody handler
+%% Woody handler called by hg_woody_wrapper
 
--behaviour(woody_server_thrift_handler).
+-behaviour(hg_woody_wrapper).
 
--export([handle_function/4]).
+-export([handle_function/3]).
 
 %%
 
 -include_lib("dmsl/include/dmsl_state_processing_thrift.hrl").
 
--type opts() :: #{
-    client_context => woody_client:context()
-}.
 
 %%
 
--spec start(ns(), id(), term(), opts()) ->
-    {{ok, term()} | {error, exists | term()}, woody_client:context()}.
+-spec start(ns(), id(), term()) ->
+    {ok, term()} | {error, exists | term()} | no_return().
 
-start(Ns, ID, Args, #{client_context := Context0}) ->
-    call_automaton('Start', [Ns, ID, wrap_args(Args)], Context0).
+start(Ns, ID, Args) ->
+    call_automaton('Start', [Ns, ID, wrap_args(Args)]).
 
--spec call(ns(), ref(), term(), opts()) ->
-    {{ok, term()} | {error, notfound | failed}, woody_client:context()} |
-    no_return().
+-spec call(ns(), ref(), term()) ->
+    {ok, term()} | {error, notfound | failed} | no_return().
 
-call(Ns, Ref, Args, #{client_context := Context0}) ->
-    case call_automaton('Call', [Ns, Ref, wrap_args(Args)], Context0) of
-        {{ok, Response}, Context} when is_binary(Response) ->
+call(Ns, Ref, Args) ->
+    case call_automaton('Call', [Ns, Ref, wrap_args(Args)]) of
+        {ok, Response} when is_binary(Response) ->
             % should be specific to a processing interface already
-            {{ok, unmarshal_term(Response)}, Context};
-        {{error, _} = Error, Context} ->
-            {Error, Context}
+            {ok, unmarshal_term(Response)};
+        {error, _} = Error ->
+            Error
     end.
 
--spec get_history(ns(), id(), opts()) ->
-    {{ok, {history(), event_id()}} | {error, notfound | failed}, woody_client:context()} | no_return().
+-spec get_history(ns(), id()) ->
+    {ok, {history(), event_id()}} | {error, notfound | failed} | no_return().
 
-get_history(Ns, ID, Opts) ->
-    get_history(Ns, ID, #'HistoryRange'{}, Opts).
+get_history(Ns, ID) ->
+    get_history(Ns, ID, #'HistoryRange'{}).
 
--spec get_history(ns(), id(), undefined | event_id(), undefined | non_neg_integer(), opts()) ->
-    {{ok, {history(), event_id()}} | {error, notfound | failed}, woody_client:context()} | no_return().
+-spec get_history(ns(), id(), undefined | event_id(), undefined | non_neg_integer()) ->
+    {ok, {history(), event_id()}} | {error, notfound | failed} | no_return().
 
-get_history(Ns, ID, AfterID, Limit, Opts) ->
-    get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}, Opts).
+get_history(Ns, ID, AfterID, Limit) ->
+    get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}).
 
-get_history(Ns, ID, Range, #{client_context := Context0}) ->
+get_history(Ns, ID, Range) ->
     LastID = #'HistoryRange'.'after',
-    case call_automaton('GetHistory', [Ns, {id, ID}, Range], Context0) of
-        {{ok, History}, Context} when is_list(History) ->
-            {{ok, unwrap_history(History, LastID)}, Context};
-        {Error, Context} ->
-            {Error, Context}
+    case call_automaton('GetHistory', [Ns, {id, ID}, Range]) of
+        {ok, History} when is_list(History) ->
+            {ok, unwrap_history(History, LastID)};
+        Error ->
+            Error
     end.
 
 %%
 
-call_automaton(Function, Args, Context0) ->
-    % TODO: hg_config module, aware of config entry semantics
-    Url = genlib_app:env(hellgate, automaton_service_url),
-    Service = {dmsl_state_processing_thrift, 'Automaton'},
-    try
-        {Result, Context1} = woody_client:call(Context0, {Service, Function, Args}, #{url => Url}),
-        {{ok, Result}, Context1}
-    catch
-        {{exception, #'MachineAlreadyExists'{}}, Context} ->
-            {{error, exists}, Context};
-        {{exception, #'MachineNotFound'{}}, Context} ->
-            {{error, notfound}, Context};
-        {{exception, #'MachineFailed'{}}, Context} ->
-            {{error, failed}, Context}
+call_automaton(Function, Args) ->
+    Result = hg_woody_wrapper:call_safe('Automaton', Function, Args),
+    case Result of
+        {exception, #'MachineAlreadyExists'{}} ->
+            {error, exists};
+        {exception, #'MachineNotFound'{}} ->
+            {error, notfound};
+        {exception, #'MachineFailed'{}} ->
+            {error, failed};
+        {exception, Reason} ->
+            throw(Reason);
+        {error, Reason} ->
+            error(Reason);
+        _ ->
+            {ok, Result}
     end.
 
 %%
 
 -type func() :: 'ProcessSignal' | 'ProcessCall'.
 
--spec handle_function(func(), woody_server_thrift_handler:args(), woody_client:context(), [ns()]) ->
-    {term(), woody_client:context()} | no_return().
+-spec handle_function(func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+    term() | no_return().
 
-handle_function('ProcessSignal', {Args}, Context0, [Ns]) ->
+handle_function('ProcessSignal', {Args}, #{ns := Ns} = _Opts) ->
     _ = hg_utils:logtag_process(namespace, Ns),
     #'SignalArgs'{signal = {_Type, Signal}, history = History} = Args,
-    dispatch_signal(Ns, Signal, History, Context0);
+    dispatch_signal(Ns, Signal, History);
 
-handle_function('ProcessCall', {Args}, Context0, [Ns]) ->
+handle_function('ProcessCall', {Args}, #{ns := Ns} = _Opts) ->
     _ = hg_utils:logtag_process(namespace, Ns),
     #'CallArgs'{arg = Payload, history = History} = Args,
-    dispatch_call(Ns, Payload, History, Context0).
+    dispatch_call(Ns, Payload, History).
 
 %%
 
--spec dispatch_signal(ns(), Signal, hg_machine:history(), woody_client:context()) ->
-    {Result, woody_client:context()} when
+-spec dispatch_signal(ns(), Signal, hg_machine:history()) ->
+    Result when
         Signal ::
             dmsl_state_processing_thrift:'InitSignal'() |
             dmsl_state_processing_thrift:'TimeoutSignal'() |
@@ -169,27 +166,27 @@ handle_function('ProcessCall', {Args}, Context0, [Ns]) ->
         Result ::
             dmsl_state_processing_thrift:'SignalResult'().
 
-dispatch_signal(Ns, #'InitSignal'{id = ID, arg = Payload}, [], Context0) ->
+dispatch_signal(Ns, #'InitSignal'{id = ID, arg = Payload}, []) ->
     Args = unwrap_args(Payload),
     _ = lager:debug("dispatch init with id = ~s and args = ~p", [ID, Args]),
     Module = get_handler_module(Ns),
-    {Result, #{client_context := Context}} = Module:init(ID, Args, create_context(Context0)),
-    {marshal_signal_result(Result), Context};
+    Result = Module:init(ID, Args),
+    marshal_signal_result(Result);
 
-dispatch_signal(Ns, #'TimeoutSignal'{}, History0, Context0) ->
+dispatch_signal(Ns, #'TimeoutSignal'{}, History0) ->
     History = unwrap_events(History0),
     _ = lager:debug("dispatch timeout with history = ~p", [History]),
     Module = get_handler_module(Ns),
-    {Result, #{client_context := Context}} = Module:process_signal(timeout, History, create_context(Context0)),
-    {marshal_signal_result(Result), Context};
+    Result = Module:process_signal(timeout, History),
+    marshal_signal_result(Result);
 
-dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, History0, Context0) ->
+dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, History0) ->
     Args = unwrap_args(Payload),
     History = unwrap_events(History0),
     _ = lager:debug("dispatch repair with args = ~p and history: ~p", [Args, History]),
     Module = get_handler_module(Ns),
-    {Result, #{client_context := Context}} = Module:process_signal({repair, Args}, History, create_context(Context0)),
-    {marshal_signal_result(Result), Context}.
+    Result = Module:process_signal({repair, Args}, History),
+    marshal_signal_result(Result).
 
 marshal_signal_result({Events, Action}) ->
     _ = lager:debug("signal result with events = ~p and action = ~p", [Events, Action]),
@@ -198,18 +195,18 @@ marshal_signal_result({Events, Action}) ->
         action = Action
     }.
 
--spec dispatch_call(ns(), Call, hg_machine:history(), woody_client:context()) ->
-    {Result, woody_client:context()} when
+-spec dispatch_call(ns(), Call, hg_machine:history()) ->
+    Result when
         Call :: dmsl_state_processing_thrift:'Args'(),
         Result :: dmsl_state_processing_thrift:'CallResult'().
 
-dispatch_call(Ns, Payload, History0, Context0) ->
+dispatch_call(Ns, Payload, History0) ->
     Args = unwrap_args(Payload),
     History = unwrap_events(History0),
     _ = lager:debug("dispatch call with args = ~p and history: ~p", [Args, History]),
     Module = get_handler_module(Ns),
-    {Result, #{client_context := Context}} = Module:process_call(Args, History, create_context(Context0)),
-    {marshal_call_result(Result), Context}.
+    Result = Module:process_call(Args, History),
+    marshal_call_result(Result).
 
 marshal_call_result({Response, {Events, Action}}) ->
     _ = lager:debug("call response = ~p with event = ~p and action = ~p", [Response, Events, Action]),
@@ -219,13 +216,10 @@ marshal_call_result({Response, {Events, Action}}) ->
         response = marshal_term(Response)
     }.
 
-create_context(ClientContext) ->
-    #{client_context => ClientContext}.
-
 %%
 
 -type service_handler() ::
-    {Path :: string(), {woody_t:service(), woody_t:handler(), [ns()]}}.
+    {Path :: string(), {woody_t:service(), woody_t:handler(), hg_woody_wrapper:handler_opts()}}.
 
 -spec get_child_spec([MachineHandler :: module()]) ->
     supervisor:child_spec().
@@ -246,7 +240,7 @@ get_service_handlers(MachineHandlers) ->
 get_service_handler(MachineHandler) ->
     Ns = MachineHandler:namespace(),
     {Path, Service} = hg_proto:get_service_spec(processor, #{namespace => Ns}),
-    {Path, {Service, ?MODULE, [Ns]}}.
+    {Path, {Service, hg_woody_wrapper, #{ns => Ns, handler => ?MODULE}}}.
 
 %%
 

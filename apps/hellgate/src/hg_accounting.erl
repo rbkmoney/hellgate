@@ -7,13 +7,13 @@
 
 -module(hg_accounting).
 
--export([get_account/2]).
+-export([get_account/1]).
+-export([create_account/1]).
 -export([create_account/2]).
--export([create_account/3]).
 
--export([plan/4]).
--export([commit/4]).
--export([rollback/4]).
+-export([plan/3]).
+-export([commit/3]).
+-export([rollback/3]).
 
 -include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
 
@@ -29,24 +29,24 @@
     currency_code => currency_code()
 }.
 
--spec get_account(AccountID :: integer(), woody_client:context())->
-    {account(), woody_client:context()}.
+-spec get_account(AccountID :: integer()) ->
+    account().
 
-get_account(AccountID, Context0) ->
-    {Result, Context} = call_accounter('GetAccountByID', [AccountID], Context0),
-    {construct_account(AccountID, Result), Context}.
+get_account(AccountID) ->
+    Result = call_accounter('GetAccountByID', [AccountID]),
+    construct_account(AccountID, Result).
 
--spec create_account(currency_code(), woody_client:context()) ->
-    {account_id(), woody_client:context()}.
+-spec create_account(currency_code()) ->
+    account_id().
 
-create_account(CurrencyCode, Context0) ->
-    create_account(CurrencyCode, undefined, Context0).
+create_account(CurrencyCode) ->
+    create_account(CurrencyCode, undefined).
 
--spec create_account(currency_code(), binary() | undefined, woody_client:context()) ->
-    {account_id(), woody_client:context()}.
+-spec create_account(currency_code(), binary() | undefined) ->
+    account_id().
 
-create_account(CurrencyCode, Description, Context0) ->
-    call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)], Context0).
+create_account(CurrencyCode, Description) ->
+    call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)]).
 
 construct_prototype(CurrencyCode, Description) ->
     #accounter_AccountPrototype{
@@ -59,28 +59,28 @@ construct_prototype(CurrencyCode, Description) ->
 -type accounts_map() :: #{hg_cashflow:account() => account_id()}.
 -type accounts_state() :: #{hg_cashflow:account() => account()}.
 
--spec plan(plan_id(), hg_cashflow:t(), accounts_map(), woody_client:context()) ->
-    {accounts_state(), woody_client:context()}.
+-spec plan(plan_id(), hg_cashflow:t(), accounts_map()) ->
+    accounts_state().
 
-plan(PlanID, Cashflow, AccountMap, Context0) ->
-    do('Hold', construct_plan(PlanID, Cashflow, AccountMap), AccountMap, Context0).
+plan(PlanID, Cashflow, AccountMap) ->
+    do('Hold', construct_plan(PlanID, Cashflow, AccountMap), AccountMap).
 
--spec commit(plan_id(), hg_cashflow:t(), accounts_map(), woody_client:context()) ->
-    {accounts_state(), woody_client:context()}.
+-spec commit(plan_id(), hg_cashflow:t(), accounts_map()) ->
+    accounts_state().
 
-commit(PlanID, Cashflow, AccountMap, Context0) ->
-    do('CommitPlan', construct_plan(PlanID, Cashflow, AccountMap), AccountMap, Context0).
+commit(PlanID, Cashflow, AccountMap) ->
+    do('CommitPlan', construct_plan(PlanID, Cashflow, AccountMap), AccountMap).
 
--spec rollback(plan_id(), hg_cashflow:t(), accounts_map(), woody_client:context()) ->
-    {accounts_state(), woody_client:context()}.
+-spec rollback(plan_id(), hg_cashflow:t(), accounts_map()) ->
+    accounts_state().
 
-rollback(PlanID, Cashflow, AccountMap, Context0) ->
-    do('RollbackPlan', construct_plan(PlanID, Cashflow, AccountMap), AccountMap, Context0).
+rollback(PlanID, Cashflow, AccountMap) ->
+    do('RollbackPlan', construct_plan(PlanID, Cashflow, AccountMap), AccountMap).
 
-do(Op, Plan, AccountMap, Context0) ->
+do(Op, Plan, AccountMap) ->
     try
-        {PlanLog, Context} = call_accounter(Op, [Plan], Context0),
-        {collect_accounts_state(PlanLog, AccountMap), Context}
+        PlanLog = call_accounter(Op, [Plan]),
+        collect_accounts_state(PlanLog, AccountMap)
     catch
         Exception ->
             error(Exception) % FIXME
@@ -144,7 +144,12 @@ construct_account(
 
 %%
 
-call_accounter(Function, Args, Context) ->
-    Url = genlib_app:env(hellgate, accounter_service_url),
-    Service = {dmsl_accounter_thrift, 'Accounter'},
-    woody_client:call(Context, {Service, Function, Args}, #{url => Url}).
+call_accounter(Function, Args) ->
+    Result = hg_woody_wrapper:call_safe('Accounter', Function, Args),
+    case Result of
+        {exception, Reason} ->
+            throw(Reason);
+        {error, Reason} ->
+            error(Reason);
+        _ -> Result
+    end.

@@ -66,7 +66,7 @@ get_api_child_spec(MachineHandlers) ->
     ).
 
 construct_service_handler(Name, Module) ->
-    construct_service_handler(Name, Module, []).
+    construct_service_handler(Name, hg_woody_wrapper, #{handler => Module}).
 
 construct_service_handler(Name, Module, Opts) ->
     {Path, Service} = hg_proto:get_service_spec(Name),

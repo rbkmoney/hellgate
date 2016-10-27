@@ -32,11 +32,11 @@
 
 %% Machine like
 
--export([init/4]).
--export([start_session/2]).
+-export([init/3]).
+-export([start_session/1]).
 
--export([process_signal/4]).
--export([process_call/4]).
+-export([process_signal/3]).
+-export([process_call/3]).
 
 -export([merge_event/2]).
 
@@ -99,10 +99,10 @@ get_payment(#st{payment = Payment}) ->
     invoice => invoice()
 }.
 
--spec init(payment_id(), _, opts(), hg_machine:context()) ->
-    {hg_machine:result(), hg_machine:context()}.
+-spec init(payment_id(), _, opts()) ->
+    hg_machine:result().
 
-init(PaymentID, PaymentParams, Opts, Context) ->
+init(PaymentID, PaymentParams, Opts) ->
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Revision = get_invoice_revision(Invoice),
@@ -118,16 +118,15 @@ init(PaymentID, PaymentParams, Opts, Context) ->
         collect_cash_flow_context(Invoice, Payment)
     ),
     AccountMap = collect_account_map(Computed, Shop, Route, VS2, Revision),
-    {_AccountsState, ClientContext1} = hg_accounting:plan(
+    _AccountsState = hg_accounting:plan(
         construct_plan_id(Invoice, Payment),
         Computed,
-        AccountMap,
-        maps:get(client_context, Context)
+        AccountMap
     ),
     Cashflow = construct_payment_cash_flow(Computed, AccountMap),
     Events = [?payment_ev(?payment_started(Payment, Route, Cashflow))],
     Action = hg_machine_action:new(),
-    {{Events, Action}, Context#{client_context := ClientContext1}}.
+    {Events, Action}.
 
 construct_payment(PaymentID, Invoice, PaymentParams) ->
     #domain_InvoicePayment{
@@ -263,73 +262,73 @@ construct_plan_id(
 
 %%
 
--spec start_session(target(), hg_machine:context()) ->
-    {hg_machine:result(), hg_machine:context()}.
+-spec start_session(target()) ->
+    hg_machine:result().
 
-start_session(Target, Context) ->
+start_session(Target) ->
     Events = [?session_ev({started, Target})],
     Action = hg_machine_action:instant(),
-    {{Events, Action}, Context}.
+    {Events, Action}.
 
 %%
 
--spec process_signal(timeout, st(), opts(), hg_machine:context()) ->
-    {{next | done, hg_machine:result()}, hg_machine:context()}.
+-spec process_signal(timeout, st(), opts()) ->
+    {next | done, hg_machine:result()}.
 
-process_signal(timeout, St, Options, Context) ->
+process_signal(timeout, St, Options) ->
     case get_status(St) of
         active ->
-            process(St, Options, Context);
+            process(St, Options);
         suspended ->
-            {fail(construct_error(<<"provider_timeout">>), St), Context}
+            fail(construct_error(<<"provider_timeout">>), St)
     end.
 
--spec process_call({callback, _}, st(), opts(), hg_machine:context()) ->
-    {{_, {next | done, hg_machine:result()}}, hg_machine:context()}. % FIXME
+-spec process_call({callback, _}, st(), opts()) ->
+    {_, {next | done, hg_machine:result()}}. % FIXME
 
-process_call({callback, Payload}, St, Options, Context) ->
+process_call({callback, Payload}, St, Options) ->
     case get_status(St) of
         suspended ->
-            handle_callback(Payload, St, Options, Context);
+            handle_callback(Payload, St, Options);
         active ->
             % there's ultimately no way how we could end up here
             error(invalid_session_status)
     end.
 
-process(St, Options, Context) ->
+process(St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
-    handle_process_result(issue_process_call(ProxyContext, St, Options, Context), Options, St).
+    handle_process_result(issue_process_call(ProxyContext, Options, St), Options, St).
 
-handle_process_result({Result, Context}, Options, St) ->
+handle_process_result(Result, Options, St) ->
     case Result of
         ProxyResult = #prxprv_ProxyResult{} ->
-            handle_proxy_result(ProxyResult, St, Options, Context);
+            handle_proxy_result(ProxyResult, St, Options);
         {exception, Exception} ->
-            {handle_exception(Exception, St), Context};
+            handle_exception(Exception, St);
         {error, Error} ->
             error(Error)
     end.
 
-handle_callback(Payload, St, Options, Context) ->
+handle_callback(Payload, St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
-    handle_callback_result(issue_callback_call(Payload, ProxyContext, St, Options, Context), Options, St).
+    handle_callback_result(issue_callback_call(Payload, ProxyContext, Options, St), Options, St).
 
-handle_callback_result({Result, Context}, Options, St) ->
+handle_callback_result(Result, Options, St) ->
     case Result of
         #prxprv_CallbackResult{result = ProxyResult, response = Response} ->
-            {{What, {Events, Action}}, Context1} = handle_proxy_result(ProxyResult, St, Options, Context),
-            {{Response, {What, {[?session_ev(activated) | Events], Action}}}, Context1};
+            {What, {Events, Action}} = handle_proxy_result(ProxyResult, St, Options),
+            {Response, {What, {[?session_ev(activated) | Events], Action}}};
         {error, Error} ->
             error(Error)
     end.
 
 handle_proxy_result(
     #prxprv_ProxyResult{intent = {_, Intent}, trx = Trx, next_state = ProxyState},
-    St, Options, Context
+    St, Options
 ) ->
     Events1 = bind_transaction(Trx, St),
-    {{What, {Events2, Action}}, Context1} = handle_proxy_intent(Intent, ProxyState, St, Options, Context),
-    {{What, {Events1 ++ Events2, Action}}, Context1}.
+    {What, {Events2, Action}} = handle_proxy_intent(Intent, ProxyState, St, Options),
+    {What, {Events1 ++ Events2, Action}}.
 
 bind_transaction(undefined, _St) ->
     % no transaction yet
@@ -350,35 +349,33 @@ bind_transaction(Trx, #st{payment = #domain_InvoicePayment{id = PaymentID, trx =
             error(proxy_contract_violated)
     end.
 
-handle_proxy_intent(#'FinishIntent'{status = {ok, _}}, _ProxyState, St, Options, Context) ->
+handle_proxy_intent(#'FinishIntent'{status = {ok, _}}, _ProxyState, St, Options) ->
     PaymentID = get_payment_id(St),
     Target = get_target(St),
-    Context2 = case get_target(St) of
+    case get_target(St) of
         ?captured() ->
-            {_AccountsState, Context1} = commit_plan(St, Options, Context),
-            Context1;
+            _AccountsState = commit_plan(St, Options);
         ?cancelled(_) ->
-            {_AccountsState, Context1} = rollback_plan(St, Options, Context),
-            Context1;
+            _AccountsState = rollback_plan(St, Options);
         ?processed() ->
-            Context
+            ok % FIXME dont know what is this
     end,
     Events = [?payment_ev(?payment_status_changed(PaymentID, Target))],
     Action = hg_machine_action:new(),
-    {{done, {Events, Action}}, Context2};
+    {done, {Events, Action}};
 
-handle_proxy_intent(#'FinishIntent'{status = {failure, Error}}, _ProxyState, St, Options, Context) ->
-    {_AccountsState, Context1} = rollback_plan(St, Options, Context),
-    {fail(construct_error(Error), St), Context1};
+handle_proxy_intent(#'FinishIntent'{status = {failure, Error}}, _ProxyState, St, Options) ->
+    _AccountsState = rollback_plan(St, Options),
+    fail(construct_error(Error), St);
 
-handle_proxy_intent(#'SleepIntent'{timer = Timer}, ProxyState, _St, _Options, Context) ->
+handle_proxy_intent(#'SleepIntent'{timer = Timer}, ProxyState, _St, _Options) ->
     Action = hg_machine_action:set_timer(Timer),
     Events = [?session_ev({proxy_state_changed, ProxyState})],
-    {{next, {Events, Action}}, Context};
+    {next, {Events, Action}};
 
 handle_proxy_intent(
     #'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction},
-    ProxyState, St, _Options, Context
+    ProxyState, St, _Options
 ) ->
     Action = try_set_timer(Timer, hg_machine_action:set_tag(Tag)),
     Events = [
@@ -386,7 +383,7 @@ handle_proxy_intent(
         ?session_ev(suspended)
         | try_emit_interaction_event(UserInteraction, St)
     ],
-    {{next, {Events, Action}}, Context}.
+    {next, {Events, Action}}.
 
 try_set_timer(undefined, Action) ->
     Action;
@@ -425,18 +422,17 @@ construct_retry_strategy(_Target) ->
     Timeout = 10000,
     genlib_retry:timecap(Timecap, genlib_retry:linear(infinity, Timeout)).
 
-commit_plan(St, Options, Context) ->
-    finalize_plan(fun hg_accounting:commit/4, St, Options, Context).
+commit_plan(St, Options) ->
+    finalize_plan(fun hg_accounting:commit/3, St, Options).
 
-rollback_plan(St, Options, Context) ->
-    finalize_plan(fun hg_accounting:rollback/4, St, Options, Context).
+rollback_plan(St, Options) ->
+    finalize_plan(fun hg_accounting:rollback/3, St, Options).
 
-finalize_plan(Finalizer, St, Options, Context = #{client_context := ClientContext}) ->
+finalize_plan(Finalizer, St, Options) ->
     PlanID = construct_plan_id(get_invoice(Options), get_payment(St)),
     Computed = get_computed_cashflow(Options, St),
     AccountMap = get_account_map(St),
-    {Result, ClientContext1} = Finalizer(PlanID, Computed, AccountMap, ClientContext),
-    {Result, Context#{client_context := ClientContext1}}.
+    Finalizer(PlanID, Computed, AccountMap).
 
 get_account_map(#st{cashflow = #domain_InvoicePaymentCashFlow{account_map = V}}) ->
     V.
@@ -647,18 +643,15 @@ create_session(Target) ->
 
 %%
 
--define(SERVICE, {dmsl_proxy_provider_thrift, 'ProviderProxy'}).
+issue_process_call(ProxyContext, Opts, St) ->
+    issue_call('ProcessPayment', [ProxyContext], Opts, St).
 
-issue_process_call(ProxyContext, St, Opts, Context) ->
-    issue_call({?SERVICE, 'ProcessPayment', [ProxyContext]}, St, Opts, Context).
+issue_callback_call(Payload, ProxyContext, Opts, St) ->
+    issue_call('HandlePaymentCallback', [Payload, ProxyContext], Opts, St).
 
-issue_callback_call(Payload, ProxyContext, St, Opts, Context) ->
-    issue_call({?SERVICE, 'HandlePaymentCallback', [Payload, ProxyContext]}, St, Opts, Context).
-
-issue_call(Call, St, Opts, Context = #{client_context := ClientContext}) ->
+issue_call(Func, Args, Opts, St) ->
     CallOpts = get_call_options(St, Opts),
-    {Result, ClientContext1} = woody_client:call_safe(ClientContext, Call, CallOpts),
-    {Result, Context#{client_context := ClientContext1}}.
+    hg_woody_wrapper:call_safe('ProviderProxy', Func, Args, CallOpts).
 
 get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}}, Opts) ->
     Revision = get_invoice_revision(get_invoice(Opts)),

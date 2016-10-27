@@ -1,11 +1,10 @@
 -module(hg_event_sink).
 
-%% Woody handler
+%% Woody handler called by hg_woody_wrapper
 
--behaviour(woody_server_thrift_handler).
+-behaviour(hg_woody_wrapper).
 
--export([handle_function/4]).
--export([handle_error/4]).
+-export([handle_function/3]).
 
 %%
 
@@ -16,42 +15,41 @@
 -type event()    :: dmsl_payment_processing_thrift:'Event'().
 
 -spec handle_function
-    ('GetEvents', woody_server_thrift_handler:args(), woody_client:context(), []) ->
-        {[event()], woody_client:context()} | no_return();
-    ('GetLastEventID', woody_server_thrift_handler:args(), woody_client:context(), []) ->
-        {event_id(), woody_client:context()} | no_return().
+    ('GetEvents', woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+        [event()] | no_return();
+    ('GetLastEventID', woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+        event_id() | no_return().
 
-handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, Context0, _Opts) ->
+handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, _Opts) ->
     try
-        get_public_history(After, Limit, Context0)
+        get_public_history(After, Limit)
     catch
-        {{exception, #'EventNotFound'{}}, Context1} ->
-            throw({#payproc_EventNotFound{}, Context1})
+        {exception, #'EventNotFound'{}} ->
+            throw(#payproc_EventNotFound{})
     end;
 
-handle_function('GetLastEventID', {}, Context0, _Opts) ->
-    case get_history_range(undefined, 1, backward, Context0) of
-        {{[#'SinkEvent'{id = ID}], _LastID}, Context} ->
-            {ID, Context};
-        {{[], _LastID}, Context} ->
-            throw({#payproc_NoLastEvent{}, Context})
+handle_function('GetLastEventID', {}, _Opts) ->
+    case get_history_range(undefined, 1, backward) of
+        {[#'SinkEvent'{id = ID}], _LastID} ->
+            ID;
+        {[], _LastID} ->
+            throw(#payproc_NoLastEvent{})
     end.
 
-get_public_history(After, Limit, Context) ->
+get_public_history(After, Limit) ->
     hg_history:get_public_history(
-        fun get_history_range/3,
+        fun get_history_range/2,
         fun publish_event/1,
-        After, Limit,
-        Context
+        After, Limit
     ).
 
-get_history_range(After, Limit, Context0) ->
-    get_history_range(After, Limit, forward, Context0).
+get_history_range(After, Limit) ->
+    get_history_range(After, Limit, forward).
 
-get_history_range(After, Limit, Direction, Context0) ->
+get_history_range(After, Limit, Direction) ->
     HistoryRange = #'HistoryRange'{'after' = After, limit = Limit, direction = Direction},
-    {History, Context} = call_event_sink('GetHistory', [HistoryRange], Context0),
-    {{History, get_history_last_id(History, After)}, Context}.
+    History = call_event_sink('GetHistory', [HistoryRange]),
+    {History, get_history_last_id(History, After)}.
 
 get_history_last_id([], LastID) ->
     LastID;
@@ -64,13 +62,12 @@ publish_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event 
 
 -define(EVENTSINK_ID, <<"payproc">>).
 
-call_event_sink(Function, Args, Context) ->
-    Url = genlib_app:env(hellgate, eventsink_service_url),
-    Service = {dmsl_state_processing_thrift, 'EventSink'},
-    woody_client:call(Context, {Service, Function, [?EVENTSINK_ID | Args]}, #{url => Url}).
-
--spec handle_error(woody_t:func(), term(), woody_client:context(), []) ->
-    _.
-
-handle_error(_Function, _Reason, _Context, _Opts) ->
-    ok.
+call_event_sink(Function, Args) ->
+    Result = hg_woody_wrapper:call_safe('EventSink', Function, [?EVENTSINK_ID | Args]),
+    case Result of
+        {exception, Reason} ->
+            throw(Reason);
+        {error, Reason} ->
+            error(Reason);
+        _ -> Result
+    end.
