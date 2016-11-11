@@ -82,6 +82,8 @@ start_app(AppName, Env) ->
 -spec start_apps([app_name() | {app_name(), list()}]) -> [app_name()].
 
 start_apps(Apps) ->
+    % FIXME ASAP! tests fail due to lag between docker start and service in container start
+    timer:sleep(5000),
     lists:foldl(
         fun
             ({AppName, Env}, {AppsAcc, RetAcc}) ->
