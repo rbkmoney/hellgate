@@ -15,6 +15,8 @@
     term() | no_return()).
 
 %% API
+-export([call/3]).
+-export([call/4]).
 -export([call_safe/3]).
 -export([call_safe/4]).
 
@@ -33,6 +35,18 @@ handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
     after
         hg_context:cleanup()
     end.
+
+-spec call(atom(), woody_t:func(), list()) ->
+    term() | no_return().
+
+call(ServiceName, Function, Args) ->
+    map_result_error(call_safe(ServiceName, Function, Args)).
+
+-spec call(atom(), woody_t:func(), list(), Opts :: map()) ->
+    term() | no_return().
+
+call(ServiceName, Function, Args, Opts) ->
+    map_result_error(call_safe(ServiceName, Function, Args, Opts)).
 
 -spec call_safe(atom(), woody_t:func(), list()) ->
     term().
@@ -53,6 +67,13 @@ call_safe(ServiceName, Function, Args, Opts) ->
 
 %% Internal functions
 
+map_result_error({error, Reason}) ->
+    error(Reason);
+map_result_error({exception, _} = Exception) ->
+    throw(Exception);
+map_result_error(Result) ->
+    Result.
+
 get_service_url(ServiceName) ->
     maps:get(ServiceName, genlib_app:env(hellgate, service_urls)).
 
@@ -62,7 +83,7 @@ get_service_modname(ServiceName) ->
         'Accounter' -> {dmsl_accounter_thrift, 'Accounter'};
         'EventSink' -> {dmsl_state_processing_thrift, 'EventSink'};
         'ProviderProxy' -> {dmsl_proxy_provider_thrift, 'ProviderProxy'};
-        _ -> error(unknown_service, ServiceName)
+        _ -> error({unknown_service, ServiceName})
     end.
 
 

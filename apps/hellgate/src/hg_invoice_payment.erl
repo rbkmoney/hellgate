@@ -358,7 +358,7 @@ handle_proxy_intent(#'FinishIntent'{status = {ok, _}}, _ProxyState, St, Options)
         ?cancelled(_) ->
             _AccountsState = rollback_plan(St, Options);
         ?processed() ->
-            ok % FIXME dont know what is this
+            ok
     end,
     Events = [?payment_ev(?payment_status_changed(PaymentID, Target))],
     Action = hg_machine_action:new(),

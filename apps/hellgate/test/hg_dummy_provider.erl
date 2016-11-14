@@ -87,7 +87,7 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
             sleep(1, <<"sleeping">>)
     end;
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
-        finish(PaymentInfo).
+    finish(PaymentInfo).
 
 handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, sleep(1, <<"sleeping">>)).

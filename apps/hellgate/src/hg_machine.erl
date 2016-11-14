@@ -122,20 +122,16 @@ get_history(Ns, ID, Range) ->
 %%
 
 call_automaton(Function, Args) ->
-    Result = hg_woody_wrapper:call_safe('Automaton', Function, Args),
-    case Result of
+    try
+        Result = hg_woody_wrapper:call('Automaton', Function, Args),
+        {ok, Result}
+    catch
         {exception, #'MachineAlreadyExists'{}} ->
             {error, exists};
         {exception, #'MachineNotFound'{}} ->
             {error, notfound};
         {exception, #'MachineFailed'{}} ->
-            {error, failed};
-        {exception, Reason} ->
-            throw(Reason);
-        {error, Reason} ->
-            error(Reason);
-        _ ->
-            {ok, Result}
+            {error, failed}
     end.
 
 %%

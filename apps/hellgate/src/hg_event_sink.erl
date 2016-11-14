@@ -29,6 +29,7 @@ handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit
     end;
 
 handle_function('GetLastEventID', {}, _Opts) ->
+    % TODO handle thrift exceptions here
     case get_history_range(undefined, 1, backward) of
         {[#'SinkEvent'{id = ID}], _LastID} ->
             ID;
@@ -63,11 +64,4 @@ publish_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event 
 -define(EVENTSINK_ID, <<"payproc">>).
 
 call_event_sink(Function, Args) ->
-    Result = hg_woody_wrapper:call_safe('EventSink', Function, [?EVENTSINK_ID | Args]),
-    case Result of
-        {exception, Reason} ->
-            throw(Reason);
-        {error, Reason} ->
-            error(Reason);
-        _ -> Result
-    end.
+    hg_woody_wrapper:call('EventSink', Function, [?EVENTSINK_ID | Args]).

@@ -145,11 +145,4 @@ construct_account(
 %%
 
 call_accounter(Function, Args) ->
-    Result = hg_woody_wrapper:call_safe('Accounter', Function, Args),
-    case Result of
-        {exception, Reason} ->
-            throw(Reason);
-        {error, Reason} ->
-            error(Reason);
-        _ -> Result
-    end.
+    hg_woody_wrapper:call('Accounter', Function, Args).
