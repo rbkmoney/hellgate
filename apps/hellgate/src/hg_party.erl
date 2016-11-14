@@ -131,11 +131,7 @@ handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, _Opts) ->
 
 handle_function('GetShopAccountState', {UserInfo, PartyID, AccountID}, _Opts) ->
     St = get_state(UserInfo, PartyID),
-    try
-        get_account_state(AccountID, St)
-    catch
-        {exception, E} -> throw(E)
-    end;
+    get_account_state(AccountID, St);
 
 handle_function('GetShopAccountSet', {UserInfo, PartyID, ShopID}, _Opts) ->
     St = get_state(UserInfo, PartyID),

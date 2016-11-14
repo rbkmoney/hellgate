@@ -79,11 +79,16 @@ get_service_url(ServiceName) ->
 
 get_service_modname(ServiceName) ->
     case ServiceName of
-        'Automaton' -> {dmsl_state_processing_thrift, 'Automaton'};
-        'Accounter' -> {dmsl_accounter_thrift, 'Accounter'};
-        'EventSink' -> {dmsl_state_processing_thrift, 'EventSink'};
-        'ProviderProxy' -> {dmsl_proxy_provider_thrift, 'ProviderProxy'};
-        _ -> error({unknown_service, ServiceName})
+        'Automaton' ->
+            {dmsl_state_processing_thrift, 'Automaton'};
+        'Accounter' ->
+            {dmsl_accounter_thrift, 'Accounter'};
+        'EventSink' ->
+            {dmsl_state_processing_thrift, 'EventSink'};
+        'ProviderProxy' ->
+            {dmsl_proxy_provider_thrift, 'ProviderProxy'};
+        _ ->
+            error({unknown_service, ServiceName})
     end.
 
 

@@ -15,6 +15,7 @@
 -export([commit/3]).
 -export([rollback/3]).
 
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
 
 -type amount()        :: dmsl_domain_thrift:'Amount'().
@@ -33,8 +34,13 @@
     account().
 
 get_account(AccountID) ->
-    Result = call_accounter('GetAccountByID', [AccountID]),
-    construct_account(AccountID, Result).
+    try
+        Result = call_accounter('GetAccountByID', [AccountID]),
+        construct_account(AccountID, Result)
+    catch
+        {exception, #accounter_AccountNotFound{}} ->
+            throw(#payproc_AccountNotFound{})
+    end.
 
 -spec create_account(currency_code()) ->
     account_id().
