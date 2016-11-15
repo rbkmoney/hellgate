@@ -314,7 +314,7 @@ handle_call({create_shop, Params, _UserInfo}, StEvents0) ->
 
 handle_call({update_shop, ID, Update, _UserInfo}, StEvents0) ->
     ok = assert_operable(StEvents0),
-    ok = assert_shop_operable(ID, StEvents0),
+    ok = assert_shop_modification_allowed(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {update, Update})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
@@ -554,9 +554,10 @@ assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
 assert_suspension(#domain_Party{suspension = Suspension}, _) ->
     raise(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
 
-assert_shop_operable(ID, StEvents) ->
-    _ = assert_shop_unblocked(ID, StEvents),
-    _ = assert_shop_active(ID, StEvents).
+assert_shop_modification_allowed(ID, {St, Events}) ->
+    % We allow updates to pending shop
+    PendingSt = get_pending_st(St),
+    _ = assert_shop_unblocked(ID, {PendingSt, Events}).
 
 assert_shop_unblocked(ID, {St, _}) ->
     Shop = get_shop(ID, get_party(St)),

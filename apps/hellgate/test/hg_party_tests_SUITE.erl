@@ -39,6 +39,7 @@
 -export([shop_not_found_on_retrieval/1]).
 -export([shop_creation/1]).
 -export([shop_update/1]).
+-export([shop_update_before_confirm/1]).
 -export([shop_blocking/1]).
 -export([shop_unblocking/1]).
 -export([shop_already_blocked/1]).
@@ -110,6 +111,7 @@ groups() ->
         {shop_management, [sequence], [
             party_creation,
             shop_not_found_on_retrieval,
+            shop_update_before_confirm,
             shop_creation,
             shop_activation,
             shop_update,
@@ -257,6 +259,7 @@ end_per_testcase(_Name, _C) ->
 -spec shop_not_found_on_retrieval(config()) -> _ | no_return().
 -spec shop_creation(config()) -> _ | no_return().
 -spec shop_update(config()) -> _ | no_return().
+-spec shop_update_before_confirm(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
 -spec claim_already_accepted_on_revoke(config()) -> _ | no_return().
 -spec claim_already_accepted_on_accept(config()) -> _ | no_return().
@@ -361,6 +364,34 @@ shop_update(C) ->
     Claim = assert_claim_pending(Result, Client),
     ok = accept_claim(Claim, Client),
     ?shop_state(#domain_Shop{details = Details}) = hg_client_party:get_shop(ShopID, Client).
+
+shop_update_before_confirm(C) ->
+    Client = ?c(client, C),
+    Params = #payproc_ShopParams{
+        category = hg_ct_helper:make_category_ref(42),
+        details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>)
+    },
+    Result = hg_client_party:create_shop(Params, Client),
+    Claim1 = assert_claim_pending(Result, Client),
+    ?claim(
+        ClaimID1,
+        ?pending(),
+        [
+            {shop_creation, #domain_Shop{id = ShopID}},
+            {shop_modification, #payproc_ShopModificationUnit{
+                id = ShopID,
+                modification = {accounts_created, _}
+            }}
+        ]
+    ) = Claim1,
+    ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
+    NewDetails = hg_ct_helper:make_shop_details(<<"BARBIES SHOP">>, <<"Hot. Short. Clean.">>),
+    Update = #payproc_ShopUpdate{details = NewDetails},
+    UpdateResult = hg_client_party:update_shop(ShopID, Update, Client),
+    Claim2 = assert_claim_pending(UpdateResult, Client),
+    ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
+    ok = accept_claim(Claim2, Client),
+    ?shop_state(#domain_Shop{details = NewDetails}) = hg_client_party:get_shop(ShopID, Client).
 
 claim_acceptance(C) ->
     Client = ?c(client, C),
