@@ -20,6 +20,9 @@
 
 -spec assert_total_order(history()) -> ok | no_return().
 
+assert_total_order([]) ->
+    ok;
+
 assert_total_order([?event(ID, _, _, _) | Rest]) ->
     _ = lists:foldl(
         fun (?event(ID1, _, _, _), ID0) ->
@@ -32,6 +35,9 @@ assert_total_order([?event(ID, _, _, _) | Rest]) ->
     ok.
 
 -spec assert_contiguous_sequences(history()) -> ok | no_return().
+
+assert_contiguous_sequences([]) ->
+    ok;
 
 assert_contiguous_sequences(Events) ->
     InvoiceSeqs = orddict:to_list(lists:foldl(

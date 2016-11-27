@@ -11,7 +11,7 @@
 -export([create_account/1]).
 -export([create_account/2]).
 
--export([plan/3]).
+-export([plan/4]).
 -export([commit/3]).
 -export([rollback/3]).
 
@@ -22,11 +22,12 @@
 -type currency_code() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
 -type account_id()    :: dmsl_accounter_thrift:'AccountID'().
 -type plan_id()       :: dmsl_accounter_thrift:'PlanID'().
+-type batch_id()      :: dmsl_accounter_thrift:'BatchID'().
 
 -type account() :: #{
     account_id => account_id(),
     own_amount => amount(),
-    available_amount => amount(),
+    min_available_amount => amount(),
     currency_code => currency_code()
 }.
 
@@ -61,27 +62,27 @@ construct_prototype(CurrencyCode, Description) ->
     }.
 
 %%
-
+-type batch() :: [{batch_id(), hg_cashflow:t()}].
 -type accounts_map() :: #{hg_cashflow:account() => account_id()}.
 -type accounts_state() :: #{hg_cashflow:account() => account()}.
 
--spec plan(plan_id(), hg_cashflow:t(), accounts_map()) ->
+-spec plan(plan_id(), batch_id(), hg_cashflow:t(), accounts_map()) ->
     accounts_state().
 
-plan(PlanID, Cashflow, AccountMap) ->
-    do('Hold', construct_plan(PlanID, Cashflow, AccountMap), AccountMap).
+plan(PlanID, BatchID, Cashflow, AccountMap) ->
+    do('Hold', construct_plan_change(PlanID, BatchID, Cashflow, AccountMap), AccountMap).
 
--spec commit(plan_id(), hg_cashflow:t(), accounts_map()) ->
+-spec commit(plan_id(), [batch()], accounts_map()) ->
     accounts_state().
 
-commit(PlanID, Cashflow, AccountMap) ->
-    do('CommitPlan', construct_plan(PlanID, Cashflow, AccountMap), AccountMap).
+commit(PlanID, Batches, AccountMap) ->
+    do('CommitPlan', construct_plan(PlanID, Batches, AccountMap), AccountMap).
 
--spec rollback(plan_id(), hg_cashflow:t(), accounts_map()) ->
+-spec rollback(plan_id(), [batch()], accounts_map()) ->
     accounts_state().
 
-rollback(PlanID, Cashflow, AccountMap) ->
-    do('RollbackPlan', construct_plan(PlanID, Cashflow, AccountMap), AccountMap).
+rollback(PlanID, Batches, AccountMap) ->
+    do('RollbackPlan', construct_plan(PlanID, Batches, AccountMap), AccountMap).
 
 do(Op, Plan, AccountMap) ->
     try
@@ -92,24 +93,37 @@ do(Op, Plan, AccountMap) ->
             error(Exception) % FIXME
     end.
 
-construct_plan(PlanID, Cashflow, AccountMap) ->
+construct_plan_change(PlanID, BatchID, Cashflow, AccountMap) ->
+    #accounter_PostingPlanChange{
+        id = PlanID,
+        batch = #accounter_PostingBatch{
+            id = BatchID,
+            postings = collect_postings(Cashflow, AccountMap)
+        }
+    }.
+
+construct_plan(PlanID, Batches, AccountMap) ->
     #accounter_PostingPlan{
         id    = PlanID,
-        batch = collect_postings(Cashflow, AccountMap)
+        batch_list = [
+            #accounter_PostingBatch{
+                id = BatchID,
+                postings = collect_postings(Cashflow, AccountMap)
+            }
+        || {BatchID, Cashflow} <- Batches]
     }.
 
 collect_postings(Cashflow, AccountMap) ->
     [
         #accounter_Posting{
-            id                = ID,
             from_id           = resolve_account(Source, AccountMap),
             to_id             = resolve_account(Destination, AccountMap),
             amount            = Amount,
             currency_sym_code = CurrencyCode,
             description       = <<>>
         } ||
-            {ID, {Source, Destination, Amount, CurrencyCode}} <-
-                lists:zip(lists:seq(1, length(Cashflow)), Cashflow)
+            {Source, Destination, Amount, CurrencyCode} <-
+             Cashflow
     ].
 
 resolve_account(Account, Accounts) ->
@@ -137,14 +151,14 @@ construct_account(
     AccountID,
     #accounter_Account{
         own_amount = OwnAmount,
-        available_amount = AvailableAmount,
-        currency_sym_code = CurrencyCode
+        currency_sym_code = CurrencyCode,
+        min_available_amount = MinAvailableAmount
     }
 ) ->
     #{
         account_id => AccountID,
         own_amount => OwnAmount,
-        available_amount => AvailableAmount,
+        min_available_amount => MinAvailableAmount,
         currency_code => CurrencyCode
     }.
 

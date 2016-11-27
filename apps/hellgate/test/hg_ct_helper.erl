@@ -378,7 +378,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                payment_method = #domain_PaymentMethodRef{id = {bank_card, visa}},
+                payment_method = ?pmt(bank_card, visa),
                 category = ?cat(1),
                 cash_flow = [
                     ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
@@ -399,7 +399,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 2">>,
                 description = <<"Brominal 2">>,
-                payment_method = #domain_PaymentMethodRef{id = {bank_card, mastercard}},
+                payment_method = ?pmt(bank_card, mastercard),
                 category = ?cat(1),
                 cash_flow = [
                     ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
@@ -448,6 +448,20 @@ construct_domain_fixture() ->
                 options = #{
                     <<"override">> => <<"Drominal 1">>
                 }
+            }
+        }},
+        {payment_method, #domain_PaymentMethodObject{
+            ref = ?pmt(bank_card, visa),
+            data = #domain_PaymentMethodDefinition{
+                name = <<"Visa bank card">>,
+                description = <<"Visa is a major brand of cards issued by Visa">>
+            }
+        }},
+        {payment_method, #domain_PaymentMethodObject{
+            ref =  ?pmt(bank_card, mastercard),
+            data = #domain_PaymentMethodDefinition{
+                name = <<"Mastercard bank card">>,
+                description = <<"For everything else, there's MasterCard.">>
             }
         }},
         {proxy, #domain_ProxyObject{

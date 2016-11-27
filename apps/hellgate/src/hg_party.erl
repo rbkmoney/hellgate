@@ -688,7 +688,7 @@ get_account_state(AccountID, St = #st{}) ->
     Account = hg_accounting:get_account(AccountID),
     #{
         own_amount := OwnAmount,
-        available_amount := AvailableAmount,
+        min_available_amount := MinAvailableAmount,
         currency_code := CurrencyCode
     } = Account,
     CurrencyRef = #domain_CurrencyRef{
@@ -698,7 +698,7 @@ get_account_state(AccountID, St = #st{}) ->
     #payproc_ShopAccountState{
         account_id = AccountID,
         own_amount = OwnAmount,
-        available_amount = AvailableAmount,
+        available_amount = MinAvailableAmount,
         currency = Currency
     }.
 

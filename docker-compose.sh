@@ -15,44 +15,43 @@ services:
       - shumway
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:f3c72168d9dfeb4da241d4eb5d6a29787c81faef
+    image: dr.rbkmoney.com/rbkmoney/dominant:be25663099fc549b14ec6d4b72bc72a76d4e2a66
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       - machinegun
 
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/machinegun:a48f9e93dd5a709d5f14db0c9785d43039282e86
+    image: dr.rbkmoney.com/rbkmoney/machinegun:faa1156dd07a5cc72413616e3c73d48767654d3c
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
 
   shumway:
-    image: dr.rbkmoney.com/rbkmoney/shumway:cd00af9d70b28a7851295fca39bdeded5a3606b0
-    entrypoint: |
-      java
-      -Xmx512m
-      -jar
-      /opt/shumway/shumway.jar
-    command: |
-      --spring.datasource.url=jdbc:postgresql://shumway_psql:5432/shumway
-      --spring.datasource.username=shumway
-      --spring.datasource.password=shumway
-    depends_on:
-      - shumway_psql
+    image: dr.rbkmoney.com/rbkmoney/shumway:ef494632710c3248a7d6a33fcbeb7944ce8fdd31
     restart: always
-
-  shumway_psql:
+    command: |
+      -Xmx512m
+      -jar /opt/shumway/shumway.jar
+      --spring.datasource.url=jdbc:postgresql://shumway-db:5432/shumway
+      --spring.datasource.username=postgres
+      --spring.datasource.password=postgres
+    depends_on:
+      - shumway-db
+    environment:
+      - SERVICE_NAME=shumway
+  shumway-db:
     image: dr.rbkmoney.com/rbkmoney/postgres:9.6
     environment:
-      - POSTGRES_DATABASE=shumway
-      - POSTGRES_USER=shumway
-      - POSTGRES_PASSWORD=shumway
+      - POSTGRES_DB=shumway
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - SERVICE_NAME=shumway-db
 
 networks:
   default:
     driver: bridge
     driver_opts:
       com.docker.network.enable_ipv6: "true"
-      com.docker.network.bridge.enable_ip_masquerade: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
 EOF
 

@@ -1,0 +1,1 @@
+-module(hg_dummy_inspector).

@@ -5,6 +5,8 @@
 -type ns() :: dmsl_base_thrift:'Namespace'().
 -type args() :: _.
 
+-type machine() :: dmsl_state_processing_thrift:'Machine'().
+
 -type event() :: event(_).
 -type event(T) :: {event_id(), timestamp(), T}.
 -type event_id() :: dmsl_base_thrift:'EventID'().
@@ -12,6 +14,9 @@
 
 -type history() :: history(_).
 -type history(T) :: [event(T)].
+
+-type history_range() :: dmsl_state_processing_thrift:'HistoryRange'().
+-type descriptor()    :: dmsl_state_processing_thrift:'MachineDescriptor'().
 
 -type result(T) :: {[T], hg_machine_action:t()}.
 -type result() :: result(_).
@@ -90,7 +95,8 @@ start(Ns, ID, Args) ->
     {ok, term()} | {error, notfound | failed} | no_return().
 
 call(Ns, Ref, Args) ->
-    case call_automaton('Call', [Ns, Ref, wrap_args(Args)]) of
+    Descriptor = prepare_descriptor(Ns, Ref, #'HistoryRange'{}),
+    case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
         {ok, Response} when is_binary(Response) ->
             % should be specific to a processing interface already
             {ok, unmarshal_term(Response)};
@@ -112,8 +118,9 @@ get_history(Ns, ID, AfterID, Limit) ->
 
 get_history(Ns, ID, Range) ->
     LastID = #'HistoryRange'.'after',
-    case call_automaton('GetHistory', [Ns, {id, ID}, Range]) of
-        {ok, History} when is_list(History) ->
+    Descriptor = prepare_descriptor(Ns, {id, ID}, Range),
+    case call_automaton('GetMachine', [Descriptor]) of
+        {ok, #'Machine'{history = History}} when is_list(History) ->
             {ok, unwrap_history(History, LastID)};
         Error ->
             Error
@@ -143,17 +150,17 @@ call_automaton(Function, Args) ->
 
 handle_function('ProcessSignal', {Args}, #{ns := Ns} = _Opts) ->
     _ = hg_utils:logtag_process(namespace, Ns),
-    #'SignalArgs'{signal = {_Type, Signal}, history = History} = Args,
-    dispatch_signal(Ns, Signal, History);
+    #'SignalArgs'{signal = {_Type, Signal}, machine = Machine} = Args,
+    dispatch_signal(Ns, Signal, Machine);
 
 handle_function('ProcessCall', {Args}, #{ns := Ns} = _Opts) ->
     _ = hg_utils:logtag_process(namespace, Ns),
-    #'CallArgs'{arg = Payload, history = History} = Args,
-    dispatch_call(Ns, Payload, History).
+    #'CallArgs'{arg = Payload, machine = Machine} = Args,
+    dispatch_call(Ns, Payload, Machine).
 
 %%
 
--spec dispatch_signal(ns(), Signal, hg_machine:history()) ->
+-spec dispatch_signal(ns(), Signal, machine()) ->
     Result when
         Signal ::
             dmsl_state_processing_thrift:'InitSignal'() |
@@ -162,21 +169,21 @@ handle_function('ProcessCall', {Args}, #{ns := Ns} = _Opts) ->
         Result ::
             dmsl_state_processing_thrift:'SignalResult'().
 
-dispatch_signal(Ns, #'InitSignal'{id = ID, arg = Payload}, []) ->
+dispatch_signal(Ns, #'InitSignal'{arg = Payload}, #'Machine'{id = ID}) ->
     Args = unwrap_args(Payload),
     _ = lager:debug("dispatch init with id = ~s and args = ~p", [ID, Args]),
     Module = get_handler_module(Ns),
     Result = Module:init(ID, Args),
     marshal_signal_result(Result);
 
-dispatch_signal(Ns, #'TimeoutSignal'{}, History0) ->
+dispatch_signal(Ns, #'TimeoutSignal'{}, #'Machine'{history = History0}) ->
     History = unwrap_events(History0),
     _ = lager:debug("dispatch timeout with history = ~p", [History]),
     Module = get_handler_module(Ns),
     Result = Module:process_signal(timeout, History),
     marshal_signal_result(Result);
 
-dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, History0) ->
+dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, #'Machine'{history = History0}) ->
     Args = unwrap_args(Payload),
     History = unwrap_events(History0),
     _ = lager:debug("dispatch repair with args = ~p and history: ~p", [Args, History]),
@@ -186,17 +193,21 @@ dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, History0) ->
 
 marshal_signal_result({Events, Action}) ->
     _ = lager:debug("signal result with events = ~p and action = ~p", [Events, Action]),
-    #'SignalResult'{
+    Change = #'MachineStateChange'{
         events = wrap_events(Events),
+        aux_state = <<"">> %%% @TODO get state from process signal?
+    },
+    #'SignalResult'{
+        change = Change,
         action = Action
     }.
 
--spec dispatch_call(ns(), Call, hg_machine:history()) ->
+-spec dispatch_call(ns(), Call, machine()) ->
     Result when
         Call :: dmsl_state_processing_thrift:'Args'(),
         Result :: dmsl_state_processing_thrift:'CallResult'().
 
-dispatch_call(Ns, Payload, History0) ->
+dispatch_call(Ns, Payload, #'Machine'{history = History0}) ->
     Args = unwrap_args(Payload),
     History = unwrap_events(History0),
     _ = lager:debug("dispatch call with args = ~p and history: ~p", [Args, History]),
@@ -206,8 +217,13 @@ dispatch_call(Ns, Payload, History0) ->
 
 marshal_call_result({Response, {Events, Action}}) ->
     _ = lager:debug("call response = ~p with event = ~p and action = ~p", [Response, Events, Action]),
-    #'CallResult'{
+    Change = #'MachineStateChange'{
         events = wrap_events(Events),
+        aux_state = <<"">> %%% @TODO get state from process signal?
+    },
+
+    #'CallResult'{
+        change = Change,
         action = Action,
         response = marshal_term(Response)
     }.
@@ -300,3 +316,11 @@ marshal_term(V) ->
 
 unmarshal_term(B) ->
     binary_to_term(B).
+
+-spec prepare_descriptor(ns(), ref(), history_range()) -> descriptor().
+prepare_descriptor(NS, Ref, Range) ->
+    #'MachineDescriptor'{
+        ns = NS,
+        ref = Ref,
+        range = Range
+    }.

@@ -15,7 +15,7 @@
 %%
 
 -type tag()      :: dmsl_base_thrift:'Tag'().
--type callback() :: dmsl_proxy_provider_thrift:'Callback'().
+-type callback() :: dmsl_proxy_thrift:'Callback'().
 
 -spec handle_function('ProcessCallback', {tag(), callback()}, hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
