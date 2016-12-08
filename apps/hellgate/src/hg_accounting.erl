@@ -11,7 +11,7 @@
 -export([create_account/1]).
 -export([create_account/2]).
 
--export([plan/4]).
+-export([plan/3]).
 -export([commit/3]).
 -export([rollback/3]).
 
@@ -23,6 +23,9 @@
 -type account_id()    :: dmsl_accounter_thrift:'AccountID'().
 -type plan_id()       :: dmsl_accounter_thrift:'PlanID'().
 -type batch_id()      :: dmsl_accounter_thrift:'BatchID'().
+-type batch()         :: {batch_id(), hg_cashflow:t()}.
+
+-export_type([batch/0]).
 
 -type account() :: #{
     account_id => account_id(),
@@ -62,15 +65,14 @@ construct_prototype(CurrencyCode, Description) ->
     }.
 
 %%
--type batch() :: [{batch_id(), hg_cashflow:t()}].
 -type accounts_map() :: #{hg_cashflow:account() => account_id()}.
 -type accounts_state() :: #{hg_cashflow:account() => account()}.
 
--spec plan(plan_id(), batch_id(), hg_cashflow:t(), accounts_map()) ->
+-spec plan(plan_id(), batch(), accounts_map()) ->
     accounts_state().
 
-plan(PlanID, BatchID, Cashflow, AccountMap) ->
-    do('Hold', construct_plan_change(PlanID, BatchID, Cashflow, AccountMap), AccountMap).
+plan(PlanID, Batch, AccountMap) ->
+    do('Hold', construct_plan_change(PlanID, Batch, AccountMap), AccountMap).
 
 -spec commit(plan_id(), [batch()], accounts_map()) ->
     accounts_state().
@@ -93,7 +95,7 @@ do(Op, Plan, AccountMap) ->
             error(Exception) % FIXME
     end.
 
-construct_plan_change(PlanID, BatchID, Cashflow, AccountMap) ->
+construct_plan_change(PlanID, {BatchID, Cashflow}, AccountMap) ->
     #accounter_PostingPlanChange{
         id = PlanID,
         batch = #accounter_PostingBatch{
@@ -121,9 +123,8 @@ collect_postings(Cashflow, AccountMap) ->
             amount            = Amount,
             currency_sym_code = CurrencyCode,
             description       = <<>>
-        } ||
-            {Source, Destination, Amount, CurrencyCode} <-
-             Cashflow
+        }
+        || {Source, Destination, Amount, CurrencyCode} <- Cashflow
     ].
 
 resolve_account(Account, Accounts) ->

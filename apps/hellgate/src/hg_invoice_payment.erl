@@ -123,8 +123,7 @@ init(PaymentID, PaymentParams, Opts) ->
     AccountMap = collect_account_map(Computed, Shop, Route, VS2, Revision),
     _AccountsState = hg_accounting:plan(
         construct_plan_id(Invoice, Payment),
-        ?BATCH_ID,
-        Computed,
+        {?BATCH_ID, Computed},
         AccountMap
     ),
     Cashflow = construct_payment_cash_flow(Computed, AccountMap),
