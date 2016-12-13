@@ -228,7 +228,7 @@ make_due_date(LifetimeSeconds) ->
 -define(tmpl(ID), #domain_ContractTemplateRef{id = ID}).
 -define(sas(ID), #domain_SystemAccountSetRef{id = ID}).
 -define(eas(ID), #domain_ExternalAccountSetRef{id = ID}).
-
+-define(insp(ID), #domain_InspectorRef{id = ID}).
 -define(trmacc(Cur, Stl),
     #domain_TerminalAccount{currency = ?cur(Cur), settlement = Stl}).
 
@@ -273,7 +273,8 @@ construct_domain_fixture() ->
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
                 inspector = #domain_InspectorRef{id = 1},
-                default_contract_template = ?tmpl(1)
+                default_contract_template = ?tmpl(1),
+                inspector = ?insp(1)
             }
         }},
         {system_account_set, #domain_SystemAccountSetObject{
@@ -410,7 +411,7 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
-                terminal = {value, [?trm(1), ?trm(2)]},
+                terminal = {value, [?trm(1), ?trm(2), ?trm(3), ?trm(4)]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -445,11 +446,33 @@ construct_domain_fixture() ->
                 options = #{
                     <<"override">> => <<"Brominal 1">>
                 },
-                risk_coverage = low
+                risk_coverage = high
             }
         }},
         {terminal, #domain_TerminalObject{
             ref = ?trm(2),
+            data = #domain_Terminal{
+                name = <<"Brominal 1">>,
+                description = <<"Brominal 1">>,
+                payment_method = ?pmt(bank_card, visa),
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
+                    ?cfpost(system, compensation, provider, compensation, ?share(18, 1000, payment_amount))
+                ],
+                accounts = ?trmacc(
+                    <<"USD">>,
+                    maps:get(terminal_1_receipt, Accounts),
+                    maps:get(terminal_1_compensation, Accounts)
+                ),
+                options = #{
+                    <<"override">> => <<"Brominal 1">>
+                },
+                risk_coverage = low
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(3),
             data = #domain_Terminal{
                 name = <<"Brominal 2">>,
                 description = <<"Brominal 2">>,
@@ -482,7 +505,7 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Drovider">>,
                 description = <<"I'm out of ideas of what to write here">>,
-                terminal = {value, [?trm(3)]},
+                terminal = {value, [?trm(5), ?trm(6)]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -492,7 +515,7 @@ construct_domain_fixture() ->
             }
         }},
         {terminal, #domain_TerminalObject{
-            ref = ?trm(3),
+            ref = ?trm(5),
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
@@ -534,6 +557,17 @@ construct_domain_fixture() ->
                 description = <<"For everything else, there's MasterCard.">>
             }
         }},
+        {inspector, #domain_InspectorObject{
+            ref = ?insp(1),
+            data = #domain_Inspector{
+                name = <<"Default inspector">>,
+                description = <<"Default inspector which left me in tears">>,
+                proxy = #domain_Proxy{
+                    ref = ?prx(2),
+                    additional = #{}
+                }
+            }
+        }},
         {proxy, #domain_ProxyObject{
             ref = ?prx(1),
             data = #domain_ProxyDefinition{
@@ -541,6 +575,13 @@ construct_domain_fixture() ->
                 description = <<"Dummy proxy, what else to say">>,
                 url         = <<>>,
                 options     = #{}
+            }
+        }},
+        {proxy, #domain_ProxyObject{
+            ref = ?prx(2),
+            data = #domain_ProxyDefinition{
+                url     = <<>>,
+                options = #{}
             }
         }}
     ].

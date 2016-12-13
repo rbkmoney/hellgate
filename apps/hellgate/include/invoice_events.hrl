@@ -37,6 +37,13 @@
             interaction = UserInteraction
         }}
 ).
+-define(payment_inspected(PaymentID, RiskScore),
+    {invoice_payment_inspected,
+        #payproc_InvoicePaymentInspected{
+            payment_id = PaymentID,
+            risk_score = RiskScore
+        }}
+).
 
 -define(paid(),
     {paid, #domain_InvoicePaid{}}).

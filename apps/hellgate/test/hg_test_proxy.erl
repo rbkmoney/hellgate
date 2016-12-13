@@ -23,7 +23,7 @@ get_child_spec(Module, IPStr, Port, Args) ->
     {ok, IP} = inet:parse_address(IPStr),
     {Path, Service} = Module:get_service_spec(),
     woody_server:child_spec(
-        ?MODULE,
+        {?MODULE, Module},
         #{
             ip => IP,
             port => Port,

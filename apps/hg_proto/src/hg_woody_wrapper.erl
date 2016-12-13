@@ -87,6 +87,8 @@ get_service_modname(ServiceName) ->
             {dmsl_state_processing_thrift, 'EventSink'};
         'ProviderProxy' ->
             {dmsl_proxy_provider_thrift, 'ProviderProxy'};
+        'InspectorProxy' ->
+            {dmsl_proxy_inspector_thrift, 'InspectorProxy'};
         _ ->
             error({unknown_service, ServiceName})
     end.

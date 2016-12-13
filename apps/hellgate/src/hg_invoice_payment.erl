@@ -111,14 +111,19 @@ init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
     Payment = construct_payment(PaymentID, Invoice, PaymentParams),
-    Route = validate_route(hg_routing:choose(VS2, Revision)),
+    RiskScore = inspect(Shop, Payment, Revision),
+    VS3 = VS2#{risk_score => RiskScore},
+    Route = validate_route(hg_routing:choose(VS3, Revision)),
     FinalCashflow = hg_cashflow:finalize(
-        collect_cash_flow({Revision, PaymentTerms}, Route, VS2),
+        collect_cash_flow({Revision, PaymentTerms}, Route, VS3),
         collect_cash_flow_context(Invoice, Payment),
-        collect_account_map(Invoice, Shop, Route, VS2, Revision)
+        collect_account_map(Invoice, Shop, Route, VS3, Revision)
     ),
     _AccountsState = hg_accounting:plan(construct_plan_id(Invoice, Payment), {?BATCH_ID, FinalCashflow}),
-    Events = [?payment_ev(?payment_started(Payment, Route, FinalCashflow))],
+    Events = [
+        ?payment_ev(?payment_started(Payment, Route, FinalCashflow)),
+        ?payment_ev(?payment_inspected(PaymentID, RiskScore))
+    ],
     Action = hg_machine_action:new(),
     {Events, Action}.
 
@@ -535,6 +540,8 @@ merge_public_event(?payment_bound(_, Trx), St = #st{payment = Payment}) ->
     St#st{payment = Payment#domain_InvoicePayment{trx = Trx}};
 merge_public_event(?payment_status_changed(_, Status), St = #st{payment = Payment}) ->
     St#st{payment = Payment#domain_InvoicePayment{status = Status}};
+merge_public_event(?payment_inspected(_, RiskScore), St = #st{payment = Payment}) ->
+    St#st{payment = Payment#domain_InvoicePayment{risk_score = RiskScore}};
 merge_public_event(?payment_interaction_requested(_, _), St) ->
     St.
 
@@ -573,3 +580,10 @@ get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}
     Proxy    = Provider#domain_Provider.proxy,
     ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
     #{url => ProxyDef#domain_ProxyDefinition.url}.
+
+inspect(Shop, Payment, Revision) ->
+    #domain_Globals{inspector = InspectorRef} = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
+    hg_inspector:inspect(Shop, Payment, Inspector, Revision).
+
+

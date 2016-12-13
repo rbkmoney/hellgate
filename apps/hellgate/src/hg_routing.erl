@@ -9,6 +9,7 @@
 
 -type t() :: dmsl_domain_thrift:'InvoicePaymentRoute'().
 -type varset() :: #{}. % FIXME
+%%-type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 
 -spec choose(varset(), hg_domain:revision()) ->
     t() | undefined.
@@ -52,15 +53,22 @@ filter_terminal(
     #domain_Terminal{
         category = Category,
         payment_method = PaymentMethod,
-        account = #domain_TerminalAccount{currency = Currency}
+        account = #domain_TerminalAccount{currency = Currency},
+        risk_coverage = RiskCoverage
     },
     VS
 ) ->
     Category      == maps:get(category, VS) andalso
     Currency      == maps:get(currency, VS) andalso
-    PaymentMethod == hg_payment_tool:get_method(maps:get(payment_tool, VS)).
+    PaymentMethod == hg_payment_tool:get_method(maps:get(payment_tool, VS)) andalso
+    is_risk_covered(maps:get(risk_score, VS), RiskCoverage).
 
 %%
 
 reduce(S, VS, Revision) ->
     {value, V} = hg_selector:reduce(S, VS, Revision), V. % FIXME
+
+is_risk_covered(RiskScore, RiskCoverage) when RiskScore == RiskCoverage ->
+    true;
+is_risk_covered(_, _) ->
+    false.

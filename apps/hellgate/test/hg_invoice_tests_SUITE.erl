@@ -15,6 +15,7 @@
 -export([invoice_cancelled_after_payment_timeout/1]).
 -export([payment_success/1]).
 -export([payment_success_on_second_try/1]).
+-export([payment_risk_score_check/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([consistent_history/1]).
 
@@ -50,6 +51,8 @@ all() ->
         payment_success,
         payment_success_on_second_try,
         invoice_success_on_third_payment,
+
+        payment_risk_score_check,
 
         consistent_history
     ].
@@ -147,8 +150,8 @@ overdue_invoice_cancelled(C) ->
 
 invoice_cancelled_after_payment_timeout(C) ->
     Client = ?c(client, C),
-    ProxyUrl = start_service_handler(hg_dummy_provider, C),
-    ok = hg_domain:update(construct_proxy(1, ProxyUrl)),
+    ok = start_handler(hg_dummy_provider, 1, C),
+    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => high}),
     InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(7), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -161,8 +164,8 @@ invoice_cancelled_after_payment_timeout(C) ->
 
 payment_success(C) ->
     Client = ?c(client, C),
-    ProxyUrl = start_service_handler(hg_dummy_provider, C),
-    ok = hg_domain:update(construct_proxy(1, ProxyUrl)),
+    ok = start_handler(hg_dummy_provider, 1, C),
+    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => high}),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -177,8 +180,8 @@ payment_success(C) ->
 
 payment_success_on_second_try(C) ->
     Client = ?c(client, C),
-    ProxyUrl = start_service_handler(hg_dummy_provider, C),
-    ok = hg_domain:update(construct_proxy(1, ProxyUrl)),
+    ok = start_handler(hg_dummy_provider, 1, C),
+    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => high}),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -195,8 +198,8 @@ payment_success_on_second_try(C) ->
 
 invoice_success_on_third_payment(C) ->
     Client = ?c(client, C),
-    ProxyUrl = start_service_handler(hg_dummy_provider, C),
-    ok = hg_domain:update(construct_proxy(1, ProxyUrl)),
+    ok = start_handler(hg_dummy_provider, 1, C),
+    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => high}),
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID1 = attach_payment(InvoiceID, PaymentParams, Client),
@@ -215,6 +218,19 @@ invoice_success_on_third_payment(C) ->
     ?payment_status_changed(PaymentID3, ?captured()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client).
 
+-spec payment_risk_score_check(config()) -> _ | no_return().
+
+payment_risk_score_check(C) ->
+    Client = ?c(client, C),
+    ok = start_handler(hg_dummy_provider, 1, C),
+    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => low}),
+    PaymentParams = make_tds_payment_params(),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    ?payment_started(_, Route, _) = next_event(InvoiceID, Client),
+    #domain_InvoicePaymentRoute{terminal = TermRef} = Route,
+    #domain_Terminal{risk_coverage = low} = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
+    ?payment_inspected(_, low) = next_event(InvoiceID, Client).
 %%
 
 -spec consistent_history(config()) -> _ | no_return().
@@ -247,10 +263,10 @@ unwrap_event(E) ->
 
 %%
 
-start_service_handler(Module, C) ->
+start_service_handler(Module, C, Additional) ->
     IP = "127.0.0.1",
     Port = get_random_port(),
-    Opts = #{hellgate_root_url => ?c(root_url, C)},
+    Opts = maps:merge(Additional, #{hellgate_root_url => ?c(root_url, C)}),
     ChildSpec = hg_test_proxy:get_child_spec(Module, IP, Port, Opts),
     {ok, _} = supervisor:start_child(?c(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
@@ -322,6 +338,7 @@ start_invoice(Product, Due, Amount, C) ->
 attach_payment(InvoiceID, PaymentParams, Client) ->
     PaymentID = <<_/binary>> = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
+    ?payment_inspected(_, _) = next_event(InvoiceID, Client),
     ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
     ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, Client),
     PaymentID.
@@ -340,3 +357,10 @@ post_request({URL, Form}) ->
 
 get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, form = Form}}}) ->
     {URL, Form}.
+
+start_handler(Module, ProxyID, Context) ->
+    start_handler(Module, ProxyID, Context, #{}).
+
+start_handler(Module, ProxyID, Context, Opts) ->
+    ProxyUrl = start_service_handler(Module, Context, Opts),
+    ok = hg_domain:update(construct_proxy(ProxyID, ProxyUrl)).
