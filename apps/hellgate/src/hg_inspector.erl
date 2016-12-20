@@ -66,4 +66,4 @@ get_call_options(Proxy, Revision) ->
     #{url => ProxyDef#domain_ProxyDefinition.url}.
 
 issue_call(Func, Args, CallOpts) ->
-    hg_woody_wrapper:call_safe('InspectorProxy', Func, Args, CallOpts).
+    hg_woody_wrapper:call('InspectorProxy', Func, Args, CallOpts).

@@ -68,7 +68,5 @@ filter_terminal(
 reduce(S, VS, Revision) ->
     {value, V} = hg_selector:reduce(S, VS, Revision), V. % FIXME
 
-is_risk_covered(RiskScore, RiskCoverage) when RiskScore == RiskCoverage ->
-    true;
-is_risk_covered(_, _) ->
-    false.
+is_risk_covered(RiskScore, RiskCoverage) ->
+    RiskScore == RiskCoverage.

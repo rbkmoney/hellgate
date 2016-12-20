@@ -108,10 +108,14 @@ init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Revision = hg_domain:head(),
     PaymentTerms = hg_party:get_payments_service_terms(Shop#domain_Shop.id, Party, Invoice#domain_Invoice.created_at),
     VS0 = collect_varset(Shop, #{}),
+
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
-    Payment = construct_payment(PaymentID, Invoice, PaymentParams),
-    RiskScore = inspect(Shop, Payment, Revision),
+    Payment0 = construct_payment(PaymentID, Invoice, PaymentParams),
+    RiskScore = inspect(Shop, Payment0, Revision),
+
+    Payment = Payment0#domain_InvoicePayment{risk_score = RiskScore},
+
     VS3 = VS2#{risk_score => RiskScore},
     Route = validate_route(hg_routing:choose(VS3, Revision)),
     FinalCashflow = hg_cashflow:finalize(
@@ -121,8 +125,7 @@ init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     ),
     _AccountsState = hg_accounting:plan(construct_plan_id(Invoice, Payment), {?BATCH_ID, FinalCashflow}),
     Events = [
-        ?payment_ev(?payment_started(Payment, Route, FinalCashflow)),
-        ?payment_ev(?payment_inspected(PaymentID, RiskScore))
+        ?payment_ev(?payment_started(Payment, Route, FinalCashflow))
     ],
     Action = hg_machine_action:new(),
     {Events, Action}.
@@ -540,8 +543,6 @@ merge_public_event(?payment_bound(_, Trx), St = #st{payment = Payment}) ->
     St#st{payment = Payment#domain_InvoicePayment{trx = Trx}};
 merge_public_event(?payment_status_changed(_, Status), St = #st{payment = Payment}) ->
     St#st{payment = Payment#domain_InvoicePayment{status = Status}};
-merge_public_event(?payment_inspected(_, RiskScore), St = #st{payment = Payment}) ->
-    St#st{payment = Payment#domain_InvoicePayment{risk_score = RiskScore}};
 merge_public_event(?payment_interaction_requested(_, _), St) ->
     St.
 

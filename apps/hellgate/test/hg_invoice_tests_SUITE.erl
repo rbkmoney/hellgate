@@ -229,8 +229,7 @@ payment_risk_score_check(C) ->
     hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_started(_, Route, _) = next_event(InvoiceID, Client),
     #domain_InvoicePaymentRoute{terminal = TermRef} = Route,
-    #domain_Terminal{risk_coverage = low} = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
-    ?payment_inspected(_, low) = next_event(InvoiceID, Client).
+    #domain_Terminal{risk_coverage = low} = hg_domain:get(hg_domain:head(), {terminal, TermRef}).
 %%
 
 -spec consistent_history(config()) -> _ | no_return().
@@ -338,7 +337,6 @@ start_invoice(Product, Due, Amount, C) ->
 attach_payment(InvoiceID, PaymentParams, Client) ->
     PaymentID = <<_/binary>> = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
-    ?payment_inspected(_, _) = next_event(InvoiceID, Client),
     ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
     ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, Client),
     PaymentID.
