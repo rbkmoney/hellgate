@@ -102,7 +102,7 @@ events_observed(C) ->
     PartyID = ?c(party_id, C),
     _ShopID = hg_ct_helper:create_party_and_shop(PartyMgmtClient),
     Events = hg_client_eventsink:pull_events(10, 3000, EventsinkClient),
-    [?event(_ID, PartyID, 1, ?party_ev(?party_created(_, _))) | _] = Events,
+    [?event(_ID, PartyID, 1, ?party_ev(?party_created(_))) | _] = Events,
     IDs = [ID || ?event(ID, _, _, _) <- Events],
     IDs = lists:sort(IDs).
 

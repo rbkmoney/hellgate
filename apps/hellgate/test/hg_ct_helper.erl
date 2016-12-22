@@ -220,7 +220,6 @@ make_due_date(LifetimeSeconds) ->
 -define(prx(ID), #domain_ProxyRef{id = ID}).
 -define(prv(ID), #domain_ProviderRef{id = ID}).
 -define(trm(ID), #domain_TerminalRef{id = ID}).
-% -define(pst(ID), #domain_PaymentsServiceTermsRef{id = ID}).
 -define(tmpl(ID), #domain_ContractTemplateRef{id = ID}).
 -define(sas(ID), #domain_SystemAccountSetRef{id = ID}).
 
@@ -267,6 +266,7 @@ construct_domain_fixture() ->
                 party_prototype = #domain_PartyPrototypeRef{id = 42},
                 providers = {value, [?prv(1), ?prv(2)]},
                 system_accounts = {value, [?sas(1)]},
+                inspector = #domain_InspectorRef{id = 1},
                 default_contract_template = ?tmpl(1)
             }
         }},
@@ -293,7 +293,18 @@ construct_domain_fixture() ->
                 test_contract_template = ?tmpl(1)
             }
         }},
-        {contract_template, #domain_ContractTemplateObject{
+        {inspector, #domain_InspectorObject{
+            ref = #domain_InspectorRef{id = 1},
+            data = #domain_Inspector{
+                name = <<"Kovalsky">>,
+                description = <<"Wold famous inspector Kovalsky at your service!">>,
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{}
+                }
+            }
+        }},
+        {template, #domain_ContractTemplateObject{
             ref = ?tmpl(1),
             data = #domain_ContractTemplate{
                 parent_template = undefined,
@@ -396,7 +407,8 @@ construct_domain_fixture() ->
                 ),
                 options = #{
                     <<"override">> => <<"Brominal 1">>
-                }
+                },
+                risk_coverage = low
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -417,7 +429,8 @@ construct_domain_fixture() ->
                 ),
                 options = #{
                     <<"override">> => <<"Brominal 2">>
-                }
+                },
+                risk_coverage = low
             }
         }},
         {provider, #domain_ProviderObject{
@@ -452,7 +465,8 @@ construct_domain_fixture() ->
                 ),
                 options = #{
                     <<"override">> => <<"Drominal 1">>
-                }
+                },
+                risk_coverage = low
             }
         }},
         {payment_method, #domain_PaymentMethodObject{
