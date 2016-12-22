@@ -77,7 +77,7 @@ create(Client) ->
     gen_server:call(Client, {call, 'Create', []}).
 
 -spec get(pid()) ->
-    dmsl_payment_processing_thrift:'PartyState'() | woody_client:result_error().
+    dmsl_domain_thrift:'Party'() | woody_client:result_error().
 
 get(Client) ->
     gen_server:call(Client, {call, 'Get', []}).

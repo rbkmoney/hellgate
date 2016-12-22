@@ -108,15 +108,15 @@ get_payment(#st{payment = Payment}) ->
 init(PaymentID, PaymentParams, Opts) ->
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
-    Revision = get_invoice_revision(Invoice),
-    Terms = get_payments_service_terms(Shop),
+    Revision = hg_domain:head(),
+    PaymentTerms = get_payments_service_terms(Opts),
     VS0 = collect_varset(Shop, #{}),
-    VS1 = validate_payment_params(PaymentParams, Terms, VS0),
-    VS2 = validate_payment_amount(Invoice, Terms, VS1),
+    VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
+    VS2 = validate_payment_amount(Invoice, {Revision, PaymentTerms}, VS1),
     Payment = construct_payment(PaymentID, Invoice, PaymentParams),
     Route = validate_route(hg_routing:choose(VS2, Revision)),
     Computed = hg_cashflow:compute( % FIXME
-        collect_cash_flow(Terms, Route, VS2, Revision),
+        collect_cash_flow({Revision, PaymentTerms}, Route, VS2),
         get_invoice_currency(Invoice),
         collect_cash_flow_context(Invoice, Payment)
     ),
@@ -173,10 +173,10 @@ validate_payment_tool(
 
 validate_payment_amount(
     #domain_Invoice{cost = #domain_Cash{amount = Amount}},
-    {Revision, #domain_PaymentsServiceTerms{limits = LimitSelector}},
+    {Revision, #domain_PaymentsServiceTerms{amount_limit = AmountLimitSelector}},
     VS
 ) ->
-    {value, Limit} = hg_selector:reduce(LimitSelector, VS, Revision), % FIXME
+    {value, Limit} = hg_selector:reduce(AmountLimitSelector, VS, Revision), % FIXME
     _ = validate_limit(Amount, Limit),
     VS#{amount => Amount}.
 
@@ -207,10 +207,9 @@ collect_varset(#domain_Shop{
 %%
 
 collect_cash_flow(
-    {_Revision, #domain_PaymentsServiceTerms{fees = MerchantCashFlowSelector}},
+    {Revision, #domain_PaymentsServiceTerms{fees = MerchantCashFlowSelector}},
     #domain_InvoicePaymentRoute{terminal = TerminalRef},
-    VS,
-    Revision
+    VS
 ) ->
     #domain_Terminal{cash_flow = ProviderCashFlow} = hg_domain:get(Revision, {terminal, TerminalRef}),
     {value, MerchantCashFlow} = hg_selector:reduce(MerchantCashFlowSelector, VS, Revision),
@@ -458,7 +457,7 @@ construct_proxy_context(#st{payment = Payment, route = Route, session = Session}
     #prxprv_Context{
         session = construct_session(Session),
         payment = construct_payment_info(Payment, Options),
-        options = collect_proxy_options(Route, Options)
+        options = collect_proxy_options(Route)
     }.
 
 construct_session(#{target := Target, proxy_state := ProxyState}) ->
@@ -506,14 +505,14 @@ construct_proxy_invoice(#{invoice := #domain_Invoice{
         cost = construct_proxy_cash(Cost)
     }.
 
-construct_proxy_shop(Options = #{invoice := Invoice}) ->
+construct_proxy_shop(Options) ->
     #domain_Shop{
         id = ShopID,
         details = ShopDetails,
         category = ShopCategoryRef
     } = get_shop(Options),
     ShopCategory = hg_domain:get(
-        get_invoice_revision(Invoice),
+        hg_domain:head(),
         {category, ShopCategoryRef}
     ),
     #prxprv_Shop{
@@ -531,11 +530,8 @@ construct_proxy_cash(#domain_Cash{
         currency = Currency
     }.
 
-collect_proxy_options(
-    #domain_InvoicePaymentRoute{provider = ProviderRef, terminal = TerminalRef},
-    Options
-) ->
-    Revision = get_invoice_revision(get_invoice(Options)),
+collect_proxy_options(#domain_InvoicePaymentRoute{provider = ProviderRef, terminal = TerminalRef}) ->
+    Revision = hg_domain:head(),
     Provider = hg_domain:get(Revision, {provider, ProviderRef}),
     Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
     Proxy    = Provider#domain_Provider.proxy,
@@ -568,20 +564,100 @@ get_shop(#{party := Party, invoice := Invoice}) ->
     Shops = Party#domain_Party.shops,
     maps:get(ShopID, Shops).
 
-get_invoice_revision(#domain_Invoice{domain_revision = Revision}) ->
-    Revision.
-
 get_invoice_currency(#domain_Invoice{cost = #domain_Cash{currency = Currency}}) ->
     #domain_CurrencyRef{symbolic_code = Currency#domain_Currency.symbolic_code}.
 
-get_payments_service_terms(
-    #domain_Shop{
-        services = #domain_ShopServices{
-            payments = #domain_PaymentsService{domain_revision = Revision, terms = Ref}
-        }
+get_payments_service_terms(#{party := Party, invoice := Invoice} = Opts) ->
+    Shop = get_shop(Opts),
+    Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
+    #domain_Terms{payments = PaymentTerms} = compute_terms(
+        Contract,
+        Invoice#domain_Invoice.created_at
+    ),
+    PaymentTerms.
+
+compute_terms(#domain_Contract{template = TemplateRef, adjustments = Adjustments}, CreatedAt) ->
+    Revision = hg_domain:head(),
+    TemplateTerms = compute_template_terms(TemplateRef, Revision),
+    AdjustmentsTerms = compute_adjustments_terms(
+        lists:filter(fun(A) -> is_adjustment_active(A, CreatedAt, Revision) end, Adjustments),
+        Revision
+    ),
+    merge_terms(TemplateTerms, AdjustmentsTerms).
+
+compute_template_terms(TemplateRef, Revision) ->
+    Template = hg_domain:get(Revision, {contract_template, TemplateRef}),
+    case Template of
+        #domain_ContractTemplate{parent_template = undefined, terms = Terms} ->
+            Terms;
+        #domain_ContractTemplate{parent_template = ParentRef, terms = Terms} ->
+            ParentTerms = compute_template_terms(ParentRef, Revision),
+            merge_terms(ParentTerms, Terms)
+    end.
+
+compute_adjustments_terms(Adjustments, Revision) when is_list(Adjustments) ->
+    lists:foldl(
+        fun(#domain_ContractAdjustment{template = TemplateRef}, Terms) ->
+            TemplateTerms = compute_template_terms(TemplateRef, Revision),
+            merge_terms(Terms, TemplateTerms)
+        end,
+        #domain_Terms{},
+        Adjustments
+    ).
+
+is_adjustment_active(
+    #domain_ContractAdjustment{concluded_at = ConcludedAt},
+    Timestamp,
+    _Revision
+) ->
+    case hg_datetime:to_integer(ConcludedAt) =< hg_datetime:to_integer(Timestamp) of
+        true ->
+            %% TODO check template lifetime parameters
+            true;
+        false ->
+            false
+    end.
+
+merge_terms(#domain_Terms{payments = PaymentTerms0}, #domain_Terms{payments = PaymentTerms1}) ->
+    #domain_Terms{
+        payments = merge_payments_terms(PaymentTerms0, PaymentTerms1)
+    }.
+
+merge_payments_terms(
+    #domain_PaymentsServiceTerms{
+        currencies = Curr0,
+        categories = Cat0,
+        payment_methods = Pm0,
+        amount_limit = Al0,
+        fees = Fee0,
+        guarantee_fund = Gf0
+    },
+    #domain_PaymentsServiceTerms{
+        currencies = Curr1,
+        categories = Cat1,
+        payment_methods = Pm1,
+        amount_limit = Al1,
+        fees = Fee1,
+        guarantee_fund = Gf1
     }
 ) ->
-    {Revision, hg_domain:get(Revision, {payments_service_terms, Ref})}.
+    #domain_PaymentsServiceTerms{
+        currencies = update_if_defined(Curr0, Curr1),
+        categories = update_if_defined(Cat0, Cat1),
+        payment_methods = update_if_defined(Pm0, Pm1),
+        amount_limit = update_if_defined(Al0, Al1),
+        fees = update_if_defined(Fee0, Fee1),
+        guarantee_fund = update_if_defined(Gf0, Gf1)
+    };
+merge_payments_terms(undefined, Any) ->
+    Any;
+merge_payments_terms(Any, undefined) ->
+    Any.
+
+update_if_defined(Value, undefined) ->
+    Value;
+update_if_defined(_, Value) ->
+    Value.
 
 %%
 
@@ -656,8 +732,8 @@ issue_call(Func, Args, Opts, St) ->
     CallOpts = get_call_options(St, Opts),
     hg_woody_wrapper:call_safe('ProviderProxy', Func, Args, CallOpts).
 
-get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}}, Opts) ->
-    Revision = get_invoice_revision(get_invoice(Opts)),
+get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}}, _Opts) ->
+    Revision = hg_domain:head(),
     Provider = hg_domain:get(Revision, {provider, ProviderRef}),
     Proxy    = Provider#domain_Provider.proxy,
     ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),

@@ -113,7 +113,7 @@ start_apps(Apps) ->
 
 create_party_and_shop(Client) ->
     ok = hg_client_party:create(Client),
-    #payproc_PartyState{party = #domain_Party{shops = Shops}} = hg_client_party:get(Client),
+    #domain_Party{shops = Shops} = hg_client_party:get(Client),
     [{ShopID, _Shop}] = maps:to_list(Shops),
     ShopID.
 
@@ -220,7 +220,8 @@ make_due_date(LifetimeSeconds) ->
 -define(prx(ID), #domain_ProxyRef{id = ID}).
 -define(prv(ID), #domain_ProviderRef{id = ID}).
 -define(trm(ID), #domain_TerminalRef{id = ID}).
--define(pst(ID), #domain_PaymentsServiceTermsRef{id = ID}).
+% -define(pst(ID), #domain_PaymentsServiceTermsRef{id = ID}).
+-define(tmpl(ID), #domain_ContractTemplateRef{id = ID}).
 -define(sas(ID), #domain_SystemAccountSetRef{id = ID}).
 
 -define(trmacc(Cur, Rec, Com),
@@ -265,7 +266,8 @@ construct_domain_fixture() ->
             data = #domain_Globals{
                 party_prototype = #domain_PartyPrototypeRef{id = 42},
                 providers = {value, [?prv(1), ?prv(2)]},
-                system_accounts = {value, [?sas(1)]}
+                system_accounts = {value, [?sas(1)]},
+                default_contract_template = ?tmpl(1)
             }
         }},
         {system_account_set, #domain_SystemAccountSetObject{
@@ -287,51 +289,54 @@ construct_domain_fixture() ->
                         name = <<"SUPER DEFAULT SHOP">>
                     }
                 },
-                default_services = #domain_ShopServices{
-                    payments = #domain_PaymentsService{
-                        domain_revision = 0,
-                        terms = ?pst(1)
-                    }
-                }
+                %% FIXME create test template with test categories only
+                test_contract_template = ?tmpl(1)
             }
         }},
-        {payments_service_terms, #domain_PaymentsServiceTermsObject{
-            ref = ?pst(1),
-            data = #domain_PaymentsServiceTerms{
-                payment_methods = {value, ordsets:from_list([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
-                ])},
-                limits = {predicates, [
-                    #domain_AmountLimitPredicate{
-                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, #domain_AmountLimit{
-                            min = {inclusive, 1000},
-                            max = {exclusive, 4200000}
-                        }}
-                    },
-                    #domain_AmountLimitPredicate{
-                        if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                        then_ = {value, #domain_AmountLimit{
-                            min = {inclusive, 200},
-                            max = {exclusive, 313370}
-                        }}
-                    }
-                ]},
-                fees = {predicates, [
-                    #domain_CashFlowPredicate{
-                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, [
-                            ?cfpost(merchant, general, system, compensation, ?share(45, 1000, payment_amount))
+        {contract_template, #domain_ContractTemplateObject{
+            ref = ?tmpl(1),
+            data = #domain_ContractTemplate{
+                parent_template = undefined,
+                valid_since = undefined,
+                valid_until = undefined,
+                terms = #domain_Terms{
+                    payments = #domain_PaymentsServiceTerms{
+                        payment_methods = {value, ordsets:from_list([
+                            ?pmt(bank_card, visa),
+                            ?pmt(bank_card, mastercard)
+                        ])},
+                        amount_limit = {predicates, [
+                            #domain_AmountLimitPredicate{
+                                if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                then_ = {value, #domain_AmountLimit{
+                                    min = {inclusive, 1000},
+                                    max = {exclusive, 4200000}
+                                }}
+                            },
+                            #domain_AmountLimitPredicate{
+                                if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                                then_ = {value, #domain_AmountLimit{
+                                    min = {inclusive, 200},
+                                    max = {exclusive, 313370}
+                                }}
+                            }
+                        ]},
+                        fees = {predicates, [
+                            #domain_CashFlowPredicate{
+                                if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                then_ = {value, [
+                                    ?cfpost(merchant, general, system, compensation, ?share(45, 1000, payment_amount))
+                                ]}
+                            },
+                            #domain_CashFlowPredicate{
+                                if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                                then_ = {value, [
+                                    ?cfpost(merchant, general, system, compensation, ?share(65, 1000, payment_amount))
+                                ]}
+                            }
                         ]}
-                    },
-                    #domain_CashFlowPredicate{
-                        if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                        then_ = {value, [
-                            ?cfpost(merchant, general, system, compensation, ?share(65, 1000, payment_amount))
-                        ]}
                     }
-                ]}
+                }
             }
         }},
         {currency, #domain_CurrencyObject{

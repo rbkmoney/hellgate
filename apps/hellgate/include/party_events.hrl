@@ -3,18 +3,29 @@
 
 -define(party_ev(Body), {party_event, Body}).
 
--define(party_created(Party, Revision),
-    {party_created,
-        #payproc_PartyCreated{party = #payproc_PartyState{party = Party, revision = Revision}}}
-).
+-define(party_created(Party), {party_created, Party}).
 -define(claim_created(Claim),
-    {claim_created,
-        #payproc_ClaimCreated{claim = Claim}}
+    {claim_created, Claim}
 ).
 -define(claim_status_changed(ID, Status),
     {claim_status_changed,
         #payproc_ClaimStatusChanged{id = ID, status = Status}}
 ).
+
+-define(contract_creation(Contract),
+    {contract_creation, Contract}).
+
+-define(contract_termination(ID, TerminatedAt, Reason), 
+    {contract_modification, #payproc_ContractModificationUnit{
+        id = ID,
+        modification = {termination, #payproc_ContractTermination{terminated_at = TerminatedAt, reason = Reason}}
+    }}).
+
+-define(contract_adjustment_creation(ID, Adjustment), 
+    {contract_modification, #payproc_ContractModificationUnit{ id = ID, modification = {adjustment_creation, Adjustment}}}).
+
+-define(payout_account_creation(PayoutAccount),
+    {payout_account_creation, PayoutAccount}).
 
 -define(shop_creation(Shop),
     {shop_creation, Shop}).
@@ -23,8 +34,8 @@
 
 -define(pending(),
     {pending, #payproc_ClaimPending{}}).
--define(accepted(Revision),
-    {accepted, #payproc_ClaimAccepted{revision = Revision}}).
+-define(accepted(AcceptedAt),
+    {accepted, #payproc_ClaimAccepted{accepted_at = AcceptedAt}}).
 -define(denied(Reason),
     {denied, #payproc_ClaimDenied{reason = Reason}}).
 -define(revoked(Reason),

@@ -70,15 +70,15 @@
 handle_function('Create', {UserInfo, InvoiceParams}, _Opts) ->
     ID = hg_utils:unique_id(),
     #payproc_InvoiceParams{party_id = PartyID, shop_id = ShopID} = InvoiceParams,
-    PartyState = get_party(UserInfo, PartyID),
-    Shop = validate_party_shop(ShopID, PartyState),
+    Party = get_party(UserInfo, PartyID),
+    Shop = validate_party_shop(ShopID, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(ID, {InvoiceParams, construct_party_ref(PartyState)}),
+    ok = start(ID, {InvoiceParams, PartyID}),
     ID;
 
 handle_function('Get', {UserInfo, InvoiceID}, _Opts) ->
     St = get_state(UserInfo, InvoiceID),
-    _PartyState = get_party(UserInfo, get_party_ref(St)),
+    _Party = get_party(UserInfo, get_party_id(St)),
     get_invoice_state(St);
 
 handle_function('GetEvents', {UserInfo, InvoiceID, Range}, _Opts) ->
@@ -87,8 +87,8 @@ handle_function('GetEvents', {UserInfo, InvoiceID, Range}, _Opts) ->
 
 handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, _Opts) ->
     St0 = get_initial_state(UserInfo, InvoiceID),
-    PartyState = get_party(UserInfo, get_party_ref(St0)),
-    _Shop = validate_party_shop(get_shop_id(St0), PartyState),
+    Party = get_party(UserInfo, get_party_id(St0)),
+    _Shop = validate_party_shop(get_shop_id(St0), Party),
     call(InvoiceID, {start_payment, PaymentParams});
 
 handle_function('GetPayment', {UserInfo, InvoiceID, PaymentID}, _Opts) ->
@@ -108,18 +108,13 @@ handle_function('Rescind', {_UserInfo, InvoiceID, Reason}, _Opts) ->
     %% TODO access control
     call(InvoiceID, {rescind, Reason}).
 
-get_party(UserInfo, #domain_PartyRef{id = PartyID}) ->
-    get_party(UserInfo, PartyID);
 get_party(UserInfo, PartyID) ->
     hg_party:get(UserInfo, PartyID).
 
-validate_party_shop(ShopID, #payproc_PartyState{party = Party}) ->
+validate_party_shop(ShopID, Party) ->
     _ = assert_party_operable(Party),
     _ = assert_shop_operable(Shop = get_party_shop(ShopID, Party)),
     Shop.
-
-construct_party_ref(#payproc_PartyState{party = #domain_Party{id = ID}, revision = Revision}) ->
-    #domain_PartyRef{id = ID, revision = Revision}.
 
 get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
     #payproc_InvoiceState{
@@ -205,7 +200,6 @@ map_start_error({error, Reason}) ->
 
 %%
 
--type party_ref() :: dmsl_domain_thrift:'PartyRef'().
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
@@ -247,11 +241,11 @@ publish_event(_InvoiceID, _Event) ->
 namespace() ->
     ?NS.
 
--spec init(invoice_id(), {invoice_params(), party_ref()}) ->
+-spec init(invoice_id(), {invoice_params(), dmsl_domain_thrift:'PartyID'()}) ->
     hg_machine:result(ev()).
 
-init(ID, {InvoiceParams, PartyRef}) ->
-    Invoice = create_invoice(ID, InvoiceParams, PartyRef),
+init(ID, {InvoiceParams, PartyID}) ->
+    Invoice = create_invoice(ID, InvoiceParams, PartyID),
     Event = {public, ?invoice_ev(?invoice_created(Invoice))},
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     ok(Event, #st{}, set_invoice_timer(#st{invoice = Invoice})).
@@ -440,9 +434,9 @@ get_payment_opts(Party, #st{invoice = Invoice}) ->
 
 %%
 
-checkout_party(St) ->
-    #domain_PartyRef{id = PartyID, revision = Revision} = get_party_ref(St),
-    hg_party:checkout(PartyID, Revision).
+checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp}}) ->
+    PartyID = get_party_id(St),
+    hg_party:checkout(PartyID, CreationTimestamp).
 
 %%
 
@@ -472,16 +466,14 @@ sequence_event_({private, Ev}, Seq) ->
 
 %%
 
-create_invoice(ID, V = #payproc_InvoiceParams{}, PartyRef) ->
-    Revision = hg_domain:head(),
-    Currency = hg_domain:get(Revision, {currency, V#payproc_InvoiceParams.currency}),
+create_invoice(ID, V = #payproc_InvoiceParams{}, PartyID) ->
+    Currency = hg_domain:get(hg_domain:head(), {currency, V#payproc_InvoiceParams.currency}),
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
-        owner           = PartyRef,
+        owner_id        = PartyID,
         created_at      = hg_datetime:format_now(),
         status          = ?unpaid(),
-        domain_revision = Revision,
         due             = V#payproc_InvoiceParams.due,
         product         = V#payproc_InvoiceParams.product,
         description     = V#payproc_InvoiceParams.description,
@@ -520,8 +512,8 @@ merge_invoice_event(?invoice_created(Invoice), St) ->
 merge_invoice_event(?invoice_status_changed(Status), St = #st{invoice = I}) ->
     St#st{invoice = I#domain_Invoice{status = Status}}.
 
-get_party_ref(#st{invoice = #domain_Invoice{owner = PartyRef}}) ->
-    PartyRef.
+get_party_id(#st{invoice = #domain_Invoice{owner_id = PartyID}}) ->
+    PartyID.
 
 get_shop_id(#st{invoice = #domain_Invoice{shop_id = ShopID}}) ->
     ShopID.
@@ -606,6 +598,7 @@ validate_invoice_params(
     ok.
 
 validate_amount(Amount) when Amount > 0 ->
+    %% TODO FIX THIS ASAP! Amount should be specified in contract terms.
     ok;
 validate_amount(_) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid amount">>]}).
