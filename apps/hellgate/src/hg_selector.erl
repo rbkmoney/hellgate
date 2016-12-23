@@ -68,7 +68,6 @@ reduce({decisions, Ps}, VS, Rev) ->
 reduce({predicates, Ps}, VS, Rev) ->
     reduce({decisions, Ps}, VS, Rev).
 
-
 reduce_decisions([{Type, V, S} | Rest], VS, Rev) ->
     case reduce_predicate(V, VS, Rev) of
         false ->
