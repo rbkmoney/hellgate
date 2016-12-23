@@ -12,11 +12,13 @@
 %%
 
 -type t() ::
-    dmsl_domain_thrift:'AmountLimitSelector'() |
+    dmsl_domain_thrift:'CashLimitSelector'() |
     dmsl_domain_thrift:'CashFlowSelector'() |
     dmsl_domain_thrift:'PaymentMethodSelector'() |
     dmsl_domain_thrift:'ProviderSelector'() |
-    dmsl_domain_thrift:'TerminalSelector'().
+    dmsl_domain_thrift:'TerminalSelector'() |
+    dmsl_domain_thrift:'SystemAccountSetSelector'() |
+    dmsl_domain_thrift:'ExternalAccountSetSelector'().
 
 -type value() ::
     _. %% FIXME
@@ -37,12 +39,12 @@
 
 fold(FoldWith, Acc, {value, V}) ->
     FoldWith(V, Acc);
-fold(FoldWith, Acc, {predicates, Ps}) ->
-    fold_predicates(FoldWith, Acc, Ps).
+fold(FoldWith, Acc, {decisions, Ps}) ->
+    fold_decisions(FoldWith, Acc, Ps).
 
-fold_predicates(FoldWith, Acc, [{_Type, _, S} | Rest]) ->
-    fold_predicates(FoldWith, fold(FoldWith, Acc, S), Rest);
-fold_predicates(_, Acc, []) ->
+fold_decisions(FoldWith, Acc, [{_Type, _, S} | Rest]) ->
+    fold_decisions(FoldWith, fold(FoldWith, Acc, S), Rest);
+fold_decisions(_, Acc, []) ->
     Acc.
 
 -spec collect(t()) ->
@@ -56,27 +58,27 @@ collect(S) ->
 
 reduce({value, _} = V, _, _) ->
     V;
-reduce({predicates, Ps}, VS, Rev) ->
-    case reduce_predicates(Ps, VS, Rev) of
+reduce({decisions, Ps}, VS, Rev) ->
+    case reduce_decisions(Ps, VS, Rev) of
         [{_Type, true, S} | _] ->
             S;
         Ps1 ->
-            {predicates, Ps1}
+            {decisions, Ps1}
     end.
 
-reduce_predicates([{Type, V, S} | Rest], VS, Rev) ->
+reduce_decisions([{Type, V, S} | Rest], VS, Rev) ->
     case reduce_predicate(V, VS, Rev) of
         false ->
-            reduce_predicates(Rest, VS, Rev);
+            reduce_decisions(Rest, VS, Rev);
         V1 ->
             case reduce(S, VS, Rev) of
-                {predicates, []} ->
-                    reduce_predicates(Rest, VS, Rev);
+                {decisions, []} ->
+                    reduce_decisions(Rest, VS, Rev);
                 S1 ->
-                    [{Type, V1, S1} | reduce_predicates(Rest, VS, Rev)]
+                    [{Type, V1, S1} | reduce_decisions(Rest, VS, Rev)]
             end
     end;
-reduce_predicates([], _, _) ->
+reduce_decisions([], _, _) ->
     [].
 
 reduce_predicate({condition, C0}, VS, Rev) ->
@@ -119,10 +121,8 @@ reduce_condition({category_is, V1}, #{category := V2}, _) ->
     V1 =:= V2;
 reduce_condition({currency_is, V1}, #{currency := V2}, _) ->
     V1 =:= V2;
-reduce_condition({payment_method_is, V1}, #{payment_tool := V2}, _) ->
-    V1 =:= hg_payment_tool:get_method(V2);
 reduce_condition({payment_tool_condition, C}, #{payment_tool := V}, Rev) ->
-    hg_payment_tool:test_condition(V, C, Rev);
+    hg_payment_tool:test_condition(C, V, Rev);
 reduce_condition(C, #{}, _) ->
     % Irreducible, return as is
     C.

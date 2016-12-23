@@ -50,7 +50,7 @@
 -define(unblocked(Reason),
     {unblocked, #domain_Unblocked{reason = Reason}}).
 
--define(accounts_created(ShopAccountSet),
-    {accounts_created, #payproc_ShopAccountSetCreated{accounts = ShopAccountSet}}).
+-define(account_created(ShopAccount),
+    {account_created, #payproc_ShopAccountCreated{account = ShopAccount}}).
 
 -endif.

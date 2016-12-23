@@ -347,7 +347,7 @@ shop_creation(C) ->
             {shop_creation, #domain_Shop{id = ShopID}},
             {shop_modification, #payproc_ShopModificationUnit{
                 id = ShopID,
-                modification = {accounts_created, _}
+                modification = ?account_created(_)
             }}
         ]
     ) = Claim,
@@ -386,7 +386,7 @@ shop_update_before_confirm(C) ->
             {shop_creation, #domain_Shop{id = ShopID}},
             {shop_modification, #payproc_ShopModificationUnit{
                 id = ShopID,
-                modification = {accounts_created, _}
+                modification = ?account_created(_)
             }}
         ]
     ) = Claim1,
@@ -435,7 +435,7 @@ claim_revocation(C) ->
             {shop_creation, #domain_Shop{id = ShopID}},
             {shop_modification, #payproc_ShopModificationUnit{
                 id = ShopID,
-                modification = {accounts_created, _}
+                modification = ?account_created(_)
             }}
         ]
     ) = Claim,
@@ -474,12 +474,12 @@ complex_claim_acceptance(C) ->
         {shop_creation, #domain_Shop{id = ShopID1, details = Details1}},
         {shop_modification, #payproc_ShopModificationUnit{
             id = ShopID1,
-            modification = {accounts_created, _}
+            modification = ?account_created(_)
         }},
         {shop_creation, #domain_Shop{id = ShopID2, details = Details2}},
         {shop_modification, #payproc_ShopModificationUnit{
             id = ShopID2,
-            modification = {accounts_created, _}
+            modification = ?account_created(_)
         }}
     ]) = Claim2,
     ok = accept_claim(Claim2, Client),
@@ -612,13 +612,13 @@ shop_already_active(C) ->
 shop_account_set_retrieval(C) ->
     Client = ?c(client, C),
     #domain_Shop{id = ShopID} = get_last_shop(Client),
-    S = #domain_ShopAccountSet{} = hg_client_party:get_shop_account_set(ShopID, Client),
+    S = #domain_ShopAccount{} = hg_client_party:get_shop_account(ShopID, Client),
     {save_config, S}.
 
 shop_account_retrieval(C) ->
     Client = ?c(client, C),
-    {shop_account_set_retrieval, #domain_ShopAccountSet{guarantee = AccountID}} = ?config(saved_config, C),
-    #payproc_ShopAccountState{account_id = AccountID} = hg_client_party:get_shop_account(AccountID, Client).
+    {shop_account_set_retrieval, #domain_ShopAccount{guarantee = AccountID}} = ?config(saved_config, C),
+    #payproc_AccountState{account_id = AccountID} = hg_client_party:get_account_state(AccountID, Client).
 
 get_last_shop(Client) ->
     #domain_Party{shops = Shops} = hg_client_party:get(Client),

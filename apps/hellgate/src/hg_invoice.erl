@@ -467,21 +467,16 @@ sequence_event_({private, Ev}, Seq) ->
 %%
 
 create_invoice(ID, V = #payproc_InvoiceParams{}, PartyID) ->
-    Currency = hg_domain:get(hg_domain:head(), {currency, V#payproc_InvoiceParams.currency}),
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
         owner_id        = PartyID,
         created_at      = hg_datetime:format_now(),
         status          = ?unpaid(),
+        cost            = V#payproc_InvoiceParams.cost,
         due             = V#payproc_InvoiceParams.due,
-        product         = V#payproc_InvoiceParams.product,
-        description     = V#payproc_InvoiceParams.description,
-        context         = V#payproc_InvoiceParams.context,
-        cost            = #domain_Cash{
-            amount          = V#payproc_InvoiceParams.amount,
-            currency        = Currency
-        }
+        info            = V#payproc_InvoiceParams.info,
+        context         = V#payproc_InvoiceParams.context
     }.
 
 create_payment_id(#st{payments = Payments}) ->
@@ -557,7 +552,7 @@ format_reason(V) ->
 get_party_shop(ID, #domain_Party{shops = Shops}) ->
     maps:get(ID, Shops, undefined).
 
-get_shop_currency(#domain_Shop{accounts = #domain_ShopAccountSet{currency = Currency}}) ->
+get_shop_currency(#domain_Shop{account = #domain_ShopAccount{currency = Currency}}) ->
     Currency.
 
 assert_party_operable(#domain_Party{blocking = Blocking, suspension = Suspension} = V) ->
@@ -588,8 +583,10 @@ assert_shop_active(V = {Status, _}) ->
 
 validate_invoice_params(
     #payproc_InvoiceParams{
-        currency = Currency,
-        amount = Amount
+        cost = #domain_Cash{
+            currency = Currency,
+            amount = Amount
+        }
     },
     Shop
 ) ->

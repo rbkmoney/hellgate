@@ -11,19 +11,20 @@
 -export([create_account/1]).
 -export([create_account/2]).
 
--export([plan/3]).
--export([commit/3]).
--export([rollback/3]).
+-export([plan/2]).
+-export([commit/2]).
+-export([rollback/2]).
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
 
--type amount()        :: dmsl_domain_thrift:'Amount'().
--type currency_code() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
--type account_id()    :: dmsl_accounter_thrift:'AccountID'().
--type plan_id()       :: dmsl_accounter_thrift:'PlanID'().
--type batch_id()      :: dmsl_accounter_thrift:'BatchID'().
--type batch()         :: {batch_id(), hg_cashflow:t()}.
+-type amount()          :: dmsl_domain_thrift:'Amount'().
+-type currency_code()   :: dmsl_domain_thrift:'CurrencySymbolicCode'().
+-type account_id()      :: dmsl_accounter_thrift:'AccountID'().
+-type plan_id()         :: dmsl_accounter_thrift:'PlanID'().
+-type batch_id()        :: dmsl_accounter_thrift:'BatchID'().
+-type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
+-type batch()           :: {batch_id(), final_cash_flow()}.
 
 -export_type([batch/0]).
 
@@ -65,85 +66,86 @@ construct_prototype(CurrencyCode, Description) ->
     }.
 
 %%
--type accounts_map() :: #{hg_cashflow:account() => account_id()}.
--type accounts_state() :: #{hg_cashflow:account() => account()}.
+-type accounts_state() :: #{account_id() => account()}.
 
--spec plan(plan_id(), batch(), accounts_map()) ->
+-spec plan(plan_id(), batch()) ->
     accounts_state().
 
-plan(PlanID, Batch, AccountMap) ->
-    do('Hold', construct_plan_change(PlanID, Batch, AccountMap), AccountMap).
+plan(PlanID, Batch) ->
+    do('Hold', construct_plan_change(PlanID, Batch)).
 
--spec commit(plan_id(), [batch()], accounts_map()) ->
+-spec commit(plan_id(), [batch()]) ->
     accounts_state().
 
-commit(PlanID, Batches, AccountMap) ->
-    do('CommitPlan', construct_plan(PlanID, Batches, AccountMap), AccountMap).
+commit(PlanID, Batches) ->
+    do('CommitPlan', construct_plan(PlanID, Batches)).
 
--spec rollback(plan_id(), [batch()], accounts_map()) ->
+-spec rollback(plan_id(), [batch()]) ->
     accounts_state().
 
-rollback(PlanID, Batches, AccountMap) ->
-    do('RollbackPlan', construct_plan(PlanID, Batches, AccountMap), AccountMap).
+rollback(PlanID, Batches) ->
+    do('RollbackPlan', construct_plan(PlanID, Batches)).
 
-do(Op, Plan, AccountMap) ->
+do(Op, Plan) ->
     try
         PlanLog = call_accounter(Op, [Plan]),
-        collect_accounts_state(PlanLog, AccountMap)
+        collect_accounts_state(PlanLog)
     catch
         Exception ->
-            error(Exception) % FIXME
+            error({accounting, Exception}) % FIXME
     end.
 
-construct_plan_change(PlanID, {BatchID, Cashflow}, AccountMap) ->
+construct_plan_change(PlanID, {BatchID, Cashflow}) ->
     #accounter_PostingPlanChange{
         id = PlanID,
         batch = #accounter_PostingBatch{
             id = BatchID,
-            postings = collect_postings(Cashflow, AccountMap)
+            postings = collect_postings(Cashflow)
         }
     }.
 
-construct_plan(PlanID, Batches, AccountMap) ->
+construct_plan(PlanID, Batches) ->
     #accounter_PostingPlan{
         id    = PlanID,
         batch_list = [
             #accounter_PostingBatch{
                 id = BatchID,
-                postings = collect_postings(Cashflow, AccountMap)
+                postings = collect_postings(Cashflow)
             }
         || {BatchID, Cashflow} <- Batches]
     }.
 
-collect_postings(Cashflow, AccountMap) ->
+collect_postings(Cashflow) ->
     [
         #accounter_Posting{
-            from_id           = resolve_account(Source, AccountMap),
-            to_id             = resolve_account(Destination, AccountMap),
+            from_id           = Source,
+            to_id             = Destination,
             amount            = Amount,
             currency_sym_code = CurrencyCode,
-            description       = <<>>
+            description       = construct_posting_description(Details)
         }
-        || {Source, Destination, Amount, CurrencyCode} <- Cashflow
+        || #domain_FinalCashFlowPosting{
+            source      = #domain_FinalCashFlowAccount{account_id = Source},
+            destination = #domain_FinalCashFlowAccount{account_id = Destination},
+            details     = Details,
+            volume      = #domain_Cash{
+                amount      = Amount,
+                currency    = #domain_CurrencyRef{symbolic_code = CurrencyCode}
+            }
+        } <- Cashflow
     ].
 
-resolve_account(Account, Accounts) ->
-    case Accounts of
-        #{Account := V} ->
-            V;
-        #{} ->
-            error({account_not_found, Account}) % FIXME
-    end.
+construct_posting_description(Details) when is_binary(Details) ->
+    Details;
+construct_posting_description(undefined) ->
+    <<>>.
 
-collect_accounts_state(
-    #accounter_PostingPlanLog{affected_accounts = Affected},
-    AccountMap
-) ->
+collect_accounts_state(#accounter_PostingPlanLog{affected_accounts = Affected}) ->
     maps:map(
-        fun (_Account, AccountID) ->
-            construct_account(AccountID, maps:get(AccountID, Affected))
+        fun (AccountID, Account) ->
+            construct_account(AccountID, Account)
         end,
-        AccountMap
+        Affected
     ).
 
 %%

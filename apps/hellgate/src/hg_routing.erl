@@ -52,7 +52,7 @@ filter_terminal(
     #domain_Terminal{
         category = Category,
         payment_method = PaymentMethod,
-        accounts = #domain_TerminalAccountSet{currency = Currency}
+        account = #domain_TerminalAccount{currency = Currency}
     },
     VS
 ) ->

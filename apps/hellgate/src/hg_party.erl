@@ -149,13 +149,13 @@ handle_function('DenyClaim', {UserInfo, PartyID, ID, Reason}, _Opts) ->
 handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, _Opts) ->
     call(PartyID, {revoke_claim, ID, Reason, UserInfo});
 
-handle_function('GetShopAccountState', {UserInfo, PartyID, AccountID}, _Opts) ->
+handle_function('GetAccountState', {UserInfo, PartyID, AccountID}, _Opts) ->
     St = get_state(UserInfo, PartyID),
     get_account_state(AccountID, St);
 
-handle_function('GetShopAccountSet', {UserInfo, PartyID, ShopID}, _Opts) ->
+handle_function('GetShopAccount', {UserInfo, PartyID, ShopID}, _Opts) ->
     St = get_state(UserInfo, PartyID),
-    get_account_set(ShopID, St).
+    get_shop_account(ShopID, St).
 
 
 get_history(PartyID) ->
@@ -487,11 +487,11 @@ create_shop(ShopParams, Revision, StEvents) ->
 
 create_shop(ShopParams, Suspension, Revision, {St, _}) ->
     ShopID = get_next_shop_id(get_pending_st(St)),
-    Shop   = construct_shop(ShopID, ShopParams, Suspension),
-    ShopAccountSet = create_shop_account_set(Revision),
+    Shop = construct_shop(ShopID, ShopParams, Suspension),
+    ShopAccount = create_shop_account(Revision),
     [
         ?shop_creation(Shop),
-        ?shop_modification(ShopID, ?accounts_created(ShopAccountSet))
+        ?shop_modification(ShopID, ?account_created(ShopAccount))
     ].
 
 construct_shop(ShopID, ShopParams, Suspension) ->
@@ -559,7 +559,7 @@ compute_terms(#domain_Contract{template = TemplateRef, adjustments = Adjustments
     merge_terms(TemplateTerms, AdjustmentsTerms).
 
 compute_template_terms(TemplateRef, Revision) ->
-    Template = hg_domain:get(Revision, {template, TemplateRef}),
+    Template = hg_domain:get(Revision, {contract_template, TemplateRef}),
     case Template of
         #domain_ContractTemplate{parent_template = undefined, terms = Terms} ->
             Terms;
@@ -601,7 +601,7 @@ merge_payments_terms(
         currencies = Curr0,
         categories = Cat0,
         payment_methods = Pm0,
-        amount_limit = Al0,
+        cash_limit = Al0,
         fees = Fee0,
         guarantee_fund = Gf0
     },
@@ -609,7 +609,7 @@ merge_payments_terms(
         currencies = Curr1,
         categories = Cat1,
         payment_methods = Pm1,
-        amount_limit = Al1,
+        cash_limit = Al1,
         fees = Fee1,
         guarantee_fund = Gf1
     }
@@ -618,7 +618,7 @@ merge_payments_terms(
         currencies = update_if_defined(Curr0, Curr1),
         categories = update_if_defined(Cat0, Cat1),
         payment_methods = update_if_defined(Pm0, Pm1),
-        amount_limit = update_if_defined(Al0, Al1),
+        cash_limit = update_if_defined(Al0, Al1),
         fees = update_if_defined(Fee0, Fee1),
         guarantee_fund = update_if_defined(Gf0, Gf1)
     };
@@ -920,14 +920,14 @@ ensure_shop(Shop = #domain_Shop{}) ->
 ensure_shop(undefined) ->
     raise(#payproc_ShopNotFound{}).
 
-get_account_set(ShopID, St = #st{}) ->
+get_shop_account(ShopID, St = #st{}) ->
     Shop = get_shop(ShopID, get_party(St)),
-    get_account_set(Shop).
+    get_shop_account(Shop).
 
-get_account_set(#domain_Shop{accounts = undefined}) ->
+get_shop_account(#domain_Shop{account = undefined}) ->
     raise(#payproc_AccountSetNotFound{});
-get_account_set(#domain_Shop{accounts = Accounts}) ->
-    Accounts.
+get_shop_account(#domain_Shop{account = Account}) ->
+    Account.
 
 get_account_state(AccountID, St = #st{}) ->
     ok = ensure_account(AccountID, get_party(St)),
@@ -941,7 +941,7 @@ get_account_state(AccountID, St = #st{}) ->
         symbolic_code = CurrencyCode
     },
     Currency = hg_domain:get(hg_domain:head(), {currency, CurrencyRef}),
-    #payproc_ShopAccountState{
+    #payproc_AccountState{
         account_id = AccountID,
         own_amount = OwnAmount,
         available_amount = MinAvailableAmount,
@@ -949,22 +949,23 @@ get_account_state(AccountID, St = #st{}) ->
     }.
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
-    case find_shop_account_set(AccountID, maps:to_list(Shops)) of
-        #domain_ShopAccountSet{} ->
+    case find_shop_account(AccountID, maps:to_list(Shops)) of
+        #domain_ShopAccount{} ->
             ok;
         undefined ->
             raise(#payproc_AccountNotFound{})
     end.
 
-find_shop_account_set(_ID, []) ->
+find_shop_account(_ID, []) ->
     undefined;
-find_shop_account_set(ID, [{_, #domain_Shop{accounts = Accounts}} | Rest]) ->
-    case Accounts of
-        #domain_ShopAccountSet{general = ID} ->
-            Accounts;
-        #domain_ShopAccountSet{guarantee = ID} ->
-            Accounts;
-        _ -> find_shop_account_set(ID, Rest)
+find_shop_account(ID, [{_, #domain_Shop{account = Account}} | Rest]) ->
+    case Account of
+        #domain_ShopAccount{settlement = ID} ->
+            Account;
+        #domain_ShopAccount{guarantee = ID} ->
+            Account;
+        _ ->
+            find_shop_account(ID, Rest)
     end.
 
 get_claim(ID, #st{claims = Claims}) ->
@@ -1032,14 +1033,8 @@ apply_shop_change({update, Update}, Shop) ->
         {Update#payproc_ShopUpdate.contract_id , fun (V, S) -> S#domain_Shop{contract_id = V} end},
         {Update#payproc_ShopUpdate.payout_account_id, fun (V, S) -> S#domain_Shop{payout_account_id = V} end}
     ], Shop);
-apply_shop_change(
-    {
-        accounts_created,
-        #payproc_ShopAccountSetCreated{accounts = Accounts}
-    },
-    Shop
-) ->
-    Shop#domain_Shop{accounts = Accounts}.
+apply_shop_change(?account_created(ShopAccount), Shop) ->
+    Shop#domain_Shop{account = ShopAccount}.
 
 fold_opt([], V) ->
     V;
@@ -1051,17 +1046,17 @@ fold_opt([{E, Fun} | Rest], V) ->
 get_next_id(IDs) ->
     lists:max([0 | IDs]) + 1.
 
-create_shop_account_set(Revision) ->
+create_shop_account(Revision) ->
     ShopPrototype = get_shop_prototype(Revision),
     CurrencyRef = ShopPrototype#domain_ShopPrototype.currency,
     #domain_CurrencyRef{
         symbolic_code = SymbolicCode
     } = CurrencyRef,
     GuaranteeID = hg_accounting:create_account(SymbolicCode),
-    GeneralID = hg_accounting:create_account(SymbolicCode),
-    #domain_ShopAccountSet{
+    SettlementID = hg_accounting:create_account(SymbolicCode),
+    #domain_ShopAccount{
         currency = CurrencyRef,
-        general = GeneralID,
+        settlement = SettlementID,
         guarantee = GuaranteeID
     }.
 

@@ -53,7 +53,7 @@
     {processed, #domain_InvoicePaymentProcessed{}}).
 -define(captured(),
     {captured, #domain_InvoicePaymentCaptured{}}).
--define(failed(Error),
-    {failed, #domain_InvoicePaymentFailed{err = Error}}).
+-define(failed(Failure),
+    {failed, #domain_InvoicePaymentFailed{failure = Failure}}).
 
 -endif.

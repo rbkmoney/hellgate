@@ -23,8 +23,8 @@
 -export([accept_claim/2]).
 -export([deny_claim/3]).
 -export([revoke_claim/3]).
+-export([get_account_state/2]).
 -export([get_shop_account/2]).
--export([get_shop_account_set/2]).
 -export([pull_event/1]).
 -export([pull_event/2]).
 
@@ -178,17 +178,17 @@ deny_claim(ID, Reason, Client) ->
 revoke_claim(ID, Reason, Client) ->
     gen_server:call(Client, {call, 'RevokeClaim', [ID, Reason]}).
 
--spec get_shop_account(shop_account_id(), pid()) ->
-    dmsl_payment_processing_thrift:'ShopAccountState'() | woody_client:result_error().
+-spec get_account_state(shop_account_id(), pid()) ->
+    dmsl_payment_processing_thrift:'AccountState'() | woody_client:result_error().
 
-get_shop_account(AccountID, Client) ->
-    gen_server:call(Client, {call, 'GetShopAccountState', [AccountID]}).
+get_account_state(AccountID, Client) ->
+    gen_server:call(Client, {call, 'GetAccountState', [AccountID]}).
 
--spec get_shop_account_set(shop_id(), pid()) ->
-    dmsl_domain_thrift:'ShopAccountSet'() | woody_client:result_error().
+-spec get_shop_account(shop_id(), pid()) ->
+    dmsl_domain_thrift:'ShopAccount'() | woody_client:result_error().
 
-get_shop_account_set(ShopID, Client) ->
-    gen_server:call(Client, {call, 'GetShopAccountSet', [ShopID]}).
+get_shop_account(ShopID, Client) ->
+    gen_server:call(Client, {call, 'GetShopAccount', [ShopID]}).
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 

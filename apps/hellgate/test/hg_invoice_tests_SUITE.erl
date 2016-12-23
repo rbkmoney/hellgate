@@ -265,8 +265,10 @@ construct_proxy(ID, Url) ->
     {proxy, #domain_ProxyObject{
         ref = construct_proxy_ref(ID),
         data = #domain_ProxyDefinition{
-            url     = Url,
-            options = #{
+            name        = Url,
+            description = Url,
+            url         = Url,
+            options     = #{
                 <<"override">> => <<"proxy">>
             }
         }

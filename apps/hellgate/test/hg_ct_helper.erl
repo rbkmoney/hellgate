@@ -133,10 +133,12 @@ make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}) ->
     #payproc_InvoiceParams{
         party_id = PartyID,
         shop_id  = ShopID,
-        product  = Product,
-        amount   = Amount,
+        info     = #domain_InvoiceInfo{product = Product},
         due      = hg_datetime:format_ts(Due),
-        currency = #domain_CurrencyRef{symbolic_code = Currency},
+        cost     = #domain_Cash{
+            amount   = Amount,
+            currency = #domain_CurrencyRef{symbolic_code = Currency}
+        },
         context  = #'Content'{
             type = <<"application/octet-stream">>,
             data = <<"some_merchant_specific_data">>
@@ -215,6 +217,8 @@ make_due_date(LifetimeSeconds) ->
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
+-include_lib("hellgate/include/domain.hrl").
+
 -define(cur(ID), #domain_CurrencyRef{symbolic_code = ID}).
 -define(pmt(C, T), #domain_PaymentMethodRef{id = {C, T}}).
 -define(cat(ID), #domain_CategoryRef{id = ID}).
@@ -223,14 +227,15 @@ make_due_date(LifetimeSeconds) ->
 -define(trm(ID), #domain_TerminalRef{id = ID}).
 -define(tmpl(ID), #domain_ContractTemplateRef{id = ID}).
 -define(sas(ID), #domain_SystemAccountSetRef{id = ID}).
+-define(eas(ID), #domain_ExternalAccountSetRef{id = ID}).
 
--define(trmacc(Cur, Rec, Com),
-    #domain_TerminalAccountSet{currency = ?cur(Cur), receipt = Rec, compensation = Com}).
+-define(trmacc(Cur, Stl),
+    #domain_TerminalAccount{currency = ?cur(Cur), settlement = Stl}).
 
--define(cfpost(S, A1, D, A2, V),
+-define(cfpost(A1, A2, V),
     #domain_CashFlowPosting{
-        source      = #domain_CashFlowAccount{party = S, designation = genlib:to_binary(A1)},
-        destination = #domain_CashFlowAccount{party = D, designation = genlib:to_binary(A2)},
+        source      = A1,
+        destination = A2,
         volume      = V
     }
 ).
@@ -250,13 +255,12 @@ construct_domain_fixture() ->
         end,
         #{},
         [
-            {system_compensation     , <<"RUB">>},
-            {terminal_1_receipt      , <<"USD">>},
-            {terminal_1_compensation , <<"USD">>},
-            {terminal_2_receipt      , <<"RUB">>},
-            {terminal_2_compensation , <<"RUB">>},
-            {terminal_3_receipt      , <<"RUB">>},
-            {terminal_3_compensation , <<"RUB">>}
+            {system_settlement       , <<"RUB">>},
+            {external_income         , <<"RUB">>},
+            {external_outcome        , <<"RUB">>},
+            {terminal_1_settlement   , <<"USD">>},
+            {terminal_2_settlement   , <<"RUB">>},
+            {terminal_3_settlement   , <<"RUB">>}
         ]
     ),
     hg_context:cleanup(),
@@ -266,7 +270,8 @@ construct_domain_fixture() ->
             data = #domain_Globals{
                 party_prototype = #domain_PartyPrototypeRef{id = 42},
                 providers = {value, [?prv(1), ?prv(2)]},
-                system_accounts = {value, [?sas(1)]},
+                system_account_set = {value, ?sas(1)},
+                external_account_set = {value, ?eas(1)},
                 inspector = #domain_InspectorRef{id = 1},
                 default_contract_template = ?tmpl(1)
             }
@@ -276,8 +281,24 @@ construct_domain_fixture() ->
             data = #domain_SystemAccountSet{
                 name = <<"Primaries">>,
                 description = <<"Primaries">>,
-                currency = ?cur(<<"RUB">>),
-                compensation = maps:get(system_compensation, Accounts)
+                accounts = #{
+                    ?cur(<<"RUB">>) => #domain_SystemAccount{
+                        settlement = maps:get(system_settlement, Accounts)
+                    }
+                }
+            }
+        }},
+        {external_account_set, #domain_ExternalAccountSetObject{
+            ref = ?eas(1),
+            data = #domain_ExternalAccountSet{
+                name = <<"Primaries">>,
+                description = <<"Primaries">>,
+                accounts = #{
+                    ?cur(<<"RUB">>) => #domain_ExternalAccount{
+                        income  = maps:get(external_income , Accounts),
+                        outcome = maps:get(external_outcome, Accounts)
+                    }
+                }
             }
         }},
         {party_prototype, #domain_PartyPrototypeObject{
@@ -305,7 +326,7 @@ construct_domain_fixture() ->
                 }
             }
         }},
-        {template, #domain_ContractTemplateObject{
+        {contract_template, #domain_ContractTemplateObject{
             ref = ?tmpl(1),
             data = #domain_ContractTemplate{
                 parent_template = undefined,
@@ -317,33 +338,41 @@ construct_domain_fixture() ->
                             ?pmt(bank_card, visa),
                             ?pmt(bank_card, mastercard)
                         ])},
-                        amount_limit = {predicates, [
-                            #domain_AmountLimitPredicate{
+                        cash_limit = {predicates, [
+                            #domain_CashLimitDecision{
                                 if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                                then_ = {value, #domain_AmountLimit{
-                                    min = {inclusive, 1000},
-                                    max = {exclusive, 4200000}
+                                then_ = {value, #domain_CashLimit{
+                                    min = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
+                                    max = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
                                 }}
                             },
-                            #domain_AmountLimitPredicate{
+                            #domain_CashLimitDecision{
                                 if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                                then_ = {value, #domain_AmountLimit{
-                                    min = {inclusive, 200},
-                                    max = {exclusive, 313370}
+                                then_ = {value, #domain_CashLimit{
+                                    min = {inclusive, ?cash(200, ?cur(<<"USD">>))},
+                                    max = {exclusive, ?cash(313370, ?cur(<<"USD">>))}
                                 }}
                             }
                         ]},
-                        fees = {predicates, [
-                            #domain_CashFlowPredicate{
+                        fees = {decisions, [
+                            #domain_CashFlowDecision{
                                 if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                                 then_ = {value, [
-                                    ?cfpost(merchant, general, system, compensation, ?share(45, 1000, payment_amount))
+                                    ?cfpost(
+                                        {merchant, settlement},
+                                        {system, settlement},
+                                        ?share(45, 1000, payment_amount)
+                                    )
                                 ]}
                             },
-                            #domain_CashFlowPredicate{
+                            #domain_CashFlowDecision{
                                 if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
                                 then_ = {value, [
-                                    ?cfpost(merchant, general, system, compensation, ?share(65, 1000, payment_amount))
+                                    ?cfpost(
+                                        {merchant, settlement},
+                                        {system, settlement},
+                                        ?share(65, 1000, payment_amount)
+                                    )
                                 ]}
                             }
                         ]}
@@ -398,13 +427,20 @@ construct_domain_fixture() ->
                 payment_method = ?pmt(bank_card, visa),
                 category = ?cat(1),
                 cash_flow = [
-                    ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
-                    ?cfpost(system, compensation, provider, compensation, ?share(18, 1000, payment_amount))
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(18, 1000, payment_amount)
+                    )
                 ],
-                accounts = ?trmacc(
+                account = ?trmacc(
                     <<"USD">>,
-                    maps:get(terminal_1_receipt, Accounts),
-                    maps:get(terminal_1_compensation, Accounts)
+                    maps:get(terminal_1_settlement, Accounts)
                 ),
                 options = #{
                     <<"override">> => <<"Brominal 1">>
@@ -420,13 +456,20 @@ construct_domain_fixture() ->
                 payment_method = ?pmt(bank_card, mastercard),
                 category = ?cat(1),
                 cash_flow = [
-                    ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
-                    ?cfpost(system, compensation, provider, compensation, ?share(19, 1000, payment_amount))
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(19, 1000, payment_amount)
+                    )
                 ],
-                accounts = ?trmacc(
+                account = ?trmacc(
                     <<"RUB">>,
-                    maps:get(terminal_2_receipt, Accounts),
-                    maps:get(terminal_2_compensation, Accounts)
+                    maps:get(terminal_2_settlement, Accounts)
                 ),
                 options = #{
                     <<"override">> => <<"Brominal 2">>
@@ -456,13 +499,20 @@ construct_domain_fixture() ->
                 payment_method = #domain_PaymentMethodRef{id = {bank_card, visa}},
                 category = ?cat(1),
                 cash_flow = [
-                    ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
-                    ?cfpost(system, compensation, provider, compensation, ?share(16, 1000, payment_amount))
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(16, 1000, payment_amount)
+                    )
                 ],
-                accounts = ?trmacc(
+                account = ?trmacc(
                     <<"RUB">>,
-                    maps:get(terminal_3_receipt, Accounts),
-                    maps:get(terminal_3_compensation, Accounts)
+                    maps:get(terminal_3_settlement, Accounts)
                 ),
                 options = #{
                     <<"override">> => <<"Drominal 1">>
@@ -487,8 +537,10 @@ construct_domain_fixture() ->
         {proxy, #domain_ProxyObject{
             ref = ?prx(1),
             data = #domain_ProxyDefinition{
-                url     = <<>>,
-                options = #{}
+                name        = <<"Dummy proxy">>,
+                description = <<"Dummy proxy, what else to say">>,
+                url         = <<>>,
+                options     = #{}
             }
         }}
     ].

@@ -2,81 +2,128 @@
 %%%
 %%% TODO
 %%%  - reduction raises suspicions
-%%%     - it's not a bijection, therefore there's no definitive way to map the
-%%%       set of postings to the original cash flow
 %%%     - should we consider posting with the same source and destination invalid?
+%%%     - did we get rid of splicing for good?
+%%%  - we should probably validate final cash flow somewhere here
 
 -module(hg_cashflow).
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 
--type amount() :: dmsl_domain_thrift:'Amount'().
--type currency() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
--type context() :: dmsl_domain_thrift:'CashFlowContext'().
--type account() :: dmsl_domain_thrift:'CashFlowAccount'().
-
--type posting(A, V, C) :: {A, A, V, C}.
-
--type t() :: [posting(account(), amount(), currency())].
-
--export_type([t/0]).
--export_type([account/0]).
+-type account()         :: dmsl_domain_thrift:'CashFlowAccount'().
+-type account_id()      :: dmsl_domain_thrift:'AccountID'().
+-type account_map()     :: #{account() => account_id()}.
+-type context()         :: dmsl_domain_thrift:'CashFlowContext'().
+-type cash_flow()       :: dmsl_domain_thrift:'CashFlow'().
+-type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 
 %%
 
--export([compute/3]).
+-export([finalize/3]).
 
 %%
 
--spec compute(dmsl_domain_thrift:'CashFlow'(), dmsl_domain_thrift:'CurrencyRef'(), context()) ->
-    t() | no_return().
+-define(posting(Source, Destination, Volume, Details),
+    #domain_CashFlowPosting{
+        source = Source,
+        destination = Destination,
+        volume = Volume,
+        details = Details
+    }).
 
-compute(CF, CurrencyRef, Context) ->
-    Currency = CurrencyRef#domain_CurrencyRef.symbolic_code,
-    try splice_postings(compute_postings(CF, Currency, Context)) catch
-        Reason ->
-            error(Reason) % FIXME
-    end.
+-define(final_posting(Source, Destination, Volume, Details),
+    #domain_FinalCashFlowPosting{
+        source = Source,
+        destination = Destination,
+        volume = Volume,
+        details = Details
+    }).
 
--define(posting(Source, Destination, Volume),
-    #domain_CashFlowPosting{source = Source, destination = Destination, volume = Volume}).
--define(fixed(Amount),
-    {fixed, #domain_CashVolumeFixed{amount = Amount}}).
--define(rational(P, Q),
-    #'Rational'{p = P, q = Q}).
--define(share(P, Q, Of),
-    {share, #domain_CashVolumeShare{'parts' = ?rational(P, Q), 'of' = Of}}).
+-spec finalize(cash_flow(), context(), account_map()) ->
+    final_cash_flow() | no_return().
 
-compute_postings(CF, Currency, Context) ->
+finalize(CF, Context, AccountMap) ->
+    compute_postings(CF, Context, AccountMap).
+
+compute_postings(CF, Context, AccountMap) ->
     [
-        {Source, Destination, compute_amount(Volume, Context), Currency} ||
-            ?posting(Source, Destination, Volume) <- CF
+        ?final_posting(
+            construct_final_account(Source, AccountMap),
+            construct_final_account(Destination, AccountMap),
+            compute_volume(Volume, Context),
+            Details
+        ) ||
+            ?posting(Source, Destination, Volume, Details) <- CF
     ].
 
-compute_amount(?fixed(Amount), _Context) ->
-    Amount;
-compute_amount(?share(P, Q, Of), Context) ->
-    compute_parts_of(P, Q, resolve_constant(Of, Context)).
+construct_final_account(AccountType, AccountMap) ->
+    #domain_FinalCashFlowAccount{
+        account_type = AccountType,
+        account_id   = resolve_account(AccountType, AccountMap)
+    }.
 
-compute_parts_of(P, Q, Amount) ->
-    hg_rational:to_integer(hg_rational:mul(hg_rational:new(Amount), hg_rational:new(P, Q))).
+resolve_account(AccountType, AccountMap) ->
+    case AccountMap of
+        #{AccountType := V} ->
+            V;
+        #{} ->
+            error({misconfiguration, {'Cash flow account can not be mapped', {AccountType, AccountMap}}})
+    end.
+
+%%
+
+-define(fixed(Cash),
+    {fixed, #domain_CashVolumeFixed{cash = Cash}}).
+-define(share(P, Q, Of),
+    {share, #domain_CashVolumeShare{'parts' = ?rational(P, Q), 'of' = Of}}).
+-define(product(Fun, CVs),
+    {product, {Fun, CVs}}).
+-define(rational(P, Q),
+    #'Rational'{p = P, q = Q}).
+
+compute_volume(?fixed(Cash), _Context) ->
+    Cash;
+compute_volume(?share(P, Q, Of), Context) ->
+    compute_parts_of(P, Q, resolve_constant(Of, Context));
+compute_volume(?product(Fun, CVs) = CV0, Context) ->
+    case ordsets:size(CVs) of
+        N when N > 0 ->
+            compute_product(Fun, ordsets:to_list(CVs), CV0, Context);
+        0 ->
+            error({misconfiguration, {'Cash volume product over empty set', CV0}})
+    end.
+
+compute_parts_of(P, Q, Cash = #domain_Cash{amount = Amount}) ->
+    Cash#domain_Cash{amount = genlib_rational:round(
+        genlib_rational:mul(
+            genlib_rational:new(Amount),
+            genlib_rational:new(P, Q)
+        )
+    )}.
+
+compute_product(Fun, [CV | CVRest], CV0, Context) ->
+    lists:foldl(
+        fun (CVN, CVMin) -> compute_product(Fun, CVN, CVMin, CV0, Context) end,
+        compute_volume(CV, Context),
+        CVRest
+    ).
+
+compute_product(Fun, CV, CVMin = #domain_Cash{amount = AmountMin, currency = Currency}, CV0, Context) ->
+    case compute_volume(CV, Context) of
+        #domain_Cash{amount = Amount, currency = Currency} ->
+            CVMin#domain_Cash{amount = compute_product_fun(Fun, AmountMin, Amount)};
+        _ ->
+            error({misconfiguration, {'Cash volume product over volumes of different currencies', CV0}})
+    end.
+
+compute_product_fun(min_of, V1, V2) ->
+    erlang:min(V1, V2);
+compute_product_fun(max_of, V1, V2) ->
+    erlang:max(V1, V2).
 
 resolve_constant(Constant, Context) ->
     case Context of
         #{Constant := V} ->
             V;
         #{} ->
-            throw({constant_not_found, Constant})
+            error({misconfiguration, {'Cash flow constant not found', {Constant, Context}}})
     end.
-
-splice_postings([Posting | Rest0]) ->
-    {Ps, Rest} = splice_posting(Posting, Rest0),
-    Ps ++ splice_postings(Rest);
-splice_postings([]) ->
-    [].
-
-splice_posting({S0, D0, A0, C0}, Rest) ->
-    % Postings with the same source and destination pairs should be accumulated
-    % together.
-    {Ps, Rest1} = lists:partition(fun ({S, D, _, C}) -> S == S0 andalso D == D0 andalso C == C0 end, Rest),
-    ASum = lists:foldl(fun ({_, _, A, _}, Acc) -> A + Acc end, A0, Ps),
-    {[{S0, D0, ASum, C0}], Rest1}.
