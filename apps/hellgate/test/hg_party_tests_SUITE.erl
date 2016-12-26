@@ -307,13 +307,17 @@ party_retrieval(C) ->
     #domain_Party{id = PartyID} = hg_client_party:get(Client).
 
 party_revisioning(C) ->
-    %% FIXME IM COMPLITELY BROKEN
     Client = ?c(client, C),
-    _Party1 = hg_client_party:get(Client),
-    _ = party_suspension(C),
-    _Party2 = hg_client_party:get(Client),
+    Context = hg_ct_helper:construct_context(),
+    hg_context:set(Context),
+    Party1 = hg_client_party:get(Client),
+    T1 = hg_datetime:format_now(),
+    Party2 = party_suspension(C),
+    Party1 = hg_party:checkout(Party1#domain_Party.id, T1),
+    T2 = hg_datetime:format_now(),
     _ = party_activation(C),
-    _Party3 = hg_client_party:get(Client).
+    Party2 = hg_party:checkout(Party2#domain_Party.id, T2),
+    hg_context:cleanup().
 
 
 %%  CONTRACT TESTS  %%

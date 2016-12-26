@@ -20,6 +20,7 @@
 -export([get_hellgate_url/0]).
 
 -export([construct_domain_fixture/0]).
+-export([construct_context/0]).
 
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 
@@ -491,6 +492,8 @@ construct_domain_fixture() ->
             }
         }}
     ].
+
+-spec construct_context() -> term().
 
 construct_context() ->
     ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
