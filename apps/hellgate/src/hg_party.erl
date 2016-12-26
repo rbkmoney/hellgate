@@ -266,13 +266,30 @@ init(ID, {_UserInfo}) ->
     Changeset1 = create_contract(#payproc_ContractParams{template = TestContractTemplpate}, StEvents),
     [?contract_creation(TestContract)] = Changeset1,
     ShopParams = get_shop_prototype_params(Revision),
-    Changeset2 = create_shop(
-        ShopParams#payproc_ShopParams{contract_id = TestContract#domain_Contract.id},
+    % FIXME payoutaccount should be optional at shop
+    Changeset2 = create_payout_account(
+        #payproc_PayoutAccountParams{
+            currency = #domain_CurrencyRef{symbolic_code = <<"RUB">>},
+            method = {bank_account, #domain_BankAccount{
+                account = <<"1234567890">>,
+                bank_name = <<"TestBank">>,
+                bank_post_account = <<"12345">>,
+                bank_bik = <<"012345">>
+            }}
+        },
+        StEvents
+    ),
+    [?payout_account_creation(TestPayoutAccount)] = Changeset2,
+    Changeset3 = create_shop(
+        ShopParams#payproc_ShopParams{
+            contract_id = TestContract#domain_Contract.id,
+            payout_account_id = TestPayoutAccount#domain_PayoutAccount.id
+        },
         ?active(),
         Revision,
         StEvents
     ),
-    {_ClaimID, StEvents1} = submit_accept_claim(Changeset1 ++ Changeset2, StEvents),
+    {_ClaimID, StEvents1} = submit_accept_claim(Changeset1 ++ Changeset2 ++ Changeset3, StEvents),
     ok(StEvents1).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
@@ -740,19 +757,19 @@ collapse_history(History) ->
 checkout_history(History, Revision) ->
     checkout_history(History, hg_datetime:to_integer(Revision), #st{}).
 
-checkout_history([{_ID, _, Ev} | Rest], Revision, St0 = #st{revision = Rev0}) ->
-    St1 = merge_history(Ev, St0),
-    Rev1 = hg_datetime:to_integer(St1#st.revision),
+checkout_history([{_ID, EventTimestamp, Ev} | Rest], Revision, St0 = #st{revision = Rev0}) ->
+    Rev1 = hg_datetime:to_integer(EventTimestamp),
     case Rev1 > Revision of
         true when Rev0 =/= undefined ->
             {ok, St0};
         true when Rev0 == undefined ->
             {error, revision_not_found};
         false ->
+            St1 = merge_history(Ev, St0),
             checkout_history(Rest, Revision, St1)
     end;
-checkout_history([], _, _) ->
-    {error, revision_not_found}.
+checkout_history([], _, St) ->
+    {ok, St}.
 
 merge_history({Seq, Event}, St) ->
     merge_event(Event, St#st{sequence = Seq}).

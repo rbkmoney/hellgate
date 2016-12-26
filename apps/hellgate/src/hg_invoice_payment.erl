@@ -586,7 +586,7 @@ compute_terms(#domain_Contract{template = TemplateRef, adjustments = Adjustments
     merge_terms(TemplateTerms, AdjustmentsTerms).
 
 compute_template_terms(TemplateRef, Revision) ->
-    Template = hg_domain:get(Revision, {contract_template, TemplateRef}),
+    Template = hg_domain:get(Revision, {template, TemplateRef}),
     case Template of
         #domain_ContractTemplate{parent_template = undefined, terms = Terms} ->
             Terms;

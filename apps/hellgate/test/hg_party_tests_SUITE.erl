@@ -323,14 +323,16 @@ party_revisioning(C) ->
 
 shop_not_found_on_retrieval(C) ->
     Client = ?c(client, C),
-    ?shop_not_found() = hg_clint_party:get_shop(<<"no such shop">>, Client).
+    ?shop_not_found() = hg_client_party:get_shop(666, Client).
 
 shop_creation(C) ->
     Client = ?c(client, C),
+    Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
     Params = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(42),
-        details  =
-            Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>)
+        details  = Details,
+        contract_id = get_first_contract(Client),
+        payout_account_id = get_first_payout_account(Client)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_pending(Result, Client),
@@ -367,7 +369,9 @@ shop_update_before_confirm(C) ->
     Client = ?c(client, C),
     Params = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(42),
-        details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>)
+        details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
+        contract_id = get_first_contract(Client),
+        payout_account_id = get_first_payout_account(Client)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim1 = assert_claim_pending(Result, Client),
@@ -414,7 +418,9 @@ claim_revocation(C) ->
     Party = hg_client_party:get(Client),
     Params = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(42),
-        details  = hg_ct_helper:make_shop_details(<<"OOPS">>)
+        details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
+        contract_id = get_first_contract(Client),
+        payout_account_id = get_first_payout_account(Client)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_pending(Result, Client),
@@ -435,13 +441,19 @@ claim_revocation(C) ->
 
 complex_claim_acceptance(C) ->
     Client = ?c(client, C),
+    ContractID = get_first_contract(Client),
+    PayoutAccountID = get_first_payout_account(Client),
     Params1 = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(1),
-        details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP 1">>)
+        details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP 1">>),
+        contract_id = ContractID,
+        payout_account_id = PayoutAccountID
     },
     Params2 = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(2),
-        details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP 2">>)
+        details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP 2">>),
+        contract_id = ContractID,
+        payout_account_id = PayoutAccountID
     },
     Claim1 = assert_claim_pending(hg_client_party:create_shop(Params1, Client), Client),
     ?claim(ClaimID1, _, [
@@ -606,8 +618,8 @@ shop_account_retrieval(C) ->
 
 get_last_shop(Client) ->
     #domain_Party{shops = Shops} = hg_client_party:get(Client),
-    ShopID = lists:last(lists:sort(lists:map(fun binary_to_integer/1, maps:keys(Shops)))),
-    maps:get(integer_to_binary(ShopID), Shops).
+    ShopID = lists:last(lists:sort(maps:keys(Shops))),
+    maps:get(ShopID, Shops).
 
 ensure_block_party(Reason, Client) ->
     assert_claim_accepted(hg_client_party:block(Reason, Client), Client).
@@ -661,6 +673,14 @@ next_event(Client) ->
     end.
 
 %%
+
+get_first_contract(Client) ->
+    #domain_Party{contracts = Contracts} = hg_client_party:get(Client),
+    erlang:hd(maps:keys(Contracts)).
+
+get_first_payout_account(Client) ->
+    #domain_Party{payout_accounts = PayoutAccounts} = hg_client_party:get(Client),
+    erlang:hd(maps:keys(PayoutAccounts)).
 
 make_userinfo() ->
     #payproc_UserInfo{id = <<?MODULE_STRING>>}.
