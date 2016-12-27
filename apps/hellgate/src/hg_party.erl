@@ -924,7 +924,7 @@ get_shop_account(ShopID, St = #st{}) ->
     get_shop_account(Shop).
 
 get_shop_account(#domain_Shop{account = undefined}) ->
-    hg_woody_wrapper:raise(#payproc_AccountNotFound{});
+    hg_woody_wrapper:raise(#payproc_ShopAccountNotFound{});
 get_shop_account(#domain_Shop{account = Account}) ->
     Account.
 
@@ -1027,10 +1027,16 @@ apply_shop_change({suspension, Suspension}, Shop) ->
     Shop#domain_Shop{suspension = Suspension};
 apply_shop_change({update, Update}, Shop) ->
     fold_opt([
-        {Update#payproc_ShopUpdate.category   , fun (V, S) -> S#domain_Shop{category = V}   end},
-        {Update#payproc_ShopUpdate.details    , fun (V, S) -> S#domain_Shop{details = V}    end},
-        {Update#payproc_ShopUpdate.contract_id , fun (V, S) -> S#domain_Shop{contract_id = V} end},
-        {Update#payproc_ShopUpdate.payout_account_id, fun (V, S) -> S#domain_Shop{payout_account_id = V} end}
+        {Update#payproc_ShopUpdate.category,
+            fun (V, S) -> S#domain_Shop{category = V} end},
+        {Update#payproc_ShopUpdate.details,
+            fun (V, S) -> S#domain_Shop{details = V} end},
+        {Update#payproc_ShopUpdate.contract_id,
+            fun (V, S) -> S#domain_Shop{contract_id = V} end},
+        {Update#payproc_ShopUpdate.payout_account_id,
+            fun (V, S) -> S#domain_Shop{payout_account_id = V} end},
+        {Update#payproc_ShopUpdate.proxy,
+            fun (V, S) -> S#domain_Shop{proxy = V} end}
     ], Shop);
 apply_shop_change(?account_created(ShopAccount), Shop) ->
     Shop#domain_Shop{account = ShopAccount}.
