@@ -21,7 +21,7 @@ services:
       - machinegun
 
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/machinegun:faa1156dd07a5cc72413616e3c73d48767654d3c
+    image: dr.rbkmoney.com/rbkmoney/machinegun:2c956c1172cf8f7b4a09512cd1571bdd4c57f1c1
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
