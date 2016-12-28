@@ -371,50 +371,31 @@ start_payment(PaymentParams, St) ->
 process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
     Party = checkout_party(St),
     Opts = get_payment_opts(Party, St),
-    case hg_invoice_payment:process_signal(Signal, PaymentSession, Opts) of
-        {next, {Events, Action}} ->
-            ok(wrap_payment_events(PaymentID, Events), St, Action);
-        {done, {Events1, _}} ->
-            PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
-            case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
-                ?processed() ->
-                    {Events2, Action} = hg_invoice_payment:start_session(?captured()),
-                    ok(wrap_payment_events(PaymentID, Events1 ++ Events2), St, Action);
-                ?captured() ->
-                    Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],
-                    ok(wrap_payment_events(PaymentID, Events1) ++ Events2, St);
-                ?failed(_) ->
-                    %% TODO: fix this dirty hack
-                    TmpPayments = lists:keydelete(PaymentID, 1, St#st.payments),
-                    ok(wrap_payment_events(PaymentID, Events1), St, restore_timer(St#st{payments = TmpPayments}))
-            end
-    end.
+    PaymentResult = hg_invoice_payment:process_signal(Signal, PaymentSession, Opts),
+    handle_payment_result(PaymentResult, PaymentID, PaymentSession, St).
 
 process_payment_call(Call, PaymentID, PaymentSession, St) ->
     Party = checkout_party(St),
     Opts = get_payment_opts(Party, St),
-    case hg_invoice_payment:process_call(Call, PaymentSession, Opts) of
-        {Response, {next, {Events, Action}}} ->
-            respond(Response, wrap_payment_events(PaymentID, Events), St, Action);
-        {Response, {done, {Events1, _}}} ->
+    {Response, PaymentResult} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
+    {{ok, Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, St)}.
+
+handle_payment_result(Result, PaymentID, PaymentSession, St) ->
+    case Result of
+        {next, {Events, Action}} ->
+            ok(wrap_payment_events(PaymentID, Events), St, Action);
+        {done, {Events1, _}} ->
             PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
+            St1 = set_payment_session(PaymentID, PaymentSession1, St),
             case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
                     {Events2, Action} = hg_invoice_payment:start_session(?captured()),
-                    Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
-                    respond(Response, Events, St, Action);
+                    ok(wrap_payment_events(PaymentID, Events1 ++ Events2), St1, Action);
                 ?captured() ->
                     Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],
-                    respond(Response, wrap_payment_events(PaymentID, Events1) ++ Events2, St);
+                    ok(wrap_payment_events(PaymentID, Events1) ++ Events2, St1);
                 ?failed(_) ->
-                    %% TODO: fix this dirty hack
-                    TmpPayments = lists:keydelete(PaymentID, 1, St#st.payments),
-                    respond(
-                            Response,
-                            wrap_payment_events(PaymentID, Events1),
-                            St,
-                            restore_timer(St#st{payments = TmpPayments})
-                    )
+                    ok(wrap_payment_events(PaymentID, Events1), St1, restore_timer(St1))
             end
     end.
 
