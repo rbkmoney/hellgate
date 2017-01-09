@@ -41,6 +41,10 @@
 
 -export([publish_event/2]).
 
+%% Party support functions
+
+-export([get_payments_service_terms/3]).
+
 %%
 
 -spec get(user_info(), party_id()) ->
@@ -211,6 +215,7 @@ map_error({error, Reason}) ->
 %%
 
 -type party_id()   :: dmsl_domain_thrift:'PartyID'().
+-type shop_id()    :: dmsl_domain_thrift:'ShopID'().
 -type party()      :: dmsl_domain_thrift:'Party'().
 -type claim_id()   :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()      :: dmsl_payment_processing_thrift:'Claim'().
@@ -352,16 +357,18 @@ handle_call({create_contract, ContractParams, _UserInfo}, StEvents0) ->
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({terminate_contract, ID, Reason, _UserInfo}, StEvents0) ->
+handle_call({terminate_contract, ID, Reason, _UserInfo}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
-    ok = assert_contract_active(ID, StEvents0),
+    Contract = get_contract(ID, get_party(St)),
+    ok = assert_contract_active(Contract, hg_datetime:format_now()),
     TerminatedAt = hg_datetime:format_now(),
     {ClaimID, StEvents1} = create_claim([?contract_termination(ID, TerminatedAt, Reason)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_contract_adjustment, ID, Params, _UserInfo}, StEvents0) ->
+handle_call({create_contract_adjustment, ID, Params, _UserInfo}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
-    ok = assert_contract_active(ID, StEvents0),
+    Contract = get_contract(ID, get_party(St)),
+    ok = assert_contract_active(Contract, hg_datetime:format_now()),
     Changeset = create_contract_adjustment(ID, Params, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
@@ -471,7 +478,7 @@ create_contract_adjustment(ID, #payproc_ContractAdjustmentParams{template = Temp
     [?contract_adjustment_creation(ID, Adjustment)].
 
 get_next_contract_adjustment_id(Adjustments) ->
-    get_next_id([0 | [ID || #domain_ContractAdjustment{id = ID} <- Adjustments]]).
+    get_next_id([ID || #domain_ContractAdjustment{id = ID} <- Adjustments]).
 
 %%
 
@@ -515,6 +522,116 @@ create_payout_account(#payproc_PayoutAccountParams{currency = Currency, method =
 
 get_next_payout_account_id(#st{party = #domain_Party{payout_accounts = Accounts}}) ->
     get_next_id(maps:keys(Accounts)).
+%%
+
+-spec get_payments_service_terms(shop_id(), party(), binary() | integer()) ->
+    dmsl_domain_thrift:'PaymentsServiceTerms'().
+
+get_payments_service_terms(ShopID, Party, Timestamp) ->
+    Shop = get_shop(ShopID, Party),
+    Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
+    ok = assert_contract_active(Contract, Timestamp),
+    #domain_Terms{payments = PaymentTerms} = compute_terms(Contract, Timestamp),
+    PaymentTerms.
+
+assert_contract_active(#domain_Contract{terminated_at = TerminatedAt}, Timestamp) ->
+    case TerminatedAt of
+        undefined ->
+            ok;
+        TerminatedAt ->
+            Active = hg_datetime:compare(TerminatedAt, Timestamp),
+            case Active of
+                later ->
+                    ok;
+                _Any ->
+                    % FIXME special exception for this case
+                    raise(#payproc_ContractNotFound{})
+            end
+    end.
+
+compute_terms(#domain_Contract{template = TemplateRef, adjustments = Adjustments}, CreatedAt) ->
+    Revision = hg_domain:head(),
+    TemplateTerms = compute_template_terms(TemplateRef, Revision),
+    AdjustmentsTerms = compute_adjustments_terms(
+        lists:filter(fun(A) -> is_adjustment_active(A, CreatedAt, Revision) end, Adjustments),
+        Revision
+    ),
+    merge_terms(TemplateTerms, AdjustmentsTerms).
+
+compute_template_terms(TemplateRef, Revision) ->
+    Template = hg_domain:get(Revision, {template, TemplateRef}),
+    case Template of
+        #domain_ContractTemplate{parent_template = undefined, terms = Terms} ->
+            Terms;
+        #domain_ContractTemplate{parent_template = ParentRef, terms = Terms} ->
+            ParentTerms = compute_template_terms(ParentRef, Revision),
+            merge_terms(ParentTerms, Terms)
+    end.
+
+compute_adjustments_terms(Adjustments, Revision) when is_list(Adjustments) ->
+    lists:foldl(
+        fun(#domain_ContractAdjustment{template = TemplateRef}, Terms) ->
+            TemplateTerms = compute_template_terms(TemplateRef, Revision),
+            merge_terms(Terms, TemplateTerms)
+        end,
+        #domain_Terms{},
+        Adjustments
+    ).
+
+is_adjustment_active(
+    #domain_ContractAdjustment{concluded_at = ConcludedAt},
+    Timestamp,
+    _Revision
+) ->
+    case hg_datetime:to_integer(ConcludedAt) =< hg_datetime:to_integer(Timestamp) of
+        true ->
+            %% TODO check template lifetime parameters
+            true;
+        false ->
+            false
+    end.
+
+merge_terms(#domain_Terms{payments = PaymentTerms0}, #domain_Terms{payments = PaymentTerms1}) ->
+    #domain_Terms{
+        payments = merge_payments_terms(PaymentTerms0, PaymentTerms1)
+    }.
+
+merge_payments_terms(
+    #domain_PaymentsServiceTerms{
+        currencies = Curr0,
+        categories = Cat0,
+        payment_methods = Pm0,
+        amount_limit = Al0,
+        fees = Fee0,
+        guarantee_fund = Gf0
+    },
+    #domain_PaymentsServiceTerms{
+        currencies = Curr1,
+        categories = Cat1,
+        payment_methods = Pm1,
+        amount_limit = Al1,
+        fees = Fee1,
+        guarantee_fund = Gf1
+    }
+) ->
+    #domain_PaymentsServiceTerms{
+        currencies = update_if_defined(Curr0, Curr1),
+        categories = update_if_defined(Cat0, Cat1),
+        payment_methods = update_if_defined(Pm0, Pm1),
+        amount_limit = update_if_defined(Al0, Al1),
+        fees = update_if_defined(Fee0, Fee1),
+        guarantee_fund = update_if_defined(Gf0, Gf1)
+    };
+merge_payments_terms(undefined, Any) ->
+    Any;
+merge_payments_terms(Any, undefined) ->
+    Any.
+
+update_if_defined(Value, undefined) ->
+    Value;
+update_if_defined(_, Value) ->
+    Value.
+
 %%
 
 create_claim(Changeset, StEvents = {St, _}) ->
@@ -624,6 +741,7 @@ construct_claim(Changeset, St, Status) ->
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
+    % TODO make ClaimID integer instead of binary
     get_next_binary_id(maps:keys(Claims)).
 
 get_next_binary_id(IDs) ->
@@ -699,21 +817,6 @@ assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     raise(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
-assert_contract_active(ID, {St, _}) ->
-    Contract = get_contract(ID, get_party(St)),
-    case Contract#domain_Contract.terminated_at of
-        undefined ->
-            ok;
-        Terminated ->
-            Active = hg_datetime:to_integer(Terminated) > hg_datetime:now(),
-            case Active of
-                true ->
-                    ok;
-                false ->
-                    raise(#payproc_ContractNotFound{})
-            end
-    end.
-
 %%
 
 -spec apply_state_event(public_event() | private_event(), StEvents) -> StEvents when
@@ -755,16 +858,15 @@ collapse_history(History) ->
 -spec checkout_history([ev()], revision()) -> {ok, st()} | {error, revision_not_found}.
 
 checkout_history(History, Revision) ->
-    checkout_history(History, hg_datetime:to_integer(Revision), #st{}).
+    checkout_history(History, Revision, #st{}).
 
 checkout_history([{_ID, EventTimestamp, Ev} | Rest], Revision, St0 = #st{revision = Rev0}) ->
-    Rev1 = hg_datetime:to_integer(EventTimestamp),
-    case Rev1 > Revision of
-        true when Rev0 =/= undefined ->
+    case hg_datetime:compare(EventTimestamp, Revision) of
+        later when Rev0 =/= undefined ->
             {ok, St0};
-        true when Rev0 == undefined ->
+        later when Rev0 == undefined ->
             {error, revision_not_found};
-        false ->
+        _ ->
             St1 = merge_history(Ev, St0),
             checkout_history(Rest, Revision, St1)
     end;

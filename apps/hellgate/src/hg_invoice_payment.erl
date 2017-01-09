@@ -105,11 +105,11 @@ get_payment(#st{payment = Payment}) ->
 -spec init(payment_id(), _, opts()) ->
     hg_machine:result().
 
-init(PaymentID, PaymentParams, Opts) ->
+init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Revision = hg_domain:head(),
-    PaymentTerms = get_payments_service_terms(Opts),
+    PaymentTerms = hg_party:get_payments_service_terms(Shop#domain_Shop.id, Party, Invoice#domain_Invoice.created_at),
     VS0 = collect_varset(Shop, #{}),
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_amount(Invoice, {Revision, PaymentTerms}, VS1),
@@ -566,98 +566,6 @@ get_shop(#{party := Party, invoice := Invoice}) ->
 
 get_invoice_currency(#domain_Invoice{cost = #domain_Cash{currency = Currency}}) ->
     #domain_CurrencyRef{symbolic_code = Currency#domain_Currency.symbolic_code}.
-
-get_payments_service_terms(#{party := Party, invoice := Invoice} = Opts) ->
-    Shop = get_shop(Opts),
-    Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
-    #domain_Terms{payments = PaymentTerms} = compute_terms(
-        Contract,
-        Invoice#domain_Invoice.created_at
-    ),
-    PaymentTerms.
-
-compute_terms(#domain_Contract{template = TemplateRef, adjustments = Adjustments}, CreatedAt) ->
-    Revision = hg_domain:head(),
-    TemplateTerms = compute_template_terms(TemplateRef, Revision),
-    AdjustmentsTerms = compute_adjustments_terms(
-        lists:filter(fun(A) -> is_adjustment_active(A, CreatedAt, Revision) end, Adjustments),
-        Revision
-    ),
-    merge_terms(TemplateTerms, AdjustmentsTerms).
-
-compute_template_terms(TemplateRef, Revision) ->
-    Template = hg_domain:get(Revision, {template, TemplateRef}),
-    case Template of
-        #domain_ContractTemplate{parent_template = undefined, terms = Terms} ->
-            Terms;
-        #domain_ContractTemplate{parent_template = ParentRef, terms = Terms} ->
-            ParentTerms = compute_template_terms(ParentRef, Revision),
-            merge_terms(ParentTerms, Terms)
-    end.
-
-compute_adjustments_terms(Adjustments, Revision) when is_list(Adjustments) ->
-    lists:foldl(
-        fun(#domain_ContractAdjustment{template = TemplateRef}, Terms) ->
-            TemplateTerms = compute_template_terms(TemplateRef, Revision),
-            merge_terms(Terms, TemplateTerms)
-        end,
-        #domain_Terms{},
-        Adjustments
-    ).
-
-is_adjustment_active(
-    #domain_ContractAdjustment{concluded_at = ConcludedAt},
-    Timestamp,
-    _Revision
-) ->
-    case hg_datetime:to_integer(ConcludedAt) =< hg_datetime:to_integer(Timestamp) of
-        true ->
-            %% TODO check template lifetime parameters
-            true;
-        false ->
-            false
-    end.
-
-merge_terms(#domain_Terms{payments = PaymentTerms0}, #domain_Terms{payments = PaymentTerms1}) ->
-    #domain_Terms{
-        payments = merge_payments_terms(PaymentTerms0, PaymentTerms1)
-    }.
-
-merge_payments_terms(
-    #domain_PaymentsServiceTerms{
-        currencies = Curr0,
-        categories = Cat0,
-        payment_methods = Pm0,
-        amount_limit = Al0,
-        fees = Fee0,
-        guarantee_fund = Gf0
-    },
-    #domain_PaymentsServiceTerms{
-        currencies = Curr1,
-        categories = Cat1,
-        payment_methods = Pm1,
-        amount_limit = Al1,
-        fees = Fee1,
-        guarantee_fund = Gf1
-    }
-) ->
-    #domain_PaymentsServiceTerms{
-        currencies = update_if_defined(Curr0, Curr1),
-        categories = update_if_defined(Cat0, Cat1),
-        payment_methods = update_if_defined(Pm0, Pm1),
-        amount_limit = update_if_defined(Al0, Al1),
-        fees = update_if_defined(Fee0, Fee1),
-        guarantee_fund = update_if_defined(Gf0, Gf1)
-    };
-merge_payments_terms(undefined, Any) ->
-    Any;
-merge_payments_terms(Any, undefined) ->
-    Any.
-
-update_if_defined(Value, undefined) ->
-    Value;
-update_if_defined(_, Value) ->
-    Value.
 
 %%
 
