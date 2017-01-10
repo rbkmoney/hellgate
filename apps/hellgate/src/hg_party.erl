@@ -71,92 +71,91 @@ checkout(PartyID, Revision) ->
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
-handle_function('Create', {UserInfo, PartyID}, _Opts) ->
+handle_function('Create', [UserInfo, PartyID], _Opts) ->
     start(PartyID, {UserInfo});
 
-handle_function('Get', {UserInfo, PartyID}, _Opts) ->
+handle_function('Get', [UserInfo, PartyID], _Opts) ->
     St = get_state(UserInfo, PartyID),
     get_party(St);
 
-handle_function('CreateContract', {UserInfo, PartyID, ContractParams}, _Opts) ->
+handle_function('CreateContract', [UserInfo, PartyID, ContractParams], _Opts) ->
     call(PartyID, {create_contract, ContractParams, UserInfo});
 
-handle_function('GetContract', {UserInfo, PartyID, ContractID}, _Opts) ->
+handle_function('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
     St = get_state(UserInfo, PartyID),
     get_contract(ContractID, get_party(St));
 
-handle_function('TerminateContract', {UserInfo, PartyID, ContractID, Reason}, _Opts) ->
+handle_function('TerminateContract', [UserInfo, PartyID, ContractID, Reason], _Opts) ->
     call(PartyID, {terminate_contract, ContractID, Reason, UserInfo});
 
-handle_function('CreateContractAdjustment', {UserInfo, PartyID, ContractID, Params}, _Opts) ->
+handle_function('CreateContractAdjustment', [UserInfo, PartyID, ContractID, Params], _Opts) ->
     call(PartyID, {create_contract_adjustment, ContractID, Params, UserInfo});
 
-handle_function('CreatePayoutAccount', {UserInfo, PartyID, Params}, _Opts) ->
+handle_function('CreatePayoutAccount', [UserInfo, PartyID, Params], _Opts) ->
     call(PartyID, {create_payout_account, Params, UserInfo});
 
-handle_function('GetEvents', {UserInfo, PartyID, Range}, _Opts) ->
+handle_function('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
     get_public_history(UserInfo, PartyID, AfterID, Limit);
 
-handle_function('Block', {UserInfo, PartyID, Reason}, _Opts) ->
+handle_function('Block', [UserInfo, PartyID, Reason], _Opts) ->
     call(PartyID, {block, Reason, UserInfo});
 
-handle_function('Unblock', {UserInfo, PartyID, Reason}, _Opts) ->
+handle_function('Unblock', [UserInfo, PartyID, Reason], _Opts) ->
     call(PartyID, {unblock, Reason, UserInfo});
 
-handle_function('Suspend', {UserInfo, PartyID}, _Opts) ->
+handle_function('Suspend', [UserInfo, PartyID], _Opts) ->
     call(PartyID, {suspend, UserInfo});
 
-handle_function('Activate', {UserInfo, PartyID}, _Opts) ->
+handle_function('Activate', [UserInfo, PartyID], _Opts) ->
     call(PartyID, {activate, UserInfo});
 
-handle_function('CreateShop', {UserInfo, PartyID, Params}, _Opts) ->
+handle_function('CreateShop', [UserInfo, PartyID, Params], _Opts) ->
     call(PartyID, {create_shop, Params, UserInfo});
 
-handle_function('GetShop', {UserInfo, PartyID, ID}, _Opts) ->
+handle_function('GetShop', [UserInfo, PartyID, ID], _Opts) ->
     St = get_state(UserInfo, PartyID),
     get_shop(ID, get_party(St));
 
-handle_function('UpdateShop', {UserInfo, PartyID, ID, Update}, _Opts) ->
+handle_function('UpdateShop', [UserInfo, PartyID, ID, Update], _Opts) ->
     call(PartyID, {update_shop, ID, Update, UserInfo});
 
-handle_function('BlockShop', {UserInfo, PartyID, ID, Reason}, _Opts) ->
+handle_function('BlockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
     call(PartyID, {block_shop, ID, Reason, UserInfo});
 
-handle_function('UnblockShop', {UserInfo, PartyID, ID, Reason}, _Opts) ->
+handle_function('UnblockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
     call(PartyID, {unblock_shop, ID, Reason, UserInfo});
 
-handle_function('SuspendShop', {UserInfo, PartyID, ID}, _Opts) ->
+handle_function('SuspendShop', [UserInfo, PartyID, ID], _Opts) ->
     call(PartyID, {suspend_shop, ID, UserInfo});
 
-handle_function('ActivateShop', {UserInfo, PartyID, ID}, _Opts) ->
+handle_function('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
     call(PartyID, {activate_shop, ID, UserInfo});
 
-handle_function('GetClaim', {UserInfo, PartyID, ID}, _Opts) ->
+handle_function('GetClaim', [UserInfo, PartyID, ID], _Opts) ->
     St = get_state(UserInfo, PartyID),
     get_claim(ID, St);
 
-handle_function('GetPendingClaim', {UserInfo, PartyID}, _Opts) ->
+handle_function('GetPendingClaim', [UserInfo, PartyID], _Opts) ->
     St = get_state(UserInfo, PartyID),
     ensure_claim(get_pending_claim(St));
 
-handle_function('AcceptClaim', {UserInfo, PartyID, ID}, _Opts) ->
+handle_function('AcceptClaim', [UserInfo, PartyID, ID], _Opts) ->
     call(PartyID, {accept_claim, ID, UserInfo});
 
-handle_function('DenyClaim', {UserInfo, PartyID, ID, Reason}, _Opts) ->
+handle_function('DenyClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
     call(PartyID, {deny_claim, ID, Reason, UserInfo});
 
-handle_function('RevokeClaim', {UserInfo, PartyID, ID, Reason}, _Opts) ->
+handle_function('RevokeClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
     call(PartyID, {revoke_claim, ID, Reason, UserInfo});
 
-handle_function('GetAccountState', {UserInfo, PartyID, AccountID}, _Opts) ->
+handle_function('GetAccountState', [UserInfo, PartyID, AccountID], _Opts) ->
     St = get_state(UserInfo, PartyID),
     get_account_state(AccountID, St);
 
-handle_function('GetShopAccount', {UserInfo, PartyID, ShopID}, _Opts) ->
+handle_function('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
     St = get_state(UserInfo, PartyID),
     get_shop_account(ShopID, St).
-
 
 get_history(PartyID) ->
     map_history_error(hg_machine:get_history(?NS, PartyID)).
@@ -167,7 +166,7 @@ get_history(PartyID, AfterID, Limit) ->
 %% TODO remove this hack as soon as machinegun learns to tell the difference between
 %%      nonexsitent machine and empty history
 assert_nonempty_history({[], _LastID}) ->
-    throw(#payproc_PartyNotFound{});
+    hg_woody_wrapper:raise(#payproc_PartyNotFound{});
 assert_nonempty_history({[_ | _], _LastID} = Result) ->
     Result.
 
@@ -191,12 +190,12 @@ call(ID, Args) ->
 map_start_error({ok, _}) ->
     ok;
 map_start_error({error, exists}) ->
-    throw(#payproc_PartyExists{}).
+    hg_woody_wrapper:raise(#payproc_PartyExists{}).
 
 map_history_error({ok, Result}) ->
     assert_nonempty_history(Result);
 map_history_error({error, notfound}) ->
-    throw(#payproc_PartyNotFound{});
+    hg_woody_wrapper:raise(#payproc_PartyNotFound{});
 map_history_error({error, Reason}) ->
     error(Reason).
 
@@ -208,7 +207,7 @@ map_error({ok, CallResult}) ->
             throw(Reason)
     end;
 map_error({error, notfound}) ->
-    throw(#payproc_PartyNotFound{});
+    hg_woody_wrapper:raise(#payproc_PartyNotFound{});
 map_error({error, Reason}) ->
     error(Reason).
 
@@ -903,7 +902,7 @@ get_contract(ID, #domain_Party{contracts = Contracts}) ->
         #domain_Contract{} ->
             Contract;
         undefined ->
-            raise(#payproc_ContractNotFound{})
+            hg_woody_wrapper:raise(#payproc_ContractNotFound{})
     end.
 
 set_contract(Contract = #domain_Contract{id = ID}, Party = #domain_Party{contracts = Contracts}) ->
@@ -918,14 +917,14 @@ set_shop(Shop = #domain_Shop{id = ID}, Party = #domain_Party{shops = Shops}) ->
 ensure_shop(Shop = #domain_Shop{}) ->
     Shop;
 ensure_shop(undefined) ->
-    raise(#payproc_ShopNotFound{}).
+    hg_woody_wrapper:raise(#payproc_ShopNotFound{}).
 
 get_shop_account(ShopID, St = #st{}) ->
     Shop = get_shop(ShopID, get_party(St)),
     get_shop_account(Shop).
 
 get_shop_account(#domain_Shop{account = undefined}) ->
-    raise(#payproc_AccountNotFound{});
+    hg_woody_wrapper:raise(#payproc_AccountNotFound{});
 get_shop_account(#domain_Shop{account = Account}) ->
     Account.
 
@@ -953,7 +952,7 @@ ensure_account(AccountID, #domain_Party{shops = Shops}) ->
         #domain_ShopAccount{} ->
             ok;
         undefined ->
-            raise(#payproc_AccountNotFound{})
+            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 find_shop_account(_ID, []) ->
@@ -988,7 +987,7 @@ set_claim(Claim = #payproc_Claim{id = ID}, St = #st{claims = Claims}) ->
 ensure_claim(Claim = #payproc_Claim{}) ->
     Claim;
 ensure_claim(undefined) ->
-    raise(#payproc_ClaimNotFound{}).
+    hg_woody_wrapper:raise(#payproc_ClaimNotFound{}).
 
 apply_accepted_claim(Claim = #payproc_Claim{status = ?accepted(AcceptedAt)}, St) ->
     apply_claim(Claim, St#st{revision = AcceptedAt});

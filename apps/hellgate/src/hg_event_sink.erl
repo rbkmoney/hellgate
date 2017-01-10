@@ -20,7 +20,7 @@
     ('GetLastEventID', woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
         event_id() | no_return().
 
-handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, _Opts) ->
+handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->
     try
         get_public_history(After, Limit)
     catch
@@ -28,7 +28,7 @@ handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit
             throw(#payproc_EventNotFound{})
     end;
 
-handle_function('GetLastEventID', {}, _Opts) ->
+handle_function('GetLastEventID', [], _Opts) ->
     % TODO handle thrift exceptions here
     case get_history_range(undefined, 1, backward) of
         {[#'SinkEvent'{id = ID}], _LastID} ->
@@ -49,7 +49,7 @@ get_history_range(After, Limit) ->
 
 get_history_range(After, Limit, Direction) ->
     HistoryRange = #'HistoryRange'{'after' = After, limit = Limit, direction = Direction},
-    History = call_event_sink('GetHistory', [HistoryRange]),
+    {ok, History} = call_event_sink('GetHistory', [HistoryRange]),
     {History, get_history_last_id(History, After)}.
 
 get_history_last_id([], LastID) ->

@@ -40,7 +40,7 @@ start_app(lager = AppName) ->
         {error_logger_hwm, 600},
         {suppress_application_start_stop, true},
         {handlers, [
-            {lager_common_test_backend, info}
+            {lager_common_test_backend, debug}
         ]}
     ]), #{}};
 
@@ -645,4 +645,4 @@ construct_domain_fixture() ->
 
 construct_context() ->
     ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
-    woody_client:new_context(ReqID, hg_client_api).
+    woody_context:new(ReqID).

@@ -43,22 +43,22 @@ get_http_cowboy_spec() ->
 
 handle_function(
     'ProcessPayment',
-    {#prxprv_Context{
+    [#prxprv_Context{
         session = #prxprv_Session{target = Target, state = State},
         payment = PaymentInfo,
         options = _
-    }},
+    }],
     Opts
 ) ->
     process_payment(Target, State, PaymentInfo, Opts);
 
 handle_function(
     'HandlePaymentCallback',
-    {Payload, #prxprv_Context{
+    [Payload, #prxprv_Context{
         session = #prxprv_Session{target = Target, state = State},
         payment = PaymentInfo,
         options = _
-    }},
+    }],
     Opts
 ) ->
     handle_callback(Payload, Target, State, PaymentInfo, Opts).
@@ -159,7 +159,7 @@ callback_to_hell(Tag) ->
         proxy_host_provider, 'ProcessCallback', [Tag, <<"payload">>],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ) of
-        {Response, _} when is_binary(Response) ->
+        {{ok, _Response}, _} ->
             200;
         {{error, _}, _} ->
             500;

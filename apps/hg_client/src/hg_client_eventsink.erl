@@ -49,7 +49,7 @@ stop(Client) ->
 
 get_last_event_id(Client) ->
     case gen_server:call(Client, {call, 'GetLastEventID', []}) of
-        EventID when is_integer(EventID) ->
+        {ok, EventID} when is_integer(EventID) ->
             EventID;
         {exception, #payproc_NoLastEvent{}} ->
             none;

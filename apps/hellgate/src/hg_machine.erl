@@ -129,10 +129,9 @@ get_history(Ns, ID, Range) ->
 %%
 
 call_automaton(Function, Args) ->
-    try
-        Result = hg_woody_wrapper:call('Automaton', Function, Args),
-        {ok, Result}
-    catch
+    case hg_woody_wrapper:call('Automaton', Function, Args) of
+        {ok, _} = Result ->
+            Result;
         {exception, #'MachineAlreadyExists'{}} ->
             {error, exists};
         {exception, #'MachineNotFound'{}} ->
@@ -148,12 +147,12 @@ call_automaton(Function, Args) ->
 -spec handle_function(func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function('ProcessSignal', {Args}, #{ns := Ns} = _Opts) ->
+handle_function('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
     _ = hg_utils:logtag_process(namespace, Ns),
     #'SignalArgs'{signal = {_Type, Signal}, machine = Machine} = Args,
     dispatch_signal(Ns, Signal, Machine);
 
-handle_function('ProcessCall', {Args}, #{ns := Ns} = _Opts) ->
+handle_function('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
     _ = hg_utils:logtag_process(namespace, Ns),
     #'CallArgs'{arg = Payload, machine = Machine} = Args,
     dispatch_call(Ns, Payload, Machine).
@@ -252,7 +251,7 @@ get_service_handlers(MachineHandlers) ->
 get_service_handler(MachineHandler) ->
     Ns = MachineHandler:namespace(),
     {Path, Service} = hg_proto:get_service_spec(processor, #{namespace => Ns}),
-    {Path, {Service, hg_woody_wrapper, #{ns => Ns, handler => ?MODULE}}}.
+    {Path, {Service, {hg_woody_wrapper, #{ns => Ns, handler => ?MODULE}}}}.
 
 %%
 

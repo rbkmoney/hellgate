@@ -9,7 +9,7 @@
 %%
 
 -behaviour(woody_event_handler).
--export([handle_event/3]).
+-export([handle_event/4]).
 
 %%
 
@@ -20,39 +20,48 @@
 new(RootUrl) ->
     new(RootUrl, construct_context()).
 
--spec new(woody_t:url(), woody_client:context()) -> t().
+-spec new(woody:url(), woody:context()) -> t().
 
 new(RootUrl, Context) ->
     {RootUrl, Context}.
 
 construct_context() ->
     ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
-    woody_client:new_context(ReqID, ?MODULE).
+    woody_context:new(ReqID).
 
 -spec call(Name :: atom(), woody_t:func(), [any()], t()) ->
-    {ok | _Response | {exception, _} | {error, _}, t()}.
+    {{ok, _Response} | {exception, _} | {error, _}, t()}.
 
 call(ServiceName, Function, Args, {RootUrl, Context}) ->
     {Path, Service} = hg_proto:get_service_spec(ServiceName),
     Url = iolist_to_binary([RootUrl, Path]),
     Request = {Service, Function, Args},
-    {Result, ContextNext} = woody_client:call_safe(Context, Request, #{url => Url}),
-    {Result, {RootUrl, ContextNext}}.
+    Result = try
+        woody_client:call(
+            Request,
+            #{url => Url, event_handler => {hg_woody_event_handler, undefined}},
+            Context
+        )
+    catch
+        error:Error ->
+            {error, Error}
+    end,
+    {Result, {RootUrl, Context}}.
 
 %%
 
--spec handle_event(EventType, RpcID, EventMeta)
-    -> _ when
-        EventType :: woody_event_handler:event_type(),
-        RpcID ::  woody_t:rpc_id(),
-        EventMeta :: woody_event_handler:event_meta_type().
+-spec handle_event(Event, RpcId, Meta, Opts) -> ok when
+    Event :: woody_event_handler:event(),
+    RpcId :: woody:rpc_id() | undefined,
+    Meta  :: woody_event_handler:event_meta(),
+    Opts  :: woody:options().
 
-handle_event(EventType, RpcID, #{status := error, class := Class, reason := Reason, stack := Stack}) ->
+handle_event(EventType, RpcID, #{status := error, class := Class, reason := Reason, stack := Stack}, _Opts) ->
     lager:error(
         maps:to_list(RpcID),
         "[client] ~s with ~s:~p at ~s",
         [EventType, Class, Reason, genlib_format:format_stacktrace(Stack, [newlines])]
     );
 
-handle_event(EventType, RpcID, EventMeta) ->
+handle_event(EventType, RpcID, EventMeta, _Opts) ->
     lager:debug(maps:to_list(RpcID), "[client] ~s: ~p", [EventType, EventMeta]).

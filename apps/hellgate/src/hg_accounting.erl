@@ -39,12 +39,11 @@
     account().
 
 get_account(AccountID) ->
-    try
-        Result = call_accounter('GetAccountByID', [AccountID]),
-        construct_account(AccountID, Result)
-    catch
+    case call_accounter('GetAccountByID', [AccountID]) of
+        {ok, Result} ->
+            construct_account(AccountID, Result);
         {exception, #accounter_AccountNotFound{}} ->
-            throw(#payproc_AccountNotFound{})
+            hg_woody_wrapper:raise(#payproc_AccountNotFound{}) 
     end.
 
 -spec create_account(currency_code()) ->
@@ -57,7 +56,13 @@ create_account(CurrencyCode) ->
     account_id().
 
 create_account(CurrencyCode, Description) ->
-    call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)]).
+    case call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)]) of
+        {ok, Result} ->
+            Result;
+        {exception, Exception} ->
+            % FIXME
+            error({accounter_exception, Exception})
+    end.
 
 construct_prototype(CurrencyCode, Description) ->
     #accounter_AccountPrototype{
@@ -87,11 +92,10 @@ rollback(PlanID, Batches) ->
     do('RollbackPlan', construct_plan(PlanID, Batches)).
 
 do(Op, Plan) ->
-    try
-        PlanLog = call_accounter(Op, [Plan]),
-        collect_accounts_state(PlanLog)
-    catch
-        Exception ->
+    case call_accounter(Op, [Plan]) of
+        {ok, PlanLog} ->
+            collect_accounts_state(PlanLog);
+        {exception, Exception} ->
             error({accounting, Exception}) % FIXME
     end.
 

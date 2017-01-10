@@ -20,7 +20,7 @@
 -spec handle_function('ProcessCallback', {tag(), callback()}, hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function('ProcessCallback', {Tag, Callback}, _) ->
+handle_function('ProcessCallback', [Tag, Callback], _) ->
     map_error(hg_invoice:process_callback(Tag, {provider, Callback})).
 
 map_error({ok, CallResult}) ->
@@ -31,6 +31,6 @@ map_error({ok, CallResult}) ->
             throw(Reason)
     end;
 map_error({error, notfound}) ->
-    throw(#'InvalidRequest'{errors = [<<"notfound">>]});
+    hg_woody_wrapper:raise(#'InvalidRequest'{errors = [<<"notfound">>]});
 map_error({error, Reason}) ->
     error(Reason).

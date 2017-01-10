@@ -67,7 +67,7 @@
 -spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function('Create', {UserInfo, InvoiceParams}, _Opts) ->
+handle_function('Create', [UserInfo, InvoiceParams], _Opts) ->
     ID = hg_utils:unique_id(),
     #payproc_InvoiceParams{party_id = PartyID, shop_id = ShopID} = InvoiceParams,
     Party = get_party(UserInfo, PartyID),
@@ -76,22 +76,22 @@ handle_function('Create', {UserInfo, InvoiceParams}, _Opts) ->
     ok = start(ID, {InvoiceParams, PartyID}),
     ID;
 
-handle_function('Get', {UserInfo, InvoiceID}, _Opts) ->
+handle_function('Get', [UserInfo, InvoiceID], _Opts) ->
     St = get_state(UserInfo, InvoiceID),
     _Party = get_party(UserInfo, get_party_id(St)),
     get_invoice_state(St);
 
-handle_function('GetEvents', {UserInfo, InvoiceID, Range}, _Opts) ->
+handle_function('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
     %% TODO access control
     get_public_history(UserInfo, InvoiceID, Range);
 
-handle_function('StartPayment', {UserInfo, InvoiceID, PaymentParams}, _Opts) ->
+handle_function('StartPayment', [UserInfo, InvoiceID, PaymentParams], _Opts) ->
     St0 = get_initial_state(UserInfo, InvoiceID),
     Party = get_party(UserInfo, get_party_id(St0)),
     _Shop = validate_party_shop(get_shop_id(St0), Party),
     call(InvoiceID, {start_payment, PaymentParams});
 
-handle_function('GetPayment', {UserInfo, InvoiceID, PaymentID}, _Opts) ->
+handle_function('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     St = get_state(UserInfo, InvoiceID),
     case get_payment_session(PaymentID, St) of
         PaymentSession when PaymentSession /= undefined ->
@@ -100,11 +100,11 @@ handle_function('GetPayment', {UserInfo, InvoiceID, PaymentID}, _Opts) ->
             throw(#payproc_InvoicePaymentNotFound{})
     end;
 
-handle_function('Fulfill', {_UserInfo, InvoiceID, Reason}, _Opts) ->
+handle_function('Fulfill', [_UserInfo, InvoiceID, Reason], _Opts) ->
     %% TODO access control
     call(InvoiceID, {fulfill, Reason});
 
-handle_function('Rescind', {_UserInfo, InvoiceID, Reason}, _Opts) ->
+handle_function('Rescind', [_UserInfo, InvoiceID, Reason], _Opts) ->
     %% TODO access control
     call(InvoiceID, {rescind, Reason}).
 

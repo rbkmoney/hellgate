@@ -74,121 +74,121 @@ stop(Client) ->
     ok | woody_client:result_error().
 
 create(Client) ->
-    gen_server:call(Client, {call, 'Create', []}).
+    map_result_error(gen_server:call(Client, {call, 'Create', []})).
 
 -spec get(pid()) ->
     dmsl_domain_thrift:'Party'() | woody_client:result_error().
 
 get(Client) ->
-    gen_server:call(Client, {call, 'Get', []}).
+    map_result_error(gen_server:call(Client, {call, 'Get', []})).
 
 -spec block(binary(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 block(Reason, Client) ->
-    gen_server:call(Client, {call, 'Block', [Reason]}).
+    map_result_error(gen_server:call(Client, {call, 'Block', [Reason]})).
 
 -spec unblock(binary(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 unblock(Reason, Client) ->
-    gen_server:call(Client, {call, 'Unblock', [Reason]}).
+    map_result_error(gen_server:call(Client, {call, 'Unblock', [Reason]})).
 
 -spec suspend(pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 suspend(Client) ->
-    gen_server:call(Client, {call, 'Suspend', []}).
+    map_result_error(gen_server:call(Client, {call, 'Suspend', []})).
 
 -spec activate(pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 activate(Client) ->
-    gen_server:call(Client, {call, 'Activate', []}).
+    map_result_error(gen_server:call(Client, {call, 'Activate', []})).
 
 -spec get_shop(shop_id(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 get_shop(ID, Client) ->
-    gen_server:call(Client, {call, 'GetShop', [ID]}).
+    map_result_error(gen_server:call(Client, {call, 'GetShop', [ID]})).
 
 -spec create_shop(shop_params(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 create_shop(Params, Client) ->
-    gen_server:call(Client, {call, 'CreateShop', [Params]}).
+    map_result_error(gen_server:call(Client, {call, 'CreateShop', [Params]})).
 
 -spec update_shop(shop_id(), dmsl_payment_processing_thrift:'ShopUpdate'(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 update_shop(ID, Update, Client) ->
-    gen_server:call(Client, {call, 'UpdateShop', [ID, Update]}).
+    map_result_error(gen_server:call(Client, {call, 'UpdateShop', [ID, Update]})).
 
 -spec block_shop(shop_id(), binary(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 block_shop(ID, Reason, Client) ->
-    gen_server:call(Client, {call, 'BlockShop', [ID, Reason]}).
+    map_result_error(gen_server:call(Client, {call, 'BlockShop', [ID, Reason]})).
 
 -spec unblock_shop(shop_id(), binary(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 unblock_shop(ID, Reason, Client) ->
-    gen_server:call(Client, {call, 'UnblockShop', [ID, Reason]}).
+    map_result_error(gen_server:call(Client, {call, 'UnblockShop', [ID, Reason]})).
 
 -spec suspend_shop(shop_id(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 suspend_shop(ID, Client) ->
-    gen_server:call(Client, {call, 'SuspendShop', [ID]}).
+    map_result_error(gen_server:call(Client, {call, 'SuspendShop', [ID]})).
 
 -spec activate_shop(shop_id(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 activate_shop(ID, Client) ->
-    gen_server:call(Client, {call, 'ActivateShop', [ID]}).
+    map_result_error(gen_server:call(Client, {call, 'ActivateShop', [ID]})).
 
 -spec get_claim(claim_id(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 get_claim(ID, Client) ->
-    gen_server:call(Client, {call, 'GetClaim', [ID]}).
+    map_result_error(gen_server:call(Client, {call, 'GetClaim', [ID]})).
 
 -spec get_pending_claim(pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_client:result_error().
 
 get_pending_claim(Client) ->
-    gen_server:call(Client, {call, 'GetPendingClaim', []}).
+    map_result_error(gen_server:call(Client, {call, 'GetPendingClaim', []})).
 
 -spec accept_claim(claim_id(), pid()) ->
     ok | woody_client:result_error().
 
 accept_claim(ID, Client) ->
-    gen_server:call(Client, {call, 'AcceptClaim', [ID]}).
+    map_result_error(gen_server:call(Client, {call, 'AcceptClaim', [ID]})).
 
 -spec deny_claim(claim_id(), binary(), pid()) ->
     ok | woody_client:result_error().
 
 deny_claim(ID, Reason, Client) ->
-    gen_server:call(Client, {call, 'DenyClaim', [ID, Reason]}).
+    map_result_error(gen_server:call(Client, {call, 'DenyClaim', [ID, Reason]})).
 
 -spec revoke_claim(claim_id(), binary(), pid()) ->
     ok | woody_client:result_error().
 
 revoke_claim(ID, Reason, Client) ->
-    gen_server:call(Client, {call, 'RevokeClaim', [ID, Reason]}).
+    map_result_error(gen_server:call(Client, {call, 'RevokeClaim', [ID, Reason]})).
 
 -spec get_account_state(shop_account_id(), pid()) ->
     dmsl_payment_processing_thrift:'AccountState'() | woody_client:result_error().
 
 get_account_state(AccountID, Client) ->
-    gen_server:call(Client, {call, 'GetAccountState', [AccountID]}).
+    map_result_error(gen_server:call(Client, {call, 'GetAccountState', [AccountID]})).
 
 -spec get_shop_account(shop_id(), pid()) ->
     dmsl_domain_thrift:'ShopAccount'() | woody_client:result_error().
 
 get_shop_account(ShopID, Client) ->
-    gen_server:call(Client, {call, 'GetShopAccount', [ShopID]}).
+    map_result_error(gen_server:call(Client, {call, 'GetShopAccount', [ShopID]})).
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
@@ -203,6 +203,13 @@ pull_event(Client) ->
 
 pull_event(Timeout, Client) ->
     gen_server:call(Client, {pull_event, Timeout}, infinity).
+
+map_result_error({ok, Result}) ->
+    Result;
+map_result_error({exception, _} = Exception) ->
+    Exception;
+map_result_error({error, Error}) ->
+    error(Error).
 
 %%
 

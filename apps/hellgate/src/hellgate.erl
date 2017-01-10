@@ -54,7 +54,6 @@ get_api_child_spec(MachineHandlers) ->
         #{
             ip => Ip,
             port => genlib_app:env(?MODULE, port, 8022),
-            net_opts => [],
             event_handler => hg_woody_event_handler,
             handlers => hg_machine:get_service_handlers(MachineHandlers) ++ [
                 construct_service_handler(party_management, hg_party),
@@ -70,7 +69,7 @@ construct_service_handler(Name, Module) ->
 
 construct_service_handler(Name, Module, Opts) ->
     {Path, Service} = hg_proto:get_service_spec(Name),
-    {Path, {Service, Module, Opts}}.
+    {Path, {Service, {Module, Opts}}}.
 
 %% Application callbacks
 
