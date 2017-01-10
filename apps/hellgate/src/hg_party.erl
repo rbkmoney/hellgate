@@ -583,11 +583,11 @@ is_adjustment_active(
     Timestamp,
     _Revision
 ) ->
-    case hg_datetime:to_integer(ConcludedAt) =< hg_datetime:to_integer(Timestamp) of
-        true ->
+    case hg_datetime:compare(ConcludedAt, Timestamp) of
+        earlier ->
             %% TODO check template lifetime parameters
             true;
-        false ->
+        _ ->
             false
     end.
 
