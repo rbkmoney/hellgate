@@ -15,13 +15,13 @@ services:
       - shumway
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:5e14750e3f3c6cf3a6478de55dd68e55a972856b
+    image: dr.rbkmoney.com/rbkmoney/dominant:a4f6660238f2ac8ea03d0bc60d130039fdcb57be
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       - machinegun
 
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/machinegun:2c956c1172cf8f7b4a09512cd1571bdd4c57f1c1
+    image: dr.rbkmoney.com/rbkmoney/machinegun:bde2440a87e8311b6e2db90e915f8efdaa520ba1
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config

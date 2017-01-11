@@ -1,5 +1,0 @@
-case os:getenv("WERCKER_CACHE_DIR") of
-    false -> CONFIG;
-    []    -> CONFIG;
-    Dir   -> lists:keystore(global_rebar_dir, 1, CONFIG, {global_rebar_dir, Dir})
-end.
