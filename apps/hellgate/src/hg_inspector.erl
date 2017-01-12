@@ -29,9 +29,9 @@ inspect(
     },
     Result = issue_call('InspectPayment', [Context], get_call_options(ProxyDef)),
     case Result of
-        RiskScore when is_atom(RiskScore) ->
+        {ok, RiskScore} when is_atom(RiskScore) ->
             RiskScore;
-        {error, Error} ->
+        {exception, Error} ->
             error(Error)
     end.
 
