@@ -81,6 +81,7 @@
     activated.
 
 -define(session_ev(E), {session_event, E}).
+
 %%
 
 -define(BATCH_ID, 1).
@@ -281,13 +282,10 @@ process(St, Options) ->
 
 handle_callback(Payload, St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
-    handle_callback_result(issue_callback_call(Payload, ProxyContext, Options, St), Options, St).
+    {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, Options, St),
+    handle_callback_result(CallbackResult, Options, St).
 
-handle_callback_result(
-    {ok, #prxprv_CallbackResult{result = ProxyResult, response = Response}},
-    Options,
-    St
-) ->
+handle_callback_result(#prxprv_CallbackResult{result = ProxyResult, response = Response}, Options, St) ->
     {What, {Events, Action}} = handle_proxy_result(ProxyResult, St, Options),
     {Response, {What, {[?session_ev(activated) | Events], Action}}}.
 
