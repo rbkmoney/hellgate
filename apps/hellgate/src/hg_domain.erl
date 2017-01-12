@@ -13,10 +13,12 @@
 -export([head/0]).
 -export([all/1]).
 -export([get/2]).
+-export([find/2]).
 -export([commit/2]).
 
 -export([insert/1]).
 -export([update/1]).
+-export([upsert/1]).
 -export([remove/1]).
 -export([cleanup/0]).
 
@@ -44,17 +46,28 @@ all(Revision) ->
     #'Snapshot'{domain = Domain} = dmt_client:checkout({version, Revision}),
     Domain.
 
--spec get(revision(), ref()) -> data().
+-spec get(revision(), ref()) -> data() | no_return().
 
 get(Revision, Ref) ->
     try
-        #'VersionedObject'{object = Object} = dmt_client:checkout_object({version, Revision}, Ref),
-        {_Tag, {_Name, _Ref, Data}} = Object,
-        Data
+        extract_data(dmt_client:checkout_object({version, Revision}, Ref))
     catch
         throw:object_not_found ->
             error({object_not_found, {Revision, Ref}})
     end.
+
+-spec find(revision(), ref()) -> data() | notfound.
+
+find(Revision, Ref) ->
+    try
+        extract_data(dmt_client:checkout_object({version, Revision}, Ref))
+    catch
+        throw:object_not_found ->
+            notfound
+    end.
+
+extract_data(#'VersionedObject'{object = {_Tag, {_Name, _Ref, Data}}}) ->
+    Data.
 
 -spec commit(revision(), dmt:commit()) -> ok.
 
@@ -85,6 +98,7 @@ insert(Objects) ->
 update(NewObject) when not is_list(NewObject) ->
     update([NewObject]);
 update(NewObjects) ->
+    Revision = head(),
     Commit = #'Commit'{
         ops = [
             {update, #'UpdateOp'{
@@ -92,7 +106,32 @@ update(NewObjects) ->
                 new_object = NewObject
             }}
                 || NewObject = {Tag, {ObjectName, Ref, _Data}} <- NewObjects,
-                    OldData <- [get(head(), {Tag, Ref})]
+                    OldData <- [get(Revision, {Tag, Ref})]
+        ]
+    },
+    commit(head(), Commit).
+
+-spec upsert(object() | [object()]) -> ok.
+
+upsert(NewObject) when not is_list(NewObject) ->
+    upsert([NewObject]);
+upsert(NewObjects) ->
+    Revision = head(),
+    Commit = #'Commit'{
+        ops = [
+            case OldData of
+                notfound ->
+                    {insert, #'InsertOp'{
+                        object = NewObject
+                    }};
+                _ ->
+                    {update, #'UpdateOp'{
+                        old_object = {Tag, {ObjectName, Ref, OldData}},
+                        new_object = NewObject
+                    }}
+            end
+                || NewObject = {Tag, {ObjectName, Ref, _Data}} <- NewObjects,
+                    OldData <- [find(Revision, {Tag, Ref})]
         ]
     },
     commit(head(), Commit).
