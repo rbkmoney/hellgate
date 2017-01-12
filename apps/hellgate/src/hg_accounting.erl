@@ -60,8 +60,7 @@ create_account(CurrencyCode, Description) ->
         {ok, Result} ->
             Result;
         {exception, Exception} ->
-            % FIXME
-            error({accounter_exception, Exception})
+            error({accounting, Exception}) % FIXME
     end.
 
 construct_prototype(CurrencyCode, Description) ->

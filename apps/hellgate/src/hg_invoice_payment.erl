@@ -276,15 +276,8 @@ process_call({callback, Payload}, St, Options) ->
 
 process(St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
-    handle_process_result(issue_process_call(ProxyContext, Options, St), Options, St).
-
-handle_process_result(Result, Options, St) ->
-    case Result of
-        {ok, ProxyResult} ->
-            handle_proxy_result(ProxyResult, St, Options);
-        {exception, Exception} ->
-            error(Exception) % FIXME, HANDLEME
-    end.
+    {ok, ProxyResult} = issue_process_call(ProxyContext, Options, St),
+    handle_proxy_result(ProxyResult, St, Options).
 
 handle_callback(Payload, St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
