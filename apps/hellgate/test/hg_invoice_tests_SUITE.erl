@@ -264,11 +264,14 @@ unwrap_event(E) ->
 
 %%
 
-start_service_handler(Module, C, Additional) ->
+start_service_handler(Module, C, HandlerOpts) ->
+    start_service_handler(Module, Module, C, HandlerOpts).
+
+start_service_handler(Name, Module, C, HandlerOpts) ->
     IP = "127.0.0.1",
     Port = get_random_port(),
-    Opts = maps:merge(Additional, #{hellgate_root_url => ?c(root_url, C)}),
-    ChildSpec = hg_test_proxy:get_child_spec(Module, IP, Port, Opts),
+    Opts = maps:merge(HandlerOpts, #{hellgate_root_url => ?c(root_url, C)}),
+    ChildSpec = hg_test_proxy:get_child_spec(Name, Module, IP, Port, Opts),
     {ok, _} = supervisor:start_child(?c(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
 
