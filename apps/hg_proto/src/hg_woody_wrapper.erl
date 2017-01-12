@@ -11,7 +11,7 @@
 
 %% Callbacks
 
--callback(handle_function(woody:func(), woody_server_thrift_handler:args(), handler_opts()) ->
+-callback(handle_function(woody:func(), woody:args(), handler_opts()) ->
     term() | no_return()).
 
 %% API
@@ -20,8 +20,8 @@
 -export([raise/1]).
 
 
--spec handle_function(woody:func(), woody_server_thrift_handler:args(), woody_client:context(), handler_opts()) ->
-    {term(), woody_client:context()} | no_return().
+-spec handle_function(woody:func(), woody:args(), woody_context:ctx(), handler_opts()) ->
+    {ok, term()} | no_return().
 
 handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
     hg_context:set(Context),

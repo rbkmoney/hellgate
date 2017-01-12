@@ -54,31 +54,31 @@ stop(Client) ->
 %%
 
 -spec create(invoice_params(), pid()) ->
-    invoice_id() | woody_client:result_error().
+    invoice_id() | woody_error:business_error().
 
 create(InvoiceParams, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Create', [InvoiceParams]})).
 
 -spec get(invoice_id(), pid()) ->
-    dmsl_payment_processing_thrift:'InvoiceState'() | woody_client:result_error().
+    dmsl_payment_processing_thrift:'InvoiceState'() | woody_error:business_error().
 
 get(InvoiceID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', [InvoiceID]})).
 
 -spec fulfill(invoice_id(), binary(), pid()) ->
-    ok | woody_client:result_error().
+    ok | woody_error:business_error().
 
 fulfill(InvoiceID, Reason, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Fulfill', [InvoiceID, Reason]})).
 
 -spec rescind(invoice_id(), binary(), pid()) ->
-    ok | woody_client:result_error().
+    ok | woody_error:business_error().
 
 rescind(InvoiceID, Reason, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Rescind', [InvoiceID, Reason]})).
 
 -spec start_payment(invoice_id(), payment_params(), pid()) ->
-    payment_id() | woody_client:result_error().
+    payment_id() | woody_error:business_error().
 
 start_payment(InvoiceID, PaymentParams, Client) ->
     map_result_error(gen_server:call(Client, {call, 'StartPayment', [InvoiceID, PaymentParams]})).
@@ -86,13 +86,13 @@ start_payment(InvoiceID, PaymentParams, Client) ->
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
 -spec pull_event(invoice_id(), pid()) ->
-    tuple() | timeout | woody_client:result_error().
+    tuple() | timeout | woody_error:business_error().
 
 pull_event(InvoiceID, Client) ->
     pull_event(InvoiceID, ?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
 
 -spec pull_event(invoice_id(), timeout(), pid()) ->
-    tuple() | timeout | woody_client:result_error().
+    tuple() | timeout | woody_error:business_error().
 
 pull_event(InvoiceID, Timeout, Client) ->
     % FIXME: infinity sounds dangerous

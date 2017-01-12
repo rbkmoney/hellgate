@@ -40,7 +40,7 @@
     {response(), result()}.
 
 -type context() :: #{
-    client_context => woody_client:context()
+    client_context => woody_context:ctx()
 }.
 
 -export_type([id/0]).
@@ -144,7 +144,7 @@ call_automaton(Function, Args) ->
 
 -type func() :: 'ProcessSignal' | 'ProcessCall'.
 
--spec handle_function(func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function(func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
 handle_function('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
@@ -230,7 +230,7 @@ marshal_call_result({Response, {Events, Action}}) ->
 %%
 
 -type service_handler() ::
-    {Path :: string(), {woody_t:service(), woody_t:handler(), hg_woody_wrapper:handler_opts()}}.
+    {Path :: string(), {woody:service(), {module(), hg_woody_wrapper:handler_opts()}}}.
 
 -spec get_child_spec([MachineHandler :: module()]) ->
     supervisor:child_spec().

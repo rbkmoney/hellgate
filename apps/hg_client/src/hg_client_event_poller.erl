@@ -10,10 +10,10 @@
 
 -type events() :: [dmsl_payment_processing_thrift:'Event'()].
 
--type api_call() :: {Name :: atom(), woody_t:func(), [_]}.
+-type api_call() :: {Name :: atom(), woody:func(), [_]}.
 -opaque t() :: {api_call(), undefined | integer()}.
 
--spec new(Name :: atom(), woody_t:func(), [_]) ->
+-spec new(Name :: atom(), woody:func(), [_]) ->
     t().
 
 new(Name, Function, Args) ->

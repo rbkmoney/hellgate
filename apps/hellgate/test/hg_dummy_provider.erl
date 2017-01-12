@@ -38,7 +38,7 @@ get_http_cowboy_spec() ->
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("hellgate/include/invoice_events.hrl").
 
--spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
 handle_function(

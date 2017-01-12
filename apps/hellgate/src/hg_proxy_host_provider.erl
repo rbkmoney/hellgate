@@ -17,8 +17,9 @@
 -type tag()      :: dmsl_base_thrift:'Tag'().
 -type callback() :: dmsl_proxy_thrift:'Callback'().
 
--spec handle_function('ProcessCallback', {tag(), callback()}, hg_woody_wrapper:handler_opts()) ->
-    term() | no_return().
+-spec handle_function('ProcessCallback', [Args], hg_woody_wrapper:handler_opts()) ->
+    term() | no_return()
+    when Args :: tag() | callback().
 
 handle_function('ProcessCallback', [Tag, Callback], _) ->
     map_error(hg_invoice:process_callback(Tag, {provider, Callback})).

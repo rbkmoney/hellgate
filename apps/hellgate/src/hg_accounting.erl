@@ -43,7 +43,7 @@ get_account(AccountID) ->
         {ok, Result} ->
             construct_account(AccountID, Result);
         {exception, #accounter_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{}) 
+            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 -spec create_account(currency_code()) ->

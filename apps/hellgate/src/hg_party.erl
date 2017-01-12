@@ -68,7 +68,7 @@ checkout(PartyID, Revision) ->
 
 %%
 
--spec handle_function(woody_t:func(), woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
 handle_function('Create', [UserInfo, PartyID], _Opts) ->

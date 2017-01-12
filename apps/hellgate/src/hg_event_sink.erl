@@ -15,9 +15,9 @@
 -type event()    :: dmsl_payment_processing_thrift:'Event'().
 
 -spec handle_function
-    ('GetEvents', woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+    ('GetEvents', woody:args(), hg_woody_wrapper:handler_opts()) ->
         [event()] | no_return();
-    ('GetLastEventID', woody_server_thrift_handler:args(), hg_woody_wrapper:handler_opts()) ->
+    ('GetLastEventID', woody:args(), hg_woody_wrapper:handler_opts()) ->
         event_id() | no_return().
 
 handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->

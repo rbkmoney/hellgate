@@ -13,14 +13,14 @@
 
 %%
 
--type t() :: {woody_t:url(), woody_client:context()}.
+-type t() :: {woody:url(), woody_context:ctx()}.
 
--spec new(woody_t:url()) -> t().
+-spec new(woody:url()) -> t().
 
 new(RootUrl) ->
     new(RootUrl, construct_context()).
 
--spec new(woody:url(), woody:context()) -> t().
+-spec new(woody:url(), woody_context:ctx()) -> t().
 
 new(RootUrl, Context) ->
     {RootUrl, Context}.
@@ -29,7 +29,7 @@ construct_context() ->
     ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
     woody_context:new(ReqID).
 
--spec call(Name :: atom(), woody_t:func(), [any()], t()) ->
+-spec call(Name :: atom(), woody:func(), [any()], t()) ->
     {{ok, _Response} | {exception, _} | {error, _}, t()}.
 
 call(ServiceName, Function, Args, {RootUrl, Context}) ->
