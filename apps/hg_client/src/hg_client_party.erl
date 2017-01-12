@@ -149,7 +149,7 @@ activate_shop(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'ActivateShop', [ID]})).
 
 -spec get_claim(claim_id(), pid()) ->
-    dmsl_payment_processing_thrift:'ClaimResult'() | woody_error:business_error().
+    dmsl_payment_processing_thrift:'Claim'() | woody_error:business_error().
 
 get_claim(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetClaim', [ID]})).
