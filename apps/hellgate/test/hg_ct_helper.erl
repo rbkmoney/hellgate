@@ -5,6 +5,9 @@
 -export([start_apps/1]).
 
 -export([create_party_and_shop/1]).
+-export([create_shop/3]).
+-export([create_shop/4]).
+-export([set_shop_proxy/4]).
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
@@ -104,19 +107,67 @@ start_apps(Apps) ->
 
 -type party_id()       :: dmsl_domain_thrift:'PartyID'().
 -type shop_id()        :: dmsl_domain_thrift:'ShopID'().
--type shop()           :: dmsl_domain_thrift:'Shop'().
+-type category()       :: dmsl_domain_thrift:'CategoryRef'().
 -type cost()           :: integer() | {integer(), binary()}.
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
+-type proxy_ref()      :: dmsl_domain_thrift:'ProxyRef'().
+-type proxy_options()  :: dmsl_domain_thrift:'ProxyOptions'().
 -type timestamp()      :: integer().
 
 -spec create_party_and_shop(Client :: pid()) ->
-    shop().
+    shop_id().
 
 create_party_and_shop(Client) ->
     ok = hg_client_party:create(Client),
     #domain_Party{shops = Shops} = hg_client_party:get(Client),
     [{ShopID, _Shop}] = maps:to_list(Shops),
     ShopID.
+
+-spec create_shop(category(), binary(), Client :: pid()) ->
+    shop_id().
+
+create_shop(Category, Name, Client) ->
+    create_shop(Category, Name, undefined, Client).
+
+-spec create_shop(category(), binary(), binary(), Client :: pid()) ->
+    shop_id().
+
+create_shop(Category, Name, Description, Client) ->
+    Party = hg_client_party:get(Client),
+    [{ContractID, _} | _] = maps:to_list(Party#domain_Party.contracts),
+    [{PayoutAccountID, _} | _] = maps:to_list(Party#domain_Party.payout_accounts),
+    Params = #payproc_ShopParams{
+        contract_id       = ContractID,
+        payout_account_id = PayoutAccountID,
+        category          = Category,
+        details           = make_shop_details(Name, Description)
+    },
+    #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_shop(Params, Client),
+    #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
+    {_, #domain_Shop{id = ShopID}} = lists:keyfind(shop_creation, 1, Changeset),
+    ok = hg_client_party:accept_claim(ClaimID, Client),
+    #payproc_ClaimResult{} = hg_client_party:activate_shop(ShopID, Client),
+    ok = flush_events(Client),
+    ShopID.
+
+-spec set_shop_proxy(shop_id(), proxy_ref(), proxy_options(), Client :: pid()) ->
+    ok.
+
+set_shop_proxy(ShopID, ProxyRef, ProxyOptions, Client) ->
+    Proxy = #domain_Proxy{ref = ProxyRef, additional = ProxyOptions},
+    Update = #payproc_ShopUpdate{proxy = Proxy},
+    #payproc_ClaimResult{id = ClaimID} = hg_client_party:update_shop(ShopID, Update, Client),
+    ok = hg_client_party:accept_claim(ClaimID, Client),
+    ok = flush_events(Client),
+    ok.
+
+flush_events(Client) ->
+    case hg_client_party:pull_event(500, Client) of
+        timeout ->
+            ok;
+        _Event ->
+            flush_events(Client)
+    end.
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), cost()) ->
     invoice_params().
@@ -146,7 +197,7 @@ make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}) ->
     }.
 
 -spec make_category_ref(dmsl_domain_thrift:'ObjectID'()) ->
-    dmsl_domain_thrift:'CategoryRef'().
+    category().
 
 make_category_ref(ID) ->
     #domain_CategoryRef{id = ID}.
@@ -273,7 +324,8 @@ construct_domain_fixture() ->
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
                 default_contract_template = ?tmpl(1),
-                inspector = ?insp(1)
+                inspector = ?insp(1),
+                common_merchant_proxy = ?prx(3)
             }
         }},
         {system_account_set, #domain_SystemAccountSetObject{
@@ -635,6 +687,15 @@ construct_domain_fixture() ->
             data = #domain_ProxyDefinition{
                 name        = <<"Inspector proxy">>,
                 description = <<"Inspector proxy that hates your mom">>,
+                url     = <<>>,
+                options = #{}
+            }
+        }},
+        {proxy, #domain_ProxyObject{
+            ref = ?prx(3),
+            data = #domain_ProxyDefinition{
+                name        = <<"Merchant proxy">>,
+                description = <<"Merchant proxy that noone cares about">>,
                 url     = <<>>,
                 options = #{}
             }

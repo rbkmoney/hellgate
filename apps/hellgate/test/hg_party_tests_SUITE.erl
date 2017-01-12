@@ -181,7 +181,7 @@ init_per_group(shop_blocking_suspension, C) ->
 
 init_per_group(Group, C) ->
     PartyID = list_to_binary(lists:concat([Group, ".", erlang:system_time()])),
-    Client = hg_client_party:start(make_userinfo(), PartyID, hg_client_api:new(?c(root_url, C))),
+    Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(?c(root_url, C))),
     [{party_id, PartyID}, {client, Client} | C].
 
 -spec end_per_group(group_name(), config()) -> _.
@@ -686,5 +686,5 @@ get_first_payout_account(Client) ->
     #domain_Party{payout_accounts = PayoutAccounts} = hg_client_party:get(Client),
     erlang:hd(maps:keys(PayoutAccounts)).
 
-make_userinfo() ->
-    #payproc_UserInfo{id = <<?MODULE_STRING>>}.
+make_userinfo(PartyID) ->
+    #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}}.

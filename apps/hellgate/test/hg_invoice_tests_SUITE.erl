@@ -14,6 +14,7 @@
 -export([overdue_invoice_cancelled/1]).
 -export([invoice_cancelled_after_payment_timeout/1]).
 -export([payment_success/1]).
+-export([payment_success_w_merchant_callback/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_risk_score_check/1]).
 -export([invoice_success_on_third_payment/1]).
@@ -49,6 +50,7 @@ all() ->
         overdue_invoice_cancelled,
         invoice_cancelled_after_payment_timeout,
         payment_success,
+        payment_success_w_merchant_callback,
         payment_success_on_second_try,
         invoice_success_on_third_payment,
 
@@ -62,6 +64,9 @@ all() ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
+    % _ = dbg:tracer(),
+    % _ = dbg:p(all, c),
+    % _ = dbg:tpl({'hg_client_party', '_', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate, {cowboy, CowboySpec}]),
     ok = hg_domain:insert(hg_ct_helper:construct_domain_fixture()),
@@ -71,6 +76,7 @@ init_per_suite(C) ->
     ShopID = hg_ct_helper:create_party_and_shop(Client),
     [
         {party_id, PartyID},
+        {party_client, Client},
         {shop_id, ShopID},
         {root_url, RootUrl},
         {apps, Apps}
@@ -167,6 +173,27 @@ payment_success(C) ->
     ok = start_handler(hg_dummy_provider, 1, #{}, C),
     ok = start_handler(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
+    ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?paid()),
+        [?payment_w_status(PaymentID, ?captured())]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_success_w_merchant_callback(config()) -> _ | no_return().
+
+payment_success_w_merchant_callback(C) ->
+    Client = ?c(client, C),
+    PartyClient = ?c(party_client, C),
+    ShopID = hg_ct_helper:create_shop(hg_ct_helper:make_category_ref(1), <<"Callback Shop">>, PartyClient),
+    ok = start_handler(hg_dummy_provider, 1, #{}, C),
+    ok = start_handler(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
+    MerchantProxy = construct_proxy(3, start_service_handler(hg_dummy_merchant, C, #{}), #{}),
+    ok = hg_domain:upsert(MerchantProxy),
+    ok = hg_ct_helper:set_shop_proxy(ShopID, get_proxy_ref(MerchantProxy), #{}, PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
@@ -292,10 +319,13 @@ construct_proxy(ID, Url, Options) ->
         }
     }}.
 
+get_proxy_ref({proxy, #domain_ProxyObject{ref = Ref}}) ->
+    Ref.
+
 %%
 
 make_userinfo(PartyID) ->
-    #payproc_UserInfo{id = PartyID}.
+    #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}}.
 
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).
@@ -329,8 +359,10 @@ create_invoice(InvoiceParams, Client) ->
     InvoiceID.
 
 start_invoice(Product, Due, Amount, C) ->
+    start_invoice(?c(shop_id, C), Product, Due, Amount, C).
+
+start_invoice(ShopID, Product, Due, Amount, C) ->
     Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
     PartyID = ?c(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, Amount),
     InvoiceID = create_invoice(InvoiceParams, Client),
@@ -364,4 +396,4 @@ start_handler(Module, ProxyID, ProxyOpts, Context) ->
 
 start_handler(Module, ProxyID, ProxyOpts, Context, HandlerOpts) ->
     ProxyUrl = start_service_handler(Module, Context, HandlerOpts),
-    ok = hg_domain:update(construct_proxy(ProxyID, ProxyUrl, ProxyOpts)).
+    ok = hg_domain:upsert(construct_proxy(ProxyID, ProxyUrl, ProxyOpts)).

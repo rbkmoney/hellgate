@@ -15,7 +15,7 @@ services:
       - shumway
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:a4f6660238f2ac8ea03d0bc60d130039fdcb57be
+    image: dr.rbkmoney.com/rbkmoney/dominant:b79f1e6acf5fd07ac60a51f9551faca48115770f
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       - machinegun

@@ -57,7 +57,11 @@
 -record(st, {
     invoice :: invoice(),
     payments = [] :: [{payment_id(), payment_st()}],
-    sequence = 0 :: 0 | sequence()
+    sequence = 0 :: 0 | sequence(),
+    pending = invoice ::
+        invoice |
+        {payment, payment_id()} |
+        {session, session()}
 }).
 
 -type st() :: #st{}.
@@ -202,19 +206,33 @@ map_start_error({error, Reason}) ->
 
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
+-type invoice_status() :: dmsl_domain_thrift:'InvoiceStatus'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type payment_st() :: hg_invoice_payment:st().
 -type sequence() :: pos_integer().
+-type proxy_state() :: dmsl_proxy_thrift:'ProxyState'().
 
 -type ev() ::
     {public, sequence(), dmsl_payment_processing_thrift:'EventPayload'()} |
     {private, sequence(), private_event()}.
 
 -type private_event() ::
-    term(). %% TODO hg_invoice_payment:private_event() ?
+    {session_event, session_event()}. %% TODO hg_invoice_payment:private_event() ?
+
+-type session_event() ::
+    {started, invoice_status()} |
+    finished |
+    {proxy_state_changed, proxy_state()}.
+
+-type session() :: #{
+    status => invoice_status(),
+    proxy_state => undefined | proxy_state()
+}.
+
+-define(session_ev(E), {session_event, E}).
 
 -include("invoice_events.hrl").
 
@@ -258,15 +276,16 @@ init(ID, {InvoiceParams, PartyID}) ->
 process_signal(Signal, History) ->
     handle_signal(Signal, collapse_history(History)).
 
-handle_signal(timeout, St) ->
-    case get_pending_payment(St) of
-        {PaymentID, PaymentSession} ->
-            % there's a payment pending
-            process_payment_signal(timeout, PaymentID, PaymentSession, St);
-        undefined ->
-            % invoice is expired
-            handle_expiration(St)
-    end;
+handle_signal(timeout, St = #st{pending = {payment, PaymentID}}) ->
+    % there's a payment pending
+    PaymentSession = get_payment_session(PaymentID, St),
+    process_payment_signal(timeout, PaymentID, PaymentSession, St);
+handle_signal(timeout, St = #st{pending = {session, Session}}) ->
+    % there's a session pending
+    process_session_signal(timeout, Session, St);
+handle_signal(timeout, St = #st{pending = invoice}) ->
+    % invoice is expired
+    handle_expiration(St);
 
 handle_signal({repair, _}, St) ->
     ok([], St, restore_timer(St)).
@@ -320,13 +339,11 @@ handle_call({rescind, Reason}, St) ->
 handle_call({callback, Callback}, St) ->
     dispatch_callback(Callback, St).
 
-dispatch_callback({provider, Payload}, St) ->
-    case get_pending_payment(St) of
-        {PaymentID, PaymentSession} ->
-            process_payment_call({callback, Payload}, PaymentID, PaymentSession, St);
-        undefined ->
-            raise(no_pending_payment) % FIXME
-    end.
+dispatch_callback({provider, Payload}, St = #st{pending = {payment, PaymentID}}) ->
+    PaymentSession = get_payment_session(PaymentID, St),
+    process_payment_call({callback, Payload}, PaymentID, PaymentSession, St);
+dispatch_callback(_Callback, _St) ->
+    raise(no_pending_payment). % FIXME
 
 assert_invoice_status(Status, #st{invoice = Invoice}) ->
     assert_invoice_status(Status, Invoice);
@@ -335,27 +352,24 @@ assert_invoice_status(Status, #domain_Invoice{status = {Status, _}}) ->
 assert_invoice_status(_Status, #domain_Invoice{status = Invalid}) ->
     raise(?invalid_invoice_status(Invalid)).
 
-assert_no_pending_payment(St) ->
-    case get_pending_payment(St) of
-        undefined ->
-            ok;
-        {PaymentID, _} ->
-            raise(?payment_pending(PaymentID))
-    end.
+assert_no_pending_payment(#st{pending = {payment, PaymentID}}) ->
+    raise(?payment_pending(PaymentID));
+assert_no_pending_payment(_) ->
+    ok.
 
-restore_timer(St) ->
-    set_invoice_timer(St).
-
-set_invoice_timer(St = #st{invoice = #domain_Invoice{status = Status, due = Due}}) ->
-    case get_pending_payment(St) of
-        undefined when Status == ?unpaid() ->
-            hg_machine_action:set_deadline(Due);
-        undefined ->
+restore_timer(St = #st{invoice = #domain_Invoice{status = Status}, pending = Pending}) ->
+    case Pending of
+        invoice when Status == ?unpaid() ->
+            set_invoice_timer(St);
+        invoice ->
             hg_machine_action:new();
-        {_, _} ->
+        _ ->
             % TODO how to restore timer properly then, magic number for now
             hg_machine_action:set_timeout(10)
     end.
+
+set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
+    hg_machine_action:set_deadline(Due).
 
 %%
 
@@ -372,30 +386,29 @@ process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
     Party = checkout_party(St),
     Opts = get_payment_opts(Party, St),
     PaymentResult = hg_invoice_payment:process_signal(Signal, PaymentSession, Opts),
-    handle_payment_result(PaymentResult, PaymentID, PaymentSession, St).
+    handle_payment_result(PaymentResult, PaymentID, PaymentSession, Party, St).
 
 process_payment_call(Call, PaymentID, PaymentSession, St) ->
     Party = checkout_party(St),
     Opts = get_payment_opts(Party, St),
     {Response, PaymentResult} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
-    {{ok, Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, St)}.
+    {{ok, Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, Party, St)}.
 
-handle_payment_result(Result, PaymentID, PaymentSession, St) ->
+handle_payment_result(Result, PaymentID, PaymentSession, Party, St) ->
     case Result of
         {next, {Events, Action}} ->
             ok(wrap_payment_events(PaymentID, Events), St, Action);
         {done, {Events1, _}} ->
             PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
-            St1 = set_payment_session(PaymentID, PaymentSession1, St),
             case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
                     {Events2, Action} = hg_invoice_payment:start_session(?captured()),
-                    ok(wrap_payment_events(PaymentID, Events1 ++ Events2), St1, Action);
+                    ok(wrap_payment_events(PaymentID, Events1 ++ Events2), St, Action);
                 ?captured() ->
-                    Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],
-                    ok(wrap_payment_events(PaymentID, Events1) ++ Events2, St1);
+                    {Events2, Action} = start_session(?paid(), Party, St),
+                    ok(wrap_payment_events(PaymentID, Events1) ++ Events2, St, Action);
                 ?failed(_) ->
-                    ok(wrap_payment_events(PaymentID, Events1), St1, restore_timer(St1))
+                    ok(wrap_payment_events(PaymentID, Events1), St, set_invoice_timer(St))
             end
     end.
 
@@ -412,6 +425,112 @@ get_payment_opts(Party, #st{invoice = Invoice}) ->
         party => Party,
         invoice => Invoice
     }.
+
+%%
+
+start_session(Status, Party, St) ->
+    Shop = get_party_shop(get_shop_id(St), Party),
+    case Shop#domain_Shop.proxy of
+        Proxy when Proxy /= undefined ->
+            Event = {private, ?session_ev({started, Status})},
+            {[Event], hg_machine_action:instant()};
+        undefined ->
+            finalize_session(Status, St)
+    end.
+
+process_session_signal(timeout, Session, St) ->
+    Party = checkout_party(St),
+    Revision = hg_domain:head(),
+    ProxyContext = construct_proxy_context(Session, Party, St, Revision),
+    {ok, ProxyResult} = issue_handle_event_call(ProxyContext, Party, St, Revision),
+    {Events, Action} = handle_proxy_result(ProxyResult, Session, St),
+    ok(Events, St, Action).
+
+finalize_session(Status, St) ->
+    Event = {public, ?invoice_ev(?invoice_status_changed(Status))},
+    {[Event], restore_timer(St)}.
+
+%%
+
+-include_lib("dmsl/include/dmsl_proxy_merchant_thrift.hrl").
+
+handle_proxy_result(#prxmerch_ProxyResult{intent = {_, Intent}, next_state = ProxyState}, Session, St) ->
+    handle_proxy_intent(Intent, ProxyState, Session, St).
+
+handle_proxy_intent(#prxmerch_FinishIntent{}, _ProxyState, #{status := Status}, St) ->
+    Event = {private, ?session_ev(finished)},
+    {Events, Action} = finalize_session(Status, St),
+    {[Event | Events], Action};
+
+handle_proxy_intent(#prxmerch_SleepIntent{timer = Timer}, ProxyState, _Session, _St) ->
+    Event = {private, ?session_ev({proxy_state_changed, ProxyState})},
+    {[Event], hg_machine_action:set_timer(Timer)}.
+
+construct_proxy_context(Session, Party, St, Revision) ->
+    Shop  = get_party_shop(get_shop_id(St), Party),
+    Proxy = Shop#domain_Shop.proxy,
+    #prxmerch_Context{
+        session = construct_proxy_session(Session),
+        invoice = collect_invoice_info(Party, Shop, St#st.invoice, Revision),
+        options = collect_proxy_options(Proxy, Revision)
+    }.
+
+construct_proxy_session(#{status := Status, proxy_state := ProxyState}) ->
+    #prxmerch_Session{
+        event = {status_changed, #prxmerch_InvoiceStatusChanged{status = construct_proxy_status(Status)}},
+        state = ProxyState
+    }.
+
+construct_proxy_status(?paid()) ->
+    {paid, #prxmerch_InvoicePaid{}}.
+
+collect_invoice_info(Party, Shop, Invoice, Revision) ->
+    Cost = Invoice#domain_Invoice.cost,
+    #prxmerch_InvoiceInfo{
+        party = #prxmerch_Party{
+            id = Party#domain_Party.id
+        },
+        shop = #prxmerch_Shop{
+            id      = Shop#domain_Shop.id,
+            details = Shop#domain_Shop.details
+        },
+        invoice = #prxmerch_Invoice{
+            id         = Invoice#domain_Invoice.id,
+            created_at = Invoice#domain_Invoice.created_at,
+            due        = Invoice#domain_Invoice.due,
+            details    = Invoice#domain_Invoice.details,
+            context    = Invoice#domain_Invoice.context,
+            cost       = #prxmerch_Cash{
+                amount     = Cost#domain_Cash.amount,
+                currency   = hg_domain:get(Revision, {currency, Cost#domain_Cash.currency})
+            }
+        }
+    }.
+
+collect_proxy_options(Proxy, Revision) ->
+    ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
+    maps:merge(
+        Proxy#domain_Proxy.additional,
+        ProxyDef#domain_ProxyDefinition.options
+    ).
+
+issue_handle_event_call(ProxyContext, Party, St, Revision) ->
+    CallOpts = get_call_options(Party, St, Revision),
+    issue_call('HandleInvoiceEvent', [ProxyContext], CallOpts).
+
+issue_call(Func, Args, CallOpts) ->
+    try
+        hg_woody_wrapper:call('MerchantProxy', Func, Args, CallOpts)
+    catch
+        {exception, Exception} ->
+            error({proxy_failure, Exception})
+    end.
+
+get_call_options(Party, St, Revision) ->
+    Shop     = get_party_shop(get_shop_id(St), Party),
+    Proxy    = Shop#domain_Shop.proxy,
+    ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
+    #{url => ProxyDef#domain_ProxyDefinition.url}.
 
 %%
 
@@ -479,9 +598,20 @@ collapse_history(History) ->
 
 merge_event(?invoice_ev(Event), St) ->
     merge_invoice_event(Event, St);
+merge_event(?session_ev(Event), St) ->
+    merge_session_event(Event, St);
 merge_event({{payment, PaymentID}, Event}, St) ->
     PaymentSession = get_payment_session(PaymentID, St),
-    set_payment_session(PaymentID, hg_invoice_payment:merge_event(Event, PaymentSession), St).
+    PaymentSession1 = hg_invoice_payment:merge_event(Event, PaymentSession),
+    St1 = set_payment_session(PaymentID, PaymentSession1, St),
+    case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
+        ?pending() ->
+            St1#st{pending = {payment, PaymentID}};
+        ?processed() ->
+            St1#st{pending = {payment, PaymentID}};
+        _ ->
+            St1#st{pending = invoice}
+    end.
 
 merge_invoice_event(?invoice_created(Invoice), St) ->
     St#st{invoice = Invoice};
@@ -490,6 +620,13 @@ merge_invoice_event(?invoice_status_changed(Status), St = #st{invoice = I}) ->
 
 get_party_id(#st{invoice = #domain_Invoice{owner_id = PartyID}}) ->
     PartyID.
+
+merge_session_event({started, Status}, St = #st{}) ->
+    St#st{pending = {session, #{status => Status, proxy_state => undefined}}};
+merge_session_event(finished, St = #st{pending = {session, _}}) ->
+    St#st{pending = invoice};
+merge_session_event({proxy_state_changed, ProxyState}, St = #st{pending = {session, Session}}) ->
+    St#st{pending = {session, Session#{proxy_state := ProxyState}}}.
 
 get_shop_id(#st{invoice = #domain_Invoice{shop_id = ShopID}}) ->
     ShopID.
@@ -504,21 +641,6 @@ get_payment_session(PaymentID, #st{payments = Payments}) ->
 
 set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
     St#st{payments = lists:keystore(PaymentID, 1, Payments, {PaymentID, PaymentSession})}.
-
-get_pending_payment(#st{payments = Payments}) ->
-    find_pending_payment(Payments).
-
-find_pending_payment([V = {_PaymentID, PaymentSession} | Rest]) ->
-    case get_payment_status(hg_invoice_payment:get_payment(PaymentSession)) of
-        ?pending() ->
-            V;
-        ?processed() ->
-            V;
-        _ ->
-            find_pending_payment(Rest)
-    end;
-find_pending_payment([]) ->
-    undefined.
 
 %%
 
