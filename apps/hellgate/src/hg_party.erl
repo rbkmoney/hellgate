@@ -163,16 +163,16 @@ get_history(PartyID) ->
 get_history(PartyID, AfterID, Limit) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
 
-%% TODO remove this hack as soon as machinegun learns to tell the difference between
-%%      nonexsitent machine and empty history
-assert_nonempty_history({[], _LastID}) ->
-    hg_woody_wrapper:raise(#payproc_PartyNotFound{});
-assert_nonempty_history({[_ | _], _LastID} = Result) ->
-    Result.
-
 get_state(_UserInfo, PartyID) ->
     {History, _LastID} = get_history(PartyID),
-    collapse_history(History).
+    collapse_history(assert_nonempty_history(History)).
+
+%% TODO remove this hack as soon as machinegun learns to tell the difference between
+%%      nonexsitent machine and empty history
+assert_nonempty_history([_ | _] = Result) ->
+    Result;
+assert_nonempty_history([]) ->
+    throw(#payproc_PartyNotFound{}).
 
 get_public_history(_UserInfo, PartyID, AfterID, Limit) ->
     hg_history:get_public_history(
@@ -193,7 +193,7 @@ map_start_error({error, exists}) ->
     hg_woody_wrapper:raise(#payproc_PartyExists{}).
 
 map_history_error({ok, Result}) ->
-    assert_nonempty_history(Result);
+    Result;
 map_history_error({error, notfound}) ->
     hg_woody_wrapper:raise(#payproc_PartyNotFound{});
 map_history_error({error, Reason}) ->
