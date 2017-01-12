@@ -133,7 +133,7 @@ make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}) ->
     #payproc_InvoiceParams{
         party_id = PartyID,
         shop_id  = ShopID,
-        info     = #domain_InvoiceInfo{product = Product},
+        details  = #domain_InvoiceDetails{product = Product},
         due      = hg_datetime:format_ts(Due),
         cost     = #domain_Cash{
             amount   = Amount,
@@ -272,7 +272,6 @@ construct_domain_fixture() ->
                 providers = {value, [?prv(1), ?prv(2)]},
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
-                inspector = #domain_InspectorRef{id = 1},
                 default_contract_template = ?tmpl(1),
                 inspector = ?insp(1)
             }
@@ -322,7 +321,7 @@ construct_domain_fixture() ->
                 name = <<"Kovalsky">>,
                 description = <<"Wold famous inspector Kovalsky at your service!">>,
                 proxy = #domain_Proxy{
-                    ref = ?prx(1),
+                    ref = ?prx(2),
                     additional = #{}
                 }
             }
@@ -339,7 +338,7 @@ construct_domain_fixture() ->
                             ?pmt(bank_card, visa),
                             ?pmt(bank_card, mastercard)
                         ])},
-                        cash_limit = {predicates, [
+                        cash_limit = {decisions, [
                             #domain_CashLimitDecision{
                                 if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                                 then_ = {value, #domain_CashLimit{
@@ -452,21 +451,28 @@ construct_domain_fixture() ->
         {terminal, #domain_TerminalObject{
             ref = ?trm(2),
             data = #domain_Terminal{
-                name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>,
+                name = <<"Brominal 2">>,
+                description = <<"Brominal 2">>,
                 payment_method = ?pmt(bank_card, visa),
                 category = ?cat(1),
                 cash_flow = [
-                    ?cfpost(provider, receipt, merchant, general, ?share(1, 1, payment_amount)),
-                    ?cfpost(system, compensation, provider, compensation, ?share(18, 1000, payment_amount))
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(18, 1000, payment_amount)
+                    )
                 ],
-                accounts = ?trmacc(
+                account = ?trmacc(
                     <<"USD">>,
-                    maps:get(terminal_1_receipt, Accounts),
-                    maps:get(terminal_1_compensation, Accounts)
+                    maps:get(terminal_1_settlement, Accounts)
                 ),
                 options = #{
-                    <<"override">> => <<"Brominal 1">>
+                    <<"override">> => <<"Brominal 2">>
                 },
                 risk_coverage = low
             }
@@ -474,8 +480,8 @@ construct_domain_fixture() ->
         {terminal, #domain_TerminalObject{
             ref = ?trm(3),
             data = #domain_Terminal{
-                name = <<"Brominal 2">>,
-                description = <<"Brominal 2">>,
+                name = <<"Brominal 3">>,
+                description = <<"Brominal 3">>,
                 payment_method = ?pmt(bank_card, mastercard),
                 category = ?cat(1),
                 cash_flow = [
@@ -495,7 +501,36 @@ construct_domain_fixture() ->
                     maps:get(terminal_2_settlement, Accounts)
                 ),
                 options = #{
-                    <<"override">> => <<"Brominal 2">>
+                    <<"override">> => <<"Brominal 3">>
+                },
+                risk_coverage = high
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(4),
+            data = #domain_Terminal{
+                name = <<"Brominal 4">>,
+                description = <<"Brominal 4">>,
+                payment_method = ?pmt(bank_card, mastercard),
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(19, 1000, payment_amount)
+                    )
+                ],
+                account = ?trmacc(
+                    <<"RUB">>,
+                    maps:get(terminal_2_settlement, Accounts)
+                ),
+                options = #{
+                    <<"override">> => <<"Brominal 4">>
                 },
                 risk_coverage = low
             }
@@ -519,7 +554,36 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                payment_method = #domain_PaymentMethodRef{id = {bank_card, visa}},
+                payment_method = ?pmt(bank_card, visa),
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(16, 1000, payment_amount)
+                    )
+                ],
+                account = ?trmacc(
+                    <<"RUB">>,
+                    maps:get(terminal_3_settlement, Accounts)
+                ),
+                options = #{
+                    <<"override">> => <<"Drominal 1">>
+                },
+                risk_coverage = high
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(6),
+            data = #domain_Terminal{
+                name = <<"Drominal 1">>,
+                description = <<"Drominal 1">>,
+                payment_method = ?pmt(bank_card, visa),
                 category = ?cat(1),
                 cash_flow = [
                     ?cfpost(
@@ -557,17 +621,6 @@ construct_domain_fixture() ->
                 description = <<"For everything else, there's MasterCard.">>
             }
         }},
-        {inspector, #domain_InspectorObject{
-            ref = ?insp(1),
-            data = #domain_Inspector{
-                name = <<"Default inspector">>,
-                description = <<"Default inspector which left me in tears">>,
-                proxy = #domain_Proxy{
-                    ref = ?prx(2),
-                    additional = #{}
-                }
-            }
-        }},
         {proxy, #domain_ProxyObject{
             ref = ?prx(1),
             data = #domain_ProxyDefinition{
@@ -580,6 +633,8 @@ construct_domain_fixture() ->
         {proxy, #domain_ProxyObject{
             ref = ?prx(2),
             data = #domain_ProxyDefinition{
+                name        = <<"Inspector proxy">>,
+                description = <<"Inspector proxy that hates your mom">>,
                 url     = <<>>,
                 options = #{}
             }

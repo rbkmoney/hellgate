@@ -112,7 +112,7 @@ init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
     Payment0 = construct_payment(PaymentID, Invoice, PaymentParams),
-    RiskScore = inspect(Shop, Payment0, Revision),
+    RiskScore = inspect(Shop, Invoice, Payment0, Revision),
 
     Payment = Payment0#domain_InvoicePayment{risk_score = RiskScore},
 
@@ -432,15 +432,14 @@ construct_proxy_invoice(#{invoice := #domain_Invoice{
     id = InvoiceID,
     created_at = CreatedAt,
     due = Due,
-    info = Info,
+    details = Details,
     cost = Cost
 }}) ->
     #prxprv_Invoice{
         id = InvoiceID,
         created_at =  CreatedAt,
         due =  Due,
-        product = Info#domain_InvoiceInfo.product,
-        description = Info#domain_InvoiceInfo.description,
+        details = Details,
         cost = construct_proxy_cash(Cost)
     }.
 
@@ -582,9 +581,9 @@ get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}
     ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
     #{url => ProxyDef#domain_ProxyDefinition.url}.
 
-inspect(Shop, Payment, Revision) ->
+inspect(Shop, Invoice, Payment, Revision) ->
     #domain_Globals{inspector = InspectorRef} = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
-    hg_inspector:inspect(Shop, Payment, Inspector, Revision).
+    hg_inspector:inspect(Shop, Invoice, Payment, Inspector, Revision).
 
 

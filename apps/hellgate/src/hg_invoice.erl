@@ -475,7 +475,7 @@ create_invoice(ID, V = #payproc_InvoiceParams{}, PartyID) ->
         status          = ?unpaid(),
         cost            = V#payproc_InvoiceParams.cost,
         due             = V#payproc_InvoiceParams.due,
-        info            = V#payproc_InvoiceParams.info,
+        details         = V#payproc_InvoiceParams.details,
         context         = V#payproc_InvoiceParams.context
     }.
 

@@ -150,8 +150,8 @@ overdue_invoice_cancelled(C) ->
 
 invoice_cancelled_after_payment_timeout(C) ->
     Client = ?c(client, C),
-    ok = start_handler(hg_dummy_provider, 1, C),
-    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => high}),
+    ok = start_handler(hg_dummy_provider, 1, #{}, C),
+    ok = start_handler(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
     InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(7), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -164,8 +164,8 @@ invoice_cancelled_after_payment_timeout(C) ->
 
 payment_success(C) ->
     Client = ?c(client, C),
-    ok = start_handler(hg_dummy_provider, 1, C),
-    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => high}),
+    ok = start_handler(hg_dummy_provider, 1, #{}, C),
+    ok = start_handler(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -180,8 +180,8 @@ payment_success(C) ->
 
 payment_success_on_second_try(C) ->
     Client = ?c(client, C),
-    ok = start_handler(hg_dummy_provider, 1, C),
-    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => high}),
+    ok = start_handler(hg_dummy_provider, 1, #{}, C),
+    ok = start_handler(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -198,8 +198,8 @@ payment_success_on_second_try(C) ->
 
 invoice_success_on_third_payment(C) ->
     Client = ?c(client, C),
-    ok = start_handler(hg_dummy_provider, 1, C),
-    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => high}),
+    ok = start_handler(hg_dummy_provider, 1, #{}, C),
+    ok = start_handler(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID1 = attach_payment(InvoiceID, PaymentParams, Client),
@@ -218,12 +218,14 @@ invoice_success_on_third_payment(C) ->
     ?payment_status_changed(PaymentID3, ?captured()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client).
 
+
+%% @TODO modify this test by failures of inspector in case of wrong terminal choice
 -spec payment_risk_score_check(config()) -> _ | no_return().
 
 payment_risk_score_check(C) ->
     Client = ?c(client, C),
-    ok = start_handler(hg_dummy_provider, 1, C),
-    ok = start_handler(hg_dummy_inspector, 2, C, #{risk_score => low}),
+    ok = start_handler(hg_dummy_provider, 1, #{}, C),
+    ok = start_handler(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"low">>}, C),
     PaymentParams = make_tds_payment_params(),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
@@ -276,16 +278,14 @@ get_random_port() ->
 construct_proxy_ref(ID) ->
     #domain_ProxyRef{id = ID}.
 
-construct_proxy(ID, Url) ->
+construct_proxy(ID, Url, Options) ->
     {proxy, #domain_ProxyObject{
         ref = construct_proxy_ref(ID),
         data = #domain_ProxyDefinition{
             name        = Url,
             description = Url,
             url         = Url,
-            options     = #{
-                <<"override">> => <<"proxy">>
-            }
+            options     = Options
         }
     }}.
 
@@ -356,9 +356,9 @@ post_request({URL, Form}) ->
 get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, form = Form}}}) ->
     {URL, Form}.
 
-start_handler(Module, ProxyID, Context) ->
-    start_handler(Module, ProxyID, Context, #{}).
+start_handler(Module, ProxyID, ProxyOpts, Context) ->
+    start_handler(Module, ProxyID, ProxyOpts, Context, #{}).
 
-start_handler(Module, ProxyID, Context, Opts) ->
-    ProxyUrl = start_service_handler(Module, Context, Opts),
-    ok = hg_domain:update(construct_proxy(ProxyID, ProxyUrl)).
+start_handler(Module, ProxyID, ProxyOpts, Context, HandlerOpts) ->
+    ProxyUrl = start_service_handler(Module, Context, HandlerOpts),
+    ok = hg_domain:update(construct_proxy(ProxyID, ProxyUrl, ProxyOpts)).

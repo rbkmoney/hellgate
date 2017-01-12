@@ -23,10 +23,12 @@ get_service_spec() ->
 
 handle_function(
     'InspectPayment',
-    {#proxy_inspector_PaymentInfo{
-        shop = _Shop,
-        payment = _Payment
+    {#proxy_inspector_Context{
+        payment = _PaymentInfo,
+        options = #{
+            <<"risk_score">> := RiskScore
+        }
     }},
-    #{risk_score := RiskScore}
+    _Options
 ) ->
-    RiskScore.
+    binary_to_atom(RiskScore, utf8).

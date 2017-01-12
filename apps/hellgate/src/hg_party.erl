@@ -925,7 +925,7 @@ get_shop_account(ShopID, St = #st{}) ->
     get_shop_account(Shop).
 
 get_shop_account(#domain_Shop{account = undefined}) ->
-    raise(#payproc_AccountSetNotFound{});
+    raise(#payproc_AccountNotFound{});
 get_shop_account(#domain_Shop{account = Account}) ->
     Account.
 
