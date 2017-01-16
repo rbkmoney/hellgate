@@ -3,6 +3,8 @@
 -export([serialize/2]).
 -export([deserialize/2]).
 
+-export([record_to_proplist/2]).
+
 %%
 
 %% TODO: move it to the thrift runtime lib?
@@ -66,3 +68,21 @@ deserialize(Type, Data) ->
 
 new_protocol(Trans) ->
     thrift_binary_protocol:new(Trans, [{strict_read, true}, {strict_write, true}]).
+
+%%
+
+-spec record_to_proplist(Record :: tuple(), RecordInfo :: [atom()]) -> [{atom(), _}].
+
+record_to_proplist(Record, RecordInfo) ->
+    element(1, lists:foldl(
+        fun (RecordField, {L, N}) ->
+            case element(N, Record) of
+                V when V /= undefined ->
+                    {[{RecordField, V} | L], N + 1};
+                undefined ->
+                    {L, N + 1}
+            end
+        end,
+        {[], 1 + 1},
+        RecordInfo
+    )).

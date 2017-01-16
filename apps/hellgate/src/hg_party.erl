@@ -692,10 +692,29 @@ is_change_need_acceptance({blocking, _}) ->
 is_change_need_acceptance({suspension, _}) ->
     false;
 is_change_need_acceptance(?shop_modification(_, Modification)) ->
-    is_change_need_acceptance(Modification);
-is_change_need_acceptance({accounts_created, _}) ->
-    false;
+    is_shop_modification_need_acceptance(Modification);
 is_change_need_acceptance(_) ->
+    true.
+
+is_shop_modification_need_acceptance({blocking, _}) ->
+    false;
+is_shop_modification_need_acceptance({suspension, _}) ->
+    false;
+is_shop_modification_need_acceptance({account_created, _}) ->
+    false;
+is_shop_modification_need_acceptance({update, ShopUpdate}) ->
+    is_shop_update_need_acceptance(ShopUpdate);
+is_shop_modification_need_acceptance(_) ->
+    true.
+
+is_shop_update_need_acceptance(ShopUpdate = #payproc_ShopUpdate{}) ->
+    RecordInfo = record_info(fields, payproc_ShopUpdate),
+    ShopUpdateUnits = hg_proto_utils:record_to_proplist(ShopUpdate, RecordInfo),
+    lists:any(fun (E) -> is_shop_update_unit_need_acceptance(E) end, ShopUpdateUnits).
+
+is_shop_update_unit_need_acceptance({proxy, _}) ->
+    false;
+is_shop_update_unit_need_acceptance(_) ->
     true.
 
 has_changeset_conflict(Changeset, ChangesetPending, St) ->

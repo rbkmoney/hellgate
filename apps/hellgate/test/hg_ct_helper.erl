@@ -156,8 +156,7 @@ create_shop(Category, Name, Description, Client) ->
 set_shop_proxy(ShopID, ProxyRef, ProxyOptions, Client) ->
     Proxy = #domain_Proxy{ref = ProxyRef, additional = ProxyOptions},
     Update = #payproc_ShopUpdate{proxy = Proxy},
-    #payproc_ClaimResult{id = ClaimID} = hg_client_party:update_shop(ShopID, Update, Client),
-    ok = hg_client_party:accept_claim(ClaimID, Client),
+    #payproc_ClaimResult{status = ?accepted(_)} = hg_client_party:update_shop(ShopID, Update, Client),
     ok = flush_events(Client),
     ok.
 
