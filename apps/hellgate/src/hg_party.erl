@@ -72,9 +72,9 @@ checkout(PartyID, Revision) ->
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
-handle_function('Create', [UserInfo, PartyID], _Opts) ->
+handle_function('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
-    start(PartyID);
+    start(PartyID, PartyParams);
 
 handle_function('Get', [UserInfo, PartyID], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
@@ -215,8 +215,8 @@ get_public_history(PartyID, AfterID, Limit) ->
         AfterID, Limit
     ).
 
-start(ID) ->
-    map_start_error(hg_machine:start(?NS, ID, {})).
+start(ID, Args) ->
+    map_start_error(hg_machine:start(?NS, ID, Args)).
 
 call(ID, Args) ->
     map_error(hg_machine:call(?NS, {id, ID}, Args)).
@@ -247,14 +247,20 @@ map_error({error, Reason}) ->
 
 %%
 
--type party_id()   :: dmsl_domain_thrift:'PartyID'().
--type shop_id()    :: dmsl_domain_thrift:'ShopID'().
--type party()      :: dmsl_domain_thrift:'Party'().
--type claim_id()   :: dmsl_payment_processing_thrift:'ClaimID'().
--type claim()      :: dmsl_payment_processing_thrift:'Claim'().
--type user_info()  :: dmsl_payment_processing_thrift:'UserInfo'().
--type revision()   :: dmsl_base_thrift:'Timestamp'().
--type sequence()   :: pos_integer().
+-type party_id()              :: dmsl_domain_thrift:'PartyID'().
+-type party()                 :: dmsl_domain_thrift:'Party'().
+-type shop_id()               :: dmsl_domain_thrift:'ShopID'().
+-type shop_params()           :: dmsl_payment_processing_thrift:'ShopParams'().
+-type shop_update()           :: dmsl_payment_processing_thrift:'ShopUpdate'().
+-type contract_id()           :: dmsl_domain_thrift:'ContractID'().
+-type contract_params()       :: dmsl_payment_processing_thrift:'ContractParams'().
+-type adjustment_params()     :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
+-type payout_account_params() :: dmsl_payment_processing_thrift:'PayoutAccountParams'().
+-type claim_id()              :: dmsl_payment_processing_thrift:'ClaimID'().
+-type claim()                 :: dmsl_payment_processing_thrift:'Claim'().
+-type user_info()             :: dmsl_payment_processing_thrift:'UserInfo'().
+-type revision()              :: dmsl_base_thrift:'Timestamp'().
+-type sequence()              :: pos_integer().
 
 -type ev() ::
     {sequence(), public_event() | private_event()}.
@@ -294,11 +300,11 @@ publish_event(_InvoiceID, _) ->
 namespace() ->
     ?NS.
 
--spec init(party_id(), {}) ->
+-spec init(party_id(), dmsl_payment_processing_thrift:'PartyParams'()) ->
     hg_machine:result(ev()).
 
-init(ID, {}) ->
-    {ok, StEvents} = create_party(ID, {#st{}, []}),
+init(ID, PartyParams) ->
+    {ok, StEvents} = create_party(ID, PartyParams, {#st{}, []}),
     Revision = hg_domain:head(),
     TestContractTemplpate = get_test_template(Revision),
     Changeset1 = create_contract(#payproc_ContractParams{template = TestContractTemplpate}, StEvents),
@@ -340,7 +346,23 @@ process_signal({repair, _}, _History) ->
     ok().
 
 -type call() ::
-    {suspend | activate}.
+    {block, binary()}                                                |
+    {unblock, binary()}                                              |
+    suspend                                                          |
+    activate                                                         |
+    {create_contract, contract_params()}                             |
+    {terminate_contract, contract_id(), binary()}                    |
+    {create_contract_adjustment, contract_id(), adjustment_params()} |
+    {create_payout_account, payout_account_params()}                 |
+    {create_shop, shop_params()}                                     |
+    {update_shop, shop_id(), shop_update()}                          |
+    {block_shop, shop_id(), binary()}                                |
+    {unblock_shop, shop_id(), binary()}                              |
+    {suspend_shop, shop_id()}                                        |
+    {activate_shop, shop_id()}                                       |
+    {accept_claim, shop_id()}                                        |
+    {deny_claim, shop_id(), binary()}                                |
+    {revoke_claim, shop_id(), binary()}.
 
 -type response() ::
     ok | {ok, term()} | {exception, term()}.
@@ -462,13 +484,14 @@ handle_call({revoke_claim, ID, Reason}, StEvents0) ->
 
 %%
 
-create_party(PartyID, StEvents) ->
+create_party(PartyID, PartyParams, StEvents) ->
     Party = #domain_Party{
-        id         = PartyID,
-        blocking   = ?unblocked(<<>>),
-        suspension = ?active(),
-        contracts = #{},
-        shops      = #{},
+        id              = PartyID,
+        contact_info    = PartyParams#payproc_PartyParams.contact_info,
+        blocking        = ?unblocked(<<>>),
+        suspension      = ?active(),
+        contracts       = #{},
+        shops           = #{},
         payout_accounts = #{}
     },
     Event = ?party_ev(?party_created(Party)),

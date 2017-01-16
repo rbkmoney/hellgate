@@ -296,15 +296,16 @@ end_per_testcase(_Name, _C) ->
 party_creation(C) ->
     Client = ?c(client, C),
     PartyID = ?c(party_id, C),
-    ok = hg_client_party:create(Client),
+    ContactInfo = #domain_PartyContactInfo{email = <<?MODULE_STRING>>},
+    ok = hg_client_party:create(make_party_params(ContactInfo), Client),
     ?party_created(?party_w_status(PartyID, ?unblocked(_), ?active())) = next_event(Client),
     ?claim_created(?claim(_, ?accepted(_), [_ | _])) = next_event(Client),
-    #domain_Party{shops = Shops} = hg_client_party:get(Client),
+    #domain_Party{contact_info = ContactInfo, shops = Shops} = hg_client_party:get(Client),
     [{_ShopID, #domain_Shop{suspension = ?active()}}] = maps:to_list(Shops).
 
 party_already_exists(C) ->
     Client = ?c(client, C),
-    ?party_exists() = hg_client_party:create(Client).
+    ?party_exists() = hg_client_party:create(make_party_params(), Client).
 
 party_not_found_on_retrieval(C) ->
     Client = ?c(client, C),
@@ -317,8 +318,7 @@ party_retrieval(C) ->
 
 party_revisioning(C) ->
     Client = ?c(client, C),
-    Context = hg_ct_helper:construct_context(),
-    hg_context:set(Context),
+    hg_context:set(woody_context:new()),
     Party1 = hg_client_party:get(Client),
     T1 = hg_datetime:format_now(),
     Party2 = party_suspension(C),
@@ -733,3 +733,10 @@ get_first_payout_account(Client) ->
 
 make_userinfo(PartyID) ->
     #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}}.
+
+make_party_params() ->
+    make_party_params(#domain_PartyContactInfo{email = <<?MODULE_STRING>>}).
+make_party_params(ContactInfo) ->
+    #payproc_PartyParams{
+        contact_info = ContactInfo
+    }.

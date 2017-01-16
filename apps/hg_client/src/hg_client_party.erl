@@ -5,7 +5,7 @@
 -export([start_link/3]).
 -export([stop/1]).
 
--export([create/1]).
+-export([create/2]).
 -export([get/1]).
 -export([block/2]).
 -export([unblock/2]).
@@ -42,6 +42,7 @@
 
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
+-type party_params() :: dmsl_payment_processing_thrift:'PartyParams'().
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
 -type claim_id() :: dmsl_payment_processing_thrift:'ClaimID'().
 -type shop_params() :: dmsl_payment_processing_thrift:'ShopParams'().
@@ -70,11 +71,11 @@ stop(Client) ->
 
 %%
 
--spec create(pid()) ->
+-spec create(party_params(), pid()) ->
     ok | woody_error:business_error().
 
-create(Client) ->
-    map_result_error(gen_server:call(Client, {call, 'Create', []})).
+create(PartyParams, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'Create', [PartyParams]})).
 
 -spec get(pid()) ->
     dmsl_domain_thrift:'Party'() | woody_error:business_error().

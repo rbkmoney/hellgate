@@ -23,7 +23,6 @@
 -export([get_hellgate_url/0]).
 
 -export([construct_domain_fixture/0]).
--export([construct_context/0]).
 
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 
@@ -118,10 +117,17 @@ start_apps(Apps) ->
     shop_id().
 
 create_party_and_shop(Client) ->
-    ok = hg_client_party:create(Client),
+    ok = hg_client_party:create(make_party_params(), Client),
     #domain_Party{shops = Shops} = hg_client_party:get(Client),
     [{ShopID, _Shop}] = maps:to_list(Shops),
     ShopID.
+
+make_party_params() ->
+    #payproc_PartyParams{
+        contact_info = #domain_PartyContactInfo{
+            email = <<?MODULE_STRING>>
+        }
+    }.
 
 -spec create_shop(category(), binary(), Client :: pid()) ->
     shop_id().
@@ -296,8 +302,7 @@ make_due_date(LifetimeSeconds) ->
     {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C}}).
 
 construct_domain_fixture() ->
-    Context = construct_context(),
-    hg_context:set(Context),
+    _ = hg_context:set(woody_context:new()),
     Accounts = lists:foldl(
         fun ({N, CurrencyCode}, M) ->
             AccountID = hg_accounting:create_account(CurrencyCode),
@@ -700,9 +705,3 @@ construct_domain_fixture() ->
             }
         }}
     ].
-
--spec construct_context() -> term().
-
-construct_context() ->
-    ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
-    woody_context:new(ReqID).
