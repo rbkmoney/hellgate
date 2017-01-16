@@ -51,12 +51,13 @@
     dmsl_domain_thrift:'Party'() | no_return().
 
 get(UserInfo, PartyID) ->
-    St = get_state(UserInfo, PartyID),
-    get_party(St).
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    get_party(get_state(PartyID)).
 
 -spec checkout(party_id(), revision()) ->
     dmsl_domain_thrift:'Party'().
 
+%% DANGER! INSECURE METHOD! USE WITH SPECIAL CARE!
 checkout(PartyID, Revision) ->
     {History, _LastID} = get_history(PartyID),
     case checkout_history(History, Revision) of
@@ -72,89 +73,114 @@ checkout(PartyID, Revision) ->
     term()| no_return().
 
 handle_function('Create', [UserInfo, PartyID], _Opts) ->
-    start(PartyID, {UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    start(PartyID);
 
 handle_function('Get', [UserInfo, PartyID], _Opts) ->
-    St = get_state(UserInfo, PartyID),
-    get_party(St);
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    get_party(get_state(PartyID));
 
 handle_function('CreateContract', [UserInfo, PartyID, ContractParams], _Opts) ->
-    call(PartyID, {create_contract, ContractParams, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {create_contract, ContractParams});
 
 handle_function('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
-    St = get_state(UserInfo, PartyID),
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    St = get_state(PartyID),
     get_contract(ContractID, get_party(St));
 
 handle_function('TerminateContract', [UserInfo, PartyID, ContractID, Reason], _Opts) ->
-    call(PartyID, {terminate_contract, ContractID, Reason, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {terminate_contract, ContractID, Reason});
 
 handle_function('CreateContractAdjustment', [UserInfo, PartyID, ContractID, Params], _Opts) ->
-    call(PartyID, {create_contract_adjustment, ContractID, Params, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {create_contract_adjustment, ContractID, Params});
 
 handle_function('CreatePayoutAccount', [UserInfo, PartyID, Params], _Opts) ->
-    call(PartyID, {create_payout_account, Params, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {create_payout_account, Params});
 
 handle_function('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
+    ok = hg_security:check_user_info(UserInfo, PartyID),
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
-    get_public_history(UserInfo, PartyID, AfterID, Limit);
+    get_public_history(PartyID, AfterID, Limit);
 
 handle_function('Block', [UserInfo, PartyID, Reason], _Opts) ->
-    call(PartyID, {block, Reason, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {block, Reason});
 
 handle_function('Unblock', [UserInfo, PartyID, Reason], _Opts) ->
-    call(PartyID, {unblock, Reason, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {unblock, Reason});
 
 handle_function('Suspend', [UserInfo, PartyID], _Opts) ->
-    call(PartyID, {suspend, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {suspend});
 
 handle_function('Activate', [UserInfo, PartyID], _Opts) ->
-    call(PartyID, {activate, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {activate});
 
 handle_function('CreateShop', [UserInfo, PartyID, Params], _Opts) ->
-    call(PartyID, {create_shop, Params, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {create_shop, Params});
 
 handle_function('GetShop', [UserInfo, PartyID, ID], _Opts) ->
-    St = get_state(UserInfo, PartyID),
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    St = get_state(PartyID),
     get_shop(ID, get_party(St));
 
 handle_function('UpdateShop', [UserInfo, PartyID, ID, Update], _Opts) ->
-    call(PartyID, {update_shop, ID, Update, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {update_shop, ID, Update});
 
 handle_function('BlockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
-    call(PartyID, {block_shop, ID, Reason, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {block_shop, ID, Reason});
 
 handle_function('UnblockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
-    call(PartyID, {unblock_shop, ID, Reason, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {unblock_shop, ID, Reason});
 
 handle_function('SuspendShop', [UserInfo, PartyID, ID], _Opts) ->
-    call(PartyID, {suspend_shop, ID, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {suspend_shop, ID});
 
 handle_function('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
-    call(PartyID, {activate_shop, ID, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {activate_shop, ID});
 
 handle_function('GetClaim', [UserInfo, PartyID, ID], _Opts) ->
-    St = get_state(UserInfo, PartyID),
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    St = get_state(PartyID),
     get_claim(ID, St);
 
 handle_function('GetPendingClaim', [UserInfo, PartyID], _Opts) ->
-    St = get_state(UserInfo, PartyID),
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    St = get_state(PartyID),
     ensure_claim(get_pending_claim(St));
 
 handle_function('AcceptClaim', [UserInfo, PartyID, ID], _Opts) ->
-    call(PartyID, {accept_claim, ID, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {accept_claim, ID});
 
 handle_function('DenyClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
-    call(PartyID, {deny_claim, ID, Reason, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {deny_claim, ID, Reason});
 
 handle_function('RevokeClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
-    call(PartyID, {revoke_claim, ID, Reason, UserInfo});
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    call(PartyID, {revoke_claim, ID, Reason});
 
 handle_function('GetAccountState', [UserInfo, PartyID, AccountID], _Opts) ->
-    St = get_state(UserInfo, PartyID),
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    St = get_state(PartyID),
     get_account_state(AccountID, St);
 
 handle_function('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
-    St = get_state(UserInfo, PartyID),
+    ok = hg_security:check_user_info(UserInfo, PartyID),
+    St = get_state(PartyID),
     get_shop_account(ShopID, St).
 
 get_history(PartyID) ->
@@ -163,7 +189,7 @@ get_history(PartyID) ->
 get_history(PartyID, AfterID, Limit) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
 
-get_state(_UserInfo, PartyID) ->
+get_state(PartyID) ->
     {History, _LastID} = get_history(PartyID),
     collapse_history(assert_nonempty_history(History)).
 
@@ -172,17 +198,17 @@ get_state(_UserInfo, PartyID) ->
 assert_nonempty_history([_ | _] = Result) ->
     Result;
 assert_nonempty_history([]) ->
-    throw(#payproc_PartyNotFound{}).
+    hg_woody_wrapper:raise(#payproc_PartyNotFound{}).
 
-get_public_history(_UserInfo, PartyID, AfterID, Limit) ->
+get_public_history(PartyID, AfterID, Limit) ->
     hg_history:get_public_history(
         fun (ID, Lim) -> get_history(PartyID, ID, Lim) end,
         fun (Event) -> publish_party_event({party, PartyID}, Event) end,
         AfterID, Limit
     ).
 
-start(ID, Args) ->
-    map_start_error(hg_machine:start(?NS, ID, Args)).
+start(ID) ->
+    map_start_error(hg_machine:start(?NS, ID, {})).
 
 call(ID, Args) ->
     map_error(hg_machine:call(?NS, {id, ID}, Args)).
@@ -260,10 +286,10 @@ publish_event(_InvoiceID, _) ->
 namespace() ->
     ?NS.
 
--spec init(party_id(), {user_info()}) ->
+-spec init(party_id(), {}) ->
     hg_machine:result(ev()).
 
-init(ID, {_UserInfo}) ->
+init(ID, {}) ->
     {ok, StEvents} = create_party(ID, {#st{}, []}),
     Revision = hg_domain:head(),
     TestContractTemplpate = get_test_template(Revision),
@@ -306,7 +332,7 @@ process_signal({repair, _}, _History) ->
     ok().
 
 -type call() ::
-    {suspend | activate, user_info()}.
+    {suspend | activate}.
 
 -type response() ::
     ok | {ok, term()} | {exception, term()}.
@@ -328,35 +354,35 @@ process_call(Call, History) ->
 raise(What) ->
     throw({exception, What}).
 
-handle_call({block, Reason, _UserInfo}, StEvents0) ->
+handle_call({block, Reason}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
     {ClaimID, StEvents1} = create_claim([{blocking, ?blocked(Reason)}], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({unblock, Reason, _UserInfo}, StEvents0) ->
+handle_call({unblock, Reason}, StEvents0) ->
     ok = assert_blocked(StEvents0),
     {ClaimID, StEvents1} = create_claim([{blocking, ?unblocked(Reason)}], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({suspend, _UserInfo}, StEvents0) ->
+handle_call({suspend}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
     ok = assert_active(StEvents0),
     {ClaimID, StEvents1} = create_claim([{suspension, ?suspended()}], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({activate, _UserInfo}, StEvents0) ->
+handle_call({activate}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
     ok = assert_suspended(StEvents0),
     {ClaimID, StEvents1} = create_claim([{suspension, ?active()}], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_contract, ContractParams, _UserInfo}, StEvents0) ->
+handle_call({create_contract, ContractParams}, StEvents0) ->
     ok = assert_operable(StEvents0),
     Changeset = create_contract(ContractParams, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({terminate_contract, ID, Reason, _UserInfo}, StEvents0 = {St, _}) ->
+handle_call({terminate_contract, ID, Reason}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
     Contract = get_contract(ID, get_party(St)),
     ok = assert_contract_active(Contract, hg_datetime:format_now()),
@@ -364,7 +390,7 @@ handle_call({terminate_contract, ID, Reason, _UserInfo}, StEvents0 = {St, _}) ->
     {ClaimID, StEvents1} = create_claim([?contract_termination(ID, TerminatedAt, Reason)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_contract_adjustment, ID, Params, _UserInfo}, StEvents0 = {St, _}) ->
+handle_call({create_contract_adjustment, ID, Params}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
     Contract = get_contract(ID, get_party(St)),
     ok = assert_contract_active(Contract, hg_datetime:format_now()),
@@ -372,56 +398,56 @@ handle_call({create_contract_adjustment, ID, Params, _UserInfo}, StEvents0 = {St
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_payout_account, Params, _UserInfo}, StEvents0) ->
+handle_call({create_payout_account, Params}, StEvents0) ->
     ok = assert_operable(StEvents0),
     Changeset = create_payout_account(Params, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_shop, Params, _UserInfo}, StEvents0) ->
+handle_call({create_shop, Params}, StEvents0) ->
     ok = assert_operable(StEvents0),
     Revision = hg_domain:head(),
     Changeset = create_shop(Params, Revision, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({update_shop, ID, Update, _UserInfo}, StEvents0) ->
+handle_call({update_shop, ID, Update}, StEvents0) ->
     ok = assert_operable(StEvents0),
     ok = assert_shop_modification_allowed(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {update, Update})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({block_shop, ID, Reason, _UserInfo}, StEvents0) ->
+handle_call({block_shop, ID, Reason}, StEvents0) ->
     ok = assert_shop_unblocked(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {blocking, ?blocked(Reason)})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({unblock_shop, ID, Reason, _UserInfo}, StEvents0) ->
+handle_call({unblock_shop, ID, Reason}, StEvents0) ->
     ok = assert_shop_blocked(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {blocking, ?unblocked(Reason)})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({suspend_shop, ID, _UserInfo}, StEvents0) ->
+handle_call({suspend_shop, ID}, StEvents0) ->
     ok = assert_shop_unblocked(ID, StEvents0),
     ok = assert_shop_active(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {suspension, ?suspended()})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({activate_shop, ID, _UserInfo}, StEvents0) ->
+handle_call({activate_shop, ID}, StEvents0) ->
     ok = assert_shop_unblocked(ID, StEvents0),
     ok = assert_shop_suspended(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {suspension, ?active()})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({accept_claim, ID, _UserInfo}, StEvents0) ->
+handle_call({accept_claim, ID}, StEvents0) ->
     {ID, StEvents1} = accept_claim(ID, StEvents0),
     respond(ok, StEvents1);
 
-handle_call({deny_claim, ID, Reason, _UserInfo}, StEvents0) ->
+handle_call({deny_claim, ID, Reason}, StEvents0) ->
     {ID, StEvents1} = finalize_claim(ID, ?denied(Reason), StEvents0),
     respond(ok, StEvents1);
 
-handle_call({revoke_claim, ID, Reason, _UserInfo}, StEvents0) ->
+handle_call({revoke_claim, ID, Reason}, StEvents0) ->
     ok = assert_operable(StEvents0),
     {ID, StEvents1} = finalize_claim(ID, ?revoked(Reason), StEvents0),
     respond(ok, StEvents1).
