@@ -220,12 +220,14 @@ map_start_error({error, Reason}) ->
     {private, sequence(), private_event()}.
 
 -type private_event() ::
-    {session_event, session_event()}. %% TODO hg_invoice_payment:private_event() ?
+    session_event(). %% TODO hg_invoice_payment:private_event() ?
 
 -type session_event() ::
-    {started, invoice_status()} |
-    finished |
-    {proxy_state_changed, proxy_state()}.
+    {session_event,
+        {started, invoice_status()} |
+        finished |
+        {proxy_state_changed, proxy_state()}
+    }.
 
 -type session() :: #{
     status => invoice_status(),
