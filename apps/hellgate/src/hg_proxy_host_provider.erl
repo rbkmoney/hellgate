@@ -24,14 +24,11 @@
 handle_function('ProcessCallback', [Tag, Callback], _) ->
     map_error(hg_invoice:process_callback(Tag, {provider, Callback})).
 
-map_error({ok, CallResult}) ->
-    case CallResult of
-        {ok, Result} ->
-            Result;
-        {exception, Reason} ->
-            throw(Reason)
-    end;
+map_error({ok, Response}) ->
+    Response;
+map_error({error, invalid_callback}) ->
+    hg_woody_wrapper:raise(#'InvalidRequest'{errors = [<<"Invalid callback">>]});
 map_error({error, notfound}) ->
-    hg_woody_wrapper:raise(#'InvalidRequest'{errors = [<<"notfound">>]});
+    hg_woody_wrapper:raise(#'InvalidRequest'{errors = [<<"Not found">>]});
 map_error({error, Reason}) ->
     error(Reason).

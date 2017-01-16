@@ -136,10 +136,17 @@ get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
 -type callback_response() :: _. %% FIXME
 
 -spec process_callback(tag(), callback()) ->
-    {ok, callback_response()} | {error, notfound | failed} | no_return().
+    {ok, callback_response()} | {error, invalid_callback | notfound | failed} | no_return().
 
 process_callback(Tag, Callback) ->
-    hg_machine:call(?NS, {tag, Tag}, {callback, Callback}).
+    case hg_machine:call(?NS, {tag, Tag}, {callback, Callback}) of
+        {ok, {ok, _} = Ok} ->
+            Ok;
+        {ok, {exception, invalid_callback}} ->
+            {error, invalid_callback};
+        {error, _} = Error ->
+            Error
+    end.
 
 %%
 
@@ -345,7 +352,7 @@ dispatch_callback({provider, Payload}, St = #st{pending = {payment, PaymentID}})
     PaymentSession = get_payment_session(PaymentID, St),
     process_payment_call({callback, Payload}, PaymentID, PaymentSession, St);
 dispatch_callback(_Callback, _St) ->
-    raise(no_pending_payment). % FIXME
+    raise(invalid_callback).
 
 assert_invoice_status(Status, #st{invoice = Invoice}) ->
     assert_invoice_status(Status, Invoice);
