@@ -30,7 +30,7 @@ handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
         {ok, Result}
     catch
         throw:Reason ->
-            woody_error:raise(business, Reason)
+            raise(Reason)
     after
         hg_context:cleanup()
     end.
