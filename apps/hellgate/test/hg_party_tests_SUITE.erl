@@ -55,6 +55,8 @@
 
 -export([consistent_history/1]).
 
+-export([party_access_control/1]).
+
 %%
 
 -define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
@@ -69,6 +71,7 @@
 
 all() ->
     [
+        {group, party_access_control},
         {group, party_creation},
         {group, party_revisioning},
         {group, party_blocking_suspension},
@@ -89,6 +92,10 @@ groups() ->
             party_creation,
             party_already_exists,
             party_retrieval
+        ]},
+        {party_access_control, [sequence], [
+            party_creation,
+            party_access_control
         ]},
         {party_revisioning, [sequence], [
             party_creation,
@@ -178,7 +185,6 @@ end_per_suite(C) ->
 
 init_per_group(shop_blocking_suspension, C) ->
     C;
-
 init_per_group(Group, C) ->
     PartyID = list_to_binary(lists:concat([Group, ".", erlang:system_time()])),
     Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(?c(root_url, C))),
@@ -207,6 +213,8 @@ end_per_testcase(_Name, _C) ->
 -define(shop_w_status(ID, Blocking, Suspension),
     #domain_Shop{id = ID, blocking = Blocking, suspension = Suspension}).
 
+-define(invalid_user(),
+    {exception, #payproc_InvalidUser{}}).
 -define(party_not_found(),
     {exception, #payproc_PartyNotFound{}}).
 -define(party_exists(),
@@ -283,6 +291,7 @@ end_per_testcase(_Name, _C) ->
 -spec shop_already_active(config()) -> _ | no_return().
 -spec shop_account_set_retrieval(config()) -> _ | no_return().
 -spec shop_account_retrieval(config()) -> _ | no_return().
+-spec party_access_control(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = ?c(client, C),
@@ -619,6 +628,42 @@ shop_account_retrieval(C) ->
     Client = ?c(client, C),
     {shop_account_set_retrieval, #domain_ShopAccount{guarantee = AccountID}} = ?config(saved_config, C),
     #payproc_AccountState{account_id = AccountID} = hg_client_party:get_account_state(AccountID, Client).
+
+%% Access control tests
+
+party_access_control(C) ->
+    PartyID = ?c(party_id, C),
+    % External Success
+    GoodExternalClient = ?c(client, C),
+    #domain_Party{id = PartyID} = hg_client_party:get(GoodExternalClient),
+
+    % External Reject
+    BadExternalClient = hg_client_party:start(
+        #payproc_UserInfo{id = <<"FakE1D">>, type = {external_user, #payproc_ExternalUser{}}},
+        PartyID,
+        hg_client_api:new(?c(root_url, C))
+    ),
+    ?invalid_user() = hg_client_party:get(BadExternalClient),
+    hg_client_party:stop(BadExternalClient),
+
+    % Internal Success
+    GoodInternalClient = hg_client_party:start(
+        #payproc_UserInfo{id = <<"F4KE1D">>, type = {internal_user, #payproc_InternalUser{}}},
+        PartyID,
+        hg_client_api:new(?c(root_url, C))
+    ),
+    #domain_Party{id = PartyID} = hg_client_party:get(GoodInternalClient),
+    hg_client_party:stop(GoodInternalClient),
+
+    % Service Success
+    GoodServiceClient = hg_client_party:start(
+        #payproc_UserInfo{id = <<"fAkE1D">>, type = {service_user, #payproc_ServiceUser{}}},
+        PartyID,
+        hg_client_api:new(?c(root_url, C))
+    ),
+    #domain_Party{id = PartyID} = hg_client_party:get(GoodServiceClient),
+    hg_client_party:stop(GoodServiceClient),
+    ok.
 
 get_last_shop(Client) ->
     #domain_Party{shops = Shops} = hg_client_party:get(Client),
