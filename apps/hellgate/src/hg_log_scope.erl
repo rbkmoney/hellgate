@@ -1,63 +1,88 @@
 -module(hg_log_scope).
 
 %% API
--export([new_scope/0]).
--export([set_values/1]).
--export([remove_value/1]).
--export([cleanup/0]).
--export([merge/0]).
+-export([new/1]).
+-export([set_meta/1]).
+-export([remove_meta/1]).
+-export([clean/0]).
 
+-type meta() :: #{atom() => any()}.
+-type scope_name() :: atom().
 
 -define(TAG, log_scopes).
 
--spec new_scope() -> _.
-new_scope() ->
-    try
-        Scopes = gproc:get_value({p, l, ?TAG}),
-        gproc:set_value({p, l, ?TAG}, [#{} | Scopes])
-    catch
-        error:badarg ->
-            gproc:reg({p, l, ?TAG}, [#{}])
+-spec new(scope_name()) -> ok.
+
+new(Name) ->
+    case get_scope_names() of
+        {ok, Scopes} ->
+            set_scope_names([Name | Scopes]);
+        error ->
+            init_scope_names([Name])
+    end,
+    lager:md(lists:keystore(Name, 1, lager:md(), {Name, #{}})).
+
+-spec clean() -> ok.
+
+clean() ->
+    case get_scope_names() of
+        {ok, []} ->
+            ok;
+        {ok, [Current | Rest]} ->
+            lager:md(
+                lists:keydelete(Current, 1, lager:md())
+            ),
+            set_scope_names(Rest);
+        error ->
+            ok
     end.
 
--spec cleanup() -> _.
 
-cleanup() ->
-    case gproc:get_value({p, l, ?TAG}) of
-        [_] ->
-            true = gproc:set_value({p, l, ?TAG}, [#{}]);
-        [_Current | Rest] ->
-            true = gproc:set_value({p, l, ?TAG}, Rest)
+-spec set_meta(meta()) -> ok.
+
+set_meta(Meta) ->
+    {ok, [Name | _]} = get_scope_names(),
+    Current = case lists:keyfind(Name, 1, lager:md()) of
+        {Name, C} ->
+            C;
+        false ->
+            #{}
     end,
-    ok.
-
--spec set_values(_) -> _.
-
-set_values(Meta) ->
-    [Current | Rest] = gproc:get_value({p, l, ?TAG}),
-    true = gproc:set_value({p, l, ?TAG}, [maps:merge(Current, Meta)| Rest]),
-    ok.
-
-
--spec remove_value(_) -> _.
-
-remove_value(Key) ->
-    [Current0 | Rest] = gproc:get_value({p, l, ?TAG}),
-    true = gproc:set_value({p, l, ?TAG}, [maps:remove(Key, Current0) | Rest]),
-    ok.
-
-merge() ->
-    Scopes = try
-        gproc:get_value({p, l, ?TAG})
-    catch
-        error:badarg ->
-            [#{}]
-    end,
-    lists:foldl(
-        fun(M, Acc) ->
-            maps:merge(M, Acc)
-        end,
-        #{},
-        Scopes
+    lager:md(
+        lists:keystore(Name, 1, lager:md(), {Name, maps:merge(Current, Meta)})
     ).
 
+
+-spec remove_meta([atom()]) -> ok.
+
+remove_meta(Keys) ->
+    {ok, [Name | _]} = get_scope_names(),
+    NewMeta = case lists:keyfind(Name, 1, lager:md()) of
+        {Name, C} ->
+            maps:filter(
+                fun(K, _V) ->
+                    not lists:member(K, Keys)
+                end,
+                C
+            );
+        false ->
+            #{}
+    end,
+    lager:md(
+        lists:keystore(Name, 1, lager:md(), {Name, NewMeta})
+    ).
+
+init_scope_names(Names) ->
+    gproc:reg({p, l, ?TAG}, Names).
+
+get_scope_names() ->
+    try
+        Scopes = gproc:get_value({p, l, ?TAG}),
+        {ok, Scopes}
+    catch
+        error:badarg ->
+            error
+    end.
+
+set_scope_names(Names) ->
+    gproc:set_value({p, l, ?TAG}, Names).

@@ -394,20 +394,13 @@ set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
 %%
 
 start_payment(PaymentParams, St) ->
-    ?scope(
-        fun() ->
-            PaymentID = create_payment_id(St),
-            hg_log_scope:set_values(#{
-                payment_id => PaymentID
-            }),
-            Party = checkout_party(St),
-            Opts = get_payment_opts(Party, St),
-            {Events1, _} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
-            {Events2, Action} = hg_invoice_payment:start_session(?processed()),
-            Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
-            respond(PaymentID, Events, St, Action)
-        end
-    ).
+    PaymentID = create_payment_id(St),
+    Party = checkout_party(St),
+    Opts = get_payment_opts(Party, St),
+    {Events1, _} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
+    {Events2, Action} = hg_invoice_payment:start_session(?processed()),
+    Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
+    respond(PaymentID, Events, St, Action).
 
 process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
     Party = checkout_party(St),
