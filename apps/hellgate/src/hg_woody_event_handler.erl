@@ -11,117 +11,53 @@
     Opts  :: woody:options().
 
 handle_event(EventType = ?EV_CALL_SERVICE, RpcID, #{
-        service  := Service,
-        function := Function,
-        type     := Type
-    } = Meta, _Opts) ->
+    service  := Service,
+    function := Function,
+    type     := Type,
+    metadata := Metadata
+} =  Meta, _Opts) ->
     log(
         EventType,
         RpcID,
         Meta,
         #{
-            rpc => #{
-                service  => Service,
-                function => Function,
-                type     => Type
-            }
+            service  => Service,
+            function => Function,
+            type     => Type,
+            metadata => Metadata
         }
     );
 
-handle_event(EventType = ?EV_SERVICE_RESULT, RpcID, #{status := Status} = Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{
-            rpc => #{
-                status  => Status
-            }
-        }
-    );
+handle_event(EventType = ?EV_SERVICE_RESULT, RpcID, Meta, _Opts) ->
+    log(EventType, RpcID, Meta, Meta );
 
-handle_event(EventType = ?EV_CLIENT_SEND, RpcID, #{url := Url} = Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{
-            rpc => #{
-                url => Url
-            }
-        }
-    );
+handle_event(EventType = ?EV_CLIENT_SEND, RpcID, Meta, _Opts) ->
+    log(EventType, RpcID, Meta, Meta );
 
-handle_event(EventType = ?EV_CLIENT_RECEIVE, RpcID, #{
-    status := Status,
-    code   := HttpCode
+handle_event(EventType = ?EV_CLIENT_RECEIVE, RpcID, Meta, _Opts) ->
+    log(EventType, RpcID, Meta, Meta );
+
+handle_event(EventType = ?EV_SERVER_RECEIVE, RpcID, Meta, _Opts) ->
+    log(EventType, RpcID, Meta, Meta );
+
+handle_event(EventType = ?EV_SERVER_SEND, RpcID, Meta, _Opts) ->
+    log(EventType, RpcID, Meta, Meta );
+
+handle_event(EventType = ?EV_INTERNAL_ERROR, RpcID, Meta, _Opts) ->
+    log(EventType, RpcID, Meta, Meta );
+
+handle_event(EventType = ?EV_TRACE, RpcID, #{
+    event := Event,
+    role := Role
 } = Meta, _Opts) ->
     log(
         EventType,
         RpcID,
         Meta,
         #{
-            rpc => #{
-                status => Status,
-                code   => HttpCode
-            }
+            event => Event,
+            role => Role
         }
-    );
-
-handle_event(EventType = ?EV_SERVER_RECEIVE, RpcID, #{
-    url    := Url,
-    status := Status
-} = Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{
-            rpc => #{
-                status => Status,
-                url   => Url
-            }
-        }
-    );
-
-handle_event(EventType = ?EV_SERVER_SEND, RpcID, #{
-    status := Status,
-    code   := HttpCode
-} = Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{
-            rpc => #{
-                status => Status,
-                code   => HttpCode
-            }
-        }
-    );
-
-handle_event(EventType = ?EV_INTERNAL_ERROR, RpcID, #{
-    role     := Role,
-    error    := Error,
-    reason   := Reason
-} = Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{
-            role     => Role,
-            error    => Error,
-            reason   => Reason
-        }
-    );
-
-handle_event(EventType = ?EV_TRACE, RpcID, Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{}
     );
 
 handle_event(EventType = ?EV_INVOKE_SERVICE_HANDLER, RpcID, #{
@@ -140,75 +76,48 @@ handle_event(EventType = ?EV_INVOKE_SERVICE_HANDLER, RpcID, #{
         }
     );
 
-handle_event(EventType = ?EV_SERVICE_HANDLER_RESULT, RpcID, #{
-    status := Status,
-    result := Result
-} = Meta, _Opts) ->
+handle_event(EventType = ?EV_SERVICE_HANDLER_RESULT, RpcID, Meta, _Opts) ->
     log(
         EventType,
         RpcID,
         Meta,
-        #{
-            rpc => #{
-                status  => Status,
-                result => Result
-            }
-        }
+        Meta
     );
 
 
 handle_event(EventType, RpcID, EventMeta, _Opts) ->
     log(EventType, RpcID, EventMeta, #{}).
 
-log(EventType, RpcID, RawMeta, FormattedMeta) ->
+log(EventType, RpcID, RawMeta, RpcMeta) ->
     {Level, {Format, Args}} = woody_event_handler:format_event(EventType, RawMeta, RpcID),
-    LoggerFun = get_logger_function(Level),
-    LoggerFun(
-        construct_md(collect_meta(EventType, RpcID, FormattedMeta)),
+    lager:log(
+        Level,
+        lists:append([
+            [{pid, self()}],
+            construct_md(collect_meta(EventType, RpcID, RpcMeta)),
+            lager:md()
+        ]),
         Format,
         Args
     ).
 
-collect_meta(EventType, RpcID, AdditionalMeta) ->
-    lists:foldl(
+collect_meta(EventType, RpcID, RpcMeta) ->
+    Meta = lists:foldl(
         fun(M, Acc) ->
             maps:merge(M, Acc)
         end,
+        #{},
         [
             #{
                 event_type => EventType
             },
             RpcID,
-            AdditionalMeta,
-            lager:md()
+            RpcMeta
         ]
-    ).
+    ),
+    #{
+        rpc => Meta
+    }.
 
-get_logger_function(debug) ->
-    fun(Meta, Format, Args) -> lager:debug(Meta, Format, Args) end;
-
-get_logger_function(info) ->
-    fun(Meta, Format, Args) -> lager:info(Meta, Format, Args) end;
-
-get_logger_function(notice) ->
-    fun(Meta, Format, Args) -> lager:notice(Meta, Format, Args) end;
-
-get_logger_function(warning) ->
-    fun(Meta, Format, Args) -> lager:warning(Meta, Format, Args) end;
-
-get_logger_function(error) ->
-    fun(Meta, Format, Args) -> lager:error(Meta, Format, Args) end;
-
-get_logger_function(critical) ->
-    fun(Meta, Format, Args) -> lager:critical(Meta, Format, Args) end;
-
-get_logger_function(alert) ->
-    fun(Meta, Format, Args) -> lager:alert(Meta, Format, Args) end;
-
-get_logger_function(emergency) ->
-    fun(Meta, Format, Args) -> lager:emergency(Meta, Format, Args) end.
-
-construct_md(undefined) ->
-    [];
 construct_md(Map = #{}) ->
     maps:to_list(Map).
