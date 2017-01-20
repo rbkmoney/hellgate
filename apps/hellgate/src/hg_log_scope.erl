@@ -1,6 +1,8 @@
 -module(hg_log_scope).
 
 %% API
+-export([scope/2]).
+-export([scope/3]).
 -export([new/1]).
 -export([set_meta/1]).
 -export([remove_meta/1]).
@@ -10,6 +12,22 @@
 -type scope_name() :: atom().
 
 -define(TAG, log_scopes).
+
+-spec scope(scope_name(), fun(() -> any())) -> any().
+
+scope(Name, Fun) ->
+    scope(Name, Fun, #{}).
+
+-spec scope(scope_name(), fun(() -> any()), meta()) -> any().
+
+scope(Name, Fun, Meta) ->
+    try
+        new(Name),
+        set_meta(Meta),
+        Fun()
+    after
+        clean()
+    end.
 
 -spec new(scope_name()) -> ok.
 
@@ -41,16 +59,21 @@ clean() ->
 -spec set_meta(meta()) -> ok.
 
 set_meta(Meta) ->
-    {ok, [Name | _]} = get_scope_names(),
-    Current = case lists:keyfind(Name, 1, lager:md()) of
-        {Name, C} ->
-            C;
-        false ->
-            #{}
-    end,
-    lager:md(
-        lists:keystore(Name, 1, lager:md(), {Name, maps:merge(Current, Meta)})
-    ).
+    case maps:size(Meta) of
+        0 ->
+            ok;
+        _ ->
+            {ok, [Name | _]} = get_scope_names(),
+            Current = case lists:keyfind(Name, 1, lager:md()) of
+                {Name, C} ->
+                    C;
+                false ->
+                    #{}
+            end,
+            lager:md(
+                lists:keystore(Name, 1, lager:md(), {Name, maps:merge(Current, Meta)})
+            )
+    end.
 
 
 -spec remove_meta([atom()]) -> ok.
