@@ -103,11 +103,27 @@ get_payment(#st{payment = Payment}) ->
 -spec init(payment_id(), _, opts()) ->
     hg_machine:result().
 
-init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
+init(PaymentID, PaymentParams, Opts) ->
+    hg_log_scope:scope(
+        payment,
+        fun() -> init_(PaymentID, PaymentParams, Opts) end,
+        #{
+            id => PaymentID
+        }
+    ).
+
+-spec init_(payment_id(), _, opts()) ->
+    hg_machine:result().
+
+init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Revision = hg_domain:head(),
-    PaymentTerms = hg_party:get_payments_service_terms(Shop#domain_Shop.id, Party, Invoice#domain_Invoice.created_at),
+    PaymentTerms = hg_party:get_payments_service_terms(
+        Shop#domain_Shop.id,
+        Party,
+        Invoice#domain_Invoice.created_at
+    ),
     VS0 = collect_varset(Party, Shop, #{}),
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
@@ -252,24 +268,28 @@ start_session(Target) ->
     {next | done, hg_machine:result()}.
 
 process_signal(timeout, St, Options) ->
-    case get_status(St) of
-        active ->
-            process(St, Options);
-        suspended ->
-            fail(construct_failure(<<"provider_timeout">>), St)
-    end.
+    hg_log_scope:scope(payment, fun() ->
+        case get_status(St) of
+            active ->
+                process(St, Options);
+            suspended ->
+                fail(construct_failure(<<"provider_timeout">>), St)
+        end
+    end, get_st_meta(St)).
 
 -spec process_call({callback, _}, st(), opts()) ->
     {_, {next | done, hg_machine:result()}}. % FIXME
 
 process_call({callback, Payload}, St, Options) ->
-    case get_status(St) of
-        suspended ->
-            handle_callback(Payload, St, Options);
-        active ->
-            % there's ultimately no way how we could end up here
-            error(invalid_session_status)
-    end.
+    hg_log_scope:scope(payment, fun() ->
+        case get_status(St) of
+            suspended ->
+                handle_callback(Payload, St, Options);
+            active ->
+                % there's ultimately no way how we could end up here
+                error(invalid_session_status)
+        end
+    end, get_st_meta(St)).
 
 process(St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
@@ -575,3 +595,11 @@ inspect(Shop, Invoice, Payment = #domain_InvoicePayment{domain_revision = Revisi
         Payment#domain_InvoicePayment{risk_score = RiskScore},
         VS#{risk_score => RiskScore}
     }.
+
+get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
+    #{
+        id => ID
+    };
+
+get_st_meta(_) ->
+    #{}.

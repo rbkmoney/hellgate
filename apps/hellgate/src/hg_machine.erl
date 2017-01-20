@@ -81,7 +81,6 @@
 %%
 
 -include_lib("dmsl/include/dmsl_state_processing_thrift.hrl").
--include("hg_log_scope.hrl").
 
 
 %%
@@ -90,7 +89,7 @@
     {ok, term()} | {error, exists | term()} | no_return().
 
 start(Ns, ID, Args) ->
-    ?scope(hg_machine, fun() ->
+    hg_log_scope:scope(machine, fun() ->
         hg_log_scope:set_meta(#{
             namespace => Ns,
             id => ID
@@ -102,7 +101,7 @@ start(Ns, ID, Args) ->
     {ok, term()} | {error, notfound | failed} | no_return().
 
 call(Ns, Ref, Args) ->
-    ?scope(hg_machine, fun() ->
+    hg_log_scope:scope(machine, fun() ->
         hg_log_scope:set_meta(#{
             namespace => Ns
         }),
@@ -129,7 +128,7 @@ get_history(Ns, ID, AfterID, Limit) ->
     get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}).
 
 get_history(Ns, ID, Range) ->
-    ?scope(hg_machine, fun() ->
+    hg_log_scope:scope(machine, fun() ->
         hg_log_scope:set_meta(#{
             namespace => Ns,
             id => ID
@@ -165,19 +164,29 @@ call_automaton(Function, Args) ->
 -spec handle_function(func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
-    ?scope(machine, fun() ->
-        hg_log_scope:set_meta(#{namespace => Ns}),
-        #'SignalArgs'{signal = {_Type, Signal}, machine = Machine} = Args,
-        dispatch_signal(Ns, Signal, Machine)
-    end);
+handle_function(Func, Args, Opts) ->
+    hg_log_scope:scope(machine,
+        fun() -> handle_function_(Func, Args, Opts) end
+    ).
 
-handle_function('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
-    ?scope(machine, fun() ->
-        hg_log_scope:set_meta(#{namespace => Ns}),
-        #'CallArgs'{arg = Payload, machine = Machine} = Args,
-        dispatch_call(Ns, Payload, Machine)
-    end).
+-spec handle_function_(func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+    term() | no_return().
+
+handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
+    #'SignalArgs'{signal = {_Type, Signal}, machine = #'Machine'{id = ID} = Machine} = Args,
+    hg_log_scope:set_meta(#{
+        namespace => Ns,
+        id => ID
+    }),
+    dispatch_signal(Ns, Signal, Machine);
+
+handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
+    #'CallArgs'{arg = Payload, machine = #'Machine'{id = ID} = Machine} = Args,
+    hg_log_scope:set_meta(#{
+        namespace => Ns,
+        id => ID
+    }),
+    dispatch_call(Ns, Payload, Machine).
 
 %%
 
