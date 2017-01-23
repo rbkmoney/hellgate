@@ -15,17 +15,20 @@
 -define(contract_creation(Contract),
     {contract_creation, Contract}).
 
--define(contract_termination(ID, TerminatedAt, Reason), 
+-define(contract_termination(ID, TerminatedAt, Reason),
     {contract_modification, #payproc_ContractModificationUnit{
         id = ID,
         modification = {termination, #payproc_ContractTermination{terminated_at = TerminatedAt, reason = Reason}}
     }}).
 
--define(contract_adjustment_creation(ID, Adjustment), 
-    {contract_modification, #payproc_ContractModificationUnit{ id = ID, modification = {adjustment_creation, Adjustment}}}).
+-define(contract_legal_agreement_binding(ID, LegalAgreement),
+    {contract_modification, #payproc_ContractModificationUnit{id = ID, modification = {legal_agreement_binding, LegalAgreement}}}).
 
--define(payout_account_creation(PayoutAccount),
-    {payout_account_creation, PayoutAccount}).
+-define(contract_adjustment_creation(ID, Adjustment),
+    {contract_modification, #payproc_ContractModificationUnit{id = ID, modification = {adjustment_creation, Adjustment}}}).
+
+-define(contract_payout_tool_creation(ID, PayoutTool),
+    {contract_modification, #payproc_ContractModificationUnit{id = ID, modification = {payout_tool_creation, PayoutTool}}}).
 
 -define(shop_creation(Shop),
     {shop_creation, Shop}).

@@ -11,6 +11,12 @@
 -export([unblock/2]).
 -export([suspend/1]).
 -export([activate/1]).
+-export([create_contract/2]).
+-export([get_contract/2]).
+-export([terminate_contract/3]).
+-export([bind_legal_agreement/3]).
+-export([create_payout_tool/3]).
+-export([create_contract_adjustment/3]).
 -export([get_shop/2]).
 -export([create_shop/2]).
 -export([update_shop/3]).
@@ -43,6 +49,10 @@
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type party_params() :: dmsl_payment_processing_thrift:'PartyParams'().
+-type contract_id() :: dmsl_domain_thrift:'ContractID'().
+-type contract_params() :: dmsl_payment_processing_thrift:'ContractParams'().
+-type payout_tool_params() :: dmsl_payment_processing_thrift:'PayoutToolParams'().
+-type contract_adjustment_params() :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
 -type claim_id() :: dmsl_payment_processing_thrift:'ClaimID'().
 -type shop_params() :: dmsl_payment_processing_thrift:'ShopParams'().
@@ -106,6 +116,42 @@ suspend(Client) ->
 
 activate(Client) ->
     map_result_error(gen_server:call(Client, {call, 'Activate', []})).
+
+-spec create_contract(contract_params(), pid()) ->
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_error:business_error().
+
+create_contract(Params, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'CreateContract', [Params]})).
+
+-spec get_contract(contract_id(), pid()) ->
+    dmsl_domain_thrift:'Contract'() | woody_error:business_error().
+
+get_contract(ID, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetContract', [ID]})).
+
+-spec terminate_contract(contract_id(), binary(), pid()) ->
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_error:business_error().
+
+terminate_contract(ID, Reason, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'TerminateContract', [ID, Reason]})).
+
+-spec bind_legal_agreement(contract_id(), dmsl_domain_thrift:'LegalAgreement'(), pid()) ->
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_error:business_error().
+
+bind_legal_agreement(ID, LegalAgreemnet, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'BindContractLegalAgreemnet', [ID, LegalAgreemnet]})).
+
+-spec create_payout_tool(contract_id(), payout_tool_params(), pid()) ->
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_error:business_error().
+
+create_payout_tool(ID, ToolParams, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'CreatePayoutTool', [ID, ToolParams]})).
+
+-spec create_contract_adjustment(contract_id(), contract_adjustment_params(), pid()) ->
+    dmsl_payment_processing_thrift:'ClaimResult'() | woody_error:business_error().
+
+create_contract_adjustment(ID, ContractAdjustmentParams, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'CreateContractAdjustment', [ID, ContractAdjustmentParams]})).
 
 -spec get_shop(shop_id(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_error:business_error().

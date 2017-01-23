@@ -89,6 +89,10 @@ handle_function('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
     St = get_state(PartyID),
     get_contract(ContractID, get_party(St));
 
+handle_function('BindContractLegalAgreemnet', [UserInfo, PartyID, ContractID, Reason], _Opts) ->
+    ok = assert_party_accessible(UserInfo, PartyID),
+    call(PartyID, {bind_contract_legal_agreemnet, ContractID, Reason});
+
 handle_function('TerminateContract', [UserInfo, PartyID, ContractID, Reason], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {terminate_contract, ContractID, Reason});
@@ -97,9 +101,9 @@ handle_function('CreateContractAdjustment', [UserInfo, PartyID, ContractID, Para
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {create_contract_adjustment, ContractID, Params});
 
-handle_function('CreatePayoutAccount', [UserInfo, PartyID, Params], _Opts) ->
+handle_function('CreatePayoutTool', [UserInfo, PartyID, ContractID, Params], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
-    call(PartyID, {create_payout_account, Params});
+    call(PartyID, {create_payout_tool, ContractID, Params});
 
 handle_function('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
@@ -255,12 +259,13 @@ map_error({error, Reason}) ->
 -type contract_id()           :: dmsl_domain_thrift:'ContractID'().
 -type contract_params()       :: dmsl_payment_processing_thrift:'ContractParams'().
 -type adjustment_params()     :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
--type payout_account_params() :: dmsl_payment_processing_thrift:'PayoutAccountParams'().
+-type payout_tool_params()    :: dmsl_payment_processing_thrift:'PayoutToolParams'().
 -type claim_id()              :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()                 :: dmsl_payment_processing_thrift:'Claim'().
 -type user_info()             :: dmsl_payment_processing_thrift:'UserInfo'().
 -type revision()              :: dmsl_base_thrift:'Timestamp'().
 -type sequence()              :: pos_integer().
+-type legal_agreement()       :: dmsl_domain_thrift:'LegalAgreement'().
 
 -type ev() ::
     {sequence(), public_event() | private_event()}.
@@ -310,30 +315,15 @@ init(ID, PartyParams) ->
     Changeset1 = create_contract(#payproc_ContractParams{template = TestContractTemplpate}, StEvents),
     [?contract_creation(TestContract)] = Changeset1,
     ShopParams = get_shop_prototype_params(Revision),
-    % FIXME payoutaccount should be optional at shop
-    Changeset2 = create_payout_account(
-        #payproc_PayoutAccountParams{
-            currency = #domain_CurrencyRef{symbolic_code = <<"RUB">>},
-            method = {bank_account, #domain_BankAccount{
-                account = <<"1234567890">>,
-                bank_name = <<"TestBank">>,
-                bank_post_account = <<"12345">>,
-                bank_bik = <<"012345">>
-            }}
-        },
-        StEvents
-    ),
-    [?payout_account_creation(TestPayoutAccount)] = Changeset2,
-    Changeset3 = create_shop(
+    Changeset2 = create_shop(
         ShopParams#payproc_ShopParams{
-            contract_id = TestContract#domain_Contract.id,
-            payout_account_id = TestPayoutAccount#domain_PayoutAccount.id
+            contract_id = TestContract#domain_Contract.id
         },
         ?active(),
         Revision,
         StEvents
     ),
-    {_ClaimID, StEvents1} = submit_accept_claim(Changeset1 ++ Changeset2 ++ Changeset3, StEvents),
+    {_ClaimID, StEvents1} = submit_accept_claim(Changeset1 ++ Changeset2, StEvents),
     ok(StEvents1).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
@@ -351,9 +341,10 @@ process_signal({repair, _}, _History) ->
     suspend                                                          |
     activate                                                         |
     {create_contract, contract_params()}                             |
+    {bind_contract_legal_agreemnet, contract_id(), legal_agreement()}|
     {terminate_contract, contract_id(), binary()}                    |
     {create_contract_adjustment, contract_id(), adjustment_params()} |
-    {create_payout_account, payout_account_params()}                 |
+    {create_payout_tool, contract_id(), payout_tool_params()}        |
     {create_shop, shop_params()}                                     |
     {update_shop, shop_id(), shop_update()}                          |
     {block_shop, shop_id(), binary()}                                |
@@ -412,6 +403,13 @@ handle_call({create_contract, ContractParams}, StEvents0) ->
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
+handle_call({bind_contract_legal_agreemnet, ID, #domain_LegalAgreement{} = LegalAgreement}, StEvents0 = {St, _}) ->
+    ok = assert_operable(StEvents0),
+    Contract = get_contract(ID, get_party(get_pending_st(St))),
+    ok = assert_contract_active(Contract, hg_datetime:format_now()),
+    {ClaimID, StEvents1} = create_claim([?contract_legal_agreement_binding(ID, LegalAgreement)], StEvents0),
+    respond(get_claim_result(ClaimID, StEvents1), StEvents1);
+
 handle_call({terminate_contract, ID, Reason}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
     Contract = get_contract(ID, get_party(St)),
@@ -428,9 +426,9 @@ handle_call({create_contract_adjustment, ID, Params}, StEvents0 = {St, _}) ->
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_payout_account, Params}, StEvents0) ->
+handle_call({create_payout_tool, ContractID, Params}, StEvents0) ->
     ok = assert_operable(StEvents0),
-    Changeset = create_payout_account(Params, StEvents0),
+    Changeset = create_payout_tool(Params, ContractID, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
@@ -491,8 +489,7 @@ create_party(PartyID, PartyParams, StEvents) ->
         blocking        = ?unblocked(<<>>),
         suspension      = ?active(),
         contracts       = #{},
-        shops           = #{},
-        payout_accounts = #{}
+        shops           = #{}
     },
     Event = ?party_ev(?party_created(Party)),
     {ok, apply_state_event(Event, StEvents)}.
@@ -502,20 +499,28 @@ get_party(#st{party = Party}) ->
 
 %%
 
-create_contract(ContractParams, {St, _}) ->
+create_contract(
+    #payproc_ContractParams{
+        contractor = Contractor,
+        template = TemplateRef,
+        payout_tool_params = PayoutToolParams
+    },
+    {St, _}
+) ->
     ContractID = get_next_contract_id(get_pending_st(St)),
-    Template = case ContractParams#payproc_ContractParams.template of
+    PayoutTools = case PayoutToolParams of
+        #payproc_PayoutToolParams{currency = Currency, tool_info = ToolInfo} ->
+            [#domain_PayoutTool{id = 1, currency = Currency, payout_tool_info = ToolInfo}];
         undefined ->
-            get_default_template();
-        Any ->
-            Any
+            []
     end,
-    Contract = #domain_Contract{
+    Contract0 = instantiate_contract_template(TemplateRef),
+    Contract = Contract0#domain_Contract{
         id = ContractID,
-        contractor = ContractParams#payproc_ContractParams.contractor,
-        concluded_at = hg_datetime:format_now(),
-        template = Template,
-        adjustments = []
+        contractor = Contractor,
+        status = {active, #domain_ContractActive{}},
+        adjustments = [],
+        payout_tools = PayoutTools
     },
     [?contract_creation(Contract)].
 
@@ -524,12 +529,19 @@ get_next_contract_id(#st{party = #domain_Party{contracts = Contracts}}) ->
 
 %%
 
-create_contract_adjustment(ID, #payproc_ContractAdjustmentParams{template = Template}, {St, _}) ->
+create_contract_adjustment(ID, #payproc_ContractAdjustmentParams{template = TemplateRef}, {St, _}) ->
     Contract = get_contract(ID, get_party(get_pending_st(St))),
     AdjustmentID = get_next_contract_adjustment_id(Contract#domain_Contract.adjustments),
+    #domain_Contract{
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        terms = TermSetHierarchyRef
+    } = instantiate_contract_template(TemplateRef),
     Adjustment = #domain_ContractAdjustment{
         id = AdjustmentID,
-        template = Template
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        terms = TermSetHierarchyRef
     },
     [?contract_adjustment_creation(ID, Adjustment)].
 
@@ -558,7 +570,7 @@ construct_shop(ShopID, ShopParams, Suspension) ->
         details    = ShopParams#payproc_ShopParams.details,
         category   = ShopParams#payproc_ShopParams.category,
         contract_id = ShopParams#payproc_ShopParams.contract_id,
-        payout_account_id = ShopParams#payproc_ShopParams.payout_account_id
+        payout_tool_id = ShopParams#payproc_ShopParams.payout_tool_id
     }.
 
 get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->
@@ -567,17 +579,18 @@ get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->
 
 %%
 
-create_payout_account(#payproc_PayoutAccountParams{currency = Currency, method = PayoutTool}, {St, _}) ->
-    AccountID = get_next_payout_account_id(get_pending_st(St)),
-    PayoutAccount = #domain_PayoutAccount{
-        id = AccountID,
+create_payout_tool(#payproc_PayoutToolParams{currency = Currency, tool_info = PayoutToolInfo}, ContractID, {St, _}) ->
+    ToolID = get_next_payout_tool_id(ContractID, get_pending_st(St)),
+    PayoutTool = #domain_PayoutTool{
+        id = ToolID,
         currency = Currency,
-        method = PayoutTool
+        payout_tool_info = PayoutToolInfo
     },
-    [?payout_account_creation(PayoutAccount)].
+    [?contract_payout_tool_creation(ContractID, PayoutTool)].
 
-get_next_payout_account_id(#st{party = #domain_Party{payout_accounts = Accounts}}) ->
-    get_next_id(maps:keys(Accounts)).
+get_next_payout_tool_id(ContractID, St) ->
+    #domain_Contract{payout_tools = Tools} = get_contract(ContractID, get_party(St)),
+    get_next_id([ID || #domain_PayoutTool{id = ID} <- Tools]).
 %%
 
 -spec get_payments_service_terms(shop_id(), party(), binary() | integer()) ->
@@ -587,70 +600,93 @@ get_payments_service_terms(ShopID, Party, Timestamp) ->
     Shop = get_shop(ShopID, Party),
     Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
     ok = assert_contract_active(Contract, Timestamp),
-    #domain_Terms{payments = PaymentTerms} = compute_terms(Contract, Timestamp),
+    #domain_TermSet{payments = PaymentTerms} = compute_terms(Contract, Timestamp),
     PaymentTerms.
 
-assert_contract_active(#domain_Contract{terminated_at = TerminatedAt}, Timestamp) ->
-    case TerminatedAt of
-        undefined ->
+assert_contract_active(
+    #domain_Contract{
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        status = Status},
+    Timestamp
+) ->
+    case Status of
+        {active, #domain_ContractActive{}} ->
             ok;
-        TerminatedAt ->
-            Active = hg_datetime:compare(TerminatedAt, Timestamp),
-            case Active of
+        {terminated, #domain_ContractTerminated{terminated_at = TerminatedAt}} ->
+            case hg_datetime:compare(TerminatedAt, Timestamp) of
                 later ->
                     ok;
-                _Any ->
-                    % FIXME special exception for this case
-                    raise(#payproc_ContractNotFound{})
+                _ ->
+                    raise(#payproc_InvalidContractStatus{status = Status})
             end
+    end,
+    case hg_datetime:between(Timestamp, ValidSince, ValidUntil) of
+        true ->
+            ok;
+        false ->
+            raise(#payproc_ContractNotFound{})
     end.
 
-compute_terms(#domain_Contract{template = TemplateRef, adjustments = Adjustments}, CreatedAt) ->
-    Revision = hg_domain:head(),
-    TemplateTerms = compute_template_terms(TemplateRef, Revision),
-    AdjustmentsTerms = compute_adjustments_terms(
-        lists:filter(fun(A) -> is_adjustment_active(A, CreatedAt, Revision) end, Adjustments),
-        Revision
-    ),
-    merge_terms(TemplateTerms, AdjustmentsTerms).
-
-compute_template_terms(TemplateRef, Revision) ->
-    Template = hg_domain:get(Revision, {contract_template, TemplateRef}),
-    case Template of
-        #domain_ContractTemplate{parent_template = undefined, terms = Terms} ->
-            Terms;
-        #domain_ContractTemplate{parent_template = ParentRef, terms = Terms} ->
-            ParentTerms = compute_template_terms(ParentRef, Revision),
-            merge_terms(ParentTerms, Terms)
-    end.
-
-compute_adjustments_terms(Adjustments, Revision) when is_list(Adjustments) ->
-    lists:foldl(
-        fun(#domain_ContractAdjustment{template = TemplateRef}, Terms) ->
-            TemplateTerms = compute_template_terms(TemplateRef, Revision),
-            merge_terms(Terms, TemplateTerms)
+compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp) ->
+    ActiveAdjustments = lists:filter(fun(A) -> is_adjustment_active(A, Timestamp) end, Adjustments),
+    % Adjustments are ordered from oldest to newest
+    ActiveTermRefs = [TermsRef | [TRef || #domain_ContractAdjustment{terms = TRef} <- ActiveAdjustments]],
+    ActiveTermSets = lists:map(
+        fun(TRef) ->
+            get_term_set(TRef, Timestamp)
         end,
-        #domain_Terms{},
-        Adjustments
-    ).
+        ActiveTermRefs
+    ),
+    merge_term_sets(ActiveTermSets).
 
 is_adjustment_active(
-    #domain_ContractAdjustment{concluded_at = ConcludedAt},
-    Timestamp,
-    _Revision
+    #domain_ContractAdjustment{valid_since = ValidSince, valid_until = ValidUntil},
+    Timestamp
 ) ->
-    case hg_datetime:compare(ConcludedAt, Timestamp) of
-        earlier ->
-            %% TODO check template lifetime parameters
-            true;
-        _ ->
-            false
+    hg_datetime:between(Timestamp, ValidSince, ValidUntil).
+
+get_term_set(TermsRef, Timestamp) ->
+    Revision = hg_domain:head(),
+    #domain_TermSetHierarchy{
+        parent_terms = ParentRef,
+        term_sets = TimedTermSets
+    } = hg_domain:get(Revision, {term_set_hierarchy, TermsRef}),
+    TermSet = get_active_term_set(TimedTermSets, Timestamp),
+    case ParentRef of
+        undefined ->
+            TermSet;
+        #domain_TermSetHierarchyRef{} ->
+            ParentTermSet = get_term_set(ParentRef, Timestamp),
+            merge_term_sets([ParentTermSet, TermSet])
     end.
 
-merge_terms(#domain_Terms{payments = PaymentTerms0}, #domain_Terms{payments = PaymentTerms1}) ->
-    #domain_Terms{
+get_active_term_set([TimedTermSet | OtherTermSets], Timestamp) ->
+    #domain_TimedTermSet{action_time = ActionTime, terms = Terms} = TimedTermSet,
+    case hg_datetime:between(Timestamp, ActionTime) of
+        true ->
+            Terms;
+        false ->
+            get_active_term_set(OtherTermSets, Timestamp)
+    end;
+
+get_active_term_set([], _) ->
+    #domain_TermSet{}.
+
+merge_term_sets(TermSets) ->
+    merge_term_sets(TermSets, #domain_TermSet{}).
+
+merge_term_sets(
+    [#domain_TermSet{payments = PaymentTerms1} | OtherTermSets],
+    #domain_TermSet{payments = PaymentTerms0}
+) ->
+    NewTermSet = #domain_TermSet{
         payments = merge_payments_terms(PaymentTerms0, PaymentTerms1)
-    }.
+    },
+    merge_term_sets(OtherTermSets, NewTermSet);
+
+merge_term_sets([], TermSet) ->
+    TermSet.
 
 merge_payments_terms(
     #domain_PaymentsServiceTerms{
@@ -736,7 +772,7 @@ submit_claim_event(Claim, StEvents) ->
 resubmit_claim(Changeset, ClaimPending, StEvents0) ->
     ChangesetMerged = merge_changesets(Changeset, get_claim_changeset(ClaimPending)),
     {ID, StEvents1} = submit_claim(ChangesetMerged, StEvents0),
-    Reason = <<"Superseded by ", ID/binary>>,
+    Reason = <<"Superseded by ", (integer_to_binary(ID))/binary>>,
     {_ , StEvents2} = finalize_claim(get_claim_id(ClaimPending), ?revoked(Reason), StEvents1),
     {ID, StEvents2}.
 
@@ -816,11 +852,7 @@ construct_claim(Changeset, St, Status) ->
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
-    % TODO make ClaimID integer instead of binary
-    get_next_binary_id(maps:keys(Claims)).
-
-get_next_binary_id(IDs) ->
-    integer_to_binary(1 + lists:max([0 | lists:map(fun binary_to_integer/1, IDs)])).
+    get_next_id(maps:keys(Claims)).
 
 get_claim_result(ID, {St, _}) ->
     #payproc_Claim{id = ID, status = Status} = get_claim(ID, St),
@@ -1039,6 +1071,8 @@ find_shop_account(ID, [{_, #domain_Shop{account = Account}} | Rest]) ->
             Account;
         #domain_ShopAccount{guarantee = ID} ->
             Account;
+        #domain_ShopAccount{payout = ID} ->
+            Account;
         _ ->
             find_shop_account(ID, Rest)
     end.
@@ -1080,14 +1114,37 @@ apply_party_change({blocking, Blocking}, Party) ->
     Party#domain_Party{blocking = Blocking};
 apply_party_change({suspension, Suspension}, Party) ->
     Party#domain_Party{suspension = Suspension};
-apply_party_change(?payout_account_creation(PayoutAccount), Party = #domain_Party{payout_accounts = Accounts}) ->
-    ID = PayoutAccount#domain_PayoutAccount.id,
-    Party#domain_Party{payout_accounts = Accounts#{ID => PayoutAccount}};
 apply_party_change(?contract_creation(Contract), Party) ->
     set_contract(Contract, Party);
 apply_party_change(?contract_termination(ID, TerminatedAt, _Reason), Party) ->
     Contract = get_contract(ID, Party),
-    set_contract(Contract#domain_Contract{terminated_at = TerminatedAt}, Party);
+    set_contract(
+        Contract#domain_Contract{
+            status = {terminated, #domain_ContractTerminated{terminated_at = TerminatedAt}}
+        },
+        Party
+    );
+apply_party_change(
+    ?contract_legal_agreement_binding(ContractID, LegalAgreement),
+    Party = #domain_Party{contracts = Contracts}
+) ->
+    % FIXME throw execption if already bound!
+    Contract = maps:get(ContractID, Contracts),
+    Party#domain_Party{
+        contracts = Contracts#{
+            ContractID => Contract#domain_Contract{legal_agreement = LegalAgreement}
+        }
+    };
+apply_party_change(
+    ?contract_payout_tool_creation(ContractID, PayoutTool),
+    Party = #domain_Party{contracts = Contracts}
+) ->
+    Contract = #domain_Contract{payout_tools = PayoutTools} = maps:get(ContractID, Contracts),
+    Party#domain_Party{
+        contracts = Contracts#{
+            ContractID => Contract#domain_Contract{payout_tools = PayoutTools ++ [PayoutTool]}
+        }
+    };
 apply_party_change(?contract_adjustment_creation(ID, Adjustment), Party) ->
     Contract = get_contract(ID, Party),
     Adjustments = Contract#domain_Contract.adjustments ++ [Adjustment],
@@ -1109,8 +1166,8 @@ apply_shop_change({update, Update}, Shop) ->
             fun (V, S) -> S#domain_Shop{details = V} end},
         {Update#payproc_ShopUpdate.contract_id,
             fun (V, S) -> S#domain_Shop{contract_id = V} end},
-        {Update#payproc_ShopUpdate.payout_account_id,
-            fun (V, S) -> S#domain_Shop{payout_account_id = V} end},
+        {Update#payproc_ShopUpdate.payout_tool_id,
+            fun (V, S) -> S#domain_Shop{payout_tool_id = V} end},
         {Update#payproc_ShopUpdate.proxy,
             fun (V, S) -> S#domain_Shop{proxy = V} end}
     ], Shop);
@@ -1135,10 +1192,12 @@ create_shop_account(Revision) ->
     } = CurrencyRef,
     GuaranteeID = hg_accounting:create_account(SymbolicCode),
     SettlementID = hg_accounting:create_account(SymbolicCode),
+    PayoutID = hg_accounting:create_account(SymbolicCode),
     #domain_ShopAccount{
         currency = CurrencyRef,
         settlement = SettlementID,
-        guarantee = GuaranteeID
+        guarantee = GuaranteeID,
+        payout = PayoutID
     }.
 
 get_shop_prototype_params(Revision) ->
@@ -1160,10 +1219,54 @@ get_test_template(Revision) ->
     PartyPrototype = get_party_prototype(Revision),
     PartyPrototype#domain_PartyPrototype.test_contract_template.
 
-get_default_template() ->
+instantiate_contract_template(TemplateRef) ->
     Revision = hg_domain:head(),
-    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
-    hg_domain:get(Revision, {default_contract_template, Globals#domain_Globals.default_contract_template}).
+    Template = case TemplateRef of
+        #domain_ContractTemplateRef{} ->
+            get_template(TemplateRef, Revision);
+        undefined ->
+            get_default_template(Revision)
+    end,
+    #domain_ContractTemplate{
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        terms = TermSetHierarchyRef
+    } = Template,
+    VS = case ValidSince of
+        undefined ->
+            hg_datetime:format_now();
+        {timestamp, TimestampVS} ->
+            TimestampVS;
+        {interval, IntervalVS} ->
+            add_interval(hg_datetime:format_now(), IntervalVS)
+    end,
+    VU = case ValidUntil of
+        undefined ->
+            undefined;
+        {timestamp, TimestampVU} ->
+            TimestampVU;
+        {interval, IntervalVU} ->
+            add_interval(VS, IntervalVU)
+    end,
+    #domain_Contract{
+        valid_since = VS,
+        valid_until = VU,
+        terms = TermSetHierarchyRef
+    }.
+
+get_template(TemplateRef, Revision) ->
+    hg_domain:get(Revision, {contract_template, TemplateRef}).
+
+get_default_template(Revision) ->
+    #domain_Globals{default_contract_template = Ref} = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    get_template(Ref, Revision).
 
 
+add_interval(Timestamp, Interval) ->
+    #domain_LifetimeInterval{
+        years = YY,
+        months = MM,
+        days = DD
+    } = Interval,
+    hg_datetime:add_interval(Timestamp, {YY, MM, DD}).
 

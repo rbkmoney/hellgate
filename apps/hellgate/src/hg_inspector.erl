@@ -1,6 +1,6 @@
 -module(hg_inspector).
 
--export([inspect/5]).
+-export([inspect/4]).
 
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 -include_lib("dmsl/include/dmsl_proxy_inspector_thrift.hrl").
@@ -11,7 +11,7 @@
 -type inspector() :: dmsl_domain_thrift:'Inspector'().
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 
--spec inspect(shop(), invoice(), payment(), inspector(), hg_domain:revision()) -> risk_score() | no_return().
+-spec inspect(shop(), invoice(), payment(), inspector()) -> risk_score() | no_return().
 inspect(
     Shop,
     Invoice,
@@ -19,12 +19,11 @@ inspect(
     #domain_Inspector{proxy = #domain_Proxy{
         ref = ProxyRef,
         additional = ProxyAdditional
-    }},
-    Revision
+    }}
 ) ->
-    ProxyDef = get_proxy_def(ProxyRef, Revision),
+    ProxyDef = get_proxy_def(ProxyRef, Payment#domain_InvoicePayment.domain_revision),
     Context = #proxy_inspector_Context{
-        payment = get_payment_info(Shop, Invoice, Payment, Revision),
+        payment = get_payment_info(Shop, Invoice, Payment),
         options = maps:merge(ProxyDef#domain_ProxyDefinition.options, ProxyAdditional)
     },
     Result = issue_call('InspectPayment', [Context], get_call_options(ProxyDef)),
@@ -49,10 +48,10 @@ get_payment_info(
     #domain_InvoicePayment{
         id = PaymentID,
         created_at = CreatedAt,
+        domain_revision = Revision,
         payer = Payer,
         cost = Cost
-    },
-    Revision
+    }
 ) ->
     ShopCategory = hg_domain:get(
         Revision,
