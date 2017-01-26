@@ -57,6 +57,13 @@
 
 -export([party_access_control/1]).
 
+-export([contract_not_found/1]).
+-export([contract_creation/1]).
+-export([contract_termination/1]).
+-export([contract_legal_agreement_binding/1]).
+-export([contract_payout_tool_creation/1]).
+-export([contract_adjustment_creation/1]).
+
 %%
 
 -define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
@@ -75,6 +82,7 @@ all() ->
         {group, party_creation},
         {group, party_revisioning},
         {group, party_blocking_suspension},
+        {group, contract_management},
         {group, shop_management},
         {group, shop_account_lazy_creation},
 
@@ -115,8 +123,18 @@ groups() ->
             party_activation,
             party_already_active
         ]},
+        {contract_management, [sequence], [
+            party_creation,
+            contract_not_found,
+            contract_creation,
+            contract_legal_agreement_binding,
+            contract_payout_tool_creation,
+            contract_adjustment_creation,
+            contract_termination
+        ]},
         {shop_management, [sequence], [
             party_creation,
+            contract_creation,
             shop_not_found_on_retrieval,
             shop_update_before_confirm,
             shop_creation,
@@ -137,12 +155,14 @@ groups() ->
         ]},
         {shop_account_lazy_creation, [sequence], [
             party_creation,
+            contract_creation,
             shop_creation,
             shop_account_set_retrieval,
             shop_account_retrieval
         ]},
         {claim_management, [sequence], [
             party_creation,
+            contract_creation,
             claim_not_found_on_retrieval,
             claim_already_accepted_on_revoke,
             claim_already_accepted_on_accept,
@@ -215,17 +235,11 @@ end_per_testcase(_Name, _C) ->
 
 -define(invalid_user(),
     {exception, #payproc_InvalidUser{}}).
+
 -define(party_not_found(),
     {exception, #payproc_PartyNotFound{}}).
 -define(party_exists(),
     {exception, #payproc_PartyExists{}}).
--define(shop_not_found(),
-    {exception, #payproc_ShopNotFound{}}).
--define(claim_not_found(),
-    {exception, #payproc_ClaimNotFound{}}).
--define(invalid_claim_status(Status),
-    {exception, #payproc_InvalidClaimStatus{status = Status}}).
-
 -define(party_blocked(Reason),
     {exception, #payproc_InvalidPartyStatus{status = {blocking, ?blocked(Reason)}}}).
 -define(party_unblocked(Reason),
@@ -235,6 +249,13 @@ end_per_testcase(_Name, _C) ->
 -define(party_active(),
     {exception, #payproc_InvalidPartyStatus{status = {suspension, ?active()}}}).
 
+-define(contract_not_found(),
+    {exception, #payproc_ContractNotFound{}}).
+-define(invalid_contract_status(Status),
+    {exception, #payproc_InvalidContractStatus{status = Status}}).
+
+-define(shop_not_found(),
+    {exception, #payproc_ShopNotFound{}}).
 -define(shop_blocked(Reason),
     {exception, #payproc_InvalidShopStatus{status = {blocking, ?blocked(Reason)}}}).
 -define(shop_unblocked(Reason),
@@ -252,6 +273,11 @@ end_per_testcase(_Name, _C) ->
     #payproc_Claim{id = ID, status = Status, changeset = Changeset}).
 -define(claim_result(ID, Status),
     #payproc_ClaimResult{id = ID, status = Status}).
+
+-define(claim_not_found(),
+    {exception, #payproc_ClaimNotFound{}}).
+-define(invalid_claim_status(Status),
+    {exception, #payproc_InvalidClaimStatus{status = Status}}).
 
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
@@ -292,6 +318,12 @@ end_per_testcase(_Name, _C) ->
 -spec shop_account_set_retrieval(config()) -> _ | no_return().
 -spec shop_account_retrieval(config()) -> _ | no_return().
 -spec party_access_control(config()) -> _ | no_return().
+-spec contract_not_found(config()) -> _ | no_return().
+-spec contract_creation(config()) -> _ | no_return().
+-spec contract_termination(config()) -> _ | no_return().
+-spec contract_legal_agreement_binding(config()) -> _ | no_return().
+-spec contract_payout_tool_creation(config()) -> _ | no_return().
+-spec contract_adjustment_creation(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = ?c(client, C),
@@ -328,11 +360,100 @@ party_revisioning(C) ->
     Party2 = hg_party:checkout(Party2#domain_Party.id, T2),
     hg_context:cleanup().
 
+contract_not_found(C) ->
+    Client = ?c(client, C),
+    ?contract_not_found() = hg_client_party:get_contract(666, Client).
 
-%%  CONTRACT TESTS  %%
-    %%%%%%%%%%%%%%
-%%                  %%
+contract_creation(C) ->
+    Client = ?c(client, C),
+    Params = hg_ct_helper:make_battle_ready_contract_params(),
+    Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
+    ?claim(
+        _,
+        ?pending(),
+        [{contract_creation, #domain_Contract{id = ID}}]
+    ) = Claim,
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{id = ID} = hg_client_party:get_contract(ID, Client).
 
+contract_termination(C) ->
+    Client = ?c(client, C),
+    ContractID = hg_ct_helper:get_first_contract_id(Client),
+    Reason = <<"WHY NOT?!">>,
+    Claim = assert_claim_pending(hg_client_party:terminate_contract(ContractID, Reason, Client), Client),
+    ?claim(
+        _,
+        ?pending(),
+        [?contract_termination(ContractID, _, Reason)]
+    ) = Claim,
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{
+        id = ContractID,
+        status = {terminated, _}
+    } = hg_client_party:get_contract(ContractID, Client).
+
+contract_legal_agreement_binding(C) ->
+    Client = ?c(client, C),
+    ContractID = hg_ct_helper:get_first_contract_id(Client),
+    LA = #domain_LegalAgreement{
+        signed_at = hg_datetime:format_now(),
+        legal_agreement_id = <<"20160123-0031235-OGM/GDM">>
+    },
+    Claim = assert_claim_pending(hg_client_party:bind_legal_agreement(ContractID, LA, Client), Client),
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{
+        id = ContractID,
+        legal_agreement = LA
+    } = hg_client_party:get_contract(ContractID, Client).
+
+
+contract_payout_tool_creation(C) ->
+    Client = ?c(client, C),
+    ContractID = hg_ct_helper:get_first_contract_id(Client),
+    PayoutToolParams = #payproc_PayoutToolParams{
+        currency = #domain_CurrencyRef{symbolic_code = <<"RUB">>},
+        tool_info  = {bank_account, #domain_BankAccount{
+            account = <<"4276300010908312893">>,
+            bank_name = <<"SomeBank">>,
+            bank_post_account = <<"123129876">>,
+            bank_bik = <<"66642666">>
+        }}
+    },
+    Claim = assert_claim_pending(hg_client_party:create_payout_tool(ContractID, PayoutToolParams, Client), Client),
+    ?claim(
+        _,
+        ?pending(),
+        [?contract_payout_tool_creation(ContractID, #domain_PayoutTool{id = ID})]
+    ) = Claim,
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{
+        id = ContractID,
+        payout_tools = PayoutTools
+    } = hg_client_party:get_contract(ContractID, Client),
+    true = lists:keymember(ID, #domain_PayoutTool.id, PayoutTools).
+
+contract_adjustment_creation(C) ->
+    Client = ?c(client, C),
+    ContractID = hg_ct_helper:get_first_contract_id(Client),
+    AdjustmentParams = #payproc_ContractAdjustmentParams{
+        % FIXME dirty hack detected! Need more elegant way to get template. Or not.
+        template = #domain_ContractTemplateRef{id = 1}
+    },
+    Claim = assert_claim_pending(
+        hg_client_party:create_contract_adjustment(ContractID, AdjustmentParams, Client),
+        Client
+    ),
+    ?claim(
+        _,
+        ?pending(),
+        [?contract_adjustment_creation(ContractID, #domain_ContractAdjustment{id = ID})]
+    ) = Claim,
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{
+        id = ContractID,
+        adjustments = Adjustments
+    } = hg_client_party:get_contract(ContractID, Client),
+    true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments).
 
 shop_not_found_on_retrieval(C) ->
     Client = ?c(client, C),
@@ -341,11 +462,12 @@ shop_not_found_on_retrieval(C) ->
 shop_creation(C) ->
     Client = ?c(client, C),
     Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
+    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(42),
         details  = Details,
-        contract_id = get_first_contract(Client),
-        payout_account_id = get_first_payout_account(Client)
+        contract_id = ContractID,
+        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_pending(Result, Client),
@@ -380,11 +502,12 @@ shop_update(C) ->
 
 shop_update_before_confirm(C) ->
     Client = ?c(client, C),
+    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(42),
         details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
-        contract_id = get_first_contract(Client),
-        payout_account_id = get_first_payout_account(Client)
+        contract_id = ContractID,
+        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim1 = assert_claim_pending(Result, Client),
@@ -429,11 +552,12 @@ claim_denial(C) ->
 claim_revocation(C) ->
     Client = ?c(client, C),
     Party = hg_client_party:get(Client),
+    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(42),
         details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
-        contract_id = get_first_contract(Client),
-        payout_account_id = get_first_payout_account(Client)
+        contract_id = ContractID,
+        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
     Result = hg_client_party:create_shop(Params, Client),
     Claim = assert_claim_pending(Result, Client),
@@ -454,19 +578,19 @@ claim_revocation(C) ->
 
 complex_claim_acceptance(C) ->
     Client = ?c(client, C),
-    ContractID = get_first_contract(Client),
-    PayoutAccountID = get_first_payout_account(Client),
+    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+    PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
     Params1 = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(1),
         details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP 1">>),
         contract_id = ContractID,
-        payout_account_id = PayoutAccountID
+        payout_tool_id = PayoutToolID
     },
     Params2 = #payproc_ShopParams{
         category = hg_ct_helper:make_category_ref(2),
         details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP 2">>),
         contract_id = ContractID,
-        payout_account_id = PayoutAccountID
+        payout_tool_id = PayoutToolID
     },
     Claim1 = assert_claim_pending(hg_client_party:create_shop(Params1, Client), Client),
     ?claim(ClaimID1, _, [
@@ -519,7 +643,7 @@ claim_already_accepted_on_deny(C) ->
 
 claim_not_found_on_retrieval(C) ->
     Client = ?c(client, C),
-    ?claim_not_found() = hg_client_party:get_claim(<<"no such id">>, Client).
+    ?claim_not_found() = hg_client_party:get_claim(-666, Client).
 
 no_pending_claim(C) ->
     Client = ?c(client, C),
@@ -723,14 +847,6 @@ next_event(Client) ->
 
 %%
 
-get_first_contract(Client) ->
-    #domain_Party{contracts = Contracts} = hg_client_party:get(Client),
-    erlang:hd(maps:keys(Contracts)).
-
-get_first_payout_account(Client) ->
-    #domain_Party{payout_accounts = PayoutAccounts} = hg_client_party:get(Client),
-    erlang:hd(maps:keys(PayoutAccounts)).
-
 make_userinfo(PartyID) ->
     #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}}.
 
@@ -740,3 +856,6 @@ make_party_params(ContactInfo) ->
     #payproc_PartyParams{
         contact_info = ContactInfo
     }.
+
+
+

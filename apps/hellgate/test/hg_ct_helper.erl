@@ -5,9 +5,15 @@
 -export([start_apps/1]).
 
 -export([create_party_and_shop/1]).
--export([create_shop/3]).
+-export([create_contract/2]).
 -export([create_shop/4]).
+-export([create_shop/5]).
 -export([set_shop_proxy/4]).
+-export([get_first_contract_id/1]).
+-export([get_first_battle_ready_contract_id/1]).
+-export([get_first_payout_tool_id/2]).
+
+-export([make_battle_ready_contract_params/0]).
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
@@ -24,6 +30,7 @@
 
 -export([construct_domain_fixture/0]).
 
+-include_lib("dmsl/include/dmsl_base_thrift.hrl").
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 
 %%
@@ -105,6 +112,7 @@ start_apps(Apps) ->
 -include_lib("hellgate/include/party_events.hrl").
 
 -type party_id()       :: dmsl_domain_thrift:'PartyID'().
+-type contract_id()    :: dmsl_domain_thrift:'ContractID'().
 -type shop_id()        :: dmsl_domain_thrift:'ShopID'().
 -type category()       :: dmsl_domain_thrift:'CategoryRef'().
 -type cost()           :: integer() | {integer(), binary()}.
@@ -129,22 +137,30 @@ make_party_params() ->
         }
     }.
 
--spec create_shop(category(), binary(), Client :: pid()) ->
+-spec create_contract(dmsl_payment_processing_thrift:'ContractParams'(), Client :: pid()) ->
+    contract_id().
+
+create_contract(#payproc_ContractParams{} = Params, Client) ->
+    #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_contract(Params, Client),
+    #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
+    {_, #domain_Contract{id = ContractID}} = lists:keyfind(contract_creation, 1, Changeset),
+    ok = hg_client_party:accept_claim(ClaimID, Client),
+    ContractID.
+
+-spec create_shop(contract_id(), category(), binary(), Client :: pid()) ->
     shop_id().
 
-create_shop(Category, Name, Client) ->
-    create_shop(Category, Name, undefined, Client).
+create_shop(ContractID, Category, Name, Client) ->
+    create_shop(ContractID, Category, Name, undefined, Client).
 
--spec create_shop(category(), binary(), binary(), Client :: pid()) ->
+-spec create_shop(contract_id(), category(), binary(), binary(), Client :: pid()) ->
     shop_id().
 
-create_shop(Category, Name, Description, Client) ->
-    Party = hg_client_party:get(Client),
-    [{ContractID, _} | _] = maps:to_list(Party#domain_Party.contracts),
-    [{PayoutAccountID, _} | _] = maps:to_list(Party#domain_Party.payout_accounts),
+create_shop(ContractID, Category, Name, Description, Client) ->
+    PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
     Params = #payproc_ShopParams{
         contract_id       = ContractID,
-        payout_account_id = PayoutAccountID,
+        payout_tool_id    = PayoutToolID,
         category          = Category,
         details           = make_shop_details(Name, Description)
     },
@@ -173,6 +189,83 @@ flush_events(Client) ->
         _Event ->
             flush_events(Client)
     end.
+
+-spec get_first_contract_id(Client :: pid()) ->
+    contract_id().
+
+get_first_contract_id(Client) ->
+    #domain_Party{contracts = Contracts} = hg_client_party:get(Client),
+    lists:min(maps:keys(Contracts)).
+
+-spec get_first_battle_ready_contract_id(Client :: pid()) ->
+    contract_id().
+
+get_first_battle_ready_contract_id(Client) ->
+    #domain_Party{contracts = Contracts} = hg_client_party:get(Client),
+    IDs = lists:foldl(fun({ID, Contract}, Acc) ->
+            case Contract of
+                #domain_Contract{
+                    contractor = #domain_Contractor{},
+                    payout_tools = [#domain_PayoutTool{} | _]
+                } ->
+                    [ID | Acc];
+                _ ->
+                    Acc
+            end
+        end,
+        [],
+        maps:to_list(Contracts)
+    ),
+    case IDs of
+        [_ | _] ->
+            lists:min(IDs);
+        [] ->
+            error(not_found)
+    end.
+
+-spec get_first_payout_tool_id(contract_id(), Client :: pid()) ->
+    dmsl_domain_thrift:'PayoutToolID'().
+
+get_first_payout_tool_id(ContractID, Client) ->
+    #domain_Contract{payout_tools = PayoutTools} = hg_client_party:get_contract(ContractID, Client),
+    case PayoutTools of
+        [Tool | _] ->
+            Tool#domain_PayoutTool.id;
+        [] ->
+            error(not_found)
+    end.
+
+-spec make_battle_ready_contract_params() ->
+    dmsl_payment_processing_thrift:'ContractParams'().
+
+make_battle_ready_contract_params() ->
+    BankAccount = #domain_BankAccount{
+        account = <<"4276300010908312893">>,
+        bank_name = <<"SomeBank">>,
+        bank_post_account = <<"123129876">>,
+        bank_bik = <<"66642666">>
+    },
+    Contractor = #domain_Contractor{
+        entity = {russian_legal_entity, #domain_RussianLegalEntity {
+            registered_name = <<"Hoofs & Horns OJSC">>,
+            registered_number = <<"1234509876">>,
+            inn = <<"1213456789012">>,
+            actual_address = <<"Nezahualcoyotl 109 Piso 8, Centro, 06082, MEXICO">>,
+            post_address = <<"NaN">>,
+            representative_position = <<"Director">>,
+            representative_full_name = <<"Someone">>,
+            representative_document = <<"100$ banknote">>
+        }},
+        bank_account = BankAccount
+    },
+    PayoutToolParams = #payproc_PayoutToolParams{
+        currency = #domain_CurrencyRef{symbolic_code = <<"RUB">>},
+        tool_info = {bank_account, BankAccount}
+    },
+    #payproc_ContractParams{
+        contractor = Contractor,
+        payout_tool_params = PayoutToolParams
+    }.
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), cost()) ->
     invoice_params().
@@ -282,6 +375,7 @@ make_due_date(LifetimeSeconds) ->
 -define(prv(ID), #domain_ProviderRef{id = ID}).
 -define(trm(ID), #domain_TerminalRef{id = ID}).
 -define(tmpl(ID), #domain_ContractTemplateRef{id = ID}).
+-define(trms(ID), #domain_TermSetHierarchyRef{id = ID}).
 -define(sas(ID), #domain_SystemAccountSetRef{id = ID}).
 -define(eas(ID), #domain_ExternalAccountSetRef{id = ID}).
 -define(insp(ID), #domain_InspectorRef{id = ID}).
@@ -319,6 +413,52 @@ construct_domain_fixture() ->
         ]
     ),
     hg_context:cleanup(),
+    TermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card, visa),
+                ?pmt(bank_card, mastercard)
+            ])},
+            cash_limit = {decisions, [
+                #domain_CashLimitDecision{
+                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, #domain_CashLimit{
+                        min = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
+                        max = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
+                    }}
+                },
+                #domain_CashLimitDecision{
+                    if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                    then_ = {value, #domain_CashLimit{
+                        min = {inclusive, ?cash(200, ?cur(<<"USD">>))},
+                        max = {exclusive, ?cash(313370, ?cur(<<"USD">>))}
+                    }}
+                }
+            ]},
+            fees = {decisions, [
+                #domain_CashFlowDecision{
+                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, [
+                        ?cfpost(
+                            {merchant, settlement},
+                            {system, settlement},
+                            ?share(45, 1000, payment_amount)
+                        )
+                    ]}
+                },
+                #domain_CashFlowDecision{
+                    if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                    then_ = {value, [
+                        ?cfpost(
+                            {merchant, settlement},
+                            {system, settlement},
+                            ?share(65, 1000, payment_amount)
+                        )
+                    ]}
+                }
+            ]}
+        }
+    },
     [
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
@@ -378,63 +518,23 @@ construct_domain_fixture() ->
                 description = <<"Wold famous inspector Kovalsky at your service!">>,
                 proxy = #domain_Proxy{
                     ref = ?prx(2),
-                    additional = #{}
+                    additional = #{<<"risk_score">> => <<"low">>}
                 }
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(1),
+            data = #domain_TermSetHierarchy{
+                parent_terms = undefined,
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TermSet
+                }]
             }
         }},
         {contract_template, #domain_ContractTemplateObject{
             ref = ?tmpl(1),
-            data = #domain_ContractTemplate{
-                parent_template = undefined,
-                valid_since = undefined,
-                valid_until = undefined,
-                terms = #domain_Terms{
-                    payments = #domain_PaymentsServiceTerms{
-                        payment_methods = {value, ordsets:from_list([
-                            ?pmt(bank_card, visa),
-                            ?pmt(bank_card, mastercard)
-                        ])},
-                        cash_limit = {decisions, [
-                            #domain_CashLimitDecision{
-                                if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                                then_ = {value, #domain_CashLimit{
-                                    min = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
-                                    max = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
-                                }}
-                            },
-                            #domain_CashLimitDecision{
-                                if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                                then_ = {value, #domain_CashLimit{
-                                    min = {inclusive, ?cash(200, ?cur(<<"USD">>))},
-                                    max = {exclusive, ?cash(313370, ?cur(<<"USD">>))}
-                                }}
-                            }
-                        ]},
-                        fees = {decisions, [
-                            #domain_CashFlowDecision{
-                                if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                                then_ = {value, [
-                                    ?cfpost(
-                                        {merchant, settlement},
-                                        {system, settlement},
-                                        ?share(45, 1000, payment_amount)
-                                    )
-                                ]}
-                            },
-                            #domain_CashFlowDecision{
-                                if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                                then_ = {value, [
-                                    ?cfpost(
-                                        {merchant, settlement},
-                                        {system, settlement},
-                                        ?share(65, 1000, payment_amount)
-                                    )
-                                ]}
-                            }
-                        ]}
-                    }
-                }
-            }
+            data = #domain_ContractTemplate{terms = ?trms(1)}
         }},
         {currency, #domain_CurrencyObject{
             ref = ?cur(<<"RUB">>),
@@ -472,7 +572,8 @@ construct_domain_fixture() ->
                     additional = #{
                         <<"override">> => <<"brovider">>
                     }
-                }
+                },
+                abs_account = <<"1234567890">>
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -602,7 +703,8 @@ construct_domain_fixture() ->
                     additional = #{
                         <<"override">> => <<"drovider">>
                     }
-                }
+                },
+                abs_account = <<"1234567890">>
             }
         }},
         {terminal, #domain_TerminalObject{

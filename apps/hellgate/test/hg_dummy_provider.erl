@@ -95,7 +95,7 @@ handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts
 finish(#prxprv_PaymentInfo{payment = Payment}) ->
     #prxprv_ProxyResult{
         intent = {finish, #'FinishIntent'{status = {success, #'Success'{}}}},
-        trx    = #domain_TransactionInfo{id = Payment#prxprv_InvoicePayment.id}
+        trx    = #domain_TransactionInfo{id = Payment#prxprv_InvoicePayment.id, extra = #{}}
     }.
 
 sleep(Timeout, State) ->
