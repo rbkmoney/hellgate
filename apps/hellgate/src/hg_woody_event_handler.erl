@@ -69,10 +69,8 @@ handle_event(EventType = ?EV_INVOKE_SERVICE_HANDLER, RpcID, #{
         RpcID,
         Meta,
         #{
-            rpc => #{
-                service  => Service,
-                function => Function
-            }
+            service  => Service,
+            function => Function
         }
     );
 
@@ -90,18 +88,21 @@ handle_event(EventType, RpcID, EventMeta, _Opts) ->
 
 log(EventType, RpcID, RawMeta, RpcMeta) ->
     {Level, {Format, Args}} = woody_event_handler:format_event(EventType, RawMeta, RpcID),
+    Meta = get_prepared_meta(EventType, RpcID, RpcMeta),
     lager:log(
         Level,
-        lists:append([
-            [{pid, self()}],
-            construct_md(collect_meta(EventType, RpcID, RpcMeta)),
-            lager:md()
-        ]),
+        [{pid, self()} | Meta],
         Format,
         Args
     ).
 
-collect_meta(EventType, RpcID, RpcMeta) ->
+get_prepared_meta(EventType, RpcID, RpcMeta) ->
+    prepare_meta(lists:append([
+        collect_rpc_meta(EventType, RpcID, RpcMeta),
+        lager:md()
+    ])).
+
+collect_rpc_meta(EventType, RpcID, RpcMeta) ->
     Meta = lists:foldl(
         fun(M, Acc) ->
             maps:merge(M, Acc)
@@ -115,9 +116,24 @@ collect_meta(EventType, RpcID, RpcMeta) ->
             RpcMeta
         ]
     ),
-    #{
-        rpc => Meta
-    }.
+    maps:to_list(Meta).
 
-construct_md(Map = #{}) ->
-    maps:to_list(Map).
+prepare_meta(Meta) ->
+    prepare_meta(Meta, []).
+
+prepare_meta([], Acc) ->
+    Acc;
+prepare_meta([{Key, Value} | Rest], Acc) ->
+    prepare_meta(Rest, [{Key, make_printable(Value)} | Acc]).
+
+make_printable(Item) when is_atom(Item); is_binary(Item) ->
+    Item;
+make_printable(Item) when is_list(Item) ->
+    [make_printable(V) || V <- Item];
+make_printable(Item) when is_map(Item) ->
+    maps:map(
+        fun(_, V) -> make_printable(V) end,
+        Item
+    );
+make_printable(V) ->
+    genlib:format("~p", [V]).
