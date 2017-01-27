@@ -89,20 +89,31 @@
     {ok, term()} | {error, exists | term()} | no_return().
 
 start(Ns, ID, Args) ->
-    call_automaton('Start', [Ns, ID, wrap_args(Args)]).
+    hg_log_scope:scope(machine, fun() ->
+        hg_log_scope:set_meta(#{
+            namespace => Ns,
+            id => ID
+        }),
+        call_automaton('Start', [Ns, ID, wrap_args(Args)])
+    end).
 
 -spec call(ns(), ref(), term()) ->
     {ok, term()} | {error, notfound | failed} | no_return().
 
 call(Ns, Ref, Args) ->
-    Descriptor = prepare_descriptor(Ns, Ref, #'HistoryRange'{}),
-    case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
-        {ok, Response} when is_binary(Response) ->
-            % should be specific to a processing interface already
-            {ok, unmarshal_term(Response)};
-        {error, _} = Error ->
-            Error
-    end.
+    hg_log_scope:scope(machine, fun() ->
+        hg_log_scope:set_meta(#{
+            namespace => Ns
+        }),
+        Descriptor = prepare_descriptor(Ns, Ref, #'HistoryRange'{}),
+        case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
+            {ok, Response} when is_binary(Response) ->
+                % should be specific to a processing interface already
+                {ok, unmarshal_term(Response)};
+            {error, _} = Error ->
+                Error
+        end
+    end).
 
 -spec get_history(ns(), id()) ->
     {ok, {history(), event_id()}} | {error, notfound | failed} | no_return().
@@ -117,14 +128,20 @@ get_history(Ns, ID, AfterID, Limit) ->
     get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}).
 
 get_history(Ns, ID, Range) ->
-    LastID = #'HistoryRange'.'after',
-    Descriptor = prepare_descriptor(Ns, {id, ID}, Range),
-    case call_automaton('GetMachine', [Descriptor]) of
-        {ok, #'Machine'{history = History}} when is_list(History) ->
-            {ok, unwrap_history(History, LastID)};
-        Error ->
-            Error
-    end.
+    hg_log_scope:scope(machine, fun() ->
+        hg_log_scope:set_meta(#{
+            namespace => Ns,
+            id => ID
+        }),
+        LastID = #'HistoryRange'.'after',
+        Descriptor = prepare_descriptor(Ns, {id, ID}, Range),
+        case call_automaton('GetMachine', [Descriptor]) of
+            {ok, #'Machine'{history = History}} when is_list(History) ->
+                {ok, unwrap_history(History, LastID)};
+            Error ->
+                Error
+        end
+    end).
 
 %%
 
@@ -147,14 +164,28 @@ call_automaton(Function, Args) ->
 -spec handle_function(func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
-    _ = hg_utils:logtag_process(namespace, Ns),
-    #'SignalArgs'{signal = {_Type, Signal}, machine = Machine} = Args,
+handle_function(Func, Args, Opts) ->
+    hg_log_scope:scope(machine,
+        fun() -> handle_function_(Func, Args, Opts) end
+    ).
+
+-spec handle_function_(func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+    term() | no_return().
+
+handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
+    #'SignalArgs'{signal = {_Type, Signal}, machine = #'Machine'{id = ID} = Machine} = Args,
+    hg_log_scope:set_meta(#{
+        namespace => Ns,
+        id => ID
+    }),
     dispatch_signal(Ns, Signal, Machine);
 
-handle_function('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
-    _ = hg_utils:logtag_process(namespace, Ns),
-    #'CallArgs'{arg = Payload, machine = Machine} = Args,
+handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
+    #'CallArgs'{arg = Payload, machine = #'Machine'{id = ID} = Machine} = Args,
+    hg_log_scope:set_meta(#{
+        namespace => Ns,
+        id => ID
+    }),
     dispatch_call(Ns, Payload, Machine).
 
 %%

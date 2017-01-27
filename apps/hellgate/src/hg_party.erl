@@ -68,117 +68,228 @@ checkout(PartyID, Revision) ->
     end.
 
 %%
-
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
-handle_function('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
+handle_function(Func, Args, Opts) ->
+    hg_log_scope:scope(party,
+        fun() -> handle_function_(Func, Args, Opts) end
+    ).
+
+-spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+    term()| no_return().
+
+handle_function_('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     start(PartyID, PartyParams);
 
-handle_function('Get', [UserInfo, PartyID], _Opts) ->
+handle_function_('Get', [UserInfo, PartyID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     get_party(get_state(PartyID));
 
-handle_function('CreateContract', [UserInfo, PartyID, ContractParams], _Opts) ->
+handle_function_('CreateContract', [UserInfo, PartyID, ContractParams], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {create_contract, ContractParams});
 
-handle_function('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
+handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     St = get_state(PartyID),
     get_contract(ContractID, get_party(St));
 
-handle_function('TerminateContract', [UserInfo, PartyID, ContractID, Reason], _Opts) ->
+handle_function_('TerminateContract', [UserInfo, PartyID, ContractID, Reason], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {terminate_contract, ContractID, Reason});
 
-handle_function('CreateContractAdjustment', [UserInfo, PartyID, ContractID, Params], _Opts) ->
+handle_function_('CreateContractAdjustment', [UserInfo, PartyID, ContractID, Params], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {create_contract_adjustment, ContractID, Params});
 
-handle_function('CreatePayoutAccount', [UserInfo, PartyID, Params], _Opts) ->
+handle_function_('CreatePayoutAccount', [UserInfo, PartyID, Params], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {create_payout_account, Params});
 
-handle_function('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
+handle_function_('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
     get_public_history(PartyID, AfterID, Limit);
 
-handle_function('Block', [UserInfo, PartyID, Reason], _Opts) ->
+handle_function_('Block', [UserInfo, PartyID, Reason], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {block, Reason});
 
-handle_function('Unblock', [UserInfo, PartyID, Reason], _Opts) ->
+handle_function_('Unblock', [UserInfo, PartyID, Reason], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {unblock, Reason});
 
-handle_function('Suspend', [UserInfo, PartyID], _Opts) ->
+handle_function_('Suspend', [UserInfo, PartyID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, suspend);
 
-handle_function('Activate', [UserInfo, PartyID], _Opts) ->
+handle_function_('Activate', [UserInfo, PartyID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, activate);
 
-handle_function('CreateShop', [UserInfo, PartyID, Params], _Opts) ->
+handle_function_('CreateShop', [UserInfo, PartyID, Params], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {create_shop, Params});
 
-handle_function('GetShop', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     St = get_state(PartyID),
     get_shop(ID, get_party(St));
 
-handle_function('UpdateShop', [UserInfo, PartyID, ID, Update], _Opts) ->
+handle_function_('UpdateShop', [UserInfo, PartyID, ID, Update], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {update_shop, ID, Update});
 
-handle_function('BlockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
+handle_function_('BlockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {block_shop, ID, Reason});
 
-handle_function('UnblockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
+handle_function_('UnblockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {unblock_shop, ID, Reason});
 
-handle_function('SuspendShop', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('SuspendShop', [UserInfo, PartyID, ID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {suspend_shop, ID});
 
-handle_function('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {activate_shop, ID});
 
-handle_function('GetClaim', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('GetClaim', [UserInfo, PartyID, ID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     St = get_state(PartyID),
     get_claim(ID, St);
 
-handle_function('GetPendingClaim', [UserInfo, PartyID], _Opts) ->
+handle_function_('GetPendingClaim', [UserInfo, PartyID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     St = get_state(PartyID),
     ensure_claim(get_pending_claim(St));
 
-handle_function('AcceptClaim', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('AcceptClaim', [UserInfo, PartyID, ID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {accept_claim, ID});
 
-handle_function('DenyClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
+handle_function_('DenyClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {deny_claim, ID, Reason});
 
-handle_function('RevokeClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
+handle_function_('RevokeClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {revoke_claim, ID, Reason});
 
-handle_function('GetAccountState', [UserInfo, PartyID, AccountID], _Opts) ->
+handle_function_('GetAccountState', [UserInfo, PartyID, AccountID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     St = get_state(PartyID),
     get_account_state(AccountID, St);
 
-handle_function('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
+handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
+    hg_log_scope:set_meta(#{
+        user_info => UserInfo,
+        id => PartyID
+    }),
     ok = assert_party_accessible(UserInfo, PartyID),
     St = get_state(PartyID),
     get_shop_account(ShopID, St).
