@@ -15,13 +15,15 @@
 inspect(
     Shop,
     Invoice,
-    Payment,
+    #domain_InvoicePayment{
+        domain_revision = Revision
+    } = Payment,
     #domain_Inspector{proxy = Proxy = #domain_Proxy{
         ref = ProxyRef,
         additional = ProxyAdditional
     }}
 ) ->
-    ProxyDef = get_proxy_def(ProxyRef, Payment#domain_InvoicePayment.domain_revision),
+    ProxyDef = get_proxy_def(ProxyRef, Revision),
     Context = #proxy_inspector_Context{
         payment = get_payment_info(Shop, Invoice, Payment),
         options = maps:merge(ProxyDef#domain_ProxyDefinition.options, ProxyAdditional)

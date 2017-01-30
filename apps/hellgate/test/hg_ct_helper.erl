@@ -468,7 +468,7 @@ construct_domain_fixture() ->
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
                 default_contract_template = ?tmpl(1),
-                inspector = ?insp(1),
+                inspector = {value, ?insp(1)},
                 common_merchant_proxy = ?prx(3)
             }
         }},
@@ -515,7 +515,7 @@ construct_domain_fixture() ->
             ref = #domain_InspectorRef{id = 1},
             data = #domain_Inspector{
                 name = <<"Kovalsky">>,
-                description = <<"Wold famous inspector Kovalsky at your service!">>,
+                description = <<"World famous inspector Kovalsky at your service!">>,
                 proxy = #domain_Proxy{
                     ref = ?prx(2),
                     additional = #{<<"risk_score">> => <<"low">>}

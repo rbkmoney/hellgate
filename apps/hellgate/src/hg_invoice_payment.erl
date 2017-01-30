@@ -109,16 +109,10 @@ init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Revision = hg_domain:head(),
     PaymentTerms = hg_party:get_payments_service_terms(Shop#domain_Shop.id, Party, Invoice#domain_Invoice.created_at),
     VS0 = collect_varset(Shop, #{}),
-
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
-    Payment0 = construct_payment(PaymentID, Invoice, PaymentParams),
-    Payment1 = Payment0#domain_InvoicePayment{domain_revision = Revision},
-
-    RiskScore = inspect(Shop, Invoice, Payment1),
-    Payment = Payment1#domain_InvoicePayment{risk_score = RiskScore},
-
-    VS3 = VS2#{risk_score => RiskScore},
+    Payment0 = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
+    {Payment, VS3} = inspect(Shop, Invoice, Payment0, VS2),
     Route = validate_route(hg_routing:choose(VS3, Revision)),
     FinalCashflow = hg_cashflow:finalize(
         collect_cash_flow({Revision, PaymentTerms}, Route, VS3),
@@ -132,13 +126,14 @@ init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Action = hg_machine_action:new(),
     {Events, Action}.
 
-construct_payment(PaymentID, Invoice, PaymentParams) ->
+construct_payment(PaymentID, Invoice, PaymentParams, Revision) ->
     #domain_InvoicePayment{
-        id           = PaymentID,
-        created_at   = hg_datetime:format_now(),
-        status       = ?pending(),
-        cost         = Invoice#domain_Invoice.cost,
-        payer        = PaymentParams#payproc_InvoicePaymentParams.payer
+        id              = PaymentID,
+        created_at      = hg_datetime:format_now(),
+        domain_revision = Revision,
+        status          = ?pending(),
+        cost            = Invoice#domain_Invoice.cost,
+        payer           = PaymentParams#payproc_InvoicePaymentParams.payer
     }.
 
 validate_payment_params(
@@ -570,9 +565,13 @@ get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}
     Provider = hg_domain:get(Revision, {provider, ProviderRef}),
     hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
 
-inspect(Shop, Invoice, #domain_InvoicePayment{domain_revision = Revision} = Payment) ->
-    #domain_Globals{inspector = InspectorRef} = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+inspect(Shop, Invoice, Payment = #domain_InvoicePayment{domain_revision = Revision}, VS) ->
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    InspectorSelector = Globals#domain_Globals.inspector,
+    {value, InspectorRef} = hg_selector:reduce(InspectorSelector, VS, Revision), % FIXME
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
-    hg_inspector:inspect(Shop, Invoice, Payment, Inspector).
-
-
+    RiskScore = hg_inspector:inspect(Shop, Invoice, Payment, Inspector),
+    {
+        Payment#domain_InvoicePayment{risk_score = RiskScore},
+        VS#{risk_score => RiskScore}
+    }.
