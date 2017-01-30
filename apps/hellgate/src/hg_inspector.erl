@@ -16,7 +16,7 @@ inspect(
     Shop,
     Invoice,
     Payment,
-    #domain_Inspector{proxy = #domain_Proxy{
+    #domain_Inspector{proxy = Proxy = #domain_Proxy{
         ref = ProxyRef,
         additional = ProxyAdditional
     }}
@@ -26,7 +26,7 @@ inspect(
         payment = get_payment_info(Shop, Invoice, Payment),
         options = maps:merge(ProxyDef#domain_ProxyDefinition.options, ProxyAdditional)
     },
-    Result = issue_call('InspectPayment', [Context], get_call_options(ProxyDef)),
+    Result = issue_call('InspectPayment', [Context], hg_proxy:get_call_options(Proxy, Revision)),
     case Result of
         {ok, RiskScore} when is_atom(RiskScore) ->
             RiskScore;
@@ -78,9 +78,6 @@ get_payment_info(
         invoice = ProxyInvoice,
         payment = ProxyPayment
     }.
-
-get_call_options(ProxyDef) ->
-    #{url => ProxyDef#domain_ProxyDefinition.url}.
 
 issue_call(Func, Args, CallOpts) ->
     hg_woody_wrapper:call('InspectorProxy', Func, Args, CallOpts).

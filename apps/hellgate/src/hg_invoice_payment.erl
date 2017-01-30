@@ -568,9 +568,7 @@ issue_call(Func, Args, Opts, St) ->
 get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}}, _Opts) ->
     Revision = hg_domain:head(),
     Provider = hg_domain:get(Revision, {provider, ProviderRef}),
-    Proxy    = Provider#domain_Provider.proxy,
-    ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
-    #{url => ProxyDef#domain_ProxyDefinition.url}.
+    hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
 
 inspect(Shop, Invoice, #domain_InvoicePayment{domain_revision = Revision} = Payment) ->
     #domain_Globals{inspector = InspectorRef} = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),

@@ -793,8 +793,8 @@ construct_domain_fixture() ->
             data = #domain_ProxyDefinition{
                 name        = <<"Inspector proxy">>,
                 description = <<"Inspector proxy that hates your mom">>,
-                url     = <<>>,
-                options = #{}
+                url         = <<>>,
+                options     = #{}
             }
         }},
         {proxy, #domain_ProxyObject{
@@ -802,8 +802,8 @@ construct_domain_fixture() ->
             data = #domain_ProxyDefinition{
                 name        = <<"Merchant proxy">>,
                 description = <<"Merchant proxy that noone cares about">>,
-                url     = <<>>,
-                options = #{}
+                url         = <<>>,
+                options     = #{}
             }
         }}
     ].

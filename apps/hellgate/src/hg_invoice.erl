@@ -545,10 +545,9 @@ issue_call(Func, Args, CallOpts) ->
     end.
 
 get_call_options(Party, St, Revision) ->
-    Shop     = get_party_shop(get_shop_id(St), Party),
-    Proxy    = Shop#domain_Shop.proxy,
-    ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
-    #{url => ProxyDef#domain_ProxyDefinition.url}.
+    Shop  = get_party_shop(get_shop_id(St), Party),
+    Proxy = Shop#domain_Shop.proxy,
+    hg_proxy:get_call_options(Proxy, Revision).
 
 %%
 
