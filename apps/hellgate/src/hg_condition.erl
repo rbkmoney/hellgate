@@ -32,14 +32,14 @@ test(_, #{}, _) ->
 -spec test_cash_range(dmsl_domain_thrift:'Cash'(), dmsl_domain_thrift:'CashRange'()) ->
     boolean().
 
-test_cash_range(Cash, #domain_CashRange{min = Min, max = Max}) ->
-    test_cash_bound(min, Min, Cash) andalso test_cash_bound(max, Max, Cash).
+test_cash_range(Cash, #domain_CashRange{lower = Lower, upper = Upper}) ->
+    test_cash_bound(lower, Lower, Cash) andalso test_cash_bound(upper, Upper, Cash).
 
 test_cash_bound(_, {inclusive, V}, V) ->
     true;
-test_cash_bound(min, {_, ?cash(Am, C)}, ?cash(A, C)) ->
+test_cash_bound(lower, {_, ?cash(Am, C)}, ?cash(A, C)) ->
     A > Am;
-test_cash_bound(max, {_, ?cash(Am, C)}, ?cash(A, C)) ->
+test_cash_bound(upper, {_, ?cash(Am, C)}, ?cash(A, C)) ->
     A < Am;
 test_cash_bound(_, _, _) ->
     % TODO Non-mathcing currencies, should we error out instead?

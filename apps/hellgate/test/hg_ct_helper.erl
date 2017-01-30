@@ -423,15 +423,15 @@ construct_domain_fixture() ->
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, #domain_CashRange{
-                        min = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
-                        max = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
+                        lower = {inclusive, ?cash(     1000, ?cur(<<"RUB">>))},
+                        upper = {exclusive, ?cash(420000000, ?cur(<<"RUB">>))}
                     }}
                 },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
                     then_ = {value, #domain_CashRange{
-                        min = {inclusive, ?cash(200, ?cur(<<"USD">>))},
-                        max = {exclusive, ?cash(313370, ?cur(<<"USD">>))}
+                        lower = {inclusive, ?cash(      200, ?cur(<<"USD">>))},
+                        upper = {exclusive, ?cash(   313370, ?cur(<<"USD">>))}
                     }}
                 }
             ]},
@@ -468,8 +468,28 @@ construct_domain_fixture() ->
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
                 default_contract_template = ?tmpl(1),
-                inspector = {value, ?insp(1)},
-                common_merchant_proxy = ?prx(3)
+                common_merchant_proxy = ?prx(3),
+                inspector = {decisions, [
+                    #domain_InspectorDecision{
+                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {decisions, [
+                            #domain_InspectorDecision{
+                                if_ = {condition, {cost_in, #domain_CashRange{
+                                    lower = {inclusive, ?cash(        0, ?cur(<<"RUB">>))},
+                                    upper = {exclusive, ?cash(   500000, ?cur(<<"RUB">>))}
+                                }}},
+                                then_ = {value, ?insp(1)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {cost_in, #domain_CashRange{
+                                    lower = {inclusive, ?cash(   500000, ?cur(<<"RUB">>))},
+                                    upper = {exclusive, ?cash(100000000, ?cur(<<"RUB">>))}
+                                }}},
+                                then_ = {value, ?insp(2)}
+                            }
+                        ]}
+                    }
+                ]}
             }
         }},
         {system_account_set, #domain_SystemAccountSetObject{
@@ -519,6 +539,17 @@ construct_domain_fixture() ->
                 proxy = #domain_Proxy{
                     ref = ?prx(2),
                     additional = #{<<"risk_score">> => <<"low">>}
+                }
+            }
+        }},
+        {inspector, #domain_InspectorObject{
+            ref = #domain_InspectorRef{id = 2},
+            data = #domain_Inspector{
+                name = <<"Skipper">>,
+                description = <<"World famous inspector Skipper at your service!">>,
+                proxy = #domain_Proxy{
+                    ref = ?prx(2),
+                    additional = #{<<"risk_score">> => <<"high">>}
                 }
             }
         }},

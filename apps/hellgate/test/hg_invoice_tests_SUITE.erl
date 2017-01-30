@@ -160,8 +160,8 @@ overdue_invoice_cancelled(C) ->
 
 invoice_cancelled_after_payment_timeout(C) ->
     Client = ?c(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, #{}, C),
-    ok = start_proxy(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(7), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -174,8 +174,8 @@ invoice_cancelled_after_payment_timeout(C) ->
 
 payment_success(C) ->
     Client = ?c(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, #{}, C),
-    ok = start_proxy(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -194,9 +194,10 @@ payment_success_w_merchant_callback(C) ->
     ContractParams = hg_ct_helper:make_battle_ready_contract_params(),
     ContractID = hg_ct_helper:create_contract(ContractParams, PartyClient),
     ShopID = hg_ct_helper:create_shop(ContractID, hg_ct_helper:make_category_ref(1), <<"Callback Shop">>, PartyClient),
-    ok = start_proxy(hg_dummy_provider, 1, #{}, C),
-    ok = start_proxy(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
-    MerchantProxy = construct_proxy(3, start_service_handler(hg_dummy_merchant, C, #{}), #{}),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    MerchantProxyUrl = start_service_handler(hg_dummy_merchant, C, #{}),
+    MerchantProxy = construct_proxy(3, MerchantProxyUrl, #{}, undefined),
     ok = hg_domain:upsert(MerchantProxy),
     ok = hg_ct_helper:set_shop_proxy(ShopID, get_proxy_ref(MerchantProxy), #{}, PartyClient),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
@@ -213,8 +214,8 @@ payment_success_w_merchant_callback(C) ->
 
 payment_success_on_second_try(C) ->
     Client = ?c(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, #{}, C),
-    ok = start_proxy(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
@@ -231,8 +232,8 @@ payment_success_on_second_try(C) ->
 
 invoice_success_on_third_payment(C) ->
     Client = ?c(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, #{}, C),
-    ok = start_proxy(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"high">>}, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID1 = attach_payment(InvoiceID, PaymentParams, Client),
@@ -256,14 +257,31 @@ invoice_success_on_third_payment(C) ->
 
 payment_risk_score_check(C) ->
     Client = ?c(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, #{}, C),
-    ok = start_proxy(hg_dummy_inspector, 2, #{<<"risk_score">> => <<"low">>}, C),
-    PaymentParams = make_tds_payment_params(),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
-    ?payment_started(_, Route, _) = next_event(InvoiceID, Client),
-    #domain_InvoicePaymentRoute{terminal = TermRef} = Route,
-    #domain_Terminal{risk_coverage = low} = hg_domain:get(hg_domain:head(), {terminal, TermRef}).
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    % Invoice w/ cost < 500000
+    InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID1 = hg_client_invoicing:start_payment(InvoiceID1, make_payment_params(), Client),
+    ?payment_started(_, Route1, _) = next_event(InvoiceID1, Client),
+    low = get_risk_coverage_from_route(Route1),
+    ?payment_bound(PaymentID1, ?trx_info(_)) = next_event(InvoiceID1, Client),
+    ?payment_status_changed(PaymentID1, ?processed()) = next_event(InvoiceID1, Client),
+    ?payment_status_changed(PaymentID1, ?captured())  = next_event(InvoiceID1, Client),
+    ?invoice_status_changed(?paid()) = next_event(InvoiceID1, Client),
+    % Invoice w/ cost > 500000
+    InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
+    PaymentID2 = hg_client_invoicing:start_payment(InvoiceID2, make_payment_params(), Client),
+    ?payment_started(_, Route2, _) = next_event(InvoiceID2, Client),
+    high = get_risk_coverage_from_route(Route2),
+    ?payment_bound(PaymentID2, ?trx_info(_)) = next_event(InvoiceID2, Client),
+    ?payment_status_changed(PaymentID2, ?processed()) = next_event(InvoiceID2, Client),
+    ?payment_status_changed(PaymentID2, ?captured())  = next_event(InvoiceID2, Client),
+    ?invoice_status_changed(?paid()) = next_event(InvoiceID2, Client).
+
+get_risk_coverage_from_route(#domain_InvoicePaymentRoute{terminal = TermRef}) ->
+    Terminal = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
+    Terminal#domain_Terminal.risk_coverage.
+
 %%
 
 -spec consistent_history(config()) -> _ | no_return().
@@ -307,12 +325,15 @@ start_service_handler(Name, Module, C, HandlerOpts) ->
     {ok, _} = supervisor:start_child(?c(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
 
+start_proxy(Module, ProxyID, Context) ->
+    start_proxy(Module, ProxyID, #{}, Context).
 start_proxy(Module, ProxyID, ProxyOpts, Context) ->
-    ProxyUrl = start_service_handler(Module, Context, #{}),
-    setup_proxy(ProxyUrl, ProxyID, ProxyOpts).
+    start_proxy(Module, ProxyID, ProxyOpts, undefined, Context).
+start_proxy(Module, ProxyID, ProxyOpts, TransOpts, Context) ->
+    setup_proxy(start_service_handler(Module, Context, #{}), ProxyID, ProxyOpts, TransOpts).
 
-setup_proxy(ProxyUrl, ProxyID, ProxyOpts) ->
-    ok = hg_domain:upsert(construct_proxy(ProxyID, ProxyUrl, ProxyOpts)).
+setup_proxy(ProxyUrl, ProxyID, ProxyOpts, TransOpts) ->
+    ok = hg_domain:upsert(construct_proxy(ProxyID, ProxyUrl, ProxyOpts, TransOpts)).
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
@@ -320,8 +341,6 @@ get_random_port() ->
 construct_proxy_ref(ID) ->
     #domain_ProxyRef{id = ID}.
 
-construct_proxy(ID, Url, Options) ->
-    construct_proxy(ID, Url, Options, undefined).
 construct_proxy(ID, Url, Options, TransOpts) ->
     {proxy, #domain_ProxyObject{
         ref = construct_proxy_ref(ID),
