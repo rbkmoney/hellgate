@@ -160,20 +160,12 @@ validate_payment_cost(
     VS
 ) ->
     {value, Limit} = hg_selector:reduce(LimitSelector, VS, Revision), % FIXME
-    _ = validate_limit(Cash, Limit),
+    ok = validate_limit(Cash, Limit),
     VS#{cost => Cash}.
 
-validate_limit(Cash, #domain_CashLimit{min = Min, max = Max}) ->
-    _ = validate_bound(min, Min, Cash),
-    _ = validate_bound(max, Max, Cash),
+validate_limit(Cash, CashRange) ->
+    _ = hg_condition:test_cash_range(Cash, CashRange) orelse raise_invalid_request(<<"Limit exceeded">>),
     ok.
-
-validate_bound(_, {inclusive, V}, V) ->
-    ok;
-validate_bound(min, {_, ?cash(Am, C)}, ?cash(A, C)) ->
-    A > Am orelse raise_invalid_request(<<"Limit exceeded">>);
-validate_bound(max, {_, ?cash(Am, C)}, ?cash(A, C)) ->
-    A < Am orelse raise_invalid_request(<<"Limit exceeded">>).
 
 validate_route(Route = #domain_InvoicePaymentRoute{}) ->
     Route.

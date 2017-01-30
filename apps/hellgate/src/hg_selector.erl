@@ -119,12 +119,11 @@ reduce_combination(_, [], _, _, []) ->
 reduce_combination(_, [], _, _, PAcc) ->
     PAcc.
 
-reduce_condition({category_is, V1}, #{category := V2}, _) ->
-    V1 =:= V2;
-reduce_condition({currency_is, V1}, #{currency := V2}, _) ->
-    V1 =:= V2;
-reduce_condition({payment_tool_condition, C}, #{payment_tool := V}, Rev) ->
-    hg_payment_tool:test_condition(C, V, Rev);
-reduce_condition(C, #{}, _) ->
-    % Irreducible, return as is
-    C.
+reduce_condition(C, VS, Rev) ->
+    case hg_condition:test(C, VS, Rev) of
+        B when is_boolean(B) ->
+            B;
+        undefined ->
+            % Irreducible, return as is
+            C
+    end.

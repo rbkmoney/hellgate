@@ -422,14 +422,14 @@ construct_domain_fixture() ->
             cash_limit = {decisions, [
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, #domain_CashLimit{
+                    then_ = {value, #domain_CashRange{
                         min = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
                         max = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
                     }}
                 },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                    then_ = {value, #domain_CashLimit{
+                    then_ = {value, #domain_CashRange{
                         min = {inclusive, ?cash(200, ?cur(<<"USD">>))},
                         max = {exclusive, ?cash(313370, ?cur(<<"USD">>))}
                     }}
