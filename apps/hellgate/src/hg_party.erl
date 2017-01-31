@@ -645,15 +645,13 @@ get_term_set(TermsRef, Timestamp) ->
 
 get_active_term_set(TimedTermSets, Timestamp) ->
     lists:foldl(
-        fun(#domain_TimedTermSet{action_time = ActionTime, terms = TermSet}, undefined) ->
+        fun(#domain_TimedTermSet{action_time = ActionTime, terms = TermSet}, ActiveTermSet) ->
             case hg_datetime:between(Timestamp, ActionTime) of
                 true ->
                     TermSet;
                 false ->
-                    undefined
-            end;
-        (_, TermSet) ->
-            TermSet
+                    ActiveTermSet
+            end
         end,
         undefined,
         TimedTermSets
