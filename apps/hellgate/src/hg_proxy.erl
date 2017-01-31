@@ -15,16 +15,13 @@ get_call_options(#domain_Proxy{ref = ProxyRef}, Revision) ->
     ProxyDef = hg_domain:get(Revision, {proxy, ProxyRef}),
     construct_call_options(ProxyDef).
 
-construct_call_options(#domain_ProxyDefinition{url = Url, transport_options = TransOpts}) ->
-    maps:merge(#{url => Url}, construct_transport_options(TransOpts)).
+construct_call_options(#domain_ProxyDefinition{url = Url}) ->
+    maps:merge(#{url => Url}, construct_transport_options()).
 
-construct_transport_options(undefined) ->
-    #{};
-construct_transport_options(#domain_TransportOptions{
-    connect_timeout = ConnectTimeout,
-    receive_timeout = ReceiveTimeout
-}) ->
-    #{
-        connect_timeout => ConnectTimeout,
-        recv_timeout    => ReceiveTimeout
-    }.
+construct_transport_options() ->
+    construct_transport_options(genlib_app:env(hellgate, proxy_opts, #{})).
+
+construct_transport_options(#{transport_opts := TransportOpts = #{}}) ->
+    maps:with([connect_timeout, recv_timeout], TransportOpts);
+construct_transport_options(#{}) ->
+    #{}.

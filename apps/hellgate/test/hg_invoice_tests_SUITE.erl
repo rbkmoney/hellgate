@@ -103,9 +103,6 @@ end_per_suite(C) ->
 -define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 
--define(trans_opts(ConnTo, RecvTo),
-    #domain_TransportOptions{connect_timeout = ConnTo, receive_timeout = RecvTo}).
-
 -define(invalid_invoice_status(Status),
     {exception, #payproc_InvalidInvoiceStatus{status = Status}}).
 
@@ -199,8 +196,7 @@ payment_success_w_merchant_callback(C) ->
     ShopID = hg_ct_helper:create_shop(ContractID, hg_ct_helper:make_category_ref(1), <<"Callback Shop">>, PartyClient),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
-    MerchantProxyUrl = start_service_handler(hg_dummy_merchant, C, #{}),
-    MerchantProxy = construct_proxy(3, MerchantProxyUrl, #{}, undefined),
+    MerchantProxy = construct_proxy(3, start_service_handler(hg_dummy_merchant, C, #{}), #{}),
     ok = hg_domain:upsert(MerchantProxy),
     ok = hg_ct_helper:set_shop_proxy(ShopID, get_proxy_ref(MerchantProxy), #{}, PartyClient),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
@@ -350,12 +346,10 @@ start_service_handler(Name, Module, C, HandlerOpts) ->
 start_proxy(Module, ProxyID, Context) ->
     start_proxy(Module, ProxyID, #{}, Context).
 start_proxy(Module, ProxyID, ProxyOpts, Context) ->
-    start_proxy(Module, ProxyID, ProxyOpts, undefined, Context).
-start_proxy(Module, ProxyID, ProxyOpts, TransOpts, Context) ->
-    setup_proxy(start_service_handler(Module, Context, #{}), ProxyID, ProxyOpts, TransOpts).
+    setup_proxy(start_service_handler(Module, Context, #{}), ProxyID, ProxyOpts).
 
-setup_proxy(ProxyUrl, ProxyID, ProxyOpts, TransOpts) ->
-    ok = hg_domain:upsert(construct_proxy(ProxyID, ProxyUrl, ProxyOpts, TransOpts)).
+setup_proxy(ProxyUrl, ProxyID, ProxyOpts) ->
+    ok = hg_domain:upsert(construct_proxy(ProxyID, ProxyUrl, ProxyOpts)).
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
@@ -363,15 +357,14 @@ get_random_port() ->
 construct_proxy_ref(ID) ->
     #domain_ProxyRef{id = ID}.
 
-construct_proxy(ID, Url, Options, TransOpts) ->
+construct_proxy(ID, Url, Options) ->
     {proxy, #domain_ProxyObject{
         ref = construct_proxy_ref(ID),
         data = #domain_ProxyDefinition{
             name              = Url,
             description       = Url,
             url               = Url,
-            options           = Options,
-            transport_options = TransOpts
+            options           = Options
         }
     }}.
 

@@ -66,6 +66,12 @@ start_app(hellgate = AppName) ->
             'Automaton' => <<"http://machinegun:8022/v1/automaton">>,
             'EventSink' => <<"http://machinegun:8022/v1/event_sink">>,
             'Accounter' => <<"http://shumway:8022/accounter">>
+        }},
+        {proxy_opts, #{
+            transport_opts => #{
+                connect_timeout => 1000,
+                recv_timeout    => 1000
+            }
         }}
     ]), #{
         hellgate_root_url => get_hellgate_url()
