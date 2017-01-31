@@ -43,6 +43,7 @@
 
 %% Party support functions
 
+-export([get_payments_service_terms/2]).
 -export([get_payments_service_terms/3]).
 
 %%
@@ -54,13 +55,13 @@ get(UserInfo, PartyID) ->
     ok = assert_party_accessible(UserInfo, PartyID),
     get_party(get_state(PartyID)).
 
--spec checkout(party_id(), revision()) ->
+-spec checkout(party_id(), timestamp()) ->
     dmsl_domain_thrift:'Party'().
 
 %% DANGER! INSECURE METHOD! USE WITH SPECIAL CARE!
-checkout(PartyID, Revision) ->
+checkout(PartyID, Timestamp) ->
     {History, _LastID} = get_history(PartyID),
-    case checkout_history(History, Revision) of
+    case checkout_history(History, Timestamp) of
         {ok, St} ->
             get_party(St);
         {error, Reason} ->
@@ -304,7 +305,7 @@ set_party_mgmt_meta(PartyID, #payproc_UserInfo{id = ID, type = {Type, _}}) ->
 -type claim_id()              :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()                 :: dmsl_payment_processing_thrift:'Claim'().
 -type user_info()             :: dmsl_payment_processing_thrift:'UserInfo'().
--type revision()              :: dmsl_base_thrift:'Timestamp'().
+-type timestamp()             :: dmsl_base_thrift:'Timestamp'().
 -type sequence()              :: pos_integer().
 -type legal_agreement()       :: dmsl_domain_thrift:'LegalAgreement'().
 
@@ -333,7 +334,7 @@ publish_event(_InvoiceID, _) ->
 
 -record(st, {
     party          :: party(),
-    revision       :: revision(),
+    timestamp      :: timestamp(),
     claims   = #{} :: #{claim_id() => claim()},
     sequence = 0   :: 0 | sequence()
 }).
@@ -365,16 +366,28 @@ process_init(ID, PartyParams) ->
     TestContractTemplpate = get_test_template(Revision),
     Changeset1 = create_contract(#payproc_ContractParams{template = TestContractTemplpate}, StEvents),
     [?contract_creation(TestContract)] = Changeset1,
+
     ShopParams = get_shop_prototype_params(Revision),
     Changeset2 = create_shop(
-        ShopParams#payproc_ShopParams{
-            contract_id = TestContract#domain_Contract.id
-        },
+        ShopParams#payproc_ShopParams{contract_id = TestContract#domain_Contract.id},
         ?active(),
-        Revision,
         StEvents
     ),
-    {_ClaimID, StEvents1} = submit_accept_claim(Changeset1 ++ Changeset2, StEvents),
+    [?shop_creation(Shop)] = Changeset2,
+    ok = assert_shop_contract_valid(Shop, TestContract, Revision),
+
+    VS = #{category => Shop#domain_Shop.category},
+    Currencies = get_contract_currencies(TestContract, VS, hg_datetime:format_now()),
+    CurrencyRef = case ordsets:to_list(Currencies) of
+        [SomeRef | _] ->
+            SomeRef;
+        [] ->
+            raise_invalid_request(<<"bad contract configuration">>)
+    end,
+    Changeset3 = [?shop_modification(Shop#domain_Shop.id, ?account_created(create_shop_account(CurrencyRef)))],
+
+    Changeset = Changeset1 ++ Changeset2 ++ Changeset3,
+    {_ClaimID, StEvents1} = submit_accept_claim(Changeset, StEvents),
     ok(StEvents1).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
@@ -456,20 +469,20 @@ handle_call(activate, StEvents0) ->
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({create_contract, ContractParams}, StEvents0) ->
-    ok = assert_operable(StEvents0),
+    ok = assert_unblocked(StEvents0),
     Changeset = create_contract(ContractParams, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({bind_contract_legal_agreemnet, ID, #domain_LegalAgreement{} = LegalAgreement}, StEvents0 = {St, _}) ->
-    ok = assert_operable(StEvents0),
+    ok = assert_unblocked(StEvents0),
     Contract = get_contract(ID, get_party(get_pending_st(St))),
     ok = assert_contract_active(Contract),
     {ClaimID, StEvents1} = create_claim([?contract_legal_agreement_binding(ID, LegalAgreement)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({terminate_contract, ID, Reason}, StEvents0 = {St, _}) ->
-    ok = assert_operable(StEvents0),
+    ok = assert_unblocked(StEvents0),
     Contract = get_contract(ID, get_party(St)),
     ok = assert_contract_active(Contract),
     TerminatedAt = hg_datetime:format_now(),
@@ -477,50 +490,70 @@ handle_call({terminate_contract, ID, Reason}, StEvents0 = {St, _}) ->
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({create_contract_adjustment, ID, Params}, StEvents0 = {St, _}) ->
-    ok = assert_operable(StEvents0),
-    Contract = get_contract(ID, get_party(St)),
-    ok = assert_contract_active(Contract),
+    ok = assert_unblocked(StEvents0),
+    ok = assert_contract_active(get_contract(ID, get_party(St))),
     Changeset = create_contract_adjustment(ID, Params, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({create_payout_tool, ContractID, Params}, StEvents0 = {St, _}) ->
-    ok = assert_operable(StEvents0),
+    ok = assert_unblocked(StEvents0),
     ok = assert_contract_active(get_contract(ContractID, get_party(get_pending_st(St)))),
     Changeset = create_payout_tool(Params, ContractID, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_shop, Params}, StEvents0) ->
-    ok = assert_operable(StEvents0),
+handle_call({create_shop, Params}, StEvents0 = {St, _}) ->
+    ok = assert_unblocked(StEvents0),
     Revision = hg_domain:head(),
-    Changeset = create_shop(Params, Revision, StEvents0),
+    Changeset0 = [?shop_creation(Shop)] = create_shop(Params, StEvents0),
+
+    Party = get_party(get_pending_st(St)),
+    Contract = get_contract(Shop#domain_Shop.contract_id, Party),
+    ok = assert_shop_contract_valid(Shop, Contract, Revision),
+    ok = assert_shop_payout_tool_valid(Shop, Contract),
+
+    VS = #{category => Shop#domain_Shop.category},
+    Currencies = get_contract_currencies(Contract, VS, hg_datetime:format_now()),
+    CurrencyRef = case ordsets:to_list(Currencies) of
+        [SomeRef | _] ->
+            SomeRef;
+        [] ->
+            raise_invalid_request(<<"bad contract configuration">>)
+    end,
+    Changeset1 = [?shop_modification(Shop#domain_Shop.id, ?account_created(create_shop_account(CurrencyRef)))],
+    Changeset = Changeset0 ++ Changeset1,
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({update_shop, ID, Update}, StEvents0) ->
-    ok = assert_operable(StEvents0),
+    ok = assert_unblocked(StEvents0),
     ok = assert_shop_modification_allowed(ID, StEvents0),
+    ok = assert_shop_update_valid(ID, Update, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {update, Update})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({block_shop, ID, Reason}, StEvents0) ->
+    ok = assert_unblocked(StEvents0),
     ok = assert_shop_unblocked(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {blocking, ?blocked(Reason)})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({unblock_shop, ID, Reason}, StEvents0) ->
+    ok = assert_unblocked(StEvents0),
     ok = assert_shop_blocked(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {blocking, ?unblocked(Reason)})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({suspend_shop, ID}, StEvents0) ->
+    ok = assert_unblocked(StEvents0),
     ok = assert_shop_unblocked(ID, StEvents0),
     ok = assert_shop_active(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {suspension, ?suspended()})], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({activate_shop, ID}, StEvents0) ->
+    ok = assert_unblocked(StEvents0),
     ok = assert_shop_unblocked(ID, StEvents0),
     ok = assert_shop_suspended(ID, StEvents0),
     {ClaimID, StEvents1} = create_claim([?shop_modification(ID, {suspension, ?active()})], StEvents0),
@@ -615,17 +648,12 @@ get_next_contract_adjustment_id(Adjustments) ->
 
 %%
 
-create_shop(ShopParams, Revision, StEvents) ->
-    create_shop(ShopParams, ?suspended(), Revision, StEvents).
+create_shop(ShopParams, StEvents) ->
+    create_shop(ShopParams, ?suspended(), StEvents).
 
-create_shop(ShopParams, Suspension, Revision, {St, _}) ->
+create_shop(ShopParams, Suspension, {St, _}) ->
     ShopID = get_next_shop_id(get_pending_st(St)),
-    Shop = construct_shop(ShopID, ShopParams, Suspension),
-    ShopAccount = create_shop_account(Revision),
-    [
-        ?shop_creation(Shop),
-        ?shop_modification(ShopID, ?account_created(ShopAccount))
-    ].
+    [?shop_creation(construct_shop(ShopID, ShopParams, Suspension))].
 
 construct_shop(ShopID, ShopParams, Suspension) ->
     #domain_Shop{
@@ -659,16 +687,36 @@ get_next_payout_tool_id(ContractID, St) ->
     get_next_id([ID || #domain_PayoutTool{id = ID} <- Tools]).
 %%
 
--spec get_payments_service_terms(shop_id(), party(), binary() | integer()) ->
-    dmsl_domain_thrift:'PaymentsServiceTerms'().
+get_contract_currencies(Contract, VS, Timestamp) ->
+    #domain_PaymentsServiceTerms{currencies = CurrencySelector} = get_payments_service_terms(Contract, Timestamp),
+    Revision = hg_domain:head(),
+
+    case hg_selector:reduce(CurrencySelector, VS, Revision) of
+        {value, Currencies} ->
+            Currencies;
+        _ ->
+            raise_invalid_request(<<"bad contract configuration">>)
+    end.
+
+-spec get_payments_service_terms(shop_id(), party(), timestamp()) ->
+    dmsl_domain_thrift:'PaymentsServiceTerms'() | no_return().
 
 get_payments_service_terms(ShopID, Party, Timestamp) ->
     Shop = get_shop(ShopID, Party),
     Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
+    get_payments_service_terms(Contract, Timestamp).
+
+-spec get_payments_service_terms(dmsl_domain_thrift:'Contract'(), timestamp()) ->
+    dmsl_domain_thrift:'PaymentsServiceTerms'() | no_return().
+
+get_payments_service_terms(Contract, Timestamp) ->
     ok = assert_contract_active(Contract),
-    % FIXME here can be undefined termset
-    #domain_TermSet{payments = PaymentTerms} = compute_terms(Contract, Timestamp),
-    PaymentTerms.
+    case compute_terms(Contract, Timestamp) of
+        #domain_TermSet{payments = PaymentTerms} ->
+            PaymentTerms;
+        undefined ->
+            error({undefined_term_set, Contract#domain_Contract.terms, Timestamp})
+    end.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;
@@ -968,6 +1016,65 @@ assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
+assert_shop_update_valid(
+    ShopID,
+    #payproc_ShopUpdate{
+        category = NewCategoryRef,
+        contract_id = NewContractID,
+        payout_tool_id = NewPayoutToolID},
+    {St, _}
+) when NewCategoryRef /= undefined orelse NewContractID /= undefined orelse NewPayoutToolID /= undefined ->
+    Party = get_party(get_pending_st(St)),
+    Shop0 = get_shop(ShopID, Party),
+    CategoryRef = update_if_defined(Shop0#domain_Shop.category, NewCategoryRef),
+    ContractID = update_if_defined(Shop0#domain_Shop.contract_id, NewContractID),
+    PayoutToolID = update_if_defined(Shop0#domain_Shop.payout_tool_id, NewPayoutToolID),
+
+    Shop = Shop0#domain_Shop{
+        category = CategoryRef,
+        contract_id = ContractID,
+        payout_tool_id = PayoutToolID
+    },
+    Contract = get_contract(ContractID, Party),
+    ok = assert_shop_contract_valid(Shop, Contract, hg_domain:head()),
+    ok = assert_shop_payout_tool_valid(Shop, Contract);
+assert_shop_update_valid(_, _, _) ->
+    ok.
+
+assert_shop_contract_valid(
+    #domain_Shop{category = CategoryRef, account = ShopAccount},
+    Contract,
+    Revision
+) ->
+    Timestamp = hg_datetime:format_now(),
+    #domain_PaymentsServiceTerms{categories = CategorySelector} = get_payments_service_terms(Contract, Timestamp),
+    VS = case ShopAccount of
+        #domain_ShopAccount{currency = CurrencyRef} ->
+            Currencies = get_contract_currencies(Contract, #{category => CategoryRef}, Timestamp),
+            _ = ordsets:is_element(CurrencyRef, Currencies) orelse
+                raise_invalid_request(<<"contract currency missmatch">>),
+            #{currency => CurrencyRef};
+        undefined ->
+            #{}
+    end,
+    case hg_selector:reduce(CategorySelector, VS, Revision) of
+        {value, Categories} ->
+            _ = ordsets:is_element(CategoryRef, Categories) orelse
+                raise_invalid_request(<<"contract category missmatch">>);
+        _ ->
+            raise_invalid_request(<<"bad contract configuration">>)
+    end,
+    ok.
+
+assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = PayoutToolID}, Contract) ->
+    _PayoutTool = get_payout_tool(PayoutToolID, Contract),
+    ok.
+
+-spec raise_invalid_request(binary()) -> no_return().
+
+raise_invalid_request(Error) ->
+    throw(#'InvalidRequest'{errors = [Error]}).
+
 %%
 
 -spec apply_state_event(public_event() | private_event(), StEvents) -> StEvents when
@@ -1004,22 +1111,28 @@ respond_w_exception(Exception, Action) ->
 -spec collapse_history([ev()]) -> st().
 
 collapse_history(History) ->
-    lists:foldl(fun ({_ID, _, Ev}, St) -> merge_history(Ev, St) end, #st{}, History).
+    {ok, St} = checkout_history(History, hg_datetime:format_now()),
+    St.
 
--spec checkout_history([ev()], revision()) -> {ok, st()} | {error, revision_not_found}.
+-spec checkout_history([ev()], timestamp()) -> {ok, st()} | {error, revision_not_found}.
 
-checkout_history(History, Revision) ->
-    checkout_history(History, Revision, #st{}).
+checkout_history(History, Timestamp) ->
+    case checkout_history(History, Timestamp, #st{}) of
+        {ok, St} ->
+            apply_checkout_history_hook(St, Timestamp);
+        {error, _} = Error ->
+            Error
+    end.
 
-checkout_history([{_ID, EventTimestamp, Ev} | Rest], Revision, St0 = #st{revision = Rev0}) ->
-    case hg_datetime:compare(EventTimestamp, Revision) of
-        later when Rev0 =/= undefined ->
+checkout_history([{_ID, EventTimestamp, Ev} | Rest], Timestamp, St0 = #st{timestamp = StTimestamp}) ->
+    case hg_datetime:compare(EventTimestamp, Timestamp) of
+        later when StTimestamp =/= undefined ->
             {ok, St0};
-        later when Rev0 == undefined ->
+        later when StTimestamp == undefined ->
             {error, revision_not_found};
         _ ->
-            St1 = merge_history(Ev, St0),
-            checkout_history(Rest, Revision, St1)
+            St1 = merge_history(Ev, St0#st{timestamp = EventTimestamp}),
+            checkout_history(Rest, Timestamp, St1)
     end;
 checkout_history([], _, St) ->
     {ok, St}.
@@ -1041,6 +1154,36 @@ merge_party_event(?claim_status_changed(ID, Status), St) ->
     St1 = set_claim(Claim1, St),
     apply_accepted_claim(Claim1, St1).
 
+apply_checkout_history_hook(St, Timestamp) ->
+    Party0 = get_party(St),
+    Contracts = maps:map(
+        fun(_, Contract) ->
+            update_contract_status(Contract, Timestamp)
+        end,
+        Party0#domain_Party.contracts
+    ),
+    Party = Party0#domain_Party{contracts = Contracts},
+    {ok, St#st{party = Party}}.
+
+update_contract_status(
+    #domain_Contract{
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        status = {active, _}} = Contract,
+    Timestamp
+) ->
+    case hg_datetime:between(Timestamp, ValidSince, ValidUntil) of
+        true ->
+            Contract;
+        false ->
+            Contract#domain_Contract{
+                % FIXME add special status for expired contracts
+                status = {terminated, #domain_ContractTerminated{terminated_at = ValidUntil}}
+            }
+    end;
+update_contract_status(Contract, _) ->
+    Contract.
+
 get_pending_st(St) ->
     case get_pending_claim(St) of
         undefined ->
@@ -1055,6 +1198,14 @@ get_contract(ID, #domain_Party{contracts = Contracts}) ->
             Contract;
         undefined ->
             throw(#payproc_ContractNotFound{})
+    end.
+
+get_payout_tool(PayoutToolID, #domain_Contract{payout_tools = PayoutTools}) ->
+    case lists:keysearch(PayoutToolID, #domain_PayoutTool.id, PayoutTools) of
+        {value, PayoutTool} ->
+            PayoutTool;
+        false ->
+            throw(#payproc_PayoutToolNotFound{})
     end.
 
 set_contract(Contract = #domain_Contract{id = ID}, Party = #domain_Party{contracts = Contracts}) ->
@@ -1143,8 +1294,8 @@ ensure_claim(Claim = #payproc_Claim{}) ->
 ensure_claim(undefined) ->
     throw(#payproc_ClaimNotFound{}).
 
-apply_accepted_claim(Claim = #payproc_Claim{status = ?accepted(AcceptedAt)}, St) ->
-    apply_claim(Claim, St#st{revision = AcceptedAt});
+apply_accepted_claim(Claim = #payproc_Claim{status = ?accepted(_AcceptedAt)}, St) ->
+    apply_claim(Claim, St);
 apply_accepted_claim(_Claim, St) ->
     St.
 
@@ -1172,7 +1323,6 @@ apply_party_change(
     ?contract_legal_agreement_binding(ContractID, LegalAgreement),
     Party = #domain_Party{contracts = Contracts}
 ) ->
-    % FIXME throw exception if already bound!
     Contract = maps:get(ContractID, Contracts),
     Party#domain_Party{
         contracts = Contracts#{
@@ -1228,12 +1378,7 @@ fold_opt([{E, Fun} | Rest], V) ->
 get_next_id(IDs) ->
     lists:max([0 | IDs]) + 1.
 
-create_shop_account(Revision) ->
-    ShopPrototype = get_shop_prototype(Revision),
-    CurrencyRef = ShopPrototype#domain_ShopPrototype.currency,
-    #domain_CurrencyRef{
-        symbolic_code = SymbolicCode
-    } = CurrencyRef,
+create_shop_account(#domain_CurrencyRef{symbolic_code = SymbolicCode} = CurrencyRef) ->
     GuaranteeID = hg_accounting:create_account(SymbolicCode),
     SettlementID = hg_accounting:create_account(SymbolicCode),
     PayoutID = hg_accounting:create_account(SymbolicCode),
@@ -1265,11 +1410,16 @@ get_test_template(Revision) ->
 
 instantiate_contract_template(TemplateRef) ->
     Revision = hg_domain:head(),
-    Template = case TemplateRef of
-        #domain_ContractTemplateRef{} ->
-            get_template(TemplateRef, Revision);
-        undefined ->
-            get_default_template(Revision)
+    Template = try
+        case TemplateRef of
+            #domain_ContractTemplateRef{} ->
+                get_template(TemplateRef, Revision);
+            undefined ->
+                get_default_template(Revision)
+        end
+    catch
+        error:{object_not_found, _} ->
+            raise_invalid_request(<<"contract template not found">>)
     end,
     #domain_ContractTemplate{
         valid_since = ValidSince,

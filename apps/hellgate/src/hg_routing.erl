@@ -41,7 +41,7 @@ collect_providers(Globals, VS, Revision) ->
 
 collect_terminals(Provider, VS, Revision) ->
     TerminalSelector = Provider#domain_Provider.terminal,
-    TerminalRefs = reduce(TerminalSelector, VS, Revision),
+    TerminalRefs = ordsets:to_list(reduce(TerminalSelector, VS, Revision)),
     [
         TerminalRef ||
             TerminalRef <- TerminalRefs,

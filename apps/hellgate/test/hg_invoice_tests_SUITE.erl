@@ -193,7 +193,7 @@ payment_success_w_merchant_callback(C) ->
     PartyClient = ?c(party_client, C),
     ContractParams = hg_ct_helper:make_battle_ready_contract_params(),
     ContractID = hg_ct_helper:create_contract(ContractParams, PartyClient),
-    ShopID = hg_ct_helper:create_shop(ContractID, hg_ct_helper:make_category_ref(1), <<"Callback Shop">>, PartyClient),
+    ShopID = hg_ct_helper:create_shop(ContractID, hg_ct_helper:make_category_ref(3), <<"Callback Shop">>, PartyClient),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     MerchantProxy = construct_proxy(3, start_service_handler(hg_dummy_merchant, C, #{}), #{}),

@@ -40,6 +40,7 @@
 -export([shop_creation/1]).
 -export([shop_update/1]).
 -export([shop_update_before_confirm/1]).
+-export([shop_update_with_bad_params/1]).
 -export([shop_blocking/1]).
 -export([shop_unblocking/1]).
 -export([shop_already_blocked/1]).
@@ -60,9 +61,11 @@
 -export([contract_not_found/1]).
 -export([contract_creation/1]).
 -export([contract_termination/1]).
+-export([contract_expiration/1]).
 -export([contract_legal_agreement_binding/1]).
 -export([contract_payout_tool_creation/1]).
 -export([contract_adjustment_creation/1]).
+-export([contract_adjustment_expiration/1]).
 
 %%
 
@@ -127,16 +130,19 @@ groups() ->
             party_creation,
             contract_not_found,
             contract_creation,
+            contract_termination,
+            contract_expiration,
             contract_legal_agreement_binding,
             contract_payout_tool_creation,
             contract_adjustment_creation,
-            contract_termination
+            contract_adjustment_expiration
         ]},
         {shop_management, [sequence], [
             party_creation,
             contract_creation,
             shop_not_found_on_retrieval,
             shop_update_before_confirm,
+            shop_update_with_bad_params,
             shop_creation,
             shop_activation,
             shop_update,
@@ -235,6 +241,8 @@ end_per_testcase(_Name, _C) ->
 
 -define(invalid_user(),
     {exception, #payproc_InvalidUser{}}).
+-define(invalid_request(Errors),
+    {exception, #'InvalidRequest'{errors = Errors}}).
 
 -define(party_not_found(),
     {exception, #payproc_PartyNotFound{}}).
@@ -253,6 +261,8 @@ end_per_testcase(_Name, _C) ->
     {exception, #payproc_ContractNotFound{}}).
 -define(invalid_contract_status(Status),
     {exception, #payproc_InvalidContractStatus{status = Status}}).
+-define(payout_tool_not_found(),
+    {exception, #payproc_PayoutToolNotFound{}}).
 
 -define(shop_not_found(),
     {exception, #payproc_ShopNotFound{}}).
@@ -287,6 +297,7 @@ end_per_testcase(_Name, _C) ->
 -spec shop_creation(config()) -> _ | no_return().
 -spec shop_update(config()) -> _ | no_return().
 -spec shop_update_before_confirm(config()) -> _ | no_return().
+-spec shop_update_with_bad_params(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
 -spec claim_already_accepted_on_revoke(config()) -> _ | no_return().
 -spec claim_already_accepted_on_accept(config()) -> _ | no_return().
@@ -321,9 +332,11 @@ end_per_testcase(_Name, _C) ->
 -spec contract_not_found(config()) -> _ | no_return().
 -spec contract_creation(config()) -> _ | no_return().
 -spec contract_termination(config()) -> _ | no_return().
+-spec contract_expiration(config()) -> _ | no_return().
 -spec contract_legal_agreement_binding(config()) -> _ | no_return().
 -spec contract_payout_tool_creation(config()) -> _ | no_return().
 -spec contract_adjustment_creation(config()) -> _ | no_return().
+-spec contract_adjustment_expiration(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = ?c(client, C),
@@ -362,7 +375,14 @@ party_revisioning(C) ->
 
 contract_not_found(C) ->
     Client = ?c(client, C),
-    ?contract_not_found() = hg_client_party:get_contract(666, Client).
+    ?contract_not_found() = hg_client_party:get_contract(666, Client),
+    Params = #payproc_ShopParams{
+        category = hg_ct_helper:make_category_ref(42),
+        details  = hg_ct_helper:make_shop_details(<<"SOME SHOP">>, <<"WITH WRONG PARAMS">>),
+        contract_id = 666,
+        payout_tool_id = 42
+    },
+    ?contract_not_found() = hg_client_party:create_shop(Params, Client).
 
 contract_creation(C) ->
     Client = ?c(client, C),
@@ -394,15 +414,43 @@ contract_termination(C) ->
     #domain_Contract{
         id = ContractID,
         status = {terminated, _}
+    } = hg_client_party:get_contract(ContractID, Client),
+    ?invalid_contract_status({terminated, _}) = hg_client_party:terminate_contract(
+        ContractID,
+        <<"JUST TO BE SURE">>,
+        Client
+    ).
+
+contract_expiration(C) ->
+    Client = ?c(client, C),
+    Params0 = hg_ct_helper:make_battle_ready_contract_params(),
+    Params = Params0#payproc_ContractParams{template = #domain_ContractTemplateRef{id = 3}},
+    Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
+    ?claim(
+        _,
+        ?pending(),
+        [{contract_creation, #domain_Contract{id = ContractID}}]
+    ) = Claim,
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{
+        id = ContractID,
+        status = {terminated, _}
     } = hg_client_party:get_contract(ContractID, Client).
 
 contract_legal_agreement_binding(C) ->
     Client = ?c(client, C),
-    ContractID = hg_ct_helper:get_first_contract_id(Client),
     LA = #domain_LegalAgreement{
         signed_at = hg_datetime:format_now(),
         legal_agreement_id = <<"20160123-0031235-OGM/GDM">>
     },
+    TerminatedContractID = hg_ct_helper:get_first_contract_id(Client),
+    ?invalid_contract_status({terminated, _}) = hg_client_party:bind_legal_agreement(
+        TerminatedContractID,
+        LA,
+        Client
+    ),
+
+    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Claim = assert_claim_pending(hg_client_party:bind_legal_agreement(ContractID, LA, Client), Client),
     ok = accept_claim(Claim, Client),
     #domain_Contract{
@@ -410,10 +458,8 @@ contract_legal_agreement_binding(C) ->
         legal_agreement = LA
     } = hg_client_party:get_contract(ContractID, Client).
 
-
 contract_payout_tool_creation(C) ->
     Client = ?c(client, C),
-    ContractID = hg_ct_helper:get_first_contract_id(Client),
     PayoutToolParams = #payproc_PayoutToolParams{
         currency = #domain_CurrencyRef{symbolic_code = <<"RUB">>},
         tool_info  = {bank_account, #domain_BankAccount{
@@ -423,7 +469,11 @@ contract_payout_tool_creation(C) ->
             bank_bik = <<"66642666">>
         }}
     },
-    Claim = assert_claim_pending(hg_client_party:create_payout_tool(ContractID, PayoutToolParams, Client), Client),
+    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+    Claim = assert_claim_pending(
+        hg_client_party:create_payout_tool(ContractID, PayoutToolParams, Client),
+        Client
+    ),
     ?claim(
         _,
         ?pending(),
@@ -438,10 +488,9 @@ contract_payout_tool_creation(C) ->
 
 contract_adjustment_creation(C) ->
     Client = ?c(client, C),
-    ContractID = hg_ct_helper:get_first_contract_id(Client),
+    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     AdjustmentParams = #payproc_ContractAdjustmentParams{
-        % FIXME dirty hack detected! Need more elegant way to get template. Or not.
-        template = #domain_ContractTemplateRef{id = 1}
+        template = #domain_ContractTemplateRef{id = 2}
     },
     Claim = assert_claim_pending(
         hg_client_party:create_contract_adjustment(ContractID, AdjustmentParams, Client),
@@ -459,6 +508,38 @@ contract_adjustment_creation(C) ->
     } = hg_client_party:get_contract(ContractID, Client),
     true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments).
 
+contract_adjustment_expiration(C) ->
+    Client = ?c(client, C),
+    hg_context:set(woody_context:new()),
+    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+    Terms = hg_party:get_payments_service_terms(
+        hg_client_party:get_contract(ContractID, Client),
+        hg_datetime:format_now()
+    ),
+    AdjustmentParams = #payproc_ContractAdjustmentParams{
+        template = #domain_ContractTemplateRef{id = 4}
+    },
+    Claim = assert_claim_pending(
+        hg_client_party:create_contract_adjustment(ContractID, AdjustmentParams, Client),
+        Client
+    ),
+    ?claim(
+        _,
+        ?pending(),
+        [?contract_adjustment_creation(ContractID, #domain_ContractAdjustment{id = ID})]
+    ) = Claim,
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{
+        id = ContractID,
+        adjustments = Adjustments
+    } = hg_client_party:get_contract(ContractID, Client),
+    true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments),
+    Terms = hg_party:get_payments_service_terms(
+        hg_client_party:get_contract(ContractID, Client),
+        hg_datetime:format_now()
+    ),
+    hg_context:cleanup().
+
 shop_not_found_on_retrieval(C) ->
     Client = ?c(client, C),
     ?shop_not_found() = hg_client_party:get_shop(666, Client).
@@ -468,7 +549,7 @@ shop_creation(C) ->
     Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(42),
+        category = hg_ct_helper:make_category_ref(2),
         details  = Details,
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
@@ -508,7 +589,7 @@ shop_update_before_confirm(C) ->
     Client = ?c(client, C),
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(42),
+        category = hg_ct_helper:make_category_ref(2),
         details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
@@ -527,13 +608,48 @@ shop_update_before_confirm(C) ->
         ]
     ) = Claim1,
     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
+    NewCategory = hg_ct_helper:make_category_ref(3),
     NewDetails = hg_ct_helper:make_shop_details(<<"BARBIES SHOP">>, <<"Hot. Short. Clean.">>),
-    Update = #payproc_ShopUpdate{details = NewDetails},
+    Update = #payproc_ShopUpdate{category = NewCategory, details = NewDetails},
     UpdateResult = hg_client_party:update_shop(ShopID, Update, Client),
     Claim2 = assert_claim_pending(UpdateResult, Client),
     ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
     ok = accept_claim(Claim2, Client),
-    #domain_Shop{details = NewDetails} = hg_client_party:get_shop(ShopID, Client).
+    #domain_Shop{category = NewCategory, details = NewDetails} = hg_client_party:get_shop(ShopID, Client).
+
+shop_update_with_bad_params(C) ->
+    Client = ?c(client, C),
+    #domain_Shop{id = ShopID} = get_last_shop(Client),
+    Params0 = hg_ct_helper:make_battle_ready_contract_params(),
+    Params = Params0#payproc_ContractParams{template = #domain_ContractTemplateRef{id = 5}},
+    Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
+    ?claim(
+        _,
+        ?pending(),
+        [{contract_creation, #domain_Contract{id = ContractID}}]
+    ) = Claim,
+    ok = accept_claim(Claim, Client),
+
+    ?invalid_request(CategoryError) = hg_client_party:update_shop(
+        ShopID,
+        #payproc_ShopUpdate{category = hg_ct_helper:make_category_ref(1)},
+        Client
+    ),
+    ?contract_not_found() = hg_client_party:update_shop(
+        ShopID,
+        #payproc_ShopUpdate{contract_id = 666},
+        Client
+    ),
+    ?invalid_request(CategoryError) = hg_client_party:update_shop(
+        ShopID,
+        #payproc_ShopUpdate{contract_id = ContractID},
+        Client
+    ),
+    ?payout_tool_not_found() = hg_client_party:update_shop(
+        ShopID,
+        #payproc_ShopUpdate{payout_tool_id = 42},
+        Client
+    ).
 
 claim_acceptance(C) ->
     Client = ?c(client, C),
@@ -558,7 +674,7 @@ claim_revocation(C) ->
     Party = hg_client_party:get(Client),
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(42),
+        category = hg_ct_helper:make_category_ref(2),
         details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
@@ -585,13 +701,13 @@ complex_claim_acceptance(C) ->
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
     Params1 = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(1),
+        category = hg_ct_helper:make_category_ref(2),
         details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP 1">>),
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
     },
     Params2 = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(2),
+        category = hg_ct_helper:make_category_ref(3),
         details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP 2">>),
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
