@@ -89,9 +89,9 @@ handle_function('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
     St = get_state(PartyID),
     get_contract(ContractID, get_party(St));
 
-handle_function('BindContractLegalAgreemnet', [UserInfo, PartyID, ContractID, Reason], _Opts) ->
+handle_function('BindContractLegalAgreemnet', [UserInfo, PartyID, ContractID, LegalAgreement], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
-    call(PartyID, {bind_contract_legal_agreemnet, ContractID, Reason});
+    call(PartyID, {bind_contract_legal_agreemnet, ContractID, LegalAgreement});
 
 handle_function('TerminateContract', [UserInfo, PartyID, ContractID, Reason], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
@@ -406,14 +406,14 @@ handle_call({create_contract, ContractParams}, StEvents0) ->
 handle_call({bind_contract_legal_agreemnet, ID, #domain_LegalAgreement{} = LegalAgreement}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
     Contract = get_contract(ID, get_party(get_pending_st(St))),
-    ok = assert_contract_active(Contract, hg_datetime:format_now()),
+    ok = assert_contract_active(Contract),
     {ClaimID, StEvents1} = create_claim([?contract_legal_agreement_binding(ID, LegalAgreement)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({terminate_contract, ID, Reason}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
     Contract = get_contract(ID, get_party(St)),
-    ok = assert_contract_active(Contract, hg_datetime:format_now()),
+    ok = assert_contract_active(Contract),
     TerminatedAt = hg_datetime:format_now(),
     {ClaimID, StEvents1} = create_claim([?contract_termination(ID, TerminatedAt, Reason)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
@@ -421,13 +421,14 @@ handle_call({terminate_contract, ID, Reason}, StEvents0 = {St, _}) ->
 handle_call({create_contract_adjustment, ID, Params}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
     Contract = get_contract(ID, get_party(St)),
-    ok = assert_contract_active(Contract, hg_datetime:format_now()),
+    ok = assert_contract_active(Contract),
     Changeset = create_contract_adjustment(ID, Params, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_payout_tool, ContractID, Params}, StEvents0) ->
+handle_call({create_payout_tool, ContractID, Params}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
+    ok = assert_contract_active(get_contract(ContractID, get_party(get_pending_st(St)))),
     Changeset = create_payout_tool(Params, ContractID, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
@@ -599,34 +600,14 @@ get_next_payout_tool_id(ContractID, St) ->
 get_payments_service_terms(ShopID, Party, Timestamp) ->
     Shop = get_shop(ShopID, Party),
     Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
-    ok = assert_contract_active(Contract, Timestamp),
+    ok = assert_contract_active(Contract),
     #domain_TermSet{payments = PaymentTerms} = compute_terms(Contract, Timestamp),
     PaymentTerms.
 
-assert_contract_active(
-    #domain_Contract{
-        valid_since = ValidSince,
-        valid_until = ValidUntil,
-        status = Status},
-    Timestamp
-) ->
-    case Status of
-        {active, #domain_ContractActive{}} ->
-            ok;
-        {terminated, #domain_ContractTerminated{terminated_at = TerminatedAt}} ->
-            case hg_datetime:compare(TerminatedAt, Timestamp) of
-                later ->
-                    ok;
-                _ ->
-                    raise(#payproc_InvalidContractStatus{status = Status})
-            end
-    end,
-    case hg_datetime:between(Timestamp, ValidSince, ValidUntil) of
-        true ->
-            ok;
-        false ->
-            raise(#payproc_ContractNotFound{})
-    end.
+assert_contract_active(#domain_Contract{status = {active, _}}) ->
+    ok;
+assert_contract_active(#domain_Contract{status = Status}) ->
+    raise(#payproc_InvalidContractStatus{status = Status}).
 
 compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp) ->
     ActiveAdjustments = lists:filter(fun(A) -> is_adjustment_active(A, Timestamp) end, Adjustments),
@@ -1128,7 +1109,7 @@ apply_party_change(
     ?contract_legal_agreement_binding(ContractID, LegalAgreement),
     Party = #domain_Party{contracts = Contracts}
 ) ->
-    % FIXME throw execption if already bound!
+    % FIXME throw exception if already bound!
     Contract = maps:get(ContractID, Contracts),
     Party#domain_Party{
         contracts = Contracts#{

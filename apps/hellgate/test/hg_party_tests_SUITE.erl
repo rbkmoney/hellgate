@@ -853,9 +853,7 @@ make_userinfo(PartyID) ->
 make_party_params() ->
     make_party_params(#domain_PartyContactInfo{email = <<?MODULE_STRING>>}).
 make_party_params(ContactInfo) ->
-    #payproc_PartyParams{
-        contact_info = ContactInfo
-    }.
+    #payproc_PartyParams{contact_info = ContactInfo}.
 
 
 

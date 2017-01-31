@@ -16,6 +16,7 @@
 -type unix_timestamp() :: integer().
 -type timestamp() :: dmsl_base_thrift:'Timestamp'().
 -type timestamp_interval() :: dmsl_base_thrift:'TimestampInterval'().
+-type timestamp_interval_bound() :: dmsl_base_thrift:'TimestampIntervalBound'().
 
 %%
 
@@ -40,63 +41,19 @@ compare(T1, T2) when is_binary(T1) andalso is_binary(T2) ->
     compare_int(to_integer(T1), to_integer(T2)).
 
 % Compare exclusivly! undefined == ∞
--spec between(timestamp(), timestamp() | undefined, timestamp() | undefined) -> true | false.
+-spec between(timestamp(), timestamp() | undefined, timestamp() | undefined) -> boolean().
 
 between(Timestamp, Start, End) ->
-    case Start of
-        undefined ->
-            true;
-        _ ->
-            case compare(Timestamp, Start) of
-                later ->
-                    true;
-                _ ->
-                    false
-            end
-    end
-    andalso
-    case End of
-        undefined ->
-            true;
-        _ ->
-            case compare(Timestamp, End) of
-                earlier ->
-                    true;
-                _ ->
-                    false
-            end
-    end.
+    LB = to_interval_bound(Start, exclusive),
+    UB = to_interval_bound(End, exclusive),
+    between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}).
 
--spec between(timestamp(), timestamp_interval()) -> true | false.
+-spec between(timestamp(), timestamp_interval()) -> boolean().
 
 between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}) ->
-    case LB of
-        undefined ->
-            true;
-        #'TimestampIntervalBound'{bound_type = LBType, bound_time = LBTimestamp} ->
-            case compare(Timestamp, LBTimestamp) of
-                later ->
-                    true;
-                simultaneously when LBType == inclusive ->
-                    true;
-                _ ->
-                    false
-            end
-    end
+    check_bound(Timestamp, LB, later)
     andalso
-    case UB of
-        undefined ->
-            true;
-        #'TimestampIntervalBound'{bound_type = UBType, bound_time = UBTimestamp} ->
-            case compare(Timestamp, UBTimestamp) of
-                earlier ->
-                    true;
-                simultaneously when UBType == inclusive ->
-                    true;
-                _ ->
-                    false
-            end
-    end.
+    check_bound(Timestamp, UB, earlier).
 
 -spec add_interval(timestamp(), {Years, Months, Days}) -> timestamp() when
     Years :: integer() | undefined,
@@ -113,8 +70,13 @@ add_interval(Timestamp, {YY, MM, DD}) ->
 
 -spec to_integer(timestamp()) -> integer().
 
-to_integer(BinaryTimestamp) ->
-    hg_utils:unwrap_result(rfc3339:to_time(BinaryTimestamp)).
+to_integer(Timestamp) ->
+    hg_utils:unwrap_result(rfc3339:to_time(Timestamp)).
+
+to_interval_bound(undefined, _) ->
+    undefined;
+to_interval_bound(Timestamp, BoundType) ->
+    #'TimestampIntervalBound'{bound_type = BoundType, bound_time = Timestamp}.
 
 compare_int(T1, T2) ->
     case T1 > T2 of
@@ -124,6 +86,20 @@ compare_int(T1, T2) ->
             earlier;
         false when T1 =:= T2 ->
             simultaneously
+    end.
+
+-spec check_bound(timestamp(), timestamp_interval_bound(), later | earlier) -> boolean().
+
+check_bound(_, undefined, _) ->
+    true;
+check_bound(Timestamp, #'TimestampIntervalBound'{bound_type = Type, bound_time = BoundTime}, Operator) ->
+    case compare(Timestamp, BoundTime) of
+        Operator ->
+            true;
+        simultaneously when Type == inclusive ->
+            true;
+        _ ->
+            false
     end.
 
 nvl(Val) ->
