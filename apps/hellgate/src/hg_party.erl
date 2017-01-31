@@ -601,6 +601,7 @@ get_payments_service_terms(ShopID, Party, Timestamp) ->
     Shop = get_shop(ShopID, Party),
     Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
     ok = assert_contract_active(Contract),
+    % FIXME here can be undefined termset
     #domain_TermSet{payments = PaymentTerms} = compute_terms(Contract, Timestamp),
     PaymentTerms.
 
@@ -642,31 +643,30 @@ get_term_set(TermsRef, Timestamp) ->
             merge_term_sets([ParentTermSet, TermSet])
     end.
 
-get_active_term_set([TimedTermSet | OtherTermSets], Timestamp) ->
-    #domain_TimedTermSet{action_time = ActionTime, terms = Terms} = TimedTermSet,
-    case hg_datetime:between(Timestamp, ActionTime) of
-        true ->
-            Terms;
-        false ->
-            get_active_term_set(OtherTermSets, Timestamp)
-    end;
+get_active_term_set(TimedTermSets, Timestamp) ->
+    lists:foldl(
+        fun(#domain_TimedTermSet{action_time = ActionTime, terms = TermSet}, undefined) ->
+            case hg_datetime:between(Timestamp, ActionTime) of
+                true ->
+                    TermSet;
+                false ->
+                    undefined
+            end;
+        (_, TermSet) ->
+            TermSet
+        end,
+        undefined,
+        TimedTermSets
+    ).
 
-get_active_term_set([], _) ->
-    #domain_TermSet{}.
+merge_term_sets(TermSets) when is_list(TermSets)->
+    lists:foldl(fun merge_term_sets/2, undefined, TermSets).
 
-merge_term_sets(TermSets) ->
-    merge_term_sets(TermSets, #domain_TermSet{}).
-
-merge_term_sets(
-    [#domain_TermSet{payments = PaymentTerms1} | OtherTermSets],
-    #domain_TermSet{payments = PaymentTerms0}
-) ->
-    NewTermSet = #domain_TermSet{
-        payments = merge_payments_terms(PaymentTerms0, PaymentTerms1)
-    },
-    merge_term_sets(OtherTermSets, NewTermSet);
-
-merge_term_sets([], TermSet) ->
+merge_term_sets(#domain_TermSet{payments = PaymentTerms1}, #domain_TermSet{payments = PaymentTerms0}) ->
+    #domain_TermSet{payments = merge_payments_terms(PaymentTerms0, PaymentTerms1)};
+merge_term_sets(undefined, TermSet) ->
+    TermSet;
+merge_term_sets(TermSet, undefined) ->
     TermSet.
 
 merge_payments_terms(
