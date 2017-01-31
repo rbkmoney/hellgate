@@ -428,7 +428,7 @@ construct_domain_fixture() ->
                     then_ = {value, ordsets:new()}
                 },
                 #domain_PaymentMethodDecision{
-                    if_   = {is_not, ?partycond(<<"DEPRIVED ONE">>, {shop_is, 1})},
+                    if_   = {constant, true},
                     then_ = {value, ordsets:from_list([
                         ?pmt(bank_card, visa),
                         ?pmt(bank_card, mastercard)

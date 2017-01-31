@@ -83,6 +83,9 @@ reduce_decisions([{Type, V, S} | Rest], VS, Rev) ->
 reduce_decisions([], _, _) ->
     [].
 
+reduce_predicate({constant, B}, _, _) when is_boolean(B) ->
+    B;
+
 reduce_predicate({condition, C0}, VS, Rev) ->
     case reduce_condition(C0, VS, Rev) of
         B when is_boolean(B) ->
