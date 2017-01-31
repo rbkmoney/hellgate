@@ -108,7 +108,7 @@ init(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Invoice = get_invoice(Opts),
     Revision = hg_domain:head(),
     PaymentTerms = hg_party:get_payments_service_terms(Shop#domain_Shop.id, Party, Invoice#domain_Invoice.created_at),
-    VS0 = collect_varset(Shop, #{}),
+    VS0 = collect_varset(Party, Shop, #{}),
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
     Payment0 = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
@@ -170,11 +170,13 @@ validate_limit(Cash, CashRange) ->
 validate_route(Route = #domain_InvoicePaymentRoute{}) ->
     Route.
 
-collect_varset(#domain_Shop{
+collect_varset(Party, Shop = #domain_Shop{
     category = Category,
     account = #domain_ShopAccount{currency = Currency}
 }, VS) ->
     VS#{
+        party    => Party,
+        shop     => Shop,
         category => Category,
         currency => Currency
     }.

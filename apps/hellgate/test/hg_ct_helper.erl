@@ -92,8 +92,6 @@ start_app(AppName, Env) ->
 -spec start_apps([app_name() | {app_name(), list()}]) -> [app_name()].
 
 start_apps(Apps) ->
-    % FIXME ASAP! tests fail due to lag between docker start and service in container start
-    timer:sleep(5000),
     lists:foldl(
         fun
             ({AppName, Env}, {AppsAcc, RetAcc}) ->
@@ -125,7 +123,7 @@ start_apps(Apps) ->
     shop_id().
 
 create_party_and_shop(Client) ->
-    ok = hg_client_party:create(make_party_params(), Client),
+    _ = hg_client_party:create(make_party_params(), Client),
     #domain_Party{shops = Shops} = hg_client_party:get(Client),
     [{ShopID, _Shop}] = maps:to_list(Shops),
     ShopID.
@@ -379,8 +377,11 @@ make_due_date(LifetimeSeconds) ->
 -define(sas(ID), #domain_SystemAccountSetRef{id = ID}).
 -define(eas(ID), #domain_ExternalAccountSetRef{id = ID}).
 -define(insp(ID), #domain_InspectorRef{id = ID}).
+
 -define(trmacc(Cur, Stl),
     #domain_TerminalAccount{currency = ?cur(Cur), settlement = Stl}).
+-define(partycond(ID, Def),
+    {condition, {party, #domain_PartyCondition{id = ID, definition = Def}}}).
 
 -define(cfpost(A1, A2, V),
     #domain_CashFlowPosting{
@@ -415,10 +416,19 @@ construct_domain_fixture() ->
     hg_context:cleanup(),
     TermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
-            ])},
+            payment_methods = {decisions, [
+                #domain_PaymentMethodDecision{
+                    if_   = ?partycond(<<"DEPRIVED ONE">>, {shop_is, 1}),
+                    then_ = {value, ordsets:new()}
+                },
+                #domain_PaymentMethodDecision{
+                    if_   = {is_not, ?partycond(<<"DEPRIVED ONE">>, {shop_is, 1})},
+                    then_ = {value, ordsets:from_list([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])}
+                }
+            ]},
             cash_limit = {decisions, [
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},

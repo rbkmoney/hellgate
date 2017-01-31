@@ -16,8 +16,9 @@
 -export([payment_success/1]).
 -export([payment_success_w_merchant_callback/1]).
 -export([payment_success_on_second_try/1]).
--export([payment_risk_score_check/1]).
 -export([invoice_success_on_third_payment/1]).
+-export([payment_risk_score_check/1]).
+-export([invalid_payment_w_deprived_party/1]).
 -export([consistent_history/1]).
 
 %%
@@ -55,6 +56,8 @@ all() ->
         invoice_success_on_third_payment,
 
         payment_risk_score_check,
+
+        invalid_payment_w_deprived_party,
 
         consistent_history
     ].
@@ -281,6 +284,25 @@ payment_risk_score_check(C) ->
 get_risk_coverage_from_route(#domain_InvoicePaymentRoute{terminal = TermRef}) ->
     Terminal = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
     Terminal#domain_Terminal.risk_coverage.
+
+-spec invalid_payment_w_deprived_party(config()) -> _ | no_return().
+
+invalid_payment_w_deprived_party(C) ->
+    PartyID = <<"DEPRIVED ONE">>,
+    ShopID = 1,
+    RootUrl = ?c(root_url, C),
+    UserInfo = make_userinfo(PartyID),
+    PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
+    InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
+    ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
+    ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, InvoicingClient),
+    PaymentParams = make_payment_params(),
+    Exception = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, InvoicingClient),
+    {exception, #'InvalidRequest'{}} = Exception.
 
 %%
 

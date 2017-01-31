@@ -24,8 +24,22 @@ test({cost_in, V}, #{cost := C}, _) ->
     test_cash_range(C, V);
 test({payment_tool_condition, C}, #{payment_tool := V}, Rev) ->
     hg_payment_tool:test_condition(C, V, Rev);
+test({shop_location_is, V}, #{shop := S}, _) ->
+    V =:= S#domain_Shop.details#domain_ShopDetails.location;
+test({party, V}, #{party := P, shop := S}, _) ->
+    test_party(V, P, S);
 test(_, #{}, _) ->
     undefined.
+
+test_party(#domain_PartyCondition{id = ID, definition = Def}, P = #domain_Party{id = ID}, S) ->
+    test_party_(Def, P, S);
+test_party(_, _, _) ->
+    false.
+
+test_party_(undefined, _, _) ->
+    true;
+test_party_({shop_is, ID1}, _, #domain_Shop{id = ID2}) ->
+    ID1 =:= ID2.
 
 %%
 
