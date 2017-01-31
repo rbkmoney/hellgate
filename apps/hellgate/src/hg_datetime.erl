@@ -61,10 +61,10 @@ between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}) ->
     Days :: integer() | undefined.
 
 add_interval(Timestamp, {YY, MM, DD}) ->
-    IntervalSeconds = (nvl(YY) * 365 + nvl(MM) * 30 + nvl(DD)) * 86400,
-    TSInt = to_integer(Timestamp),
-    TSSeconds = erlang:convert_time_unit(TSInt, native, seconds),
-    format_ts(TSSeconds + IntervalSeconds).
+    TSSeconds = erlang:convert_time_unit(to_integer(Timestamp), native, seconds),
+    {Date, Time} = genlib_time:unixtime_to_daytime(TSSeconds),
+    NewDate = genlib_time:shift_date(Date, {nvl(YY), nvl(MM), nvl(DD)}),
+    format_ts(genlib_time:daytime_to_unixtime({NewDate, Time})).
 
 %% Internal functions
 
