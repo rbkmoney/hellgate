@@ -30,8 +30,9 @@ services:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
     healthcheck:
       test: "curl http://localhost:8022/"
-      interval: 8s
-      timeout: 4s
+      interval: 5s
+      timeout: 1s
+      retries: 12
 
   shumway:
     image: dr.rbkmoney.com/rbkmoney/shumway:ef494632710c3248a7d6a33fcbeb7944ce8fdd31
@@ -48,8 +49,9 @@ services:
       - shumway-db
     healthcheck:
       test: "curl http://localhost:8022/"
-      interval: 8s
-      timeout: 4s
+      interval: 5s
+      timeout: 1s
+      retries: 12
 
   shumway-db:
     image: dr.rbkmoney.com/rbkmoney/postgres:9.6
