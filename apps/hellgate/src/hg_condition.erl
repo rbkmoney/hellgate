@@ -44,10 +44,10 @@ test_party_({shop_is, ID1}, _, #domain_Shop{id = ID2}) ->
 %%
 
 -spec test_cash_range(dmsl_domain_thrift:'Cash'(), dmsl_domain_thrift:'CashRange'()) ->
-    boolean().
+    true | false | undefined.
 
 test_cash_range(Cash, #domain_CashRange{lower = Lower, upper = Upper}) ->
-    test_cash_bound(lower, Lower, Cash) andalso test_cash_bound(upper, Upper, Cash).
+    get_product(test_cash_bound(lower, Lower, Cash), test_cash_bound(upper, Upper, Cash)).
 
 test_cash_bound(_, {inclusive, V}, V) ->
     true;
@@ -56,5 +56,13 @@ test_cash_bound(lower, {_, ?cash(Am, C)}, ?cash(A, C)) ->
 test_cash_bound(upper, {_, ?cash(Am, C)}, ?cash(A, C)) ->
     A < Am;
 test_cash_bound(_, _, _) ->
-    % TODO Non-mathcing currencies, should we error out instead?
-    false.
+    undefined.
+
+%%
+
+get_product(undefined, _) ->
+    undefined;
+get_product(_, undefined) ->
+    undefined;
+get_product(A, B) ->
+    A and B.

@@ -164,8 +164,14 @@ validate_payment_cost(
     VS#{cost => Cash}.
 
 validate_limit(Cash, CashRange) ->
-    _ = hg_condition:test_cash_range(Cash, CashRange) orelse raise_invalid_request(<<"Limit exceeded">>),
-    ok.
+    case hg_condition:test_cash_range(Cash, CashRange) of
+        true ->
+            ok;
+        false ->
+            raise_invalid_request(<<"Limit exceeded">>);
+        undefined ->
+            error({misconfiguration, {'Invalid cash range specified', CashRange, Cash}})
+    end.
 
 validate_route(Route = #domain_InvoicePaymentRoute{}) ->
     Route.
