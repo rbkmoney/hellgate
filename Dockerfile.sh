@@ -5,6 +5,7 @@ MAINTAINER Andrey Mayorov <a.mayorov@rbkmoney.com>
 COPY ./_build/prod/rel/hellgate /opt/hellgate
 COPY containerpilot.json /etc/containerpilot.json
 CMD /bin/containerpilot -config file:///etc/containerpilot.json /opt/hellgate/bin/hellgate foreground
+EXPOSE 8022
 LABEL base_image_tag=$BASE_IMAGE_TAG
 LABEL build_image_tag=$BUILD_IMAGE_TAG
 # A bit of magic to get a proper branch name
