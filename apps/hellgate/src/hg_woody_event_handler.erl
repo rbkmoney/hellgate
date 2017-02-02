@@ -10,130 +10,101 @@
     Meta  :: woody_event_handler:event_meta(),
     Opts  :: woody:options().
 
+%% client
+
 handle_event(EventType = ?EV_CALL_SERVICE, RpcID, #{
     service  := Service,
     function := Function,
     type     := Type,
     metadata := Metadata
-} =  Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{
-            service  => Service,
-            function => Function,
-            type     => Type,
-            metadata => Metadata
-        }
-    );
-
-handle_event(EventType = ?EV_SERVICE_RESULT, RpcID, Meta, _Opts) ->
-    log(EventType, RpcID, Meta, Meta );
+} = Meta, _Opts) ->
+    ok = hg_log_scope:new('rpc.client'),
+    ok = hg_log_scope:set_meta(try_append_event_metadata(Metadata, #{
+        service  => Service,
+        function => Function,
+        type     => Type
+    })),
+    log(EventType, RpcID, Meta, #{}, RpcID);
 
 handle_event(EventType = ?EV_CLIENT_SEND, RpcID, Meta, _Opts) ->
-    log(EventType, RpcID, Meta, Meta );
+    log(EventType, RpcID, Meta, #{}, RpcID);
 
-handle_event(EventType = ?EV_CLIENT_RECEIVE, RpcID, Meta, _Opts) ->
-    log(EventType, RpcID, Meta, Meta );
+handle_event(EventType = ?EV_CLIENT_RECEIVE, RpcID, Meta = #{status := Status}, _Opts) ->
+    log(EventType, RpcID, Meta, #{
+        status => Status
+    }, RpcID);
+
+handle_event(EventType = ?EV_SERVICE_RESULT, RpcID, Meta = #{status := Status}, _Opts) ->
+    _ = log(EventType, RpcID, Meta, #{
+        status => Status
+    }, RpcID),
+    hg_log_scope:clean();
+
+%% server
 
 handle_event(EventType = ?EV_SERVER_RECEIVE, RpcID, Meta, _Opts) ->
-    log(EventType, RpcID, Meta, Meta );
-
-handle_event(EventType = ?EV_SERVER_SEND, RpcID, Meta, _Opts) ->
-    log(EventType, RpcID, Meta, Meta );
-
-handle_event(EventType = ?EV_INTERNAL_ERROR, RpcID, Meta, _Opts) ->
-    log(EventType, RpcID, Meta, Meta );
-
-handle_event(EventType = ?EV_TRACE, RpcID, #{
-    event := Event,
-    role := Role
-} = Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{
-            event => Event,
-            role => Role
-        }
-    );
+    ok = tag_process(RpcID),
+    ok = hg_log_scope:new('rpc.server'),
+    log(EventType, RpcID, Meta, #{});
 
 handle_event(EventType = ?EV_INVOKE_SERVICE_HANDLER, RpcID, #{
     service  := Service,
-    function := Function
+    function := Function,
+    metadata := Metadata
 } = Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        #{
-            service  => Service,
-            function => Function
-        }
-    );
+    ok = hg_log_scope:set_meta(try_append_event_metadata(Metadata, #{
+        service  => Service,
+        function => Function
+    })),
+    log(EventType, RpcID, Meta, #{});
 
 handle_event(EventType = ?EV_SERVICE_HANDLER_RESULT, RpcID, Meta, _Opts) ->
-    log(
-        EventType,
-        RpcID,
-        Meta,
-        Meta
-    );
+    log(EventType, RpcID, Meta, #{});
 
+handle_event(EventType = ?EV_SERVER_SEND, RpcID, Meta, _Opts) ->
+    _ = log(EventType, RpcID, Meta, #{}),
+    _ = untag_process(RpcID),
+    hg_log_scope:clean();
 
-handle_event(EventType, RpcID, EventMeta, _Opts) ->
-    log(EventType, RpcID, EventMeta, #{}).
+%%
 
-log(EventType, RpcID, RawMeta, RpcMeta) ->
+handle_event(EventType, RpcID, Meta, _Opts) when
+    EventType == ?EV_INTERNAL_ERROR;
+    EventType == ?EV_TRACE
+->
+    log(EventType, RpcID, Meta, #{}).
+
+%%
+
+log(EventType, RpcID, RawMeta, RpcMeta0) ->
+    log(EventType, RpcID, RawMeta, RpcMeta0, #{}).
+
+log(EventType, RpcID, RawMeta, RpcMeta0, ExtraMD) ->
+    RpcMeta = RpcMeta0#{event => EventType},
+    ok = hg_log_scope:set_meta(RpcMeta),
     {Level, {Format, Args}} = woody_event_handler:format_event(EventType, RawMeta, RpcID),
-    Meta = get_prepared_meta(EventType, RpcID, RpcMeta),
-    lager:log(
-        Level,
-        [{pid, self()} | Meta],
-        Format,
-        Args
+    _ = lager:log(Level, [{pid, self()}] ++ collect_md(ExtraMD), Format, Args),
+    _ = hg_log_scope:remove_meta(maps:keys(RpcMeta)),
+    ok.
+
+tag_process(MD) ->
+    lager:md(collect_md(MD)).
+
+collect_md(MD = #{}) ->
+    maps:fold(
+        fun (K, V, Acc) -> lists:keystore(K, 1, Acc, {K, V}) end,
+        lager:md(),
+        MD
     ).
 
-get_prepared_meta(EventType, RpcID, RpcMeta) ->
-    prepare_meta(lists:append([
-        collect_rpc_meta(EventType, RpcID, RpcMeta),
-        lager:md()
-    ])).
+untag_process(MD = #{}) ->
+    lager:md(maps:fold(
+        fun (K, _, Acc) -> lists:keydelete(K, 1, Acc) end,
+        lager:md(),
+        MD
+    )).
 
-collect_rpc_meta(EventType, RpcID, RpcMeta) ->
-    Meta = lists:foldl(
-        fun(M, Acc) ->
-            maps:merge(M, Acc)
-        end,
-        #{},
-        [
-            #{
-                event_type => EventType
-            },
-            RpcID,
-            RpcMeta
-        ]
-    ),
-    maps:to_list(Meta).
-
-prepare_meta(Meta) ->
-    prepare_meta(Meta, []).
-
-prepare_meta([], Acc) ->
-    Acc;
-prepare_meta([{Key, Value} | Rest], Acc) ->
-    prepare_meta(Rest, [{Key, make_printable(Value)} | Acc]).
-
-make_printable(Item) when is_atom(Item); is_binary(Item) ->
-    Item;
-make_printable(Item) when is_list(Item) ->
-    [make_printable(V) || V <- Item];
-make_printable(Item) when is_map(Item) ->
-    maps:map(
-        fun(_, V) -> make_printable(V) end,
-        Item
-    );
-make_printable(V) ->
-    genlib:format("~p", [V]).
+try_append_event_metadata(undefined, MD) ->
+    MD;
+try_append_event_metadata(EventMD = #{}, MD) ->
+    maps:merge(EventMD, MD).
