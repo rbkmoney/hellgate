@@ -571,7 +571,8 @@ construct_shop(ShopID, ShopParams, Suspension) ->
         details    = ShopParams#payproc_ShopParams.details,
         category   = ShopParams#payproc_ShopParams.category,
         contract_id = ShopParams#payproc_ShopParams.contract_id,
-        payout_tool_id = ShopParams#payproc_ShopParams.payout_tool_id
+        payout_tool_id = ShopParams#payproc_ShopParams.payout_tool_id,
+        proxy      = ShopParams#payproc_ShopParams.proxy
     }.
 
 get_next_shop_id(#st{party = #domain_Party{shops = Shops}}) ->
