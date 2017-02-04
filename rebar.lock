@@ -29,7 +29,7 @@
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.0.2">>},2},
- {<<"ranch">>,{pkg,<<"ranch">>,<<"1.2.1">>},2},
+ {<<"ranch">>,{pkg,<<"ranch">>,<<"1.3.1">>},2},
  {<<"rfc3339">>,{pkg,<<"rfc3339">>,<<"0.9.0">>},0},
  {<<"snowflake">>,
   {git,"https://github.com/rbkmoney/snowflake.git",
@@ -42,5 +42,5 @@
   1},
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
-       {ref,"249fa01d1385babf7da96aeb82d9ed006d55465d"}},
+       {ref,"17bd5218432f3d958d2b8425267f13a3774b7d26"}},
   0}].

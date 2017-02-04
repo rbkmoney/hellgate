@@ -366,14 +366,9 @@ process_call(Call, History) ->
     try
         handle_call(Call, {St, []})
     catch
-        {exception, Exception} ->
+        throw:Exception ->
             respond_w_exception(Exception)
     end.
-
--spec raise(term()) -> no_return().
-
-raise(What) ->
-    throw({exception, What}).
 
 handle_call({block, Reason}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
@@ -609,7 +604,7 @@ get_payments_service_terms(ShopID, Party, Timestamp) ->
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;
 assert_contract_active(#domain_Contract{status = Status}) ->
-    raise(#payproc_InvalidContractStatus{status = Status}).
+    throw(#payproc_InvalidContractStatus{status = Status}).
 
 compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp) ->
     ActiveAdjustments = lists:filter(fun(A) -> is_adjustment_active(A, Timestamp) end, Adjustments),
@@ -817,7 +812,7 @@ assert_claim_pending(ID, {St, _}) ->
         #payproc_Claim{status = ?pending()} ->
             ok;
         #payproc_Claim{status = Status} ->
-            raise(#payproc_InvalidClaimStatus{status = Status})
+            throw(#payproc_InvalidClaimStatus{status = Status})
     end.
 
 construct_claim(Changeset, St) ->
@@ -866,12 +861,12 @@ assert_suspended({St, _}) ->
 assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
     ok;
 assert_blocking(#domain_Party{blocking = Blocking}, _) ->
-    raise(#payproc_InvalidPartyStatus{status = {blocking, Blocking}}).
+    throw(#payproc_InvalidPartyStatus{status = {blocking, Blocking}}).
 
 assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
     ok;
 assert_suspension(#domain_Party{suspension = Suspension}, _) ->
-    raise(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
+    throw(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
 
 assert_shop_modification_allowed(ID, {St, Events}) ->
     % We allow updates to pending shop
@@ -897,12 +892,12 @@ assert_shop_suspended(ID, {St, _}) ->
 assert_shop_blocking(#domain_Shop{blocking = {Status, _}}, Status) ->
     ok;
 assert_shop_blocking(#domain_Shop{blocking = Blocking}, _) ->
-    raise(#payproc_InvalidShopStatus{status = {blocking, Blocking}}).
+    throw(#payproc_InvalidShopStatus{status = {blocking, Blocking}}).
 
 assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
     ok;
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
-    raise(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
+    throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
 %%
 
