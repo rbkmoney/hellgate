@@ -372,7 +372,7 @@ contract_creation(C) ->
         _,
         ?pending(),
         [
-            {contract_creation, #domain_Contract{id = ID}},
+            ?contract_creation(#domain_Contract{id = ID}),
             ?contract_payout_tool_creation(ID, #domain_PayoutTool{id = PayoutToolID})
         ]
     ) = Claim,
