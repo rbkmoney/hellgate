@@ -570,9 +570,12 @@ create_contract(
     {St, _}
 ) ->
     ContractID = get_next_contract_id(get_pending_st(St)),
-    PayoutTools = case PayoutToolParams of
+    PayoutToolChangeset = case PayoutToolParams of
         #payproc_PayoutToolParams{currency = Currency, tool_info = ToolInfo} ->
-            [#domain_PayoutTool{id = 1, currency = Currency, payout_tool_info = ToolInfo}];
+            [?contract_payout_tool_creation(
+                ContractID,
+                #domain_PayoutTool{id = 1, currency = Currency, payout_tool_info = ToolInfo}
+            )];
         undefined ->
             []
     end,
@@ -582,9 +585,9 @@ create_contract(
         contractor = Contractor,
         status = {active, #domain_ContractActive{}},
         adjustments = [],
-        payout_tools = PayoutTools
+        payout_tools = []
     },
-    [?contract_creation(Contract)].
+    [?contract_creation(Contract)] ++ PayoutToolChangeset.
 
 get_next_contract_id(#st{party = #domain_Party{contracts = Contracts}}) ->
     get_next_id(maps:keys(Contracts)).

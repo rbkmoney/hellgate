@@ -371,10 +371,14 @@ contract_creation(C) ->
     ?claim(
         _,
         ?pending(),
-        [{contract_creation, #domain_Contract{id = ID}}]
+        [
+            {contract_creation, #domain_Contract{id = ID}},
+            ?contract_payout_tool_creation(ID, #domain_PayoutTool{id = PayoutToolID})
+        ]
     ) = Claim,
     ok = accept_claim(Claim, Client),
-    #domain_Contract{id = ID} = hg_client_party:get_contract(ID, Client).
+    #domain_Contract{id = ID, payout_tools = PayoutTools} = hg_client_party:get_contract(ID, Client),
+    true = lists:keymember(PayoutToolID, #domain_PayoutTool.id, PayoutTools).
 
 contract_termination(C) ->
     Client = ?c(client, C),
