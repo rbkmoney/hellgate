@@ -429,7 +429,7 @@ contract_expiration(C) ->
     ?claim(
         _,
         ?pending(),
-        [{contract_creation, #domain_Contract{id = ContractID}}]
+        [{contract_creation, #domain_Contract{id = ContractID}}, _PayouToolChangeSet]
     ) = Claim,
     ok = accept_claim(Claim, Client),
     #domain_Contract{
@@ -626,7 +626,7 @@ shop_update_with_bad_params(C) ->
     ?claim(
         _,
         ?pending(),
-        [{contract_creation, #domain_Contract{id = ContractID}}]
+        [{contract_creation, #domain_Contract{id = ContractID}}, _PayouToolChangeSet]
     ) = Claim,
     ok = accept_claim(Claim, Client),
 
