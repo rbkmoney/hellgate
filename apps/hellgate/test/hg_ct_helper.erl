@@ -14,6 +14,7 @@
 -export([get_first_payout_tool_id/2]).
 
 -export([make_battle_ready_contract_params/0]).
+-export([make_battle_ready_contract_params/1]).
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
@@ -272,6 +273,12 @@ get_first_payout_tool_id(ContractID, Client) ->
     dmsl_payment_processing_thrift:'ContractParams'().
 
 make_battle_ready_contract_params() ->
+    make_battle_ready_contract_params(undefined).
+
+-spec make_battle_ready_contract_params(dmsl_domain_thrift:'ContractTemplateRef'()) ->
+    dmsl_payment_processing_thrift:'ContractParams'().
+
+make_battle_ready_contract_params(TemplateRef) ->
     BankAccount = #domain_BankAccount{
         account = <<"4276300010908312893">>,
         bank_name = <<"SomeBank">>,
@@ -297,6 +304,7 @@ make_battle_ready_contract_params() ->
     },
     #payproc_ContractParams{
         contractor = Contractor,
+        template = TemplateRef,
         payout_tool_params = PayoutToolParams
     }.
 
@@ -690,8 +698,8 @@ construct_domain_fixture() ->
         {contract_template, #domain_ContractTemplateObject{
             ref = ?tmpl(4),
             data = #domain_ContractTemplate{
-                valid_since = {interval, #domain_LifetimeInterval{years = -1}},
-                valid_until = {interval, #domain_LifetimeInterval{months = 10}},
+                valid_since = undefined,
+                valid_until = {interval, #domain_LifetimeInterval{months = 1}},
                 terms = ?trms(1)
             }
         }},

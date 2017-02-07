@@ -423,8 +423,7 @@ contract_termination(C) ->
 
 contract_expiration(C) ->
     Client = ?c(client, C),
-    Params0 = hg_ct_helper:make_battle_ready_contract_params(),
-    Params = Params0#payproc_ContractParams{template = #domain_ContractTemplateRef{id = 3}},
+    Params = hg_ct_helper:make_battle_ready_contract_params(#domain_ContractTemplateRef{id = 3}),
     Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
     ?claim(
         _,
@@ -534,10 +533,12 @@ contract_adjustment_expiration(C) ->
         adjustments = Adjustments
     } = hg_client_party:get_contract(ContractID, Client),
     true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments),
-    Terms = hg_party:get_payments_service_terms(
+    true = Terms /= hg_party:get_payments_service_terms(
         hg_client_party:get_contract(ContractID, Client),
         hg_datetime:format_now()
     ),
+    AfterExpiration = hg_datetime:add_interval(hg_datetime:format_now(), {0, 1, 1}),
+    Terms = hg_party:get_payments_service_terms(hg_client_party:get_contract(ContractID, Client), AfterExpiration),
     hg_context:cleanup().
 
 shop_not_found_on_retrieval(C) ->
@@ -620,8 +621,7 @@ shop_update_before_confirm(C) ->
 shop_update_with_bad_params(C) ->
     Client = ?c(client, C),
     #domain_Shop{id = ShopID} = get_last_shop(Client),
-    Params0 = hg_ct_helper:make_battle_ready_contract_params(),
-    Params = Params0#payproc_ContractParams{template = #domain_ContractTemplateRef{id = 5}},
+    Params = hg_ct_helper:make_battle_ready_contract_params(#domain_ContractTemplateRef{id = 5}),
     Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
     ?claim(
         _,
