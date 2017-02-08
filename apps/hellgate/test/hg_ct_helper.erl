@@ -736,14 +736,16 @@ construct_domain_fixture() ->
             ref = ?cat(2),
             data = #domain_Category{
                 name = <<"Categories">>,
-                description = <<"Goods sold by category providers">>
+                description = <<"Goods sold by category providers">>,
+                type = live
             }
         }},
         {category, #domain_CategoryObject{
             ref = ?cat(3),
             data = #domain_Category{
                 name = <<"Guns & Booze">>,
-                description = <<"High risk category">>
+                description = <<"High risk category">>,
+                type = live
             }
         }},
         {provider, #domain_ProviderObject{

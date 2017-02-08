@@ -513,7 +513,10 @@ handle_call({create_contract_adjustment, ID, Params}, StEvents0 = {St, _}) ->
 
 handle_call({create_payout_tool, ContractID, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
-    ok = assert_contract_active(get_contract(ContractID, get_party(get_pending_st(St)))),
+    Contract = get_contract(ContractID, get_party(get_pending_st(St))),
+    ok = assert_contract_active(Contract),
+    _ = not is_test_contract(Contract) orelse
+        raise_invalid_request(<<"creating payout tool for test contract unavailable">>),
     Changeset = create_payout_tool(Params, ContractID, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
@@ -602,6 +605,17 @@ get_party_id(#domain_Party{id = ID}) ->
     ID.
 
 %%
+
+is_test_contract(Contract) ->
+    Revision = hg_domain:head(),
+    Categories = get_contract_categories(Contract, hg_datetime:format_now(), Revision),
+    lists:any(
+        fun(CategoryRef) ->
+            #domain_Category{type = Type} = hg_domain:get(Revision, {category, CategoryRef}),
+            Type == test
+        end,
+        ordsets:to_list(Categories)
+    ).
 
 create_contract(
     #payproc_ContractParams{
@@ -700,6 +714,10 @@ get_contract_currencies(Contract, Timestamp, Revision) ->
     #domain_PaymentsServiceTerms{currencies = CurrencySelector} = get_payments_service_terms(Contract, Timestamp),
     reduce_selector_to_values(CurrencySelector, #{}, Revision).
 
+get_contract_categories(Contract, Timestamp, Revision) ->
+    #domain_PaymentsServiceTerms{categories = CategorySelector} = get_payments_service_terms(Contract, Timestamp),
+    reduce_selector_to_values(CategorySelector, #{}, Revision).
+
 reduce_selector_to_values(Selector, VS, Revision) ->
     EmptySet = ordsets:new(),
     case hg_selector:reduce(Selector, VS, Revision) of
@@ -728,11 +746,6 @@ get_payments_service_terms(Contract, Timestamp) ->
         undefined ->
             error({undefined_term_set, Contract#domain_Contract.terms, Timestamp})
     end.
-
-assert_contract_active(#domain_Contract{status = {active, _}}) ->
-    ok;
-assert_contract_active(#domain_Contract{status = Status}) ->
-    throw(#payproc_InvalidContractStatus{status = Status}).
 
 compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp) ->
     ActiveAdjustments = lists:filter(fun(A) -> is_adjustment_active(A, Timestamp) end, Adjustments),
@@ -995,6 +1008,11 @@ assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
     ok;
 assert_suspension(#domain_Party{suspension = Suspension}, _) ->
     throw(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
+
+assert_contract_active(#domain_Contract{status = {active, _}}) ->
+    ok;
+assert_contract_active(#domain_Contract{status = Status}) ->
+    throw(#payproc_InvalidContractStatus{status = Status}).
 
 assert_shop_modification_allowed(ID, {St, Events}) ->
     % We allow updates to pending shop
