@@ -483,9 +483,11 @@ process_session_signal(timeout, Session, St) ->
     {Events, Action} = handle_proxy_result(ProxyResult, Session, St),
     ok(Events, St, Action).
 
-finalize_session(Status, St) ->
+finalize_session(Status, _St) ->
     Event = {public, ?invoice_ev(?invoice_status_changed(Status))},
-    {[Event], restore_timer(St)}.
+    % TODO ideally we should restore timer if there was any
+    %      as of right now there's no timeout possibility
+    {[Event], hg_machine_action:new()}.
 
 %%
 
