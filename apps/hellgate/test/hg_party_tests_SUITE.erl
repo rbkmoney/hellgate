@@ -1,4 +1,6 @@
 -module(hg_party_tests_SUITE).
+
+-include("domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 
 -export([all/0]).
@@ -193,7 +195,7 @@ groups() ->
 
 init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate]),
-    ok = hg_domain:insert(hg_ct_helper:construct_domain_fixture()),
+    ok = hg_domain:insert(construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.
@@ -377,7 +379,7 @@ contract_not_found(C) ->
     Client = ?c(client, C),
     ?contract_not_found() = hg_client_party:get_contract(666, Client),
     Params = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(42),
+        category = ?cat(42),
         details  = hg_ct_helper:make_shop_details(<<"SOME SHOP">>, <<"WITH WRONG PARAMS">>),
         contract_id = 666,
         payout_tool_id = 42
@@ -460,7 +462,7 @@ contract_legal_agreement_binding(C) ->
 contract_payout_tool_creation(C) ->
     Client = ?c(client, C),
     PayoutToolParams = #payproc_PayoutToolParams{
-        currency = #domain_CurrencyRef{symbolic_code = <<"RUB">>},
+        currency = ?cur(<<"RUB">>),
         tool_info  = {bank_account, #domain_BankAccount{
             account = <<"4276300010908312893">>,
             bank_name = <<"SomeBank">>,
@@ -550,7 +552,7 @@ shop_creation(C) ->
     Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(2),
+        category = ?cat(2),
         details  = Details,
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
@@ -590,7 +592,7 @@ shop_update_before_confirm(C) ->
     Client = ?c(client, C),
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(2),
+        category = ?cat(2),
         details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
@@ -609,7 +611,7 @@ shop_update_before_confirm(C) ->
         ]
     ) = Claim1,
     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
-    NewCategory = hg_ct_helper:make_category_ref(3),
+    NewCategory = ?cat(3),
     NewDetails = hg_ct_helper:make_shop_details(<<"BARBIES SHOP">>, <<"Hot. Short. Clean.">>),
     Update = #payproc_ShopUpdate{category = NewCategory, details = NewDetails},
     UpdateResult = hg_client_party:update_shop(ShopID, Update, Client),
@@ -632,7 +634,7 @@ shop_update_with_bad_params(C) ->
 
     ?invalid_request(CategoryError) = hg_client_party:update_shop(
         ShopID,
-        #payproc_ShopUpdate{category = hg_ct_helper:make_category_ref(1)},
+        #payproc_ShopUpdate{category = ?cat(1)},
         Client
     ),
     ?contract_not_found() = hg_client_party:update_shop(
@@ -674,7 +676,7 @@ claim_revocation(C) ->
     Party = hg_client_party:get(Client),
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(2),
+        category = ?cat(2),
         details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
@@ -701,13 +703,13 @@ complex_claim_acceptance(C) ->
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
     Params1 = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(2),
+        category = ?cat(2),
         details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP 1">>),
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
     },
     Params2 = #payproc_ShopParams{
-        category = hg_ct_helper:make_category_ref(3),
+        category = ?cat(3),
         details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP 2">>),
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
@@ -975,5 +977,169 @@ make_party_params() ->
 make_party_params(ContactInfo) ->
     #payproc_PartyParams{contact_info = ContactInfo}.
 
+-spec construct_domain_fixture() -> [hg_domain:object()].
+
+construct_domain_fixture() ->
+    TestTermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
+            categories = {value, ordsets:from_list([?cat(1)])}
+        }
+    },
+    DefaultTermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            currencies = {value, ordsets:from_list([
+                ?cur(<<"RUB">>),
+                ?cur(<<"USD">>)
+            ])},
+            categories = {value, ordsets:from_list([
+                ?cat(2),
+                ?cat(3)
+            ])},
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card, visa),
+                ?pmt(bank_card, mastercard)
+            ])}
+        }
+    },
+    TermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            cash_limit = {value, #domain_CashRange{
+                lower = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
+                upper = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
+            }},
+            fees = {value, [
+                ?cfpost(
+                    {merchant, settlement},
+                    {system, settlement},
+                    ?share(45, 1000, payment_amount)
+                )
+            ]}
+        }
+    },
+    hg_ct_helper:construct_basic_domain_fixture() ++
+    [
+        {globals, #domain_GlobalsObject{
+            ref = #domain_GlobalsRef{},
+            data = #domain_Globals{
+                party_prototype = #domain_PartyPrototypeRef{id = 42},
+                providers = {value, ordsets:new()},
+                system_account_set = {value, ?sas(1)},
+                external_account_set = {value, ?eas(1)},
+                default_contract_template = ?tmpl(2),
+                common_merchant_proxy = ?prx(1),
+                inspector = {value, ?insp(1)}
+            }
+        }},
+        {system_account_set, #domain_SystemAccountSetObject{
+            ref = ?sas(1),
+            data = #domain_SystemAccountSet{
+                name = <<"Primaries">>,
+                description = <<"Primaries">>,
+                accounts = #{}
+            }
+        }},
+        {external_account_set, #domain_ExternalAccountSetObject{
+            ref = ?eas(1),
+            data = #domain_ExternalAccountSet{
+                name = <<"Primaries">>,
+                description = <<"Primaries">>,
+                accounts = #{}
+            }
+        }},
+        {party_prototype, #domain_PartyPrototypeObject{
+            ref = #domain_PartyPrototypeRef{id = 42},
+            data = #domain_PartyPrototype{
+                shop = #domain_ShopPrototype{
+                    category = ?cat(1),
+                    currency = ?cur(<<"RUB">>),
+                    details  = #domain_ShopDetails{
+                        name = <<"SUPER DEFAULT SHOP">>
+                    }
+                },
+                test_contract_template = ?tmpl(1)
+            }
+        }},
+        {contract_template, #domain_ContractTemplateObject{
+            ref = ?tmpl(1),
+            data = #domain_ContractTemplate{terms = ?trms(1)}
+        }},
+        {contract_template, #domain_ContractTemplateObject{
+            ref = ?tmpl(2),
+            data = #domain_ContractTemplate{terms = ?trms(3)}
+        }},
+        {contract_template, #domain_ContractTemplateObject{
+            ref = ?tmpl(3),
+            data = #domain_ContractTemplate{
+                valid_since = {interval, #domain_LifetimeInterval{years = -1}},
+                valid_until = {interval, #domain_LifetimeInterval{months = 10}},
+                terms = ?trms(2)
+            }
+        }},
+        {contract_template, #domain_ContractTemplateObject{
+            ref = ?tmpl(4),
+            data = #domain_ContractTemplate{
+                valid_since = undefined,
+                valid_until = {interval, #domain_LifetimeInterval{months = 1}},
+                terms = ?trms(1)
+            }
+        }},
+        {contract_template, #domain_ContractTemplateObject{
+            ref = ?tmpl(5),
+            data = #domain_ContractTemplate{terms = ?trms(4)}
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(1),
+            data = #domain_TermSetHierarchy{
+                parent_terms = undefined,
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TestTermSet
+                }]
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(2),
+            data = #domain_TermSetHierarchy{
+                parent_terms = undefined,
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = DefaultTermSet
+                }]
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(3),
+            data = #domain_TermSetHierarchy{
+                parent_terms = ?trms(2),
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TermSet
+                }]
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(4),
+            data = #domain_TermSetHierarchy{
+                parent_terms = ?trms(3),
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = #domain_TermSet{
+                        payments = #domain_PaymentsServiceTerms{
+                            currencies = {value, ordsets:from_list([
+                                ?cur(<<"RUB">>)
+                            ])},
+                            categories = {value, ordsets:from_list([
+                                ?cat(2)
+                            ])},
+                            payment_methods = {value, ordsets:from_list([
+                                ?pmt(bank_card, visa)
+                            ])}
+                        }
+                    }
+                }]
+            }
+        }}
+    ].
 
 
