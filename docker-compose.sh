@@ -31,7 +31,7 @@ services:
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s
-      timeout: 10s
+      timeout: 1s
       retries: 12
 
   shumway:
