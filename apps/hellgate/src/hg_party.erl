@@ -92,10 +92,9 @@ handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
     get_party(get_state(PartyID));
 
-handle_function_('CreateContract', [UserInfo, PartyID, ContractParams0], _Opts) ->
+handle_function_('CreateContract', [UserInfo, PartyID, ContractParams], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    ContractParams = ensure_contract_creation_params(ContractParams0),
     call(PartyID, {create_contract, ContractParams});
 
 handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
@@ -114,10 +113,9 @@ handle_function_('TerminateContract', [UserInfo, PartyID, ContractID, Reason], _
     ok = assert_party_accessible(UserInfo, PartyID),
     call(PartyID, {terminate_contract, ContractID, Reason});
 
-handle_function_('CreateContractAdjustment', [UserInfo, PartyID, ContractID, Params0], _Opts) ->
+handle_function_('CreateContractAdjustment', [UserInfo, PartyID, ContractID, Params], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    Params = ensure_adjustment_creation_params(Params0),
     call(PartyID, {create_contract_adjustment, ContractID, Params});
 
 handle_function_('CreatePayoutTool', [UserInfo, PartyID, ContractID, Params], _Opts) ->
@@ -387,6 +385,7 @@ init(ID, PartyParams) ->
 
 process_init(ID, PartyParams) ->
     {ok, StEvents} = create_party(ID, PartyParams, {#st{}, []}),
+    Timestamp = hg_datetime:format_now(),
     Revision = hg_domain:head(),
     TestContractTemplate = get_test_template_ref(Revision),
     Changeset1 = create_contract(#payproc_ContractParams{template = TestContractTemplate}, StEvents),
@@ -395,9 +394,9 @@ process_init(ID, PartyParams) ->
     ShopParams = get_shop_prototype_params(TestContract#domain_Contract.id, Revision),
     Changeset2 = create_shop(ShopParams, ?active(), StEvents),
     [?shop_creation(Shop)] = Changeset2,
-    ok = assert_shop_contract_valid(Shop, TestContract, Revision),
+    ok = assert_shop_contract_valid(Shop, TestContract, Timestamp, Revision),
 
-    Currencies = get_contract_currencies(TestContract, hg_datetime:format_now(), Revision),
+    Currencies = get_contract_currencies(TestContract, Timestamp, Revision),
     CurrencyRef = erlang:hd(ordsets:to_list(Currencies)),
     Changeset3 = [?shop_modification(Shop#domain_Shop.id, ?account_created(create_shop_account(CurrencyRef)))],
 
@@ -483,8 +482,9 @@ handle_call(activate, StEvents0) ->
     {ClaimID, StEvents1} = create_claim([{suspension, ?active()}], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_contract, ContractParams}, StEvents0) ->
+handle_call({create_contract, ContractParams0}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
+    ContractParams = ensure_contract_creation_params(ContractParams0),
     Changeset = create_contract(ContractParams, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
@@ -504,9 +504,10 @@ handle_call({terminate_contract, ID, Reason}, StEvents0 = {St, _}) ->
     {ClaimID, StEvents1} = create_claim([?contract_termination(ID, TerminatedAt, Reason)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_contract_adjustment, ID, Params}, StEvents0 = {St, _}) ->
+handle_call({create_contract_adjustment, ID, Params0}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
     ok = assert_contract_active(get_contract(ID, get_party(St))),
+    Params = ensure_adjustment_creation_params(Params0),
     Changeset = create_contract_adjustment(ID, Params, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
@@ -515,7 +516,7 @@ handle_call({create_payout_tool, ContractID, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
     Contract = get_contract(ContractID, get_party(get_pending_st(St))),
     ok = assert_contract_active(Contract),
-    _ = not is_test_contract(Contract) orelse
+    _ = not is_test_contract(Contract, hg_datetime:format_now(), hg_domain:head()) orelse
         raise_invalid_request(<<"creating payout tool for test contract unavailable">>),
     Changeset = create_payout_tool(Params, ContractID, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
@@ -523,15 +524,16 @@ handle_call({create_payout_tool, ContractID, Params}, StEvents0 = {St, _}) ->
 
 handle_call({create_shop, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
+    Timestamp = hg_datetime:format_now(),
     Revision = hg_domain:head(),
     Changeset0 = [?shop_creation(Shop)] = create_shop(Params, StEvents0),
 
     Party = get_party(get_pending_st(St)),
     Contract = get_contract(Shop#domain_Shop.contract_id, Party),
-    ok = assert_shop_contract_valid(Shop, Contract, Revision),
+    ok = assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
     ok = assert_shop_payout_tool_valid(Shop, Contract),
 
-    Currencies = get_contract_currencies(Contract, hg_datetime:format_now(), Revision),
+    Currencies = get_contract_currencies(Contract, Timestamp, Revision),
     CurrencyRef = erlang:hd(ordsets:to_list(Currencies)),
     Changeset1 = [?shop_modification(Shop#domain_Shop.id, ?account_created(create_shop_account(CurrencyRef)))],
 
@@ -606,9 +608,8 @@ get_party_id(#domain_Party{id = ID}) ->
 
 %%
 
-is_test_contract(Contract) ->
-    Revision = hg_domain:head(),
-    Categories = get_contract_categories(Contract, hg_datetime:format_now(), Revision),
+is_test_contract(Contract, Timestamp, Revision) ->
+    Categories = get_contract_categories(Contract, Timestamp, Revision),
     lists:any(
         fun(CategoryRef) ->
             #domain_Category{type = Type} = hg_domain:get(Revision, {category, CategoryRef}),
@@ -719,10 +720,14 @@ get_contract_categories(Contract, Timestamp, Revision) ->
     reduce_selector_to_values(CategorySelector, #{}, Revision).
 
 reduce_selector_to_values(Selector, VS, Revision) ->
-    EmptySet = ordsets:new(),
     case hg_selector:reduce(Selector, VS, Revision) of
-        {value, Value} when Value /= EmptySet ->
-            Value;
+        {value, Value} ->
+            case not ordsets:is_set(Value) orelse ordsets:size(Value) > 0 of
+                true ->
+                    Value;
+                false ->
+                    raise_invalid_request(<<"bad contract configuration">>)
+            end;
         _ ->
             raise_invalid_request(<<"bad contract configuration">>)
     end.
@@ -1045,29 +1050,28 @@ assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
-assert_shop_update_valid(
-    ShopID,
-    #payproc_ShopUpdate{
-        category = NewCategoryRef,
-        contract_id = NewContractID,
-        payout_tool_id = NewPayoutToolID
-    } = Update,
-    {St, _}
-) when NewCategoryRef /= undefined orelse NewContractID /= undefined orelse NewPayoutToolID /= undefined ->
+assert_shop_update_valid(ShopID, Update, {St, _}) ->
     Party = get_party(get_pending_st(St)),
     Shop = apply_shop_change({update, Update}, get_shop(ShopID, Party)),
     Contract = get_contract(Shop#domain_Shop.contract_id, Party),
-    ok = assert_shop_contract_valid(Shop, Contract, hg_domain:head()),
-    ok = assert_shop_payout_tool_valid(Shop, Contract);
-assert_shop_update_valid(_, _, _) ->
-    ok.
+    Timestamp = hg_datetime:format_now(),
+    Revision = hg_domain:head(),
+    ok = assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
+    case is_test_contract(Contract, Timestamp, Revision) of
+        true when Shop#domain_Shop.payout_tool_id == undefined ->
+            ok;
+        true ->
+            raise_invalid_request(<<"creating payout tool for test contract unavailable">>);
+        false ->
+            assert_shop_payout_tool_valid(Shop, Contract)
+    end.
 
 assert_shop_contract_valid(
     #domain_Shop{category = CategoryRef, account = ShopAccount},
     Contract,
+    Timestamp,
     Revision
 ) ->
-    Timestamp = hg_datetime:format_now(),
     #domain_PaymentsServiceTerms{
         currencies = CurrencySelector,
         categories = CategorySelector
