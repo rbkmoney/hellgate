@@ -1,6 +1,6 @@
 -module(hg_invoice_tests_SUITE).
 
--include("domain.hrl").
+-include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
@@ -37,6 +37,9 @@ init([]) ->
 %%
 
 -define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
+
+-define(cash(Amount, Currency),
+    #domain_Cash{amount = Amount, currency = Currency}).
 
 %% tests descriptions
 
@@ -557,8 +560,27 @@ construct_domain_fixture() ->
             ]}
         }
     },
-    hg_ct_helper:construct_basic_domain_fixture() ++
     [
+        hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
+        hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
+
+        hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
+        hg_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
+        hg_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
+
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+
+        hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
+        hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
+        hg_ct_fixture:construct_proxy(?prx(3), <<"Merchant proxy">>),
+
+        hg_ct_fixture:construct_inspector(?insp(1), <<"Rejector">>, ?prx(2), #{<<"risk_score">> => <<"low">>}),
+        hg_ct_fixture:construct_inspector(?insp(2), <<"Skipper">>, ?prx(2), #{<<"risk_score">> => <<"high">>}),
+
+        hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
+        hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
+
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
@@ -598,31 +620,25 @@ construct_domain_fixture() ->
                 ]}
             }
         }},
-        {system_account_set, #domain_SystemAccountSetObject{
-            ref = ?sas(1),
-            data = #domain_SystemAccountSet{
-                name = <<"Primaries">>,
-                description = <<"Primaries">>,
-                accounts = #{
-                    ?cur(<<"RUB">>) => #domain_SystemAccount{
-                        settlement = maps:get(system_settlement, Accounts)
-                    }
+        hg_ct_fixture:construct_system_account_set(
+            ?sas(1),
+            <<"Primaries">>,
+            #{
+                ?cur(<<"RUB">>) => #domain_SystemAccount{
+                    settlement = maps:get(system_settlement, Accounts)
                 }
             }
-        }},
-        {external_account_set, #domain_ExternalAccountSetObject{
-            ref = ?eas(1),
-            data = #domain_ExternalAccountSet{
-                name = <<"Primaries">>,
-                description = <<"Primaries">>,
-                accounts = #{
-                    ?cur(<<"RUB">>) => #domain_ExternalAccount{
-                        income  = maps:get(external_income , Accounts),
-                        outcome = maps:get(external_outcome, Accounts)
-                    }
+        ),
+        hg_ct_fixture:construct_external_account_set(
+            ?eas(1),
+            <<"Primaries">>,
+            #{
+                ?cur(<<"RUB">>) => #domain_ExternalAccount{
+                    income  = maps:get(external_income , Accounts),
+                    outcome = maps:get(external_outcome, Accounts)
                 }
             }
-        }},
+        ),
         {party_prototype, #domain_PartyPrototypeObject{
             ref = #domain_PartyPrototypeRef{id = 42},
             data = #domain_PartyPrototype{
@@ -635,14 +651,6 @@ construct_domain_fixture() ->
                 },
                 test_contract_template = ?tmpl(1)
             }
-        }},
-        {contract_template, #domain_ContractTemplateObject{
-            ref = ?tmpl(1),
-            data = #domain_ContractTemplate{terms = ?trms(1)}
-        }},
-        {contract_template, #domain_ContractTemplateObject{
-            ref = ?tmpl(2),
-            data = #domain_ContractTemplate{terms = ?trms(2)}
         }},
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(1),

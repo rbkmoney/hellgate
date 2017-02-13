@@ -1,6 +1,6 @@
 -module(hg_party_tests_SUITE).
 
--include("domain.hrl").
+-include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 
 -export([all/0]).
@@ -1005,8 +1005,8 @@ construct_domain_fixture() ->
     TermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             cash_limit = {value, #domain_CashRange{
-                lower = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
-                upper = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
+                lower = {inclusive, #domain_Cash{amount = 1000, currency = ?cur(<<"RUB">>)}},
+                upper = {exclusive, #domain_Cash{amount = 4200000, currency = ?cur(<<"RUB">>)}}
             }},
             fees = {value, [
                 ?cfpost(
@@ -1017,8 +1017,22 @@ construct_domain_fixture() ->
             ]}
         }
     },
-    hg_ct_helper:construct_basic_domain_fixture() ++
     [
+        hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
+        hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
+
+        hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
+        hg_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
+        hg_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
+
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+
+        hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
+        hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
+        hg_ct_fixture:construct_system_account_set(?sas(1), <<"Primaries">>),
+        hg_ct_fixture:construct_external_account_set(?eas(1), <<"Primaries">>),
+
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
@@ -1029,22 +1043,6 @@ construct_domain_fixture() ->
                 default_contract_template = ?tmpl(2),
                 common_merchant_proxy = ?prx(1),
                 inspector = {value, ?insp(1)}
-            }
-        }},
-        {system_account_set, #domain_SystemAccountSetObject{
-            ref = ?sas(1),
-            data = #domain_SystemAccountSet{
-                name = <<"Primaries">>,
-                description = <<"Primaries">>,
-                accounts = #{}
-            }
-        }},
-        {external_account_set, #domain_ExternalAccountSetObject{
-            ref = ?eas(1),
-            data = #domain_ExternalAccountSet{
-                name = <<"Primaries">>,
-                description = <<"Primaries">>,
-                accounts = #{}
             }
         }},
         {party_prototype, #domain_PartyPrototypeObject{
@@ -1060,34 +1058,30 @@ construct_domain_fixture() ->
                 test_contract_template = ?tmpl(1)
             }
         }},
-        {contract_template, #domain_ContractTemplateObject{
-            ref = ?tmpl(1),
-            data = #domain_ContractTemplate{terms = ?trms(1)}
-        }},
-        {contract_template, #domain_ContractTemplateObject{
-            ref = ?tmpl(2),
-            data = #domain_ContractTemplate{terms = ?trms(3)}
-        }},
-        {contract_template, #domain_ContractTemplateObject{
-            ref = ?tmpl(3),
-            data = #domain_ContractTemplate{
-                valid_since = {interval, #domain_LifetimeInterval{years = -1}},
-                valid_until = {interval, #domain_LifetimeInterval{months = 10}},
-                terms = ?trms(2)
-            }
-        }},
-        {contract_template, #domain_ContractTemplateObject{
-            ref = ?tmpl(4),
-            data = #domain_ContractTemplate{
-                valid_since = undefined,
-                valid_until = {interval, #domain_LifetimeInterval{months = 1}},
-                terms = ?trms(1)
-            }
-        }},
-        {contract_template, #domain_ContractTemplateObject{
-            ref = ?tmpl(5),
-            data = #domain_ContractTemplate{terms = ?trms(4)}
-        }},
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(1),
+            ?trms(1)
+        ),
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(2),
+            ?trms(3)
+        ),
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(3),
+            ?trms(2),
+            {interval, #domain_LifetimeInterval{years = -1}},
+            {interval, #domain_LifetimeInterval{months = 10}}
+        ),
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(4),
+            ?trms(1),
+            undefined,
+            {interval, #domain_LifetimeInterval{months = 1}}
+        ),
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(5),
+            ?trms(4)
+        ),
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
