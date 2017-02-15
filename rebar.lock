@@ -11,7 +11,7 @@
   1},
  {<<"dmt_client">>,
   {git,"git@github.com:rbkmoney/dmt_client.git",
-       {ref,"97a215e95706dacc536f215538fe39090bdfb6b0"}},
+       {ref,"aec229fca9e03868e2d2e7d892f9987d272793e9"}},
   0},
  {<<"genlib">>,
   {git,"https://github.com/rbkmoney/genlib.git",
@@ -42,5 +42,5 @@
   1},
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
-       {ref,"17bd5218432f3d958d2b8425267f13a3774b7d26"}},
+       {ref,"b5ae9ae3abc8da470f68d2e2ca15ccc606801225"}},
   0}].
