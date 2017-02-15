@@ -1030,8 +1030,8 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
-        hg_ct_fixture:construct_system_account_set(?sas(1), <<"Primaries">>),
-        hg_ct_fixture:construct_external_account_set(?eas(1), <<"Primaries">>),
+        hg_ct_fixture:construct_system_account_set(?sas(1)),
+        hg_ct_fixture:construct_external_account_set(?eas(1)),
 
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},

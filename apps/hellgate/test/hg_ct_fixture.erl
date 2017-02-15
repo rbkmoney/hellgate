@@ -16,9 +16,9 @@
 -export([construct_inspector/4]).
 -export([construct_contract_template/2]).
 -export([construct_contract_template/4]).
--export([construct_system_account_set/2]).
+-export([construct_system_account_set/1]).
 -export([construct_system_account_set/3]).
--export([construct_external_account_set/2]).
+-export([construct_external_account_set/1]).
 -export([construct_external_account_set/3]).
 
 %%
@@ -30,7 +30,7 @@
 -type inspector()   :: dmsl_domain_thrift:'InspectorRef'().
 -type template()    :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms()       :: dmsl_domain_thrift:'TermSetHierarchyRef'().
--type lifetime()    :: dmsl_domain_thrift:'Lifetime'().
+-type lifetime()    :: dmsl_domain_thrift:'Lifetime'() | undefined.
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
@@ -150,41 +150,53 @@ construct_contract_template(Ref, TermsRef, ValidSince, ValidUntil) ->
         }
     }}.
 
--spec construct_system_account_set(system_account_set(), name()) ->
+-spec construct_system_account_set(system_account_set()) ->
     {system_account_set, dmsl_domain_thrift:'SystemAccountSetObject'()}.
 
-construct_system_account_set(Ref, Name) ->
-    construct_system_account_set(Ref, Name, #{}).
+construct_system_account_set(Ref) ->
+    construct_system_account_set(Ref, <<"Primaries">>, ?cur(<<"RUB">>)).
 
--spec construct_system_account_set(system_account_set(), name(), Accounts :: map()) ->
+-spec construct_system_account_set(system_account_set(), name(), currency()) ->
     {system_account_set, dmsl_domain_thrift:'SystemAccountSetObject'()}.
 
-construct_system_account_set(Ref, Name, Accounts) ->
+construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
+    _ = hg_context:set(woody_context:new()),
+    AccountID = hg_accounting:create_account(CurrencyCode),
+    hg_context:cleanup(),
     {system_account_set, #domain_SystemAccountSetObject{
         ref = Ref,
         data = #domain_SystemAccountSet{
             name = Name,
             description = Name,
-            accounts = Accounts
+            accounts = #{?cur(CurrencyCode) => #domain_SystemAccount{
+                settlement = AccountID
+            }}
         }
     }}.
 
--spec construct_external_account_set(external_account_set(), name()) ->
+-spec construct_external_account_set(external_account_set()) ->
     {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 
-construct_external_account_set(Ref, Name) ->
-    construct_external_account_set(Ref, Name, #{}).
+construct_external_account_set(Ref) ->
+    construct_external_account_set(Ref, <<"Primaries">>, ?cur(<<"RUB">>)).
 
--spec construct_external_account_set(external_account_set(), name(), Accounts :: map()) ->
+-spec construct_external_account_set(external_account_set(), name(), currency()) ->
     {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 
-construct_external_account_set(Ref, Name, Accounts) ->
+construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
+    _ = hg_context:set(woody_context:new()),
+    AccountID1 = hg_accounting:create_account(CurrencyCode),
+    AccountID2 = hg_accounting:create_account(CurrencyCode),
+    hg_context:cleanup(),
     {external_account_set, #domain_ExternalAccountSetObject{
         ref = Ref,
         data = #domain_ExternalAccountSet{
             name = Name,
             description = Name,
-            accounts = Accounts
+            accounts = #{?cur(<<"RUB">>) => #domain_ExternalAccount{
+                income  = AccountID1,
+                outcome = AccountID2
+            }}
         }
     }}.
 

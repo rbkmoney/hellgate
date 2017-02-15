@@ -384,8 +384,8 @@ init(ID, PartyParams) ->
     ).
 
 process_init(ID, PartyParams) ->
-    {ok, StEvents} = create_party(ID, PartyParams, {#st{}, []}),
     Timestamp = hg_datetime:format_now(),
+    {ok, StEvents} = create_party(ID, PartyParams, {#st{timestamp = Timestamp}, []}),
     Revision = hg_domain:head(),
     TestContractTemplate = get_test_template_ref(Revision),
     Changeset1 = create_contract(#payproc_ContractParams{template = TestContractTemplate}, StEvents),
@@ -516,15 +516,15 @@ handle_call({create_payout_tool, ContractID, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
     Contract = get_contract(ContractID, get_party(get_pending_st(St))),
     ok = assert_contract_active(Contract),
-    _ = not is_test_contract(Contract, hg_datetime:format_now(), hg_domain:head()) orelse
-        raise_invalid_request(<<"creating payout tool for test contract unavailable">>),
+    _ = not is_test_contract(Contract, get_timestamp(St), hg_domain:head()) orelse
+        raise_invalid_request(<<"creating payout tool for test contract is forbidden">>),
     Changeset = create_payout_tool(Params, ContractID, StEvents0),
     {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({create_shop, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = get_timestamp(St),
     Revision = hg_domain:head(),
     Changeset0 = [?shop_creation(Shop)] = create_shop(Params, StEvents0),
 
@@ -599,6 +599,9 @@ create_party(PartyID, PartyParams, StEvents) ->
     },
     Event = ?party_ev(?party_created(Party)),
     {ok, apply_state_event(Event, StEvents)}.
+
+get_timestamp(#st{timestamp = Timestamp}) ->
+    Timestamp.
 
 get_party(#st{party = Party}) ->
     Party.
@@ -722,14 +725,14 @@ get_contract_categories(Contract, Timestamp, Revision) ->
 reduce_selector_to_values(Selector, VS, Revision) ->
     case hg_selector:reduce(Selector, VS, Revision) of
         {value, Value} ->
-            case not ordsets:is_set(Value) orelse ordsets:size(Value) > 0 of
+            case ordsets:is_set(Value) andalso ordsets:size(Value) == 0 of
                 true ->
-                    Value;
+                    error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}});
                 false ->
-                    raise_invalid_request(<<"bad contract configuration">>)
+                    Value
             end;
         _ ->
-            raise_invalid_request(<<"bad contract configuration">>)
+            error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}})
     end.
 
 -spec get_payments_service_terms(shop_id(), party(), timestamp()) ->
@@ -749,7 +752,7 @@ get_payments_service_terms(Contract, Timestamp) ->
         #domain_TermSet{payments = PaymentTerms} ->
             PaymentTerms;
         undefined ->
-            error({undefined_term_set, Contract#domain_Contract.terms, Timestamp})
+            error({misconfiguration, {'Undefined TermSet', Contract#domain_Contract.terms, Timestamp}})
     end.
 
 compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp) ->
@@ -1054,14 +1057,14 @@ assert_shop_update_valid(ShopID, Update, {St, _}) ->
     Party = get_party(get_pending_st(St)),
     Shop = apply_shop_change({update, Update}, get_shop(ShopID, Party)),
     Contract = get_contract(Shop#domain_Shop.contract_id, Party),
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = get_timestamp(St),
     Revision = hg_domain:head(),
     ok = assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
     case is_test_contract(Contract, Timestamp, Revision) of
         true when Shop#domain_Shop.payout_tool_id == undefined ->
             ok;
         true ->
-            raise_invalid_request(<<"creating payout tool for test contract unavailable">>);
+            error({misconfiguration, {'Test and live categories in same TermSet', Contract#domain_Contract.terms}});
         false ->
             assert_shop_payout_tool_valid(Shop, Contract)
     end.
@@ -1080,13 +1083,13 @@ assert_shop_contract_valid(
         #domain_ShopAccount{currency = CurrencyRef} ->
             Currencies = reduce_selector_to_values(CurrencySelector, #{}, Revision),
             _ = ordsets:is_element(CurrencyRef, Currencies) orelse
-                raise_invalid_request(<<"contract currency missmatch">>);
+                raise_invalid_request(<<"currency is not permitted by contract">>);
         undefined ->
             ok
     end,
     Categories = reduce_selector_to_values(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse
-        raise_invalid_request(<<"contract category missmatch">>),
+        raise_invalid_request(<<"category is not permitted by contract">>),
     ok.
 
 assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = PayoutToolID}, Contract) ->
@@ -1140,22 +1143,16 @@ collapse_history(History) ->
 -spec checkout_history([ev()], timestamp()) -> {ok, st()} | {error, revision_not_found}.
 
 checkout_history(History, Timestamp) ->
-    case checkout_history(History, Timestamp, #st{}) of
-        {ok, St} ->
-            apply_checkout_history_hook(St, Timestamp);
-        {error, _} = Error ->
-            Error
-    end.
+    checkout_history(History, undefined, #st{timestamp = Timestamp}).
 
-checkout_history([{_ID, EventTimestamp, Ev} | Rest], Timestamp, St0 = #st{timestamp = StTimestamp}) ->
+checkout_history([{_ID, EventTimestamp, Ev} | Rest], PrevTimestamp, #st{timestamp = Timestamp} = St) ->
     case hg_datetime:compare(EventTimestamp, Timestamp) of
-        later when StTimestamp =/= undefined ->
-            {ok, St0};
-        later when StTimestamp == undefined ->
+        later when PrevTimestamp =/= undefined ->
+            {ok, St};
+        later when PrevTimestamp == undefined ->
             {error, revision_not_found};
         _ ->
-            St1 = merge_history(Ev, St0#st{timestamp = EventTimestamp}),
-            checkout_history(Rest, Timestamp, St1)
+            checkout_history(Rest, EventTimestamp, merge_history(Ev, St))
     end;
 checkout_history([], _, St) ->
     {ok, St}.
@@ -1176,36 +1173,6 @@ merge_party_event(?claim_status_changed(ID, Status), St) ->
     Claim1 = Claim#payproc_Claim{status = Status},
     St1 = set_claim(Claim1, St),
     apply_accepted_claim(Claim1, St1).
-
-apply_checkout_history_hook(St, Timestamp) ->
-    Party0 = get_party(St),
-    Contracts = maps:map(
-        fun(_, Contract) ->
-            update_contract_status(Contract, Timestamp)
-        end,
-        Party0#domain_Party.contracts
-    ),
-    Party = Party0#domain_Party{contracts = Contracts},
-    {ok, St#st{party = Party}}.
-
-update_contract_status(
-    #domain_Contract{
-        valid_since = ValidSince,
-        valid_until = ValidUntil,
-        status = {active, _}} = Contract,
-    Timestamp
-) ->
-    case hg_datetime:between(Timestamp, ValidSince, ValidUntil) of
-        true ->
-            Contract;
-        false ->
-            Contract#domain_Contract{
-                % FIXME add special status for expired contracts
-                status = {terminated, #domain_ContractTerminated{terminated_at = ValidUntil}}
-            }
-    end;
-update_contract_status(Contract, _) ->
-    Contract.
 
 get_pending_st(St) ->
     case get_pending_claim(St) of
@@ -1233,6 +1200,28 @@ get_payout_tool(PayoutToolID, #domain_Contract{payout_tools = PayoutTools}) ->
 
 set_contract(Contract = #domain_Contract{id = ID}, Party = #domain_Party{contracts = Contracts}) ->
     Party#domain_Party{contracts = Contracts#{ID => Contract}}.
+
+
+ensure_contract_active(
+    #domain_Contract{
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        status = {active, _}
+    } = Contract,
+    Timestamp
+) ->
+    case hg_datetime:between(Timestamp, ValidSince, ValidUntil) of
+        true ->
+            Contract;
+        false ->
+            Contract#domain_Contract{
+                % FIXME add special status for expired contracts
+                status = {terminated, #domain_ContractTerminated{terminated_at = ValidUntil}}
+            }
+    end;
+
+ensure_contract_active(Contract, _) ->
+    Contract.
 
 get_shop(ID, #domain_Party{shops = Shops}) ->
     ensure_shop(maps:get(ID, Shops, undefined)).
@@ -1325,16 +1314,22 @@ apply_accepted_claim(_Claim, St) ->
 apply_claim(#payproc_Claim{changeset = Changeset}, St) ->
     apply_changeset(Changeset, St).
 
-apply_changeset(Changeset, St) ->
-    St#st{party = lists:foldl(fun apply_party_change/2, get_party(St), Changeset)}.
+apply_changeset(Changeset, St = #st{timestamp = Timestamp}) ->
+    St#st{party = lists:foldl(
+        fun(Change, Party) ->
+            apply_party_change(Change, Party, Timestamp)
+        end,
+        get_party(St),
+        Changeset
+    )}.
 
-apply_party_change({blocking, Blocking}, Party) ->
+apply_party_change({blocking, Blocking}, Party, _) ->
     Party#domain_Party{blocking = Blocking};
-apply_party_change({suspension, Suspension}, Party) ->
+apply_party_change({suspension, Suspension}, Party, _) ->
     Party#domain_Party{suspension = Suspension};
-apply_party_change(?contract_creation(Contract), Party) ->
-    set_contract(Contract, Party);
-apply_party_change(?contract_termination(ID, TerminatedAt, _Reason), Party) ->
+apply_party_change(?contract_creation(Contract), Party, Timestamp) ->
+    set_contract(ensure_contract_active(Contract, Timestamp), Party);
+apply_party_change(?contract_termination(ID, TerminatedAt, _Reason), Party, _) ->
     Contract = get_contract(ID, Party),
     set_contract(
         Contract#domain_Contract{
@@ -1344,7 +1339,8 @@ apply_party_change(?contract_termination(ID, TerminatedAt, _Reason), Party) ->
     );
 apply_party_change(
     ?contract_legal_agreement_binding(ContractID, LegalAgreement),
-    Party = #domain_Party{contracts = Contracts}
+    Party = #domain_Party{contracts = Contracts},
+    _Timestamp
 ) ->
     Contract = maps:get(ContractID, Contracts),
     Party#domain_Party{
@@ -1354,7 +1350,8 @@ apply_party_change(
     };
 apply_party_change(
     ?contract_payout_tool_creation(ContractID, PayoutTool),
-    Party = #domain_Party{contracts = Contracts}
+    Party = #domain_Party{contracts = Contracts},
+    _Timestamp
 ) ->
     Contract = #domain_Contract{payout_tools = PayoutTools} = maps:get(ContractID, Contracts),
     Party#domain_Party{
@@ -1362,13 +1359,13 @@ apply_party_change(
             ContractID => Contract#domain_Contract{payout_tools = PayoutTools ++ [PayoutTool]}
         }
     };
-apply_party_change(?contract_adjustment_creation(ID, Adjustment), Party) ->
+apply_party_change(?contract_adjustment_creation(ID, Adjustment), Party, _) ->
     Contract = get_contract(ID, Party),
     Adjustments = Contract#domain_Contract.adjustments ++ [Adjustment],
     set_contract(Contract#domain_Contract{adjustments = Adjustments}, Party);
-apply_party_change({shop_creation, Shop}, Party) ->
+apply_party_change({shop_creation, Shop}, Party, _) ->
     set_shop(Shop, Party);
-apply_party_change(?shop_modification(ID, V), Party) ->
+apply_party_change(?shop_modification(ID, V), Party, _) ->
     set_shop(apply_shop_change(V, get_shop(ID, Party)), Party).
 
 apply_shop_change({blocking, Blocking}, Shop) ->

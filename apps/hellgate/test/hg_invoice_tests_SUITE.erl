@@ -446,21 +446,8 @@ get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, 
 
 construct_domain_fixture() ->
     _ = hg_context:set(woody_context:new()),
-    Accounts = lists:foldl(
-        fun ({N, CurrencyCode}, M) ->
-            AccountID = hg_accounting:create_account(CurrencyCode),
-            M#{N => AccountID}
-        end,
-        #{},
-        [
-            {system_settlement       , <<"RUB">>},
-            {external_income         , <<"RUB">>},
-            {external_outcome        , <<"RUB">>},
-            {terminal_1_settlement   , <<"USD">>},
-            {terminal_2_settlement   , <<"RUB">>},
-            {terminal_3_settlement   , <<"RUB">>}
-        ]
-    ),
+    AccountUSD = ?trmacc(<<"USD">>, hg_accounting:create_account(<<"USD">>)),
+    AccountRUB = ?trmacc(<<"RUB">>, hg_accounting:create_account(<<"RUB">>)),
     hg_context:cleanup(),
     TestTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
@@ -581,6 +568,9 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
         hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
 
+        hg_ct_fixture:construct_system_account_set(?sas(1)),
+        hg_ct_fixture:construct_external_account_set(?eas(1)),
+
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
@@ -620,25 +610,6 @@ construct_domain_fixture() ->
                 ]}
             }
         }},
-        hg_ct_fixture:construct_system_account_set(
-            ?sas(1),
-            <<"Primaries">>,
-            #{
-                ?cur(<<"RUB">>) => #domain_SystemAccount{
-                    settlement = maps:get(system_settlement, Accounts)
-                }
-            }
-        ),
-        hg_ct_fixture:construct_external_account_set(
-            ?eas(1),
-            <<"Primaries">>,
-            #{
-                ?cur(<<"RUB">>) => #domain_ExternalAccount{
-                    income  = maps:get(external_income , Accounts),
-                    outcome = maps:get(external_outcome, Accounts)
-                }
-            }
-        ),
         {party_prototype, #domain_PartyPrototypeObject{
             ref = #domain_PartyPrototypeRef{id = 42},
             data = #domain_PartyPrototype{
@@ -706,10 +677,7 @@ construct_domain_fixture() ->
                         ?share(18, 1000, payment_amount)
                     )
                 ],
-                account = ?trmacc(
-                    <<"USD">>,
-                    maps:get(terminal_1_settlement, Accounts)
-                ),
+                account = AccountUSD,
                 options = #{
                     <<"override">> => <<"Brominal 1">>
                 },
@@ -735,10 +703,7 @@ construct_domain_fixture() ->
                         ?share(18, 1000, payment_amount)
                     )
                 ],
-                account = ?trmacc(
-                    <<"USD">>,
-                    maps:get(terminal_1_settlement, Accounts)
-                ),
+                account = AccountUSD,
                 options = #{
                     <<"override">> => <<"Brominal 2">>
                 },
@@ -764,10 +729,7 @@ construct_domain_fixture() ->
                         ?share(19, 1000, payment_amount)
                     )
                 ],
-                account = ?trmacc(
-                    <<"RUB">>,
-                    maps:get(terminal_2_settlement, Accounts)
-                ),
+                account = AccountRUB,
                 options = #{
                     <<"override">> => <<"Brominal 3">>
                 },
@@ -793,10 +755,7 @@ construct_domain_fixture() ->
                         ?share(19, 1000, payment_amount)
                     )
                 ],
-                account = ?trmacc(
-                    <<"RUB">>,
-                    maps:get(terminal_2_settlement, Accounts)
-                ),
+                account = AccountRUB,
                 options = #{
                     <<"override">> => <<"Brominal 4">>
                 },
@@ -837,10 +796,7 @@ construct_domain_fixture() ->
                         ?share(16, 1000, payment_amount)
                     )
                 ],
-                account = ?trmacc(
-                    <<"RUB">>,
-                    maps:get(terminal_3_settlement, Accounts)
-                ),
+                account = AccountRUB,
                 options = #{
                     <<"override">> => <<"Drominal 1">>
                 },
@@ -866,10 +822,7 @@ construct_domain_fixture() ->
                         ?share(16, 1000, payment_amount)
                     )
                 ],
-                account = ?trmacc(
-                    <<"RUB">>,
-                    maps:get(terminal_3_settlement, Accounts)
-                ),
+                account = AccountRUB,
                 options = #{
                     <<"override">> => <<"Drominal 1">>
                 },
@@ -896,10 +849,7 @@ construct_domain_fixture() ->
                         ?share(16, 1000, payment_amount)
                     )
                 ],
-                account = ?trmacc(
-                    <<"RUB">>,
-                    maps:get(terminal_3_settlement, Accounts)
-                ),
+                account = AccountRUB,
                 options = #{}
             }
         }},
@@ -923,10 +873,7 @@ construct_domain_fixture() ->
                         ?share(16, 1000, payment_amount)
                     )
                 ],
-                account = ?trmacc(
-                    <<"RUB">>,
-                    maps:get(terminal_2_settlement, Accounts)
-                ),
+                account = AccountRUB,
                 options = #{}
             }
         }}
