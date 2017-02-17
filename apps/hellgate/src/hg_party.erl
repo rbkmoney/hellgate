@@ -716,21 +716,28 @@ get_next_payout_tool_id(ContractID, St) ->
 
 get_contract_currencies(Contract, Timestamp, Revision) ->
     #domain_PaymentsServiceTerms{currencies = CurrencySelector} = get_payments_service_terms(Contract, Timestamp),
-    reduce_selector_to_values(CurrencySelector, #{}, Revision).
+    Value = reduce_selector_to_value(CurrencySelector, #{}, Revision),
+    case ordsets:size(Value) > 0 of
+        true ->
+            Value;
+        false ->
+            error({misconfiguration, {'Empty set in currency selector\'s value', CurrencySelector, Revision}})
+    end.
 
 get_contract_categories(Contract, Timestamp, Revision) ->
     #domain_PaymentsServiceTerms{categories = CategorySelector} = get_payments_service_terms(Contract, Timestamp),
-    reduce_selector_to_values(CategorySelector, #{}, Revision).
+    Value = reduce_selector_to_value(CategorySelector, #{}, Revision),
+    case ordsets:size(Value) > 0 of
+        true ->
+            Value;
+        false ->
+            error({misconfiguration, {'Empty set in category selector\'s value', CategorySelector, Revision}})
+    end.
 
-reduce_selector_to_values(Selector, VS, Revision) ->
+reduce_selector_to_value(Selector, VS, Revision) ->
     case hg_selector:reduce(Selector, VS, Revision) of
         {value, Value} ->
-            case ordsets:is_set(Value) andalso ordsets:size(Value) == 0 of
-                true ->
-                    error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}});
-                false ->
-                    Value
-            end;
+            Value;
         _ ->
             error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}})
     end.
@@ -752,7 +759,7 @@ get_payments_service_terms(Contract, Timestamp) ->
         #domain_TermSet{payments = PaymentTerms} ->
             PaymentTerms;
         undefined ->
-            error({misconfiguration, {'Undefined TermSet', Contract#domain_Contract.terms, Timestamp}})
+            error({misconfiguration, {'No active TermSet found', Contract#domain_Contract.terms, Timestamp}})
     end.
 
 compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp) ->
@@ -1081,13 +1088,13 @@ assert_shop_contract_valid(
     } = get_payments_service_terms(Contract, Timestamp),
     case ShopAccount of
         #domain_ShopAccount{currency = CurrencyRef} ->
-            Currencies = reduce_selector_to_values(CurrencySelector, #{}, Revision),
+            Currencies = reduce_selector_to_value(CurrencySelector, #{}, Revision),
             _ = ordsets:is_element(CurrencyRef, Currencies) orelse
                 raise_invalid_request(<<"currency is not permitted by contract">>);
         undefined ->
             ok
     end,
-    Categories = reduce_selector_to_values(CategorySelector, #{}, Revision),
+    Categories = reduce_selector_to_value(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse
         raise_invalid_request(<<"category is not permitted by contract">>),
     ok.
@@ -1202,7 +1209,7 @@ set_contract(Contract = #domain_Contract{id = ID}, Party = #domain_Party{contrac
     Party#domain_Party{contracts = Contracts#{ID => Contract}}.
 
 
-ensure_contract_active(
+update_contract_status(
     #domain_Contract{
         valid_since = ValidSince,
         valid_until = ValidUntil,
@@ -1220,7 +1227,7 @@ ensure_contract_active(
             }
     end;
 
-ensure_contract_active(Contract, _) ->
+update_contract_status(Contract, _) ->
     Contract.
 
 get_shop(ID, #domain_Party{shops = Shops}) ->
@@ -1328,7 +1335,7 @@ apply_party_change({blocking, Blocking}, Party, _) ->
 apply_party_change({suspension, Suspension}, Party, _) ->
     Party#domain_Party{suspension = Suspension};
 apply_party_change(?contract_creation(Contract), Party, Timestamp) ->
-    set_contract(ensure_contract_active(Contract, Timestamp), Party);
+    set_contract(update_contract_status(Contract, Timestamp), Party);
 apply_party_change(?contract_termination(ID, TerminatedAt, _Reason), Party, _) ->
     Contract = get_contract(ID, Party),
     set_contract(
