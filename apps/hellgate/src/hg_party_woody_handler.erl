@@ -186,6 +186,9 @@ map_error({error, notfound}) ->
 map_error({error, Reason}) ->
     error(Reason).
 
+-spec assert_party_accessible(dmsl_payment_processing_thrift:'UserInfo'(), dmsl_domain_thrift:'PartyID'()) ->
+    ok | no_return().
+
 assert_party_accessible(UserInfo, PartyID) ->
     case hg_access_control:check_user_info(UserInfo, PartyID) of
         ok ->

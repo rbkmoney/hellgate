@@ -22,6 +22,7 @@
 
 -export([get_party/1]).
 -export([get_claim/2]).
+-export([checkout/2]).
 -export([get_pending_claim/1]).
 -export([get_public_history/3]).
 
@@ -43,26 +44,36 @@
     {unblock, binary()}                                              |
     suspend                                                          |
     activate                                                         |
-    {create_contract, contract_params()}                             |
-    {bind_contract_legal_agreemnet, contract_id(), legal_agreement()}|
-    {terminate_contract, contract_id(), binary()}                    |
-    {create_contract_adjustment, contract_id(), adjustment_params()} |
-    {create_payout_tool, contract_id(), payout_tool_params()}        |
-    {create_shop, shop_params()}                                     |
-    {update_shop, shop_id(), shop_update()}                          |
-    {block_shop, shop_id(), binary()}                                |
-    {unblock_shop, shop_id(), binary()}                              |
-    {suspend_shop, shop_id()}                                        |
-    {activate_shop, shop_id()}                                       |
-    {accept_claim, shop_id()}                                        |
-    {deny_claim, shop_id(), binary()}                                |
-    {revoke_claim, shop_id(), binary()}.
+    {create_contract, hg_party:contract_params()}                             |
+    {bind_contract_legal_agreemnet, hg_party:contract_id(), hg_party:legal_agreement()}|
+    {terminate_contract, hg_party:contract_id(), binary()}                    |
+    {create_contract_adjustment, hg_party:contract_id(), hg_party:adjustment_params()} |
+    {create_payout_tool, hg_party:contract_id(), hg_party:payout_tool_params()}        |
+    {create_shop, hg_party:shop_params()}                                     |
+    {update_shop, hg_party:shop_id(), hg_party:shop_update()}                          |
+    {block_shop, hg_party:shop_id(), binary()}                                |
+    {unblock_shop, hg_party:shop_id(), binary()}                              |
+    {suspend_shop, hg_party:shop_id()}                                        |
+    {activate_shop, hg_party:shop_id()}                                       |
+    {accept_claim, hg_party:shop_id()}                                        |
+    {deny_claim, hg_party:shop_id(), binary()}                                |
+    {revoke_claim, hg_party:shop_id(), binary()}.
 
 -type response() ::
     ok | {ok, term()} | {exception, term()}.
 
 -type public_event() :: dmsl_payment_processing_thrift:'EventPayload'().
 -type private_event() :: none().
+
+-type ev() ::
+    {sequence(), public_event() | private_event()}.
+
+-type party()       :: dmsl_domain_thrift:'Party'().
+-type party_id()    :: dmsl_domain_thrift:'PartyID'().
+-type claim_id()    :: dmsl_payment_processing_thrift:'ClaimID'().
+-type claim()       :: dmsl_payment_processing_thrift:'Claim'().
+-type sequence()    :: pos_integer().
+-type timestamp()   :: dmsl_base_thrift:'Timestamp'().
 
 -spec namespace() ->
     hg_machine:ns().
@@ -83,20 +94,20 @@ init(ID, PartyParams) ->
         }
     ).
 
-process_init(ID, PartyParams) ->
-    {ok, {St, Events}} = create_party(ID, PartyParams, {#st{}, []}),
+process_init(PartyID, PartyParams) ->
+    Party = hg_party:create_party(PartyID, PartyParams),
+    {St, Events} = apply_state_event(?party_ev(?party_created(Party)), {#st{}, []}),
     Revision = hg_domain:head(),
-    TestContractTemplate = get_test_template_ref(Revision),
-    TestContract = hg_party:create_contract(#payproc_ContractParams{template = TestContractTemplate}, get_st_party(St)),
+    TestContract = hg_party:create_test_contract(Party, Revision),
     Changeset1 = [?contract_creation(TestContract)],
 
-    ShopParams = get_shop_prototype_params(TestContract#domain_Contract.id, Revision),
-    Shop = hg_party:create_shop(ShopParams, ?active(), get_st_party(St)),
+    Shop = hg_party:create_test_shop(hg_party:get_contract_id(TestContract), Party, Revision),
     Changeset2 = [?shop_creation(Shop)],
 
-    Currencies = hg_party:get_contract_currencies(TestContract, hg_datetime:format_now(), Revision),
+    Currencies = hg_party:get_contract_currencies(TestContract, get_st_timestamp(St), Revision),
     CurrencyRef = erlang:hd(ordsets:to_list(Currencies)),
-    Changeset3 = [?shop_modification(Shop#domain_Shop.id, ?account_created(create_shop_account(CurrencyRef)))],
+    Account = create_shop_account(CurrencyRef),
+    Changeset3 = [?shop_modification(hg_party:get_shop_id(Shop), ?account_created(Account))],
 
     Changeset = Changeset1 ++ Changeset2 ++ Changeset3,
     {_ClaimID, StEvents1} = submit_accept_claim(Changeset, {St, Events}),
@@ -157,10 +168,18 @@ handle_call(activate, StEvents0) ->
     {ClaimID, StEvents1} = create_claim([{suspension, ?active()}], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_contract, ContractParams}, StEvents0) ->
+handle_call({create_contract, ContractParams}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
-    Changeset = create_contract(ContractParams, StEvents0),
-    {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
+    Party = get_st_pending_party(St),
+    Revision = hg_domain:head(),
+
+    Contract = hg_party:create_contract(ContractParams, Party, Revision),
+    Changeset1 = [?contract_creation(Contract)],
+    #payproc_ContractParams{payout_tool_params = PayoutToolParams} = ContractParams,
+    PayoutTool = hg_party:create_payout_tool(PayoutToolParams, Contract, get_st_timestamp(St), Revision),
+    Changeset2 = [?contract_payout_tool_creation(hg_party:get_contract_id(Contract), PayoutTool)],
+
+    {ClaimID, StEvents1} = create_claim(Changeset1 ++ Changeset2, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({bind_contract_legal_agreemnet, ID, #domain_LegalAgreement{} = LegalAgreement}, StEvents0 = {St, _}) ->
@@ -178,35 +197,24 @@ handle_call({terminate_contract, ContractID, Reason}, StEvents0 = {St, _}) ->
     {ClaimID, StEvents1} = create_claim([?contract_termination(ContractID, TerminatedAt, Reason)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_contract_adjustment, ContractID, Params}, StEvents0) ->
+handle_call({create_contract_adjustment, ContractID, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
-    Changeset = create_contract_adjustment(ContractID, Params, StEvents0),
-    {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
+    Contract = hg_party:get_contract(ContractID, get_st_pending_party(St)),
+    Adjustment = hg_party:create_contract_adjustment(Params, Contract, hg_domain:head()),
+    {ClaimID, StEvents1} = create_claim([?contract_adjustment_creation(ContractID, Adjustment)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({create_payout_tool, ContractID, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
-    Changeset = create_payout_tool(ContractID, Params, StEvents0),
-    {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
+    Contract = hg_party:get_contract(ContractID, get_st_pending_party(St)),
+    PayoutTool = hg_party:create_payout_tool(Params, Contract, get_st_timestamp(St), hg_domain:head()),
+    {ClaimID, StEvents1} = create_claim([?contract_payout_tool_creation(ContractID, PayoutTool)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
-handle_call({create_shop, Params}, StEvents0 = {St, _}) ->
+handle_call({create_shop, Params}, StEvents0) ->
     ok = assert_unblocked(StEvents0),
-    Revision = hg_domain:head(),
-    Timestamp = get_st_timestamp(St),
-    Party = get_st_pending_party(St),
-
-    Shop = hg_party:create_shop(Params, Party),
-    Changeset0 = [?shop_creation(Shop)],
-    Contract = get_contract(Shop#domain_Shop.contract_id, Party),
-    ok = assert_shop_contract_valid(Shop, Contract, Revision),
-    ok = assert_shop_payout_tool_valid(Shop, Contract),
-
-    Currencies = get_contract_currencies(Contract, Timestamp, Revision),
-    CurrencyRef = erlang:hd(ordsets:to_list(Currencies)),
-    Changeset1 = [?shop_modification(Shop#domain_Shop.id, ?account_created(create_shop_account(CurrencyRef)))],
-
-    {ClaimID, StEvents1} = create_claim(Changeset0 ++ Changeset1, StEvents0),
+    Changeset = create_shop(Params, StEvents0),
+    {ClaimID, StEvents1} = create_claim(Changeset, StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({update_shop, ID, Update}, StEvents0) ->
@@ -255,7 +263,7 @@ handle_call({revoke_claim, ID, Reason}, StEvents0) ->
     {ID, StEvents1} = finalize_claim(ID, ?revoked(Reason), StEvents0),
     respond(ok, StEvents1).
 
-publish_party_event(Source, {ID, Dt, {Seq, Payload = get_st_party_ev(_)}}) ->
+publish_party_event(Source, {ID, Dt, {Seq, Payload = ?party_ev(_)}}) ->
     {true, #payproc_Event{id = ID, source = Source, created_at = Dt, sequence = Seq, payload = Payload}};
 publish_party_event(_Source, {_ID, _Dt, _Event}) ->
     false.
@@ -263,18 +271,21 @@ publish_party_event(_Source, {_ID, _Dt, _Event}) ->
 -spec publish_event(party_id(), hg_machine:event(ev())) ->
     {true, hg_event_provider:public_event()} | false.
 
-publish_event(PartyID, {Seq, Ev = get_st_party_ev(_)}) ->
+publish_event(PartyID, {Seq, Ev = ?party_ev(_)}) ->
     {true, {{party, PartyID}, Seq, Ev}};
 publish_event(_InvoiceID, _) ->
     false.
 
 %%
 
+-spec get_party(party_id()) ->
+    dmsl_domain_thrift:'Party'() | no_return().
+
 get_party(PartyID) ->
     get_st_party(get_state(PartyID)).
 
 -spec checkout(party_id(), timestamp()) ->
-    dmsl_domain_thrift:'Party'().
+    dmsl_domain_thrift:'Party'() | no_return().
 
 checkout(PartyID, Timestamp) ->
     {History, _LastID} = get_history(PartyID),
@@ -285,11 +296,20 @@ checkout(PartyID, Timestamp) ->
             error(Reason)
     end.
 
+-spec get_claim(claim_id(), party_id()) ->
+    claim() | no_return().
+
 get_claim(ID, PartyID) ->
     get_st_claim(ID, get_state(PartyID)).
 
+-spec get_pending_claim(party_id()) ->
+    claim() | undefined | no_return().
+
 get_pending_claim(PartyID) ->
     get_st_pending_claim(get_state(PartyID)).
+
+-spec get_public_history(party_id(), integer(), non_neg_integer()) ->
+    [ev()].
 
 get_public_history(PartyID, AfterID, Limit) ->
     hg_history:get_public_history(
@@ -414,7 +434,7 @@ submit_accept_claim(Changeset, StEvents = {St, _}) ->
     submit_claim_event(Claim, StEvents).
 
 submit_claim_event(Claim, StEvents) ->
-    Event = get_st_party_ev(?claim_created(Claim)),
+    Event = ?party_ev(?claim_created(Claim)),
     {get_claim_id(Claim), apply_state_event(Event, StEvents)}.
 
 resubmit_claim(Changeset, ClaimPending, StEvents0) ->
@@ -477,7 +497,7 @@ accept_claim(ID, StEvents) ->
 
 finalize_claim(ID, Status, StEvents) ->
     ok = assert_claim_pending(ID, StEvents),
-    Event = get_st_party_ev(?claim_status_changed(ID, Status)),
+    Event = ?party_ev(?claim_status_changed(ID, Status)),
     {ID, apply_state_event(Event, StEvents)}.
 
 assert_claim_pending(ID, {St, _}) ->
@@ -500,7 +520,7 @@ construct_claim(Changeset, St, Status) ->
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
-    get_next_id(maps:keys(Claims)).
+    lists:max([0| maps:keys(Claims)]) + 1.
 
 get_claim_result(ID, {St, _}) ->
     #payproc_Claim{id = ID, status = Status} = get_claim(ID, St),
@@ -514,35 +534,31 @@ get_claim_changeset(#payproc_Claim{changeset = Changeset}) ->
 
 %%
 
-create_party(PartyID, PartyParams, StEvents) ->
-    Party = hg_party:new(PartyID, PartyParams),
-    Event = get_st_party_ev(get_st_party_created(Party)),
-    {ok, apply_state_event(Event, StEvents)}.
-
-create_contract(ContractParams0, {St, _}) ->
+create_shop(Params, {St, _}) ->
+    Revision = hg_domain:head(),
     Party = get_st_pending_party(St),
-    ContractParams = hg_party:ensure_contract_creation_params(ContractParams0),
-    Contract = hg_party:create_contract(ContractParams),
-    Changeset1 = [?contract_creation(Contract)],
-    #payproc_ContractParams{payout_tool_params = PayoutToolParams} = ContractParams,
-    PayoutTool = hg_party:create_payout_tool(PayoutToolParams, Contract),
-    Changeset2 = [?contract_payout_tool_creation(hg_party:get_contract_id(Contract), PayoutTool)]
-    Changeset1 ++ Changeset2.
+    Timestamp = get_st_timestamp(St),
+    Shop = hg_party:create_shop(Params, Party),
+    Changeset0 = [?shop_creation(Shop)],
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    ok = hg_party:assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
+    ok = hg_party:assert_shop_payout_tool_valid(Shop, Contract),
 
-create_contract_adjustment(ContractID, Params0, {St, _}) ->
-    Contract = hg_party:get_contract(ContractID, get_st_pending_party(St)),
-    ok = hg_party:assert_contract_active(Contract),
-    Params = hg_party:ensure_adjustment_creation_params(Params0),
-    Adjustment = hg_party:create_contract_adjustment(Params, Contract),
-    [?contract_adjustment_creation(ContractID, Adjustment)].
+    Currencies = hg_party:get_contract_currencies(Contract, Timestamp, Revision),
+    CurrencyRef = erlang:hd(ordsets:to_list(Currencies)),
+    Changeset1 = [?shop_modification(hg_party:get_shop_id(Shop), ?account_created(create_shop_account(CurrencyRef)))],
+    Changeset0 ++ Changeset1.
 
-create_payout_tool(ContractID, Params, {St, _}) ->
-    Contract = hg_party:get_contract(ContractID, get_st_pending_party(St)),
-    ok = hg_party:assert_contract_active(Contract),
-    _ = not hg_party:is_test_contract(Contract, get_st_timestamp(St), hg_domain:head()) orelse
-        raise_invalid_request(<<"creating payout tool for test contract unavailable">>),
-    PayoutTool = hg_party:create_payout_tool(Params, Contract),
-    [?contract_payout_tool_creation(ContractID, PayoutTool)].
+create_shop_account(#domain_CurrencyRef{symbolic_code = SymbolicCode} = CurrencyRef) ->
+    GuaranteeID = hg_accounting:create_account(SymbolicCode),
+    SettlementID = hg_accounting:create_account(SymbolicCode),
+    PayoutID = hg_accounting:create_account(SymbolicCode),
+    #domain_ShopAccount{
+        currency = CurrencyRef,
+        settlement = SettlementID,
+        guarantee = GuaranteeID,
+        payout = PayoutID
+    }.
 
 %%
 
@@ -550,7 +566,7 @@ apply_state_event(EventData, {St0, EventsAcc}) ->
     Event = construct_event(EventData, St0),
     {merge_history(Event, St0), EventsAcc ++ [Event]}.
 
-construct_event(EventData = get_st_party_ev(_), #st{sequence = Seq}) ->
+construct_event(EventData = ?party_ev(_), #st{sequence = Seq}) ->
     {Seq + 1, EventData}.
 
 %%
@@ -606,10 +622,10 @@ checkout_history([], _, St) ->
 merge_history({Seq, Event}, St) ->
     merge_event(Event, St#st{sequence = Seq}).
 
-merge_event(get_st_party_ev(Ev), St) ->
+merge_event(?party_ev(Ev), St) ->
     merge_party_event(Ev, St).
 
-merge_party_event(get_st_party_created(Party), St) ->
+merge_party_event(?party_created(Party), St) ->
     St#st{party = Party};
 merge_party_event(?claim_created(Claim), St) ->
     St1 = set_claim(Claim, St),
@@ -666,13 +682,28 @@ assert_active({St, _}) ->
 assert_suspended({St, _}) ->
     hg_party:assert_suspension(get_st_party(St), suspended).
 
-create_shop_account(#domain_CurrencyRef{symbolic_code = SymbolicCode} = CurrencyRef) ->
-    GuaranteeID = hg_accounting:create_account(SymbolicCode),
-    SettlementID = hg_accounting:create_account(SymbolicCode),
-    PayoutID = hg_accounting:create_account(SymbolicCode),
-    #domain_ShopAccount{
-        currency = CurrencyRef,
-        settlement = SettlementID,
-        guarantee = GuaranteeID,
-        payout = PayoutID
-    }.
+assert_shop_unblocked(ID, {St, _}) ->
+    Shop = hg_party:get_shop(ID, get_st_party(St)),
+    hg_party:assert_shop_blocking(Shop, unblocked).
+
+assert_shop_blocked(ID, {St, _}) ->
+    Shop = hg_party:get_shop(ID, get_st_party(St)),
+    hg_party:assert_shop_blocking(Shop, blocked).
+
+assert_shop_active(ID, {St, _}) ->
+    Shop = hg_party:get_shop(ID, get_st_party(St)),
+    hg_party:assert_shop_suspension(Shop, active).
+
+assert_shop_suspended(ID, {St, _}) ->
+    Shop = hg_party:get_shop(ID, get_st_party(St)),
+    hg_party:assert_shop_suspension(Shop, suspended).
+
+assert_shop_modification_allowed(ID, {St, _}) ->
+    % We allow updates to pending shop
+    Shop = hg_party:get_shop(ID, get_st_pending_party(St)),
+    hg_party:assert_shop_blocking(Shop, unblocked).
+
+assert_shop_update_valid(ID, Update, {St, _}) ->
+    hg_party:assert_shop_update_valid(ID, Update, get_st_party(St), get_st_timestamp(St), hg_domain:head()).
+
+

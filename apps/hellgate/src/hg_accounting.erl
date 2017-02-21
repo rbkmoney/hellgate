@@ -35,7 +35,7 @@
     currency_code => currency_code()
 }.
 
--spec get_account(AccountID :: integer()) ->
+-spec get_account(account_id()) ->
     account().
 
 get_account(AccountID) ->
