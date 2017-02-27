@@ -482,7 +482,12 @@ collect_proxy_options(#domain_InvoicePaymentRoute{provider = ProviderRef, termin
     Proxy    = Provider#domain_Provider.proxy,
     ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
     lists:foldl(
-        fun maps:merge/2,
+        fun
+            (undefined, M) ->
+                M;
+            (M1, M) ->
+                maps:merge(M1, M)
+        end,
         #{},
         [
             Terminal#domain_Terminal.options,

@@ -678,9 +678,6 @@ construct_domain_fixture() ->
                     )
                 ],
                 account = AccountUSD,
-                options = #{
-                    <<"override">> => <<"Brominal 1">>
-                },
                 risk_coverage = high
             }
         }},
@@ -704,9 +701,6 @@ construct_domain_fixture() ->
                     )
                 ],
                 account = AccountUSD,
-                options = #{
-                    <<"override">> => <<"Brominal 2">>
-                },
                 risk_coverage = low
             }
         }},
@@ -730,9 +724,6 @@ construct_domain_fixture() ->
                     )
                 ],
                 account = AccountRUB,
-                options = #{
-                    <<"override">> => <<"Brominal 3">>
-                },
                 risk_coverage = high
             }
         }},
@@ -756,9 +747,6 @@ construct_domain_fixture() ->
                     )
                 ],
                 account = AccountRUB,
-                options = #{
-                    <<"override">> => <<"Brominal 4">>
-                },
                 risk_coverage = low
             }
         }},
@@ -797,9 +785,6 @@ construct_domain_fixture() ->
                     )
                 ],
                 account = AccountRUB,
-                options = #{
-                    <<"override">> => <<"Drominal 1">>
-                },
                 risk_coverage = high
             }
         }},
@@ -823,9 +808,6 @@ construct_domain_fixture() ->
                     )
                 ],
                 account = AccountRUB,
-                options = #{
-                    <<"override">> => <<"Drominal 1">>
-                },
                 risk_coverage = low
             }
         }},
@@ -849,8 +831,7 @@ construct_domain_fixture() ->
                         ?share(16, 1000, payment_amount)
                     )
                 ],
-                account = AccountRUB,
-                options = #{}
+                account = AccountRUB
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -873,8 +854,7 @@ construct_domain_fixture() ->
                         ?share(16, 1000, payment_amount)
                     )
                 ],
-                account = AccountRUB,
-                options = #{}
+                account = AccountRUB
             }
         }}
     ].
