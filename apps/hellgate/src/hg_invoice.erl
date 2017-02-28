@@ -87,7 +87,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
         invalid_user ->
             throw(#payproc_InvalidUser{})
     end,
-    Party = get_party(UserInfo, PartyID),
+    Party = get_party(PartyID),
     Shop = validate_party_shop(ShopID, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
     ok = start(ID, {InvoiceParams, PartyID}),
@@ -97,7 +97,7 @@ handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
     ok = validate_access(UserInfo, InvoiceID),
     St = get_state(InvoiceID),
-    _Party = get_party(UserInfo, get_party_id(St)),
+    _Party = get_party(get_party_id(St)),
     get_invoice_state(St);
 
 handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
@@ -109,7 +109,7 @@ handle_function_('StartPayment', [UserInfo, InvoiceID, PaymentParams], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
     ok = validate_access(UserInfo, InvoiceID),
     St0 = get_initial_state(InvoiceID),
-    Party = get_party(UserInfo, get_party_id(St0)),
+    Party = get_party(get_party_id(St0)),
     _Shop = validate_party_shop(get_shop_id(St0), Party),
     call(InvoiceID, {start_payment, PaymentParams});
 
@@ -134,12 +134,12 @@ handle_function_('Rescind', [UserInfo, InvoiceID, Reason], _Opts) ->
     ok = validate_access(UserInfo, InvoiceID),
     call(InvoiceID, {rescind, Reason}).
 
-get_party(UserInfo, PartyID) ->
-    hg_party:get(UserInfo, PartyID).
+get_party(PartyID) ->
+    hg_party_machine:get_party(PartyID).
 
 validate_party_shop(ShopID, Party) ->
     _ = assert_party_operable(Party),
-    _ = assert_shop_operable(Shop = get_party_shop(ShopID, Party)),
+    _ = assert_shop_operable(Shop = hg_party:get_shop(ShopID, Party)),
     Shop.
 
 get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
@@ -506,7 +506,7 @@ handle_proxy_intent(#prxmerch_SleepIntent{timer = Timer}, ProxyState, _Session, 
     {[Event], hg_machine_action:set_timer(Timer)}.
 
 construct_proxy_context(Session, Party, St, Revision) ->
-    Shop  = get_party_shop(get_shop_id(St), Party),
+    Shop  = hg_party:get_shop(get_shop_id(St), Party),
     Proxy = Shop#domain_Shop.proxy,
     #prxmerch_Context{
         session = construct_proxy_session(Session),
@@ -566,7 +566,7 @@ issue_call(Func, Args, CallOpts) ->
     end.
 
 get_call_options(Party, St, Revision) ->
-    Shop  = get_party_shop(get_shop_id(St), Party),
+    Shop  = hg_party:get_shop(get_shop_id(St), Party),
     Proxy = Shop#domain_Shop.proxy,
     hg_proxy:get_call_options(Proxy, Revision).
 
@@ -574,7 +574,7 @@ get_call_options(Party, St, Revision) ->
 
 checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp}}) ->
     PartyID = get_party_id(St),
-    hg_party:checkout(PartyID, CreationTimestamp).
+    hg_party_machine:checkout(PartyID, CreationTimestamp).
 
 %%
 
@@ -707,8 +707,6 @@ assert_party_unblocked(V = {Status, _}) ->
 assert_party_active(V = {Status, _}) ->
     Status == active orelse throw(#payproc_InvalidPartyStatus{status = {suspension, V}}).
 
-assert_shop_operable(undefined) ->
-    throw(#payproc_ShopNotFound{});
 assert_shop_operable(#domain_Shop{blocking = Blocking, suspension = Suspension} = V) ->
     _ = assert_shop_unblocked(Blocking),
     _ = assert_shop_active(Suspension),

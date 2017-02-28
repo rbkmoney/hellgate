@@ -12,6 +12,8 @@
 %%
 
 -type t() ::
+    dmsl_domain_thrift:'CurrencySelector'() |
+    dmsl_domain_thrift:'CategorySelector'() |
     dmsl_domain_thrift:'CashLimitSelector'() |
     dmsl_domain_thrift:'CashFlowSelector'() |
     dmsl_domain_thrift:'PaymentMethodSelector'() |

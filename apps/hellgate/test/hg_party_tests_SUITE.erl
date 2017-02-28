@@ -369,10 +369,10 @@ party_revisioning(C) ->
     Party1 = hg_client_party:get(Client),
     T1 = hg_datetime:format_now(),
     Party2 = party_suspension(C),
-    Party1 = hg_party:checkout(Party1#domain_Party.id, T1),
+    Party1 = hg_party_machine:checkout(Party1#domain_Party.id, T1),
     T2 = hg_datetime:format_now(),
     _ = party_activation(C),
-    Party2 = hg_party:checkout(Party2#domain_Party.id, T2),
+    Party2 = hg_party_machine:checkout(Party2#domain_Party.id, T2),
     hg_context:cleanup().
 
 contract_not_found(C) ->
