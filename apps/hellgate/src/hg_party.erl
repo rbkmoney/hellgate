@@ -594,6 +594,7 @@ find_shop_account(ID, [{_, #domain_Shop{account = Account}} | Rest]) ->
             find_shop_account(ID, Rest)
     end.
 
+%% TODO move all work with changes to hg_party_machine, provide interface for party modification
 -spec apply_change(dmsl_payment_processing_thrift:'PartyModification'(), party(), timestamp()) ->
     party().
 
