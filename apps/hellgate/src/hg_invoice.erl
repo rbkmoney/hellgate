@@ -9,8 +9,6 @@
 %%%           - simpler flow control (?)
 %%%           - event publishing (?)
 %%%           - timer preservation on calls (?)
-%%%  - if a party or shop is blocked / suspended, is it an `InvalidStatus` or 503?
-%%%    let'em enjoy unexpected exception in the meantime :)
 %%%  - unify somehow with operability assertions from hg_party
 %%%  - should party blocking / suspension be version-locked? probably _not_
 %%%  - if someone has access to a party then it has access to an invoice
@@ -89,9 +87,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
     ok = validate_access(UserInfo, InvoiceID),
-    St = get_state(InvoiceID),
-    _Party = get_party(get_party_id(St)),
-    get_invoice_state(St);
+    get_invoice_state(get_state(InvoiceID));
 
 handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
@@ -101,9 +97,7 @@ handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
 handle_function_('StartPayment', [UserInfo, InvoiceID, PaymentParams], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
     ok = validate_access(UserInfo, InvoiceID),
-    St0 = get_initial_state(InvoiceID),
-    Party = get_party(get_party_id(St0)),
-    _Shop = validate_party_shop(get_shop_id(St0), Party),
+    ok = validate_operability(get_initial_state(InvoiceID)),
     call(InvoiceID, {start_payment, PaymentParams});
 
 handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
@@ -120,20 +114,26 @@ handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
 handle_function_('Fulfill', [UserInfo, InvoiceID, Reason], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
     ok = validate_access(UserInfo, InvoiceID),
+    ok = validate_operability(get_initial_state(InvoiceID)),
     call(InvoiceID, {fulfill, Reason});
 
 handle_function_('Rescind', [UserInfo, InvoiceID, Reason], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
     ok = validate_access(UserInfo, InvoiceID),
+    ok = validate_operability(get_initial_state(InvoiceID)),
     call(InvoiceID, {rescind, Reason}).
 
-get_party(PartyID) ->
-    hg_party_machine:get_party(PartyID).
+validate_operability(St) ->
+    _ = validate_party_shop(get_shop_id(St), get_party(get_party_id(St))),
+    ok.
 
 validate_party_shop(ShopID, Party) ->
     _ = assert_party_operable(Party),
     _ = assert_shop_operable(Shop = hg_party:get_shop(ShopID, Party)),
     Shop.
+
+get_party(PartyID) ->
+    hg_party_machine:get_party(PartyID).
 
 get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
     #payproc_InvoiceState{

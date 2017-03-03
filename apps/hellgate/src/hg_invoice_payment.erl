@@ -402,7 +402,7 @@ get_final_cashflow(#st{cashflow = FinalCashflow}) ->
 construct_proxy_context(#st{payment = Payment, route = Route, session = Session}, Options) ->
     #prxprv_Context{
         session = construct_session(Session),
-        payment = construct_payment_info(Payment, Options),
+        payment_info = construct_payment_info(Payment, Options),
         options = collect_proxy_options(Route)
     }.
 

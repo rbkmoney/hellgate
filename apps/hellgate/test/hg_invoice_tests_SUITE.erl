@@ -12,6 +12,8 @@
 
 -export([invalid_invoice_amount/1]).
 -export([invalid_invoice_currency/1]).
+-export([invalid_party_status/1]).
+-export([invalid_shop_status/1]).
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancelled/1]).
 -export([invoice_cancelled_after_payment_timeout/1]).
@@ -52,6 +54,8 @@ all() ->
     [
         invalid_invoice_amount,
         invalid_invoice_currency,
+        invalid_party_status,
+        invalid_shop_status,
         invoice_cancellation,
         overdue_invoice_cancelled,
         invoice_cancelled_after_payment_timeout,
@@ -142,6 +146,44 @@ invalid_invoice_currency(C) ->
     PartyID = ?c(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100, <<"KEK">>}),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:create(InvoiceParams, Client).
+
+-spec invalid_party_status(config()) -> _ | no_return().
+
+invalid_party_status(C) ->
+    Client = ?c(client, C),
+    PartyClient = ?c(party_client, C),
+    ShopID = ?c(shop_id, C),
+    PartyID = ?c(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    #payproc_ClaimResult{} = hg_client_party:suspend(PartyClient),
+    {exception, #payproc_InvalidPartyStatus{
+        status = {suspension, {suspended, _}}
+    }} = hg_client_invoicing:create(InvoiceParams, Client),
+    #payproc_ClaimResult{} = hg_client_party:activate(PartyClient),
+    #payproc_ClaimResult{} = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    {exception, #payproc_InvalidPartyStatus{
+        status = {blocking, {blocked, _}}
+    }} = hg_client_invoicing:create(InvoiceParams, Client),
+    #payproc_ClaimResult{} = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+
+-spec invalid_shop_status(config()) -> _ | no_return().
+
+invalid_shop_status(C) ->
+    Client = ?c(client, C),
+    PartyClient = ?c(party_client, C),
+    ShopID = ?c(shop_id, C),
+    PartyID = ?c(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    #payproc_ClaimResult{} = hg_client_party:suspend_shop(ShopID, PartyClient),
+    {exception, #payproc_InvalidShopStatus{
+        status = {suspension, {suspended, _}}
+    }} = hg_client_invoicing:create(InvoiceParams, Client),
+    #payproc_ClaimResult{} = hg_client_party:activate_shop(ShopID, PartyClient),
+    #payproc_ClaimResult{} = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    {exception, #payproc_InvalidShopStatus{
+        status = {blocking, {blocked, _}}
+    }} = hg_client_invoicing:create(InvoiceParams, Client),
+    #payproc_ClaimResult{} = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec invoice_cancellation(config()) -> _ | no_return().
 
