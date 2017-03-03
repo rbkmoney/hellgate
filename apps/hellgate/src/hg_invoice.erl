@@ -9,17 +9,10 @@
 %%%           - simpler flow control (?)
 %%%           - event publishing (?)
 %%%           - timer preservation on calls (?)
-%%%  - do not make payment ids so complex, a sequence would suffice
-%%%     - alter `Invoicing.GetPayment` signature
 %%%  - if a party or shop is blocked / suspended, is it an `InvalidStatus` or 503?
 %%%    let'em enjoy unexpected exception in the meantime :)
 %%%  - unify somehow with operability assertions from hg_party
-%%%  - it is inadequately painful to handle rolling context correctly
-%%%     - some kind of an api client process akin to the `hg_client_api`?
 %%%  - should party blocking / suspension be version-locked? probably _not_
-%%%  - we should probably check access rights and operability without going into
-%%%    invoice machine
-%%%  - looks like payment state is a better place to put version lock
 %%%  - if someone has access to a party then it has access to an invoice
 %%%    belonging to this party
 
