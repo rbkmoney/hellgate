@@ -28,7 +28,6 @@
 -export([get_contract_id/1]).
 -export([get_contract_currencies/3]).
 -export([get_contract_categories/3]).
--export([is_test_contract/3]).
 
 -export([create_shop/4]).
 -export([create_test_shop/3]).
@@ -90,34 +89,6 @@ create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
 
 get_party_id(#domain_Party{id = ID}) ->
     ID.
-
--spec is_test_contract(contract(), timestamp(), revision()) ->
-    boolean().
-
-is_test_contract(Contract, Timestamp, Revision) ->
-    Categories = get_contract_categories(Contract, Timestamp, Revision),
-    {Test, Live} = lists:foldl(
-        fun(CategoryRef, {TestFound, LiveFound}) ->
-            case hg_domain:get(Revision, {category, CategoryRef}) of
-                #domain_Category{type = test} ->
-                    {true, LiveFound};
-                #domain_Category{type = live} ->
-                    {TestFound, true}
-            end
-        end,
-        {false, false},
-        ordsets:to_list(Categories)
-    ),
-    case Test /= Live of
-        true ->
-            Test;
-        false ->
-            error({
-                misconfiguration,
-                {'Test and live category in same term set', Contract#domain_Contract.terms, Timestamp, Revision}
-            })
-    end.
-
 
 -spec create_contract(contract_params(), revision(), party()) ->
     contract().
@@ -691,6 +662,32 @@ get_next_id(IDs) ->
 raise_invalid_request(Error) ->
     throw(#'InvalidRequest'{errors = [Error]}).
 
+-spec is_test_contract(contract(), timestamp(), revision()) ->
+    boolean().
+
+is_test_contract(Contract, Timestamp, Revision) ->
+    Categories = get_contract_categories(Contract, Timestamp, Revision),
+    {Test, Live} = lists:foldl(
+        fun(CategoryRef, {TestFound, LiveFound}) ->
+            case hg_domain:get(Revision, {category, CategoryRef}) of
+                #domain_Category{type = test} ->
+                    {true, LiveFound};
+                #domain_Category{type = live} ->
+                    {TestFound, true}
+            end
+        end,
+        {false, false},
+        ordsets:to_list(Categories)
+    ),
+    case Test /= Live of
+        true ->
+            Test;
+        false ->
+            error({
+                misconfiguration,
+                {'Test and live category in same term set', Contract#domain_Contract.terms, Timestamp, Revision}
+            })
+    end.
 
 %% Asserts
 %% TODO there should be more concise way to express this assertions in terms of preconditions
