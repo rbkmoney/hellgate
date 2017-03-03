@@ -20,9 +20,11 @@
 
 %%
 
+-export([start/2]).
 -export([get_party/1]).
--export([get_claim/2]).
 -export([checkout/2]).
+-export([call/2]).
+-export([get_claim/2]).
 -export([get_pending_claim/1]).
 -export([get_public_history/3]).
 
@@ -101,9 +103,9 @@ process_init(PartyID, PartyParams) ->
     Party = hg_party:create_party(PartyID, PartyParams),
     {St, Events} = apply_state_event(?party_ev(?party_created(Party)), {#st{timestamp = Timestamp}, []}),
     Revision = hg_domain:head(),
-    TestContract = hg_party:create_test_contract(Party, Revision),
+    TestContract = hg_party:create_test_contract(Revision, Party),
     Changeset1 = [?contract_creation(TestContract)],
-    Shop = hg_party:create_test_shop(hg_party:get_contract_id(TestContract), Party, Revision),
+    Shop = hg_party:create_test_shop(hg_party:get_contract_id(TestContract), Revision, Party),
     Changeset2 = [?shop_creation(Shop)],
 
     Currencies = hg_party:get_contract_currencies(TestContract, Timestamp, Revision),
@@ -175,10 +177,10 @@ handle_call({create_contract, ContractParams}, StEvents0 = {St, _}) ->
     Party = get_st_pending_party(St),
     Revision = hg_domain:head(),
 
-    Contract = hg_party:create_contract(ContractParams, Party, Revision),
+    Contract = hg_party:create_contract(ContractParams, Revision, Party),
     Changeset1 = [?contract_creation(Contract)],
     #payproc_ContractParams{payout_tool_params = PayoutToolParams} = ContractParams,
-    PayoutTool = hg_party:create_payout_tool(PayoutToolParams, Contract, get_st_timestamp(St), Revision),
+    PayoutTool = hg_party:create_payout_tool(PayoutToolParams, get_st_timestamp(St), Revision, Contract),
     Changeset2 = [?contract_payout_tool_creation(hg_party:get_contract_id(Contract), PayoutTool)],
 
     {ClaimID, StEvents1} = create_claim(Changeset1 ++ Changeset2, StEvents0),
@@ -202,14 +204,14 @@ handle_call({terminate_contract, ContractID, Reason}, StEvents0 = {St, _}) ->
 handle_call({create_contract_adjustment, ContractID, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
     Contract = hg_party:get_contract(ContractID, get_st_pending_party(St)),
-    Adjustment = hg_party:create_contract_adjustment(Params, Contract, hg_domain:head()),
+    Adjustment = hg_party:create_contract_adjustment(Params, hg_domain:head(), Contract),
     {ClaimID, StEvents1} = create_claim([?contract_adjustment_creation(ContractID, Adjustment)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
 handle_call({create_payout_tool, ContractID, Params}, StEvents0 = {St, _}) ->
     ok = assert_unblocked(StEvents0),
     Contract = hg_party:get_contract(ContractID, get_st_pending_party(St)),
-    PayoutTool = hg_party:create_payout_tool(Params, Contract, get_st_timestamp(St), hg_domain:head()),
+    PayoutTool = hg_party:create_payout_tool(Params, get_st_timestamp(St), hg_domain:head(), Contract),
     {ClaimID, StEvents1} = create_claim([?contract_payout_tool_creation(ContractID, PayoutTool)], StEvents0),
     respond(get_claim_result(ClaimID, StEvents1), StEvents1);
 
@@ -279,6 +281,16 @@ publish_event(_InvoiceID, _) ->
     false.
 
 %%
+-spec start(party_id(), Args :: term()) ->
+    ok | no_return().
+
+start(PartyID, Args) ->
+    case hg_machine:start(?NS, PartyID, Args) of
+        {ok, _} ->
+            ok;
+        {error, exists} ->
+            throw(#payproc_PartyExists{})
+    end.
 
 -spec get_party(party_id()) ->
     dmsl_domain_thrift:'Party'() | no_return().
@@ -297,6 +309,24 @@ checkout(PartyID, Timestamp) ->
         {error, Reason} ->
             error(Reason)
     end.
+
+-spec call(party_id(), call()) ->
+    term() | no_return().
+
+call(PartyID, Call) ->
+    map_error(hg_machine:call(?NS, {id, PartyID}, Call)).
+
+map_error({ok, CallResult}) ->
+    case CallResult of
+        {ok, Result} ->
+            Result;
+        {exception, Reason} ->
+            throw(Reason)
+    end;
+map_error({error, notfound}) ->
+    throw(#payproc_PartyNotFound{});
+map_error({error, Reason}) ->
+    error(Reason).
 
 -spec get_claim(claim_id(), party_id()) ->
     claim() | no_return().
@@ -552,7 +582,7 @@ create_shop(Params, {St, _}) ->
     Revision = hg_domain:head(),
     Party = get_st_pending_party(St),
     Timestamp = get_st_timestamp(St),
-    Shop = hg_party:create_shop(Params, Party, Timestamp, Revision),
+    Shop = hg_party:create_shop(Params, Timestamp, Revision, Party),
     Changeset0 = [?shop_creation(Shop)],
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
 

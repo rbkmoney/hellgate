@@ -43,8 +43,6 @@
 -export([get_payments_service_terms/3]).
 
 %% Asserts
-%% FIXME asserts probably shouldn't be here.
-%% Here should be only is_<some_property_check>, and caller should deside to fail or not.
 
 -export([assert_blocking/2]).
 -export([assert_suspension/2]).
@@ -121,10 +119,10 @@ is_test_contract(Contract, Timestamp, Revision) ->
     end.
 
 
--spec create_contract(contract_params(), party(), revision()) ->
+-spec create_contract(contract_params(), revision(), party()) ->
     contract().
 
-create_contract(Params, Party, Revision) ->
+create_contract(Params, Revision, Party) ->
     #payproc_ContractParams{
         contractor = Contractor,
         template = TemplateRef
@@ -139,12 +137,12 @@ create_contract(Params, Party, Revision) ->
         payout_tools = []
     }.
 
--spec create_test_contract(party(), revision()) ->
+-spec create_test_contract(revision(), party()) ->
     contract().
 
-create_test_contract(Party, Revision) ->
+create_test_contract(Revision, Party) ->
     Params = #payproc_ContractParams{template = get_test_template_ref(Revision)},
-    create_contract(Params, Party, Revision).
+    create_contract(Params, Revision, Party).
 
 -spec get_contract(contract_id(), party()) ->
     contract().
@@ -163,7 +161,7 @@ get_contract(ID, #domain_Party{contracts = Contracts}) ->
 get_contract_id(#domain_Contract{id = ContractID}) ->
     ContractID.
 
--spec create_payout_tool(payout_tool_params(), contract(), timestamp(), revision()) ->
+-spec create_payout_tool(payout_tool_params(), timestamp(), revision(), contract()) ->
     dmsl_domain_thrift:'PayoutTool'().
 
 create_payout_tool(
@@ -171,9 +169,9 @@ create_payout_tool(
         currency = Currency,
         tool_info = ToolInfo
     },
-    Contract,
     Timestamp,
-    Revision
+    Revision,
+    Contract
 ) ->
     ok = assert_contract_active(Contract),
     ok = assert_contract_live(Contract, Timestamp, Revision),
@@ -184,10 +182,10 @@ create_payout_tool(
         payout_tool_info = ToolInfo
     }.
 
--spec create_contract_adjustment(adjustment_params(), contract(), revision()) ->
+-spec create_contract_adjustment(adjustment_params(), revision(), contract()) ->
     dmsl_domain_thrift:'ContractAdjustment'().
 
-create_contract_adjustment(Params, Contract, Revision) ->
+create_contract_adjustment(Params, Revision, Contract) ->
     ok = assert_contract_active(Contract),
     #payproc_ContractAdjustmentParams{
         template = TemplateRef
@@ -251,13 +249,13 @@ get_payments_service_terms(Contract, Timestamp) ->
             error({misconfiguration, {'No active TermSet found', Contract#domain_Contract.terms, Timestamp}})
     end.
 
--spec create_shop(shop_params(), party(), timestamp(), revision()) ->
+-spec create_shop(shop_params(), timestamp(), revision(), party()) ->
     shop().
 
-create_shop(ShopParams, Party, Timestamp, Revision) ->
-    create_shop(ShopParams, ?suspended(), Party, Timestamp, Revision).
+create_shop(ShopParams, Timestamp, Revision, Party) ->
+    create_shop(ShopParams, ?suspended(), Timestamp, Revision, Party).
 
-create_shop(ShopParams, Suspension, Party, Timestamp, Revision) ->
+create_shop(ShopParams, Suspension, Timestamp, Revision, Party) ->
     ShopID = get_next_shop_id(Party),
     Shop = #domain_Shop{
         id              = ShopID,
@@ -274,10 +272,10 @@ create_shop(ShopParams, Suspension, Party, Timestamp, Revision) ->
     ok = assert_shop_payout_tool_valid(Shop, Contract),
     Shop.
 
--spec create_test_shop(contract_id(), party(), revision()) ->
+-spec create_test_shop(contract_id(), revision(), party()) ->
     shop().
 
-create_test_shop(ContractID, Party, Revision) ->
+create_test_shop(ContractID, Revision, Party) ->
     Params = get_shop_prototype_params(ContractID, Revision),
     #domain_Shop{
         id              = get_next_shop_id(Party),
@@ -341,7 +339,7 @@ get_account_state(AccountID, Party) ->
         currency = Currency
     }.
 
-%% Kishki
+%% Internals
 
 get_shop_prototype_params(ContractID, Revision) ->
     ShopPrototype = get_shop_prototype(Revision),
@@ -596,7 +594,7 @@ find_shop_account(ID, [{_, #domain_Shop{account = Account}} | Rest]) ->
             find_shop_account(ID, Rest)
     end.
 
--spec apply_change({_, _}, party(), timestamp()) ->
+-spec apply_change(dmsl_payment_processing_thrift:'PartyModification'(), party(), timestamp()) ->
     party().
 
 apply_change({blocking, Blocking}, Party, _) ->
@@ -681,7 +679,6 @@ get_next_contract_adjustment_id(#domain_Contract{adjustments = Adjustments}) ->
     get_next_id([ID || #domain_ContractAdjustment{id = ID} <- Adjustments]).
 
 get_next_shop_id(#domain_Party{shops = Shops}) ->
-    % TODO cache sequences on history collapse
     get_next_id(maps:keys(Shops)).
 
 get_next_id(IDs) ->
@@ -745,7 +742,7 @@ assert_shop_update_valid(ShopID, Update, Party, Timestamp, Revision) ->
         true when Shop#domain_Shop.payout_tool_id == undefined ->
             ok;
         true ->
-            error({misconfiguration, {'Test and live categories in same TermSet', Contract#domain_Contract.terms}});
+            raise_invalid_request(<<"using payout tool with test shop unavailable">>);
         false ->
             assert_shop_payout_tool_valid(Shop, Contract)
     end.
