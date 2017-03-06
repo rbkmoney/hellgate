@@ -552,7 +552,6 @@ shop_creation(C) ->
     Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
-        category = ?cat(2),
         details  = Details,
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
@@ -676,7 +675,6 @@ claim_revocation(C) ->
     Party = hg_client_party:get(Client),
     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
     Params = #payproc_ShopParams{
-        category = ?cat(2),
         details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)

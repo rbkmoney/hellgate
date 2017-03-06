@@ -227,18 +227,22 @@ create_shop(ShopParams, Timestamp, Revision, Party) ->
     create_shop(ShopParams, ?suspended(), Timestamp, Revision, Party).
 
 create_shop(ShopParams, Suspension, Timestamp, Revision, Party) ->
-    ShopID = get_next_shop_id(Party),
-    Shop = #domain_Shop{
-        id              = ShopID,
-        blocking        = ?unblocked(<<>>),
-        suspension      = Suspension,
-        details         = ShopParams#payproc_ShopParams.details,
-        category        = ShopParams#payproc_ShopParams.category,
-        contract_id     = ShopParams#payproc_ShopParams.contract_id,
-        payout_tool_id  = ShopParams#payproc_ShopParams.payout_tool_id,
-        proxy           = ShopParams#payproc_ShopParams.proxy
-    },
-    Contract = get_contract(Shop#domain_Shop.contract_id, Party),
+    Contract = get_contract(ShopParams#payproc_ShopParams.contract_id, Party),
+    Shop = ensure_shop_category(
+        #domain_Shop{
+            id              = get_next_shop_id(Party),
+            blocking        = ?unblocked(<<>>),
+            suspension      = Suspension,
+            details         = ShopParams#payproc_ShopParams.details,
+            category        = ShopParams#payproc_ShopParams.category,
+            contract_id     = ShopParams#payproc_ShopParams.contract_id,
+            payout_tool_id  = ShopParams#payproc_ShopParams.payout_tool_id,
+            proxy           = ShopParams#payproc_ShopParams.proxy
+        },
+        Contract,
+        Timestamp,
+        Revision
+    ),
     ok = assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
     ok = assert_shop_payout_tool_valid(Shop, Contract),
     Shop.
@@ -352,6 +356,17 @@ ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, Revision) 
 
 ensure_contract_template(undefined, Revision) ->
     get_default_template_ref(Revision).
+
+ensure_shop_category(Shop = #domain_Shop{category = #domain_CategoryRef{}}, _, _, _) ->
+    Shop;
+ensure_shop_category(Shop = #domain_Shop{category = undefined}, Contract, Timestamp, Revision) ->
+    Shop#domain_Shop{
+        category = get_default_contract_category(Contract, Timestamp, Revision)
+    }.
+
+get_default_contract_category(Contract, Timestamp, Revision) ->
+    Categories = get_contract_categories(Contract, Timestamp, Revision),
+    erlang:hd(ordsets:to_list(Categories)).
 
 -spec reduce_selector_to_value(Selector, #{}, revision())
     -> ordsets:ordset(currency()) | ordsets:ordset(category()) | no_return()
