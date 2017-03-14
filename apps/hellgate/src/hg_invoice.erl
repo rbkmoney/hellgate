@@ -221,7 +221,7 @@ map_error({error, Reason}) ->
 map_history_error({ok, Result}) ->
     Result;
 map_history_error({error, notfound}) ->
-    throw(#payproc_PartyNotFound{});
+    throw(#payproc_UserInvoiceNotFound{});
 map_history_error({error, Reason}) ->
     error(Reason).
 
