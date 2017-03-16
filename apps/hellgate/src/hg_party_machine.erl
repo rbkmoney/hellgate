@@ -25,7 +25,7 @@
 -export([checkout/2]).
 -export([call/2]).
 -export([get_claim/2]).
--export([get_pending_claim/1]).
+-export([get_claims/1]).
 -export([get_public_history/3]).
 
 %%
@@ -36,7 +36,8 @@
     party          :: party(),
     timestamp      :: timestamp(),
     claims   = #{} :: #{claim_id() => claim()},
-    sequence = 0   :: 0 | sequence()
+    sequence = 0   :: 0 | sequence(),
+    migration_data = #{} :: #{any() => any()}
 }).
 
 -type st() :: #st{}.
@@ -114,7 +115,7 @@ process_init(PartyID, PartyParams) ->
     Changeset3 = [?shop_modification(hg_party:get_shop_id(Shop), ?account_created(Account))],
 
     Changeset = Changeset1 ++ Changeset2 ++ Changeset3,
-    {_ClaimID, StEvents1} = submit_accept_claim(Changeset, {St, Events}),
+    {_ClaimID, StEvents1} = submit_claim(Changeset, ?accepted(Timestamp), {St, Events}),
     ok(StEvents1).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
@@ -334,16 +335,12 @@ map_error({error, Reason}) ->
 get_claim(ID, PartyID) ->
     get_st_claim(ID, get_state(PartyID)).
 
--spec get_pending_claim(party_id()) ->
-    claim() | no_return().
+-spec get_claims(party_id()) ->
+    [claim()] | no_return().
 
-get_pending_claim(PartyID) ->
-    case get_st_pending_claim(get_state(PartyID)) of
-        #payproc_Claim{} = Claim ->
-            Claim;
-        undefined ->
-            throw(#payproc_ClaimNotFound{})
-    end.
+get_claims(PartyID) ->
+    #st{claims = Claims} = get_state(PartyID),
+    maps:to_list(Claims).
 
 -spec get_public_history(party_id(), integer(), non_neg_integer()) ->
     [ev()].
@@ -378,25 +375,29 @@ get_st_party(#st{party = Party}) ->
     Party.
 
 get_st_pending_party(St0) ->
-    St = case get_st_pending_claim(St0) of
-        undefined ->
+    St = case get_st_pending_claims(St0) of
+        [] ->
             St0;
-        Claim ->
-            apply_claim(Claim, St0)
+        Claims ->
+            lists:foldl(
+                fun apply_claim/2,
+                St0,
+                Claims
+            )
     end,
     get_st_party(St).
 
 get_st_claim(ID, #st{claims = Claims}) ->
     assert_claim_exists(maps:get(ID, Claims, undefined)).
 
-get_st_pending_claim(#st{claims = Claims})->
+get_st_pending_claims(#st{claims = Claims})->
     % TODO cache it during history collapse
     maps:fold(
         fun
-            (_ID, #payproc_Claim{status = ?pending()} = Claim, undefined) -> Claim;
-            (_ID, #payproc_Claim{status = _Another}, Claim)               -> Claim
+            (_ID, #payproc_Claim{status = ?pending()} = Claim, Acc) -> [Claim | Acc];
+            (_ID, #payproc_Claim{status = _Another}, Acc)           -> Acc
         end,
-        undefined,
+        [],
         Claims
     ).
 
@@ -439,54 +440,50 @@ apply_changeset(Changeset, St) ->
 %%
 
 create_claim(Changeset, StEvents = {St, _}) ->
-    ClaimPending = get_st_pending_claim(St),
+    ClaimsPending = get_st_pending_claims(St),
+    Timestamp = hg_datetime:format_now(),
     % Test if we can safely accept proposed changes.
     case does_changeset_need_acceptance(Changeset) of
-        false when ClaimPending == undefined ->
-            % We can and there is no pending claim, accept them right away.
-            submit_accept_claim(Changeset, StEvents);
+        false when ClaimsPending == [] ->
+            % We can and there is no pending claims, accept them right away.
+            submit_claim(Changeset, ?accepted(Timestamp), StEvents);
         false ->
-            % We can but there is pending claim...
-            try_submit_accept_claim(Changeset, ClaimPending, StEvents);
-        true when ClaimPending == undefined ->
-            % We can't and there is no pending claim, submit new pending claim with proposed changes.
-            submit_claim(Changeset, StEvents);
+            % We can but there are pending claims, submit new accepted claim
+            % if it has zer0 conflicts with other claims
+            try_submit_claim(Changeset, ?accepted(Timestamp), ClaimsPending, StEvents);
+        true when ClaimsPending == [] ->
+            % We can't and there is no pending claims, submit new pending claim with proposed changes.
+            submit_claim(Changeset, ?pending(), StEvents);
         true ->
-            % We can't and there is in fact pending claim, revoke it and submit new claim with
-            % a combination of proposed changes and pending changes.
-            resubmit_claim(Changeset, ClaimPending, StEvents)
+            % We can't and there are pending claims, submit new claim
+            % if it has zer0 conflicts with other claims
+            try_submit_claim(Changeset, ?pending(), ClaimsPending, StEvents)
     end.
 
-try_submit_accept_claim(Changeset, ClaimPending, StEvents = {St, _}) ->
-    % ...Test whether there's a conflict between pending changes and proposed changes.
-    case has_changeset_conflict(Changeset, get_claim_changeset(ClaimPending), St) of
-        false ->
-            % If there's none then we can accept proposed changes safely.
-            submit_accept_claim(Changeset, StEvents);
-        true ->
-            % If there is then we should revoke the pending claim and submit new claim with a
-            % combination of proposed changes and pending changes.
-            resubmit_claim(Changeset, ClaimPending, StEvents)
+try_submit_claim(Changeset, Status, ClaimsPending, StEvents = {St, _}) ->
+    % ...Test whether there's a conflict between pending claims and proposed changes.
+    ConflictedClaims = lists:filter(
+        fun(Claim) ->
+            has_changeset_conflict(Changeset, get_claim_changeset(Claim), St)
+        end,
+        ClaimsPending
+    ),
+    case ConflictedClaims of
+        [] ->
+            % If there's none then we can submit claim with proposed changes safely.
+            submit_claim(Changeset, Status, StEvents);
+        [#payproc_Claim{id = ID} | _] ->
+            % If there is then we should SCREEM LIKE A BABY AND RUN AWAY!
+            throw(#payproc_ChangesetConflict{conflicted_id = ID})
     end.
 
-submit_claim(Changeset, StEvents = {St, _}) ->
-    Claim = construct_claim(Changeset, St),
-    submit_claim_event(Claim, StEvents).
-
-submit_accept_claim(Changeset, StEvents = {St, _}) ->
-    Claim = construct_claim(Changeset, St, ?accepted(hg_datetime:format_now())),
+submit_claim(Changeset, Status, StEvents = {St, _}) ->
+    Claim = construct_claim(Changeset, Status, St),
     submit_claim_event(Claim, StEvents).
 
 submit_claim_event(Claim, StEvents) ->
     Event = ?party_ev(?claim_created(Claim)),
     {get_claim_id(Claim), apply_state_event(Event, StEvents)}.
-
-resubmit_claim(Changeset, ClaimPending, StEvents0) ->
-    ChangesetMerged = merge_changesets(Changeset, get_claim_changeset(ClaimPending)),
-    {ID, StEvents1} = submit_claim(ChangesetMerged, StEvents0),
-    Reason = <<"Superseded by ", (integer_to_binary(ID))/binary>>,
-    {_ , StEvents2} = finalize_claim(get_claim_id(ClaimPending), ?revoked(Reason), StEvents1),
-    {ID, StEvents2}.
 
 does_changeset_need_acceptance(Changeset) ->
     lists:any(fun is_change_need_acceptance/1, Changeset).
@@ -553,9 +550,9 @@ assert_claim_pending(ID, {St, _}) ->
     end.
 
 construct_claim(Changeset, St) ->
-    construct_claim(Changeset, St, ?pending()).
+    construct_claim(Changeset, ?pending(), St).
 
-construct_claim(Changeset, St, Status) ->
+construct_claim(Changeset, Status, St) ->
     #payproc_Claim{
         id        = get_next_claim_id(St),
         status    = Status,
