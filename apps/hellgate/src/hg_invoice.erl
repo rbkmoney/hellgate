@@ -71,38 +71,34 @@ handle_function(Func, Args, Opts) ->
 handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     ID = hg_utils:unique_id(),
     _ = set_invoicing_meta(ID, UserInfo),
-    #payproc_InvoiceParams{party_id = PartyID, shop_id = ShopID} = InvoiceParams,
-    case hg_access_control:check_user_info(UserInfo, PartyID) of
-        ok ->
-            ok;
-        invalid_user ->
-            throw(#payproc_InvalidUser{})
-    end,
+    PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
+    ok = validate_party_access(UserInfo, PartyID),
     Party = get_party(PartyID),
+    ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
     Shop = validate_party_shop(ShopID, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(ID, {InvoiceParams, PartyID}),
+    ok = start(ID, InvoiceParams),
     ID;
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_access(UserInfo, InvoiceID),
+    ok = validate_invoice_access(UserInfo, InvoiceID),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_access(UserInfo, InvoiceID),
+    ok = validate_invoice_access(UserInfo, InvoiceID),
     get_public_history(InvoiceID, Range);
 
 handle_function_('StartPayment', [UserInfo, InvoiceID, PaymentParams], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_access(UserInfo, InvoiceID),
+    ok = validate_invoice_access(UserInfo, InvoiceID),
     ok = validate_operability(get_initial_state(InvoiceID)),
     call(InvoiceID, {start_payment, PaymentParams});
 
 handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_access(UserInfo, InvoiceID),
+    ok = validate_invoice_access(UserInfo, InvoiceID),
     St = get_state(InvoiceID),
     case get_payment_session(PaymentID, St) of
         PaymentSession when PaymentSession /= undefined ->
@@ -113,13 +109,13 @@ handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
 
 handle_function_('Fulfill', [UserInfo, InvoiceID, Reason], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_access(UserInfo, InvoiceID),
+    ok = validate_invoice_access(UserInfo, InvoiceID),
     ok = validate_operability(get_initial_state(InvoiceID)),
     call(InvoiceID, {fulfill, Reason});
 
 handle_function_('Rescind', [UserInfo, InvoiceID, Reason], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_access(UserInfo, InvoiceID),
+    ok = validate_invoice_access(UserInfo, InvoiceID),
     ok = validate_operability(get_initial_state(InvoiceID)),
     call(InvoiceID, {rescind, Reason}).
 
@@ -289,10 +285,10 @@ publish_event(_InvoiceID, _Event) ->
 namespace() ->
     ?NS.
 
--spec init(invoice_id(), {invoice_params(), dmsl_domain_thrift:'PartyID'()}) ->
+-spec init(invoice_id(), invoice_params()) ->
     hg_machine:result(ev()).
 
-init(ID, {InvoiceParams, PartyID}) ->
+init(ID, InvoiceParams = #payproc_InvoiceParams{party_id = PartyID}) ->
     Invoice = create_invoice(ID, InvoiceParams, PartyID),
     Event = {public, ?invoice_ev(?invoice_created(Invoice))},
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
@@ -737,9 +733,12 @@ validate_currency(Currency, Currency) ->
 validate_currency(_, _) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid currency">>]}).
 
-validate_access(UserInfo, InvoiceID) ->
+validate_invoice_access(UserInfo, InvoiceID) ->
     St = get_initial_state(InvoiceID),
     PartyID = get_party_id(St),
+    validate_party_access(UserInfo, PartyID).
+
+validate_party_access(UserInfo, PartyID) ->
     case hg_access_control:check_user_info(UserInfo, PartyID) of
         ok ->
             ok;
