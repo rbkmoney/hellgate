@@ -97,7 +97,7 @@ start(Ns, ID, Args) ->
 call(Ns, Ref, Args) ->
     Descriptor = prepare_descriptor(Ns, Ref, #'HistoryRange'{}),
     case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
-        {ok, Response} when is_binary(Response) ->
+        {ok, Response} ->
             % should be specific to a processing interface already
             {ok, unmarshal_term(Response)};
         {error, _} = Error ->
@@ -211,7 +211,7 @@ marshal_signal_result({Events, Action}) ->
     _ = lager:debug("signal result with events = ~p and action = ~p", [Events, Action]),
     Change = #'MachineStateChange'{
         events = wrap_events(Events),
-        aux_state = <<"">> %%% @TODO get state from process signal?
+        aux_state = {nl, #msgpack_Nil{}} %%% @TODO get state from process signal?
     },
     #'SignalResult'{
         change = Change,
@@ -235,7 +235,7 @@ marshal_call_result({Response, {Events, Action}}) ->
     _ = lager:debug("call response = ~p with event = ~p and action = ~p", [Response, Events, Action]),
     Change = #'MachineStateChange'{
         events = wrap_events(Events),
-        aux_state = <<"">> %%% @TODO get state from process signal?
+        aux_state = {nl, #msgpack_Nil{}} %%% @TODO get state from process signal?
     },
 
     #'CallResult'{
@@ -328,9 +328,9 @@ unwrap_args(Payload) ->
     unmarshal_term(Payload).
 
 marshal_term(V) ->
-    term_to_binary(V).
+    {bin, term_to_binary(V)}.
 
-unmarshal_term(B) ->
+unmarshal_term({bin, B}) ->
     binary_to_term(B).
 
 -spec prepare_descriptor(ns(), ref(), history_range()) -> descriptor().
