@@ -59,7 +59,12 @@ handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
     Party = hg_party_machine:get_party(PartyID),
-    hg_party:get_contract(ContractID, Party);
+    case hg_party:get_contract(ContractID, Party) of
+        #domain_Contract{} = Contract ->
+            Contract;
+        undefined ->
+            throw(#payproc_ContractNotFound{})
+    end;
 
 %% Shop
 
@@ -67,7 +72,12 @@ handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
     Party = hg_party_machine:get_party(PartyID),
-    hg_party:get_shop(ID, Party);
+    case hg_party:get_shop(ID, Party) of
+        #domain_Shop{} = Shop ->
+            Shop;
+        undefined ->
+            throw(#payproc_ShopNotFound{})
+    end;
 
 handle_function_('BlockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
@@ -106,25 +116,25 @@ handle_function_('GetClaims', [UserInfo, PartyID], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
     hg_party_machine:get_claims(PartyID);
 
-handle_function_('AcceptClaim', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('AcceptClaim', [UserInfo, PartyID, ID, Revision], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {accept_claim, ID});
+    hg_party_machine:call(PartyID, {accept_claim, ID, Revision});
 
-handle_function_('UpdateClaim', [UserInfo, PartyID, ID, Changeset], _Opts) ->
+handle_function_('UpdateClaim', [UserInfo, PartyID, ID, Revision, Changeset], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {update_claim, ID, Changeset});
+    hg_party_machine:call(PartyID, {update_claim, ID, Revision, Changeset});
 
-handle_function_('DenyClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
+handle_function_('DenyClaim', [UserInfo, PartyID, ID, Revision, Reason], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {deny_claim, ID, Reason});
+    hg_party_machine:call(PartyID, {deny_claim, ID, Revision, Reason});
 
-handle_function_('RevokeClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
+handle_function_('RevokeClaim', [UserInfo, PartyID, ID, Revision, Reason], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {revoke_claim, ID, Reason});
+    hg_party_machine:call(PartyID, {revoke_claim, ID, Revision, Reason});
 
 %% Event
 

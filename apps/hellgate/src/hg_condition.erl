@@ -25,7 +25,7 @@ test({cost_in, V}, #{cost := C}, _) ->
 test({payment_tool_condition, C}, #{payment_tool := V}, Rev) ->
     hg_payment_tool:test_condition(C, V, Rev);
 test({shop_location_is, V}, #{shop := S}, _) ->
-    V =:= S#domain_Shop.details#domain_ShopDetails.location;
+    V =:= S#domain_Shop.location;
 test({party, V}, #{party := P, shop := S}, _) ->
     test_party(V, P, S);
 test(_, #{}, _) ->
