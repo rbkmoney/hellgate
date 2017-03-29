@@ -24,7 +24,7 @@ services:
         condition: service_healthy
 
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/machinegun:f06cc286ce779a87f6874ed00ff547427e3820fc
+    image: dr.rbkmoney.com/rbkmoney/machinegun:e04e529f4c5682b527d12d73a13a3cf9eb296d4d
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
