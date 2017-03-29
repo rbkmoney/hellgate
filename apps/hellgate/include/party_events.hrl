@@ -12,11 +12,11 @@
 -define(shop_suspension(ID, Suspension),
     {shop_suspension, #payproc_ShopSuspension{shop_id = ID, suspension = Suspension}}).
 
--define(blocked(Reason), #domain_Blocked{reason = Reason}).
--define(unblocked(Reason), #domain_Unblocked{reason = Reason}).
+-define(blocked(Reason), {blocked, #domain_Blocked{reason = Reason}}).
+-define(unblocked(Reason), {unblocked, #domain_Unblocked{reason = Reason}}).
 
--define(active(), #domain_Active{}).
--define(suspended(), #domain_Suspended{}).
+-define(active(), {active, #domain_Active{}}).
+-define(suspended(), {suspended, #domain_Suspended{}}).
 
 -define(contract_modification(ID, Modification),
     {contract_modification, #payproc_ContractModificationUnit{id = ID, modification = Modification}}).

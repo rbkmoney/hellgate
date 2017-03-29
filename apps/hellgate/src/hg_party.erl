@@ -95,6 +95,9 @@
 -type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
 -type category()              :: dmsl_domain_thrift:'CategoryRef'().
 
+-type blocking()              :: dmsl_domain_thrift:'Blocking'().
+-type suspension()            :: dmsl_domain_thrift:'Suspension'().
+
 -type timestamp()             :: dmsl_base_thrift:'Timestamp'().
 -type revision()              :: hg_domain:revision().
 
@@ -120,15 +123,13 @@ create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
 get_party_id(#domain_Party{id = ID}) ->
     ID.
 
-% FIXME
--spec blocking(any(), party()) ->
+-spec blocking(blocking(), party()) ->
     party().
 
 blocking(Blocking, Party) ->
     Party#domain_Party{blocking = Blocking}.
 
-% FIXME
--spec suspension(any(), party()) ->
+-spec suspension(suspension(), party()) ->
     party().
 
 suspension(Suspension, Party) ->
@@ -178,12 +179,6 @@ get_contract(ID, #domain_Party{contracts = Contracts}) ->
 set_new_contract(Contract, Timestamp, Party) ->
     set_contract(update_contract_status(Contract, Timestamp), Party).
 
-% -spec get_contract_status(contract_id(), party()) ->
-%     contract_status().
-
-% get_contract_status(ContractID, Party) ->
-%     get_contract_status(get_contract(ContractID, Party)).
-
 -spec get_contract_status(contract()) ->
     contract_status().
 
@@ -197,14 +192,8 @@ set_contract_status(ContractID, Status, Party) ->
     Contract = get_contract(ContractID, Party),
     set_contract(Contract#domain_Contract{status = Status}, Party).
 
-% -spec get_contract_adjustment(contract_id(), adjustment_id(), party()) ->
-%     adjustment().
-
-% get_contract_adjustment(ContractID, AdjustmentID, Party) ->
-%     get_contract_adjustment(AdjustmentID, get_contract(ContractID, Party)).
-
 -spec get_contract_adjustment(adjustment_id(), contract()) ->
-    adjustment().
+    adjustment() | undefined.
 
 get_contract_adjustment(AdjustmentID, #domain_Contract{adjustments = Adjustments}) ->
     case lists:keysearch(AdjustmentID, #domain_ContractAdjustment.id, Adjustments) of
@@ -222,14 +211,8 @@ set_contract_adjustment(ContractID, Adjustment, Party) ->
     Adjustments = Contract#domain_Contract.adjustments ++ [Adjustment],
     set_contract(Contract#domain_Contract{adjustments = Adjustments}, Party).
 
-% -spec get_contract_payout_tool(contract_id(), payout_tool_id(), party()) ->
-%     payout_tool().
-
-% get_contract_payout_tool(ContractID, PayoutToolID, Party) ->
-%     get_contract_payout_tool(PayoutToolID, get_contract(ContractID, Party)).
-
 -spec get_contract_payout_tool(payout_tool_id(), contract()) ->
-    payout_tool().
+    payout_tool() | undefined.
 
 get_contract_payout_tool(PayoutToolID, #domain_Contract{payout_tools = PayoutTools}) ->
     case lists:keysearch(PayoutToolID, #domain_PayoutTool.id, PayoutTools) of
@@ -255,7 +238,7 @@ set_contract_legal_agreement(ContractID, LegalAgreement, Party) ->
     set_contract(Contract#domain_Contract{legal_agreement = LegalAgreement}, Party).
 
 -spec get_test_contract_params(revision()) ->
-    contract_params().
+    {contract_id(), contract_params()}.
 
 get_test_contract_params(Revision) ->
     {<<"TESTCONTRACT">>, #payproc_ContractParams{template = get_test_template_ref(Revision)}}.
@@ -384,7 +367,7 @@ create_shop(ID, ShopParams, Timestamp) ->
     }.
 
 -spec get_test_shop_params(contract_id(), revision()) ->
-    shop_params().
+    {shop_id(), shop_params()}.
 
 get_test_shop_params(ContractID, Revision) ->
     {<<"TESTSHOP">>, get_shop_prototype_params(ContractID, Revision)}.
@@ -450,20 +433,18 @@ set_shop_account(ShopID, Account, Party) ->
     Shop = get_shop(ShopID, Party),
     set_shop(Shop#domain_Shop{account = Account}, Party).
 
-% FIXME
--spec shop_blocking(shop_id(), any(), party()) ->
+-spec shop_blocking(shop_id(), blocking(), party()) ->
     party().
 
 shop_blocking(ID, Blocking, Party) ->
-    Shop = ensure_shop(get_shop(ID, Party)),
+    Shop = get_shop(ID, Party),
     set_shop(Shop#domain_Shop{blocking = Blocking}, Party).
 
-% FIXME
--spec shop_suspension(shop_id(), any(), party()) ->
+-spec shop_suspension(shop_id(), suspension(), party()) ->
     party().
 
 shop_suspension(ID, Suspension, Party) ->
-    Shop = ensure_shop(get_shop(ID, Party)),
+    Shop = get_shop(ID, Party),
     set_shop(Shop#domain_Shop{suspension = Suspension}, Party).
 
 -spec get_shop_id(shop()) ->
@@ -811,8 +792,8 @@ assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
 assert_party_objects_valid(Timestamp, Revision, #domain_Party{shops = Shops} = Party) ->
-    lists:foreach(
-        fun(Shop) ->
+    genlib_map:foreach(
+        fun(_ID, Shop) ->
             assert_shop_valid(Shop, Timestamp, Revision, Party)
         end,
         Shops

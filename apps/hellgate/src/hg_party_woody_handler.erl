@@ -116,25 +116,25 @@ handle_function_('GetClaims', [UserInfo, PartyID], _Opts) ->
     ok = assert_party_accessible(UserInfo, PartyID),
     hg_party_machine:get_claims(PartyID);
 
-handle_function_('AcceptClaim', [UserInfo, PartyID, ID, Revision], _Opts) ->
+handle_function_('AcceptClaim', [UserInfo, PartyID, ID, ClaimRevision], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {accept_claim, ID, Revision});
+    hg_party_machine:call(PartyID, {accept_claim, ID, ClaimRevision});
 
-handle_function_('UpdateClaim', [UserInfo, PartyID, ID, Revision, Changeset], _Opts) ->
+handle_function_('UpdateClaim', [UserInfo, PartyID, ID, ClaimRevision, Changeset], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {update_claim, ID, Revision, Changeset});
+    hg_party_machine:call(PartyID, {update_claim, ID, ClaimRevision, Changeset});
 
-handle_function_('DenyClaim', [UserInfo, PartyID, ID, Revision, Reason], _Opts) ->
+handle_function_('DenyClaim', [UserInfo, PartyID, ID, ClaimRevision, Reason], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {deny_claim, ID, Revision, Reason});
+    hg_party_machine:call(PartyID, {deny_claim, ID, ClaimRevision, Reason});
 
-handle_function_('RevokeClaim', [UserInfo, PartyID, ID, Revision, Reason], _Opts) ->
+handle_function_('RevokeClaim', [UserInfo, PartyID, ID, ClaimRevision, Reason], _Opts) ->
     _ = set_party_mgmt_meta(PartyID, UserInfo),
     ok = assert_party_accessible(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {revoke_claim, ID, Revision, Reason});
+    hg_party_machine:call(PartyID, {revoke_claim, ID, ClaimRevision, Reason});
 
 %% Event
 

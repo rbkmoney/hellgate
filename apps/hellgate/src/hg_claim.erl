@@ -10,11 +10,14 @@
 -export([revoke/2]).
 -export([apply/3]).
 
+-export([get_id/1]).
 -export([get_status/1]).
 -export([set_status/2]).
 -export([is_pending/1]).
+-export([is_accepted/1]).
 -export([is_need_acceptance/1]).
 -export([is_conflicting/5]).
+-export([update_changeset/2]).
 -export([craete_party_initial_claim/4]).
 
 -export([assert_revision/2]).
@@ -24,7 +27,7 @@
 
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
--type claim_status()        :: dmsl_payment_processing_thrift:'ClaimStatus'().
+-type claim_status()    :: dmsl_payment_processing_thrift:'ClaimStatus'().
 -type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
 -type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
 
@@ -34,6 +37,12 @@
 -type revision()        :: hg_domain:revision().
 
 %% Interface
+
+-spec get_id(claim()) ->
+    claim_id().
+
+get_id(#payproc_Claim{id = ID}) ->
+    ID.
 
 -spec craete_party_initial_claim(claim_id(), party(), timestamp(), revision()) ->
     claim().
@@ -48,7 +57,7 @@ craete_party_initial_claim(ID, Party, Timestamp, Revision) ->
     create(ID, Changeset, Party, Timestamp, Revision).
 
 -spec create(claim_id(), changeset(), party(), timestamp(), revision()) ->
-    claim().
+    claim() | no_return().
 
 create(ID, Changeset, Party, Timestamp, Revision) ->
     ok = assert_changeset_applicable(Changeset, Timestamp, Revision, Party),
@@ -60,7 +69,7 @@ create(ID, Changeset, Party, Timestamp, Revision) ->
     }.
 
 -spec update(changeset(), claim(), party(), timestamp(), revision()) ->
-    claim().
+    claim() | no_return().
 
 update(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim, Party, Timestamp, Revision) ->
     TmpChangeset = merge_changesets(OldChangeset, NewChangeset),
@@ -79,11 +88,11 @@ update_changeset(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim)
     }.
 
 -spec accept(timestamp(), revision(), party(), claim()) ->
-    claim().
+    claim() | no_return().
 
 accept(Timestamp, DomainRevision, Party, Claim) ->
     ok = assert_changeset_acceptable(get_changeset(Claim), Timestamp, DomainRevision, Party),
-    Effects = make_effects(Timestamp, DomainRevision, Claim),
+    Effects = make_effects(Timestamp, DomainRevision, Claim ),
     set_status(?accepted(Timestamp, Effects), Claim).
 
 -spec deny(binary(), claim()) ->
@@ -122,6 +131,14 @@ is_pending(#payproc_Claim{status = ?pending()}) ->
 is_pending(_) ->
     false.
 
+-spec is_accepted(claim()) ->
+    boolean().
+
+is_accepted(#payproc_Claim{status = ?accepted(_,_)}) ->
+    true;
+is_accepted(_) ->
+    false.
+
 -spec is_need_acceptance(claim()) ->
     boolean().
 
@@ -137,13 +154,10 @@ is_conflicting(Claim1, Claim2, Timestamp, Revision, Party) ->
 -spec apply(claim(), timestamp(), party()) ->
     party().
 
-apply(#payproc_Claim{status = ?accepted(_AcceptedAt, Effects)}, Timestamp, Party) ->
+apply(#payproc_Claim{status = ?accepted(_, Effects)}, Timestamp, Party) ->
     apply_effects(Effects, Timestamp, Party).
 
 %% Implementation
-
-% get_id(#payproc_Claim{id = ID}) ->
-%     ID.
 
 get_changeset(#payproc_Claim{changeset = Changeset}) ->
     Changeset.
@@ -171,7 +185,7 @@ is_shop_modification_need_acceptance(_) ->
 ensure_shop_account_creation(Changeset, Party, Timestamp, Revision) ->
     {CreatedShops, Party1} = lists:foldl(
         fun (?shop_modification(ID, {creation, ShopParams}), {Shops, P}) ->
-                {[hg_party:create_shop(ID, ShopParams) | Shops], P};
+                {[hg_party:create_shop(ID, ShopParams, Timestamp) | Shops], P};
             (?shop_modification(ID, {shop_account_creation, _}), {Shops, P}) ->
                 {lists:keydelete(ID, #domain_Shop.id, Shops), P};
             (?contract_modification(ID, {creation, Params}), {Shops, P}) ->
@@ -305,9 +319,9 @@ make_change_safe_effect(
     ?shop_effect(ID,
         {account_created, #domain_ShopAccount{
             currency = Currency,
-            settlement = <<"FAKEID">>,
-            guarantee = <<"FAKEID">>,
-            payout = <<"FAKEID">>
+            settlement = 42,
+            guarantee = 42,
+            payout = 42
         }}
     );
 
@@ -360,8 +374,14 @@ apply_shop_effect(ID, {proxy_changed, #payproc_ShopProxyChanged{proxy = Proxy}},
 apply_shop_effect(ID, {account_created, Account}, Party) ->
     hg_party:set_shop_account(ID, Account, Party).
 
+-spec raise_invalid_changeset(dmsl_payment_processing_thrift:'InvalidChangesetReason'()) ->
+    no_return().
+
 raise_invalid_changeset(Reason) ->
     throw(#payproc_InvalidChangeset{reason = Reason}).
+
+-spec raise_invalid_request(binary()) ->
+    no_return().
 
 raise_invalid_request(Error) ->
     throw(#'InvalidRequest'{errors = [Error]}).
@@ -369,12 +389,13 @@ raise_invalid_request(Error) ->
 %% Asserts
 
 -spec assert_revision(claim(), claim_revision())    -> ok | no_return().
--spec assert_pending(claim())                       -> ok | no_return().
 
 assert_revision(#payproc_Claim{revision = Revision}, Revision) ->
     ok;
 assert_revision(_, _) ->
     throw(#payproc_InvalidClaimRevision{}).
+
+-spec assert_pending(claim())                       -> ok | no_return().
 
 assert_pending(#payproc_Claim{status = ?pending()}) ->
     ok;
@@ -441,7 +462,7 @@ assert_shop_change_applicable(_, _, _) ->
 assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),
     Party = apply_effects(Effects, Timestamp, Party0),
-    hg_party:assert_party_objects_valid(Party, Timestamp, Revision).
+    hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
 
 assert_contract_live(Contract, Timestamp, Revision) ->
     case hg_party:is_test_contract(Contract, Timestamp, Revision) of

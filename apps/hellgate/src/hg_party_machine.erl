@@ -44,24 +44,19 @@
 -type st() :: #st{}.
 
 -type call() ::
-    {block, binary()}                                                |
-    {unblock, binary()}                                              |
-    suspend                                                          |
-    activate                                                         |
-    {create_contract, dmsl_payment_processing_thrift:'ContractParams'()}                             |
-    {bind_contract_legal_agreemnet, contract_id(), dmsl_domain_thrift:'LegalAgreement'()}|
-    {terminate_contract, contract_id(), binary()}                    |
-    {create_contract_adjustment, contract_id(), dmsl_payment_processing_thrift:'ContractAdjustmentParams'()} |
-    {create_payout_tool, contract_id(), dmsl_payment_processing_thrift:'PayoutToolParams'()}        |
-    {create_shop, dmsl_payment_processing_thrift:'ShopParams'()}                                     |
-    {update_shop, shop_id(), dmsl_payment_processing_thrift:'ShopUpdate'()}                          |
-    {block_shop, shop_id(), binary()}                                |
-    {unblock_shop, shop_id(), binary()}                              |
-    {suspend_shop, shop_id()}                                        |
-    {activate_shop, shop_id()}                                       |
-    {accept_claim, shop_id()}                                        |
-    {deny_claim, shop_id(), binary()}                                |
-    {revoke_claim, shop_id(), binary()}.
+    {block, binary()}                                           |
+    {unblock, binary()}                                         |
+    suspend                                                     |
+    activate                                                    |
+    {block_shop, shop_id(), binary()}                           |
+    {unblock_shop, shop_id(), binary()}                         |
+    {suspend_shop, shop_id()}                                   |
+    {activate_shop, shop_id()}                                  |
+    {create_claim, changeset()}                                 |
+    {update_claim, claim_id(), claim_revision(), changeset()}   |
+    {accept_claim, claim_id(), claim_revision()}                |
+    {deny_claim, claim_id(), claim_revision(), binary()}        |
+    {revoke_claim, claim_id(), claim_revision(), binary()}.
 
 -type response() ::
     ok | {ok, term()} | {exception, term()}.
@@ -72,14 +67,15 @@
 -type ev() ::
     {sequence(), public_event() | private_event()}.
 
--type party()       :: dmsl_domain_thrift:'Party'().
--type party_id()    :: dmsl_domain_thrift:'PartyID'().
--type contract_id() :: dmsl_domain_thrift:'ContractID'().
--type shop_id()     :: dmsl_domain_thrift:'ShopID'().
--type claim_id()    :: dmsl_payment_processing_thrift:'ClaimID'().
--type claim()       :: dmsl_payment_processing_thrift:'Claim'().
--type sequence()    :: pos_integer().
--type timestamp()   :: dmsl_base_thrift:'Timestamp'().
+-type party()           :: dmsl_domain_thrift:'Party'().
+-type party_id()        :: dmsl_domain_thrift:'PartyID'().
+-type shop_id()         :: dmsl_domain_thrift:'ShopID'().
+-type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
+-type claim()           :: dmsl_payment_processing_thrift:'Claim'().
+-type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
+-type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
+-type sequence()        :: pos_integer().
+-type timestamp()       :: dmsl_base_thrift:'Timestamp'().
 
 -spec namespace() ->
     hg_machine:ns().
@@ -110,8 +106,8 @@ process_init(PartyID, PartyParams) ->
         {#st{timestamp = Timestamp, revision = Revision}, []}
     ),
 
-    Claim = hg_claim:craete_party_initial_claim(Timestamp, Revision),
-    {_, StEvents1} = submit_claim(hg_claim:accept(Timestamp, Revision, Claim), {St, Events}),
+    Claim = hg_claim:craete_party_initial_claim(get_next_claim_id(St), Party, Timestamp, Revision),
+    {_, StEvents1} = submit_claim(hg_claim:accept(Timestamp, Revision, Party, Claim), {St, Events}),
     ok(StEvents1).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
@@ -199,30 +195,31 @@ handle_call({create_claim, Changeset}, StEvents0) ->
     {Claim, StEvents1} = create_claim(Changeset, StEvents0),
     respond(Claim, StEvents1);
 
-handle_call({update_claim, ID, Revision, Changeset}, StEvents0) ->
-    ok = assert_claim_modification_allowed(ID, Revision, StEvents0),
+handle_call({update_claim, ID, ClaimRevision, Changeset}, StEvents0) ->
+    ok = assert_claim_modification_allowed(ID, ClaimRevision, StEvents0),
     StEvents1 = update_claim(ID, Changeset, StEvents0),
     respond(ok, StEvents1);
 
-handle_call({accept_claim, ID, Revision}, StEvents0 = {St, _}) ->
-    ok = assert_claim_modification_allowed(ID, Revision, StEvents0),
+handle_call({accept_claim, ID, ClaimRevision}, StEvents0 = {St, _}) ->
+    ok = assert_claim_modification_allowed(ID, ClaimRevision, StEvents0),
     Claim = hg_claim:accept(
         get_st_timestamp(St),
         get_st_revision(St),
+        get_st_party(St),
         get_st_claim(ID, St)
     ),
     StEvents1 = finalize_claim(Claim, StEvents0),
     respond(ok, StEvents1);
 
-handle_call({deny_claim, ID, Revision, Reason}, StEvents0 = {St, _}) ->
-    ok = assert_claim_modification_allowed(ID, Revision, StEvents0),
+handle_call({deny_claim, ID, ClaimRevision, Reason}, StEvents0 = {St, _}) ->
+    ok = assert_claim_modification_allowed(ID, ClaimRevision, StEvents0),
     Claim = hg_claim:deny(Reason, get_st_claim(ID, St)),
     StEvents1 = finalize_claim(Claim, StEvents0),
     respond(ok, StEvents1);
 
-handle_call({revoke_claim, ID, Revision, Reason}, StEvents0 = {St, _}) ->
+handle_call({revoke_claim, ID, ClaimRevision, Reason}, StEvents0 = {St, _}) ->
     ok = assert_operable(StEvents0),
-    ok = assert_claim_modification_allowed(ID, Revision, StEvents0),
+    ok = assert_claim_modification_allowed(ID, ClaimRevision, StEvents0),
     Claim = hg_claim:revoke(Reason, get_st_claim(ID, St)),
     StEvents1 = finalize_claim(Claim, StEvents0),
     respond(ok, StEvents1).
@@ -299,7 +296,7 @@ get_claim(ID, PartyID) ->
 
 get_claims(PartyID) ->
     #st{claims = Claims} = get_state(PartyID),
-    maps:to_list(Claims).
+    maps:values(Claims).
 
 -spec get_public_history(party_id(), integer(), non_neg_integer()) ->
     [ev()].
@@ -340,10 +337,21 @@ get_st_pending_claims(#st{claims = Claims})->
     % TODO cache it during history collapse
     % Looks like little overhead, compared to previous version (based on maps:fold),
     % but I hope for small amount of pending claims simultaniously.
-    maps:to_list(maps:filter(fun hg_claim:is_pending/1, Claims)).
+    maps:values(maps:filter(
+        fun(_ID, Claim) ->
+            hg_claim:is_pending(Claim)
+        end,
+        Claims
+    )).
+
+-spec get_st_timestamp(st()) ->
+    timestamp().
 
 get_st_timestamp(#st{timestamp = Timestamp}) ->
     Timestamp.
+
+-spec get_st_revision(st()) ->
+    hg_domain:revision().
 
 get_st_revision(#st{revision = Revision}) ->
     Revision.
@@ -368,10 +376,13 @@ assert_claim_modification_allowed(ID, Revision, {St, _}) ->
     ok = hg_claim:assert_revision(Claim, Revision),
     ok = hg_claim:assert_pending(Claim).
 
-assert_claims_conflict(Claim, ClaimsPending) ->
+assert_claims_conflict(Claim, ClaimsPending, St) ->
+    Timestamp = get_st_timestamp(St),
+    Revision = get_st_revision(St),
+    Party = get_st_party(St),
     ConflictedClaims = lists:dropwhile(
         fun(PendingClaim) ->
-            not hg_claim:is_conflicting(Claim, PendingClaim)
+            not hg_claim:is_conflicting(Claim, PendingClaim, Timestamp, Revision, Party)
         end,
         ClaimsPending
     ),
@@ -385,15 +396,17 @@ assert_claims_conflict(Claim, ClaimsPending) ->
 %%
 
 create_claim(Changeset, StEvents = {St, _}) ->
-    Claim = hg_claim:create(get_next_claim_id(St), Changeset),
+    Timestamp = get_st_timestamp(St),
+    Revision = get_st_revision(St),
+    Claim = hg_claim:create(get_next_claim_id(St), Changeset, get_st_party(St), Timestamp, Revision),
     ClaimsPending = get_st_pending_claims(St),
     % Check for conflicts with other pending claims
-    ok = assert_claims_conflict(Claim, ClaimsPending),
+    ok = assert_claims_conflict(Claim, ClaimsPending, St),
     % Test if we can safely accept proposed changes.
     case hg_claim:is_need_acceptance(Claim) of
         false ->
             % Submit new accepted claim
-            AcceptedClaim = hg_claim:accept(get_st_timestamp(St), get_st_revision(St), Claim),
+            AcceptedClaim = hg_claim:accept(get_st_timestamp(St), get_st_revision(St), get_st_party(St), Claim),
             submit_claim(AcceptedClaim, StEvents);
         true ->
             % Submit new pending claim
@@ -405,10 +418,16 @@ submit_claim(Claim, StEvents) ->
     {Claim, apply_state_event(Event, StEvents)}.
 
 update_claim(ID, Changeset, StEvents = {St, _}) ->
-    Claim = hg_claim:update(Changeset, get_st_claim(ID, St)),
+    Claim = hg_claim:update(
+        Changeset,
+        get_st_claim(ID, St),
+        get_st_party(St),
+        get_st_timestamp(St),
+        get_st_revision(St)
+    ),
     ClaimsPending = get_st_pending_claims(St),
     % Check for conflicts with other pending claims
-    ok = assert_claims_conflict(Claim, ClaimsPending),
+    ok = assert_claims_conflict(Claim, ClaimsPending, St),
     Event = ?party_ev(?claim_updated(ID, Changeset)),
     apply_state_event(Event, StEvents).
 
@@ -428,11 +447,14 @@ get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
     lists:max([0| maps:keys(Claims)]) + 1.
 
-apply_accepted_claim(Claim = #payproc_Claim{status = ?accepted(_, _)}, St) ->
-    Party = hg_claim:apply(Claim, get_st_party(St)),
-    St#st{party = Party};
-apply_accepted_claim(_Claim, St) ->
-    St.
+apply_accepted_claim(Claim, St) ->
+    case hg_claim:is_accepted(Claim) of
+        true ->
+            Party = hg_claim:apply(Claim, get_st_timestamp(St), get_st_party(St)),
+            St#st{party = Party};
+        false ->
+            St
+    end.
 
 ok() ->
     {[], hg_machine_action:new()}.
@@ -462,7 +484,8 @@ collapse_history(History) ->
 -spec checkout_history([ev()], timestamp()) -> {ok, st()} | {error, revision_not_found}.
 
 checkout_history(History, Timestamp) ->
-    checkout_history(History, undefined, #st{timestamp = Timestamp}).
+    % FIXME hg_domain:head() looks strange here
+    checkout_history(History, undefined, #st{timestamp = Timestamp, revision = hg_domain:head()}).
 
 checkout_history([{_ID, EventTimestamp, Ev} | Rest], PrevTimestamp, #st{timestamp = Timestamp} = St) ->
     case hg_datetime:compare(EventTimestamp, Timestamp) of
@@ -503,7 +526,7 @@ merge_party_event(?claim_updated(ID, Changeset), St) ->
     Claim = hg_claim:update_changeset(Changeset, get_st_claim(ID, St)),
     set_claim(Claim, St);
 merge_party_event(?claim_status_changed(ID, Status), St) ->
-    Claim = hg_claim:change_status(Status, get_st_claim(ID, St)),
+    Claim = hg_claim:set_status(Status, get_st_claim(ID, St)),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1).
 
