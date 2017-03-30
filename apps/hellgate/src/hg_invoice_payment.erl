@@ -181,12 +181,12 @@ validate_payment_cost(
 
 validate_limit(Cash, CashRange) ->
     case hg_condition:test_cash_range(Cash, CashRange) of
-        true ->
+        within ->
             ok;
-        false ->
-            raise_invalid_request(<<"Limit exceeded">>);
-        undefined ->
-            error({misconfiguration, {'Invalid cash range specified', CashRange, Cash}})
+        {exceeds, lower} ->
+            raise_invalid_request(<<"Invalid amount, less than allowed minumum">>);
+        {exceeds, upper} ->
+            raise_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
 validate_route(Route = #domain_InvoicePaymentRoute{}) ->

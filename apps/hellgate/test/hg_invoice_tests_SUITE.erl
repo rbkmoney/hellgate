@@ -17,6 +17,7 @@
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancelled/1]).
 -export([invoice_cancelled_after_payment_timeout/1]).
+-export([invalid_payment_amount/1]).
 -export([payment_success/1]).
 -export([payment_success_w_merchant_callback/1]).
 -export([payment_success_on_second_try/1]).
@@ -59,6 +60,7 @@ all() ->
         invoice_cancellation,
         overdue_invoice_cancelled,
         invoice_cancelled_after_payment_timeout,
+        invalid_payment_amount,
         payment_success,
         payment_success_w_merchant_callback,
         payment_success_on_second_try,
@@ -136,7 +138,9 @@ invalid_invoice_amount(C) ->
     ShopID = ?c(shop_id, C),
     PartyID = ?c(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
-    {exception, #'InvalidRequest'{}} = hg_client_invoicing:create(InvoiceParams, Client).
+    {exception, #'InvalidRequest'{
+        errors = [<<"Invalid amount">>]
+    }} = hg_client_invoicing:create(InvoiceParams, Client).
 
 -spec invalid_invoice_currency(config()) -> _ | no_return().
 
@@ -145,7 +149,9 @@ invalid_invoice_currency(C) ->
     ShopID = ?c(shop_id, C),
     PartyID = ?c(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100, <<"KEK">>}),
-    {exception, #'InvalidRequest'{}} = hg_client_invoicing:create(InvoiceParams, Client).
+    {exception, #'InvalidRequest'{
+        errors = [<<"Invalid currency">>]
+    }} = hg_client_invoicing:create(InvoiceParams, Client).
 
 -spec invalid_party_status(config()) -> _ | no_return().
 
@@ -216,6 +222,20 @@ invoice_cancelled_after_payment_timeout(C) ->
     %% wait for payment timeout
     ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
+
+-spec invalid_payment_amount(config()) -> _ | no_return().
+
+invalid_payment_amount(C) ->
+    Client = ?c(client, C),
+    PaymentParams = make_payment_params(),
+    InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 1, C),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Invalid amount, less", _/binary>>]
+    }} = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
+    InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 100000000000000, C),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Invalid amount, more", _/binary>>]
+    }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
 
 -spec payment_success(config()) -> _ | no_return().
 
