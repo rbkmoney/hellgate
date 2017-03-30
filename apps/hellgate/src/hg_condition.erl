@@ -48,8 +48,8 @@ test_party_({shop_is, ID1}, _, #domain_Shop{id = ID2}) ->
 
 test_cash_range(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper}) ->
     case {
-        test_cash_bound(fun erlang:'>'/2, Lower, Cash),
-        test_cash_bound(fun erlang:'<'/2, Upper, Cash)
+        test_cash_bound(fun erlang:'>'/2, Cash, Lower),
+        test_cash_bound(fun erlang:'<'/2, Cash, Upper)
     } of
         {true, true} ->
             within;
@@ -61,9 +61,9 @@ test_cash_range(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper
             error({misconfiguration, {'Invalid cash range specified', CashRange, Cash}})
     end.
 
-test_cash_bound(_, {inclusive, V}, V) ->
+test_cash_bound(_, V, {inclusive, V}) ->
     true;
-test_cash_bound(F, {_, ?cash(Am, C)}, ?cash(A, C)) ->
+test_cash_bound(F, ?cash(A, C), {_, ?cash(Am, C)}) ->
     F(A, Am);
 test_cash_bound(_, _, _) ->
     error.
