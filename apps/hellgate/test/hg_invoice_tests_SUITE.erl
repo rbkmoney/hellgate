@@ -354,7 +354,7 @@ get_risk_coverage_from_route(#domain_InvoicePaymentRoute{terminal = TermRef}) ->
 
 invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
-    ShopID = 1,
+    ShopID = <<"TESTSHOP">>,
     RootUrl = ?c(root_url, C),
     UserInfo = make_userinfo(PartyID),
     PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
@@ -523,7 +523,7 @@ construct_domain_fixture() ->
             ])},
             payment_methods = {decisions, [
                 #domain_PaymentMethodDecision{
-                    if_   = ?partycond(<<"DEPRIVED ONE">>, {shop_is, 1}),
+                    if_   = ?partycond(<<"DEPRIVED ONE">>, {shop_is, <<"TESTSHOP">>}),
                     then_ = {value, ordsets:new()}
                 },
                 #domain_PaymentMethodDecision{

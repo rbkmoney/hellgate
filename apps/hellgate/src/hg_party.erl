@@ -389,7 +389,7 @@ create_shop(ID, ShopParams, Timestamp) ->
         id              = ID,
         created_at      = Timestamp,
         blocking        = ?unblocked(<<>>),
-        suspension      = ?suspended(),
+        suspension      = ?active(),
         category        = ShopParams#payproc_ShopParams.category,
         details         = ShopParams#payproc_ShopParams.details,
         location        = ShopParams#payproc_ShopParams.location,
@@ -835,14 +835,7 @@ assert_party_objects_valid(Timestamp, Revision, #domain_Party{shops = Shops} = P
 assert_shop_valid(Shop, Timestamp, Revision, Party) ->
     Contract = get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
-    case is_test_contract(Contract, Timestamp, Revision) of
-        true when Shop#domain_Shop.payout_tool_id == undefined ->
-            ok;
-        true ->
-            raise_invalid_request(<<"using payout tool with test shop unavailable">>);
-        false ->
-            assert_shop_payout_tool_valid(Shop, Contract)
-    end.
+    ok = assert_shop_payout_tool_valid(Shop, Contract).
 
 assert_shop_contract_valid(
     #domain_Shop{category = CategoryRef, account = ShopAccount},

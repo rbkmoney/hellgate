@@ -18,7 +18,7 @@
 -export([is_need_acceptance/1]).
 -export([is_conflicting/5]).
 -export([update_changeset/2]).
--export([craete_party_initial_claim/4]).
+-export([create_party_initial_claim/4]).
 
 -export([assert_revision/2]).
 -export([assert_pending/1]).
@@ -44,10 +44,10 @@
 get_id(#payproc_Claim{id = ID}) ->
     ID.
 
--spec craete_party_initial_claim(claim_id(), party(), timestamp(), revision()) ->
+-spec create_party_initial_claim(claim_id(), party(), timestamp(), revision()) ->
     claim().
 
-craete_party_initial_claim(ID, Party, Timestamp, Revision) ->
+create_party_initial_claim(ID, Party, Timestamp, Revision) ->
     % FIXME
     Email = (Party#domain_Party.contact_info)#domain_PartyContactInfo.email,
     {ContractID, ContractParams} = hg_party:get_test_contract_params(Email, Revision),
@@ -68,7 +68,7 @@ create(ID, Changeset, Party, Timestamp, Revision) ->
     #payproc_Claim{
         id        = ID,
         status    = ?pending(),
-        changeset = merge_changesets(Changeset, ensure_shop_account_creation(Changeset, Party, Timestamp, Revision)),
+        changeset = merge_changesets(Changeset, ensure_shop_accounts_creation(Changeset, Party, Timestamp, Revision)),
         revision = 1
     }.
 
@@ -78,7 +78,7 @@ create(ID, Changeset, Party, Timestamp, Revision) ->
 update(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim, Party, Timestamp, Revision) ->
     TmpChangeset = merge_changesets(OldChangeset, NewChangeset),
     ok = assert_changeset_applicable(TmpChangeset, Timestamp, Revision, Party),
-    Changeset = merge_changesets(NewChangeset, ensure_shop_account_creation(TmpChangeset, Party, Timestamp, Revision)),
+    Changeset = merge_changesets(NewChangeset, ensure_shop_accounts_creation(TmpChangeset, Party, Timestamp, Revision)),
     update_changeset(Changeset, Claim).
 
 % FIXME dirty ad hoc for event appliance
@@ -96,7 +96,7 @@ update_changeset(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim)
 
 accept(Timestamp, DomainRevision, Party, Claim) ->
     ok = assert_changeset_acceptable(get_changeset(Claim), Timestamp, DomainRevision, Party),
-    Effects = make_effects(Timestamp, DomainRevision, Claim ),
+    Effects = make_effects(Timestamp, DomainRevision, Claim),
     set_status(?accepted(Timestamp, Effects), Claim).
 
 -spec deny(binary(), claim()) ->
@@ -186,7 +186,7 @@ is_shop_modification_need_acceptance({shop_account_creation, _}) ->
 is_shop_modification_need_acceptance(_) ->
     true.
 
-ensure_shop_account_creation(Changeset, Party, Timestamp, Revision) ->
+ensure_shop_accounts_creation(Changeset, Party, Timestamp, Revision) ->
     {CreatedShops, Party1} = lists:foldl(
         fun (?shop_modification(ID, {creation, ShopParams}), {Shops, P}) ->
                 {[hg_party:create_shop(ID, ShopParams, Timestamp) | Shops], P};
@@ -322,10 +322,7 @@ make_change_safe_effect(
 ) ->
     ?shop_effect(ID,
         {account_created, #domain_ShopAccount{
-            currency = Currency,
-            settlement = 42,
-            guarantee = 42,
-            payout = 42
+            currency = Currency
         }}
     );
 
@@ -384,12 +381,6 @@ apply_shop_effect(ID, {account_created, Account}, Party) ->
 raise_invalid_changeset(Reason) ->
     throw(#payproc_InvalidChangeset{reason = Reason}).
 
--spec raise_invalid_request(binary()) ->
-    no_return().
-
-raise_invalid_request(Error) ->
-    throw(#'InvalidRequest'{errors = [Error]}).
-
 %% Asserts
 
 -spec assert_revision(claim(), claim_revision())    -> ok | no_return().
@@ -410,7 +401,7 @@ assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
     case Change of
         ?contract_modification(ID, Modification) ->
             Contract = hg_party:get_contract(ID, Party),
-            ok = assert_contract_change_applicable(ID, Modification, Timestamp, Revision, Contract);
+            ok = assert_contract_change_applicable(ID, Modification, Contract);
         ?shop_modification(ID, Modification) ->
             Shop = hg_party:get_shop(ID, Party),
             ok = assert_shop_change_applicable(ID, Modification, Shop)
@@ -420,13 +411,13 @@ assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
 assert_changeset_applicable([], _, _, _) ->
     ok.
 
-assert_contract_change_applicable(_, {creation, _}, _, _, undefined) ->
+assert_contract_change_applicable(_, {creation, _}, undefined) ->
     ok;
-assert_contract_change_applicable(ID, {creation, _}, _, _, #domain_Contract{}) ->
+assert_contract_change_applicable(ID, {creation, _}, #domain_Contract{}) ->
     raise_invalid_changeset({contract_already_exists, ID});
-assert_contract_change_applicable(ID, _AnyModification, _, _, undefined) ->
+assert_contract_change_applicable(ID, _AnyModification, undefined) ->
     raise_invalid_changeset({contract_not_exists, ID});
-assert_contract_change_applicable(ID, ?contract_termination(_), _, _, Contract) ->
+assert_contract_change_applicable(ID, ?contract_termination(_), Contract) ->
     case hg_party:is_contract_active(Contract) of
         true ->
             ok;
@@ -436,22 +427,21 @@ assert_contract_change_applicable(ID, ?contract_termination(_), _, _, Contract) 
                 status = hg_party:get_contract_status(Contract)
             }})
     end;
-assert_contract_change_applicable(_, ?adjustment_creation(AdjustmentID, _), _, _, Contract) ->
+assert_contract_change_applicable(_, ?adjustment_creation(AdjustmentID, _), Contract) ->
     case hg_party:get_contract_adjustment(AdjustmentID, Contract) of
         undefined ->
             ok;
         _ ->
             raise_invalid_changeset({contract_adjustment_already_exists, AdjustmentID})
     end;
-assert_contract_change_applicable(_, ?payout_tool_creation(PayoutToolID, _), Timestamp, Revision, Contract) ->
-    ok = assert_contract_live(Contract, Timestamp, Revision),
+assert_contract_change_applicable(_, ?payout_tool_creation(PayoutToolID, _), Contract) ->
     case hg_party:get_contract_payout_tool(PayoutToolID, Contract) of
         undefined ->
             ok;
         _ ->
             raise_invalid_changeset({payout_tool_already_exists, PayoutToolID})
     end;
-assert_contract_change_applicable(_, _, _, _, _) ->
+assert_contract_change_applicable(_, _, _) ->
     ok.
 
 assert_shop_change_applicable(_, {creation, _}, undefined) ->
@@ -468,10 +458,3 @@ assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
 
-assert_contract_live(Contract, Timestamp, Revision) ->
-    case hg_party:is_test_contract(Contract, Timestamp, Revision) of
-        true ->
-            raise_invalid_request(<<"creating payout tool for test contract unavailable">>);
-        false ->
-            ok
-    end.

@@ -106,7 +106,7 @@ process_init(PartyID, PartyParams) ->
         {#st{timestamp = Timestamp, revision = Revision}, []}
     ),
 
-    Claim = hg_claim:craete_party_initial_claim(get_next_claim_id(St), Party, Timestamp, Revision),
+    Claim = hg_claim:create_party_initial_claim(get_next_claim_id(St), Party, Timestamp, Revision),
     {_, StEvents1} = submit_claim(hg_claim:accept(Timestamp, Revision, Party, Claim), {St, Events}),
     ok(StEvents1).
 
