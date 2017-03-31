@@ -99,7 +99,7 @@ init(ID, PartyParams) ->
 process_init(PartyID, PartyParams) ->
     Timestamp = hg_datetime:format_now(),
     Revision = hg_domain:head(),
-    Party = hg_party:create_party(PartyID, PartyParams),
+    Party = hg_party:create_party(PartyID, PartyParams, Timestamp),
 
     {St, Events} = apply_state_event(
         ?party_ev(?party_created(Party)),

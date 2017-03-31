@@ -17,15 +17,15 @@
 -export([party_already_exists/1]).
 -export([party_retrieval/1]).
 
--export([claim_already_accepted_on_accept/1]).
--export([claim_already_accepted_on_deny/1]).
--export([claim_already_accepted_on_revoke/1]).
--export([claim_acceptance/1]).
--export([claim_denial/1]).
--export([claim_revocation/1]).
--export([claim_not_found_on_retrieval/1]).
--export([no_pending_claim/1]).
--export([complex_claim_acceptance/1]).
+% -export([claim_already_accepted_on_accept/1]).
+% -export([claim_already_accepted_on_deny/1]).
+% -export([claim_already_accepted_on_revoke/1]).
+% -export([claim_acceptance/1]).
+% -export([claim_denial/1]).
+% -export([claim_revocation/1]).
+% -export([claim_not_found_on_retrieval/1]).
+% -export([no_pending_claim/1]).
+% -export([complex_claim_acceptance/1]).
 
 -export([party_revisioning/1]).
 -export([party_blocking/1]).
@@ -38,20 +38,20 @@
 -export([party_already_suspended/1]).
 -export([party_already_active/1]).
 
--export([shop_not_found_on_retrieval/1]).
--export([shop_creation/1]).
--export([shop_update/1]).
--export([shop_update_before_confirm/1]).
--export([shop_update_with_bad_params/1]).
--export([shop_blocking/1]).
--export([shop_unblocking/1]).
--export([shop_already_blocked/1]).
--export([shop_already_unblocked/1]).
--export([shop_blocked_on_suspend/1]).
--export([shop_suspension/1]).
--export([shop_activation/1]).
--export([shop_already_suspended/1]).
--export([shop_already_active/1]).
+% -export([shop_not_found_on_retrieval/1]).
+% -export([shop_creation/1]).
+% -export([shop_update/1]).
+% -export([shop_update_before_confirm/1]).
+% -export([shop_update_with_bad_params/1]).
+% -export([shop_blocking/1]).
+% -export([shop_unblocking/1]).
+% -export([shop_already_blocked/1]).
+% -export([shop_already_unblocked/1]).
+% -export([shop_blocked_on_suspend/1]).
+% -export([shop_suspension/1]).
+% -export([shop_activation/1]).
+% -export([shop_already_suspended/1]).
+% -export([shop_already_active/1]).
 
 -export([shop_account_set_retrieval/1]).
 -export([shop_account_retrieval/1]).
@@ -60,14 +60,14 @@
 
 -export([party_access_control/1]).
 
--export([contract_not_found/1]).
--export([contract_creation/1]).
--export([contract_termination/1]).
--export([contract_expiration/1]).
--export([contract_legal_agreement_binding/1]).
--export([contract_payout_tool_creation/1]).
--export([contract_adjustment_creation/1]).
--export([contract_adjustment_expiration/1]).
+% -export([contract_not_found/1]).
+% -export([contract_creation/1]).
+% -export([contract_termination/1]).
+% -export([contract_expiration/1]).
+% -export([contract_legal_agreement_binding/1]).
+% -export([contract_payout_tool_creation/1]).
+% -export([contract_adjustment_creation/1]).
+% -export([contract_adjustment_expiration/1]).
 
 %%
 
@@ -87,11 +87,11 @@ all() ->
         {group, party_creation},
         {group, party_revisioning},
         {group, party_blocking_suspension},
-        {group, contract_management},
-        {group, shop_management},
-        {group, shop_account_lazy_creation},
+        % {group, contract_management},
+        % {group, shop_management},
+        % {group, shop_account_lazy_creation},
 
-        {group, claim_management},
+        % {group, claim_management},
 
         {group, consistent_history}
     ].
@@ -283,8 +283,6 @@ end_per_testcase(_Name, _C) ->
     #payproc_Claim{id = ID, status = Status}).
 -define(claim(ID, Status, Changeset),
     #payproc_Claim{id = ID, status = Status, changeset = Changeset}).
--define(claim_result(ID, Status),
-    #payproc_ClaimResult{id = ID, status = Status}).
 
 -define(claim_not_found(),
     {exception, #payproc_ClaimNotFound{}}).
@@ -295,21 +293,25 @@ end_per_testcase(_Name, _C) ->
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
 -spec party_already_exists(config()) -> _ | no_return().
 -spec party_retrieval(config()) -> _ | no_return().
--spec shop_not_found_on_retrieval(config()) -> _ | no_return().
--spec shop_creation(config()) -> _ | no_return().
--spec shop_update(config()) -> _ | no_return().
--spec shop_update_before_confirm(config()) -> _ | no_return().
--spec shop_update_with_bad_params(config()) -> _ | no_return().
+
+% -spec shop_not_found_on_retrieval(config()) -> _ | no_return().
+% -spec shop_creation(config()) -> _ | no_return().
+% -spec shop_update(config()) -> _ | no_return().
+% -spec shop_update_before_confirm(config()) -> _ | no_return().
+% -spec shop_update_with_bad_params(config()) -> _ | no_return().
+
 -spec party_revisioning(config()) -> _ | no_return().
--spec claim_already_accepted_on_revoke(config()) -> _ | no_return().
--spec claim_already_accepted_on_accept(config()) -> _ | no_return().
--spec claim_already_accepted_on_deny(config()) -> _ | no_return().
--spec claim_acceptance(config()) -> _ | no_return().
--spec claim_denial(config()) -> _ | no_return().
--spec claim_revocation(config()) -> _ | no_return().
--spec claim_not_found_on_retrieval(config()) -> _ | no_return().
--spec no_pending_claim(config()) -> _ | no_return().
--spec complex_claim_acceptance(config()) -> _ | no_return().
+
+% -spec claim_already_accepted_on_revoke(config()) -> _ | no_return().
+% -spec claim_already_accepted_on_accept(config()) -> _ | no_return().
+% -spec claim_already_accepted_on_deny(config()) -> _ | no_return().
+% -spec claim_acceptance(config()) -> _ | no_return().
+% -spec claim_denial(config()) -> _ | no_return().
+% -spec claim_revocation(config()) -> _ | no_return().
+% -spec claim_not_found_on_retrieval(config()) -> _ | no_return().
+% -spec no_pending_claim(config()) -> _ | no_return().
+% -spec complex_claim_acceptance(config()) -> _ | no_return().
+
 -spec party_blocking(config()) -> _ | no_return().
 -spec party_unblocking(config()) -> _ | no_return().
 -spec party_already_blocked(config()) -> _ | no_return().
@@ -319,26 +321,29 @@ end_per_testcase(_Name, _C) ->
 -spec party_activation(config()) -> _ | no_return().
 -spec party_already_suspended(config()) -> _ | no_return().
 -spec party_already_active(config()) -> _ | no_return().
--spec shop_blocking(config()) -> _ | no_return().
--spec shop_unblocking(config()) -> _ | no_return().
--spec shop_already_blocked(config()) -> _ | no_return().
--spec shop_already_unblocked(config()) -> _ | no_return().
--spec shop_blocked_on_suspend(config()) -> _ | no_return().
--spec shop_suspension(config()) -> _ | no_return().
--spec shop_activation(config()) -> _ | no_return().
--spec shop_already_suspended(config()) -> _ | no_return().
--spec shop_already_active(config()) -> _ | no_return().
+
+% -spec shop_blocking(config()) -> _ | no_return().
+% -spec shop_unblocking(config()) -> _ | no_return().
+% -spec shop_already_blocked(config()) -> _ | no_return().
+% -spec shop_already_unblocked(config()) -> _ | no_return().
+% -spec shop_blocked_on_suspend(config()) -> _ | no_return().
+% -spec shop_suspension(config()) -> _ | no_return().
+% -spec shop_activation(config()) -> _ | no_return().
+% -spec shop_already_suspended(config()) -> _ | no_return().
+% -spec shop_already_active(config()) -> _ | no_return().
 -spec shop_account_set_retrieval(config()) -> _ | no_return().
 -spec shop_account_retrieval(config()) -> _ | no_return().
+
 -spec party_access_control(config()) -> _ | no_return().
--spec contract_not_found(config()) -> _ | no_return().
--spec contract_creation(config()) -> _ | no_return().
--spec contract_termination(config()) -> _ | no_return().
--spec contract_expiration(config()) -> _ | no_return().
--spec contract_legal_agreement_binding(config()) -> _ | no_return().
--spec contract_payout_tool_creation(config()) -> _ | no_return().
--spec contract_adjustment_creation(config()) -> _ | no_return().
--spec contract_adjustment_expiration(config()) -> _ | no_return().
+
+% -spec contract_not_found(config()) -> _ | no_return().
+% -spec contract_creation(config()) -> _ | no_return().
+% -spec contract_termination(config()) -> _ | no_return().
+% -spec contract_expiration(config()) -> _ | no_return().
+% -spec contract_legal_agreement_binding(config()) -> _ | no_return().
+% -spec contract_payout_tool_creation(config()) -> _ | no_return().
+% -spec contract_adjustment_creation(config()) -> _ | no_return().
+% -spec contract_adjustment_expiration(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = ?c(client, C),
@@ -346,7 +351,7 @@ party_creation(C) ->
     ContactInfo = #domain_PartyContactInfo{email = <<?MODULE_STRING>>},
     ok = hg_client_party:create(make_party_params(ContactInfo), Client),
     ?party_created(?party_w_status(PartyID, ?unblocked(_), ?active())) = next_event(Client),
-    ?claim_created(?claim(_, ?accepted(_), [_ | _])) = next_event(Client),
+    ?claim_created(?claim(_, ?accepted(_, _), [_ | _])) = next_event(Client),
     #domain_Party{contact_info = ContactInfo, shops = Shops} = hg_client_party:get(Client),
     [{_ShopID, #domain_Shop{suspension = ?active()}}] = maps:to_list(Shops).
 
@@ -375,410 +380,410 @@ party_revisioning(C) ->
     Party2 = hg_party_machine:checkout(Party2#domain_Party.id, T2),
     hg_context:cleanup().
 
-contract_not_found(C) ->
-    Client = ?c(client, C),
-    ?contract_not_found() = hg_client_party:get_contract(666, Client),
-    Params = #payproc_ShopParams{
-        category = ?cat(42),
-        details  = hg_ct_helper:make_shop_details(<<"SOME SHOP">>, <<"WITH WRONG PARAMS">>),
-        contract_id = 666,
-        payout_tool_id = 42
-    },
-    ?contract_not_found() = hg_client_party:create_shop(Params, Client).
+% contract_not_found(C) ->
+%     Client = ?c(client, C),
+%     ?contract_not_found() = hg_client_party:get_contract(666, Client),
+%     Params = #payproc_ShopParams{
+%         category = ?cat(42),
+%         details  = hg_ct_helper:make_shop_details(<<"SOME SHOP">>, <<"WITH WRONG PARAMS">>),
+%         contract_id = 666,
+%         payout_tool_id = 42
+%     },
+%     ?contract_not_found() = hg_client_party:create_shop(Params, Client).
 
-contract_creation(C) ->
-    Client = ?c(client, C),
-    Params = hg_ct_helper:make_battle_ready_contract_params(),
-    Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
-    ?claim(
-        _,
-        ?pending(),
-        [
-            ?contract_creation(#domain_Contract{id = ID}),
-            ?contract_payout_tool_creation(ID, #domain_PayoutTool{id = PayoutToolID})
-        ]
-    ) = Claim,
-    ok = accept_claim(Claim, Client),
-    #domain_Contract{id = ID, payout_tools = PayoutTools} = hg_client_party:get_contract(ID, Client),
-    true = lists:keymember(PayoutToolID, #domain_PayoutTool.id, PayoutTools).
+% contract_creation(C) ->
+%     Client = ?c(client, C),
+%     Params = hg_ct_helper:make_battle_ready_contract_params(),
+%     Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
+%     ?claim(
+%         _,
+%         ?pending(),
+%         [
+%             ?contract_creation(#domain_Contract{id = ID}),
+%             ?contract_payout_tool_creation(ID, #domain_PayoutTool{id = PayoutToolID})
+%         ]
+%     ) = Claim,
+%     ok = accept_claim(Claim, Client),
+%     #domain_Contract{id = ID, payout_tools = PayoutTools} = hg_client_party:get_contract(ID, Client),
+%     true = lists:keymember(PayoutToolID, #domain_PayoutTool.id, PayoutTools).
 
-contract_termination(C) ->
-    Client = ?c(client, C),
-    ContractID = hg_ct_helper:get_first_contract_id(Client),
-    Reason = <<"WHY NOT?!">>,
-    Claim = assert_claim_pending(hg_client_party:terminate_contract(ContractID, Reason, Client), Client),
-    ?claim(
-        _,
-        ?pending(),
-        [?contract_termination(ContractID, _, Reason)]
-    ) = Claim,
-    ok = accept_claim(Claim, Client),
-    #domain_Contract{
-        id = ContractID,
-        status = {terminated, _}
-    } = hg_client_party:get_contract(ContractID, Client),
-    ?invalid_contract_status({terminated, _}) = hg_client_party:terminate_contract(
-        ContractID,
-        <<"JUST TO BE SURE">>,
-        Client
-    ).
+% contract_termination(C) ->
+%     Client = ?c(client, C),
+%     ContractID = hg_ct_helper:get_first_contract_id(Client),
+%     Reason = <<"WHY NOT?!">>,
+%     Claim = assert_claim_pending(hg_client_party:terminate_contract(ContractID, Reason, Client), Client),
+%     ?claim(
+%         _,
+%         ?pending(),
+%         [?contract_termination(ContractID, _, Reason)]
+%     ) = Claim,
+%     ok = accept_claim(Claim, Client),
+%     #domain_Contract{
+%         id = ContractID,
+%         status = {terminated, _}
+%     } = hg_client_party:get_contract(ContractID, Client),
+%     ?invalid_contract_status({terminated, _}) = hg_client_party:terminate_contract(
+%         ContractID,
+%         <<"JUST TO BE SURE">>,
+%         Client
+%     ).
 
-contract_expiration(C) ->
-    Client = ?c(client, C),
-    Params = hg_ct_helper:make_battle_ready_contract_params(#domain_ContractTemplateRef{id = 3}),
-    Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
-    ?claim(
-        _,
-        ?pending(),
-        [{contract_creation, #domain_Contract{id = ContractID}}, _PayouToolChangeSet]
-    ) = Claim,
-    ok = accept_claim(Claim, Client),
-    #domain_Contract{
-        id = ContractID,
-        status = {terminated, _}
-    } = hg_client_party:get_contract(ContractID, Client).
+% contract_expiration(C) ->
+%     Client = ?c(client, C),
+%     Params = hg_ct_helper:make_battle_ready_contract_params(#domain_ContractTemplateRef{id = 3}),
+%     Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
+%     ?claim(
+%         _,
+%         ?pending(),
+%         [{contract_creation, #domain_Contract{id = ContractID}}, _PayouToolChangeSet]
+%     ) = Claim,
+%     ok = accept_claim(Claim, Client),
+%     #domain_Contract{
+%         id = ContractID,
+%         status = {terminated, _}
+%     } = hg_client_party:get_contract(ContractID, Client).
 
-contract_legal_agreement_binding(C) ->
-    Client = ?c(client, C),
-    LA = #domain_LegalAgreement{
-        signed_at = hg_datetime:format_now(),
-        legal_agreement_id = <<"20160123-0031235-OGM/GDM">>
-    },
-    TerminatedContractID = hg_ct_helper:get_first_contract_id(Client),
-    ?invalid_contract_status({terminated, _}) = hg_client_party:bind_legal_agreement(
-        TerminatedContractID,
-        LA,
-        Client
-    ),
+% contract_legal_agreement_binding(C) ->
+%     Client = ?c(client, C),
+%     LA = #domain_LegalAgreement{
+%         signed_at = hg_datetime:format_now(),
+%         legal_agreement_id = <<"20160123-0031235-OGM/GDM">>
+%     },
+%     TerminatedContractID = hg_ct_helper:get_first_contract_id(Client),
+%     ?invalid_contract_status({terminated, _}) = hg_client_party:bind_legal_agreement(
+%         TerminatedContractID,
+%         LA,
+%         Client
+%     ),
 
-    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
-    Claim = assert_claim_pending(hg_client_party:bind_legal_agreement(ContractID, LA, Client), Client),
-    ok = accept_claim(Claim, Client),
-    #domain_Contract{
-        id = ContractID,
-        legal_agreement = LA
-    } = hg_client_party:get_contract(ContractID, Client).
+%     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+%     Claim = assert_claim_pending(hg_client_party:bind_legal_agreement(ContractID, LA, Client), Client),
+%     ok = accept_claim(Claim, Client),
+%     #domain_Contract{
+%         id = ContractID,
+%         legal_agreement = LA
+%     } = hg_client_party:get_contract(ContractID, Client).
 
-contract_payout_tool_creation(C) ->
-    Client = ?c(client, C),
-    PayoutToolParams = #payproc_PayoutToolParams{
-        currency = ?cur(<<"RUB">>),
-        tool_info  = {bank_account, #domain_BankAccount{
-            account = <<"4276300010908312893">>,
-            bank_name = <<"SomeBank">>,
-            bank_post_account = <<"123129876">>,
-            bank_bik = <<"66642666">>
-        }}
-    },
-    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
-    Claim = assert_claim_pending(
-        hg_client_party:create_payout_tool(ContractID, PayoutToolParams, Client),
-        Client
-    ),
-    ?claim(
-        _,
-        ?pending(),
-        [?contract_payout_tool_creation(ContractID, #domain_PayoutTool{id = ID})]
-    ) = Claim,
-    ok = accept_claim(Claim, Client),
-    #domain_Contract{
-        id = ContractID,
-        payout_tools = PayoutTools
-    } = hg_client_party:get_contract(ContractID, Client),
-    true = lists:keymember(ID, #domain_PayoutTool.id, PayoutTools).
+% contract_payout_tool_creation(C) ->
+%     Client = ?c(client, C),
+%     PayoutToolParams = #payproc_PayoutToolParams{
+%         currency = ?cur(<<"RUB">>),
+%         tool_info  = {bank_account, #domain_BankAccount{
+%             account = <<"4276300010908312893">>,
+%             bank_name = <<"SomeBank">>,
+%             bank_post_account = <<"123129876">>,
+%             bank_bik = <<"66642666">>
+%         }}
+%     },
+%     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+%     Claim = assert_claim_pending(
+%         hg_client_party:create_payout_tool(ContractID, PayoutToolParams, Client),
+%         Client
+%     ),
+%     ?claim(
+%         _,
+%         ?pending(),
+%         [?contract_payout_tool_creation(ContractID, #domain_PayoutTool{id = ID})]
+%     ) = Claim,
+%     ok = accept_claim(Claim, Client),
+%     #domain_Contract{
+%         id = ContractID,
+%         payout_tools = PayoutTools
+%     } = hg_client_party:get_contract(ContractID, Client),
+%     true = lists:keymember(ID, #domain_PayoutTool.id, PayoutTools).
 
-contract_adjustment_creation(C) ->
-    Client = ?c(client, C),
-    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
-    AdjustmentParams = #payproc_ContractAdjustmentParams{
-        template = #domain_ContractTemplateRef{id = 2}
-    },
-    Claim = assert_claim_pending(
-        hg_client_party:create_contract_adjustment(ContractID, AdjustmentParams, Client),
-        Client
-    ),
-    ?claim(
-        _,
-        ?pending(),
-        [?contract_adjustment_creation(ContractID, #domain_ContractAdjustment{id = ID})]
-    ) = Claim,
-    ok = accept_claim(Claim, Client),
-    #domain_Contract{
-        id = ContractID,
-        adjustments = Adjustments
-    } = hg_client_party:get_contract(ContractID, Client),
-    true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments).
+% contract_adjustment_creation(C) ->
+%     Client = ?c(client, C),
+%     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+%     AdjustmentParams = #payproc_ContractAdjustmentParams{
+%         template = #domain_ContractTemplateRef{id = 2}
+%     },
+%     Claim = assert_claim_pending(
+%         hg_client_party:create_contract_adjustment(ContractID, AdjustmentParams, Client),
+%         Client
+%     ),
+%     ?claim(
+%         _,
+%         ?pending(),
+%         [?contract_adjustment_creation(ContractID, #domain_ContractAdjustment{id = ID})]
+%     ) = Claim,
+%     ok = accept_claim(Claim, Client),
+%     #domain_Contract{
+%         id = ContractID,
+%         adjustments = Adjustments
+%     } = hg_client_party:get_contract(ContractID, Client),
+%     true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments).
 
-contract_adjustment_expiration(C) ->
-    Client = ?c(client, C),
-    hg_context:set(woody_context:new()),
-    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
-    Terms = hg_party:get_payments_service_terms(
-        hg_client_party:get_contract(ContractID, Client),
-        hg_datetime:format_now()
-    ),
-    AdjustmentParams = #payproc_ContractAdjustmentParams{
-        template = #domain_ContractTemplateRef{id = 4}
-    },
-    Claim = assert_claim_pending(
-        hg_client_party:create_contract_adjustment(ContractID, AdjustmentParams, Client),
-        Client
-    ),
-    ?claim(
-        _,
-        ?pending(),
-        [?contract_adjustment_creation(ContractID, #domain_ContractAdjustment{id = ID})]
-    ) = Claim,
-    ok = accept_claim(Claim, Client),
-    #domain_Contract{
-        id = ContractID,
-        adjustments = Adjustments
-    } = hg_client_party:get_contract(ContractID, Client),
-    true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments),
-    true = Terms /= hg_party:get_payments_service_terms(
-        hg_client_party:get_contract(ContractID, Client),
-        hg_datetime:format_now()
-    ),
-    AfterExpiration = hg_datetime:add_interval(hg_datetime:format_now(), {0, 1, 1}),
-    Terms = hg_party:get_payments_service_terms(hg_client_party:get_contract(ContractID, Client), AfterExpiration),
-    hg_context:cleanup().
+% contract_adjustment_expiration(C) ->
+%     Client = ?c(client, C),
+%     hg_context:set(woody_context:new()),
+%     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+%     Terms = hg_party:get_payments_service_terms(
+%         hg_client_party:get_contract(ContractID, Client),
+%         hg_datetime:format_now()
+%     ),
+%     AdjustmentParams = #payproc_ContractAdjustmentParams{
+%         template = #domain_ContractTemplateRef{id = 4}
+%     },
+%     Claim = assert_claim_pending(
+%         hg_client_party:create_contract_adjustment(ContractID, AdjustmentParams, Client),
+%         Client
+%     ),
+%     ?claim(
+%         _,
+%         ?pending(),
+%         [?contract_adjustment_creation(ContractID, #domain_ContractAdjustment{id = ID})]
+%     ) = Claim,
+%     ok = accept_claim(Claim, Client),
+%     #domain_Contract{
+%         id = ContractID,
+%         adjustments = Adjustments
+%     } = hg_client_party:get_contract(ContractID, Client),
+%     true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments),
+%     true = Terms /= hg_party:get_payments_service_terms(
+%         hg_client_party:get_contract(ContractID, Client),
+%         hg_datetime:format_now()
+%     ),
+%     AfterExpiration = hg_datetime:add_interval(hg_datetime:format_now(), {0, 1, 1}),
+%     Terms = hg_party:get_payments_service_terms(hg_client_party:get_contract(ContractID, Client), AfterExpiration),
+%     hg_context:cleanup().
 
-shop_not_found_on_retrieval(C) ->
-    Client = ?c(client, C),
-    ?shop_not_found() = hg_client_party:get_shop(666, Client).
+% shop_not_found_on_retrieval(C) ->
+%     Client = ?c(client, C),
+%     ?shop_not_found() = hg_client_party:get_shop(666, Client).
 
-shop_creation(C) ->
-    Client = ?c(client, C),
-    Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
-    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
-    Params = #payproc_ShopParams{
-        details  = Details,
-        contract_id = ContractID,
-        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
-    },
-    Result = hg_client_party:create_shop(Params, Client),
-    Claim = assert_claim_pending(Result, Client),
-    ?claim(
-        _,
-        ?pending(),
-        [
-            {shop_creation, #domain_Shop{id = ShopID}},
-            {shop_modification, #payproc_ShopModificationUnit{
-                id = ShopID,
-                modification = ?account_created(_)
-            }}
-        ]
-    ) = Claim,
-    ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
-    ok = accept_claim(Claim, Client),
-    #domain_Shop{
-        id = ShopID,
-        suspension = ?suspended(),
-        details = Details
-    } = hg_client_party:get_shop(ShopID, Client).
+% shop_creation(C) ->
+%     Client = ?c(client, C),
+%     Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
+%     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+%     Params = #payproc_ShopParams{
+%         details  = Details,
+%         contract_id = ContractID,
+%         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
+%     },
+%     Result = hg_client_party:create_shop(Params, Client),
+%     Claim = assert_claim_pending(Result, Client),
+%     ?claim(
+%         _,
+%         ?pending(),
+%         [
+%             {shop_creation, #domain_Shop{id = ShopID}},
+%             {shop_modification, #payproc_ShopModificationUnit{
+%                 id = ShopID,
+%                 modification = ?account_created(_)
+%             }}
+%         ]
+%     ) = Claim,
+%     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
+%     ok = accept_claim(Claim, Client),
+%     #domain_Shop{
+%         id = ShopID,
+%         suspension = ?suspended(),
+%         details = Details
+%     } = hg_client_party:get_shop(ShopID, Client).
 
-shop_update(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    Details = hg_ct_helper:make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
-    Update = #payproc_ShopUpdate{details = Details},
-    Result = hg_client_party:update_shop(ShopID, Update, Client),
-    Claim = assert_claim_pending(Result, Client),
-    ok = accept_claim(Claim, Client),
-    #domain_Shop{details = Details} = hg_client_party:get_shop(ShopID, Client).
+% shop_update(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     Details = hg_ct_helper:make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
+%     Update = #payproc_ShopUpdate{details = Details},
+%     Result = hg_client_party:update_shop(ShopID, Update, Client),
+%     Claim = assert_claim_pending(Result, Client),
+%     ok = accept_claim(Claim, Client),
+%     #domain_Shop{details = Details} = hg_client_party:get_shop(ShopID, Client).
 
-shop_update_before_confirm(C) ->
-    Client = ?c(client, C),
-    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
-    Params = #payproc_ShopParams{
-        category = ?cat(2),
-        details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
-        contract_id = ContractID,
-        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
-    },
-    Result = hg_client_party:create_shop(Params, Client),
-    Claim1 = assert_claim_pending(Result, Client),
-    ?claim(
-        ClaimID1,
-        ?pending(),
-        [
-            {shop_creation, #domain_Shop{id = ShopID}},
-            {shop_modification, #payproc_ShopModificationUnit{
-                id = ShopID,
-                modification = ?account_created(_)
-            }}
-        ]
-    ) = Claim1,
-    ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
-    NewCategory = ?cat(3),
-    NewDetails = hg_ct_helper:make_shop_details(<<"BARBIES SHOP">>, <<"Hot. Short. Clean.">>),
-    Update = #payproc_ShopUpdate{category = NewCategory, details = NewDetails},
-    UpdateResult = hg_client_party:update_shop(ShopID, Update, Client),
-    Claim2 = assert_claim_pending(UpdateResult, Client),
-    ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
-    ok = accept_claim(Claim2, Client),
-    #domain_Shop{category = NewCategory, details = NewDetails} = hg_client_party:get_shop(ShopID, Client).
+% shop_update_before_confirm(C) ->
+%     Client = ?c(client, C),
+%     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+%     Params = #payproc_ShopParams{
+%         category = ?cat(2),
+%         details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
+%         contract_id = ContractID,
+%         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
+%     },
+%     Result = hg_client_party:create_shop(Params, Client),
+%     Claim1 = assert_claim_pending(Result, Client),
+%     ?claim(
+%         ClaimID1,
+%         ?pending(),
+%         [
+%             {shop_creation, #domain_Shop{id = ShopID}},
+%             {shop_modification, #payproc_ShopModificationUnit{
+%                 id = ShopID,
+%                 modification = ?account_created(_)
+%             }}
+%         ]
+%     ) = Claim1,
+%     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
+%     NewCategory = ?cat(3),
+%     NewDetails = hg_ct_helper:make_shop_details(<<"BARBIES SHOP">>, <<"Hot. Short. Clean.">>),
+%     Update = #payproc_ShopUpdate{category = NewCategory, details = NewDetails},
+%     UpdateResult = hg_client_party:update_shop(ShopID, Update, Client),
+%     Claim2 = assert_claim_pending(UpdateResult, Client),
+%     ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
+%     ok = accept_claim(Claim2, Client),
+%     #domain_Shop{category = NewCategory, details = NewDetails} = hg_client_party:get_shop(ShopID, Client).
 
-shop_update_with_bad_params(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    Params = hg_ct_helper:make_battle_ready_contract_params(#domain_ContractTemplateRef{id = 5}),
-    Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
-    ?claim(
-        _,
-        ?pending(),
-        [{contract_creation, #domain_Contract{id = ContractID}}, _PayouToolChangeSet]
-    ) = Claim,
-    ok = accept_claim(Claim, Client),
+% shop_update_with_bad_params(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     Params = hg_ct_helper:make_battle_ready_contract_params(#domain_ContractTemplateRef{id = 5}),
+%     Claim = assert_claim_pending(hg_client_party:create_contract(Params, Client), Client),
+%     ?claim(
+%         _,
+%         ?pending(),
+%         [{contract_creation, #domain_Contract{id = ContractID}}, _PayouToolChangeSet]
+%     ) = Claim,
+%     ok = accept_claim(Claim, Client),
 
-    ?invalid_request(CategoryError) = hg_client_party:update_shop(
-        ShopID,
-        #payproc_ShopUpdate{category = ?cat(1)},
-        Client
-    ),
-    ?contract_not_found() = hg_client_party:update_shop(
-        ShopID,
-        #payproc_ShopUpdate{contract_id = 666},
-        Client
-    ),
-    ?invalid_request(CategoryError) = hg_client_party:update_shop(
-        ShopID,
-        #payproc_ShopUpdate{contract_id = ContractID},
-        Client
-    ),
-    ?payout_tool_not_found() = hg_client_party:update_shop(
-        ShopID,
-        #payproc_ShopUpdate{payout_tool_id = 42},
-        Client
-    ).
+%     ?invalid_request(CategoryError) = hg_client_party:update_shop(
+%         ShopID,
+%         #payproc_ShopUpdate{category = ?cat(1)},
+%         Client
+%     ),
+%     ?contract_not_found() = hg_client_party:update_shop(
+%         ShopID,
+%         #payproc_ShopUpdate{contract_id = 666},
+%         Client
+%     ),
+%     ?invalid_request(CategoryError) = hg_client_party:update_shop(
+%         ShopID,
+%         #payproc_ShopUpdate{contract_id = ContractID},
+%         Client
+%     ),
+%     ?payout_tool_not_found() = hg_client_party:update_shop(
+%         ShopID,
+%         #payproc_ShopUpdate{payout_tool_id = 42},
+%         Client
+%     ).
 
-claim_acceptance(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    Update = #payproc_ShopUpdate{details = Details = hg_ct_helper:make_shop_details(<<"McDolan">>)},
-    Result = hg_client_party:update_shop(ShopID, Update, Client),
-    Claim = assert_claim_pending(Result, Client),
-    ok = accept_claim(Claim, Client),
-    #domain_Shop{details = Details} = hg_client_party:get_shop(ShopID, Client).
+% claim_acceptance(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     Update = #payproc_ShopUpdate{details = Details = hg_ct_helper:make_shop_details(<<"McDolan">>)},
+%     Result = hg_client_party:update_shop(ShopID, Update, Client),
+%     Claim = assert_claim_pending(Result, Client),
+%     ok = accept_claim(Claim, Client),
+%     #domain_Shop{details = Details} = hg_client_party:get_shop(ShopID, Client).
 
-claim_denial(C) ->
-    Client = ?c(client, C),
-    Shop = #domain_Shop{id = ShopID} = get_last_shop(Client),
-    Update = #payproc_ShopUpdate{details = #domain_ShopDetails{name = <<"Pr0nHub">>}},
-    Result = hg_client_party:update_shop(ShopID, Update, Client),
-    Claim = assert_claim_pending(Result, Client),
-    ok = deny_claim(Claim, Client),
-    Shop = hg_client_party:get_shop(ShopID, Client).
+% claim_denial(C) ->
+%     Client = ?c(client, C),
+%     Shop = #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     Update = #payproc_ShopUpdate{details = #domain_ShopDetails{name = <<"Pr0nHub">>}},
+%     Result = hg_client_party:update_shop(ShopID, Update, Client),
+%     Claim = assert_claim_pending(Result, Client),
+%     ok = deny_claim(Claim, Client),
+%     Shop = hg_client_party:get_shop(ShopID, Client).
 
-claim_revocation(C) ->
-    Client = ?c(client, C),
-    Party = hg_client_party:get(Client),
-    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
-    Params = #payproc_ShopParams{
-        details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
-        contract_id = ContractID,
-        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
-    },
-    Result = hg_client_party:create_shop(Params, Client),
-    Claim = assert_claim_pending(Result, Client),
-    ?claim(
-        _,
-        _,
-        [
-            {shop_creation, #domain_Shop{id = ShopID}},
-            {shop_modification, #payproc_ShopModificationUnit{
-                id = ShopID,
-                modification = ?account_created(_)
-            }}
-        ]
-    ) = Claim,
-    ok = revoke_claim(Claim, Client),
-    Party = hg_client_party:get(Client),
-    ?shop_not_found() = hg_client_party:get_shop(ShopID, Client).
+% claim_revocation(C) ->
+%     Client = ?c(client, C),
+%     Party = hg_client_party:get(Client),
+%     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+%     Params = #payproc_ShopParams{
+%         details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
+%         contract_id = ContractID,
+%         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
+%     },
+%     Result = hg_client_party:create_shop(Params, Client),
+%     Claim = assert_claim_pending(Result, Client),
+%     ?claim(
+%         _,
+%         _,
+%         [
+%             {shop_creation, #domain_Shop{id = ShopID}},
+%             {shop_modification, #payproc_ShopModificationUnit{
+%                 id = ShopID,
+%                 modification = ?account_created(_)
+%             }}
+%         ]
+%     ) = Claim,
+%     ok = revoke_claim(Claim, Client),
+%     Party = hg_client_party:get(Client),
+%     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client).
 
-complex_claim_acceptance(C) ->
-    Client = ?c(client, C),
-    ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
-    PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
-    Params1 = #payproc_ShopParams{
-        category = ?cat(2),
-        details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP 1">>),
-        contract_id = ContractID,
-        payout_tool_id = PayoutToolID
-    },
-    Params2 = #payproc_ShopParams{
-        category = ?cat(3),
-        details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP 2">>),
-        contract_id = ContractID,
-        payout_tool_id = PayoutToolID
-    },
-    Claim1 = assert_claim_pending(hg_client_party:create_shop(Params1, Client), Client),
-    ?claim(ClaimID1, _, [
-        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}}, _
-    ]) = Claim1,
-    _ = assert_claim_accepted(hg_client_party:suspend(Client), Client),
-    Claim1 = ?claim(_) = hg_client_party:get_pending_claim(Client),
-    _ = assert_claim_accepted(hg_client_party:activate(Client), Client),
-    Claim1 = ?claim(_) = hg_client_party:get_pending_claim(Client),
-    Claim2 = assert_claim_pending(hg_client_party:create_shop(Params2, Client), Client),
-    ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
-    Claim2 = ?claim(_) = hg_client_party:get_pending_claim(Client),
-    ?claim(_, _, [
-        {shop_creation, #domain_Shop{id = ShopID1, details = Details1}},
-        {shop_modification, #payproc_ShopModificationUnit{
-            id = ShopID1,
-            modification = ?account_created(_)
-        }},
-        {shop_creation, #domain_Shop{id = ShopID2, details = Details2}},
-        {shop_modification, #payproc_ShopModificationUnit{
-            id = ShopID2,
-            modification = ?account_created(_)
-        }}
-    ]) = Claim2,
-    ok = accept_claim(Claim2, Client),
-    #domain_Shop{details = Details1} = hg_client_party:get_shop(ShopID1, Client),
-    #domain_Shop{details = Details2} = hg_client_party:get_shop(ShopID2, Client).
+% complex_claim_acceptance(C) ->
+%     Client = ?c(client, C),
+%     ContractID = hg_ct_helper:get_first_battle_ready_contract_id(Client),
+%     PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
+%     Params1 = #payproc_ShopParams{
+%         category = ?cat(2),
+%         details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP 1">>),
+%         contract_id = ContractID,
+%         payout_tool_id = PayoutToolID
+%     },
+%     Params2 = #payproc_ShopParams{
+%         category = ?cat(3),
+%         details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP 2">>),
+%         contract_id = ContractID,
+%         payout_tool_id = PayoutToolID
+%     },
+%     Claim1 = assert_claim_pending(hg_client_party:create_shop(Params1, Client), Client),
+%     ?claim(ClaimID1, _, [
+%         {shop_creation, #domain_Shop{id = ShopID1, details = Details1}}, _
+%     ]) = Claim1,
+%     _ = assert_claim_accepted(hg_client_party:suspend(Client), Client),
+%     Claim1 = ?claim(_) = hg_client_party:get_pending_claim(Client),
+%     _ = assert_claim_accepted(hg_client_party:activate(Client), Client),
+%     Claim1 = ?claim(_) = hg_client_party:get_pending_claim(Client),
+%     Claim2 = assert_claim_pending(hg_client_party:create_shop(Params2, Client), Client),
+%     ?claim_status_changed(ClaimID1, ?revoked(_)) = next_event(Client),
+%     Claim2 = ?claim(_) = hg_client_party:get_pending_claim(Client),
+%     ?claim(_, _, [
+%         {shop_creation, #domain_Shop{id = ShopID1, details = Details1}},
+%         {shop_modification, #payproc_ShopModificationUnit{
+%             id = ShopID1,
+%             modification = ?account_created(_)
+%         }},
+%         {shop_creation, #domain_Shop{id = ShopID2, details = Details2}},
+%         {shop_modification, #payproc_ShopModificationUnit{
+%             id = ShopID2,
+%             modification = ?account_created(_)
+%         }}
+%     ]) = Claim2,
+%     ok = accept_claim(Claim2, Client),
+%     #domain_Shop{details = Details1} = hg_client_party:get_shop(ShopID1, Client),
+%     #domain_Shop{details = Details2} = hg_client_party:get_shop(ShopID2, Client).
 
-claim_already_accepted_on_revoke(C) ->
-    Client = ?c(client, C),
-    Reason = <<"The End is near">>,
-    ?claim(ID1) = ensure_block_party(Reason, Client),
-    ?party_blocked(Reason) = hg_client_party:revoke_claim(ID1, <<>>, Client),
-    ?claim(ID2) = ensure_unblock_party(<<>>, Client),
-    ?invalid_claim_status(?accepted(_)) = hg_client_party:revoke_claim(ID2, <<>>, Client).
+% claim_already_accepted_on_revoke(C) ->
+%     Client = ?c(client, C),
+%     Reason = <<"The End is near">>,
+%     ?claim(ID1) = ensure_block_party(Reason, Client),
+%     ?party_blocked(Reason) = hg_client_party:revoke_claim(ID1, <<>>, Client),
+%     ?claim(ID2) = ensure_unblock_party(<<>>, Client),
+%     ?invalid_claim_status(?accepted(_)) = hg_client_party:revoke_claim(ID2, <<>>, Client).
 
-claim_already_accepted_on_accept(C) ->
-    Client = ?c(client, C),
-    Reason = <<"And behold">>,
-    ?claim(ID) = ensure_block_party(Reason, Client),
-    ?invalid_claim_status(?accepted(_)) = hg_client_party:accept_claim(ID, Client),
-    _ = ensure_unblock_party(<<>>, Client).
+% claim_already_accepted_on_accept(C) ->
+%     Client = ?c(client, C),
+%     Reason = <<"And behold">>,
+%     ?claim(ID) = ensure_block_party(Reason, Client),
+%     ?invalid_claim_status(?accepted(_)) = hg_client_party:accept_claim(ID, Client),
+%     _ = ensure_unblock_party(<<>>, Client).
 
-claim_already_accepted_on_deny(C) ->
-    Client = ?c(client, C),
-    Reason = <<"I am about to destroy them">>,
-    ?claim(ID) = ensure_block_party(Reason, Client),
-    ?invalid_claim_status(?accepted(_)) = hg_client_party:deny_claim(ID, <<>>, Client),
-    _ = ensure_unblock_party(<<>>, Client).
+% claim_already_accepted_on_deny(C) ->
+%     Client = ?c(client, C),
+%     Reason = <<"I am about to destroy them">>,
+%     ?claim(ID) = ensure_block_party(Reason, Client),
+%     ?invalid_claim_status(?accepted(_)) = hg_client_party:deny_claim(ID, <<>>, Client),
+%     _ = ensure_unblock_party(<<>>, Client).
 
-claim_not_found_on_retrieval(C) ->
-    Client = ?c(client, C),
-    ?claim_not_found() = hg_client_party:get_claim(-666, Client).
+% claim_not_found_on_retrieval(C) ->
+%     Client = ?c(client, C),
+%     ?claim_not_found() = hg_client_party:get_claim(-666, Client).
 
-no_pending_claim(C) ->
-    Client = ?c(client, C),
-    ?claim_not_found() = hg_client_party:get_pending_claim(Client).
+% no_pending_claim(C) ->
+%     Client = ?c(client, C),
+%     ?claim_not_found() = hg_client_party:get_pending_claim(Client).
 
 party_blocking(C) ->
     Client = ?c(client, C),
     PartyID = ?c(party_id, C),
-    _ = assert_claim_accepted(hg_client_party:block(<<"i said so">>, Client), Client),
+    ok = hg_client_party:block(<<"i said so">>, Client),
     ?party_w_status(PartyID, ?blocked(_), _) = hg_client_party:get(Client).
 
 party_unblocking(C) ->
     Client = ?c(client, C),
     PartyID = ?c(party_id, C),
-    _ = assert_claim_accepted(hg_client_party:unblock(<<"enough">>, Client), Client),
+    ok = hg_client_party:unblock(<<"enough">>, Client),
     ?party_w_status(PartyID, ?unblocked(_), _) = hg_client_party:get(Client).
 
 party_already_blocked(C) ->
@@ -796,13 +801,13 @@ party_blocked_on_suspend(C) ->
 party_suspension(C) ->
     Client = ?c(client, C),
     PartyID = ?c(party_id, C),
-    _ = assert_claim_accepted(hg_client_party:suspend(Client), Client),
+    ok = hg_client_party:suspend(Client),
     ?party_w_status(PartyID, _, ?suspended()) = hg_client_party:get(Client).
 
 party_activation(C) ->
     Client = ?c(client, C),
     PartyID = ?c(party_id, C),
-    _ = assert_claim_accepted(hg_client_party:activate(Client), Client),
+    ok = hg_client_party:activate(Client),
     ?party_w_status(PartyID, _, ?active()) = hg_client_party:get(Client).
 
 party_already_suspended(C) ->
@@ -813,54 +818,54 @@ party_already_active(C) ->
     Client = ?c(client, C),
     ?party_active() = hg_client_party:activate(Client).
 
-shop_blocking(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    _ = assert_claim_accepted(hg_client_party:block_shop(ShopID, <<"i said so">>, Client), Client),
-    ?shop_w_status(ShopID, ?blocked(_), _) = hg_client_party:get_shop(ShopID, Client).
+% shop_blocking(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ok = hg_client_party:block_shop(ShopID, <<"i said so">>, Client),
+%     ?shop_w_status(ShopID, ?blocked(_), _) = hg_client_party:get_shop(ShopID, Client).
 
-shop_unblocking(C) ->
-    Client  = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    _ = assert_claim_accepted(hg_client_party:unblock_shop(ShopID, <<"enough">>, Client), Client),
-    ?shop_w_status(ShopID, ?unblocked(_), _) = hg_client_party:get_shop(ShopID, Client).
+% shop_unblocking(C) ->
+%     Client  = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ok = hg_client_party:unblock_shop(ShopID, <<"enough">>, Client),
+%     ?shop_w_status(ShopID, ?unblocked(_), _) = hg_client_party:get_shop(ShopID, Client).
 
-shop_already_blocked(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    ?shop_blocked(_) = hg_client_party:block_shop(ShopID, <<"too much">>, Client).
+% shop_already_blocked(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ?shop_blocked(_) = hg_client_party:block_shop(ShopID, <<"too much">>, Client).
 
-shop_already_unblocked(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    ?shop_unblocked(_) = hg_client_party:unblock_shop(ShopID, <<"too free">>, Client).
+% shop_already_unblocked(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ?shop_unblocked(_) = hg_client_party:unblock_shop(ShopID, <<"too free">>, Client).
 
-shop_blocked_on_suspend(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    ?shop_blocked(_) = hg_client_party:suspend_shop(ShopID, Client).
+% shop_blocked_on_suspend(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ?shop_blocked(_) = hg_client_party:suspend_shop(ShopID, Client).
 
-shop_suspension(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    _ = assert_claim_accepted(hg_client_party:suspend_shop(ShopID, Client), Client),
-    ?shop_w_status(ShopID, _, ?suspended()) = hg_client_party:get_shop(ShopID, Client).
+% shop_suspension(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ok = hg_client_party:suspend_shop(ShopID, Client),
+%     ?shop_w_status(ShopID, _, ?suspended()) = hg_client_party:get_shop(ShopID, Client).
 
-shop_activation(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    _ = assert_claim_accepted(hg_client_party:activate_shop(ShopID, Client), Client),
-    ?shop_w_status(ShopID, _, ?active()) = hg_client_party:get_shop(ShopID, Client).
+% shop_activation(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ok = hg_client_party:activate_shop(ShopID, Client),
+%     ?shop_w_status(ShopID, _, ?active()) = hg_client_party:get_shop(ShopID, Client).
 
-shop_already_suspended(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    ?shop_suspended() = hg_client_party:suspend_shop(ShopID, Client).
+% shop_already_suspended(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ?shop_suspended() = hg_client_party:suspend_shop(ShopID, Client).
 
-shop_already_active(C) ->
-    Client = ?c(client, C),
-    #domain_Shop{id = ShopID} = get_last_shop(Client),
-    ?shop_active() = hg_client_party:activate_shop(ShopID, Client).
+% shop_already_active(C) ->
+%     Client = ?c(client, C),
+%     #domain_Shop{id = ShopID} = get_last_shop(Client),
+%     ?shop_active() = hg_client_party:activate_shop(ShopID, Client).
 
 shop_account_set_retrieval(C) ->
     Client = ?c(client, C),
@@ -914,36 +919,36 @@ get_last_shop(Client) ->
     ShopID = lists:last(lists:sort(maps:keys(Shops))),
     maps:get(ShopID, Shops).
 
-ensure_block_party(Reason, Client) ->
-    assert_claim_accepted(hg_client_party:block(Reason, Client), Client).
+% ensure_block_party(Reason, Client) ->
+%     assert_claim_accepted(hg_client_party:block(Reason, Client), Client).
 
-ensure_unblock_party(Reason, Client) ->
-    assert_claim_accepted(hg_client_party:unblock(Reason, Client), Client).
+% ensure_unblock_party(Reason, Client) ->
+%     assert_claim_accepted(hg_client_party:unblock(Reason, Client), Client).
 
-accept_claim(#payproc_Claim{id = ClaimID}, Client) ->
-    ok = hg_client_party:accept_claim(ClaimID, Client),
-    ?claim_status_changed(ClaimID, ?accepted(_)) = next_event(Client),
-    ok.
+% accept_claim(#payproc_Claim{id = ClaimID}, Client) ->
+%     ok = hg_client_party:accept_claim(ClaimID, Client),
+%     ?claim_status_changed(ClaimID, ?accepted(_)) = next_event(Client),
+%     ok.
 
-deny_claim(#payproc_Claim{id = ClaimID}, Client) ->
-    ok = hg_client_party:deny_claim(ClaimID, Reason = <<"The Reason">>, Client),
-    ?claim_status_changed(ClaimID, ?denied(Reason)) = next_event(Client),
-    ok.
+% deny_claim(#payproc_Claim{id = ClaimID}, Client) ->
+%     ok = hg_client_party:deny_claim(ClaimID, Reason = <<"The Reason">>, Client),
+%     ?claim_status_changed(ClaimID, ?denied(Reason)) = next_event(Client),
+%     ok.
 
-revoke_claim(#payproc_Claim{id = ClaimID}, Client) ->
-    ok = hg_client_party:revoke_claim(ClaimID, <<>>, Client),
-    ?claim_status_changed(ClaimID, ?revoked(<<>>)) = next_event(Client),
-    ok.
+% revoke_claim(#payproc_Claim{id = ClaimID}, Client) ->
+%     ok = hg_client_party:revoke_claim(ClaimID, <<>>, Client),
+%     ?claim_status_changed(ClaimID, ?revoked(<<>>)) = next_event(Client),
+%     ok.
 
-assert_claim_pending(?claim_result(ClaimID, Status = ?pending()), Client) ->
-    Claim = ?claim(ClaimID, Status) = hg_client_party:get_claim(ClaimID, Client),
-    ?claim_created(?claim(ClaimID)) = next_event(Client),
-    Claim.
+% assert_claim_pending(?claim_result(ClaimID, Status = ?pending()), Client) ->
+%     Claim = ?claim(ClaimID, Status) = hg_client_party:get_claim(ClaimID, Client),
+%     ?claim_created(?claim(ClaimID)) = next_event(Client),
+%     Claim.
 
-assert_claim_accepted(?claim_result(ClaimID, Status = ?accepted(_)), Client) ->
-    Claim = ?claim(ClaimID, Status) = hg_client_party:get_claim(ClaimID, Client),
-    ?claim_created(?claim(ClaimID, ?accepted(_))) = next_event(Client),
-    Claim.
+% assert_claim_accepted(?claim_result(ClaimID, Status = ?accepted(_, _)), Client) ->
+%     Claim = ?claim(ClaimID, Status) = hg_client_party:get_claim(ClaimID, Client),
+%     ?claim_created(?claim(ClaimID, ?accepted(_, _))) = next_event(Client),
+%     Claim.
 
 %%
 
@@ -1047,13 +1052,28 @@ construct_domain_fixture() ->
             ref = #domain_PartyPrototypeRef{id = 42},
             data = #domain_PartyPrototype{
                 shop = #domain_ShopPrototype{
+                    shop_id = <<"TESTSHOP">>,
                     category = ?cat(1),
                     currency = ?cur(<<"RUB">>),
                     details  = #domain_ShopDetails{
                         name = <<"SUPER DEFAULT SHOP">>
-                    }
+                    },
+                    location = {url, <<"">>}
                 },
-                test_contract_template = ?tmpl(1)
+                contract = #domain_ContractPrototype{
+                    contract_id = <<"TESTCONTRACT">>,
+                    test_contract_template = ?tmpl(1),
+                    payout_tool = #domain_PayoutToolPrototype{
+                        payout_tool_id = <<"TESTPAYOUTTOOL">>,
+                        payout_tool_info = {bank_account, #domain_BankAccount{
+                            account = <<"">>,
+                            bank_name = <<"">>,
+                            bank_post_account = <<"">>,
+                            bank_bik = <<"">>
+                        }},
+                        payout_tool_currency = ?cur(<<"RUB">>)
+                    }
+                }
             }
         }},
         hg_ct_fixture:construct_contract_template(

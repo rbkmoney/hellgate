@@ -48,11 +48,15 @@ get_id(#payproc_Claim{id = ID}) ->
     claim().
 
 craete_party_initial_claim(ID, Party, Timestamp, Revision) ->
-    {TestContractID, TestContractParams} = hg_party:get_test_contract_params(Revision),
-    {TestShopID, TestShopParams} = hg_party:get_test_shop_params(TestContractID, Revision),
+    % FIXME
+    Email = (Party#domain_Party.contact_info)#domain_PartyContactInfo.email,
+    {ContractID, ContractParams} = hg_party:get_test_contract_params(Email, Revision),
+    {PayoutToolID, PayoutToolParams} = hg_party:get_test_payout_tool_params(Revision),
+    {ShopID, ShopParams} = hg_party:get_test_shop_params(ContractID, PayoutToolID, Revision),
     Changeset = [
-        ?contract_modification(TestContractID, {creation, TestContractParams}),
-        ?shop_modification(TestShopID, {creation, TestShopParams})
+        ?contract_modification(ContractID, {creation, ContractParams}),
+        ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID, PayoutToolParams)),
+        ?shop_modification(ShopID, {creation, ShopParams})
     ],
     create(ID, Changeset, Party, Timestamp, Revision).
 

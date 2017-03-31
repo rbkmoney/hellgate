@@ -51,7 +51,7 @@ start_app(lager = AppName) ->
         {error_logger_hwm, 600},
         {suppress_application_start_stop, true},
         {handlers, [
-            {lager_common_test_backend, warning}
+            {lager_common_test_backend, debug}
         ]}
     ]), #{}};
 
@@ -146,12 +146,13 @@ make_party_params() ->
 -spec create_contract(dmsl_payment_processing_thrift:'ContractParams'(), Client :: pid()) ->
     contract_id().
 
-create_contract(#payproc_ContractParams{} = Params, Client) ->
-    #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_contract(Params, Client),
-    #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
-    {_, #domain_Contract{id = ContractID}} = lists:keyfind(contract_creation, 1, Changeset),
-    ok = hg_client_party:accept_claim(ClaimID, Client),
-    ContractID.
+create_contract(_, _) -> ok.
+% create_contract(#payproc_ContractParams{} = Params, Client) ->
+%     #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_contract(Params, Client),
+%     #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
+%     {_, #domain_Contract{id = ContractID}} = lists:keyfind(contract_creation, 1, Changeset),
+%     ok = hg_client_party:accept_claim(ClaimID, Client),
+%     ContractID.
 
 -spec create_shop(contract_id(), category(), binary(), Client :: pid()) ->
     shop_id().
@@ -162,39 +163,41 @@ create_shop(ContractID, Category, Name, Client) ->
 -spec create_shop(contract_id(), category(), binary(), binary(), Client :: pid()) ->
     shop_id().
 
-create_shop(ContractID, Category, Name, Description, Client) ->
-    PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
-    Params = #payproc_ShopParams{
-        contract_id       = ContractID,
-        payout_tool_id    = PayoutToolID,
-        category          = Category,
-        details           = make_shop_details(Name, Description)
-    },
-    #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_shop(Params, Client),
-    #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
-    {_, #domain_Shop{id = ShopID}} = lists:keyfind(shop_creation, 1, Changeset),
-    ok = hg_client_party:accept_claim(ClaimID, Client),
-    #payproc_ClaimResult{} = hg_client_party:activate_shop(ShopID, Client),
-    ok = flush_events(Client),
-    ShopID.
+create_shop(_, _, _, _, _) -> ok.
+% create_shop(ContractID, Category, Name, Description, Client) ->
+%     PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
+%     Params = #payproc_ShopParams{
+%         contract_id       = ContractID,
+%         payout_tool_id    = PayoutToolID,
+%         category          = Category,
+%         details           = make_shop_details(Name, Description)
+%     },
+%     #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_shop(Params, Client),
+%     #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
+%     {_, #domain_Shop{id = ShopID}} = lists:keyfind(shop_creation, 1, Changeset),
+%     ok = hg_client_party:accept_claim(ClaimID, Client),
+%     #payproc_ClaimResult{} = hg_client_party:activate_shop(ShopID, Client),
+%     ok = flush_events(Client),
+%     ShopID.
 
 -spec set_shop_proxy(shop_id(), proxy_ref(), proxy_options(), Client :: pid()) ->
     ok.
 
-set_shop_proxy(ShopID, ProxyRef, ProxyOptions, Client) ->
-    Proxy = #domain_Proxy{ref = ProxyRef, additional = ProxyOptions},
-    Update = #payproc_ShopUpdate{proxy = Proxy},
-    #payproc_ClaimResult{status = ?accepted(_)} = hg_client_party:update_shop(ShopID, Update, Client),
-    ok = flush_events(Client),
+set_shop_proxy(_, _, _, _) ->
+% set_shop_proxy(ShopID, ProxyRef, ProxyOptions, Client) ->
+    % Proxy = #domain_Proxy{ref = ProxyRef, additional = ProxyOptions},
+    % Update = #payproc_ShopUpdate{proxy = Proxy},
+    % #payproc_ClaimResult{status = ?accepted(_, _)} = hg_client_party:update_shop(ShopID, Update, Client),
+    % ok = flush_events(Client),
     ok.
 
-flush_events(Client) ->
-    case hg_client_party:pull_event(500, Client) of
-        timeout ->
-            ok;
-        _Event ->
-            flush_events(Client)
-    end.
+% flush_events(Client) ->
+%     case hg_client_party:pull_event(500, Client) of
+%         timeout ->
+%             ok;
+%         _Event ->
+%             flush_events(Client)
+%     end.
 
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().
@@ -211,7 +214,7 @@ get_first_battle_ready_contract_id(Client) ->
     IDs = lists:foldl(fun({ID, Contract}, Acc) ->
             case Contract of
                 #domain_Contract{
-                    contractor = #domain_Contractor{},
+                    contractor = {legal_entity, _},
                     payout_tools = [#domain_PayoutTool{} | _]
                 } ->
                     [ID | Acc];
@@ -257,8 +260,8 @@ make_battle_ready_contract_params(TemplateRef) ->
         bank_post_account = <<"123129876">>,
         bank_bik = <<"66642666">>
     },
-    Contractor = #domain_Contractor{
-        entity = {russian_legal_entity, #domain_RussianLegalEntity {
+    Contractor = {legal_entity,
+        {russian_legal_entity, #domain_RussianLegalEntity {
             registered_name = <<"Hoofs & Horns OJSC">>,
             registered_number = <<"1234509876">>,
             inn = <<"1213456789012">>,
@@ -266,18 +269,18 @@ make_battle_ready_contract_params(TemplateRef) ->
             post_address = <<"NaN">>,
             representative_position = <<"Director">>,
             representative_full_name = <<"Someone">>,
-            representative_document = <<"100$ banknote">>
-        }},
-        bank_account = BankAccount
+            representative_document = <<"100$ banknote">>,
+            bank_account = BankAccount
+        }}
     },
-    PayoutToolParams = #payproc_PayoutToolParams{
+    _PayoutToolParams = #payproc_PayoutToolParams{
         currency = ?cur(<<"RUB">>),
         tool_info = {bank_account, BankAccount}
     },
     #payproc_ContractParams{
         contractor = Contractor,
-        template = TemplateRef,
-        payout_tool_params = PayoutToolParams
+        template = TemplateRef
+        % payout_tool_params = PayoutToolParams
     }.
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), cost()) ->

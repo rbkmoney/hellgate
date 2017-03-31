@@ -17,7 +17,7 @@
 
 %% Party support functions
 
--export([create_party/2]).
+-export([create_party/3]).
 -export([get_party_id/1]).
 -export([blocking/2]).
 -export([suspension/2]).
@@ -27,7 +27,8 @@
 -export([is_contract_active/1]).
 -export([is_test_contract/3]).
 -export([update_contract_status/2]).
--export([get_test_contract_params/1]).
+-export([get_test_contract_params/2]).
+-export([get_test_payout_tool_params/1]).
 -export([create_payout_tool/3]).
 -export([create_contract_adjustment/4]).
 
@@ -52,7 +53,7 @@
 -export([shop_suspension/3]).
 -export([set_new_shop/2]).
 
--export([get_test_shop_params/2]).
+-export([get_test_shop_params/3]).
 -export([get_new_shop_currency/4]).
 -export([get_shop/2]).
 -export([get_shop_id/1]).
@@ -104,12 +105,13 @@
 
 %% Interface
 
--spec create_party(party_id(), dmsl_payment_processing_thrift:'PartyParams'()) ->
+-spec create_party(party_id(), dmsl_payment_processing_thrift:'PartyParams'(), timestamp()) ->
     party().
 
-create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
+create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}, Timestamp) ->
     #domain_Party{
         id              = PartyID,
+        created_at      = Timestamp,
         contact_info    = ContactInfo,
         blocking        = ?unblocked(<<>>),
         suspension      = ?active(),
@@ -237,11 +239,40 @@ set_contract_legal_agreement(ContractID, LegalAgreement, Party) ->
     Contract = get_contract(ContractID, Party),
     set_contract(Contract#domain_Contract{legal_agreement = LegalAgreement}, Party).
 
--spec get_test_contract_params(revision()) ->
+-spec get_test_contract_params(binary(), revision()) ->
     {contract_id(), contract_params()}.
 
-get_test_contract_params(Revision) ->
-    {<<"TESTCONTRACT">>, #payproc_ContractParams{template = get_test_template_ref(Revision)}}.
+get_test_contract_params(Email, Revision) ->
+    #domain_ContractPrototype{
+        contract_id = ContractID,
+        test_contract_template = TemplateRef
+    } = get_contract_prototype(Revision),
+    {
+        ContractID,
+        #payproc_ContractParams{
+            contractor = {registered_user, #domain_RegisteredUser{email = Email}},
+            template = TemplateRef
+        }
+    }.
+
+-spec get_test_payout_tool_params(revision()) ->
+    {payout_tool_id(), payout_tool_params()}.
+
+get_test_payout_tool_params(Revision) ->
+    #domain_ContractPrototype{
+        payout_tool = #domain_PayoutToolPrototype{
+            payout_tool_id = ID,
+            payout_tool_info = ToolInfo,
+            payout_tool_currency = Currency
+        }
+    } = get_contract_prototype(Revision),
+    {
+        ID,
+        #payproc_PayoutToolParams{
+            currency = Currency,
+            tool_info = ToolInfo
+        }
+    }.
 
 -spec create_payout_tool(payout_tool_id(), payout_tool_params(), timestamp()) ->
     payout_tool().
@@ -366,11 +397,21 @@ create_shop(ID, ShopParams, Timestamp) ->
         payout_tool_id  = ShopParams#payproc_ShopParams.payout_tool_id
     }.
 
--spec get_test_shop_params(contract_id(), revision()) ->
+-spec get_test_shop_params(contract_id(), payout_tool_id(), revision()) ->
     {shop_id(), shop_params()}.
 
-get_test_shop_params(ContractID, Revision) ->
-    {<<"TESTSHOP">>, get_shop_prototype_params(ContractID, Revision)}.
+get_test_shop_params(ContractID, PayoutToolID, Revision) ->
+    ShopPrototype = get_shop_prototype(Revision),
+    {
+        ShopPrototype#domain_ShopPrototype.shop_id,
+        #payproc_ShopParams{
+            location = ShopPrototype#domain_ShopPrototype.location,
+            category = ShopPrototype#domain_ShopPrototype.category,
+            details = ShopPrototype#domain_ShopPrototype.details,
+            contract_id = ContractID,
+            payout_tool_id = PayoutToolID
+        }
+    }.
 
 -spec get_shop(shop_id(), party()) ->
     shop() | undefined.
@@ -512,14 +553,6 @@ ensure_shop(#domain_Shop{} = Shop) ->
 ensure_shop(undefined) ->
     throw(#payproc_ShopNotFound{}).
 
-get_shop_prototype_params(ContractID, Revision) ->
-    ShopPrototype = get_shop_prototype(Revision),
-    #payproc_ShopParams{
-        contract_id = ContractID,
-        category = ShopPrototype#domain_ShopPrototype.category,
-        details = ShopPrototype#domain_ShopPrototype.details
-    }.
-
 get_globals(Revision) ->
     hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}).
 
@@ -530,6 +563,10 @@ get_party_prototype(Revision) ->
 get_shop_prototype(Revision) ->
     PartyPrototype = get_party_prototype(Revision),
     PartyPrototype#domain_PartyPrototype.shop.
+
+get_contract_prototype(Revision) ->
+    PartyPrototype = get_party_prototype(Revision),
+    PartyPrototype#domain_PartyPrototype.contract.
 
 ensure_contract_creation_params(#payproc_ContractParams{template = TemplateRef} = Params, Revision) ->
     Params#payproc_ContractParams{
@@ -567,10 +604,6 @@ reduce_selector_to_value(Selector, VS, Revision) ->
 
 get_template(TemplateRef, Revision) ->
     hg_domain:get(Revision, {contract_template, TemplateRef}).
-
-get_test_template_ref(Revision) ->
-    PartyPrototype = get_party_prototype(Revision),
-    PartyPrototype#domain_PartyPrototype.test_contract_template.
 
 get_default_template_ref(Revision) ->
     Globals = get_globals(Revision),
