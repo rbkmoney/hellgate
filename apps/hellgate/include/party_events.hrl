@@ -21,8 +21,8 @@
 -define(contract_modification(ID, Modification),
     {contract_modification, #payproc_ContractModificationUnit{id = ID, modification = Modification}}).
 
--define(contract_termination(TerminatedAt),
-    {termination, #payproc_ContractTermination{terminated_at = TerminatedAt}}).
+-define(contract_termination(TerminatedAt, Reason),
+    {termination, #payproc_ContractTermination{terminated_at = TerminatedAt, reason = Reason}}).
 
 -define(adjustment_creation(ID, Params),
     {adjustment_modification, #payproc_ContractAdjustmentModificationUnit{

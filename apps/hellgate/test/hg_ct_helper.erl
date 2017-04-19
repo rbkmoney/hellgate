@@ -15,6 +15,7 @@
 
 -export([make_battle_ready_contract_params/0]).
 -export([make_battle_ready_contract_params/1]).
+-export([make_battle_ready_payout_tool_params/0]).
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
@@ -273,14 +274,23 @@ make_battle_ready_contract_params(TemplateRef) ->
             bank_account = BankAccount
         }}
     },
-    _PayoutToolParams = #payproc_PayoutToolParams{
-        currency = ?cur(<<"RUB">>),
-        tool_info = {bank_account, BankAccount}
-    },
     #payproc_ContractParams{
         contractor = Contractor,
         template = TemplateRef
-        % payout_tool_params = PayoutToolParams
+    }.
+
+-spec make_battle_ready_payout_tool_params() ->
+    dmsl_payment_processing_thrift:'PayoutToolParams'().
+
+make_battle_ready_payout_tool_params() ->
+    #payproc_PayoutToolParams{
+        currency = ?cur(<<"RUB">>),
+        tool_info = {bank_account, #domain_BankAccount{
+            account = <<"4276300010908312893">>,
+            bank_name = <<"SomeBank">>,
+            bank_post_account = <<"123129876">>,
+            bank_bik = <<"66642666">>
+        }}
     }.
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), cost()) ->

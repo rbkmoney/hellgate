@@ -159,12 +159,19 @@ create_contract(ID, Params, Timestamp, Revision) ->
         contractor = Contractor,
         template = TemplateRef
     } = ensure_contract_creation_params(Params, Revision),
-    Contract = instantiate_contract_template(TemplateRef, Timestamp, Revision),
-    Contract#domain_Contract{
+    #domain_ContractTemplate{
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        terms = TermSetHierarchyRef
+    } = get_template(TemplateRef, Revision),
+    #domain_Contract{
         id = ID,
         contractor = Contractor,
         created_at = Timestamp,
+        valid_since = instantiate_contract_lifetime_bound(ValidSince, Timestamp),
+        valid_until = instantiate_contract_lifetime_bound(ValidUntil, Timestamp),
         status = {active, #domain_ContractActive{}},
+        terms = TermSetHierarchyRef,
         adjustments = [],
         payout_tools = []
     }.
@@ -299,16 +306,16 @@ create_contract_adjustment(ID, Params, Timestamp, Revision) ->
     #payproc_ContractAdjustmentParams{
         template = TemplateRef
     } = ensure_adjustment_creation_params(Params, Revision),
-    #domain_Contract{
+    #domain_ContractTemplate{
         valid_since = ValidSince,
         valid_until = ValidUntil,
         terms = TermSetHierarchyRef
-    } = instantiate_contract_template(TemplateRef, Timestamp, Revision),
+    } = get_template(TemplateRef, Revision),
     #domain_ContractAdjustment{
         id = ID,
         created_at = Timestamp,
-        valid_since = ValidSince,
-        valid_until = ValidUntil,
+        valid_since = instantiate_contract_lifetime_bound(ValidSince, Timestamp),
+        valid_until = instantiate_contract_lifetime_bound(ValidUntil, Timestamp),
         terms = TermSetHierarchyRef
     }.
 
@@ -343,14 +350,13 @@ get_contract_categories(Contract, Timestamp, Revision) ->
 
 update_contract_status(
     #domain_Contract{
-        created_at = CreatedAt,
         valid_since = ValidSince,
         valid_until = ValidUntil,
         status = {active, _}
     } = Contract,
     Timestamp
 ) ->
-    case hg_datetime:between(Timestamp, update_if_defined(CreatedAt, ValidSince), ValidUntil) of
+    case hg_datetime:between(Timestamp, ValidSince, ValidUntil) of
         true ->
             Contract;
         false ->
@@ -373,7 +379,6 @@ get_payments_service_terms(ShopID, Party, Timestamp) ->
     dmsl_domain_thrift:'PaymentsServiceTerms'() | no_return().
 
 get_payments_service_terms(Contract, Timestamp) ->
-    ok = assert_contract_active(Contract),
     case compute_terms(Contract, Timestamp) of
         #domain_TermSet{payments = PaymentTerms} ->
             PaymentTerms;
@@ -609,18 +614,6 @@ get_default_template_ref(Revision) ->
     Globals = get_globals(Revision),
     Globals#domain_Globals.default_contract_template.
 
-instantiate_contract_template(TemplateRef, Timestamp, Revision) ->
-    #domain_ContractTemplate{
-        valid_since = ValidSince,
-        valid_until = ValidUntil,
-        terms = TermSetHierarchyRef
-    } = get_template(TemplateRef, Revision),
-    #domain_Contract{
-        valid_since = instantiate_contract_lifetime_bound(ValidSince, Timestamp),
-        valid_until = instantiate_contract_lifetime_bound(ValidUntil, Timestamp),
-        terms = TermSetHierarchyRef
-    }.
-
 instantiate_contract_lifetime_bound(undefined, _) ->
     undefined;
 instantiate_contract_lifetime_bound({timestamp, Timestamp}, _) ->
@@ -807,13 +800,6 @@ assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
 assert_suspension(#domain_Party{suspension = Suspension}, _) ->
     throw(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
 
-assert_contract_active(#domain_Contract{status = {active, _}}) ->
-    ok;
-assert_contract_active(#domain_Contract{status = Status}) ->
-    % FIXME
-    % throw(#payproc_InvalidContractStatus{status = Status}).
-    error({invalid_contract_status, Status}).
-
 assert_shop_blocking(#domain_Shop{blocking = {Status, _}}, Status) ->
     ok;
 assert_shop_blocking(#domain_Shop{blocking = Blocking}, _) ->
@@ -855,14 +841,9 @@ assert_shop_contract_valid(
         undefined ->
             ok
     end,
-    case CategoryRef of
-        #domain_CategoryRef{} ->
-            Categories = reduce_selector_to_value(CategorySelector, #{}, Revision),
-            _ = ordsets:is_element(CategoryRef, Categories) orelse
-                raise_invalid_request(<<"category is not permitted by contract">>);
-        undefined ->
-            ok
-    end,
+    Categories = reduce_selector_to_value(CategorySelector, #{}, Revision),
+    _ = ordsets:is_element(CategoryRef, Categories) orelse
+        raise_invalid_request(<<"category is not permitted by contract">>),
     ok.
 
 assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = PayoutToolID}, Contract) ->
