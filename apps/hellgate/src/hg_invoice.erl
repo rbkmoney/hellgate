@@ -46,7 +46,7 @@
 %%
 
 -record(st, {
-    invoice :: invoice(),
+    invoice = undefined :: undefined | invoice(),
     payments = [] :: [{payment_id(), payment_st()}],
     sequence = 0 :: 0 | sequence(),
     pending = invoice ::
@@ -317,7 +317,7 @@ handle_signal({repair, _}, St) ->
     ok([], St, restore_timer(St)).
 
 handle_expiration(St) ->
-    Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(overdue))))},
+    Event = {public, ?invoice_ev(?invoice_status_changed(?invoice_cancelled(format_reason(overdue))))},
     ok(Event, St).
 
 %%
@@ -353,13 +353,13 @@ handle_call({start_payment, PaymentParams}, St) ->
 
 handle_call({fulfill, Reason}, St) ->
     _ = assert_invoice_status(paid, St),
-    Event = {public, ?invoice_ev(?invoice_status_changed(?fulfilled(format_reason(Reason))))},
+    Event = {public, ?invoice_ev(?invoice_status_changed(?invoice_fulfilled(format_reason(Reason))))},
     respond(ok, Event, St);
 
 handle_call({rescind, Reason}, St) ->
     _ = assert_invoice_status(unpaid, St),
     _ = assert_no_pending_payment(St),
-    Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(Reason))))},
+    Event = {public, ?invoice_ev(?invoice_status_changed(?invoice_cancelled(format_reason(Reason))))},
     respond(ok, Event, St);
 
 handle_call({callback, Callback}, St) ->
@@ -385,7 +385,7 @@ assert_no_pending_payment(_) ->
 
 restore_timer(St = #st{invoice = #domain_Invoice{status = Status}, pending = Pending}) ->
     case Pending of
-        invoice when Status == ?unpaid() ->
+        invoice when Status == ?invoice_unpaid() ->
             set_invoice_timer(St);
         invoice ->
             hg_machine_action:new();
@@ -431,7 +431,7 @@ handle_payment_result(Result, PaymentID, PaymentSession, Party, St) ->
                     {Events2, Action} = hg_invoice_payment:start_session(?captured()),
                     ok(wrap_payment_events(PaymentID, Events1 ++ Events2), St, Action);
                 ?captured() ->
-                    {Events2, Action} = start_session(?paid(), Party, St),
+                    {Events2, Action} = start_session(?invoice_paid(), Party, St),
                     ok(wrap_payment_events(PaymentID, Events1) ++ Events2, St, Action);
                 ?failed(_) ->
                     ok(wrap_payment_events(PaymentID, Events1), St, set_invoice_timer(St))
@@ -509,7 +509,7 @@ construct_proxy_session(#{status := Status, proxy_state := ProxyState}) ->
         state = ProxyState
     }.
 
-construct_proxy_status(?paid()) ->
+construct_proxy_status(?invoice_paid()) ->
     {paid, #prxmerch_InvoicePaid{}}.
 
 collect_invoice_info(Party, Shop, Invoice, Revision) ->
@@ -599,7 +599,7 @@ create_invoice(ID, V = #payproc_InvoiceParams{}, PartyID) ->
         shop_id         = V#payproc_InvoiceParams.shop_id,
         owner_id        = PartyID,
         created_at      = hg_datetime:format_now(),
-        status          = ?unpaid(),
+        status          = ?invoice_unpaid(),
         cost            = V#payproc_InvoiceParams.cost,
         due             = V#payproc_InvoiceParams.due,
         details         = V#payproc_InvoiceParams.details,

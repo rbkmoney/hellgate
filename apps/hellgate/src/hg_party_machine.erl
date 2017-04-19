@@ -33,11 +33,11 @@
 -define(NS, <<"party">>).
 
 -record(st, {
-    party          :: party(),
-    timestamp      :: timestamp(),
-    revision       :: hg_domain:revision(),
-    claims   = #{} :: #{claim_id() => claim()},
-    sequence = 0   :: 0 | sequence(),
+    party = undefined   :: undefined | party(),
+    timestamp           :: timestamp(),
+    revision            :: hg_domain:revision(),
+    claims   = #{}      :: #{claim_id() => claim()},
+    sequence = 0        :: 0 | sequence(),
     migration_data = #{} :: #{any() => any()}
 }).
 
@@ -382,7 +382,8 @@ assert_claims_conflict(Claim, ClaimsPending, St) ->
     Party = get_st_party(St),
     ConflictedClaims = lists:dropwhile(
         fun(PendingClaim) ->
-            not hg_claim:is_conflicting(Claim, PendingClaim, Timestamp, Revision, Party)
+            hg_claim:get_id(Claim) =:= hg_claim:get_id(PendingClaim) orelse
+                not hg_claim:is_conflicting(Claim, PendingClaim, Timestamp, Revision, Party)
         end,
         ClaimsPending
     ),

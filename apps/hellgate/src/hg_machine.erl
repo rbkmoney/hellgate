@@ -152,7 +152,7 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
--spec handle_function_(func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function_(func(), woody:args(), #{ns := ns()}) ->
     term() | no_return().
 
 handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->

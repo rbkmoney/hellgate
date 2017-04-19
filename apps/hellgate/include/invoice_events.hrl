@@ -39,13 +39,13 @@
 ).
 
 
--define(paid(),
+-define(invoice_paid(),
     {paid, #domain_InvoicePaid{}}).
--define(unpaid(),
+-define(invoice_unpaid(),
     {unpaid, #domain_InvoiceUnpaid{}}).
--define(cancelled(Reason),
+-define(invoice_cancelled(Reason),
     {cancelled, #domain_InvoiceCancelled{details = Reason}}).
--define(fulfilled(Reason),
+-define(invoice_fulfilled(Reason),
     {fulfilled, #domain_InvoiceFulfilled{details = Reason}}).
 
 -define(pending(),
@@ -54,6 +54,8 @@
     {processed, #domain_InvoicePaymentProcessed{}}).
 -define(captured(),
     {captured, #domain_InvoicePaymentCaptured{}}).
+-define(cancelled(),
+    {cancelled, #domain_InvoicePaymentCancelled{}}).
 -define(failed(Failure),
     {failed, #domain_InvoicePaymentFailed{failure = Failure}}).
 

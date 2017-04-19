@@ -44,7 +44,7 @@
     payment  :: payment(),
     route    :: route(),
     cashflow :: cashflow(),
-    session  :: session()
+    session  :: undefined | session()
 }).
 
 -type st() :: #st{}.
@@ -119,6 +119,7 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Revision = hg_domain:head(),
+    % FIXME add check for contarct status
     PaymentTerms = hg_party:get_payments_service_terms(
         Shop#domain_Shop.id,
         Party,
@@ -338,7 +339,7 @@ handle_proxy_intent(#'FinishIntent'{status = {success, _}}, _ProxyState, St, Opt
     case get_target(St) of
         ?captured() ->
             _AccountsState = commit_plan(St, Options);
-        ?cancelled(_) ->
+        ?cancelled() ->
             _AccountsState = rollback_plan(St, Options);
         ?processed() ->
             ok

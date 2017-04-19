@@ -26,8 +26,16 @@
     _. %% FIXME
 
 -type varset() :: #{
-    %% TODO
+    category    => dmsl_domain_thrift:'CategoryRef'(),
+    currency    => dmsl_domain_thrift:'CurrencyRef'(),
+    cost        => dmsl_domain_thrift:'Cash'(),
+    payment_tool=> dmsl_domain_thrift:'PaymentTool'(),
+    party       => dmsl_domain_thrift:'Party'(),
+    shop        => dmsl_domain_thrift:'Shop'(),
+    risk_score  => high | low
 }.
+
+-export_type([varset/0]).
 
 -export([fold/3]).
 -export([collect/1]).
