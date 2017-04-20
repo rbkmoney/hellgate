@@ -24,6 +24,7 @@
 
 -export([create_contract/4]).
 -export([set_new_contract/3]).
+-export([set_contract/2]).
 -export([is_contract_active/1]).
 -export([is_test_contract/3]).
 -export([update_contract_status/2]).
@@ -40,18 +41,13 @@
 -export([get_contract_adjustment/2]).
 -export([get_contract_payout_tool/2]).
 
--export([set_contract_status/3]).
--export([set_contract_adjustment/3]).
--export([set_contract_payout_tool/3]).
--export([set_contract_legal_agreement/3]).
-
 -export([get_payments_service_terms/2]).
 -export([get_payments_service_terms/3]).
 
 -export([create_shop/3]).
 -export([shop_blocking/3]).
 -export([shop_suspension/3]).
--export([set_new_shop/2]).
+-export([set_shop/2]).
 
 -export([get_test_shop_params/3]).
 -export([get_new_shop_currency/4]).
@@ -59,14 +55,6 @@
 -export([get_shop_id/1]).
 -export([get_shop_account/2]).
 -export([get_account_state/2]).
-
--export([set_shop_category/3]).
--export([set_shop_details/3]).
--export([set_shop_location/3]).
--export([set_shop_contract/4]).
--export([set_shop_payout_tool/3]).
--export([set_shop_proxy/3]).
--export([set_shop_account/3]).
 
 %% Asserts
 
@@ -113,8 +101,8 @@ create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}, Timestam
         id              = PartyID,
         created_at      = Timestamp,
         contact_info    = ContactInfo,
-        blocking        = ?unblocked(<<>>),
-        suspension      = ?active(),
+        blocking        = ?unblocked(<<>>, Timestamp),
+        suspension      = ?active(Timestamp),
         contracts       = #{},
         shops           = #{}
     }.
@@ -188,18 +176,17 @@ get_contract(ID, #domain_Party{contracts = Contracts}) ->
 set_new_contract(Contract, Timestamp, Party) ->
     set_contract(update_contract_status(Contract, Timestamp), Party).
 
+-spec set_contract(contract(), party()) ->
+    party().
+
+set_contract(Contract = #domain_Contract{id = ID}, Party = #domain_Party{contracts = Contracts}) ->
+    Party#domain_Party{contracts = Contracts#{ID => Contract}}.
+
 -spec get_contract_status(contract()) ->
     contract_status().
 
 get_contract_status(#domain_Contract{status = Status}) ->
     Status.
-
--spec set_contract_status(contract_id(), contract_status(), party()) ->
-    party().
-
-set_contract_status(ContractID, Status, Party) ->
-    Contract = get_contract(ContractID, Party),
-    set_contract(Contract#domain_Contract{status = Status}, Party).
 
 -spec get_contract_adjustment(adjustment_id(), contract()) ->
     adjustment() | undefined.
@@ -212,14 +199,6 @@ get_contract_adjustment(AdjustmentID, #domain_Contract{adjustments = Adjustments
             undefined
     end.
 
--spec set_contract_adjustment(contract_id(), adjustment(), party()) ->
-    party().
-
-set_contract_adjustment(ContractID, Adjustment, Party) ->
-    Contract = get_contract(ContractID, Party),
-    Adjustments = Contract#domain_Contract.adjustments ++ [Adjustment],
-    set_contract(Contract#domain_Contract{adjustments = Adjustments}, Party).
-
 -spec get_contract_payout_tool(payout_tool_id(), contract()) ->
     payout_tool() | undefined.
 
@@ -230,21 +209,6 @@ get_contract_payout_tool(PayoutToolID, #domain_Contract{payout_tools = PayoutToo
         false ->
             undefined
     end.
-
--spec set_contract_payout_tool(contract_id(), payout_tool(), party()) ->
-    party().
-
-set_contract_payout_tool(ContractID, PayoutTool, Party) ->
-    Contract = get_contract(ContractID, Party),
-    PayoutTools = Contract#domain_Contract.payout_tools ++ [PayoutTool],
-    set_contract(Contract#domain_Contract{payout_tools = PayoutTools}, Party).
-
--spec set_contract_legal_agreement(contract_id(), dmsl_domain_thrift:'LegalAgreement'(), party()) ->
-    party().
-
-set_contract_legal_agreement(ContractID, LegalAgreement, Party) ->
-    Contract = get_contract(ContractID, Party),
-    set_contract(Contract#domain_Contract{legal_agreement = LegalAgreement}, Party).
 
 -spec get_test_contract_params(binary(), revision()) ->
     {contract_id(), contract_params()}.
@@ -373,7 +337,13 @@ update_contract_status(Contract, _) ->
 get_payments_service_terms(ShopID, Party, Timestamp) ->
     Shop = ensure_shop(get_shop(ShopID, Party)),
     Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
+    ok = assert_contract_active(Contract),
     get_payments_service_terms(Contract, Timestamp).
+
+assert_contract_active(#domain_Contract{status = {active, _}}) ->
+    ok;
+assert_contract_active(#domain_Contract{status = Status}) ->
+    throw(#payproc_InvalidContractStatus{status = Status}).
 
 -spec get_payments_service_terms(contract(), timestamp()) ->
     dmsl_domain_thrift:'PaymentsServiceTerms'() | no_return().
@@ -393,8 +363,8 @@ create_shop(ID, ShopParams, Timestamp) ->
     #domain_Shop{
         id              = ID,
         created_at      = Timestamp,
-        blocking        = ?unblocked(<<>>),
-        suspension      = ?active(),
+        blocking        = ?unblocked(<<>>, Timestamp),
+        suspension      = ?active(Timestamp),
         category        = ShopParams#payproc_ShopParams.category,
         details         = ShopParams#payproc_ShopParams.details,
         location        = ShopParams#payproc_ShopParams.location,
@@ -424,60 +394,11 @@ get_test_shop_params(ContractID, PayoutToolID, Revision) ->
 get_shop(ID, #domain_Party{shops = Shops}) ->
     maps:get(ID, Shops, undefined).
 
--spec set_new_shop(shop(), party()) ->
+-spec set_shop(shop(), party()) ->
     party().
 
-set_new_shop(Shop, Party) ->
-    set_shop(Shop, Party).
-
--spec set_shop_category(shop_id(), category(), party()) ->
-    party().
-
-set_shop_category(ShopID, Category, Party) ->
-    Shop = get_shop(ShopID, Party),
-    set_shop(Shop#domain_Shop{category = Category}, Party).
-
--spec set_shop_details(shop_id(), dmsl_domain_thrift:'ShopDetails'(), party()) ->
-    party().
-
-set_shop_details(ShopID, Details, Party) ->
-    Shop = get_shop(ShopID, Party),
-    set_shop(Shop#domain_Shop{details = Details}, Party).
-
--spec set_shop_contract(shop_id(), contract_id(), payout_tool_id(), party()) ->
-    party().
-
-set_shop_contract(ShopID, ContractID, PayoutToolID, Party) ->
-    Shop = get_shop(ShopID, Party),
-    set_shop(Shop#domain_Shop{contract_id = ContractID, payout_tool_id = PayoutToolID}, Party).
-
--spec set_shop_payout_tool(shop_id(), payout_tool_id(), party()) ->
-    party().
-
-set_shop_payout_tool(ShopID, PayoutToolID, Party) ->
-    Shop = get_shop(ShopID, Party),
-    set_shop(Shop#domain_Shop{payout_tool_id = PayoutToolID}, Party).
-
--spec set_shop_location(shop_id(), dmsl_domain_thrift:'ShopLocation'(), party()) ->
-    party().
-
-set_shop_location(ShopID, Location, Party) ->
-    Shop = get_shop(ShopID, Party),
-    set_shop(Shop#domain_Shop{location = Location}, Party).
-
--spec set_shop_proxy(shop_id(), dmsl_domain_thrift:'Proxy'(), party()) ->
-    party().
-
-set_shop_proxy(ShopID, Proxy, Party) ->
-    Shop = get_shop(ShopID, Party),
-    set_shop(Shop#domain_Shop{proxy = Proxy}, Party).
-
--spec set_shop_account(shop_id(), dmsl_domain_thrift:'ShopAccount'(), party()) ->
-    party().
-
-set_shop_account(ShopID, Account, Party) ->
-    Shop = get_shop(ShopID, Party),
-    set_shop(Shop#domain_Shop{account = Account}, Party).
+set_shop(Shop = #domain_Shop{id = ID}, Party = #domain_Party{shops = Shops}) ->
+    Party#domain_Party{shops = Shops#{ID => Shop}}.
 
 -spec shop_blocking(shop_id(), blocking(), party()) ->
     party().
@@ -546,12 +467,6 @@ get_new_shop_currency(#domain_Shop{contract_id = ContractID}, Party, Timestamp, 
     erlang:hd(ordsets:to_list(Currencies)).
 
 %% Internals
-
-set_contract(Contract = #domain_Contract{id = ID}, Party = #domain_Party{contracts = Contracts}) ->
-    Party#domain_Party{contracts = Contracts#{ID => Contract}}.
-
-set_shop(Shop = #domain_Shop{id = ID}, Party = #domain_Party{shops = Shops}) ->
-    Party#domain_Party{shops = Shops#{ID => Shop}}.
 
 ensure_shop(#domain_Shop{} = Shop) ->
     Shop;
@@ -824,7 +739,7 @@ assert_shop_valid(Shop, Timestamp, Revision, Party) ->
     ok = assert_shop_payout_tool_valid(Shop, Contract).
 
 assert_shop_contract_valid(
-    #domain_Shop{category = CategoryRef, account = ShopAccount},
+    #domain_Shop{id = ID, category = CategoryRef, account = ShopAccount},
     Contract,
     Timestamp,
     Revision
@@ -837,19 +752,37 @@ assert_shop_contract_valid(
         #domain_ShopAccount{currency = CurrencyRef} ->
             Currencies = reduce_selector_to_value(CurrencySelector, #{}, Revision),
             _ = ordsets:is_element(CurrencyRef, Currencies) orelse
-                raise_invalid_request(<<"currency is not permitted by contract">>);
+                % raise_invalid_request(<<"currency is not permitted by contract">>);
+                hg_claim:raise_invalid_changeset(
+                    {contract_terms_violated, #payproc_ContractTermsViolated{
+                        shop_id = ID,
+                        contract_id = get_contract_id(Contract),
+                        terms = #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+                            currencies = CurrencySelector
+                        }}
+                    }}
+                );
         undefined ->
             ok
     end,
     Categories = reduce_selector_to_value(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse
-        raise_invalid_request(<<"category is not permitted by contract">>),
+        %raise_invalid_request(<<"category is not permitted by contract">>),
+        hg_claim:raise_invalid_changeset(
+            {contract_terms_violated, #payproc_ContractTermsViolated{
+                shop_id = ID,
+                contract_id = get_contract_id(Contract),
+                terms = #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+                    categories = CategorySelector
+                }}
+            }}
+        ),
     ok.
 
 assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = PayoutToolID}, Contract) ->
     case get_contract_payout_tool(PayoutToolID, Contract) of
         undefined ->
-            throw({payout_tool_not_found, PayoutToolID});
+            hg_claim:raise_invalid_changeset({payout_tool_not_exists, PayoutToolID});
         _ ->
             ok
     end.

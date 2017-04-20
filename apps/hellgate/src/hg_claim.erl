@@ -6,22 +6,24 @@
 -export([create/5]).
 -export([update/5]).
 -export([accept/4]).
--export([deny/2]).
--export([revoke/2]).
+-export([deny/3]).
+-export([revoke/3]).
 -export([apply/3]).
 
 -export([get_id/1]).
+-export([get_revision/1]).
 -export([get_status/1]).
--export([set_status/2]).
+-export([set_status/4]).
 -export([is_pending/1]).
 -export([is_accepted/1]).
 -export([is_need_acceptance/1]).
 -export([is_conflicting/5]).
--export([update_changeset/2]).
+-export([update_changeset/4]).
 -export([create_party_initial_claim/4]).
 
 -export([assert_revision/2]).
 -export([assert_pending/1]).
+-export([raise_invalid_changeset/1]).
 
 %% Types
 
@@ -43,6 +45,12 @@
 
 get_id(#payproc_Claim{id = ID}) ->
     ID.
+
+-spec get_revision(claim()) ->
+    claim_revision().
+
+get_revision(#payproc_Claim{revision = Revision}) ->
+    Revision.
 
 -spec create_party_initial_claim(claim_id(), party(), timestamp(), revision()) ->
     claim().
@@ -69,7 +77,8 @@ create(ID, Changeset, Party, Timestamp, Revision) ->
         id        = ID,
         status    = ?pending(),
         changeset = merge_changesets(Changeset, ensure_shop_accounts_creation(Changeset, Party, Timestamp, Revision)),
-        revision = 1
+        revision = 1,
+        created_at = Timestamp
     }.
 
 -spec update(changeset(), claim(), party(), timestamp(), revision()) ->
@@ -79,15 +88,15 @@ update(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim, Party, Ti
     TmpChangeset = merge_changesets(OldChangeset, NewChangeset),
     ok = assert_changeset_applicable(TmpChangeset, Timestamp, Revision, Party),
     Changeset = merge_changesets(NewChangeset, ensure_shop_accounts_creation(TmpChangeset, Party, Timestamp, Revision)),
-    update_changeset(Changeset, Claim).
+    update_changeset(Changeset, get_next_revision(Claim), Timestamp, Claim).
 
-% FIXME dirty ad hoc for event appliance
--spec update_changeset(changeset(), claim()) ->
+-spec update_changeset(changeset(), claim_revision(), timestamp(), claim()) ->
     claim().
 
-update_changeset(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim) ->
+update_changeset(NewChangeset, NewRevision, Timestamp, #payproc_Claim{changeset = OldChangeset} = Claim) ->
     Claim#payproc_Claim{
-        revision = get_next_revision(Claim),
+        revision = NewRevision,
+        updated_at = Timestamp,
         changeset = merge_changesets(OldChangeset, NewChangeset)
     }.
 
@@ -97,27 +106,27 @@ update_changeset(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim)
 accept(Timestamp, DomainRevision, Party, Claim) ->
     ok = assert_changeset_acceptable(get_changeset(Claim), Timestamp, DomainRevision, Party),
     Effects = make_effects(Timestamp, DomainRevision, Claim),
-    set_status(?accepted(Timestamp, Effects), Claim).
+    set_status(?accepted(Effects), get_next_revision(Claim), Timestamp, Claim).
 
--spec deny(binary(), claim()) ->
+-spec deny(binary(), timestamp(), claim()) ->
     claim().
 
-deny(Reason, Claim) ->
-    set_status(?denied(Reason), Claim).
+deny(Reason, Timestamp, Claim) ->
+    set_status(?denied(Reason), get_next_revision(Claim), Timestamp, Claim).
 
--spec revoke(binary(), claim()) ->
+-spec revoke(binary(), timestamp(), claim()) ->
     claim().
 
-revoke(Reason, Claim) ->
-    set_status(?revoked(Reason), Claim).
+revoke(Reason, Timestamp, Claim) ->
+    set_status(?revoked(Reason), get_next_revision(Claim), Timestamp, Claim).
 
-% FIXME dirty ad hoc for event appliance
--spec set_status(claim_status(), claim()) ->
+-spec set_status(claim_status(), claim_revision(), timestamp(), claim()) ->
     claim().
 
-set_status(Status, Claim) ->
+set_status(Status, NewRevision, Timestamp, Claim) ->
     Claim#payproc_Claim{
-        revision = get_next_revision(Claim),
+        revision = NewRevision,
+        updated_at = Timestamp,
         status = Status
     }.
 
@@ -138,7 +147,7 @@ is_pending(_) ->
 -spec is_accepted(claim()) ->
     boolean().
 
-is_accepted(#payproc_Claim{status = ?accepted(_,_)}) ->
+is_accepted(#payproc_Claim{status = ?accepted(_)}) ->
     true;
 is_accepted(_) ->
     false.
@@ -158,7 +167,7 @@ is_conflicting(Claim1, Claim2, Timestamp, Revision, Party) ->
 -spec apply(claim(), timestamp(), party()) ->
     party().
 
-apply(#payproc_Claim{status = ?accepted(_, Effects)}, Timestamp, Party) ->
+apply(#payproc_Claim{status = ?accepted(Effects)}, Timestamp, Party) ->
     apply_effects(Effects, Timestamp, Party).
 
 %% Implementation
@@ -250,12 +259,12 @@ make_effects(Timestamp, Revision, Claim) ->
     make_changeset_effects(get_changeset(Claim), Timestamp, Revision).
 
 make_changeset_effects(Changeset, Timestamp, Revision) ->
-    lists:map(
+    squash_effects(lists:map(
         fun(Change) ->
             make_change_effect(Change, Timestamp, Revision)
         end,
         Changeset
-    ).
+    )).
 
 make_change_effect(?contract_modification(ID, Modification), Timestamp, Revision) ->
     ?contract_effect(ID, make_contract_modification_effect(ID, Modification, Timestamp, Revision));
@@ -308,12 +317,12 @@ create_shop_account(#domain_CurrencyRef{symbolic_code = SymbolicCode} = Currency
     }.
 
 make_changeset_safe_effects(Changeset, Timestamp, Revision) ->
-    lists:map(
+    squash_effects(lists:map(
         fun(Change) ->
             make_change_safe_effect(Change, Timestamp, Revision)
         end,
         Changeset
-    ).
+    )).
 
 make_change_safe_effect(
     ?shop_modification(ID, {shop_account_creation, #payproc_ShopAccountParams{currency = Currency}}),
@@ -332,6 +341,72 @@ make_change_safe_effect(
 make_change_safe_effect(Change, Timestamp, Revision) ->
     make_change_effect(Change, Timestamp, Revision).
 
+squash_effects(Effects) ->
+    squash_effects(Effects, []).
+
+squash_effects([?contract_effect(_, _) = Effect | Others], Squashed) ->
+    squash_effects(Others, squash_contract_effect(Effect, Squashed));
+squash_effects([?shop_effect(_, _) = Effect | Others], Squashed) ->
+    squash_effects(Others, squash_shop_effect(Effect, Squashed));
+squash_effects([], Squashed) ->
+    Squashed.
+
+squash_contract_effect(?contract_effect(_, {created, _}) = Effect, Squashed) ->
+    Squashed ++ [Effect];
+squash_contract_effect(?contract_effect(ID, Mod) = Effect, Squashed) ->
+    % Try to find contract creation in squashed effects
+    {AnyEffects, ProbablyCreated} = lists:splitwith(
+        fun(E) ->
+            case E of
+                ?contract_effect(ID, {created, _}) ->
+                    false;
+                _ ->
+                    true
+            end
+        end,
+        Squashed
+    ),
+    case ProbablyCreated of
+        % Contract creation found, lets update it with this claim effect
+        [?contract_effect(ID, {created, Contract}) | Others] ->
+            AnyEffects ++ [
+                ?contract_effect(ID, {created, update_contract(Mod, Contract)}) |
+                Others
+            ];
+        % Contract creation not found, so this contract created earlier and we shuold just
+        % add this claim effect to the end of squashed effects
+        [] ->
+            AnyEffects ++ [Effect]
+    end.
+
+squash_shop_effect(?shop_effect(_, {created, _}) = Effect, Squashed) ->
+    Squashed ++ [Effect];
+squash_shop_effect(?shop_effect(ID, Mod) = Effect, Squashed) ->
+    % Try to find shop creation in squashed effects
+    {AnyEffects, ProbablyCreated} = lists:splitwith(
+        fun(E) ->
+            case E of
+                ?shop_effect(ID, {created, _}) ->
+                    false;
+                _ ->
+                    true
+            end
+        end,
+        Squashed
+    ),
+    case ProbablyCreated of
+        % Shop creation found, lets update it with this claim effect
+        [?shop_effect(ID, {created, Shop}) | Others] ->
+            AnyEffects ++ [
+                ?shop_effect(ID, {created, update_shop(Mod, Shop)}) |
+                Others
+            ];
+        % Shop creation not found, so this shop created earlier and we shuold just
+        % add this claim effect to the end of squashed effects
+        [] ->
+            AnyEffects ++ [Effect]
+    end.
+
 apply_effects(Effects, Timestamp, Party) ->
     lists:foldl(
         fun(Effect, AccParty) ->
@@ -348,35 +423,44 @@ apply_claim_effect(?shop_effect(ID, Effect), _, Party) ->
 
 apply_contract_effect(_, {created, Contract}, Timestamp, Party) ->
     hg_party:set_new_contract(Contract, Timestamp, Party);
-apply_contract_effect(ID, {status_changed, Status}, _, Party) ->
-    hg_party:set_contract_status(ID, Status, Party);
-apply_contract_effect(ID, {adjustment_created, Adjustment}, _, Party) ->
-    hg_party:set_contract_adjustment(ID, Adjustment, Party);
-apply_contract_effect(ID, {payout_tool_created, PayoutTool}, _, Party) ->
-    hg_party:set_contract_payout_tool(ID, PayoutTool, Party);
-apply_contract_effect(ID, {legal_agreement_bound, LegalAgreement}, _, Party) ->
-    hg_party:set_contract_legal_agreement(ID, LegalAgreement, Party).
+apply_contract_effect(ID, Effect, _, Party) ->
+    Contract = hg_party:get_contract(ID, Party),
+    hg_party:set_contract(update_contract(Effect, Contract), Party).
+
+update_contract({status_changed, Status}, Contract) ->
+    Contract#domain_Contract{status = Status};
+update_contract({adjustment_created, Adjustment}, Contract) ->
+    Adjustments = Contract#domain_Contract.adjustments ++ [Adjustment],
+    Contract#domain_Contract{adjustments = Adjustments};
+update_contract({payout_tool_created, PayoutTool}, Contract) ->
+    PayoutTools = Contract#domain_Contract.payout_tools ++ [PayoutTool],
+    Contract#domain_Contract{payout_tools = PayoutTools};
+update_contract({legal_agreement_bound, LegalAgreement}, Contract) ->
+    Contract#domain_Contract{legal_agreement = LegalAgreement}.
 
 apply_shop_effect(_, {created, Shop}, Party) ->
-    hg_party:set_new_shop(Shop, Party);
-apply_shop_effect(ID, {category_changed, Category}, Party) ->
-    hg_party:set_shop_category(ID, Category, Party);
-apply_shop_effect(ID, {details_changed, Details}, Party) ->
-    hg_party:set_shop_details(ID, Details, Party);
-apply_shop_effect(
-    ID,
+    hg_party:set_shop(Shop, Party);
+apply_shop_effect(ID, Effect, Party) ->
+    Shop = hg_party:get_shop(ID, Party),
+    hg_party:set_shop(update_shop(Effect, Shop), Party).
+
+update_shop({category_changed, Category}, Shop) ->
+    Shop#domain_Shop{category = Category};
+update_shop({details_changed, Details}, Shop) ->
+    Shop#domain_Shop{details = Details};
+update_shop(
     {contract_changed, #payproc_ShopContractChanged{contract_id = ContractID, payout_tool_id = PayoutToolID}},
-    Party
+    Shop
 ) ->
-    hg_party:set_shop_contract(ID, ContractID, PayoutToolID, Party);
-apply_shop_effect(ID, {payout_tool_changed, PayoutToolID}, Party) ->
-    hg_party:set_shop_payout_tool(ID, PayoutToolID, Party);
-apply_shop_effect(ID, {location_changed, Location}, Party) ->
-    hg_party:set_shop_location(ID, Location, Party);
-apply_shop_effect(ID, {proxy_changed, #payproc_ShopProxyChanged{proxy = Proxy}}, Party) ->
-    hg_party:set_shop_proxy(ID, Proxy, Party);
-apply_shop_effect(ID, {account_created, Account}, Party) ->
-    hg_party:set_shop_account(ID, Account, Party).
+    Shop#domain_Shop{contract_id = ContractID, payout_tool_id = PayoutToolID};
+update_shop({payout_tool_changed, PayoutToolID}, Shop) ->
+    Shop#domain_Shop{payout_tool_id = PayoutToolID};
+update_shop({location_changed, Location}, Shop) ->
+    Shop#domain_Shop{location = Location};
+update_shop({proxy_changed, #payproc_ShopProxyChanged{proxy = Proxy}}, Shop) ->
+    Shop#domain_Shop{proxy = Proxy};
+update_shop({account_created, Account}, Shop) ->
+    Shop#domain_Shop{account = Account}.
 
 -spec raise_invalid_changeset(dmsl_payment_processing_thrift:'InvalidChangesetReason'()) ->
     no_return().

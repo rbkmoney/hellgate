@@ -22,12 +22,15 @@ services:
     depends_on:
       machinegun:
         condition: service_healthy
+    volumes:
+      - ../dominant/_build/prod/rel/dominant:/opt/dominant
 
   machinegun:
     image: dr.rbkmoney.com/rbkmoney/machinegun:e04e529f4c5682b527d12d73a13a3cf9eb296d4d
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
+      - ./log:/opt/machinegun/log/
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s

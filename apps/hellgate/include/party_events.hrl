@@ -12,11 +12,11 @@
 -define(shop_suspension(ID, Suspension),
     {shop_suspension, #payproc_ShopSuspension{shop_id = ID, suspension = Suspension}}).
 
--define(blocked(Reason), {blocked, #domain_Blocked{reason = Reason}}).
--define(unblocked(Reason), {unblocked, #domain_Unblocked{reason = Reason}}).
+-define(blocked(Reason, Since), {blocked, #domain_Blocked{reason = Reason, since = Since}}).
+-define(unblocked(Reason, Since), {unblocked, #domain_Unblocked{reason = Reason, since = Since}}).
 
--define(active(), {active, #domain_Active{}}).
--define(suspended(), {suspended, #domain_Suspended{}}).
+-define(active(Since), {active, #domain_Active{since = Since}}).
+-define(suspended(Since), {suspended, #domain_Suspended{since = Since}}).
 
 -define(contract_modification(ID, Modification),
     {contract_modification, #payproc_ContractModificationUnit{id = ID, modification = Modification}}).
@@ -54,16 +54,16 @@
 -define(claim_created(Claim),
     {claim_created, Claim}).
 
--define(claim_updated(ID, Changeset),
-    {claim_updated, #payproc_ClaimUpdated{id = ID, changeset = Changeset}}).
+-define(claim_updated(ID, Changeset, ClaimRevision, Timestamp),
+    {claim_updated, #payproc_ClaimUpdated{id = ID, changeset = Changeset, revision = ClaimRevision, updated_at = Timestamp}}).
 
--define(claim_status_changed(ID, Status),
-    {claim_status_changed, #payproc_ClaimStatusChanged{id = ID, status = Status}}).
+-define(claim_status_changed(ID, Status, ClaimRevision, Timestamp),
+    {claim_status_changed, #payproc_ClaimStatusChanged{id = ID, status = Status, revision = ClaimRevision, changed_at = Timestamp}}).
 
 -define(pending(),
     {pending, #payproc_ClaimPending{}}).
--define(accepted(AcceptedAt, Effects),
-    {accepted, #payproc_ClaimAccepted{accepted_at = AcceptedAt, effects = Effects}}).
+-define(accepted(Effects),
+    {accepted, #payproc_ClaimAccepted{effects = Effects}}).
 -define(denied(Reason),
     {denied, #payproc_ClaimDenied{reason = Reason}}).
 -define(revoked(Reason),
