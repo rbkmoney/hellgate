@@ -227,24 +227,48 @@ collect_account_map(Invoice, Shop, Route, VS, Revision) ->
     TerminalRef = Route#domain_InvoicePaymentRoute.terminal,
     #domain_Terminal{account = ProviderAccount} = hg_domain:get(Revision, {terminal, TerminalRef}),
     #domain_Shop{account = MerchantAccount} = Shop,
-    SystemAccount = choose_system_account(Invoice, VS, Revision),
-    #{
+    Currency = get_invoice_currency(Invoice),
+    SystemAccount = choose_system_account(Currency, VS, Revision),
+    M = #{
         {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
         {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
         {provider , settlement} => ProviderAccount#domain_TerminalAccount.settlement ,
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
-    }.
+    },
+    % External account probably can be optional for some payments
+    case choose_external_account(Currency, VS, Revision) of
+        #domain_ExternalAccount{income = Income, outcome = Outcome} ->
+            M#{
+                {external, income} => Income,
+                {external, outcome} => Outcome
+            };
+        undefined ->
+            M
+    end.
 
-choose_system_account(Invoice, VS, Revision) ->
+choose_system_account(Currency, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     SystemAccountSetSelector = Globals#domain_Globals.system_account_set,
     {value, SystemAccountSetRef} = hg_selector:reduce(SystemAccountSetSelector, VS, Revision), % FIXME
     SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
-    Currency = get_invoice_currency(Invoice),
     maps:get( % FIXME
         Currency,
         SystemAccountSet#domain_SystemAccountSet.accounts
     ).
+
+choose_external_account(Currency, VS, Revision) ->
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    ExternalAccountSetSelector = Globals#domain_Globals.external_account_set,
+    case hg_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
+        {value, ExternalAccountSetRef} ->
+            ExternalAccountSet = hg_domain:get(Revision, {external_account_set, ExternalAccountSetRef}),
+            genlib_map:get(
+                Currency,
+                ExternalAccountSet#domain_ExternalAccountSet.accounts
+            );
+        _ ->
+            undefined
+    end.
 
 construct_plan_id(
     #domain_Invoice{id = InvoiceID},

@@ -24,6 +24,7 @@
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
 -export([invalid_payment_w_deprived_party/1]).
+-export([lgbt_external_account/1]).
 -export([consistent_history/1]).
 
 %%
@@ -69,6 +70,8 @@ all() ->
         payment_risk_score_check,
 
         invalid_payment_w_deprived_party,
+        % FIXME naming
+        lgbt_external_account,
 
         consistent_history
     ].
@@ -367,6 +370,49 @@ invalid_payment_w_deprived_party(C) ->
     Exception = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, InvoicingClient),
     {exception, #'InvalidRequest'{}} = Exception.
 
+-spec lgbt_external_account(config()) -> _ | no_return().
+
+lgbt_external_account(C) ->
+    PartyID = <<"LGBT">>,
+    ShopID = 1,
+    RootUrl = ?c(root_url, C),
+    UserInfo = make_userinfo(PartyID),
+    PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
+    InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
+    ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
+    ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, InvoicingClient),
+    PaymentID = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    ?payment_started(_, _, CashFlow) = next_event(InvoiceID, InvoicingClient),
+    [AssistAccountID] = lists:foldl(
+        fun
+            (#domain_FinalCashFlowPosting{
+                destination = #domain_FinalCashFlowAccount{
+                    account_type = {external, outcome},
+                    account_id = AccountID
+                },
+                details = <<"Assist fee">>
+            }, Acc) ->
+                [AccountID | Acc];
+            (_, Acc) ->
+                Acc
+        end,
+        [],
+        CashFlow
+    ),
+    _ = hg_context:set(woody_context:new()),
+    #domain_ExternalAccountSet{
+        accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
+    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}),
+    hg_context:cleanup(),
+    ?payment_bound(PaymentID, ?trx_info(_)) = next_event(InvoiceID, InvoicingClient),
+    ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, InvoicingClient),
+    ?payment_status_changed(PaymentID, ?captured())  = next_event(InvoiceID, InvoicingClient),
+    ?invoice_status_changed(?paid()) = next_event(InvoiceID, InvoicingClient).
+
 %%
 
 -spec consistent_history(config()) -> _ | no_return().
@@ -632,6 +678,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
+        hg_ct_fixture:construct_external_account_set(?eas(2), <<"Assist">>, ?cur(<<"RUB">>)),
 
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
@@ -642,7 +689,18 @@ construct_domain_fixture() ->
                     ?prv(2)
                 ])},
                 system_account_set = {value, ?sas(1)},
-                external_account_set = {value, ?eas(1)},
+                external_account_set = {decisions, [
+                    #domain_ExternalAccountSetDecision{
+                        if_ = {condition, {party, #domain_PartyCondition{
+                            id = <<"LGBT">>
+                        }}},
+                        then_ = {value, ?eas(2)}
+                    },
+                    #domain_ExternalAccountSetDecision{
+                        if_ = {constant, true},
+                        then_ = {value, ?eas(1)}
+                    }
+                ]},
                 default_contract_template = ?tmpl(2),
                 common_merchant_proxy = ?prx(3),
                 inspector = {decisions, [
@@ -867,6 +925,12 @@ construct_domain_fixture() ->
                         {system, settlement},
                         {provider, settlement},
                         ?share(16, 1000, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {external, outcome},
+                        ?fixed(20, ?cur(<<"RUB">>)),
+                        <<"Assist fee">>
                     )
                 ],
                 account = AccountRUB,
