@@ -24,7 +24,7 @@
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
 -export([invalid_payment_w_deprived_party/1]).
--export([lgbt_external_account/1]).
+-export([external_account_posting/1]).
 -export([consistent_history/1]).
 
 %%
@@ -70,8 +70,7 @@ all() ->
         payment_risk_score_check,
 
         invalid_payment_w_deprived_party,
-        % FIXME naming
-        lgbt_external_account,
+        external_account_posting,
 
         consistent_history
     ].
@@ -370,11 +369,10 @@ invalid_payment_w_deprived_party(C) ->
     Exception = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, InvoicingClient),
     {exception, #'InvalidRequest'{}} = Exception.
 
--spec lgbt_external_account(config()) -> _ | no_return().
+-spec external_account_posting(config()) -> _ | no_return().
 
-lgbt_external_account(C) ->
+external_account_posting(C) ->
     PartyID = <<"LGBT">>,
-    ShopID = 1,
     RootUrl = ?c(root_url, C),
     UserInfo = make_userinfo(PartyID),
     PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
@@ -387,22 +385,13 @@ lgbt_external_account(C) ->
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, InvoicingClient),
     PaymentID = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
     ?payment_started(_, _, CashFlow) = next_event(InvoiceID, InvoicingClient),
-    [AssistAccountID] = lists:foldl(
-        fun
-            (#domain_FinalCashFlowPosting{
-                destination = #domain_FinalCashFlowAccount{
-                    account_type = {external, outcome},
-                    account_id = AccountID
-                },
-                details = <<"Assist fee">>
-            }, Acc) ->
-                [AccountID | Acc];
-            (_, Acc) ->
-                Acc
-        end,
-        [],
-        CashFlow
-    ),
+    [AssistAccountID] = [
+    AccountID ||
+        #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{account_type = {external, outcome}, account_id = AccountID},
+            details = <<"Assist fee">>
+        } <- CashFlow
+    ],
     _ = hg_context:set(woody_context:new()),
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}

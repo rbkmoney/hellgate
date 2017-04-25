@@ -17,10 +17,10 @@
 -define(partycond(ID, Def), {condition, {party, #domain_PartyCondition{id = ID, definition = Def}}}).
 
 -define(fixed(Amount, CurrencyRef),
-	{fixed, #domain_CashVolumeFixed{cash = #domain_Cash{
-		amount = Amount,
-		currency = CurrencyRef
-	}}}).
+    {fixed, #domain_CashVolumeFixed{cash = #domain_Cash{
+        amount = Amount,
+        currency = CurrencyRef
+    }}}).
 -define(share(P, Q, C), {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C}}).
 
 -define(cfpost(A1, A2, V),
@@ -36,7 +36,7 @@
         source      = A1,
         destination = A2,
         volume      = V,
-        details		= D
+        details     = D
     }
 ).
 
