@@ -82,24 +82,23 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_invoice_access(UserInfo, InvoiceID),
-    get_invoice_state(get_state(InvoiceID));
+    St = validate_invoice_access(UserInfo, get_state(InvoiceID)),
+    get_invoice_state(St);
 
 handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_invoice_access(UserInfo, InvoiceID),
+    _ = validate_invoice_access(UserInfo, get_initial_state(InvoiceID)),
     get_public_history(InvoiceID, Range);
 
 handle_function_('StartPayment', [UserInfo, InvoiceID, PaymentParams], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_invoice_access(UserInfo, InvoiceID),
-    ok = validate_operability(get_initial_state(InvoiceID)),
+    St = validate_invoice_access(UserInfo, get_initial_state(InvoiceID)),
+    ok = validate_operability(St),
     call(InvoiceID, {start_payment, PaymentParams});
 
 handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_invoice_access(UserInfo, InvoiceID),
-    St = get_state(InvoiceID),
+    St = validate_invoice_access(UserInfo, get_state(InvoiceID)),
     case get_payment_session(PaymentID, St) of
         PaymentSession when PaymentSession /= undefined ->
             hg_invoice_payment:get_payment(PaymentSession);
@@ -109,14 +108,14 @@ handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
 
 handle_function_('Fulfill', [UserInfo, InvoiceID, Reason], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_invoice_access(UserInfo, InvoiceID),
-    ok = validate_operability(get_initial_state(InvoiceID)),
+    St = validate_invoice_access(UserInfo, get_initial_state(InvoiceID)),
+    ok = validate_operability(St),
     call(InvoiceID, {fulfill, Reason});
 
 handle_function_('Rescind', [UserInfo, InvoiceID, Reason], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    ok = validate_invoice_access(UserInfo, InvoiceID),
-    ok = validate_operability(get_initial_state(InvoiceID)),
+    St = validate_invoice_access(UserInfo, get_initial_state(InvoiceID)),
+    ok = validate_operability(St),
     call(InvoiceID, {rescind, Reason}).
 
 validate_operability(St) ->
@@ -231,7 +230,6 @@ map_start_error({error, Reason}) ->
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type invoice_status() :: dmsl_domain_thrift:'InvoiceStatus'().
--type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
@@ -323,9 +321,9 @@ handle_expiration(St) ->
 %%
 
 -type call() ::
-    {start_payment, payment_params(), user_info()} |
-    {fulfill, binary(), user_info()} |
-    {rescind, binary(), user_info()} |
+    {start_payment, payment_params()} |
+    {fulfill, binary()} |
+    {rescind, binary()} |
     {callback, callback()}.
 
 -type response() ::
@@ -733,10 +731,10 @@ validate_currency(Currency, Currency) ->
 validate_currency(_, _) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid currency">>]}).
 
-validate_invoice_access(UserInfo, InvoiceID) ->
-    St = get_initial_state(InvoiceID),
+validate_invoice_access(UserInfo, St = #st{}) ->
     PartyID = get_party_id(St),
-    validate_party_access(UserInfo, PartyID).
+    ok = validate_party_access(UserInfo, PartyID),
+    St.
 
 validate_party_access(UserInfo, PartyID) ->
     case hg_access_control:check_user_info(UserInfo, PartyID) of
