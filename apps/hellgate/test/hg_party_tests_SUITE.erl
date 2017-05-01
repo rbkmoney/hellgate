@@ -1039,7 +1039,7 @@ construct_domain_fixture() ->
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
                 default_contract_template = ?tmpl(2),
-                common_merchant_proxy = ?prx(1),
+                common_merchant_proxy = ?prx(1), % FIXME
                 inspector = {value, ?insp(1)}
             }
         }},

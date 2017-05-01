@@ -8,7 +8,6 @@
 -export([create_contract/2]).
 -export([create_shop/4]).
 -export([create_shop/5]).
--export([set_shop_proxy/4]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
 -export([get_first_payout_tool_id/2]).
@@ -123,8 +122,6 @@ start_apps(Apps) ->
 -type category()       :: dmsl_domain_thrift:'CategoryRef'().
 -type cost()           :: integer() | {integer(), binary()}.
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
--type proxy_ref()      :: dmsl_domain_thrift:'ProxyRef'().
--type proxy_options()  :: dmsl_domain_thrift:'ProxyOptions'().
 -type timestamp()      :: integer().
 
 -spec create_party_and_shop(Client :: pid()) ->
@@ -177,16 +174,6 @@ create_shop(ContractID, Category, Name, Description, Client) ->
     #payproc_ClaimResult{} = hg_client_party:activate_shop(ShopID, Client),
     ok = flush_events(Client),
     ShopID.
-
--spec set_shop_proxy(shop_id(), proxy_ref(), proxy_options(), Client :: pid()) ->
-    ok.
-
-set_shop_proxy(ShopID, ProxyRef, ProxyOptions, Client) ->
-    Proxy = #domain_Proxy{ref = ProxyRef, additional = ProxyOptions},
-    Update = #payproc_ShopUpdate{proxy = Proxy},
-    #payproc_ClaimResult{status = ?accepted(_)} = hg_client_party:update_shop(ShopID, Update, Client),
-    ok = flush_events(Client),
-    ok.
 
 flush_events(Client) ->
     case hg_client_party:pull_event(500, Client) of

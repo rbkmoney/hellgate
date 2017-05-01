@@ -19,7 +19,6 @@
 -export([invoice_cancelled_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 -export([payment_success/1]).
--export([payment_success_w_merchant_callback/1]).
 -export([payment_success_on_second_try/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
@@ -63,7 +62,6 @@ all() ->
         invoice_cancelled_after_payment_timeout,
         invalid_payment_amount,
         payment_success,
-        payment_success_w_merchant_callback,
         payment_success_on_second_try,
         invoice_success_on_third_payment,
 
@@ -246,29 +244,6 @@ payment_success(C) ->
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(),
-    PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
-    ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
-    ?invoice_state(
-        ?invoice_w_status(?paid()),
-        [?payment_w_status(PaymentID, ?captured())]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
-
--spec payment_success_w_merchant_callback(config()) -> _ | no_return().
-
-payment_success_w_merchant_callback(C) ->
-    Client = ?c(client, C),
-    PartyClient = ?c(party_client, C),
-    ContractParams = hg_ct_helper:make_battle_ready_contract_params(),
-    ContractID = hg_ct_helper:create_contract(ContractParams, PartyClient),
-    ShopID = hg_ct_helper:create_shop(ContractID, ?cat(3), <<"Callback Shop">>, PartyClient),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
-    MerchantProxy = construct_proxy(3, start_service_handler(hg_dummy_merchant, C, #{}), #{}),
-    ok = hg_domain:upsert(MerchantProxy),
-    ok = hg_ct_helper:set_shop_proxy(ShopID, get_proxy_ref(MerchantProxy), #{}, PartyClient),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
@@ -466,9 +441,6 @@ construct_proxy(ID, Url, Options) ->
             options           = Options
         }
     }}.
-
-get_proxy_ref({proxy, #domain_ProxyObject{ref = Ref}}) ->
-    Ref.
 
 %%
 
@@ -691,7 +663,7 @@ construct_domain_fixture() ->
                     }
                 ]},
                 default_contract_template = ?tmpl(2),
-                common_merchant_proxy = ?prx(3),
+                common_merchant_proxy = ?prx(3), % FIXME
                 inspector = {decisions, [
                     #domain_InspectorDecision{
                         if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
