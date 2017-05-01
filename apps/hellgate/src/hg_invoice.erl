@@ -8,7 +8,6 @@
 %%%           - state collapsing (?)
 %%%           - simpler flow control (?)
 %%%           - event publishing (?)
-%%%           - timer preservation on calls (?)
 %%%  - unify somehow with operability assertions from hg_party
 %%%  - should party blocking / suspension be version-locked? probably _not_
 %%%  - if someone has access to a party then it has access to an invoice
@@ -312,7 +311,7 @@ handle_signal(timeout, St = #st{pending = invoice}) ->
     handle_expiration(St);
 
 handle_signal({repair, _}, St) ->
-    ok([], St, restore_timer(St)).
+    ok([], St).
 
 handle_expiration(St) ->
     Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(overdue))))},
@@ -336,7 +335,7 @@ process_call(Call, History) ->
     St = collapse_history(History),
     try handle_call(Call, St) catch
         {exception, Exception} ->
-            {{exception, Exception}, {[], restore_timer(St)}}
+            {{exception, Exception}, {[], hg_machine_action:new()}}
     end.
 
 -spec raise(term()) -> no_return().
@@ -358,7 +357,7 @@ handle_call({rescind, Reason}, St) ->
     _ = assert_invoice_status(unpaid, St),
     _ = assert_no_pending_payment(St),
     Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(Reason))))},
-    respond(ok, Event, St);
+    respond(ok, Event, St, hg_machine_action:unset_timer());
 
 handle_call({callback, Callback}, St) ->
     dispatch_callback(Callback, St).
@@ -380,17 +379,6 @@ assert_no_pending_payment(#st{pending = {payment, PaymentID}}) ->
     raise(?payment_pending(PaymentID));
 assert_no_pending_payment(_) ->
     ok.
-
-restore_timer(St = #st{invoice = #domain_Invoice{status = Status}, pending = Pending}) ->
-    case Pending of
-        invoice when Status == ?unpaid() ->
-            set_invoice_timer(St);
-        invoice ->
-            hg_machine_action:new();
-        _ ->
-            % TODO how to restore timer properly then, magic number for now
-            hg_machine_action:set_timeout(10)
-    end.
 
 set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
     hg_machine_action:set_deadline(Due).

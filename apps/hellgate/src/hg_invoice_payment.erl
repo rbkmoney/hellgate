@@ -297,7 +297,7 @@ process_signal(timeout, St, Options) ->
             active ->
                 process(St, Options);
             suspended ->
-                fail(construct_failure(<<"provider_timeout">>), St)
+                fail(construct_failure(<<"provider_timeout">>), hg_machine_action:new(), St)
         end
     end, get_st_meta(St)).
 
@@ -318,7 +318,7 @@ process_call({callback, Payload}, St, Options) ->
 process(St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
     {ok, ProxyResult} = issue_process_call(ProxyContext, Options, St),
-    handle_proxy_result(ProxyResult, St, Options).
+    handle_proxy_result(ProxyResult, hg_machine_action:new(), St, Options).
 
 handle_callback(Payload, St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
@@ -326,15 +326,15 @@ handle_callback(Payload, St, Options) ->
     handle_callback_result(CallbackResult, Options, St).
 
 handle_callback_result(#prxprv_CallbackResult{result = ProxyResult, response = Response}, Options, St) ->
-    {What, {Events, Action}} = handle_proxy_result(ProxyResult, St, Options),
+    {What, {Events, Action}} = handle_proxy_result(ProxyResult, hg_machine_action:unset_timer(), St, Options),
     {Response, {What, {[?session_ev(activated) | Events], Action}}}.
 
 handle_proxy_result(
     #prxprv_ProxyResult{intent = {_, Intent}, trx = Trx, next_state = ProxyState},
-    St, Options
+    Action0, St, Options
 ) ->
     Events1 = bind_transaction(Trx, St),
-    {What, {Events2, Action}} = handle_proxy_intent(Intent, ProxyState, St, Options),
+    {What, {Events2, Action}} = handle_proxy_intent(Intent, ProxyState, Action0, St, Options),
     {What, {Events1 ++ Events2, Action}}.
 
 bind_transaction(undefined, _St) ->
@@ -356,7 +356,7 @@ bind_transaction(Trx, #st{payment = #domain_InvoicePayment{id = PaymentID, trx =
             error(proxy_contract_violated)
     end.
 
-handle_proxy_intent(#'FinishIntent'{status = {success, _}}, _ProxyState, St, Options) ->
+handle_proxy_intent(#'FinishIntent'{status = {success, _}}, _ProxyState, Action, St, Options) ->
     PaymentID = get_payment_id(St),
     Target = get_target(St),
     case get_target(St) of
@@ -368,23 +368,22 @@ handle_proxy_intent(#'FinishIntent'{status = {success, _}}, _ProxyState, St, Opt
             ok
     end,
     Events = [?payment_ev(?payment_status_changed(PaymentID, Target))],
-    Action = hg_machine_action:new(),
     {done, {Events, Action}};
 
-handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, _ProxyState, St, Options) ->
+handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, _ProxyState, Action0, St, Options) ->
     _AccountsState = rollback_plan(St, Options),
-    fail(convert_failure(Failure), St);
+    fail(convert_failure(Failure), Action0, St);
 
-handle_proxy_intent(#'SleepIntent'{timer = Timer}, ProxyState, _St, _Options) ->
-    Action = hg_machine_action:set_timer(Timer),
+handle_proxy_intent(#'SleepIntent'{timer = Timer}, ProxyState, Action0, _St, _Options) ->
+    Action = hg_machine_action:set_timer(Timer, Action0),
     Events = [?session_ev({proxy_state_changed, ProxyState})],
     {next, {Events, Action}};
 
 handle_proxy_intent(
     #'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction},
-    ProxyState, St, _Options
+    ProxyState, Action0, St, _Options
 ) ->
-    Action = try_set_timer(Timer, hg_machine_action:set_tag(Tag)),
+    Action = try_set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [
         ?session_ev({proxy_state_changed, ProxyState}),
         ?session_ev(suspended)
@@ -402,9 +401,8 @@ try_emit_interaction_event(undefined, _St) ->
 try_emit_interaction_event(UserInteraction, St) ->
     [?payment_ev(?payment_interaction_requested(get_payment_id(St), UserInteraction))].
 
-fail(Error, St) ->
+fail(Error, Action, St) ->
     Events = [?payment_ev(?payment_status_changed(get_payment_id(St), ?failed(Error)))],
-    Action = hg_machine_action:new(),
     {done, {Events, Action}}.
 
 commit_plan(St, Options) ->
