@@ -292,12 +292,13 @@ start_session(Target) ->
     {next | done, hg_machine:result()}.
 
 process_signal(timeout, St, Options) ->
+    Action = hg_machine_action:new(),
     hg_log_scope:scope(payment, fun() ->
         case get_status(St) of
             active ->
-                process(St, Options);
+                process(Action, St, Options);
             suspended ->
-                fail(construct_failure(<<"provider_timeout">>), hg_machine_action:new(), St)
+                fail(construct_failure(<<"provider_timeout">>), Action, St)
         end
     end, get_st_meta(St)).
 
@@ -308,25 +309,29 @@ process_call({callback, Payload}, St, Options) ->
     hg_log_scope:scope(payment, fun() ->
         case get_status(St) of
             suspended ->
-                handle_callback(Payload, St, Options);
+                Action = hg_machine_action:unset_timer(),
+                handle_callback(Payload, Action, St, Options);
             active ->
                 % there's ultimately no way how we could end up here
                 error(invalid_session_status)
         end
     end, get_st_meta(St)).
 
-process(St, Options) ->
+process(Action0, St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
-    {ok, ProxyResult} = issue_process_call(ProxyContext, Options, St),
-    handle_proxy_result(ProxyResult, hg_machine_action:new(), St, Options).
+    {ok, ProxyResult} = issue_process_call(ProxyContext, St, Options),
+    handle_proxy_result(ProxyResult, Action0, St, Options).
 
-handle_callback(Payload, St, Options) ->
+handle_callback(Payload, Action0, St, Options) ->
     ProxyContext = construct_proxy_context(St, Options),
-    {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, Options, St),
-    handle_callback_result(CallbackResult, Options, St).
+    {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St, Options),
+    handle_callback_result(CallbackResult, Action0, St, Options).
 
-handle_callback_result(#prxprv_CallbackResult{result = ProxyResult, response = Response}, Options, St) ->
-    {What, {Events, Action}} = handle_proxy_result(ProxyResult, hg_machine_action:unset_timer(), St, Options),
+handle_callback_result(
+    #prxprv_CallbackResult{result = ProxyResult, response = Response},
+    Action0, St, Options
+) ->
+    {What, {Events, Action}} = handle_proxy_result(ProxyResult, Action0, St, Options),
     {Response, {What, {[?session_ev(activated) | Events], Action}}}.
 
 handle_proxy_result(
@@ -597,13 +602,13 @@ create_session(Target) ->
 
 %%
 
-issue_process_call(ProxyContext, Opts, St) ->
-    issue_call('ProcessPayment', [ProxyContext], Opts, St).
+issue_process_call(ProxyContext, St, Opts) ->
+    issue_call('ProcessPayment', [ProxyContext], St, Opts).
 
-issue_callback_call(Payload, ProxyContext, Opts, St) ->
-    issue_call('HandlePaymentCallback', [Payload, ProxyContext], Opts, St).
+issue_callback_call(Payload, ProxyContext, St, Opts) ->
+    issue_call('HandlePaymentCallback', [Payload, ProxyContext], St, Opts).
 
-issue_call(Func, Args, Opts, St) ->
+issue_call(Func, Args, St, Opts) ->
     CallOpts = get_call_options(St, Opts),
     hg_woody_wrapper:call('ProviderProxy', Func, Args, CallOpts).
 
