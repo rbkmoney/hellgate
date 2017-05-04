@@ -16,8 +16,7 @@
 -export([invalid_shop_status/1]).
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancellation/1]).
--export([overdue_invoice_cancellation_after_payment_failure/1]).
--export([invoice_cancelled_after_payment_timeout/1]).
+-export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 -export([payment_success/1]).
 -export([payment_success_on_second_try/1]).
@@ -59,9 +58,8 @@ all() ->
         invalid_party_status,
         invalid_shop_status,
         invoice_cancellation,
-        overdue_invoice_cancellation_after_payment_failure,
         overdue_invoice_cancellation,
-        invoice_cancelled_after_payment_timeout,
+        invoice_cancellation_after_payment_timeout,
         invalid_payment_amount,
         payment_success,
         payment_success_on_second_try,
@@ -211,26 +209,13 @@ overdue_invoice_cancellation(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(1), 10000, C),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
 
--spec overdue_invoice_cancellation_after_payment_failure(config()) -> _ | no_return().
+-spec invoice_cancellation_after_payment_timeout(config()) -> _ | no_return().
 
-overdue_invoice_cancellation_after_payment_failure(C) ->
+invoice_cancellation_after_payment_timeout(C) ->
     Client = ?c(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
-    InvoiceID = start_invoice(<<"rubberdawn">>, make_due_date(2), 10000, C),
-    PaymentID = attach_payment(InvoiceID, make_tds_payment_params(), Client),
-    ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
-    %% wait for payment timeout
-    ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
-
--spec invoice_cancelled_after_payment_timeout(config()) -> _ | no_return().
-
-invoice_cancelled_after_payment_timeout(C) ->
-    Client = ?c(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
-    InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(7), 1000, C),
+    InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(3), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
