@@ -15,7 +15,8 @@
 -export([invalid_party_status/1]).
 -export([invalid_shop_status/1]).
 -export([invoice_cancellation/1]).
--export([overdue_invoice_cancelled/1]).
+-export([overdue_invoice_cancellation/1]).
+-export([overdue_invoice_cancellation_after_payment_failure/1]).
 -export([invoice_cancelled_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 -export([payment_success/1]).
@@ -58,7 +59,8 @@ all() ->
         invalid_party_status,
         invalid_shop_status,
         invoice_cancellation,
-        overdue_invoice_cancelled,
+        overdue_invoice_cancellation_after_payment_failure,
+        overdue_invoice_cancellation,
         invoice_cancelled_after_payment_timeout,
         invalid_payment_amount,
         payment_success,
@@ -202,11 +204,24 @@ invoice_cancellation(C) ->
     ?invalid_invoice_status(_) = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
     ok = hg_client_invoicing:rescind(InvoiceID, <<"whynot">>, Client).
 
--spec overdue_invoice_cancelled(config()) -> _ | no_return().
+-spec overdue_invoice_cancellation(config()) -> _ | no_return().
 
-overdue_invoice_cancelled(C) ->
+overdue_invoice_cancellation(C) ->
     Client = ?c(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(1), 10000, C),
+    ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
+
+-spec overdue_invoice_cancellation_after_payment_failure(config()) -> _ | no_return().
+
+overdue_invoice_cancellation_after_payment_failure(C) ->
+    Client = ?c(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberdawn">>, make_due_date(2), 10000, C),
+    PaymentID = attach_payment(InvoiceID, make_tds_payment_params(), Client),
+    ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
+    %% wait for payment timeout
+    ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
 
 -spec invoice_cancelled_after_payment_timeout(config()) -> _ | no_return().
