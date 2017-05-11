@@ -22,7 +22,7 @@ test({currency_is, V1}, #{currency := V2}, _) ->
     V1 =:= V2;
 test({cost_in, V}, #{cost := C}, _) ->
     test_cash_range(C, V) =:= within;
-test({payment_tool_condition, C}, #{payment_tool := V}, Rev) ->
+test({payment_tool, C}, #{payment_tool := V}, Rev) ->
     hg_payment_tool:test_condition(C, V, Rev);
 test({shop_location_is, V}, #{shop := S}, _) ->
     V =:= S#domain_Shop.details#domain_ShopDetails.location;
