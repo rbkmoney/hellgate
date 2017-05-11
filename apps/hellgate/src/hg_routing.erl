@@ -8,10 +8,9 @@
 %%
 
 -type t() :: dmsl_domain_thrift:'InvoicePaymentRoute'().
--type varset() :: #{}. % FIXME
 %%-type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 
--spec choose(varset(), hg_domain:revision()) ->
+-spec choose(hg_selector:varset(), hg_domain:revision()) ->
     t() | undefined.
 
 choose(VS, Revision) ->

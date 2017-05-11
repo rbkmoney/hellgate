@@ -7,7 +7,10 @@
 -export([handle_function/4]).
 -export_type([handler_opts/0]).
 
--type handler_opts() :: #{handler => module()}.
+-type handler_opts() :: #{
+    handler => module(),
+    user_identity => undefined | woody_user_identity:user_identity()
+}.
 
 %% Callbacks
 
@@ -26,7 +29,11 @@
 handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
     hg_context:set(Context),
     try
-        Result = Handler:handle_function(Func, Args, Opts),
+        Result = Handler:handle_function(
+            Func,
+            Args,
+            Opts#{user_identity => get_user_identity(Context)}
+        ),
         {ok, Result}
     catch
         throw:Reason ->
@@ -82,3 +89,11 @@ get_service_module('MerchantProxy') ->
     dmsl_proxy_merchant_thrift;
 get_service_module(ServiceName) ->
     error({unknown_service, ServiceName}).
+
+get_user_identity(Context) ->
+    try
+        woody_user_identity:get(Context)
+    catch
+        {missing_required, _Key} ->
+            undefined
+    end.

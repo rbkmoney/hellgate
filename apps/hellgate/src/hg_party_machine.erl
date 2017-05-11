@@ -33,7 +33,7 @@
 -define(NS, <<"party">>).
 
 -record(st, {
-    party          :: party(),
+    party          :: undefined | party(),
     timestamp      :: timestamp(),
     claims   = #{} :: #{claim_id() => claim()},
     sequence = 0   :: 0 | sequence()

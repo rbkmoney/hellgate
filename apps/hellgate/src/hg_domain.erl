@@ -69,7 +69,7 @@ find(Revision, Ref) ->
 extract_data(#'VersionedObject'{object = {_Tag, {_Name, _Ref, Data}}}) ->
     Data.
 
--spec commit(revision(), dmt:commit()) -> ok.
+-spec commit(revision(), dmt:commit()) -> ok | no_return().
 
 commit(Revision, Commit) ->
     Revision = dmt_client:commit(Revision, Commit) - 1,
@@ -78,7 +78,7 @@ commit(Revision, Commit) ->
 
 %% convenience shortcuts, use carefully
 
--spec insert(object() | [object()]) -> ok.
+-spec insert(object() | [object()]) -> ok | no_return().
 
 insert(Object) when not is_list(Object) ->
     insert([Object]);
@@ -93,7 +93,7 @@ insert(Objects) ->
     },
     commit(head(), Commit).
 
--spec update(object() | [object()]) -> ok.
+-spec update(object() | [object()]) -> ok | no_return().
 
 update(NewObject) when not is_list(NewObject) ->
     update([NewObject]);
@@ -111,7 +111,7 @@ update(NewObjects) ->
     },
     commit(head(), Commit).
 
--spec upsert(object() | [object()]) -> ok.
+-spec upsert(object() | [object()]) -> ok | no_return().
 
 upsert(NewObject) when not is_list(NewObject) ->
     upsert([NewObject]);
@@ -136,7 +136,7 @@ upsert(NewObjects) ->
     },
     commit(head(), Commit).
 
--spec remove(object() | [object()]) -> ok.
+-spec remove(object() | [object()]) -> ok | no_return().
 
 remove(Object) when not is_list(Object) ->
     remove([Object]);
@@ -151,7 +151,7 @@ remove(Objects) ->
     },
     commit(head(), Commit).
 
--spec cleanup() -> ok.
+-spec cleanup() -> ok | no_return().
 
 cleanup() ->
     Domain = all(head()),

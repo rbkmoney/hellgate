@@ -16,7 +16,8 @@
         woody,
         gproc,
         hg_proto,
-        dmt_client
+        dmt_client,
+        woody_user_identity
     ]},
     {env, []},
     {modules, []},

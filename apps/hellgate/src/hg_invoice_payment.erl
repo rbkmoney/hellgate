@@ -44,7 +44,7 @@
     payment  :: payment(),
     route    :: route(),
     cashflow :: cashflow(),
-    session  :: session()
+    session  :: undefined | session()
 }).
 
 -type st() :: #st{}.

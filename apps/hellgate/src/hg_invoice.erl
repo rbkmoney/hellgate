@@ -45,7 +45,7 @@
 %%
 
 -record(st, {
-    invoice :: invoice(),
+    invoice :: undefined | invoice(),
     payments = [] :: [{payment_id(), payment_st()}],
     sequence = 0 :: 0 | sequence(),
     pending = invoice ::
@@ -66,11 +66,11 @@ handle_function(Func, Args, Opts) ->
 -spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
+handle_function_('Create', [UserInfo, InvoiceParams], #{user_identity := UserIdentity}) ->
     ID = hg_utils:unique_id(),
     _ = set_invoicing_meta(ID, UserInfo),
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
-    ok = validate_party_access(UserInfo, PartyID),
+    ok = validate_party_access(UserIdentity, UserInfo, PartyID),
     Party = get_party(PartyID),
     ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
     Shop = validate_party_shop(ShopID, Party),
@@ -78,25 +78,25 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     ok = start(ID, InvoiceParams),
     ID;
 
-handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
+handle_function_('Get', [UserInfo, InvoiceID], #{user_identity := UserIdentity}) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    St = validate_invoice_access(UserInfo, get_state(InvoiceID)),
+    St = validate_invoice_access(UserIdentity, UserInfo, get_state(InvoiceID)),
     get_invoice_state(St);
 
-handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
+handle_function_('GetEvents', [UserInfo, InvoiceID, Range], #{user_identity := UserIdentity}) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    _ = validate_invoice_access(UserInfo, get_initial_state(InvoiceID)),
+    _ = validate_invoice_access(UserIdentity, UserInfo, get_initial_state(InvoiceID)),
     get_public_history(InvoiceID, Range);
 
-handle_function_('StartPayment', [UserInfo, InvoiceID, PaymentParams], _Opts) ->
+handle_function_('StartPayment', [UserInfo, InvoiceID, PaymentParams], #{user_identity := UserIdentity}) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    St = validate_invoice_access(UserInfo, get_initial_state(InvoiceID)),
+    St = validate_invoice_access(UserIdentity, UserInfo, get_initial_state(InvoiceID)),
     ok = validate_operability(St),
     call(InvoiceID, {start_payment, PaymentParams});
 
-handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
+handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], #{user_identity := UserIdentity}) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    St = validate_invoice_access(UserInfo, get_state(InvoiceID)),
+    St = validate_invoice_access(UserIdentity, UserInfo, get_state(InvoiceID)),
     case get_payment_session(PaymentID, St) of
         PaymentSession when PaymentSession /= undefined ->
             hg_invoice_payment:get_payment(PaymentSession);
@@ -104,15 +104,15 @@ handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
             throw(#payproc_InvoicePaymentNotFound{})
     end;
 
-handle_function_('Fulfill', [UserInfo, InvoiceID, Reason], _Opts) ->
+handle_function_('Fulfill', [UserInfo, InvoiceID, Reason], #{user_identity := UserIdentity}) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    St = validate_invoice_access(UserInfo, get_initial_state(InvoiceID)),
+    St = validate_invoice_access(UserIdentity, UserInfo, get_initial_state(InvoiceID)),
     ok = validate_operability(St),
     call(InvoiceID, {fulfill, Reason});
 
-handle_function_('Rescind', [UserInfo, InvoiceID, Reason], _Opts) ->
+handle_function_('Rescind', [UserInfo, InvoiceID, Reason], #{user_identity := UserIdentity}) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
-    St = validate_invoice_access(UserInfo, get_initial_state(InvoiceID)),
+    St = validate_invoice_access(UserIdentity, UserInfo, get_initial_state(InvoiceID)),
     ok = validate_operability(St),
     call(InvoiceID, {rescind, Reason}).
 
@@ -581,16 +581,15 @@ validate_currency(Currency, Currency) ->
 validate_currency(_, _) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid currency">>]}).
 
-validate_invoice_access(UserInfo, St = #st{}) ->
+validate_invoice_access(UserIdentity, UserInfo, St = #st{}) ->
     PartyID = get_party_id(St),
-    ok = validate_party_access(UserInfo, PartyID),
+    ok = validate_party_access(UserIdentity, UserInfo, PartyID),
     St.
 
-validate_party_access(UserInfo, PartyID) ->
-    case hg_access_control:check_user_info(UserInfo, PartyID) of
+validate_party_access(UserIdentity, UserInfo, PartyID) ->
+    case hg_access_control:check_user(UserIdentity, UserInfo, PartyID) of
         ok ->
             ok;
         invalid_user ->
             throw(#payproc_InvalidUser{})
     end.
-
