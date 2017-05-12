@@ -78,6 +78,15 @@ start_app(hellgate = AppName) ->
         hellgate_root_url => get_hellgate_url()
     }};
 
+start_app(dmt_client = AppName) ->
+    {start_app(AppName, [
+        {cache_update_interval, 5000}, % milliseconds
+        {service_urls, #{
+            'Repository' => <<"http://dominant:8022/v1/domain/repository">>,
+            'RepositoryClient' => <<"http://dominant:8022/v1/domain/repository_client">>
+        }}
+    ]), #{}};
+
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
 

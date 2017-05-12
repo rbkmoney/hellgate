@@ -194,7 +194,7 @@ groups() ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
-    {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, hellgate]),
+    {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, dmt_client, hellgate]),
     ok = hg_domain:insert(construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
@@ -882,13 +882,27 @@ party_access_control(C) ->
     #domain_Party{id = PartyID} = hg_client_party:get(GoodExternalClient),
 
     % External Reject
-    BadExternalClient = hg_client_party:start(
+    BadExternalClient0 = hg_client_party:start(
         #payproc_UserInfo{id = <<"FakE1D">>, type = {external_user, #payproc_ExternalUser{}}},
         PartyID,
         hg_client_api:new(?c(root_url, C))
     ),
-    ?invalid_user() = hg_client_party:get(BadExternalClient),
-    hg_client_party:stop(BadExternalClient),
+    ?invalid_user() = hg_client_party:get(BadExternalClient0),
+    hg_client_party:stop(BadExternalClient0),
+
+    % UserIdentity has priority
+    UserIdentity = #{
+        id => PartyID,
+        realm => <<"internal">>
+    },
+    Context = woody_user_identity:put(UserIdentity, woody_context:new()),
+    BadExternalClient1 = hg_client_party:start(
+        #payproc_UserInfo{id = <<"FakE1D">>, type = {external_user, #payproc_ExternalUser{}}},
+        PartyID,
+        hg_client_api:new(?c(root_url, C), Context)
+    ),
+    #domain_Party{id = PartyID} = hg_client_party:get(BadExternalClient1),
+    hg_client_party:stop(BadExternalClient1),
 
     % Internal Success
     GoodInternalClient = hg_client_party:start(

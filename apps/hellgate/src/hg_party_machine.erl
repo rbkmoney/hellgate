@@ -508,9 +508,7 @@ is_shop_modification_need_acceptance({suspension, _}) ->
 is_shop_modification_need_acceptance({account_created, _}) ->
     false;
 is_shop_modification_need_acceptance({update, ShopUpdate}) ->
-    is_shop_update_need_acceptance(ShopUpdate);
-is_shop_modification_need_acceptance(_) ->
-    true.
+    is_shop_update_need_acceptance(ShopUpdate).
 
 is_shop_update_need_acceptance(ShopUpdate = #payproc_ShopUpdate{}) ->
     RecordInfo = record_info(fields, payproc_ShopUpdate),

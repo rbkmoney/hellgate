@@ -69,7 +69,7 @@ find(Revision, Ref) ->
 extract_data(#'VersionedObject'{object = {_Tag, {_Name, _Ref, Data}}}) ->
     Data.
 
--spec commit(revision(), dmt:commit()) -> ok | no_return().
+-spec commit(revision(), dmt_client:commit()) -> ok | no_return().
 
 commit(Revision, Commit) ->
     Revision = dmt_client:commit(Revision, Commit) - 1,

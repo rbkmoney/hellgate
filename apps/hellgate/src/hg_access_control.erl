@@ -9,7 +9,7 @@
 
 
 -spec check_user(
-    undefined | woody_user_indentity:user_identity(),
+    undefined | woody_user_identity:user_identity(),
     dmsl_payment_processing_thrift:'UserInfo'(),
     dmsl_domain_thrift:'PartyID'()
 ) -> ok | invalid_user.
@@ -22,7 +22,7 @@ check_user(UserIdentity, _UserInfo, PartyID) ->
 
 %%
 
--spec check_user_identity(woody_user_indentity:user_identity(), dmsl_domain_thrift:'PartyID'())->
+-spec check_user_identity(woody_user_identity:user_identity(), dmsl_domain_thrift:'PartyID'())->
     ok | invalid_user.
 
 check_user_identity(#{id := PartyID, realm := <<"external">>}, PartyID) ->

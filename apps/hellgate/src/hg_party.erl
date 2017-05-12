@@ -64,6 +64,8 @@
 -type shop_params()           :: dmsl_payment_processing_thrift:'ShopParams'().
 -type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
 -type category()              :: dmsl_domain_thrift:'CategoryRef'().
+-type contract_template_ref() :: dmsl_domain_thrift:'ContractTemplateRef'().
+-type contractor()            :: dmsl_domain_thrift:'Contractor'().
 
 -type timestamp()             :: dmsl_base_thrift:'Timestamp'().
 -type revision()              :: hg_domain:revision().
@@ -91,29 +93,21 @@ get_party_id(#domain_Party{id = ID}) ->
     ID.
 
 -spec create_contract(contract_params(), revision(), party()) ->
-    contract().
+    contract() |  no_return().
 
 create_contract(Params, Revision, Party) ->
     #payproc_ContractParams{
         contractor = Contractor,
         template = TemplateRef
     } = ensure_contract_creation_params(Params, Revision),
-    ContractID = get_next_contract_id(Party),
-    Contract = instantiate_contract_template(TemplateRef, Revision),
-    Contract#domain_Contract{
-        id = ContractID,
-        contractor = Contractor,
-        status = {active, #domain_ContractActive{}},
-        adjustments = [],
-        payout_tools = []
-    }.
+    prepare_contract(TemplateRef, Contractor, Revision, Party).
 
 -spec create_test_contract(revision(), party()) ->
-    contract().
+    contract() | no_return().
 
 create_test_contract(Revision, Party) ->
-    Params = #payproc_ContractParams{template = get_test_template_ref(Revision)},
-    create_contract(Params, Revision, Party).
+    TemplateRef = ensure_contract_template(get_test_template_ref(Revision), Revision),
+    prepare_contract(TemplateRef, undefined, Revision, Party).
 
 -spec get_contract(contract_id(), party()) ->
     contract().
@@ -162,11 +156,10 @@ create_contract_adjustment(Params, Revision, Contract) ->
         template = TemplateRef
     } = ensure_adjustment_creation_params(Params, Revision),
     ID = get_next_contract_adjustment_id(Contract),
-    #domain_Contract{
-        valid_since = ValidSince,
-        valid_until = ValidUntil,
-        terms = TermSetHierarchyRef
-    } = instantiate_contract_template(TemplateRef, Revision),
+    {ValidSince, ValidUntil, TermSetHierarchyRef} = instantiate_contract_template(
+        TemplateRef,
+        Revision
+    ),
     #domain_ContractAdjustment{
         id = ID,
         valid_since = ValidSince,
@@ -226,23 +219,19 @@ get_payments_service_terms(Contract, Timestamp) ->
 create_shop(ShopParams, Timestamp, Revision, Party) ->
     create_shop(ShopParams, ?suspended(), Timestamp, Revision, Party).
 
-create_shop(ShopParams, Suspension, Timestamp, Revision, Party) ->
-    Contract = get_contract(ShopParams#payproc_ShopParams.contract_id, Party),
-    Shop = ensure_shop_category(
-        #domain_Shop{
-            id              = get_next_shop_id(Party),
-            blocking        = ?unblocked(<<>>),
-            suspension      = Suspension,
-            details         = ShopParams#payproc_ShopParams.details,
-            category        = ShopParams#payproc_ShopParams.category,
-            contract_id     = ShopParams#payproc_ShopParams.contract_id,
-            payout_tool_id  = ShopParams#payproc_ShopParams.payout_tool_id,
-            proxy           = ShopParams#payproc_ShopParams.proxy
-        },
-        Contract,
-        Timestamp,
-        Revision
-    ),
+create_shop(ShopParams0, Suspension, Timestamp, Revision, Party) ->
+    Contract = get_contract(ShopParams0#payproc_ShopParams.contract_id, Party),
+    ShopParams = ensure_shop_params_category(ShopParams0, Contract, Timestamp, Revision),
+    Shop = #domain_Shop{
+        id              = get_next_shop_id(Party),
+        blocking        = ?unblocked(<<>>),
+        suspension      = Suspension,
+        details         = ShopParams#payproc_ShopParams.details,
+        category        = ShopParams#payproc_ShopParams.category,
+        contract_id     = ShopParams#payproc_ShopParams.contract_id,
+        payout_tool_id  = ShopParams#payproc_ShopParams.payout_tool_id,
+        proxy           = ShopParams#payproc_ShopParams.proxy
+    },
     ok = assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
     ok = assert_shop_payout_tool_valid(Shop, Contract),
     Shop.
@@ -251,16 +240,16 @@ create_shop(ShopParams, Suspension, Timestamp, Revision, Party) ->
     shop().
 
 create_test_shop(ContractID, Revision, Party) ->
-    Params = get_shop_prototype_params(ContractID, Revision),
+    ShopPrototype = get_shop_prototype(Revision),
     #domain_Shop{
         id              = get_next_shop_id(Party),
         blocking        = ?unblocked(<<>>),
         suspension      = ?active(),
-        details         = Params#payproc_ShopParams.details,
-        category        = Params#payproc_ShopParams.category,
-        contract_id     = Params#payproc_ShopParams.contract_id,
-        payout_tool_id  = Params#payproc_ShopParams.payout_tool_id,
-        proxy           = Params#payproc_ShopParams.proxy
+        details         = ShopPrototype#domain_ShopPrototype.details,
+        category        = ShopPrototype#domain_ShopPrototype.category,
+        contract_id     = ContractID,
+        payout_tool_id  = undefined,
+        proxy           = undefined
     }.
 
 -spec get_shop(shop_id(), party()) ->
@@ -316,14 +305,6 @@ get_account_state(AccountID, Party) ->
 
 %% Internals
 
-get_shop_prototype_params(ContractID, Revision) ->
-    ShopPrototype = get_shop_prototype(Revision),
-    #payproc_ShopParams{
-        contract_id = ContractID,
-        category = ShopPrototype#domain_ShopPrototype.category,
-        details = ShopPrototype#domain_ShopPrototype.details
-    }.
-
 get_globals(Revision) ->
     hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}).
 
@@ -345,6 +326,8 @@ ensure_adjustment_creation_params(#payproc_ContractAdjustmentParams{template = T
         template = ensure_contract_template(TemplateRef, Revision)
     }.
 
+-spec ensure_contract_template(contract_template_ref(), revision()) -> contract_template_ref() | no_return().
+
 ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, Revision) ->
     try
         _GoodTemplate = get_template(TemplateRef, Revision),
@@ -357,16 +340,33 @@ ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, Revision) 
 ensure_contract_template(undefined, Revision) ->
     get_default_template_ref(Revision).
 
-ensure_shop_category(Shop = #domain_Shop{category = #domain_CategoryRef{}}, _, _, _) ->
-    Shop;
-ensure_shop_category(Shop = #domain_Shop{category = undefined}, Contract, Timestamp, Revision) ->
-    Shop#domain_Shop{
+ensure_shop_params_category(ShopParams = #payproc_ShopParams{category = #domain_CategoryRef{}}, _, _, _) ->
+    ShopParams;
+ensure_shop_params_category(ShopParams = #payproc_ShopParams{category = undefined}, Contract, Timestamp, Revision) ->
+    ShopParams#payproc_ShopParams{
         category = get_default_contract_category(Contract, Timestamp, Revision)
     }.
 
 get_default_contract_category(Contract, Timestamp, Revision) ->
     Categories = get_contract_categories(Contract, Timestamp, Revision),
     erlang:hd(ordsets:to_list(Categories)).
+
+-spec prepare_contract(contract_template_ref(), undefined | contractor(), revision(), party()) ->
+    contract() | no_return().
+
+prepare_contract(TemplateRef, Contractor, Revision, Party) ->
+    ContractID = get_next_contract_id(Party),
+    {ValidSince, ValidUntil, TermSetHierarchyRef} = instantiate_contract_template(TemplateRef, Revision),
+    #domain_Contract{
+        id = ContractID,
+        contractor = Contractor,
+        status = {active, #domain_ContractActive{}},
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        terms = TermSetHierarchyRef,
+        adjustments = [],
+        payout_tools = []
+    }.
 
 -spec reduce_selector_to_value(Selector, #{}, revision())
     -> ordsets:ordset(currency()) | ordsets:ordset(category()) | no_return()
@@ -414,11 +414,7 @@ instantiate_contract_template(TemplateRef, Revision) ->
         {interval, IntervalVU} ->
             add_interval(VS, IntervalVU)
     end,
-    #domain_Contract{
-        valid_since = VS,
-        valid_until = VU,
-        terms = TermSetHierarchyRef
-    }.
+    {VS, VU, TermSetHierarchyRef}.
 
 add_interval(Timestamp, Interval) ->
     #domain_LifetimeInterval{
