@@ -896,13 +896,13 @@ party_access_control(C) ->
         realm => <<"internal">>
     },
     Context = woody_user_identity:put(UserIdentity, woody_context:new()),
-    BadExternalClient1 = hg_client_party:start(
+    UserIdentityClient1 = hg_client_party:start(
         #payproc_UserInfo{id = <<"FakE1D">>, type = {external_user, #payproc_ExternalUser{}}},
         PartyID,
         hg_client_api:new(?c(root_url, C), Context)
     ),
-    #domain_Party{id = PartyID} = hg_client_party:get(BadExternalClient1),
-    hg_client_party:stop(BadExternalClient1),
+    #domain_Party{id = PartyID} = hg_client_party:get(UserIdentityClient1),
+    hg_client_party:stop(UserIdentityClient1),
 
     % Internal Success
     GoodInternalClient = hg_client_party:start(

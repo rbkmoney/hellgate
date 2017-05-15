@@ -16,7 +16,7 @@
 get_service_spec(Name) ->
     get_service_spec(Name, #{}).
 
--spec get_service_spec(Name :: atom(), Opts :: #{namespace => binary()}) -> service_spec().
+-spec get_service_spec(Name :: atom(), Opts :: map()) -> service_spec().
 
 get_service_spec(eventsink, #{}) ->
     Service = {dmsl_payment_processing_thrift, 'EventSink'},
