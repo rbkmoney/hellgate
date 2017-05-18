@@ -265,8 +265,7 @@ choose_external_account(Currency, VS, Revision) ->
     case hg_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
         {value, ExternalAccountSetRef} ->
             ExternalAccountSet = hg_domain:get(Revision, {external_account_set, ExternalAccountSetRef}),
-            choose_account(
-                external,
+            genlib_map:get(
                 Currency,
                 ExternalAccountSet#domain_ExternalAccountSet.accounts
             );
