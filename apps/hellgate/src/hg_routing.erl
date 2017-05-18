@@ -32,7 +32,7 @@ choose_provider_terminal([], _) ->
 
 collect_providers(Globals, VS, Revision) ->
     ProviderSelector = Globals#domain_Globals.providers,
-    ProviderRefs = ordsets:to_list(reduce(ProviderSelector, VS, Revision)),
+    ProviderRefs = ordsets:to_list(reduce(provider, ProviderSelector, VS, Revision)),
     [
         {ProviderRef, collect_terminals(hg_domain:get(Revision, {provider, ProviderRef}), VS, Revision)} ||
             ProviderRef <- ProviderRefs
@@ -40,7 +40,7 @@ collect_providers(Globals, VS, Revision) ->
 
 collect_terminals(Provider, VS, Revision) ->
     TerminalSelector = Provider#domain_Provider.terminal,
-    TerminalRefs = ordsets:to_list(reduce(TerminalSelector, VS, Revision)),
+    TerminalRefs = ordsets:to_list(reduce(terminal, TerminalSelector, VS, Revision)),
     [
         TerminalRef ||
             TerminalRef <- TerminalRefs,
@@ -64,8 +64,13 @@ filter_terminal(
 
 %%
 
-reduce(S, VS, Revision) ->
-    {value, V} = hg_selector:reduce(S, VS, Revision), V. % FIXME
+reduce(Name, S, VS, Revision) ->
+    case hg_selector:reduce(S, VS, Revision) of
+        {value, V} ->
+            V;
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
 
 is_risk_covered(RiskScore, RiskCoverage) ->
     RiskScore == RiskCoverage.

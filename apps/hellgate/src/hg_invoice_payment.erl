@@ -129,7 +129,7 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
     Payment0 = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
     {Payment, VS3} = inspect(Shop, Invoice, Payment0, VS2),
-    Route = validate_route(hg_routing:choose(VS3, Revision)),
+    Route = validate_route(Payment, hg_routing:choose(VS3, Revision)),
     FinalCashflow = hg_cashflow:finalize(
         collect_cash_flow({Revision, PaymentTerms}, Route, VS3),
         collect_cash_flow_context(Invoice, Payment),
@@ -165,7 +165,7 @@ validate_payment_tool(
     {Revision, #domain_PaymentsServiceTerms{payment_methods = PaymentMethodSelector}},
     VS
 ) ->
-    {value, PMs} = hg_selector:reduce(PaymentMethodSelector, VS, Revision), % FIXME
+    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
     _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
         raise_invalid_request(<<"Invalid payment method">>),
     VS.
@@ -175,7 +175,7 @@ validate_payment_cost(
     {Revision, #domain_PaymentsServiceTerms{cash_limit = LimitSelector}},
     VS
 ) ->
-    {value, Limit} = hg_selector:reduce(LimitSelector, VS, Revision), % FIXME
+    Limit = reduce_selector(cash_limit, LimitSelector, VS, Revision),
     ok = validate_limit(Cash, Limit),
     VS#{cost => Cash}.
 
@@ -189,8 +189,10 @@ validate_limit(Cash, CashRange) ->
             raise_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-validate_route(Route = #domain_InvoicePaymentRoute{}) ->
-    Route.
+validate_route(_Payment, Route = #domain_InvoicePaymentRoute{}) ->
+    Route;
+validate_route(Payment, undefined) ->
+    error({misconfiguration, {'No route found for a payment', Payment}}).
 
 collect_varset(Party, Shop = #domain_Shop{
     category = Category,
@@ -211,7 +213,7 @@ collect_cash_flow(
     VS
 ) ->
     #domain_Terminal{cash_flow = ProviderCashFlow} = hg_domain:get(Revision, {terminal, TerminalRef}),
-    {value, MerchantCashFlow} = hg_selector:reduce(MerchantCashFlowSelector, VS, Revision),
+    MerchantCashFlow = reduce_selector(merchant_cash_flow, MerchantCashFlowSelector, VS, Revision),
     MerchantCashFlow ++ ProviderCashFlow.
 
 collect_cash_flow_context(
@@ -249,9 +251,10 @@ collect_account_map(Invoice, Shop, Route, VS, Revision) ->
 choose_system_account(Currency, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     SystemAccountSetSelector = Globals#domain_Globals.system_account_set,
-    {value, SystemAccountSetRef} = hg_selector:reduce(SystemAccountSetSelector, VS, Revision), % FIXME
+    SystemAccountSetRef = reduce_selector(system_account_set, SystemAccountSetSelector, VS, Revision),
     SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
-    maps:get( % FIXME
+    choose_account(
+        system,
         Currency,
         SystemAccountSet#domain_SystemAccountSet.accounts
     ).
@@ -262,7 +265,8 @@ choose_external_account(Currency, VS, Revision) ->
     case hg_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
         {value, ExternalAccountSetRef} ->
             ExternalAccountSet = hg_domain:get(Revision, {external_account_set, ExternalAccountSetRef}),
-            genlib_map:get(
+            choose_account(
+                external,
                 Currency,
                 ExternalAccountSet#domain_ExternalAccountSet.accounts
             );
@@ -270,11 +274,27 @@ choose_external_account(Currency, VS, Revision) ->
             undefined
     end.
 
+choose_account(Name, Currency, Accounts) ->
+    case maps:find(Currency, Accounts) of
+        {ok, Account} ->
+            Account;
+        error ->
+            error({misconfiguration, {'No account for a given currency', {Name, Currency}}})
+    end.
+
 construct_plan_id(
     #domain_Invoice{id = InvoiceID},
     #domain_InvoicePayment{id = PaymentID}
 ) ->
     <<InvoiceID/binary, ".", PaymentID/binary>>.
+
+reduce_selector(Name, Selector, VS, Revision) ->
+    case hg_selector:reduce(Selector, VS, Revision) of
+        {value, V} ->
+            V;
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
 
 %%
 
@@ -620,7 +640,7 @@ get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}
 inspect(Shop, Invoice, Payment = #domain_InvoicePayment{domain_revision = Revision}, VS) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     InspectorSelector = Globals#domain_Globals.inspector,
-    {value, InspectorRef} = hg_selector:reduce(InspectorSelector, VS, Revision), % FIXME
+    InspectorRef = reduce_selector(inspector, InspectorSelector, VS, Revision),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
     RiskScore = hg_inspector:inspect(Shop, Invoice, Payment, Inspector),
     {
