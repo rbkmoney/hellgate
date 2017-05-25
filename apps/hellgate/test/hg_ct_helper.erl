@@ -61,6 +61,19 @@ start_app(woody = AppName) ->
         {acceptors_pool_size, 4}
     ]), #{}};
 
+start_app(dmt_client = AppName) ->
+    {start_app(AppName, [
+        {cache_update_interval, 5000}, % milliseconds
+        {max_cache_size, #{
+            elements => 20,
+            memory => 52428800 % 50Mb
+        }},
+        {service_urls, #{
+            'Repository' => <<"dominant:8022/v1/domain/repository">>,
+            'RepositoryClient' => <<"dominant:8022/v1/domain/repository_client">>
+        }}
+    ]), #{}};
+
 start_app(hellgate = AppName) ->
     {start_app(AppName, [
         {host, ?HELLGATE_HOST},

@@ -6,14 +6,14 @@
   {git,"git@github.com:rbkmoney/damsel_erlang.git",
        {ref,"d56ec60d4cfd2f06492ea6432347d550ba3e0855"}},
   0},
- {<<"dmt">>,
-  {git,"git@github.com:rbkmoney/dmt_core.git",
-       {ref,"cbcc1d24b8e50afc50a884a829c808d30da1a521"}},
-  1},
  {<<"dmt_client">>,
   {git,"git@github.com:rbkmoney/dmt_client.git",
-       {ref,"aec229fca9e03868e2d2e7d892f9987d272793e9"}},
+       {ref,"6de81bcb8482bb0c2576c8b594c676e6d896b426"}},
   0},
+ {<<"dmt_core">>,
+  {git,"git@github.com:rbkmoney/dmt_core.git",
+       {ref,"fdc4c1a3b7c22c148e04bbbdbbb83aeba9f99ea3"}},
+  1},
  {<<"genlib">>,
   {git,"https://github.com/rbkmoney/genlib.git",
        {ref,"82ff16f4314fc406dd90752467a08fe401b009ef"}},
@@ -43,7 +43,7 @@
   1},
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
-       {ref,"8f1f42e209a272570c5355599f908339cd097b5b"}},
+       {ref,"992c279466e7eb1c24a9d9c6e7e8d66c597bc7e1"}},
   0}]}.
 [
 {pkg_hash,[
