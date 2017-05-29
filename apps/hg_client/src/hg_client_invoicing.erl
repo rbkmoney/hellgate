@@ -25,9 +25,10 @@
 
 %%
 
--type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
--type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
--type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type user_info()      :: dmsl_payment_processing_thrift:'UserInfo'().
+-type invoice_id()     :: dmsl_domain_thrift:'InvoiceID'().
+-type invoice_state()  :: dmsl_payment_processing_thrift:'InvoiceState'().
+-type payment_id()     :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 
@@ -54,13 +55,13 @@ stop(Client) ->
 %%
 
 -spec create(invoice_params(), pid()) ->
-    invoice_id() | woody_error:business_error().
+    invoice_state() | woody_error:business_error().
 
 create(InvoiceParams, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Create', [InvoiceParams]})).
 
 -spec get(invoice_id(), pid()) ->
-    dmsl_payment_processing_thrift:'InvoiceState'() | woody_error:business_error().
+    invoice_state() | woody_error:business_error().
 
 get(InvoiceID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', [InvoiceID]})).

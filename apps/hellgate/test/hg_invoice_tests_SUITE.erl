@@ -107,6 +107,8 @@ end_per_suite(C) ->
 
 -include("invoice_events.hrl").
 
+-define(invoice(ID), #domain_Invoice{id = ID}).
+-define(payment(ID), #domain_InvoicePayment{id = ID}).
 -define(invoice_state(Invoice), #payproc_InvoiceState{invoice = Invoice}).
 -define(invoice_state(Invoice, Payments), #payproc_InvoiceState{invoice = Invoice, payments = Payments}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
@@ -304,7 +306,7 @@ payment_risk_score_check(C) ->
     ok = start_proxy(hg_dummy_inspector, 2, C),
     % Invoice w/ cost < 500000
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID1 = hg_client_invoicing:start_payment(InvoiceID1, make_payment_params(), Client),
+    ?payment(PaymentID1) = hg_client_invoicing:start_payment(InvoiceID1, make_payment_params(), Client),
     ?payment_started(_, Route1, _) = next_event(InvoiceID1, Client),
     low = get_risk_coverage_from_route(Route1),
     ?payment_bound(PaymentID1, ?trx_info(_)) = next_event(InvoiceID1, Client),
@@ -313,7 +315,7 @@ payment_risk_score_check(C) ->
     ?invoice_status_changed(?paid()) = next_event(InvoiceID1, Client),
     % Invoice w/ cost > 500000
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
-    PaymentID2 = hg_client_invoicing:start_payment(InvoiceID2, make_payment_params(), Client),
+    ?payment(PaymentID2) = hg_client_invoicing:start_payment(InvoiceID2, make_payment_params(), Client),
     ?payment_started(_, Route2, _) = next_event(InvoiceID2, Client),
     high = get_risk_coverage_from_route(Route2),
     ?payment_bound(PaymentID2, ?trx_info(_)) = next_event(InvoiceID2, Client),
@@ -358,7 +360,7 @@ external_account_posting(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, InvoicingClient),
-    PaymentID = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    ?payment(PaymentID) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
     ?payment_started(_, _, CashFlow) = next_event(InvoiceID, InvoicingClient),
     [AssistAccountID] = [
     AccountID ||
@@ -475,7 +477,7 @@ make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
 
 create_invoice(InvoiceParams, Client) ->
-    InvoiceID = <<_/binary>> = hg_client_invoicing:create(InvoiceParams, Client),
+    ?invoice_state(?invoice(InvoiceID)) = hg_client_invoicing:create(InvoiceParams, Client),
     InvoiceID.
 
 start_invoice(Product, Due, Amount, C) ->
@@ -490,7 +492,7 @@ start_invoice(ShopID, Product, Due, Amount, C) ->
     InvoiceID.
 
 attach_payment(InvoiceID, PaymentParams, Client) ->
-    PaymentID = <<_/binary>> = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    ?payment(PaymentID) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
     ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
     ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, Client),

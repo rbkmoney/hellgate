@@ -67,16 +67,16 @@ handle_function(Func, Args, Opts) ->
     term() | no_return().
 
 handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
-    ID = hg_utils:unique_id(),
-    _ = set_invoicing_meta(ID, UserInfo),
+    InvoiceID = hg_utils:unique_id(),
+    _ = set_invoicing_meta(InvoiceID, UserInfo),
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
     ok = validate_party_access(UserInfo, PartyID),
     Party = get_party(PartyID),
     ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
     Shop = validate_party_shop(ShopID, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(ID, InvoiceParams),
-    ID;
+    ok = start(InvoiceID, InvoiceParams),
+    get_invoice_state(get_state(InvoiceID));
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
     _ = set_invoicing_meta(InvoiceID, UserInfo),
@@ -213,10 +213,8 @@ map_error({error, Reason}) ->
 
 map_history_error({ok, Result}) ->
     Result;
-map_history_error({error, notfound}) ->
-    throw(#payproc_UserInvoiceNotFound{});
-map_history_error({error, Reason}) ->
-    error(Reason).
+map_history_error({error, _} = Error) ->
+    map_error(Error).
 
 map_start_error({ok, _}) ->
     ok;
@@ -372,8 +370,11 @@ start_payment(PaymentParams, St) ->
     % TODO make timer reset explicit here
     {Events1, _} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
     {Events2, Action} = hg_invoice_payment:start_session(?processed()),
-    Events = wrap_payment_events(PaymentID, Events1 ++ Events2),
-    respond(PaymentID, Events, St, Action).
+    Events = Events1 ++ Events2,
+    % FIXME ugliest hacks you'll ever see
+    PaymentSession = lists:foldl(fun hg_invoice_payment:merge_event/2, undefined, Events),
+    Payment = hg_invoice_payment:get_payment(PaymentSession),
+    respond(Payment, wrap_payment_events(PaymentID, Events), St, Action).
 
 process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
     Party = checkout_party(St),
