@@ -1,18 +1,48 @@
 -module(hg_woody_handler_utils).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
--export([get_user_identity/1]).
+-type user_info()     :: dmsl_payment_processing_thrift:'UserInfo'().
+-type user_identity() :: woody_user_identity:user_identity().
 
--spec get_user_identity(dmsl_payment_processing_thrift:'UserInfo'()) ->
-    woody_user_identity:user_identity().
+-export([get_user_identity/0]).
+-export([collect_user_identity/1]).
+-export([set_user_identity/1]).
+-export([assume_user_identity/1]).
 
-get_user_identity(UserInfo) ->
+-spec get_user_identity() -> woody_user_identity:user_identity() | undefined.
+
+get_user_identity() ->
     try
         Context = hg_context:get(),
         woody_user_identity:get(Context)
     catch
         throw:{missing_required, _Key} ->
+            undefined
+    end.
+
+-spec collect_user_identity(user_info()) -> user_identity().
+
+collect_user_identity(UserInfo) ->
+    case get_user_identity() of
+        V when V /= undefined ->
+            V;
+        undefined ->
             map_user_info(UserInfo)
+    end.
+
+-spec set_user_identity(user_identity()) -> ok.
+
+set_user_identity(UserIdentity) ->
+    hg_context:update(woody_user_identity:put(UserIdentity, hg_context:get())).
+
+-spec assume_user_identity(user_info()) -> ok.
+
+assume_user_identity(UserInfo) ->
+    case get_user_identity() of
+        V when V /= undefined ->
+            ok;
+        undefined ->
+            set_user_identity(map_user_info(UserInfo))
     end.
 
 map_user_info(#payproc_UserInfo{id = PartyID, type = Type}) ->

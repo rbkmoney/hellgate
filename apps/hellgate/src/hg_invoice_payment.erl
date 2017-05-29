@@ -16,7 +16,6 @@
 %%%     - abuse transient error passthrough
 %%%  - think about safe clamping of timers returned by some proxy
 %%%  - why don't user interaction events imprint anything on the state?
-%%%  - proper exception interface instead of dirtily copied `raise`
 
 -module(hg_invoice_payment).
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
@@ -167,7 +166,7 @@ validate_payment_tool(
 ) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
     _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
-        raise_invalid_request(<<"Invalid payment method">>),
+        throw_invalid_request(<<"Invalid payment method">>),
     VS.
 
 validate_payment_cost(
@@ -184,9 +183,9 @@ validate_limit(Cash, CashRange) ->
         within ->
             ok;
         {exceeds, lower} ->
-            raise_invalid_request(<<"Invalid amount, less than allowed minumum">>);
+            throw_invalid_request(<<"Invalid amount, less than allowed minumum">>);
         {exceeds, upper} ->
-            raise_invalid_request(<<"Invalid amount, more than allowed maximum">>)
+            throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
 validate_route(_Payment, Route = #domain_InvoicePaymentRoute{}) ->
@@ -574,15 +573,10 @@ get_target(#st{session =  #{target := Target}}) ->
 
 %%
 
--spec raise(term()) -> no_return().
+-spec throw_invalid_request(binary()) -> no_return().
 
-raise(What) ->
-    throw({exception, What}).
-
--spec raise_invalid_request(binary()) -> no_return().
-
-raise_invalid_request(Why) ->
-    raise(#'InvalidRequest'{errors = [Why]}).
+throw_invalid_request(Why) ->
+    throw(#'InvalidRequest'{errors = [Why]}).
 
 %%
 
