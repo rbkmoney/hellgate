@@ -16,6 +16,7 @@
 %%%     - abuse transient error passthrough
 %%%  - think about safe clamping of timers returned by some proxy
 %%%  - why don't user interaction events imprint anything on the state?
+%%%  - adjustments look and behave very much like claims over payments
 
 -module(hg_invoice_payment).
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
@@ -26,37 +27,43 @@
 %% St accessors
 
 -export([get_payment/1]).
+-export([get_adjustment/2]).
 
 %% Machine like
 
 -export([init/3]).
--export([start_session/1]).
 
 -export([process_signal/3]).
 -export([process_call/3]).
+
+-export([start_session/1]).
+
+-export([create_adjustment/3]).
+-export([capture_adjustment/3]).
+-export([cancel_adjustment/3]).
 
 -export([merge_event/2]).
 
 %%
 
 -record(st, {
-    payment  :: payment(),
-    route    :: route(),
-    cashflow :: cashflow(),
-    session  :: undefined | session()
+    payment          :: undefined | payment(),
+    session          :: undefined | session(),
+    adjustments = [] :: [adjustment()]
 }).
 
 -type st() :: #st{}.
 -export_type([st/0]).
 
--type party()       :: dmsl_domain_thrift:'Party'().
--type invoice()     :: dmsl_domain_thrift:'Invoice'().
--type payment()     :: dmsl_domain_thrift:'InvoicePayment'().
--type payment_id()  :: dmsl_domain_thrift:'InvoicePaymentID'().
--type route()       :: dmsl_domain_thrift:'InvoicePaymentRoute'().
--type cashflow()    :: dmsl_domain_thrift:'FinalCashFlow'().
--type target()      :: dmsl_proxy_provider_thrift:'TargetInvoicePaymentStatus'().
--type proxy_state() :: dmsl_proxy_thrift:'ProxyState'().
+-type party()             :: dmsl_domain_thrift:'Party'().
+-type invoice()           :: dmsl_domain_thrift:'Invoice'().
+-type payment()           :: dmsl_domain_thrift:'InvoicePayment'().
+-type payment_id()        :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type adjustment()        :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
+-type adjustment_id()     :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
+-type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
+-type target()            :: dmsl_proxy_provider_thrift:'TargetInvoicePaymentStatus'().
+-type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
 
 -type session() :: #{
     target      => target(),
@@ -83,14 +90,20 @@
 
 %%
 
--define(BATCH_ID, 1).
-
-%%
-
 -spec get_payment(st()) -> payment().
 
 get_payment(#st{payment = Payment}) ->
     Payment.
+
+-spec get_adjustment(adjustment_id(), st()) -> adjustment() | no_return().
+
+get_adjustment(ID, #st{adjustments = As}) ->
+    case lists:keyfind(ID, #domain_InvoicePaymentAdjustment.id, As) of
+        Adjustment = #domain_InvoicePaymentAdjustment{} ->
+            Adjustment;
+        error ->
+            throw(#payproc_InvoicePaymentAdjustmentNotFound{})
+    end.
 
 %%
 
@@ -118,11 +131,7 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Revision = hg_domain:head(),
-    PaymentTerms = hg_party:get_payments_service_terms(
-        Shop#domain_Shop.id,
-        Party,
-        Invoice#domain_Invoice.created_at
-    ),
+    PaymentTerms = get_merchant_payment_terms(Opts),
     VS0 = collect_varset(Party, Shop, #{}),
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
@@ -134,12 +143,20 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
         collect_cash_flow_context(Invoice, Payment),
         collect_account_map(Invoice, Shop, Route, VS3, Revision)
     ),
-    _AccountsState = hg_accounting:plan(construct_plan_id(Invoice, Payment), {?BATCH_ID, FinalCashflow}),
-    Events = [
-        ?payment_ev(?payment_started(Payment, Route, FinalCashflow))
-    ],
-    Action = hg_machine_action:new(),
-    {Events, Action}.
+    _AccountsState = hg_accounting:plan(
+        construct_plan_id(Invoice, Payment),
+        {1, FinalCashflow}
+    ),
+    Event = ?payment_ev(?payment_started(Payment, Route, FinalCashflow)),
+    {[Event], hg_machine_action:new()}.
+
+get_merchant_payment_terms(Opts) ->
+    Invoice = get_invoice(Opts),
+    hg_party:get_payments_service_terms(
+        get_shop_id(Invoice),
+        get_party(Opts),
+        get_created_at(Invoice)
+    ).
 
 construct_payment(PaymentID, Invoice, PaymentParams, Revision) ->
     #domain_InvoicePayment{
@@ -202,6 +219,16 @@ collect_varset(Party, Shop = #domain_Shop{
         shop     => Shop,
         category => Category,
         currency => Currency
+    }.
+
+collect_varset(Party, Shop, #domain_InvoicePayment{
+    cost = Cash,
+    payer = #domain_Payer{payment_tool = PaymentTool}
+}, VS) ->
+    VS0 = collect_varset(Party, Shop, VS),
+    VS0#{
+        cost         => Cash,
+        payment_tool => PaymentTool
     }.
 
 %%
@@ -303,6 +330,127 @@ start_session(Target) ->
     Events = [?session_ev({started, Target})],
     Action = hg_machine_action:instant(),
     {Events, Action}.
+
+%%
+
+-spec create_adjustment(adjustment_params(), st(), opts()) ->
+    {adjustment(), hg_machine:result()}.
+
+create_adjustment(Params, St, Opts) ->
+    Payment = get_payment(St),
+    Revision = get_adjustment_revision(Params),
+    _ = assert_payment_status(captured, Payment),
+    _ = assert_no_adjustment_pending(St),
+    Party = get_party(Opts),
+    Shop = get_shop(Opts),
+    Invoice = get_invoice(Opts),
+    PaymentTerms = get_merchant_payment_terms(Opts),
+    Route = get_route(Payment),
+    VS = collect_varset(Party, Shop, Payment, #{}),
+    FinalCashflow = hg_cashflow:finalize(
+        collect_cash_flow({Revision, PaymentTerms}, Route, VS),
+        collect_cash_flow_context(Invoice, Payment),
+        collect_account_map(Invoice, Shop, Route, VS, Revision)
+    ),
+    Adjustment = #domain_InvoicePaymentAdjustment{
+        id              = construct_id(adjustment, St),
+        status          = ?adjustment_pending(),
+        created_at      = hg_datetime:format_now(),
+        domain_revision = Revision,
+        reason          = Params#payproc_InvoicePaymentAdjustmentParams.reason,
+        cash_flow       = FinalCashflow
+    },
+    _AccountsState = prepare_adjustment_cashflow(Adjustment, St, Opts),
+    Event = ?payment_ev(?adjustment_ev(?adjustment_created(get_payment_id(St), Adjustment))),
+    {Adjustment, {[Event], hg_machine_action:new()}}.
+
+get_adjustment_revision(Params) ->
+    hg_utils:select_defined(
+        Params#payproc_InvoicePaymentAdjustmentParams.domain_revision,
+        hg_domain:head()
+    ).
+
+construct_id(adjustment, #st{adjustments = As}) ->
+    integer_to_binary(length(As) + 1).
+
+assert_payment_status(Status, #domain_InvoicePayment{status = {Status, _}}) ->
+    ok;
+assert_payment_status(_, #domain_InvoicePayment{status = Status}) ->
+    throw(#payproc_InvalidPaymentStatus{status = Status}).
+
+assert_no_adjustment_pending(#st{adjustments = [Adjustment | _]}) ->
+    assert_adjustment_finalized(Adjustment);
+assert_no_adjustment_pending(#st{adjustments = []}) ->
+    ok.
+
+assert_adjustment_finalized(#domain_InvoicePaymentAdjustment{id = ID, status = {pending, _}}) ->
+    throw(#payproc_InvoicePaymentAdjustmentPending{id = ID});
+assert_adjustment_finalized(_) ->
+    ok.
+
+-spec capture_adjustment(adjustment_id(), st(), opts()) ->
+    {ok, hg_machine:result()}.
+
+capture_adjustment(ID, St, Options) ->
+    finalize_adjustment(ID, capture, St, Options).
+
+-spec cancel_adjustment(adjustment_id(), st(), opts()) ->
+    {ok, hg_machine:result()}.
+
+cancel_adjustment(ID, St, Options) ->
+    finalize_adjustment(ID, cancel, St, Options).
+
+finalize_adjustment(ID, Intent, St, Options) ->
+    Adjustment = get_adjustment(ID, St),
+    ok = assert_adjustment_status(pending, Adjustment),
+    _AccountsState = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
+    Status = case Intent of
+        capture ->
+            ?adjustment_captured(hg_datetime:format_now());
+        cancel ->
+            ?adjustment_cancelled(hg_datetime:format_now())
+    end,
+    Event = ?payment_ev(?adjustment_ev(?adjustment_status_changed(get_payment_id(St), ID, Status))),
+    {ok, {[Event], hg_machine_action:new()}}.
+
+prepare_adjustment_cashflow(Adjustment, St, Options) ->
+    PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
+    Plan = get_adjustment_cashflow_plan(Adjustment, St),
+    hg_accounting:plan(PlanID, Plan).
+
+finalize_adjustment_cashflow(Intent, Adjustment, St, Options) ->
+    PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
+    Plan = get_adjustment_cashflow_plan(Adjustment, St),
+    case Intent of
+        capture ->
+            hg_accounting:commit(PlanID, Plan);
+        cancel ->
+            hg_accounting:rollback(PlanID, Plan)
+    end.
+
+get_adjustment_cashflow_plan(Adjustment, St) ->
+    [
+        {1, hg_cashflow:revert(get_final_cashflow(get_payment(St)))},
+        {2, get_adjustment_cashflow(Adjustment)}
+    ].
+
+assert_adjustment_status(Status, #domain_InvoicePaymentAdjustment{status = {Status, _}}) ->
+    ok;
+assert_adjustment_status(_, #domain_InvoicePaymentAdjustment{status = Status}) ->
+    throw(#payproc_InvalidPaymentAdjustmentStatus{status = Status}).
+
+construct_adjustment_plan_id(Adjustment, St, Options) ->
+    hg_utils:construct_complex_id([
+        get_invoice_id(get_invoice(Options)),
+        get_payment_id(St),
+        {adj, get_adjustment_id(Adjustment)}
+    ]).
+
+get_adjustment_id(#domain_InvoicePaymentAdjustment{id = ID}) ->
+    ID.
+
+get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{cash_flow = Cashflow}) ->
+    Cashflow.
 
 %%
 
@@ -436,19 +584,19 @@ rollback_plan(St, Options) ->
 
 finalize_plan(Finalizer, St, Options) ->
     PlanID = construct_plan_id(get_invoice(Options), get_payment(St)),
-    FinalCashflow = get_final_cashflow(St),
-    Finalizer(PlanID, [{?BATCH_ID, FinalCashflow}]).
+    FinalCashflow = get_final_cashflow(get_payment(St)),
+    Finalizer(PlanID, [{1, FinalCashflow}]).
 
-get_final_cashflow(#st{cashflow = FinalCashflow}) ->
+get_final_cashflow(#domain_InvoicePayment{cash_flow = FinalCashflow}) ->
     FinalCashflow.
 
 %%
 
-construct_proxy_context(#st{payment = Payment, route = Route, session = Session}, Options) ->
+construct_proxy_context(#st{payment = Payment, session = Session}, Options) ->
     #prxprv_Context{
         session = construct_session(Session),
         payment_info = construct_payment_info(Payment, Options),
-        options = collect_proxy_options(Route)
+        options = collect_proxy_options(Payment)
     }.
 
 construct_session(#{target := Target, proxy_state := ProxyState}) ->
@@ -520,7 +668,11 @@ construct_proxy_cash(#domain_Cash{
         currency = hg_domain:get(Revision, {currency, CurrencyRef})
     }.
 
-collect_proxy_options(#domain_InvoicePaymentRoute{provider = ProviderRef, terminal = TerminalRef}) ->
+collect_proxy_options(
+    #domain_InvoicePayment{
+        route = #domain_InvoicePaymentRoute{provider = ProviderRef, terminal = TerminalRef}
+    }
+) ->
     Revision = hg_domain:head(),
     Provider = hg_domain:get(Revision, {provider, ProviderRef}),
     Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
@@ -552,6 +704,18 @@ convert_failure(#'Failure'{code = Code, description = Description}) ->
 get_invoice(#{invoice := Invoice}) ->
     Invoice.
 
+get_invoice_id(#domain_Invoice{id = ID}) ->
+    ID.
+
+get_shop_id(#domain_Invoice{shop_id = ShopID}) ->
+    ShopID.
+
+get_created_at(#domain_Invoice{created_at = Dt}) ->
+    Dt.
+
+get_party(#{party := Party}) ->
+    Party.
+
 get_shop(#{party := Party, invoice := Invoice}) ->
     ShopID = Invoice#domain_Invoice.shop_id,
     Shops = Party#domain_Party.shops,
@@ -580,21 +744,48 @@ throw_invalid_request(Why) ->
 
 %%
 
--spec merge_event(ev(), st()) -> st().
+-spec merge_event(ev(), st() | undefined) -> st().
+
+merge_event(Event, undefined) ->
+    merge_event(Event, #st{});
 
 merge_event(?payment_ev(Event), St) ->
     merge_public_event(Event, St);
 merge_event(?session_ev(Event), St) ->
     merge_session_event(Event, St).
 
-merge_public_event(?payment_started(Payment, Route, Cashflow), undefined) ->
-    #st{payment = Payment, route = Route, cashflow = Cashflow};
+merge_public_event(?payment_started(Payment, Route, Cashflow), St) ->
+    St#st{payment = Payment#domain_InvoicePayment{route = Route, cash_flow = Cashflow}};
 merge_public_event(?payment_bound(_, Trx), St = #st{payment = Payment}) ->
     St#st{payment = Payment#domain_InvoicePayment{trx = Trx}};
 merge_public_event(?payment_status_changed(_, Status), St = #st{payment = Payment}) ->
     St#st{payment = Payment#domain_InvoicePayment{status = Status}};
 merge_public_event(?payment_interaction_requested(_, _), St) ->
-    St.
+    St;
+
+merge_public_event(?adjustment_ev(Event), St) ->
+    merge_adjustment_event(Event, St).
+
+merge_adjustment_event(?adjustment_created(_, Adjustment), St = #st{adjustments = As}) ->
+    St#st{adjustments = [Adjustment | As]};
+merge_adjustment_event(?adjustment_status_changed(_, ID, Status), St0) ->
+    Adjustment = get_adjustment(ID, St0),
+    St1 = set_adjustment(Adjustment#domain_InvoicePaymentAdjustment{status = Status}, St0),
+    case Status of
+        ?adjustment_captured(_) ->
+            Payment0 = get_payment(St1),
+            Payment1 = Payment0#domain_InvoicePayment{cash_flow = get_adjustment_cashflow(Adjustment)},
+            set_payment(Payment1, St1);
+        ?adjustment_cancelled(_) ->
+            St1
+    end.
+
+set_payment(Payment, St = #st{}) ->
+    St#st{payment = Payment}.
+
+set_adjustment(Adjustment, St = #st{adjustments = As}) ->
+    ID = get_adjustment_id(Adjustment),
+    St#st{adjustments = lists:keyreplace(ID, #domain_InvoicePaymentAdjustment.id, As, Adjustment)}.
 
 %% TODO session_finished?
 merge_session_event({started, Target}, St) ->
@@ -625,10 +816,16 @@ issue_call(Func, Args, St, Opts) ->
     CallOpts = get_call_options(St, Opts),
     hg_woody_wrapper:call('ProviderProxy', Func, Args, CallOpts).
 
-get_call_options(#st{route = #domain_InvoicePaymentRoute{provider = ProviderRef}}, _Opts) ->
+get_call_options(St, _Opts) ->
     Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, ProviderRef}),
+    Provider = hg_domain:get(Revision, {provider, get_route_provider(get_route(get_payment(St)))}),
     hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
+
+get_route(#domain_InvoicePayment{route = Route}) ->
+    Route.
+
+get_route_provider(#domain_InvoicePaymentRoute{provider = ProviderRef}) ->
+    ProviderRef.
 
 inspect(Shop, Invoice, Payment = #domain_InvoicePayment{domain_revision = Revision}, VS) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),

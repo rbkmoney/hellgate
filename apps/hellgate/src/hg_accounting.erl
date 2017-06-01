@@ -72,9 +72,17 @@ construct_prototype(CurrencyCode, Description) ->
 %%
 -type accounts_state() :: #{account_id() => account()}.
 
--spec plan(plan_id(), batch()) ->
+-spec plan(plan_id(), batch() | [batch()]) ->
     accounts_state().
 
+plan(PlanID, Batches) when is_list(Batches) ->
+    lists:foldl(
+        fun (Batch, AS) ->
+            maps:merge(plan(PlanID, Batch), AS)
+        end,
+        #{},
+        Batches
+    );
 plan(PlanID, Batch) ->
     do('Hold', construct_plan_change(PlanID, Batch)).
 

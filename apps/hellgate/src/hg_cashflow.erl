@@ -19,6 +19,7 @@
 %%
 
 -export([finalize/3]).
+-export([revert/1]).
 
 %%
 
@@ -68,6 +69,20 @@ resolve_account(AccountType, AccountMap) ->
         #{} ->
             error({misconfiguration, {'Cash flow account can not be mapped', {AccountType, AccountMap}}})
     end.
+
+%%
+
+-spec revert(final_cash_flow()) -> final_cash_flow().
+
+revert(CF) ->
+    [?final_posting(Destination, Source, Volume, revert_details(Details))
+        || ?final_posting(Source, Destination, Volume, Details) <- CF].
+
+revert_details(undefined) ->
+    undefined;
+revert_details(Details) ->
+    % TODO looks gnarly
+    <<"Revert '", Details/binary, "'">>.
 
 %%
 

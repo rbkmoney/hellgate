@@ -101,12 +101,28 @@ handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
-    case get_payment_session(PaymentID, St) of
-        PaymentSession when PaymentSession /= undefined ->
-            hg_invoice_payment:get_payment(PaymentSession);
-        undefined ->
-            throw(#payproc_InvoicePaymentNotFound{})
-    end;
+    hg_invoice_payment:get_payment(get_payment_session(PaymentID, St));
+
+handle_function_('CreatePaymentAdjustment', [UserInfo, InvoiceID, PaymentID, Params], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {create_payment_adjustment, PaymentID, Params});
+
+handle_function_('GetPaymentAdjustment', [UserInfo, InvoiceID, PaymentID, ID], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    St = assert_invoice_accessible(get_state(InvoiceID)),
+    hg_invoice_payment:get_adjustment(ID, get_payment_session(PaymentID, St));
+
+handle_function_('CapturePaymentAdjustment', [UserInfo, InvoiceID, PaymentID, ID], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {capture_payment_adjustment, PaymentID, ID});
+
+handle_function_('CancelPaymentAdjustment', [UserInfo, InvoiceID, PaymentID, ID], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {cancel_payment_adjustment, PaymentID, ID});
 
 handle_function_('Fulfill', [UserInfo, InvoiceID, Reason], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -124,7 +140,7 @@ assert_invoice_operable(St) ->
     assert_party_shop_operable(Shop, Party).
 
 assert_party_shop_operable(Shop, Party) ->
-    assert_party_operable(Party),
+    _ = assert_party_operable(Party),
     assert_shop_operable(Shop).
 
 get_party(PartyID) ->
@@ -215,8 +231,10 @@ map_error({error, Reason}) ->
 
 map_history_error({ok, Result}) ->
     Result;
-map_history_error({error, _} = Error) ->
-    map_error(Error).
+map_history_error({error, notfound}) ->
+    throw(#payproc_InvoiceNotFound{});
+map_history_error({error, Reason}) ->
+    error(Reason).
 
 map_start_error({ok, _}) ->
     ok;
@@ -230,6 +248,8 @@ map_start_error({error, Reason}) ->
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
+-type adjustment_id() :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type payment_st() :: hg_invoice_payment:st().
 -type sequence() :: pos_integer().
 
@@ -301,6 +321,9 @@ handle_expiration(St) ->
 
 -type call() ::
     {start_payment, payment_params()} |
+    {create_payment_adjustment , payment_id(), adjustment_params()} |
+    {capture_payment_adjustment, payment_id(), adjustment_id()} |
+    {cancel_payment_adjustment , payment_id(), adjustment_id()} |
     {fulfill, binary()} |
     {rescind, binary()} |
     {callback, callback()}.
@@ -319,6 +342,7 @@ process_call(Call, History) ->
     end.
 
 handle_call({start_payment, PaymentParams}, St) ->
+    % TODO consolidate these assertions somehow
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(unpaid, St),
@@ -339,6 +363,27 @@ handle_call({rescind, Reason}, St) ->
     _ = assert_no_pending_payment(St),
     Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(Reason))))},
     respond(ok, Event, St, hg_machine_action:unset_timer());
+
+handle_call({create_payment_adjustment, PaymentID, Params}, St) ->
+    _ = assert_invoice_accessible(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    Opts = get_payment_opts(St),
+    {Adjustment, {Events, Action}} = hg_invoice_payment:create_adjustment(Params, PaymentSession, Opts),
+    respond(Adjustment, wrap_payment_events(PaymentID, Events), St, Action);
+
+handle_call({capture_payment_adjustment, PaymentID, ID}, St) ->
+    _ = assert_invoice_accessible(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    Opts = get_payment_opts(St),
+    {ok, {Events, Action}} = hg_invoice_payment:capture_adjustment(ID, PaymentSession, Opts),
+    respond(ok, wrap_payment_events(PaymentID, Events), St, Action);
+
+handle_call({cancel_payment_adjustment, PaymentID, ID}, St) ->
+    _ = assert_invoice_accessible(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    Opts = get_payment_opts(St),
+    {ok, {Events, Action}} = hg_invoice_payment:cancel_adjustment(ID, PaymentSession, Opts),
+    respond(ok, wrap_payment_events(PaymentID, Events), St, Action);
 
 handle_call({callback, Callback}, St) ->
     dispatch_callback(Callback, St).
@@ -368,8 +413,7 @@ set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
 
 start_payment(PaymentParams, St) ->
     PaymentID = create_payment_id(St),
-    Party = checkout_party(St),
-    Opts = get_payment_opts(Party, St),
+    Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
     {Events1, _} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
     {Events2, Action} = hg_invoice_payment:start_session(?processed()),
@@ -380,18 +424,16 @@ start_payment(PaymentParams, St) ->
     respond(Payment, wrap_payment_events(PaymentID, Events), St, Action).
 
 process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
-    Party = checkout_party(St),
-    Opts = get_payment_opts(Party, St),
+    Opts = get_payment_opts(St),
     PaymentResult = hg_invoice_payment:process_signal(Signal, PaymentSession, Opts),
-    handle_payment_result(PaymentResult, PaymentID, PaymentSession, Party, St).
+    handle_payment_result(PaymentResult, PaymentID, PaymentSession, St).
 
 process_payment_call(Call, PaymentID, PaymentSession, St) ->
-    Party = checkout_party(St),
-    Opts = get_payment_opts(Party, St),
+    Opts = get_payment_opts(St),
     {Response, PaymentResult} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
-    {{ok, Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, Party, St)}.
+    {{ok, Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, St)}.
 
-handle_payment_result(Result, PaymentID, PaymentSession, Party, St) ->
+handle_payment_result(Result, PaymentID, PaymentSession, St) ->
     case Result of
         {next, {Events, Action}} ->
             ok(wrap_payment_events(PaymentID, Events), St, Action);
@@ -417,9 +459,9 @@ wrap_payment_events(PaymentID, Events) ->
             {private, {{payment, PaymentID}, E}}
     end, Events).
 
-get_payment_opts(Party, #st{invoice = Invoice}) ->
+get_payment_opts(St = #st{invoice = Invoice}) ->
     #{
-        party => Party,
+        party => checkout_party(St),
         invoice => Invoice
     }.
 
@@ -490,7 +532,7 @@ collapse_history(History) ->
 merge_event(?invoice_ev(Event), St) ->
     merge_invoice_event(Event, St);
 merge_event({{payment, PaymentID}, Event}, St) ->
-    PaymentSession = get_payment_session(PaymentID, St),
+    PaymentSession = try_get_payment_session(PaymentID, St),
     PaymentSession1 = hg_invoice_payment:merge_event(Event, PaymentSession),
     St1 = set_payment_session(PaymentID, PaymentSession1, St),
     case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
@@ -513,7 +555,15 @@ get_party_id(#st{invoice = #domain_Invoice{owner_id = PartyID}}) ->
 get_shop_id(#st{invoice = #domain_Invoice{shop_id = ShopID}}) ->
     ShopID.
 
-get_payment_session(PaymentID, #st{payments = Payments}) ->
+get_payment_session(PaymentID, St) ->
+    case try_get_payment_session(PaymentID, St) of
+        PaymentSession when PaymentSession /= undefined ->
+            PaymentSession;
+        undefined ->
+            throw(#payproc_InvoicePaymentNotFound{})
+    end.
+
+try_get_payment_session(PaymentID, #st{payments = Payments}) ->
     case lists:keyfind(PaymentID, 1, Payments) of
         {PaymentID, PaymentSession} ->
             PaymentSession;

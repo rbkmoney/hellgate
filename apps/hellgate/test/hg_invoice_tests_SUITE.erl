@@ -22,6 +22,7 @@
 -export([payment_success_on_second_try/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
+-export([payment_adjustment/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
 -export([consistent_history/1]).
@@ -67,6 +68,8 @@ all() ->
 
         payment_risk_score_check,
 
+        payment_adjustment,
+
         invalid_payment_w_deprived_party,
         external_account_posting,
 
@@ -109,6 +112,8 @@ end_per_suite(C) ->
 
 -define(invoice(ID), #domain_Invoice{id = ID}).
 -define(payment(ID), #domain_InvoicePayment{id = ID}).
+-define(adjustment(ID), #domain_InvoicePaymentAdjustment{id = ID}).
+-define(adjustment(ID, Status), #domain_InvoicePaymentAdjustment{id = ID, status = Status}).
 -define(invoice_state(Invoice), #payproc_InvoiceState{invoice = Invoice}).
 -define(invoice_state(Invoice, Payments), #payproc_InvoiceState{invoice = Invoice, payments = Payments}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
@@ -118,6 +123,13 @@ end_per_suite(C) ->
 
 -define(invalid_invoice_status(Status),
     {exception, #payproc_InvalidInvoiceStatus{status = Status}}).
+
+-define(invalid_payment_status(Status),
+    {exception, #payproc_InvalidPaymentStatus{status = Status}}).
+-define(invalid_adjustment_status(Status),
+    {exception, #payproc_InvalidPaymentAdjustmentStatus{status = Status}}).
+-define(adjustment_pending(ID),
+    {exception, #payproc_InvoicePaymentAdjustmentPending{id = ID}}).
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -327,6 +339,47 @@ get_risk_coverage_from_route(#domain_InvoicePaymentRoute{terminal = TermRef}) ->
     Terminal = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
     Terminal#domain_Terminal.risk_coverage.
 
+-spec payment_adjustment(config()) -> _ | no_return().
+
+payment_adjustment(C) ->
+    Client = ?c(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    %% start a smoker's payment
+    PaymentParams1 = make_tds_payment_params(),
+    PaymentID1 = attach_payment(InvoiceID, PaymentParams1, Client),
+    %% no way to create adjustment for a pending payment
+    ?invalid_payment_status(?processed()) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID1, make_adjustment_params(), Client),
+    ?payment_interaction_requested(PaymentID1, _) = next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID1, ?failed(_)) = next_event(InvoiceID, Client),
+    %% no way to create adjustment for a failed payment
+    ?invalid_payment_status(?failed(_)) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID1, make_adjustment_params(), Client),
+    %% start a healthy man's payment
+    PaymentParams2 = make_payment_params(),
+    PaymentID2 = attach_payment(InvoiceID, PaymentParams2, Client),
+    ?payment_status_changed(PaymentID2, ?captured()) = next_event(InvoiceID, Client),
+    ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
+    %% make an adjustment which essentially adjusts nothing
+    ?adjustment(AdjustmentID1, ?adjustment_pending()) = Adjustment1 =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID2, make_adjustment_params(), Client),
+    Adjustment1 =
+        hg_client_invoicing:get_adjustment(InvoiceID, PaymentID2, AdjustmentID1, Client),
+    ?adjustment_created(PaymentID2, Adjustment1) = next_event(InvoiceID, Client),
+    %% no way to create another one yet
+    ?adjustment_pending(AdjustmentID1) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID2, make_adjustment_params(), Client),
+    ok =
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID2, AdjustmentID1, Client),
+    ?invalid_adjustment_status(?adjustment_captured(_)) =
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID2, AdjustmentID1, Client),
+    ?invalid_adjustment_status(?adjustment_captured(_)) =
+        hg_client_invoicing:cancel_adjustment(InvoiceID, PaymentID2, AdjustmentID1, Client),
+    ?adjustment_status_changed(PaymentID2, AdjustmentID1, ?adjustment_captured(_)) =
+        next_event(InvoiceID, Client).
+
 -spec invalid_payment_w_deprived_party(config()) -> _ | no_return().
 
 invalid_payment_w_deprived_party(C) ->
@@ -406,6 +459,8 @@ unwrap_event(?invoice_ev(E)) ->
     unwrap_event(E);
 unwrap_event(?payment_ev(E)) ->
     unwrap_event(E);
+unwrap_event(?adjustment_ev(E)) ->
+    unwrap_event(E);
 unwrap_event(E) ->
     E.
 
@@ -467,10 +522,22 @@ make_payment_params(PaymentTool, Session) ->
     #payproc_InvoicePaymentParams{
         payer = #domain_Payer{
             payment_tool = PaymentTool,
-            session = Session,
+            session_id = Session,
             client_info = #domain_ClientInfo{},
             contact_info = #domain_ContactInfo{}
         }
+    }.
+
+make_adjustment_params() ->
+    make_adjustment_params(<<>>).
+
+make_adjustment_params(Reason) ->
+    make_adjustment_params(Reason, undefined).
+
+make_adjustment_params(Reason, Revision) ->
+    #payproc_InvoicePaymentAdjustmentParams{
+        domain_revision = Revision,
+        reason = Reason
     }.
 
 make_due_date(LifetimeSeconds) ->

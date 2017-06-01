@@ -13,6 +13,7 @@
 ).
 
 -define(payment_ev(Body), {invoice_payment_event, Body}).
+-define(adjustment_ev(Body), {invoice_payment_adjustment_event, Body}).
 
 -define(payment_started(Payment),
     {invoice_payment_started,
@@ -38,6 +39,31 @@
         }}
 ).
 
+-define(adjustment_created(PaymentID, Adjustment),
+    {invoice_payment_adjustment_created,
+        #payproc_InvoicePaymentAdjustmentCreated{
+            payment_id = PaymentID,
+            adjustment = Adjustment
+        }
+    }
+).
+
+-define(adjustment_status_changed(PaymentID, AdjustmentID, Status),
+    {invoice_payment_adjustment_status_changed,
+        #payproc_InvoicePaymentAdjustmentStatusChanged{
+            payment_id = PaymentID,
+            adjustment_id = AdjustmentID,
+            status = Status
+        }
+    }
+).
+
+-define(adjustment_pending(),
+    {pending, #domain_InvoicePaymentAdjustmentPending{}}).
+-define(adjustment_captured(At),
+    {captured, #domain_InvoicePaymentAdjustmentCaptured{at = At}}).
+-define(adjustment_cancelled(At),
+    {cancelled, #domain_InvoicePaymentAdjustmentCancelled{at = At}}).
 
 -define(paid(),
     {paid, #domain_InvoicePaid{}}).
