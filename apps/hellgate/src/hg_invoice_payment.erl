@@ -138,11 +138,7 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Payment0 = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
     {Payment, VS3} = inspect(Shop, Invoice, Payment0, VS2),
     Route = validate_route(Payment, hg_routing:choose(VS3, Revision)),
-    FinalCashflow = hg_cashflow:finalize(
-        collect_cash_flow({Revision, PaymentTerms}, Route, VS3),
-        collect_cash_flow_context(Invoice, Payment),
-        collect_account_map(Invoice, Shop, Route, VS3, Revision)
-    ),
+    FinalCashflow = finalize_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS3, Revision),
     _AccountsState = hg_accounting:plan(
         construct_plan_id(Invoice, Payment),
         {1, FinalCashflow}
@@ -156,6 +152,13 @@ get_merchant_payment_terms(Opts) ->
         get_shop_id(Invoice),
         get_party(Opts),
         get_created_at(Invoice)
+    ).
+
+finalize_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision) ->
+    hg_cashflow:finalize(
+        collect_cash_flow({Revision, PaymentTerms}, Route, VS),
+        collect_cash_flow_context(Invoice, Payment),
+        collect_account_map(Invoice, Shop, Route, VS, Revision)
     ).
 
 construct_payment(PaymentID, Invoice, PaymentParams, Revision) ->
@@ -347,11 +350,7 @@ create_adjustment(Params, St, Opts) ->
     PaymentTerms = get_merchant_payment_terms(Opts),
     Route = get_route(Payment),
     VS = collect_varset(Party, Shop, Payment, #{}),
-    FinalCashflow = hg_cashflow:finalize(
-        collect_cash_flow({Revision, PaymentTerms}, Route, VS),
-        collect_cash_flow_context(Invoice, Payment),
-        collect_account_map(Invoice, Shop, Route, VS, Revision)
-    ),
+    FinalCashflow = finalize_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision),
     Adjustment = #domain_InvoicePaymentAdjustment{
         id              = construct_id(adjustment, St),
         status          = ?adjustment_pending(),
