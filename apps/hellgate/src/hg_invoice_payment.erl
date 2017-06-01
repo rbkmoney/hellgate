@@ -101,7 +101,7 @@ get_adjustment(ID, #st{adjustments = As}) ->
     case lists:keyfind(ID, #domain_InvoicePaymentAdjustment.id, As) of
         Adjustment = #domain_InvoicePaymentAdjustment{} ->
             Adjustment;
-        error ->
+        false ->
             throw(#payproc_InvoicePaymentAdjustmentNotFound{})
     end.
 
