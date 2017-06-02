@@ -138,7 +138,7 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Payment0 = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
     {Payment, VS3} = inspect(Shop, Invoice, Payment0, VS2),
     Route = validate_route(Payment, hg_routing:choose(VS3, Revision)),
-    FinalCashflow = finalize_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS3, Revision),
+    FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS3, Revision),
     _AccountsState = hg_accounting:plan(
         construct_plan_id(Invoice, Payment),
         {1, FinalCashflow}
@@ -154,7 +154,7 @@ get_merchant_payment_terms(Opts) ->
         get_created_at(Invoice)
     ).
 
-finalize_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision) ->
+construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision) ->
     hg_cashflow:finalize(
         collect_cash_flow({Revision, PaymentTerms}, Route, VS),
         collect_cash_flow_context(Invoice, Payment),
@@ -350,7 +350,7 @@ create_adjustment(Params, St, Opts) ->
     PaymentTerms = get_merchant_payment_terms(Opts),
     Route = get_route(Payment),
     VS = collect_varset(Party, Shop, Payment, #{}),
-    FinalCashflow = finalize_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision),
+    FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision),
     Adjustment = #domain_InvoicePaymentAdjustment{
         id              = construct_id(adjustment, St),
         status          = ?adjustment_pending(),
@@ -429,7 +429,7 @@ finalize_adjustment_cashflow(Intent, Adjustment, St, Options) ->
 
 get_adjustment_cashflow_plan(Adjustment, St) ->
     [
-        {1, hg_cashflow:revert(get_final_cashflow(get_payment(St)))},
+        {1, hg_cashflow:revert(get_cashflow(get_payment(St)))},
         {2, get_adjustment_cashflow(Adjustment)}
     ].
 
@@ -583,10 +583,10 @@ rollback_plan(St, Options) ->
 
 finalize_plan(Finalizer, St, Options) ->
     PlanID = construct_plan_id(get_invoice(Options), get_payment(St)),
-    FinalCashflow = get_final_cashflow(get_payment(St)),
+    FinalCashflow = get_cashflow(get_payment(St)),
     Finalizer(PlanID, [{1, FinalCashflow}]).
 
-get_final_cashflow(#domain_InvoicePayment{cash_flow = FinalCashflow}) ->
+get_cashflow(#domain_InvoicePayment{cash_flow = FinalCashflow}) ->
     FinalCashflow.
 
 %%
@@ -772,15 +772,16 @@ merge_adjustment_event(?adjustment_status_changed(_, ID, Status), St0) ->
     St1 = set_adjustment(Adjustment#domain_InvoicePaymentAdjustment{status = Status}, St0),
     case Status of
         ?adjustment_captured(_) ->
-            Payment0 = get_payment(St1),
-            Payment1 = Payment0#domain_InvoicePayment{cash_flow = get_adjustment_cashflow(Adjustment)},
-            set_payment(Payment1, St1);
+            set_payment(set_cashflow(get_adjustment_cashflow(Adjustment), get_payment(St1)), St1);
         ?adjustment_cancelled(_) ->
             St1
     end.
 
 set_payment(Payment, St = #st{}) ->
     St#st{payment = Payment}.
+
+set_cashflow(Cashflow, Payment = #domain_InvoicePayment{}) ->
+    Payment#domain_InvoicePayment{cash_flow = Cashflow}.
 
 set_adjustment(Adjustment, St = #st{adjustments = As}) ->
     ID = get_adjustment_id(Adjustment),
