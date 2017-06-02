@@ -3,6 +3,7 @@
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("hellgate/include/domain.hrl").
 
 -export([all/0]).
 -export([init_per_suite/1]).
@@ -22,7 +23,8 @@
 -export([payment_success_on_second_try/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
--export([payment_adjustment/1]).
+-export([invalid_payment_adjustment/1]).
+-export([payment_adjustment_success/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
 -export([consistent_history/1]).
@@ -41,9 +43,6 @@ init([]) ->
 %%
 
 -define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
-
--define(cash(Amount, Currency),
-    #domain_Cash{amount = Amount, currency = Currency}).
 
 %% tests descriptions
 
@@ -68,7 +67,8 @@ all() ->
 
         payment_risk_score_check,
 
-        payment_adjustment,
+        invalid_payment_adjustment,
+        payment_adjustment_success,
 
         invalid_payment_w_deprived_party,
         external_account_posting,
@@ -133,7 +133,14 @@ end_per_suite(C) ->
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
+init_per_testcase(payment_adjustment_success, C) ->
+    Revision = hg_domain:head(),
+    ok = hg_domain:upsert(get_adjustment_fixture(Revision)),
+    [{original_domain_revision, Revision} | init_per_testcase(C)];
 init_per_testcase(_Name, C) ->
+    init_per_testcase(C).
+
+init_per_testcase(C) ->
     PartyID = ?c(party_id, C),
     Client = hg_client_invoicing:start_link(make_userinfo(PartyID), hg_client_api:new(?c(root_url, C))),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
@@ -142,6 +149,12 @@ init_per_testcase(_Name, C) ->
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
 end_per_testcase(_Name, C) ->
+    _ = case ?c(original_domain_revision, C) of
+        Revision when is_integer(Revision) ->
+            ok = hg_domain:reset(Revision);
+        undefined ->
+            ok
+    end,
     _ = unlink(?c(test_sup, C)),
     exit(?c(test_sup, C), shutdown).
 
@@ -339,46 +352,147 @@ get_risk_coverage_from_route(#domain_InvoicePaymentRoute{terminal = TermRef}) ->
     Terminal = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
     Terminal#domain_Terminal.risk_coverage.
 
--spec payment_adjustment(config()) -> _ | no_return().
+-spec invalid_payment_adjustment(config()) -> _ | no_return().
 
-payment_adjustment(C) ->
+invalid_payment_adjustment(C) ->
     Client = ?c(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a smoker's payment
-    PaymentParams1 = make_tds_payment_params(),
-    PaymentID1 = attach_payment(InvoiceID, PaymentParams1, Client),
-    %% no way to create adjustment for a pending payment
+    PaymentParams = make_tds_payment_params(),
+    PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
+    %% no way to create adjustment for a payment not yet finished
     ?invalid_payment_status(?processed()) =
-        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID1, make_adjustment_params(), Client),
-    ?payment_interaction_requested(PaymentID1, _) = next_event(InvoiceID, Client),
-    ?payment_status_changed(PaymentID1, ?failed(_)) = next_event(InvoiceID, Client),
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, Client),
     %% no way to create adjustment for a failed payment
     ?invalid_payment_status(?failed(_)) =
-        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID1, make_adjustment_params(), Client),
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
+
+-spec payment_adjustment_success(config()) -> _ | no_return().
+
+payment_adjustment_success(C) ->
+    Client = ?c(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a healthy man's payment
-    PaymentParams2 = make_payment_params(),
-    PaymentID2 = attach_payment(InvoiceID, PaymentParams2, Client),
-    ?payment_status_changed(PaymentID2, ?captured()) = next_event(InvoiceID, Client),
+    PaymentParams = make_payment_params(),
+    PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
-    %% make an adjustment which essentially adjusts nothing
-    ?adjustment(AdjustmentID1, ?adjustment_pending()) = Adjustment1 =
-        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID2, make_adjustment_params(), Client),
-    Adjustment1 =
-        hg_client_invoicing:get_adjustment(InvoiceID, PaymentID2, AdjustmentID1, Client),
-    ?adjustment_created(PaymentID2, Adjustment1) = next_event(InvoiceID, Client),
+    #domain_InvoicePayment{cash_flow = CF1} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
+    SysAccount1 = get_cashflow_account({system, settlement}, CF1),
+    %% update terminal cashflow
+    Terminal = hg_domain:get(hg_domain:head(), {terminal, ?trm(100)}),
+    ok = hg_domain:upsert(
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(100),
+            data = Terminal#domain_Terminal{cash_flow = get_adjustment_terminal_cashflow(actual)}
+        }}
+    ),
+    %% make an adjustment
+    Params = make_adjustment_params(Reason = <<"imdrunk">>),
+    ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, Params, Client),
+    Adjustment = #domain_InvoicePaymentAdjustment{reason = Reason} =
+        hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    ?adjustment_created(PaymentID, Adjustment) = next_event(InvoiceID, Client),
     %% no way to create another one yet
-    ?adjustment_pending(AdjustmentID1) =
-        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID2, make_adjustment_params(), Client),
+    ?adjustment_pending(AdjustmentID) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
     ok =
-        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID2, AdjustmentID1, Client),
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     ?invalid_adjustment_status(?adjustment_captured(_)) =
-        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID2, AdjustmentID1, Client),
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     ?invalid_adjustment_status(?adjustment_captured(_)) =
-        hg_client_invoicing:cancel_adjustment(InvoiceID, PaymentID2, AdjustmentID1, Client),
-    ?adjustment_status_changed(PaymentID2, AdjustmentID1, ?adjustment_captured(_)) =
-        next_event(InvoiceID, Client).
+        hg_client_invoicing:cancel_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    ?adjustment_status_changed(PaymentID, AdjustmentID, ?adjustment_captured(_)) =
+        next_event(InvoiceID, Client),
+    %% verify that cash deposited correctly everywhere
+    #domain_InvoicePayment{cash_flow = CF2} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
+    SysAccount2 = get_cashflow_account({system, settlement}, CF2),
+    500  = maps:get(own_amount, PrvAccount1) - maps:get(own_amount, PrvAccount2),
+    -480 = maps:get(own_amount, SysAccount1) - maps:get(own_amount, SysAccount2).
+
+get_cashflow_account(Type, CF) ->
+    [ID] = [V || #domain_FinalCashFlowPosting{
+        destination = #domain_FinalCashFlowAccount{
+            account_id = V,
+            account_type = T
+        }
+    } <- CF, T == Type],
+    hg_ct_helper:get_account(ID).
+
+get_adjustment_fixture(Revision) ->
+    AccountRUB = hg_ct_fixture:construct_terminal_account(?cur(<<"RUB">>)),
+    Globals = hg_domain:get(Revision, {globals, ?glob()}),
+    [
+        {globals, #domain_GlobalsObject{
+            ref = ?glob(),
+            data = Globals#domain_Globals{
+                providers = {value, ordsets:from_list([?prv(100)])}
+            }}
+        },
+        {provider, #domain_ProviderObject{
+            ref = ?prv(100),
+            data = #domain_Provider{
+                name = <<"Adjustable">>,
+                description = <<>>,
+                abs_account = <<>>,
+                terminal = {value, [?trm(100)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}}
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(100),
+            data = #domain_Terminal{
+                name = <<"Adjustable Terminal">>,
+                description = <<>>,
+                payment_method = ?pmt(bank_card, visa),
+                category = ?cat(1),
+                cash_flow = get_adjustment_terminal_cashflow(initial),
+                account = AccountRUB,
+                risk_coverage = low
+            }
+        }}
+    ].
+
+get_adjustment_terminal_cashflow(initial) ->
+    [
+        ?cfpost(
+            {provider, settlement},
+            {merchant, settlement},
+            ?share(1, 1, payment_amount)
+        ),
+        ?cfpost(
+            {system, settlement},
+            {provider, settlement},
+            ?share(21, 1000, payment_amount)
+        )
+    ];
+get_adjustment_terminal_cashflow(actual) ->
+    [
+        ?cfpost(
+            {provider, settlement},
+            {merchant, settlement},
+            ?share(1, 1, payment_amount)
+        ),
+        ?cfpost(
+            {system, settlement},
+            {provider, settlement},
+            ?share(16, 1000, payment_amount)
+        ),
+        ?cfpost(
+            {system, settlement},
+            {external, outcome},
+            ?fixed(20, ?cur(<<"RUB">>))
+        )
+    ].
 
 -spec invalid_payment_w_deprived_party(config()) -> _ | no_return().
 
@@ -583,10 +697,8 @@ get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
 construct_domain_fixture() ->
-    _ = hg_context:set(woody_context:new()),
-    AccountUSD = ?trmacc(<<"USD">>, hg_accounting:create_account(<<"USD">>)),
-    AccountRUB = ?trmacc(<<"RUB">>, hg_accounting:create_account(<<"RUB">>)),
-    hg_context:cleanup(),
+    AccountUSD = hg_ct_fixture:construct_terminal_account(?cur(<<"USD">>)),
+    AccountRUB = hg_ct_fixture:construct_terminal_account(?cur(<<"RUB">>)),
     TestTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             currencies = {value, ordsets:from_list([

@@ -15,6 +15,7 @@
 -export([get/2]).
 -export([find/2]).
 -export([commit/2]).
+-export([reset/1]).
 
 -export([insert/1]).
 -export([update/1]).
@@ -76,6 +77,11 @@ commit(Revision, Commit) ->
     _ = hg_domain:all(Revision + 1),
     ok.
 
+-spec reset(revision()) -> ok | no_return().
+
+reset(Revision) ->
+    upsert(maps:values(all(Revision))).
+
 %% convenience shortcuts, use carefully
 
 -spec insert(object() | [object()]) -> ok | no_return().
@@ -109,7 +115,7 @@ update(NewObjects) ->
                     OldData <- [get(Revision, {Tag, Ref})]
         ]
     },
-    commit(head(), Commit).
+    commit(Revision, Commit).
 
 -spec upsert(object() | [object()]) -> ok | no_return().
 
@@ -118,23 +124,27 @@ upsert(NewObject) when not is_list(NewObject) ->
 upsert(NewObjects) ->
     Revision = head(),
     Commit = #'Commit'{
-        ops = [
-            case OldData of
-                notfound ->
-                    {insert, #'InsertOp'{
-                        object = NewObject
-                    }};
-                _ ->
-                    {update, #'UpdateOp'{
-                        old_object = {Tag, {ObjectName, Ref, OldData}},
-                        new_object = NewObject
-                    }}
-            end
-                || NewObject = {Tag, {ObjectName, Ref, _Data}} <- NewObjects,
-                    OldData <- [find(Revision, {Tag, Ref})]
-        ]
+        ops = lists:foldl(
+            fun (NewObject = {Tag, {ObjectName, Ref, NewData}}, Ops) ->
+                case find(Revision, {Tag, Ref}) of
+                    NewData ->
+                        Ops;
+                    notfound ->
+                        [{insert, #'InsertOp'{
+                            object = NewObject
+                        }} | Ops];
+                    OldData ->
+                        [{update, #'UpdateOp'{
+                            old_object = {Tag, {ObjectName, Ref, OldData}},
+                            new_object = NewObject
+                        }} | Ops]
+                end
+            end,
+            [],
+            NewObjects
+        )
     },
-    commit(head(), Commit).
+    commit(Revision, Commit).
 
 -spec remove(object() | [object()]) -> ok | no_return().
 

@@ -1,6 +1,7 @@
 -ifndef(__hellgate_ct_domain__).
 -define(__hellgate_ct_domain__, 42).
 
+-define(glob(),     #domain_GlobalsRef{}).
 -define(cur(ID),    #domain_CurrencyRef{symbolic_code = ID}).
 -define(pmt(C, T),  #domain_PaymentMethodRef{id = {C, T}}).
 -define(cat(ID),    #domain_CategoryRef{id = ID}).

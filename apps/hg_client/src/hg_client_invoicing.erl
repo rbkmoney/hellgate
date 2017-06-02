@@ -10,6 +10,7 @@
 -export([fulfill/3]).
 -export([rescind/3]).
 -export([start_payment/3]).
+-export([get_payment/3]).
 -export([create_adjustment/4]).
 -export([get_adjustment/4]).
 -export([capture_adjustment/4]).
@@ -91,6 +92,12 @@ rescind(InvoiceID, Reason, Client) ->
 
 start_payment(InvoiceID, PaymentParams, Client) ->
     map_result_error(gen_server:call(Client, {call, 'StartPayment', [InvoiceID, PaymentParams]})).
+
+-spec get_payment(invoice_id(), payment_id(), pid()) ->
+    payment() | woody_error:business_error().
+
+get_payment(InvoiceID, PaymentID, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetPayment', [InvoiceID, PaymentID]})).
 
 -spec create_adjustment(invoice_id(), payment_id(), adjustment_params(), pid()) ->
     adjustment() | woody_error:business_error().

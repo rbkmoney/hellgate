@@ -8,6 +8,7 @@
 -export([create_contract/2]).
 -export([create_shop/4]).
 -export([create_shop/5]).
+-export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
 -export([get_first_payout_tool_id/2]).
@@ -126,6 +127,8 @@ start_apps(Apps) ->
 -include_lib("hellgate/include/party_events.hrl").
 
 -type party_id()       :: dmsl_domain_thrift:'PartyID'().
+-type account_id()     :: dmsl_domain_thrift:'AccountID'().
+-type account()        :: map().
 -type contract_id()    :: dmsl_domain_thrift:'ContractID'().
 -type shop_id()        :: dmsl_domain_thrift:'ShopID'().
 -type category()       :: dmsl_domain_thrift:'CategoryRef'().
@@ -224,6 +227,15 @@ get_first_battle_ready_contract_id(Client) ->
         [] ->
             error(not_found)
     end.
+
+-spec get_account(account_id()) -> account().
+
+get_account(AccountID) ->
+    % TODO we sure need to proxy this through the hellgate interfaces
+    _ = hg_context:set(woody_context:new()),
+    Account = hg_accounting:get_account(AccountID),
+    _ = hg_context:cleanup(),
+    Account.
 
 -spec get_first_payout_tool_id(contract_id(), Client :: pid()) ->
     dmsl_domain_thrift:'PayoutToolID'().
