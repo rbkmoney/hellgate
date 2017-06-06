@@ -44,6 +44,8 @@
 
 -export([merge_event/2]).
 
+-export([get_log_params/2]).
+
 %%
 
 -record(st, {
@@ -849,3 +851,71 @@ get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
 
 get_st_meta(_) ->
     #{}.
+
+%%
+
+-spec get_log_params(ev(), st()) ->
+    undefined | #{type := invoice_payment_event, params := list(), message := string()}.
+
+get_log_params(?payment_ev(Event), State) ->
+    {EventType, Payment, Params} = case Event of
+        ?payment_started(P, _, C) ->
+            {invoice_payment_started, P, [
+                {accounts, get_partial_remainders(C)}
+            ]};
+        ?payment_status_changed(_, {Status, _}) ->
+            P = get_payment(State),
+            C = get_cashflow(P),
+            {invoice_payment_status_changed, P, [
+                {status, Status},
+                {accounts, get_partial_remainders(C)}
+            ]};
+        ?payment_bound(_, _) ->
+            {invoice_payment_bound, get_payment(State), []};
+        ?payment_interaction_requested(_, _) ->
+            {invoice_payment_interaction_requested, get_payment(State), []};
+        ?payment_inspected(_, _) ->
+            {invoice_payment_inspected, get_payment(State), []};
+        _ ->
+            %% TO DO: handle adjustment events
+            {undefined, undefined, undefined}
+    end,
+    case {EventType, Payment, Params} of
+        {undefined, _, _} ->
+            undefined;
+        _ ->
+            #domain_InvoicePayment{
+                id = ID,
+                cost = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency})
+            } = Payment,
+            #{
+                type => invoice_payment_event,
+                params => [{type, EventType}, {id, ID}, {cost, [{amount, Amount}, {currency, Currency}]} | Params],
+                message => get_message(EventType)
+            }
+    end.
+
+get_partial_remainders(CashFlow) ->
+    Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
+    lists:map(
+        fun ({Account, Cash}) ->
+            ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency}) = Cash,
+            Remainder = [{remainder, [{amount, Amount}, {currency, Currency}]}],
+            {get_account_key(Account), Remainder}
+        end,
+        Reminders
+    ).
+
+get_account_key({AccountParty, AccountType}) ->
+    list_to_binary(lists:concat([atom_to_list(AccountParty), ".", atom_to_list(AccountType)])).
+
+get_message(invoice_payment_started) ->
+    "Invoice payment is started";
+get_message(invoice_payment_status_changed) ->
+    "Invoice payment status is changed";
+get_message(invoice_payment_bound) ->
+    "Invoice payment is bound";
+get_message(invoice_payment_interaction_requested) ->
+    "Invoice payment interaction is requested";
+get_message(invoice_payment_inspected) ->
+    "Invoice payment is inspected".

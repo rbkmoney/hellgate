@@ -15,11 +15,14 @@
 -type context()         :: dmsl_domain_thrift:'CashFlowContext'().
 -type cash_flow()       :: dmsl_domain_thrift:'CashFlow'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
+-type cash()            :: dmsl_domain_thrift:'Cash'().
 
 %%
 
 -export([finalize/3]).
 -export([revert/1]).
+
+-export([get_partial_remainders/1]).
 
 %%
 
@@ -142,3 +145,38 @@ resolve_constant(Constant, Context) ->
         #{} ->
             error({misconfiguration, {'Cash flow constant not found', {Constant, Context}}})
     end.
+
+%%
+
+-include("domain.hrl").
+
+-spec get_partial_remainders(final_cash_flow()) ->
+    #{account() => cash()}.
+
+get_partial_remainders(CashFlow) ->
+    lists:foldl(
+        fun (CashFlowPosting, Acc) ->
+            ?final_posting(
+                #domain_FinalCashFlowAccount{account_type = Source},
+                #domain_FinalCashFlowAccount{account_type = Destination},
+                ?cash(Amount, Currency),
+            _) = CashFlowPosting,
+            maps:update_with(
+                Source,
+                fun (?cash(A, C)) when C == Currency ->
+                    ?cash(A - Amount, Currency)
+                end,
+                 ?cash(-Amount, Currency),
+                maps:update_with(
+                    Destination,
+                    fun (?cash(A, C)) when C == Currency ->
+                         ?cash(A + Amount, Currency)
+                    end,
+                    ?cash(Amount, Currency),
+                    Acc
+                )
+            )
+        end,
+        #{},
+        CashFlow
+    ).
