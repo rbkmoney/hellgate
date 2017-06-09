@@ -128,7 +128,7 @@ end_per_suite(C) ->
     {exception, #payproc_InvalidPaymentStatus{status = Status}}).
 -define(invalid_adjustment_status(Status),
     {exception, #payproc_InvalidPaymentAdjustmentStatus{status = Status}}).
--define(adjustment_pending(ID),
+-define(invalid_adjustment_pending(ID),
     {exception, #payproc_InvoicePaymentAdjustmentPending{id = ID}}).
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
@@ -402,7 +402,7 @@ payment_adjustment_success(C) ->
         hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     ?adjustment_created(PaymentID, Adjustment) = next_event(InvoiceID, Client),
     %% no way to create another one yet
-    ?adjustment_pending(AdjustmentID) =
+    ?invalid_adjustment_pending(AdjustmentID) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
     ok =
         hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
