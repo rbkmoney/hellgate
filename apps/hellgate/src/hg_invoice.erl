@@ -415,13 +415,9 @@ start_payment(PaymentParams, St) ->
     PaymentID = create_payment_id(St),
     Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
-    {Events1, _} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
-    {Events2, Action} = hg_invoice_payment:start_session(?processed()),
-    Events = Events1 ++ Events2,
-    % FIXME ugliest hacks you'll ever see
-    PaymentSession = lists:foldl(fun hg_invoice_payment:merge_event/2, undefined, Events),
-    Payment = hg_invoice_payment:get_payment(PaymentSession),
-    respond(Payment, wrap_payment_events(PaymentID, Events), St, Action).
+    {Payment, {Events1, _}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
+    {ok, {Events2, Action}} = hg_invoice_payment:start_session(?processed()),
+    respond(Payment, wrap_payment_events(PaymentID, Events1 ++ Events2), St, Action).
 
 process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
     Opts = get_payment_opts(St),
@@ -441,7 +437,7 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
             PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
             case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
-                    {Events2, Action} = hg_invoice_payment:start_session(?captured()),
+                    {ok, {Events2, Action}} = hg_invoice_payment:start_session(?captured()),
                     ok(wrap_payment_events(PaymentID, Events1 ++ Events2), St, Action);
                 ?captured() ->
                     Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],

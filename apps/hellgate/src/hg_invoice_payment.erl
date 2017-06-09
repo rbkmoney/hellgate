@@ -113,7 +113,7 @@ get_adjustment(ID, #st{adjustments = As}) ->
 }.
 
 -spec init(payment_id(), _, opts()) ->
-    hg_machine:result().
+    {payment(), hg_machine:result()}.
 
 init(PaymentID, PaymentParams, Opts) ->
     hg_log_scope:scope(
@@ -125,7 +125,7 @@ init(PaymentID, PaymentParams, Opts) ->
     ).
 
 -spec init_(payment_id(), _, opts()) ->
-    hg_machine:result().
+    {payment(), hg_machine:result()}.
 
 init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Shop = get_shop(Opts),
@@ -144,7 +144,7 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
         {1, FinalCashflow}
     ),
     Event = ?payment_ev(?payment_started(Payment, Route, FinalCashflow)),
-    {[Event], hg_machine_action:new()}.
+    {Payment, {[Event], hg_machine_action:new()}}.
 
 get_merchant_payment_terms(Opts) ->
     Invoice = get_invoice(Opts),
@@ -327,12 +327,12 @@ reduce_selector(Name, Selector, VS, Revision) ->
 %%
 
 -spec start_session(target()) ->
-    hg_machine:result().
+    {ok, hg_machine:result()}.
 
 start_session(Target) ->
     Events = [?session_ev({started, Target})],
     Action = hg_machine_action:instant(),
-    {Events, Action}.
+    {ok, {Events, Action}}.
 
 %%
 
