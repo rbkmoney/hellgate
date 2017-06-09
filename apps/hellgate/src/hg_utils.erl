@@ -31,7 +31,7 @@ logtag_process(Key, Value) when is_atom(Key) ->
 construct_complex_id(L) ->
     genlib_string:join($., lists:map(
         fun
-            ({Tag, ID}) -> [genlib:to_binary(Tag), <<"-">>, ID];
+            ({Tag, ID}) -> [atom_to_binary(Tag, utf8), <<"-">>, ID];
             (ID       ) -> ID
         end,
         L
