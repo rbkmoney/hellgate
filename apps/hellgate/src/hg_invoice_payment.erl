@@ -352,7 +352,7 @@ create_adjustment(Params, St, Opts) ->
     VS = collect_varset(Party, Shop, Payment, #{}),
     FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision),
     Adjustment = #domain_InvoicePaymentAdjustment{
-        id              = construct_id(adjustment, St),
+        id              = construct_adjustment_id(St),
         status          = ?adjustment_pending(),
         created_at      = hg_datetime:format_now(),
         domain_revision = Revision,
@@ -369,7 +369,7 @@ get_adjustment_revision(Params) ->
         hg_domain:head()
     ).
 
-construct_id(adjustment, #st{adjustments = As}) ->
+construct_adjustment_id(#st{adjustments = As}) ->
     integer_to_binary(length(As) + 1).
 
 assert_payment_status(Status, #domain_InvoicePayment{status = {Status, _}}) ->
