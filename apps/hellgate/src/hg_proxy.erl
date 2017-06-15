@@ -16,12 +16,12 @@ get_call_options(#domain_Proxy{ref = ProxyRef}, Revision) ->
     construct_call_options(ProxyDef).
 
 construct_call_options(#domain_ProxyDefinition{url = Url}) ->
-    maps:merge(#{url => Url}, construct_transport_options()).
+    #{url => Url, transport_opts => construct_transport_options()}.
 
 construct_transport_options() ->
     construct_transport_options(genlib_app:env(hellgate, proxy_opts, #{})).
 
 construct_transport_options(#{transport_opts := TransportOpts = #{}}) ->
-    maps:with([connect_timeout, recv_timeout], TransportOpts);
+    maps:to_list(maps:with([connect_timeout, recv_timeout], TransportOpts));
 construct_transport_options(#{}) ->
-    #{}.
+    [].
