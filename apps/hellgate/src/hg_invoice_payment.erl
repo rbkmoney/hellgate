@@ -357,8 +357,8 @@ create_adjustment(Params, St, Opts) ->
         created_at            = hg_datetime:format_now(),
         domain_revision       = Revision,
         reason                = Params#payproc_InvoicePaymentAdjustmentParams.reason,
-        new_cash_flow         = hg_cashflow:revert(get_cashflow(Payment)),
-        old_cash_flow_inverse = FinalCashflow
+        old_cash_flow_inverse = hg_cashflow:revert(get_cashflow(Payment)),
+        new_cash_flow         = FinalCashflow
     },
     _AccountsState = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Event = ?payment_ev(?adjustment_ev(?adjustment_created(get_payment_id(St), Adjustment))),
