@@ -6,10 +6,16 @@
 
 -export([handle_function/4]).
 -export_type([handler_opts/0]).
+-export_type([client_opts/0]).
 
 -type handler_opts() :: #{
     handler => module(),
     user_identity => undefined | woody_user_identity:user_identity()
+}.
+
+-type client_opts() :: #{
+    url            := woody:url(),
+    transport_opts => [{_, _}]
 }.
 
 %% Callbacks
@@ -50,7 +56,7 @@ call(ServiceName, Function, Args) ->
     Url = get_service_url(ServiceName),
     call(ServiceName, Function, Args, #{url => Url}).
 
--spec call(atom(), woody:func(), list(), Opts :: map()) ->
+-spec call(atom(), woody:func(), list(), client_opts()) ->
     term().
 
 call(ServiceName, Function, Args, Opts) ->
