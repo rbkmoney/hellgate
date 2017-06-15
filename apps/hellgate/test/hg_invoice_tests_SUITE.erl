@@ -42,12 +42,17 @@ init([]) ->
 
 %%
 
--define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
 
 %% tests descriptions
 
 -type config() :: [{atom(), term()}].
 -type test_case_name() :: atom().
+
+cfg(Key, C) ->
+    case lists:keyfind(Key, 1, C) of
+        {Key, V} -> V;
+        _        -> undefined
+    end.
 
 -spec all() -> [test_case_name()].
 
@@ -104,7 +109,7 @@ init_per_suite(C) ->
 
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
-    [application:stop(App) || App <- ?c(apps, C)].
+    [application:stop(App) || App <- cfg(apps, C)].
 
 %% tests
 
@@ -141,29 +146,29 @@ init_per_testcase(_Name, C) ->
     init_per_testcase(C).
 
 init_per_testcase(C) ->
-    PartyID = ?c(party_id, C),
-    Client = hg_client_invoicing:start_link(make_userinfo(PartyID), hg_client_api:new(?c(root_url, C))),
+    PartyID = cfg(party_id, C),
+    Client = hg_client_invoicing:start_link(make_userinfo(PartyID), hg_client_api:new(cfg(root_url, C))),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [{client, Client}, {test_sup, SupPid} | C].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
 end_per_testcase(_Name, C) ->
-    _ = case ?c(original_domain_revision, C) of
+    _ = case cfg(original_domain_revision, C) of
         Revision when is_integer(Revision) ->
             ok = hg_domain:reset(Revision);
         undefined ->
             ok
     end,
-    _ = unlink(?c(test_sup, C)),
-    exit(?c(test_sup, C), shutdown).
+    _ = unlink(cfg(test_sup, C)),
+    exit(cfg(test_sup, C), shutdown).
 
 -spec invalid_invoice_amount(config()) -> _ | no_return().
 
 invalid_invoice_amount(C) ->
-    Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount">>]
@@ -172,9 +177,9 @@ invalid_invoice_amount(C) ->
 -spec invalid_invoice_currency(config()) -> _ | no_return().
 
 invalid_invoice_currency(C) ->
-    Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100, <<"KEK">>}),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid currency">>]
@@ -183,10 +188,10 @@ invalid_invoice_currency(C) ->
 -spec invalid_party_status(config()) -> _ | no_return().
 
 invalid_party_status(C) ->
-    Client = ?c(client, C),
-    PartyClient = ?c(party_client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
     #payproc_ClaimResult{} = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
@@ -202,10 +207,10 @@ invalid_party_status(C) ->
 -spec invalid_shop_status(config()) -> _ | no_return().
 
 invalid_shop_status(C) ->
-    Client = ?c(client, C),
-    PartyClient = ?c(party_client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
     #payproc_ClaimResult{} = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
@@ -221,9 +226,9 @@ invalid_shop_status(C) ->
 -spec invoice_cancellation(config()) -> _ | no_return().
 
 invoice_cancellation(C) ->
-    Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     ?invalid_invoice_status(_) = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
@@ -232,14 +237,14 @@ invoice_cancellation(C) ->
 -spec overdue_invoice_cancellation(config()) -> _ | no_return().
 
 overdue_invoice_cancellation(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(1), 10000, C),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
 
 -spec invoice_cancellation_after_payment_timeout(config()) -> _ | no_return().
 
 invoice_cancellation_after_payment_timeout(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(3), 1000, C),
@@ -253,7 +258,7 @@ invoice_cancellation_after_payment_timeout(C) ->
 -spec invalid_payment_amount(config()) -> _ | no_return().
 
 invalid_payment_amount(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     PaymentParams = make_payment_params(),
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 1, C),
     {exception, #'InvalidRequest'{
@@ -267,7 +272,7 @@ invalid_payment_amount(C) ->
 -spec payment_success(config()) -> _ | no_return().
 
 payment_success(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
@@ -283,7 +288,7 @@ payment_success(C) ->
 -spec payment_success_on_second_try(config()) -> _ | no_return().
 
 payment_success_on_second_try(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
@@ -301,7 +306,7 @@ payment_success_on_second_try(C) ->
 -spec invoice_success_on_third_payment(config()) -> _ | no_return().
 
 invoice_success_on_third_payment(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
@@ -326,7 +331,7 @@ invoice_success_on_third_payment(C) ->
 -spec payment_risk_score_check(config()) -> _ | no_return().
 
 payment_risk_score_check(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     % Invoice w/ cost < 500000
@@ -355,7 +360,7 @@ get_risk_coverage_from_route(#domain_InvoicePaymentRoute{terminal = TermRef}) ->
 -spec invalid_payment_adjustment(config()) -> _ | no_return().
 
 invalid_payment_adjustment(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
@@ -374,7 +379,7 @@ invalid_payment_adjustment(C) ->
 -spec payment_adjustment_success(config()) -> _ | no_return().
 
 payment_adjustment_success(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
@@ -499,7 +504,7 @@ get_adjustment_terminal_cashflow(actual) ->
 invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
     ShopID = 1,
-    RootUrl = ?c(root_url, C),
+    RootUrl = cfg(root_url, C),
     UserInfo = make_userinfo(PartyID),
     PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
     InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
@@ -517,7 +522,7 @@ invalid_payment_w_deprived_party(C) ->
 
 external_account_posting(C) ->
     PartyID = <<"LGBT">>,
-    RootUrl = ?c(root_url, C),
+    RootUrl = cfg(root_url, C),
     UserInfo = make_userinfo(PartyID),
     PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
     InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
@@ -586,9 +591,9 @@ start_service_handler(Module, C, HandlerOpts) ->
 start_service_handler(Name, Module, C, HandlerOpts) ->
     IP = "127.0.0.1",
     Port = get_random_port(),
-    Opts = maps:merge(HandlerOpts, #{hellgate_root_url => ?c(root_url, C)}),
+    Opts = maps:merge(HandlerOpts, #{hellgate_root_url => cfg(root_url, C)}),
     ChildSpec = hg_test_proxy:get_child_spec(Name, Module, IP, Port, Opts),
-    {ok, _} = supervisor:start_child(?c(test_sup, C), ChildSpec),
+    {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
 
 start_proxy(Module, ProxyID, Context) ->
@@ -662,11 +667,11 @@ create_invoice(InvoiceParams, Client) ->
     InvoiceID.
 
 start_invoice(Product, Due, Amount, C) ->
-    start_invoice(?c(shop_id, C), Product, Due, Amount, C).
+    start_invoice(cfg(shop_id, C), Product, Due, Amount, C).
 
 start_invoice(ShopID, Product, Due, Amount, C) ->
-    Client = ?c(client, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, Amount),
     InvoiceID = create_invoice(InvoiceParams, Client),
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, Client),
