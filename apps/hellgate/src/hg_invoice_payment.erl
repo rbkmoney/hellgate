@@ -352,12 +352,13 @@ create_adjustment(Params, St, Opts) ->
     VS = collect_varset(Party, Shop, Payment, #{}),
     FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision),
     Adjustment = #domain_InvoicePaymentAdjustment{
-        id              = construct_adjustment_id(St),
-        status          = ?adjustment_pending(),
-        created_at      = hg_datetime:format_now(),
-        domain_revision = Revision,
-        reason          = Params#payproc_InvoicePaymentAdjustmentParams.reason,
-        cash_flow       = FinalCashflow
+        id                    = construct_adjustment_id(St),
+        status                = ?adjustment_pending(),
+        created_at            = hg_datetime:format_now(),
+        domain_revision       = Revision,
+        reason                = Params#payproc_InvoicePaymentAdjustmentParams.reason,
+        new_cash_flow         = hg_cashflow:revert(get_cashflow(Payment)),
+        old_cash_flow_inverse = FinalCashflow
     },
     _AccountsState = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Event = ?payment_ev(?adjustment_ev(?adjustment_created(get_payment_id(St), Adjustment))),
@@ -414,12 +415,12 @@ finalize_adjustment(ID, Intent, St, Options) ->
 
 prepare_adjustment_cashflow(Adjustment, St, Options) ->
     PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
-    Plan = get_adjustment_cashflow_plan(Adjustment, St),
+    Plan = get_adjustment_cashflow_plan(Adjustment),
     hg_accounting:plan(PlanID, Plan).
 
 finalize_adjustment_cashflow(Intent, Adjustment, St, Options) ->
     PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
-    Plan = get_adjustment_cashflow_plan(Adjustment, St),
+    Plan = get_adjustment_cashflow_plan(Adjustment),
     case Intent of
         capture ->
             hg_accounting:commit(PlanID, Plan);
@@ -427,10 +428,13 @@ finalize_adjustment_cashflow(Intent, Adjustment, St, Options) ->
             hg_accounting:rollback(PlanID, Plan)
     end.
 
-get_adjustment_cashflow_plan(Adjustment, St) ->
+get_adjustment_cashflow_plan(#domain_InvoicePaymentAdjustment{
+    old_cash_flow_inverse = CashflowInverse,
+    new_cash_flow         = Cashflow
+}) ->
     [
-        {1, hg_cashflow:revert(get_cashflow(get_payment(St)))},
-        {2, get_adjustment_cashflow(Adjustment)}
+        {1, CashflowInverse},
+        {2, Cashflow}
     ].
 
 assert_adjustment_status(Status, #domain_InvoicePaymentAdjustment{status = {Status, _}}) ->
@@ -448,7 +452,7 @@ construct_adjustment_plan_id(Adjustment, St, Options) ->
 get_adjustment_id(#domain_InvoicePaymentAdjustment{id = ID}) ->
     ID.
 
-get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{cash_flow = Cashflow}) ->
+get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{new_cash_flow = Cashflow}) ->
     Cashflow.
 
 %%
