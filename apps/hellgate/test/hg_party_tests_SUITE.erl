@@ -250,6 +250,8 @@ end_per_testcase(_Name, _C) ->
     {exception, #payproc_PartyNotFound{}}).
 -define(party_exists(),
     {exception, #payproc_PartyExists{}}).
+-define(party_not_exists_yet(),
+    {exception, #payproc_PartyNotExistsYet{}}).
 -define(party_blocked(Reason),
     {exception, #payproc_InvalidPartyStatus{status = {blocking, ?blocked(Reason)}}}).
 -define(party_unblocked(Reason),
@@ -366,7 +368,7 @@ party_retrieval(C) ->
 party_revisioning(C) ->
     Client = ?c(client, C),
     T0 = hg_datetime:add_interval(hg_datetime:format_now(), {undefined, undefined, -1}), % yesterday
-    ?invalid_request([<<"Too early">>]) = hg_client_party:checkout(T0, Client),
+    ?party_not_exists_yet() = hg_client_party:checkout(T0, Client),
     Party1 = hg_client_party:get(Client),
     T1 = hg_datetime:format_now(),
     Party2 = party_suspension(C),

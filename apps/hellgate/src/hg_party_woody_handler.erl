@@ -35,7 +35,7 @@ handle_function_('Checkout', [UserInfo, PartyID, Timestamp], _Opts) ->
         hg_party_machine:checkout(PartyID, Timestamp)
     catch
         error:revision_not_found ->
-            throw(#'InvalidRequest'{errors = [<<"Too early">>]})
+            throw(#payproc_PartyNotExistsYet{})
     end;
 
 handle_function_('Get', [UserInfo, PartyID], _Opts) ->
