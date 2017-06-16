@@ -7,6 +7,7 @@
 
 -export([create/2]).
 -export([get/1]).
+-export([checkout/2]).
 -export([block/2]).
 -export([unblock/2]).
 -export([suspend/1]).
@@ -92,6 +93,12 @@ create(PartyParams, Client) ->
 
 get(Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', []})).
+
+-spec checkout(dmsl_base_thrift:'Timestamp'(), pid()) ->
+    dmsl_domain_thrift:'Party'() | woody_error:business_error().
+
+checkout(Timestamp, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'Checkout', [Timestamp]})).
 
 -spec block(binary(), pid()) ->
     dmsl_payment_processing_thrift:'ClaimResult'() | woody_error:business_error().

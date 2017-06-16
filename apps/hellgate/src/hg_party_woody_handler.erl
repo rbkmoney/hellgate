@@ -27,6 +27,17 @@ handle_function_('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
     ok = assert_party_accessible(PartyID),
     hg_party_machine:start(PartyID, PartyParams);
 
+handle_function_('Checkout', [UserInfo, PartyID, Timestamp], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    try
+        hg_party_machine:checkout(PartyID, Timestamp)
+    catch
+        error:revision_not_found ->
+            throw(#'InvalidRequest'{errors = [<<"Too early">>]})
+    end;
+
 handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
