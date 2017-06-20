@@ -855,45 +855,38 @@ get_st_meta(_) ->
 %%
 
 -spec get_log_params(ev(), st()) ->
-    undefined | #{type := invoice_payment_event, params := list(), message := string()}.
+    #{type := invoice_payment_event, params := list(), message := string()}.
 
-get_log_params(?payment_ev(Event), State) ->
-    {EventType, Payment, Params} = case Event of
-        ?payment_started(P, _, C) ->
-            {invoice_payment_started, P, [
-                {accounts, get_partial_remainders(C)}
-            ]};
-        ?payment_status_changed(_, {Status, _}) ->
-            P = get_payment(State),
-            C = get_cashflow(P),
-            {invoice_payment_status_changed, P, [
-                {status, Status},
-                {accounts, get_partial_remainders(C)}
-            ]};
-        ?payment_bound(_, _) ->
-            {invoice_payment_bound, get_payment(State), []};
-        ?payment_interaction_requested(_, _) ->
-            {invoice_payment_interaction_requested, get_payment(State), []};
-        ?payment_inspected(_, _) ->
-            {invoice_payment_inspected, get_payment(State), []};
-        _ ->
-            %% TO DO: handle adjustment events
-            {undefined, undefined, undefined}
-    end,
-    case {EventType, Payment, Params} of
-        {undefined, _, _} ->
-            undefined;
-        _ ->
-            #domain_InvoicePayment{
-                id = ID,
-                cost = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency})
-            } = Payment,
-            #{
-                type => invoice_payment_event,
-                params => [{type, EventType}, {id, ID}, {cost, [{amount, Amount}, {currency, Currency}]} | Params],
-                message => get_message(EventType)
-            }
-    end.
+get_log_params(?payment_ev(?payment_started(Payment, _, Cashflow)), _) ->
+    Params = [{accounts, get_partial_remainders(Cashflow)}],
+    make_log_params(invoice_payment_started, Payment, Params);
+get_log_params(?payment_ev(?payment_status_changed(_, {Status, _})), State) ->
+    Payment = get_payment(State),
+    Cashflow = get_cashflow(Payment),
+    Params = [{status, Status}, {accounts, get_partial_remainders(Cashflow)}],
+    make_log_params(invoice_payment_status_changed, Payment, Params);
+get_log_params(?payment_ev(?payment_bound(_, _)), State) ->
+    Payment = get_payment(State),
+    make_log_params(invoice_payment_bound, Payment, []);
+get_log_params(?payment_ev(?payment_interaction_requested(_, _)), State) ->
+    Payment = get_payment(State),
+    make_log_params(invoice_payment_interaction_requested, Payment, []);
+get_log_params(?payment_ev(?payment_inspected(_, _)), State) ->
+    Payment = get_payment(State),
+    make_log_params(invoice_payment_inspected, Payment, []);
+get_log_params(_, _) ->
+    #{}.
+
+make_log_params(EventType, Payment, Params) ->
+    #domain_InvoicePayment{
+        id = ID,
+        cost = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency})
+    } = Payment,
+    #{
+        type => invoice_payment_event,
+        params => [{type, EventType}, {id, ID}, {cost, [{amount, Amount}, {currency, Currency}]} | Params],
+        message => get_message(EventType)
+    }.
 
 get_partial_remainders(CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),

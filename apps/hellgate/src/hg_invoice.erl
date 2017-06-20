@@ -677,22 +677,24 @@ get_log_params({public, ?invoice_ev(Event)}, St) ->
             #st{invoice = Invoice} = St,
             {invoice_status_changed, Status, Invoice}
     end,
-    #{type => invoice_event,
-      params => [{type, EventType}, {status, InvoiceStatus} | get_invoice_params(InvoiceState)],
-      message => get_message(EventType)};
+    #{
+        type => invoice_event,
+        params => [{type, EventType}, {status, InvoiceStatus} | get_invoice_params(InvoiceState)],
+        message => get_message(EventType)
+    };
 get_log_params({public, {{payment, PaymentID}, InvoicePayment}}, #st{invoice = Invoice} = St) ->
     InvoicePaymentState = try_get_payment_session(PaymentID, St),
     Params = hg_invoice_payment:get_log_params(InvoicePayment, InvoicePaymentState),
-    case Params of
-        undefined -> #{};
-        _ ->
-            maps:update_with(
-                params,
-                fun (V) ->
-                    [{invoice, get_invoice_params(Invoice)} | V]
-                end,
-                Params
-            )
+    try maps:update_with(
+        params,
+        fun (V) ->
+            [{invoice, get_invoice_params(Invoice)} | V]
+        end,
+        Params
+    )
+    catch
+        error:{badkey, params} ->
+            #{}
     end;
 get_log_params(_, _) ->
     #{}.
