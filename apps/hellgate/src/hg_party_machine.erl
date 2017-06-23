@@ -400,7 +400,7 @@ assert_claim_modification_allowed(ID, Revision, {St, _}) ->
     ok = hg_claim:assert_revision(Claim, Revision),
     ok = hg_claim:assert_pending(Claim).
 
-assert_claims_conflict(Claim, ClaimsPending, St) ->
+assert_claims_not_conflict(Claim, ClaimsPending, St) ->
     Timestamp = get_st_timestamp(St),
     Revision = get_st_revision(St),
     Party = get_st_party(St),
@@ -426,7 +426,7 @@ create_claim(Changeset, StEvents = {St, _}) ->
     Claim = hg_claim:create(get_next_claim_id(St), Changeset, get_st_party(St), Timestamp, Revision),
     ClaimsPending = get_st_pending_claims(St),
     % Check for conflicts with other pending claims
-    ok = assert_claims_conflict(Claim, ClaimsPending, St),
+    ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
     % Test if we can safely accept proposed changes.
     case hg_claim:is_need_acceptance(Claim) of
         false ->
@@ -453,7 +453,7 @@ update_claim(ID, Changeset, StEvents = {St, _}) ->
     ),
     ClaimsPending = get_st_pending_claims(St),
     % Check for conflicts with other pending claims
-    ok = assert_claims_conflict(Claim, ClaimsPending, St),
+    ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
     Event = ?party_ev(?claim_updated(ID, Changeset, hg_claim:get_revision(Claim), Timestamp)),
     apply_state_event(Event, StEvents).
 

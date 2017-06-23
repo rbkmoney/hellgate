@@ -32,7 +32,7 @@
     payment_tool=> dmsl_domain_thrift:'PaymentTool'(),
     party       => dmsl_domain_thrift:'Party'(),
     shop        => dmsl_domain_thrift:'Shop'(),
-    risk_score  => high | low
+    risk_score  => dmsl_domain_thrift:'RiskScore'()
 }.
 
 -export_type([varset/0]).

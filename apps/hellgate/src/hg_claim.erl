@@ -353,58 +353,56 @@ squash_effects([], Squashed) ->
 
 squash_contract_effect(?contract_effect(_, {created, _}) = Effect, Squashed) ->
     Squashed ++ [Effect];
-squash_contract_effect(?contract_effect(ID, Mod) = Effect, Squashed) ->
+squash_contract_effect(?contract_effect(ContractID, Mod) = Effect, Squashed) ->
     % Try to find contract creation in squashed effects
-    {AnyEffects, ProbablyCreated} = lists:splitwith(
-        fun(E) ->
-            case E of
-                ?contract_effect(ID, {created, _}) ->
-                    false;
-                _ ->
-                    true
-            end
+    {ReversedEffects, AppliedFlag} = lists:foldl(
+        fun
+            (?contract_effect(ID, {created, Contract}), {Acc, false}) when ID =:= ContractID ->
+                % Contract creation found, lets update it with this claim effect
+                {[?contract_effect(ID, {created, update_contract(Mod, Contract)}) | Acc], true};
+            (?contract_effect(ID, {created, _}), {_, true}) when ID =:= ContractID ->
+                % One more created contract with same id - error.
+                raise_invalid_changeset({contract_already_exists, ID});
+            (E, {Acc, Flag}) ->
+                {[E | Acc], Flag}
         end,
+        {[], false},
         Squashed
     ),
-    case ProbablyCreated of
-        % Contract creation found, lets update it with this claim effect
-        [?contract_effect(ID, {created, Contract}) | Others] ->
-            AnyEffects ++ [
-                ?contract_effect(ID, {created, update_contract(Mod, Contract)}) |
-                Others
-            ];
-        % Contract creation not found, so this contract created earlier and we shuold just
-        % add this claim effect to the end of squashed effects
-        [] ->
-            AnyEffects ++ [Effect]
+    case AppliedFlag of
+        true ->
+            lists:reverse(ReversedEffects);
+        false ->
+            % Contract creation not found, so this contract created earlier and we shuold just
+            % add this claim effect to the end of squashed effects
+            lists:reverse([Effect | ReversedEffects])
     end.
 
 squash_shop_effect(?shop_effect(_, {created, _}) = Effect, Squashed) ->
     Squashed ++ [Effect];
-squash_shop_effect(?shop_effect(ID, Mod) = Effect, Squashed) ->
+squash_shop_effect(?shop_effect(ShopID, Mod) = Effect, Squashed) ->
     % Try to find shop creation in squashed effects
-    {AnyEffects, ProbablyCreated} = lists:splitwith(
-        fun(E) ->
-            case E of
-                ?shop_effect(ID, {created, _}) ->
-                    false;
-                _ ->
-                    true
-            end
+    {ReversedEffects, AppliedFlag} = lists:foldl(
+        fun
+            (?shop_effect(ID, {created, Shop}), {Acc, false}) when ID =:= ShopID ->
+                % Shop creation found, lets update it with this claim effect
+                {[?shop_effect(ID, {created, update_shop(Mod, Shop)}) | Acc], true};
+            (?shop_effect(ID, {created, _}), {_, true}) when ID =:= ShopID ->
+                % One more shop with same id - error.
+                raise_invalid_changeset({shop_already_exists, ID});
+            (E, {Acc, Flag}) ->
+                {[E | Acc], Flag}
         end,
+        {[], false},
         Squashed
     ),
-    case ProbablyCreated of
-        % Shop creation found, lets update it with this claim effect
-        [?shop_effect(ID, {created, Shop}) | Others] ->
-            AnyEffects ++ [
-                ?shop_effect(ID, {created, update_shop(Mod, Shop)}) |
-                Others
-            ];
-        % Shop creation not found, so this shop created earlier and we shuold just
-        % add this claim effect to the end of squashed effects
-        [] ->
-            AnyEffects ++ [Effect]
+    case AppliedFlag of
+        true ->
+            lists:reverse(ReversedEffects);
+        false ->
+            % Shop creation not found, so this shop created earlier and we shuold just
+            % add this claim effect to the end of squashed effects
+            lists:reverse([Effect | ReversedEffects])
     end.
 
 apply_effects(Effects, Timestamp, Party) ->

@@ -30,7 +30,6 @@ services:
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
-      - ./log:/opt/machinegun/log/
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s

@@ -101,7 +101,7 @@ create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}, Timestam
         id              = PartyID,
         created_at      = Timestamp,
         contact_info    = ContactInfo,
-        blocking        = ?unblocked(<<>>, Timestamp),
+        blocking        = ?unblocked(Timestamp),
         suspension      = ?active(Timestamp),
         contracts       = #{},
         shops           = #{}
@@ -363,7 +363,7 @@ create_shop(ID, ShopParams, Timestamp) ->
     #domain_Shop{
         id              = ID,
         created_at      = Timestamp,
-        blocking        = ?unblocked(<<>>, Timestamp),
+        blocking        = ?unblocked(Timestamp),
         suspension      = ?active(Timestamp),
         category        = ShopParams#payproc_ShopParams.category,
         details         = ShopParams#payproc_ShopParams.details,
@@ -752,32 +752,33 @@ assert_shop_contract_valid(
         #domain_ShopAccount{currency = CurrencyRef} ->
             Currencies = reduce_selector_to_value(CurrencySelector, #{}, Revision),
             _ = ordsets:is_element(CurrencyRef, Currencies) orelse
-                % raise_invalid_request(<<"currency is not permitted by contract">>);
-                hg_claim:raise_invalid_changeset(
-                    {contract_terms_violated, #payproc_ContractTermsViolated{
-                        shop_id = ID,
-                        contract_id = get_contract_id(Contract),
-                        terms = #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-                            currencies = CurrencySelector
-                        }}
-                    }}
+                raise_contract_terms_violated(
+                    ID,
+                    get_contract_id(Contract),
+                    #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}}
                 );
         undefined ->
             ok
     end,
     Categories = reduce_selector_to_value(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse
-        %raise_invalid_request(<<"category is not permitted by contract">>),
-        hg_claim:raise_invalid_changeset(
-            {contract_terms_violated, #payproc_ContractTermsViolated{
-                shop_id = ID,
-                contract_id = get_contract_id(Contract),
-                terms = #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-                    categories = CategorySelector
-                }}
-            }}
+        raise_contract_terms_violated(
+            ID,
+            get_contract_id(Contract),
+            #domain_TermSet{payments = #domain_PaymentsServiceTerms{categories = CategorySelector}}
         ),
     ok.
+
+-spec raise_contract_terms_violated(shop_id(), contract_id(), dmsl_domain_thrift:'TermSet'()) -> no_return().
+
+raise_contract_terms_violated(ShopID, ContractID, Terms) ->
+    hg_claim:raise_invalid_changeset(
+        {contract_terms_violated, #payproc_ContractTermsViolated{
+            shop_id = ShopID,
+            contract_id = ContractID,
+            terms = Terms
+        }}
+    ).
 
 assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = PayoutToolID}, Contract) ->
     case get_contract_payout_tool(PayoutToolID, Contract) of

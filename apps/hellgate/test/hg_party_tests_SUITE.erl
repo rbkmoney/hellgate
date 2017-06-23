@@ -1,7 +1,9 @@
 -module(hg_party_tests_SUITE).
 
 -include("hg_ct_domain.hrl").
+-include("party_events.hrl").
 -include_lib("common_test/include/ct.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -40,6 +42,7 @@
 
 -export([shop_not_found_on_retrieval/1]).
 -export([shop_creation/1]).
+-export([shop_already_exists/1]).
 -export([shop_update/1]).
 -export([shop_update_before_confirm/1]).
 -export([shop_update_with_bad_params/1]).
@@ -62,7 +65,9 @@
 
 -export([contract_not_found/1]).
 -export([contract_creation/1]).
+-export([contract_already_exists/1]).
 -export([contract_termination/1]).
+-export([contract_already_terminated/1]).
 -export([contract_expiration/1]).
 -export([contract_legal_agreement_binding/1]).
 -export([contract_payout_tool_creation/1]).
@@ -132,7 +137,9 @@ groups() ->
             party_creation,
             contract_not_found,
             contract_creation,
+            contract_already_exists,
             contract_termination,
+            contract_already_terminated,
             contract_expiration,
             contract_legal_agreement_binding,
             contract_payout_tool_creation,
@@ -146,6 +153,7 @@ groups() ->
             shop_update_before_confirm,
             shop_update_with_bad_params,
             shop_creation,
+            shop_already_exists,
             % shop_activation,
             shop_update,
             {group, shop_blocking_suspension}
@@ -206,9 +214,6 @@ end_per_suite(C) ->
 
 %% tests
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include("party_events.hrl").
-
 -spec init_per_group(group_name(), config()) -> config().
 
 init_per_group(shop_blocking_suspension, C) ->
@@ -245,8 +250,6 @@ end_per_testcase(_Name, _C) ->
     {exception, #payproc_InvalidUser{}}).
 -define(invalid_request(Errors),
     {exception, #'InvalidRequest'{errors = Errors}}).
--define(invalid_changeset(Reason),
-    {exception, #payproc_InvalidChangeset{reason = Reason}}).
 
 -define(party_not_found(),
     {exception, #payproc_PartyNotFound{}}).
@@ -290,6 +293,11 @@ end_per_testcase(_Name, _C) ->
     {exception, #payproc_ClaimNotFound{}}).
 -define(invalid_claim_status(Status),
     {exception, #payproc_InvalidClaimStatus{status = Status}}).
+-define(invalid_changeset(Reason),
+    {exception, #payproc_InvalidChangeset{reason = Reason}}).
+
+-define(REAL_SHOP_ID, <<"SHOP1">>).
+-define(REAL_CONTRACT_ID, <<"CONTRACT1">>).
 
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
@@ -298,6 +306,7 @@ end_per_testcase(_Name, _C) ->
 
 -spec shop_not_found_on_retrieval(config()) -> _ | no_return().
 -spec shop_creation(config()) -> _ | no_return().
+-spec shop_already_exists(config()) -> _ | no_return().
 -spec shop_update(config()) -> _ | no_return().
 -spec shop_update_before_confirm(config()) -> _ | no_return().
 -spec shop_update_with_bad_params(config()) -> _ | no_return().
@@ -340,7 +349,9 @@ end_per_testcase(_Name, _C) ->
 
 -spec contract_not_found(config()) -> _ | no_return().
 -spec contract_creation(config()) -> _ | no_return().
+-spec contract_already_exists(config()) -> _ | no_return().
 -spec contract_termination(config()) -> _ | no_return().
+-spec contract_already_terminated(config()) -> _ | no_return().
 -spec contract_expiration(config()) -> _ | no_return().
 -spec contract_legal_agreement_binding(config()) -> _ | no_return().
 -spec contract_payout_tool_creation(config()) -> _ | no_return().
@@ -387,11 +398,10 @@ contract_not_found(C) ->
     ?contract_not_found() = hg_client_party:get_contract(<<"666">>, Client).
 
 contract_creation(C) ->
-    % FIXME check for creation with already existed ID, maybe in separate test
     Client = ?c(client, C),
     ContractParams = hg_ct_helper:make_battle_ready_contract_params(),
     PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
-    ContractID = <<"CONTRACT1">>,
+    ContractID = ?REAL_CONTRACT_ID,
     PayoutToolID = <<"1">>,
     Changeset = [
         ?contract_modification(ContractID, {creation, ContractParams}),
@@ -402,8 +412,14 @@ contract_creation(C) ->
     #domain_Contract{id = ContractID, payout_tools = PayoutTools} = hg_client_party:get_contract(ContractID, Client),
     true = lists:keymember(PayoutToolID, #domain_PayoutTool.id, PayoutTools).
 
+contract_already_exists(C) ->
+    Client = ?c(client, C),
+    ContractParams = hg_ct_helper:make_battle_ready_contract_params(),
+    ContractID = ?REAL_CONTRACT_ID,
+    Changeset = [?contract_modification(ContractID, {creation, ContractParams})],
+    ?invalid_changeset({contract_already_exists, ContractID}) = hg_client_party:create_claim(Changeset, Client).
+
 contract_termination(C) ->
-    % FIXME try to terminate already terminated contract, maube in separate test
     Client = ?c(client, C),
     ContractID = <<"TESTCONTRACT">>,
     Changeset = [?contract_modification(ContractID, ?contract_termination(hg_datetime:format_now(), <<"WHY NOT?!">>))],
@@ -414,11 +430,19 @@ contract_termination(C) ->
         status = {terminated, _}
     } = hg_client_party:get_contract(ContractID, Client).
 
+contract_already_terminated(C) ->
+    Client = ?c(client, C),
+    ContractID = <<"TESTCONTRACT">>,
+    Changeset = [
+        ?contract_modification(ContractID, ?contract_termination(hg_datetime:format_now(), <<"JUST TO BE SURE.">>))
+    ],
+    ?invalid_changeset({contract_status_invalid, _}) = hg_client_party:create_claim(Changeset, Client).
+
 contract_expiration(C) ->
     Client = ?c(client, C),
     ContractParams = hg_ct_helper:make_battle_ready_contract_params(?tmpl(3)),
     PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
-    ContractID = <<"CONTRACT2">>,
+    ContractID = <<"CONTRACT_EXPIRED">>,
     Changeset = [
         ?contract_modification(ContractID, {creation, ContractParams}),
         ?contract_modification(ContractID, ?payout_tool_creation(<<"1">>, PayoutToolParams))
@@ -433,7 +457,7 @@ contract_expiration(C) ->
 contract_legal_agreement_binding(C) ->
     % FIXME how about already terminated contract?
     Client = ?c(client, C),
-    ContractID = <<"CONTRACT1">>,
+    ContractID = ?REAL_CONTRACT_ID,
     LA = #domain_LegalAgreement{
         signed_at = hg_datetime:format_now(),
         legal_agreement_id = <<"20160123-0031235-OGM/GDM">>
@@ -448,7 +472,7 @@ contract_legal_agreement_binding(C) ->
 
 contract_payout_tool_creation(C) ->
     Client = ?c(client, C),
-    ContractID = <<"CONTRACT1">>,
+    ContractID = ?REAL_CONTRACT_ID,
     PayoutToolID = <<"2">>,
     PayoutToolParams = #payproc_PayoutToolParams{
         currency = ?cur(<<"RUB">>),
@@ -470,7 +494,7 @@ contract_payout_tool_creation(C) ->
 
 contract_adjustment_creation(C) ->
     Client = ?c(client, C),
-    ContractID = <<"CONTRACT1">>,
+    ContractID = ?REAL_CONTRACT_ID,
     ID = <<"ADJ1">>,
     AdjustmentParams = #payproc_ContractAdjustmentParams{
         template = #domain_ContractTemplateRef{id = 2}
@@ -487,7 +511,7 @@ contract_adjustment_creation(C) ->
 contract_adjustment_expiration(C) ->
     Client = ?c(client, C),
     hg_context:set(woody_context:new()),
-    ContractID = <<"CONTRACT1">>,
+    ContractID = ?REAL_CONTRACT_ID,
     ID = <<"ADJ2">>,
     Terms = hg_party:get_payments_service_terms(
         hg_client_party:get_contract(ContractID, Client),
@@ -519,8 +543,8 @@ shop_not_found_on_retrieval(C) ->
 shop_creation(C) ->
     Client = ?c(client, C),
     Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
-    ContractID = <<"CONTRACT1">>,
-    ShopID = <<"SHOP1">>,
+    ContractID = ?REAL_CONTRACT_ID,
+    ShopID = ?REAL_SHOP_ID,
     Params = #payproc_ShopParams{
         category = ?cat(2),
         location = {url, <<"https://somename.somedomain/p/123?redirect=1">>},
@@ -546,9 +570,24 @@ shop_creation(C) ->
         details = Details
     } = hg_client_party:get_shop(ShopID, Client).
 
+shop_already_exists(C) ->
+    Client = ?c(client, C),
+    Details = hg_ct_helper:make_shop_details(<<"THRlFT SHOP">>, <<"Hot. Fancy. Almost like thrift.">>),
+    ContractID = ?REAL_CONTRACT_ID,
+    ShopID = ?REAL_SHOP_ID,
+    Params = #payproc_ShopParams{
+        category = ?cat(2),
+        location = {url, <<"https://s0mename.s0med0main">>},
+        details  = Details,
+        contract_id = ContractID,
+        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
+    },
+    Changeset = [?shop_modification(ShopID, {creation, Params})],
+    ?invalid_changeset({shop_already_exists, ShopID}) = hg_client_party:create_claim(Changeset, Client).
+
 shop_update(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     Details = hg_ct_helper:make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
     Changeset1 = [?shop_modification(ShopID, {details_modification, Details})],
     _Claim1 = assert_claim_accepted(hg_client_party:create_claim(Changeset1, Client), Client),
@@ -562,7 +601,7 @@ shop_update(C) ->
 
 shop_update_before_confirm(C) ->
     Client = ?c(client, C),
-    ContractID = <<"CONTRACT1">>,
+    ContractID = ?REAL_CONTRACT_ID,
     ShopID = <<"SHOP2">>,
     Params = #payproc_ShopParams{
         location = {url, <<"">>},
@@ -599,18 +638,19 @@ shop_update_with_bad_params(C) ->
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
 
-    #payproc_Claim{id = ID1, revision = Rev1} = assert_claim_pending(
+    Claim1 = #payproc_Claim{id = ID1, revision = Rev1} = assert_claim_pending(
         hg_client_party:create_claim(
             [?shop_modification(ShopID, {category_modification, ?cat(1)})],
             Client
         ),
         Client
     ),
-    ?invalid_changeset(_CategoryError) = hg_client_party:accept_claim(ID1, Rev1, Client).
+    ?invalid_changeset(_CategoryError) = hg_client_party:accept_claim(ID1, Rev1, Client),
+    ok = revoke_claim(Claim1, Client).
 
 claim_acceptance(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     Details = hg_ct_helper:make_shop_details(<<"McDolan">>),
     Location = {url, <<"very_suspicious_url">>},
     Changeset = [
@@ -623,7 +663,7 @@ claim_acceptance(C) ->
 
 claim_denial(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     Shop = hg_client_party:get_shop(ShopID, Client),
     Location = {url, <<"Pr0nHub">>},
     Changeset = [?shop_modification(ShopID, {location_modification, Location})],
@@ -635,7 +675,7 @@ claim_revocation(C) ->
     Client = ?c(client, C),
     Party = hg_client_party:get(Client),
     ShopID = <<"SHOP3">>,
-    ContractID = <<"CONTRACT1">>,
+    ContractID = ?REAL_CONTRACT_ID,
     Params = #payproc_ShopParams{
         location = {url, <<"https://url3">>},
         details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
@@ -650,7 +690,7 @@ claim_revocation(C) ->
 
 complex_claim_acceptance(C) ->
     Client = ?c(client, C),
-    ContractID = <<"CONTRACT1">>,
+    ContractID = ?REAL_CONTRACT_ID,
     ShopID1 = <<"SHOP4">>,
     Params1 = #payproc_ShopParams{
         location = {url, <<"https://url4">>},
@@ -809,7 +849,7 @@ party_already_active(C) ->
 
 shop_blocking(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     Reason = <<"i said so">>,
     ok = hg_client_party:block_shop(ShopID, Reason, Client),
     ?shop_blocking(ShopID, ?blocked(Reason, _)) = next_event(Client),
@@ -817,7 +857,7 @@ shop_blocking(C) ->
 
 shop_unblocking(C) ->
     Client  = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     Reason = <<"enough">>,
     ok = hg_client_party:unblock_shop(ShopID, Reason, Client),
     ?shop_blocking(ShopID, ?unblocked(Reason, _)) = next_event(Client),
@@ -825,46 +865,46 @@ shop_unblocking(C) ->
 
 shop_already_blocked(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     ?shop_blocked(_) = hg_client_party:block_shop(ShopID, <<"too much">>, Client).
 
 shop_already_unblocked(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     ?shop_unblocked(_) = hg_client_party:unblock_shop(ShopID, <<"too free">>, Client).
 
 shop_blocked_on_suspend(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     ?shop_blocked(_) = hg_client_party:suspend_shop(ShopID, Client).
 
 shop_suspension(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     ok = hg_client_party:suspend_shop(ShopID, Client),
     ?shop_suspension(ShopID, ?suspended(_)) = next_event(Client),
     ?shop_w_status(ShopID, _, ?suspended(_)) = hg_client_party:get_shop(ShopID, Client).
 
 shop_activation(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     ok = hg_client_party:activate_shop(ShopID, Client),
     ?shop_suspension(ShopID, ?active(_)) = next_event(Client),
     ?shop_w_status(ShopID, _, ?active(_)) = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_suspended(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     ?shop_suspended() = hg_client_party:suspend_shop(ShopID, Client).
 
 shop_already_active(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     ?shop_active() = hg_client_party:activate_shop(ShopID, Client).
 
 shop_account_set_retrieval(C) ->
     Client = ?c(client, C),
-    ShopID = <<"SHOP1">>,
+    ShopID = ?REAL_SHOP_ID,
     S = #domain_ShopAccount{} = hg_client_party:get_shop_account(ShopID, Client),
     {save_config, S}.
 

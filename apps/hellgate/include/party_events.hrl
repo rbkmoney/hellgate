@@ -14,6 +14,7 @@
 
 -define(blocked(Reason, Since), {blocked, #domain_Blocked{reason = Reason, since = Since}}).
 -define(unblocked(Reason, Since), {unblocked, #domain_Unblocked{reason = Reason, since = Since}}).
+-define(unblocked(Since), {unblocked, #domain_Unblocked{reason = <<"">>, since = Since}}).
 
 -define(active(Since), {active, #domain_Active{since = Since}}).
 -define(suspended(Since), {suspended, #domain_Suspended{since = Since}}).
