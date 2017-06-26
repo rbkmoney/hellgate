@@ -662,10 +662,10 @@ log_events(Events, St) ->
 
 log_event(Event, St) ->
     case get_log_params(Event, St) of
-        #{type := Type, params := Params, message := Message} ->
+        {ok, #{type := Type, params := Params, message := Message}} ->
             _ = lager:log(info, [{Type, Params}], Message),
             ok;
-        _ ->
+        undefined ->
             ok
     end.
 
@@ -677,27 +677,29 @@ get_log_params({public, ?invoice_ev(Event)}, St) ->
             #st{invoice = Invoice} = St,
             {invoice_status_changed, Status, Invoice}
     end,
-    #{
+    Result = #{
         type => invoice_event,
         params => [{type, EventType}, {status, InvoiceStatus} | get_invoice_params(InvoiceState)],
         message => get_message(EventType)
-    };
+    },
+    {ok, Result};
 get_log_params({public, {{payment, PaymentID}, InvoicePayment}}, #st{invoice = Invoice} = St) ->
     InvoicePaymentState = try_get_payment_session(PaymentID, St),
-    Params = hg_invoice_payment:get_log_params(InvoicePayment, InvoicePaymentState),
-    try maps:update_with(
-        params,
-        fun (V) ->
-            [{invoice, get_invoice_params(Invoice)} | V]
-        end,
-        Params
-    )
-    catch
-        error:{badkey, params} ->
-            #{}
+    case hg_invoice_payment:get_log_params(InvoicePayment, InvoicePaymentState) of
+        {ok, Params} ->
+            Result = maps:update_with(
+                params,
+                fun (V) ->
+                    [{invoice, get_invoice_params(Invoice)} | V]
+                end,
+                Params
+            ),
+            {ok, Result};
+        undefined ->
+            undefined
     end;
 get_log_params(_, _) ->
-    #{}.
+    undefined.
 
 get_invoice_params(Invoice) ->
     #domain_Invoice{

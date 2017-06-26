@@ -855,7 +855,7 @@ get_st_meta(_) ->
 %%
 
 -spec get_log_params(ev(), st()) ->
-    #{type := invoice_payment_event, params := list(), message := string()}.
+    {ok, #{type := invoice_payment_event, params := list(), message := string()}} | undefined.
 
 get_log_params(?payment_ev(?payment_started(Payment, _, Cashflow)), _) ->
     Params = [{accounts, get_partial_remainders(Cashflow)}],
@@ -875,18 +875,19 @@ get_log_params(?payment_ev(?payment_inspected(_, _)), State) ->
     Payment = get_payment(State),
     make_log_params(invoice_payment_inspected, Payment, []);
 get_log_params(_, _) ->
-    #{}.
+    undefined.
 
 make_log_params(EventType, Payment, Params) ->
     #domain_InvoicePayment{
         id = ID,
         cost = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency})
     } = Payment,
-    #{
+    Result = #{
         type => invoice_payment_event,
         params => [{type, EventType}, {id, ID}, {cost, [{amount, Amount}, {currency, Currency}]} | Params],
         message => get_message(EventType)
-    }.
+    },
+    {ok, Result}.
 
 get_partial_remainders(CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
