@@ -52,10 +52,11 @@ get_api_child_spec(MachineHandlers) ->
     woody_server:child_spec(
         ?MODULE,
         #{
-            ip => Ip,
-            port => genlib_app:env(?MODULE, port, 8022),
+            ip            => Ip,
+            port          => genlib_app:env(?MODULE, port, 8022),
+            net_opts      => genlib_app:env(?MODULE, net_opts, []),
             event_handler => hg_woody_event_handler,
-            handlers => hg_machine:get_service_handlers(MachineHandlers) ++ [
+            handlers      => hg_machine:get_service_handlers(MachineHandlers) ++ [
                 construct_service_handler(party_management, hg_party_woody_handler),
                 construct_service_handler(invoicing, hg_invoice),
                 construct_service_handler(proxy_host_provider, hg_proxy_host_provider),

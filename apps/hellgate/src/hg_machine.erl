@@ -152,8 +152,7 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
--spec handle_function_(func(), woody:args(), #{ns := ns()}) ->
-    term() | no_return().
+-spec handle_function_(func(), woody:args(), #{ns := ns()}) -> term() | no_return().
 
 handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
     #'SignalArgs'{signal = {Type, Signal}, machine = #'Machine'{id = ID} = Machine} = Args,

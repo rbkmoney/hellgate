@@ -8,6 +8,8 @@
 -export([set_deadline/2]).
 -export([set_timer/1]).
 -export([set_timer/2]).
+-export([unset_timer/0]).
+-export([unset_timer/1]).
 -export([set_tag/1]).
 -export([set_tag/2]).
 
@@ -65,7 +67,18 @@ set_timer(Timer) ->
 -spec set_timer(timer(), t()) -> t().
 
 set_timer(Timer, Action = #'ComplexAction'{}) ->
-    Action#'ComplexAction'{set_timer = #'SetTimerAction'{timer = Timer}}.
+    % TODO pass range and processing timeout explicitly too
+    Action#'ComplexAction'{timer = {set_timer, #'SetTimerAction'{timer = Timer}}}.
+
+-spec unset_timer() -> t().
+
+unset_timer() ->
+    unset_timer(new()).
+
+-spec unset_timer(t()) -> t().
+
+unset_timer(Action = #'ComplexAction'{}) ->
+    Action#'ComplexAction'{timer = {unset_timer, #'UnsetTimerAction'{}}}.
 
 -spec set_tag(tag()) -> t().
 

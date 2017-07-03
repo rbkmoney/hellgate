@@ -5,10 +5,7 @@
 -export([start_apps/1]).
 
 -export([create_party_and_shop/1]).
--export([create_contract/2]).
--export([create_shop/4]).
--export([create_shop/5]).
--export([set_shop_proxy/4]).
+-export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
 -export([get_first_payout_tool_id/2]).
@@ -132,13 +129,12 @@ start_apps(Apps) ->
 -include_lib("hellgate/include/party_events.hrl").
 
 -type party_id()       :: dmsl_domain_thrift:'PartyID'().
+-type account_id()     :: dmsl_domain_thrift:'AccountID'().
+-type account()        :: map().
 -type contract_id()    :: dmsl_domain_thrift:'ContractID'().
 -type shop_id()        :: dmsl_domain_thrift:'ShopID'().
--type category()       :: dmsl_domain_thrift:'CategoryRef'().
 -type cost()           :: integer() | {integer(), binary()}.
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
--type proxy_ref()      :: dmsl_domain_thrift:'ProxyRef'().
--type proxy_options()  :: dmsl_domain_thrift:'ProxyOptions'().
 -type timestamp()      :: integer().
 
 -spec create_party_and_shop(Client :: pid()) ->
@@ -156,62 +152,6 @@ make_party_params() ->
             email = <<?MODULE_STRING>>
         }
     }.
-
--spec create_contract(dmsl_payment_processing_thrift:'ContractParams'(), Client :: pid()) ->
-    contract_id().
-
-create_contract(_, _) -> ok.
-% create_contract(#payproc_ContractParams{} = Params, Client) ->
-%     #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_contract(Params, Client),
-%     #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
-%     {_, #domain_Contract{id = ContractID}} = lists:keyfind(contract_creation, 1, Changeset),
-%     ok = hg_client_party:accept_claim(ClaimID, Client),
-%     ContractID.
-
--spec create_shop(contract_id(), category(), binary(), Client :: pid()) ->
-    shop_id().
-
-create_shop(ContractID, Category, Name, Client) ->
-    create_shop(ContractID, Category, Name, undefined, Client).
-
--spec create_shop(contract_id(), category(), binary(), binary(), Client :: pid()) ->
-    shop_id().
-
-create_shop(_, _, _, _, _) -> ok.
-% create_shop(ContractID, Category, Name, Description, Client) ->
-%     PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
-%     Params = #payproc_ShopParams{
-%         contract_id       = ContractID,
-%         payout_tool_id    = PayoutToolID,
-%         category          = Category,
-%         details           = make_shop_details(Name, Description)
-%     },
-%     #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_shop(Params, Client),
-%     #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
-%     {_, #domain_Shop{id = ShopID}} = lists:keyfind(shop_creation, 1, Changeset),
-%     ok = hg_client_party:accept_claim(ClaimID, Client),
-%     #payproc_ClaimResult{} = hg_client_party:activate_shop(ShopID, Client),
-%     ok = flush_events(Client),
-%     ShopID.
-
--spec set_shop_proxy(shop_id(), proxy_ref(), proxy_options(), Client :: pid()) ->
-    ok.
-
-set_shop_proxy(_, _, _, _) ->
-% set_shop_proxy(ShopID, ProxyRef, ProxyOptions, Client) ->
-    % Proxy = #domain_Proxy{ref = ProxyRef, additional = ProxyOptions},
-    % Update = #payproc_ShopUpdate{proxy = Proxy},
-    % #payproc_ClaimResult{status = ?accepted(_, _)} = hg_client_party:update_shop(ShopID, Update, Client),
-    % ok = flush_events(Client),
-    ok.
-
-% flush_events(Client) ->
-%     case hg_client_party:pull_event(500, Client) of
-%         timeout ->
-%             ok;
-%         _Event ->
-%             flush_events(Client)
-%     end.
 
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().
@@ -245,6 +185,15 @@ get_first_battle_ready_contract_id(Client) ->
         [] ->
             error(not_found)
     end.
+
+-spec get_account(account_id()) -> account().
+
+get_account(AccountID) ->
+    % TODO we sure need to proxy this through the hellgate interfaces
+    _ = hg_context:set(woody_context:new()),
+    Account = hg_accounting:get_account(AccountID),
+    _ = hg_context:cleanup(),
+    Account.
 
 -spec get_first_payout_tool_id(contract_id(), Client :: pid()) ->
     dmsl_domain_thrift:'PayoutToolID'().

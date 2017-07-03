@@ -255,6 +255,8 @@ end_per_testcase(_Name, _C) ->
     {exception, #payproc_PartyNotFound{}}).
 -define(party_exists(),
     {exception, #payproc_PartyExists{}}).
+-define(party_not_exists_yet(),
+    {exception, #payproc_PartyNotExistsYet{}}).
 -define(party_blocked(Reason),
     {exception, #payproc_InvalidPartyStatus{status = {blocking, ?blocked(Reason, _)}}}).
 -define(party_unblocked(Reason),
@@ -383,15 +385,17 @@ party_retrieval(C) ->
 
 party_revisioning(C) ->
     Client = ?c(client, C),
-    hg_context:set(woody_context:new()),
+    T0 = hg_datetime:add_interval(hg_datetime:format_now(), {undefined, undefined, -1}), % yesterday
+    ?party_not_exists_yet() = hg_client_party:checkout(T0, Client),
     Party1 = hg_client_party:get(Client),
     T1 = hg_datetime:format_now(),
     Party2 = party_suspension(C),
-    Party1 = hg_party_machine:checkout(Party1#domain_Party.id, T1),
+    Party1 = hg_client_party:checkout(T1, Client),
     T2 = hg_datetime:format_now(),
     _ = party_activation(C),
-    Party2 = hg_party_machine:checkout(Party2#domain_Party.id, T2),
-    hg_context:cleanup().
+    Party2 = hg_client_party:checkout(T2, Client),
+    T3 = hg_datetime:add_interval(T2, {undefined, undefined, 1}), % tomorrow
+    Party1 = hg_client_party:checkout(T3, Client).
 
 contract_not_found(C) ->
     Client = ?c(client, C),
@@ -422,7 +426,7 @@ contract_already_exists(C) ->
 contract_termination(C) ->
     Client = ?c(client, C),
     ContractID = <<"TESTCONTRACT">>,
-    Changeset = [?contract_modification(ContractID, ?contract_termination(hg_datetime:format_now(), <<"WHY NOT?!">>))],
+    Changeset = [?contract_modification(ContractID, ?contract_termination(<<"WHY NOT?!">>))],
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
     #domain_Contract{
@@ -434,7 +438,7 @@ contract_already_terminated(C) ->
     Client = ?c(client, C),
     ContractID = <<"TESTCONTRACT">>,
     Changeset = [
-        ?contract_modification(ContractID, ?contract_termination(hg_datetime:format_now(), <<"JUST TO BE SURE.">>))
+        ?contract_modification(ContractID, ?contract_termination(<<"JUST TO BE SURE.">>))
     ],
     ?invalid_changeset({contract_status_invalid, _}) = hg_client_party:create_claim(Changeset, Client).
 
@@ -922,13 +926,27 @@ party_access_control(C) ->
     #domain_Party{id = PartyID} = hg_client_party:get(GoodExternalClient),
 
     % External Reject
-    BadExternalClient = hg_client_party:start(
+    BadExternalClient0 = hg_client_party:start(
         #payproc_UserInfo{id = <<"FakE1D">>, type = {external_user, #payproc_ExternalUser{}}},
         PartyID,
         hg_client_api:new(?c(root_url, C))
     ),
-    ?invalid_user() = hg_client_party:get(BadExternalClient),
-    hg_client_party:stop(BadExternalClient),
+    ?invalid_user() = hg_client_party:get(BadExternalClient0),
+    hg_client_party:stop(BadExternalClient0),
+
+    % UserIdentity has priority
+    UserIdentity = #{
+        id => PartyID,
+        realm => <<"internal">>
+    },
+    Context = woody_user_identity:put(UserIdentity, woody_context:new()),
+    UserIdentityClient1 = hg_client_party:start(
+        #payproc_UserInfo{id = <<"FakE1D">>, type = {external_user, #payproc_ExternalUser{}}},
+        PartyID,
+        hg_client_api:new(?c(root_url, C), Context)
+    ),
+    #domain_Party{id = PartyID} = hg_client_party:get(UserIdentityClient1),
+    hg_client_party:stop(UserIdentityClient1),
 
     % Internal Success
     GoodInternalClient = hg_client_party:start(
@@ -1075,7 +1093,7 @@ construct_domain_fixture() ->
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
                 default_contract_template = ?tmpl(2),
-                common_merchant_proxy = ?prx(1),
+                common_merchant_proxy = ?prx(1), % FIXME
                 inspector = {value, ?insp(1)}
             }
         }},

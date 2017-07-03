@@ -274,8 +274,8 @@ make_change_effect(?shop_modification(ID, Modification), Timestamp, _Revision) -
 
 make_contract_modification_effect(ID, {creation, ContractParams}, Timestamp, Revision) ->
     {created, hg_party:create_contract(ID, ContractParams, Timestamp, Revision)};
-make_contract_modification_effect(_, ?contract_termination(TerminatedAt, _), _, _) ->
-    {status_changed, {terminated, #domain_ContractTerminated{terminated_at = TerminatedAt}}};
+make_contract_modification_effect(_, ?contract_termination(_), Timestamp, _) ->
+    {status_changed, {terminated, #domain_ContractTerminated{terminated_at = Timestamp}}};
 make_contract_modification_effect(_, ?adjustment_creation(AdjustmentID, Params), Timestamp, Revision) ->
     {adjustment_created, hg_party:create_contract_adjustment(AdjustmentID, Params, Timestamp, Revision)};
 make_contract_modification_effect(_, ?payout_tool_creation(PayoutToolID, Params), Timestamp, _) ->
@@ -502,7 +502,7 @@ assert_contract_change_applicable(ID, {creation, _}, #domain_Contract{}) ->
     raise_invalid_changeset({contract_already_exists, ID});
 assert_contract_change_applicable(ID, _AnyModification, undefined) ->
     raise_invalid_changeset({contract_not_exists, ID});
-assert_contract_change_applicable(ID, ?contract_termination(_, _), Contract) ->
+assert_contract_change_applicable(ID, ?contract_termination(_), Contract) ->
     case hg_party:is_contract_active(Contract) of
         true ->
             ok;

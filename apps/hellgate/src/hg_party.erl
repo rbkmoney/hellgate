@@ -83,6 +83,7 @@
 -type shop_params()           :: dmsl_payment_processing_thrift:'ShopParams'().
 -type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
 -type category()              :: dmsl_domain_thrift:'CategoryRef'().
+-type contract_template_ref() :: dmsl_domain_thrift:'ContractTemplateRef'().
 
 -type blocking()              :: dmsl_domain_thrift:'Blocking'().
 -type suspension()            :: dmsl_domain_thrift:'Suspension'().
@@ -497,6 +498,8 @@ ensure_adjustment_creation_params(#payproc_ContractAdjustmentParams{template = T
     Params#payproc_ContractAdjustmentParams{
         template = ensure_contract_template(TemplateRef, Revision)
     }.
+
+-spec ensure_contract_template(contract_template_ref(), revision()) -> contract_template_ref() | no_return().
 
 ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, Revision) ->
     try

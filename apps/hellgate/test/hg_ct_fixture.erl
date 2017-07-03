@@ -16,6 +16,7 @@
 -export([construct_inspector/4]).
 -export([construct_contract_template/2]).
 -export([construct_contract_template/4]).
+-export([construct_terminal_account/1]).
 -export([construct_system_account_set/1]).
 -export([construct_system_account_set/3]).
 -export([construct_external_account_set/1]).
@@ -149,6 +150,14 @@ construct_contract_template(Ref, TermsRef, ValidSince, ValidUntil) ->
             terms = TermsRef
         }
     }}.
+
+-spec construct_terminal_account(currency()) -> dmsl_domain_thrift:'TerminalAccount'().
+
+construct_terminal_account(?cur(C)) ->
+    _ = hg_context:set(woody_context:new()),
+    Account = ?trmacc(C, hg_accounting:create_account(C)),
+    _ = hg_context:cleanup(),
+    Account.
 
 -spec construct_system_account_set(system_account_set()) ->
     {system_account_set, dmsl_domain_thrift:'SystemAccountSetObject'()}.

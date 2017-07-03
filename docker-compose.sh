@@ -17,7 +17,7 @@ services:
         condition: service_healthy
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:61320c4320bc5deecfd5c540f41ddfa23be4d1f8
+    image: dr.rbkmoney.com/rbkmoney/dominant:6e31359681eccfae1b603b22cff8202b1599600f
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
@@ -26,7 +26,7 @@ services:
       - ../dominant/_build/prod/rel/dominant:/opt/dominant
 
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/machinegun:e04e529f4c5682b527d12d73a13a3cf9eb296d4d
+    image: dr.rbkmoney.com/rbkmoney/machinegun:707c2f8015f21de8dd9aa51a748532fe384c3a60
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config

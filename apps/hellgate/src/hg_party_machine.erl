@@ -33,11 +33,11 @@
 -define(NS, <<"party">>).
 
 -record(st, {
-    party = undefined   :: undefined | party(),
-    timestamp           :: timestamp(),
-    revision            :: hg_domain:revision(),
-    claims   = #{}      :: #{claim_id() => claim()},
-    sequence = 0        :: 0 | sequence(),
+    party                :: undefined | party(),
+    timestamp            :: timestamp(),
+    revision             :: hg_domain:revision(),
+    claims   = #{}       :: #{claim_id() => claim()},
+    sequence = 0         :: 0 | sequence(),
     migration_data = #{} :: #{any() => any()}
 }).
 

@@ -10,6 +10,11 @@
 -export([fulfill/3]).
 -export([rescind/3]).
 -export([start_payment/3]).
+-export([get_payment/3]).
+-export([create_adjustment/4]).
+-export([get_adjustment/4]).
+-export([capture_adjustment/4]).
+-export([cancel_adjustment/4]).
 -export([pull_event/2]).
 -export([pull_event/3]).
 
@@ -25,11 +30,16 @@
 
 %%
 
--type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
--type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
--type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
--type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
--type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
+-type user_info()         :: dmsl_payment_processing_thrift:'UserInfo'().
+-type invoice_id()        :: dmsl_domain_thrift:'InvoiceID'().
+-type invoice_state()     :: dmsl_payment_processing_thrift:'InvoiceState'().
+-type payment()           :: dmsl_domain_thrift:'InvoicePayment'().
+-type payment_id()        :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type invoice_params()    :: dmsl_payment_processing_thrift:'InvoiceParams'().
+-type payment_params()    :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
+-type adjustment()        :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
+-type adjustment_id()     :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
+-type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 
 -spec start(user_info(), hg_client_api:t()) -> pid().
 
@@ -54,13 +64,13 @@ stop(Client) ->
 %%
 
 -spec create(invoice_params(), pid()) ->
-    invoice_id() | woody_error:business_error().
+    invoice_state() | woody_error:business_error().
 
 create(InvoiceParams, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Create', [InvoiceParams]})).
 
 -spec get(invoice_id(), pid()) ->
-    dmsl_payment_processing_thrift:'InvoiceState'() | woody_error:business_error().
+    invoice_state() | woody_error:business_error().
 
 get(InvoiceID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', [InvoiceID]})).
@@ -78,10 +88,44 @@ rescind(InvoiceID, Reason, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Rescind', [InvoiceID, Reason]})).
 
 -spec start_payment(invoice_id(), payment_params(), pid()) ->
-    payment_id() | woody_error:business_error().
+    payment() | woody_error:business_error().
 
 start_payment(InvoiceID, PaymentParams, Client) ->
     map_result_error(gen_server:call(Client, {call, 'StartPayment', [InvoiceID, PaymentParams]})).
+
+-spec get_payment(invoice_id(), payment_id(), pid()) ->
+    payment() | woody_error:business_error().
+
+get_payment(InvoiceID, PaymentID, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetPayment', [InvoiceID, PaymentID]})).
+
+-spec create_adjustment(invoice_id(), payment_id(), adjustment_params(), pid()) ->
+    adjustment() | woody_error:business_error().
+
+create_adjustment(InvoiceID, PaymentID, Params, Client) ->
+    Args = [InvoiceID, PaymentID, Params],
+    map_result_error(gen_server:call(Client, {call, 'CreatePaymentAdjustment', Args})).
+
+-spec get_adjustment(invoice_id(), payment_id(), adjustment_params(), pid()) ->
+    adjustment() | woody_error:business_error().
+
+get_adjustment(InvoiceID, PaymentID, Params, Client) ->
+    Args = [InvoiceID, PaymentID, Params],
+    map_result_error(gen_server:call(Client, {call, 'GetPaymentAdjustment', Args})).
+
+-spec capture_adjustment(invoice_id(), payment_id(), adjustment_id(), pid()) ->
+    adjustment() | woody_error:business_error().
+
+capture_adjustment(InvoiceID, PaymentID, ID, Client) ->
+    Args = [InvoiceID, PaymentID, ID],
+    map_result_error(gen_server:call(Client, {call, 'CapturePaymentAdjustment', Args})).
+
+-spec cancel_adjustment(invoice_id(), payment_id(), adjustment_id(), pid()) ->
+    adjustment() | woody_error:business_error().
+
+cancel_adjustment(InvoiceID, PaymentID, ID, Client) ->
+    Args = [InvoiceID, PaymentID, ID],
+    map_result_error(gen_server:call(Client, {call, 'CancelPaymentAdjustment', Args})).
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 

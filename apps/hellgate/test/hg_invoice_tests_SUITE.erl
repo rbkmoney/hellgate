@@ -3,6 +3,7 @@
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("hellgate/include/domain.hrl").
 
 -export([all/0]).
 -export([init_per_suite/1]).
@@ -15,15 +16,17 @@
 -export([invalid_party_status/1]).
 -export([invalid_shop_status/1]).
 -export([invoice_cancellation/1]).
--export([overdue_invoice_cancelled/1]).
--export([invoice_cancelled_after_payment_timeout/1]).
+-export([overdue_invoice_cancellation/1]).
+-export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 -export([payment_success/1]).
--export([payment_success_w_merchant_callback/1]).
 -export([payment_success_on_second_try/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
+-export([invalid_payment_adjustment/1]).
+-export([payment_adjustment_success/1]).
 -export([invalid_payment_w_deprived_party/1]).
+-export([external_account_posting/1]).
 -export([consistent_history/1]).
 
 %%
@@ -39,15 +42,17 @@ init([]) ->
 
 %%
 
--define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
-
--define(cash(Amount, Currency),
-    #domain_Cash{amount = Amount, currency = Currency}).
 
 %% tests descriptions
 
 -type config() :: [{atom(), term()}].
 -type test_case_name() :: atom().
+
+cfg(Key, C) ->
+    case lists:keyfind(Key, 1, C) of
+        {Key, V} -> V;
+        _        -> undefined
+    end.
 
 -spec all() -> [test_case_name()].
 
@@ -58,17 +63,20 @@ all() ->
         invalid_party_status,
         invalid_shop_status,
         invoice_cancellation,
-        overdue_invoice_cancelled,
-        invoice_cancelled_after_payment_timeout,
+        overdue_invoice_cancellation,
+        invoice_cancellation_after_payment_timeout,
         invalid_payment_amount,
         payment_success,
-        payment_success_w_merchant_callback,
         payment_success_on_second_try,
         invoice_success_on_third_payment,
 
         payment_risk_score_check,
 
+        invalid_payment_adjustment,
+        payment_adjustment_success,
+
         invalid_payment_w_deprived_party,
+        external_account_posting,
 
         consistent_history
     ].
@@ -101,12 +109,16 @@ init_per_suite(C) ->
 
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
-    [application:stop(App) || App <- ?c(apps, C)].
+    [application:stop(App) || App <- cfg(apps, C)].
 
 %% tests
 
 -include("invoice_events.hrl").
 
+-define(invoice(ID), #domain_Invoice{id = ID}).
+-define(payment(ID), #domain_InvoicePayment{id = ID}).
+-define(adjustment(ID), #domain_InvoicePaymentAdjustment{id = ID}).
+-define(adjustment(ID, Status), #domain_InvoicePaymentAdjustment{id = ID, status = Status}).
 -define(invoice_state(Invoice), #payproc_InvoiceState{invoice = Invoice}).
 -define(invoice_state(Invoice, Payments), #payproc_InvoiceState{invoice = Invoice, payments = Payments}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
@@ -117,26 +129,46 @@ end_per_suite(C) ->
 -define(invalid_invoice_status(Status),
     {exception, #payproc_InvalidInvoiceStatus{status = Status}}).
 
+-define(invalid_payment_status(Status),
+    {exception, #payproc_InvalidPaymentStatus{status = Status}}).
+-define(invalid_adjustment_status(Status),
+    {exception, #payproc_InvalidPaymentAdjustmentStatus{status = Status}}).
+-define(invalid_adjustment_pending(ID),
+    {exception, #payproc_InvoicePaymentAdjustmentPending{id = ID}}).
+
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
+init_per_testcase(payment_adjustment_success, C) ->
+    Revision = hg_domain:head(),
+    ok = hg_domain:upsert(get_adjustment_fixture(Revision)),
+    [{original_domain_revision, Revision} | init_per_testcase(C)];
 init_per_testcase(_Name, C) ->
-    PartyID = ?c(party_id, C),
-    Client = hg_client_invoicing:start_link(make_userinfo(PartyID), hg_client_api:new(?c(root_url, C))),
+    init_per_testcase(C).
+
+init_per_testcase(C) ->
+    PartyID = cfg(party_id, C),
+    Client = hg_client_invoicing:start_link(make_userinfo(PartyID), hg_client_api:new(cfg(root_url, C))),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [{client, Client}, {test_sup, SupPid} | C].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
 end_per_testcase(_Name, C) ->
-    _ = unlink(?c(test_sup, C)),
-    exit(?c(test_sup, C), shutdown).
+    _ = case cfg(original_domain_revision, C) of
+        Revision when is_integer(Revision) ->
+            ok = hg_domain:reset(Revision);
+        undefined ->
+            ok
+    end,
+    _ = unlink(cfg(test_sup, C)),
+    exit(cfg(test_sup, C), shutdown).
 
 -spec invalid_invoice_amount(config()) -> _ | no_return().
 
 invalid_invoice_amount(C) ->
-    Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount">>]
@@ -145,9 +177,9 @@ invalid_invoice_amount(C) ->
 -spec invalid_invoice_currency(config()) -> _ | no_return().
 
 invalid_invoice_currency(C) ->
-    Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100, <<"KEK">>}),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid currency">>]
@@ -156,10 +188,10 @@ invalid_invoice_currency(C) ->
 -spec invalid_party_status(config()) -> _ | no_return().
 
 invalid_party_status(C) ->
-    Client = ?c(client, C),
-    PartyClient = ?c(party_client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
     ok = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
@@ -175,10 +207,10 @@ invalid_party_status(C) ->
 -spec invalid_shop_status(config()) -> _ | no_return().
 
 invalid_shop_status(C) ->
-    Client = ?c(client, C),
-    PartyClient = ?c(party_client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
     ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
@@ -194,28 +226,28 @@ invalid_shop_status(C) ->
 -spec invoice_cancellation(config()) -> _ | no_return().
 
 invoice_cancellation(C) ->
-    Client = ?c(client, C),
-    ShopID = ?c(shop_id, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     ?invalid_invoice_status(_) = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
     ok = hg_client_invoicing:rescind(InvoiceID, <<"whynot">>, Client).
 
--spec overdue_invoice_cancelled(config()) -> _ | no_return().
+-spec overdue_invoice_cancellation(config()) -> _ | no_return().
 
-overdue_invoice_cancelled(C) ->
-    Client = ?c(client, C),
+overdue_invoice_cancellation(C) ->
+    Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(1), 10000, C),
     ?invoice_status_changed(?invoice_cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
 
--spec invoice_cancelled_after_payment_timeout(config()) -> _ | no_return().
+-spec invoice_cancellation_after_payment_timeout(config()) -> _ | no_return().
 
-invoice_cancelled_after_payment_timeout(C) ->
-    Client = ?c(client, C),
+invoice_cancellation_after_payment_timeout(C) ->
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
-    InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(7), 1000, C),
+    InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(3), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
     ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
@@ -226,7 +258,7 @@ invoice_cancelled_after_payment_timeout(C) ->
 -spec invalid_payment_amount(config()) -> _ | no_return().
 
 invalid_payment_amount(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     PaymentParams = make_payment_params(),
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 1, C),
     {exception, #'InvalidRequest'{
@@ -240,7 +272,7 @@ invalid_payment_amount(C) ->
 -spec payment_success(config()) -> _ | no_return().
 
 payment_success(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
@@ -253,35 +285,10 @@ payment_success(C) ->
         [?payment_w_status(PaymentID, ?captured())]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
--spec payment_success_w_merchant_callback(config()) -> _ | no_return().
-
-payment_success_w_merchant_callback(_) ->
-% payment_success_w_merchant_callback(C) ->
-    % Client = ?c(client, C),
-    % PartyClient = ?c(party_client, C),
-    % ContractParams = hg_ct_helper:make_battle_ready_contract_params(),
-    % ContractID = hg_ct_helper:create_contract(ContractParams, PartyClient),
-    % ShopID = hg_ct_helper:create_shop(ContractID, ?cat(3), <<"Callback Shop">>, PartyClient),
-    % ok = start_proxy(hg_dummy_provider, 1, C),
-    % ok = start_proxy(hg_dummy_inspector, 2, C),
-    % MerchantProxy = construct_proxy(3, start_service_handler(hg_dummy_merchant, C, #{}), #{}),
-    % ok = hg_domain:upsert(MerchantProxy),
-    % ok = hg_ct_helper:set_shop_proxy(ShopID, get_proxy_ref(MerchantProxy), #{}, PartyClient),
-    % InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    % PaymentParams = make_payment_params(),
-    % PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
-    % ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
-    % ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID, Client),
-    % ?invoice_state(
-    %     ?invoice_w_status(?invoice_paid()),
-    %     [?payment_w_status(PaymentID, ?captured())]
-    % ) = hg_client_invoicing:get(InvoiceID, Client).
-    ok.
-
 -spec payment_success_on_second_try(config()) -> _ | no_return().
 
 payment_success_on_second_try(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
@@ -299,7 +306,7 @@ payment_success_on_second_try(C) ->
 -spec invoice_success_on_third_payment(config()) -> _ | no_return().
 
 invoice_success_on_third_payment(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
@@ -324,12 +331,12 @@ invoice_success_on_third_payment(C) ->
 -spec payment_risk_score_check(config()) -> _ | no_return().
 
 payment_risk_score_check(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
     % Invoice w/ cost < 500000
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID1 = hg_client_invoicing:start_payment(InvoiceID1, make_payment_params(), Client),
+    ?payment(PaymentID1) = hg_client_invoicing:start_payment(InvoiceID1, make_payment_params(), Client),
     ?payment_started(_, Route1, _) = next_event(InvoiceID1, Client),
     low = get_risk_coverage_from_route(Route1),
     ?payment_bound(PaymentID1, ?trx_info(_)) = next_event(InvoiceID1, Client),
@@ -338,7 +345,7 @@ payment_risk_score_check(C) ->
     ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID1, Client),
     % Invoice w/ cost > 500000
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
-    PaymentID2 = hg_client_invoicing:start_payment(InvoiceID2, make_payment_params(), Client),
+    ?payment(PaymentID2) = hg_client_invoicing:start_payment(InvoiceID2, make_payment_params(), Client),
     ?payment_started(_, Route2, _) = next_event(InvoiceID2, Client),
     high = get_risk_coverage_from_route(Route2),
     ?payment_bound(PaymentID2, ?trx_info(_)) = next_event(InvoiceID2, Client),
@@ -350,12 +357,154 @@ get_risk_coverage_from_route(#domain_InvoicePaymentRoute{terminal = TermRef}) ->
     Terminal = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
     Terminal#domain_Terminal.risk_coverage.
 
+-spec invalid_payment_adjustment(config()) -> _ | no_return().
+
+invalid_payment_adjustment(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
+    %% start a smoker's payment
+    PaymentParams = make_tds_payment_params(),
+    PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
+    %% no way to create adjustment for a payment not yet finished
+    ?invalid_payment_status(?processed()) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
+    ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, Client),
+    %% no way to create adjustment for a failed payment
+    ?invalid_payment_status(?failed(_)) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
+
+-spec payment_adjustment_success(config()) -> _ | no_return().
+
+payment_adjustment_success(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
+    %% start a healthy man's payment
+    PaymentParams = make_payment_params(),
+    PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
+    ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
+    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID, Client),
+    #domain_InvoicePayment{cash_flow = CF1} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
+    SysAccount1 = get_cashflow_account({system, settlement}, CF1),
+    %% update terminal cashflow
+    Terminal = hg_domain:get(hg_domain:head(), {terminal, ?trm(100)}),
+    ok = hg_domain:upsert(
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(100),
+            data = Terminal#domain_Terminal{cash_flow = get_adjustment_terminal_cashflow(actual)}
+        }}
+    ),
+    %% make an adjustment
+    Params = make_adjustment_params(Reason = <<"imdrunk">>),
+    ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, Params, Client),
+    Adjustment = #domain_InvoicePaymentAdjustment{reason = Reason} =
+        hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    ?adjustment_created(PaymentID, Adjustment) = next_event(InvoiceID, Client),
+    %% no way to create another one yet
+    ?invalid_adjustment_pending(AdjustmentID) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    ok =
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    ?invalid_adjustment_status(?adjustment_captured(_)) =
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    ?invalid_adjustment_status(?adjustment_captured(_)) =
+        hg_client_invoicing:cancel_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    ?adjustment_status_changed(PaymentID, AdjustmentID, ?adjustment_captured(_)) =
+        next_event(InvoiceID, Client),
+    %% verify that cash deposited correctly everywhere
+    #domain_InvoicePayment{cash_flow = CF2} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
+    SysAccount2 = get_cashflow_account({system, settlement}, CF2),
+    500  = maps:get(own_amount, PrvAccount1) - maps:get(own_amount, PrvAccount2),
+    -480 = maps:get(own_amount, SysAccount1) - maps:get(own_amount, SysAccount2).
+
+get_cashflow_account(Type, CF) ->
+    [ID] = [V || #domain_FinalCashFlowPosting{
+        destination = #domain_FinalCashFlowAccount{
+            account_id = V,
+            account_type = T
+        }
+    } <- CF, T == Type],
+    hg_ct_helper:get_account(ID).
+
+get_adjustment_fixture(Revision) ->
+    AccountRUB = hg_ct_fixture:construct_terminal_account(?cur(<<"RUB">>)),
+    Globals = hg_domain:get(Revision, {globals, ?glob()}),
+    [
+        {globals, #domain_GlobalsObject{
+            ref = ?glob(),
+            data = Globals#domain_Globals{
+                providers = {value, ordsets:from_list([?prv(100)])}
+            }}
+        },
+        {provider, #domain_ProviderObject{
+            ref = ?prv(100),
+            data = #domain_Provider{
+                name = <<"Adjustable">>,
+                description = <<>>,
+                abs_account = <<>>,
+                terminal = {value, [?trm(100)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}}
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(100),
+            data = #domain_Terminal{
+                name = <<"Adjustable Terminal">>,
+                description = <<>>,
+                payment_method = ?pmt(bank_card, visa),
+                category = ?cat(1),
+                cash_flow = get_adjustment_terminal_cashflow(initial),
+                account = AccountRUB,
+                risk_coverage = low
+            }
+        }}
+    ].
+
+get_adjustment_terminal_cashflow(initial) ->
+    [
+        ?cfpost(
+            {provider, settlement},
+            {merchant, settlement},
+            ?share(1, 1, payment_amount)
+        ),
+        ?cfpost(
+            {system, settlement},
+            {provider, settlement},
+            ?share(21, 1000, payment_amount)
+        )
+    ];
+get_adjustment_terminal_cashflow(actual) ->
+    [
+        ?cfpost(
+            {provider, settlement},
+            {merchant, settlement},
+            ?share(1, 1, payment_amount)
+        ),
+        ?cfpost(
+            {system, settlement},
+            {provider, settlement},
+            ?share(16, 1000, payment_amount)
+        ),
+        ?cfpost(
+            {system, settlement},
+            {external, outcome},
+            ?fixed(20, ?cur(<<"RUB">>))
+        )
+    ].
+
 -spec invalid_payment_w_deprived_party(config()) -> _ | no_return().
 
 invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
     ShopID = <<"TESTSHOP">>,
-    RootUrl = ?c(root_url, C),
+    RootUrl = cfg(root_url, C),
     UserInfo = make_userinfo(PartyID),
     PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
     InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
@@ -368,6 +517,39 @@ invalid_payment_w_deprived_party(C) ->
     PaymentParams = make_payment_params(),
     Exception = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, InvoicingClient),
     {exception, #'InvalidRequest'{}} = Exception.
+
+-spec external_account_posting(config()) -> _ | no_return().
+
+external_account_posting(C) ->
+    PartyID = <<"LGBT">>,
+    RootUrl = cfg(root_url, C),
+    UserInfo = make_userinfo(PartyID),
+    PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
+    InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
+    ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
+    ?invoice_created(?invoice_w_status(?invoice_unpaid())) = next_event(InvoiceID, InvoicingClient),
+    ?payment(PaymentID) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    ?payment_started(_, _, CashFlow) = next_event(InvoiceID, InvoicingClient),
+    [AssistAccountID] = [
+    AccountID ||
+        #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{account_type = {external, outcome}, account_id = AccountID},
+            details = <<"Assist fee">>
+        } <- CashFlow
+    ],
+    _ = hg_context:set(woody_context:new()),
+    #domain_ExternalAccountSet{
+        accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
+    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}),
+    hg_context:cleanup(),
+    ?payment_bound(PaymentID, ?trx_info(_)) = next_event(InvoiceID, InvoicingClient),
+    ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, InvoicingClient),
+    ?payment_status_changed(PaymentID, ?captured())  = next_event(InvoiceID, InvoicingClient),
+    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID, InvoicingClient).
 
 %%
 
@@ -396,6 +578,8 @@ unwrap_event(?invoice_ev(E)) ->
     unwrap_event(E);
 unwrap_event(?payment_ev(E)) ->
     unwrap_event(E);
+unwrap_event(?adjustment_ev(E)) ->
+    unwrap_event(E);
 unwrap_event(E) ->
     E.
 
@@ -407,9 +591,9 @@ start_service_handler(Module, C, HandlerOpts) ->
 start_service_handler(Name, Module, C, HandlerOpts) ->
     IP = "127.0.0.1",
     Port = get_random_port(),
-    Opts = maps:merge(HandlerOpts, #{hellgate_root_url => ?c(root_url, C)}),
+    Opts = maps:merge(HandlerOpts, #{hellgate_root_url => cfg(root_url, C)}),
     ChildSpec = hg_test_proxy:get_child_spec(Name, Module, IP, Port, Opts),
-    {ok, _} = supervisor:start_child(?c(test_sup, C), ChildSpec),
+    {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
 
 start_proxy(Module, ProxyID, Context) ->
@@ -434,9 +618,6 @@ construct_proxy(ID, Url, Options) ->
         }
     }}.
 
-% get_proxy_ref({proxy, #domain_ProxyObject{ref = Ref}}) ->
-%     Ref.
-
 %%
 
 make_userinfo(PartyID) ->
@@ -460,32 +641,44 @@ make_payment_params(PaymentTool, Session) ->
     #payproc_InvoicePaymentParams{
         payer = #domain_Payer{
             payment_tool = PaymentTool,
-            session = Session,
+            session_id = Session,
             client_info = #domain_ClientInfo{},
             contact_info = #domain_ContactInfo{}
         }
+    }.
+
+make_adjustment_params() ->
+    make_adjustment_params(<<>>).
+
+make_adjustment_params(Reason) ->
+    make_adjustment_params(Reason, undefined).
+
+make_adjustment_params(Reason, Revision) ->
+    #payproc_InvoicePaymentAdjustmentParams{
+        domain_revision = Revision,
+        reason = Reason
     }.
 
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
 
 create_invoice(InvoiceParams, Client) ->
-    InvoiceID = <<_/binary>> = hg_client_invoicing:create(InvoiceParams, Client),
+    ?invoice_state(?invoice(InvoiceID)) = hg_client_invoicing:create(InvoiceParams, Client),
     InvoiceID.
 
 start_invoice(Product, Due, Amount, C) ->
-    start_invoice(?c(shop_id, C), Product, Due, Amount, C).
+    start_invoice(cfg(shop_id, C), Product, Due, Amount, C).
 
 start_invoice(ShopID, Product, Due, Amount, C) ->
-    Client = ?c(client, C),
-    PartyID = ?c(party_id, C),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, Amount),
     InvoiceID = create_invoice(InvoiceParams, Client),
     ?invoice_created(?invoice_w_status(?invoice_unpaid())) = next_event(InvoiceID, Client),
     InvoiceID.
 
 attach_payment(InvoiceID, PaymentParams, Client) ->
-    PaymentID = <<_/binary>> = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    ?payment(PaymentID) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
     ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
     ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, Client),
@@ -509,10 +702,8 @@ get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
 construct_domain_fixture() ->
-    _ = hg_context:set(woody_context:new()),
-    AccountUSD = ?trmacc(<<"USD">>, hg_accounting:create_account(<<"USD">>)),
-    AccountRUB = ?trmacc(<<"RUB">>, hg_accounting:create_account(<<"RUB">>)),
-    hg_context:cleanup(),
+    AccountUSD = hg_ct_fixture:construct_terminal_account(?cur(<<"USD">>)),
+    AccountRUB = hg_ct_fixture:construct_terminal_account(?cur(<<"RUB">>)),
     TestTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             currencies = {value, ordsets:from_list([
@@ -634,6 +825,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
+        hg_ct_fixture:construct_external_account_set(?eas(2), <<"Assist">>, ?cur(<<"RUB">>)),
 
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
@@ -644,9 +836,20 @@ construct_domain_fixture() ->
                     ?prv(2)
                 ])},
                 system_account_set = {value, ?sas(1)},
-                external_account_set = {value, ?eas(1)},
+                external_account_set = {decisions, [
+                    #domain_ExternalAccountSetDecision{
+                        if_ = {condition, {party, #domain_PartyCondition{
+                            id = <<"LGBT">>
+                        }}},
+                        then_ = {value, ?eas(2)}
+                    },
+                    #domain_ExternalAccountSetDecision{
+                        if_ = {constant, true},
+                        then_ = {value, ?eas(1)}
+                    }
+                ]},
                 default_contract_template = ?tmpl(2),
-                common_merchant_proxy = ?prx(3),
+                common_merchant_proxy = ?prx(3), % FIXME
                 inspector = {decisions, [
                     #domain_InspectorDecision{
                         if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
@@ -884,6 +1087,12 @@ construct_domain_fixture() ->
                         {system, settlement},
                         {provider, settlement},
                         ?share(16, 1000, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {external, outcome},
+                        ?fixed(20, ?cur(<<"RUB">>)),
+                        <<"Assist fee">>
                     )
                 ],
                 account = AccountRUB,
