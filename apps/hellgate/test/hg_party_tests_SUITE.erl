@@ -394,8 +394,9 @@ party_revisioning(C) ->
     T2 = hg_datetime:format_now(),
     _ = party_activation(C),
     Party2 = hg_client_party:checkout(T2, Client),
+    Party3 = hg_client_party:get(Client),
     T3 = hg_datetime:add_interval(T2, {undefined, undefined, 1}), % tomorrow
-    Party1 = hg_client_party:checkout(T3, Client).
+    Party3 = hg_client_party:checkout(T3, Client).
 
 contract_not_found(C) ->
     Client = ?c(client, C),

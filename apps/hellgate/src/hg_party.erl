@@ -18,7 +18,6 @@
 %% Party support functions
 
 -export([create_party/3]).
--export([get_party_id/1]).
 -export([blocking/2]).
 -export([suspension/2]).
 
@@ -34,8 +33,6 @@
 -export([create_contract_adjustment/4]).
 
 -export([get_contract/2]).
--export([get_contract_id/1]).
--export([get_contract_status/1]).
 -export([get_contract_currencies/3]).
 -export([get_contract_categories/3]).
 -export([get_contract_adjustment/2]).
@@ -52,16 +49,11 @@
 -export([get_test_shop_params/3]).
 -export([get_new_shop_currency/4]).
 -export([get_shop/2]).
--export([get_shop_id/1]).
 -export([get_shop_account/2]).
 -export([get_account_state/2]).
 
 %% Asserts
 
--export([assert_blocking/2]).
--export([assert_suspension/2]).
--export([assert_shop_blocking/2]).
--export([assert_shop_suspension/2]).
 -export([assert_party_objects_valid/3]).
 
 %%
@@ -71,7 +63,6 @@
 -type contract()              :: dmsl_domain_thrift:'Contract'().
 -type contract_id()           :: dmsl_domain_thrift:'ContractID'().
 -type contract_params()       :: dmsl_payment_processing_thrift:'ContractParams'().
--type contract_status()       :: dmsl_domain_thrift:'ContractStatus'().
 -type adjustment()            :: dmsl_domain_thrift:'ContractAdjustment'().
 -type adjustment_id()         :: dmsl_domain_thrift:'ContractAdjustmentID'().
 -type adjustment_params()     :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
@@ -108,12 +99,6 @@ create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}, Timestam
         shops           = #{}
     }.
 
--spec get_party_id(party()) ->
-    party_id().
-
-get_party_id(#domain_Party{id = ID}) ->
-    ID.
-
 -spec blocking(blocking(), party()) ->
     party().
 
@@ -125,12 +110,6 @@ blocking(Blocking, Party) ->
 
 suspension(Suspension, Party) ->
     Party#domain_Party{suspension = Suspension}.
-
--spec get_contract_id(contract()) ->
-    contract_id().
-
-get_contract_id(#domain_Contract{id = ContractID}) ->
-    ContractID.
 
 -spec is_contract_active(contract()) ->
     boolean().
@@ -182,12 +161,6 @@ set_new_contract(Contract, Timestamp, Party) ->
 
 set_contract(Contract = #domain_Contract{id = ID}, Party = #domain_Party{contracts = Contracts}) ->
     Party#domain_Party{contracts = Contracts#{ID => Contract}}.
-
--spec get_contract_status(contract()) ->
-    contract_status().
-
-get_contract_status(#domain_Contract{status = Status}) ->
-    Status.
 
 -spec get_contract_adjustment(adjustment_id(), contract()) ->
     adjustment() | undefined.
@@ -415,12 +388,6 @@ shop_suspension(ID, Suspension, Party) ->
     Shop = get_shop(ID, Party),
     set_shop(Shop#domain_Shop{suspension = Suspension}, Party).
 
--spec get_shop_id(shop()) ->
-    shop_id().
-
-get_shop_id(#domain_Shop{id = ID}) ->
-    ID.
-
 -spec get_shop_account(shop_id(), party()) ->
     dmsl_domain_thrift:'ShopAccount'().
 
@@ -468,6 +435,9 @@ get_new_shop_currency(#domain_Shop{contract_id = ContractID}, Party, Timestamp, 
     erlang:hd(ordsets:to_list(Currencies)).
 
 %% Internals
+
+get_contract_id(#domain_Contract{id = ContractID}) ->
+    ContractID.
 
 ensure_shop(#domain_Shop{} = Shop) ->
     Shop;
@@ -700,33 +670,9 @@ is_test_contract(Contract, Timestamp, Revision) ->
 %% Asserts
 %% TODO there should be more concise way to express this assertions in terms of preconditions
 
--spec assert_blocking(party(), term()) ->       ok | no_return().
--spec assert_suspension(party(), term()) ->     ok | no_return().
--spec assert_shop_blocking(shop(), term()) ->   ok | no_return().
--spec assert_shop_suspension(shop(), term()) -> ok | no_return().
 -spec assert_party_objects_valid(timestamp(), revision(), party()) -> ok | no_return().
 -spec assert_shop_contract_valid(shop(), contract(), timestamp(), revision()) -> ok | no_return().
 -spec assert_shop_payout_tool_valid(shop(), contract()) -> ok | no_return().
-
-assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
-    ok;
-assert_blocking(#domain_Party{blocking = Blocking}, _) ->
-    throw(#payproc_InvalidPartyStatus{status = {blocking, Blocking}}).
-
-assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
-    ok;
-assert_suspension(#domain_Party{suspension = Suspension}, _) ->
-    throw(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
-
-assert_shop_blocking(#domain_Shop{blocking = {Status, _}}, Status) ->
-    ok;
-assert_shop_blocking(#domain_Shop{blocking = Blocking}, _) ->
-    throw(#payproc_InvalidShopStatus{status = {blocking, Blocking}}).
-
-assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
-    ok;
-assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
-    throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
 assert_party_objects_valid(Timestamp, Revision, #domain_Party{shops = Shops} = Party) ->
     genlib_map:foreach(

@@ -220,7 +220,7 @@ create_shop_account_change(Shop, Party, Timestamp, Revision) ->
             raise_invalid_changeset({contract_not_exists, ContractID})
     end,
     ?shop_modification(
-        hg_party:get_shop_id(Shop),
+        Shop#domain_Shop.id,
         {shop_account_creation, #payproc_ShopAccountParams{currency = Currency}}
     ).
 
@@ -509,7 +509,7 @@ assert_contract_change_applicable(ID, ?contract_termination(_), Contract) ->
         false ->
             raise_invalid_changeset({contract_status_invalid, #payproc_ContractStatusInvalid{
                 contract_id = ID,
-                status = hg_party:get_contract_status(Contract)
+                status = Contract#domain_Contract.status
             }})
     end;
 assert_contract_change_applicable(_, ?adjustment_creation(AdjustmentID, _), Contract) ->
