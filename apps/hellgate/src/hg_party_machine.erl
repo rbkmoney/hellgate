@@ -215,7 +215,7 @@ publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
 publish_party_event(_Source, {_ID, _Dt, _Event}) ->
     false.
 
--spec publish_event(party_id(), hg_machine:event(ev())) ->
+-spec publish_event(party_id(), ev()) ->
     {true, hg_event_provider:public_event()} | false.
 
 publish_event(PartyID, Ev = ?party_ev(_)) ->
