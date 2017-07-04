@@ -5,9 +5,6 @@
 -export([start_apps/1]).
 
 -export([create_party_and_shop/1]).
--export([create_contract/2]).
--export([create_shop/4]).
--export([create_shop/5]).
 -export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
@@ -15,6 +12,7 @@
 
 -export([make_battle_ready_contract_params/0]).
 -export([make_battle_ready_contract_params/1]).
+-export([make_battle_ready_payout_tool_params/0]).
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
@@ -60,6 +58,19 @@ start_app(woody = AppName) ->
         {acceptors_pool_size, 4}
     ]), #{}};
 
+start_app(dmt_client = AppName) ->
+    {start_app(AppName, [
+        {cache_update_interval, 5000}, % milliseconds
+        {max_cache_size, #{
+            elements => 20,
+            memory => 52428800 % 50Mb
+        }},
+        {service_urls, #{
+            'Repository' => <<"dominant:8022/v1/domain/repository">>,
+            'RepositoryClient' => <<"dominant:8022/v1/domain/repository_client">>
+        }}
+    ]), #{}};
+
 start_app(hellgate = AppName) ->
     {start_app(AppName, [
         {host, ?HELLGATE_HOST},
@@ -78,15 +89,6 @@ start_app(hellgate = AppName) ->
     ]), #{
         hellgate_root_url => get_hellgate_url()
     }};
-
-start_app(dmt_client = AppName) ->
-    {start_app(AppName, [
-        {cache_update_interval, 5000}, % milliseconds
-        {service_urls, #{
-            'Repository' => <<"http://dominant:8022/v1/domain/repository">>,
-            'RepositoryClient' => <<"http://dominant:8022/v1/domain/repository_client">>
-        }}
-    ]), #{}};
 
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
@@ -131,7 +133,6 @@ start_apps(Apps) ->
 -type account()        :: map().
 -type contract_id()    :: dmsl_domain_thrift:'ContractID'().
 -type shop_id()        :: dmsl_domain_thrift:'ShopID'().
--type category()       :: dmsl_domain_thrift:'CategoryRef'().
 -type cost()           :: integer() | {integer(), binary()}.
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type timestamp()      :: integer().
@@ -152,49 +153,6 @@ make_party_params() ->
         }
     }.
 
--spec create_contract(dmsl_payment_processing_thrift:'ContractParams'(), Client :: pid()) ->
-    contract_id().
-
-create_contract(#payproc_ContractParams{} = Params, Client) ->
-    #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_contract(Params, Client),
-    #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
-    {_, #domain_Contract{id = ContractID}} = lists:keyfind(contract_creation, 1, Changeset),
-    ok = hg_client_party:accept_claim(ClaimID, Client),
-    ContractID.
-
--spec create_shop(contract_id(), category(), binary(), Client :: pid()) ->
-    shop_id().
-
-create_shop(ContractID, Category, Name, Client) ->
-    create_shop(ContractID, Category, Name, undefined, Client).
-
--spec create_shop(contract_id(), category(), binary(), binary(), Client :: pid()) ->
-    shop_id().
-
-create_shop(ContractID, Category, Name, Description, Client) ->
-    PayoutToolID = hg_ct_helper:get_first_payout_tool_id(ContractID, Client),
-    Params = #payproc_ShopParams{
-        contract_id       = ContractID,
-        payout_tool_id    = PayoutToolID,
-        category          = Category,
-        details           = make_shop_details(Name, Description)
-    },
-    #payproc_ClaimResult{id = ClaimID} = hg_client_party:create_shop(Params, Client),
-    #payproc_Claim{changeset = Changeset} = hg_client_party:get_claim(ClaimID, Client),
-    {_, #domain_Shop{id = ShopID}} = lists:keyfind(shop_creation, 1, Changeset),
-    ok = hg_client_party:accept_claim(ClaimID, Client),
-    #payproc_ClaimResult{} = hg_client_party:activate_shop(ShopID, Client),
-    ok = flush_events(Client),
-    ShopID.
-
-flush_events(Client) ->
-    case hg_client_party:pull_event(500, Client) of
-        timeout ->
-            ok;
-        _Event ->
-            flush_events(Client)
-    end.
-
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().
 
@@ -210,7 +168,7 @@ get_first_battle_ready_contract_id(Client) ->
     IDs = lists:foldl(fun({ID, Contract}, Acc) ->
             case Contract of
                 #domain_Contract{
-                    contractor = #domain_Contractor{},
+                    contractor = {legal_entity, _},
                     payout_tools = [#domain_PayoutTool{} | _]
                 } ->
                     [ID | Acc];
@@ -265,8 +223,8 @@ make_battle_ready_contract_params(TemplateRef) ->
         bank_post_account = <<"123129876">>,
         bank_bik = <<"66642666">>
     },
-    Contractor = #domain_Contractor{
-        entity = {russian_legal_entity, #domain_RussianLegalEntity {
+    Contractor = {legal_entity,
+        {russian_legal_entity, #domain_RussianLegalEntity {
             registered_name = <<"Hoofs & Horns OJSC">>,
             registered_number = <<"1234509876">>,
             inn = <<"1213456789012">>,
@@ -274,18 +232,27 @@ make_battle_ready_contract_params(TemplateRef) ->
             post_address = <<"NaN">>,
             representative_position = <<"Director">>,
             representative_full_name = <<"Someone">>,
-            representative_document = <<"100$ banknote">>
-        }},
-        bank_account = BankAccount
-    },
-    PayoutToolParams = #payproc_PayoutToolParams{
-        currency = ?cur(<<"RUB">>),
-        tool_info = {bank_account, BankAccount}
+            representative_document = <<"100$ banknote">>,
+            bank_account = BankAccount
+        }}
     },
     #payproc_ContractParams{
         contractor = Contractor,
-        template = TemplateRef,
-        payout_tool_params = PayoutToolParams
+        template = TemplateRef
+    }.
+
+-spec make_battle_ready_payout_tool_params() ->
+    dmsl_payment_processing_thrift:'PayoutToolParams'().
+
+make_battle_ready_payout_tool_params() ->
+    #payproc_PayoutToolParams{
+        currency = ?cur(<<"RUB">>),
+        tool_info = {bank_account, #domain_BankAccount{
+            account = <<"4276300010908312893">>,
+            bank_name = <<"SomeBank">>,
+            bank_post_account = <<"123129876">>,
+            bank_bik = <<"66642666">>
+        }}
     }.
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), cost()) ->

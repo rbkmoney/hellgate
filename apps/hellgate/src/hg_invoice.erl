@@ -314,7 +314,7 @@ handle_signal({repair, _}, St) ->
     #{state => St}.
 
 handle_expiration(St) ->
-    Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(overdue))))},
+    Event = {public, ?invoice_ev(?invoice_status_changed(?invoice_cancelled(format_reason(overdue))))},
     #{event => Event, state => St}.
 
 %%
@@ -353,7 +353,7 @@ handle_call({fulfill, Reason}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(paid, St),
-    Event = {public, ?invoice_ev(?invoice_status_changed(?fulfilled(format_reason(Reason))))},
+    Event = {public, ?invoice_ev(?invoice_status_changed(?invoice_fulfilled(format_reason(Reason))))},
     #{response => ok, event => Event, state => St};
 
 handle_call({rescind, Reason}, St) ->
@@ -361,7 +361,7 @@ handle_call({rescind, Reason}, St) ->
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(unpaid, St),
     _ = assert_no_pending_payment(St),
-    Event = {public, ?invoice_ev(?invoice_status_changed(?cancelled(format_reason(Reason))))},
+    Event = {public, ?invoice_ev(?invoice_status_changed(?invoice_cancelled(format_reason(Reason))))},
     #{response => ok, event => Event, action => hg_machine_action:unset_timer(), state => St};
 
 handle_call({create_payment_adjustment, PaymentID, Params}, St) ->
@@ -440,7 +440,7 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                     {ok, {Events2, Action}} = hg_invoice_payment:start_session(?captured()),
                     #{event => wrap_payment_events(PaymentID, Events1 ++ Events2), action => Action, state => St};
                 ?captured() ->
-                    Events2 = [{public, ?invoice_ev(?invoice_status_changed(?paid()))}],
+                    Events2 = [{public, ?invoice_ev(?invoice_status_changed(?invoice_paid()))}],
                     #{event => wrap_payment_events(PaymentID, Events1) ++ Events2, state => St};
                 ?failed(_) ->
                     #{event => wrap_payment_events(PaymentID, Events1), action => set_invoice_timer(St), state => St}
@@ -461,13 +461,9 @@ get_payment_opts(St = #st{invoice = Invoice}) ->
         invoice => Invoice
     }.
 
-%%
-
 checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp}}) ->
     PartyID = get_party_id(St),
     hg_party_machine:checkout(PartyID, CreationTimestamp).
-
-%%
 
 handle_result(#{state := St} = Params) ->
     Event = maps:get(event, Params, []),
@@ -504,7 +500,7 @@ create_invoice(ID, V = #payproc_InvoiceParams{}, PartyID) ->
         shop_id         = V#payproc_InvoiceParams.shop_id,
         owner_id        = PartyID,
         created_at      = hg_datetime:format_now(),
-        status          = ?unpaid(),
+        status          = ?invoice_unpaid(),
         cost            = V#payproc_InvoiceParams.cost,
         due             = V#payproc_InvoiceParams.due,
         details         = V#payproc_InvoiceParams.details,

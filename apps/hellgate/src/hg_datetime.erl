@@ -40,12 +40,12 @@ format_now() ->
 compare(T1, T2) when is_binary(T1) andalso is_binary(T2) ->
     compare_int(to_integer(T1), to_integer(T2)).
 
-% Compare exclusivly! undefined == ∞
+% Compare inclusivly! undefined == ∞
 -spec between(timestamp(), timestamp() | undefined, timestamp() | undefined) -> boolean().
 
 between(Timestamp, Start, End) ->
-    LB = to_interval_bound(Start, exclusive),
-    UB = to_interval_bound(End, exclusive),
+    LB = to_interval_bound(Start, inclusive),
+    UB = to_interval_bound(End, inclusive),
     between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}).
 
 -spec between(timestamp(), timestamp_interval()) -> boolean().

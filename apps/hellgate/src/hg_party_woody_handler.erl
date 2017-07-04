@@ -21,6 +21,8 @@ handle_function(Func, Args, Opts) ->
 -spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
+%% Party
+
 handle_function_('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
@@ -43,66 +45,6 @@ handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     hg_party_machine:get_party(PartyID);
-
-handle_function_('CreateContract', [UserInfo, PartyID, ContractParams], _Opts) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_party_mgmt_meta(PartyID),
-    ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {create_contract, ContractParams});
-
-handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_party_mgmt_meta(PartyID),
-    ok = assert_party_accessible(PartyID),
-    Party = hg_party_machine:get_party(PartyID),
-    hg_party:get_contract(ContractID, Party);
-
-handle_function_(
-    'BindContractLegalAgreemnet',
-    [UserInfo, PartyID, ContractID, LegalAgreement],
-    _Opts
-) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_party_mgmt_meta(PartyID),
-    ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {bind_contract_legal_agreemnet, ContractID, LegalAgreement});
-
-handle_function_(
-    'TerminateContract',
-    [UserInfo, PartyID, ContractID, Reason],
-    _Opts
-) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_party_mgmt_meta(PartyID),
-    ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {terminate_contract, ContractID, Reason});
-
-handle_function_(
-    'CreateContractAdjustment',
-    [UserInfo, PartyID, ContractID, Params],
-    _Opts
-) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_party_mgmt_meta(PartyID),
-    ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {create_contract_adjustment, ContractID, Params});
-
-handle_function_(
-    'CreatePayoutTool',
-    [UserInfo, PartyID, ContractID, Params],
-    _Opts
-) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_party_mgmt_meta(PartyID),
-    ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {create_payout_tool, ContractID, Params});
-
-handle_function_('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_party_mgmt_meta(PartyID),
-    ok = assert_party_accessible(PartyID),
-    #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
-    hg_party_machine:get_public_history(PartyID, AfterID, Limit);
 
 handle_function_('Block', [UserInfo, PartyID, Reason], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -128,24 +70,33 @@ handle_function_('Activate', [UserInfo, PartyID], _Opts) ->
     ok = assert_party_accessible(PartyID),
     hg_party_machine:call(PartyID, activate);
 
-handle_function_('CreateShop', [UserInfo, PartyID, Params], _Opts) ->
+%% Contract
+
+handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {create_shop, Params});
+    Party = hg_party_machine:get_party(PartyID),
+    case hg_party:get_contract(ContractID, Party) of
+        #domain_Contract{} = Contract ->
+            Contract;
+        undefined ->
+            throw(#payproc_ContractNotFound{})
+    end;
+
+%% Shop
 
 handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     Party = hg_party_machine:get_party(PartyID),
-    hg_party:get_shop(ID, Party);
-
-handle_function_('UpdateShop', [UserInfo, PartyID, ID, Update], _Opts) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_party_mgmt_meta(PartyID),
-    ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {update_shop, ID, Update});
+    case hg_party:get_shop(ID, Party) of
+        #domain_Shop{} = Shop ->
+            Shop;
+        undefined ->
+            throw(#payproc_ShopNotFound{})
+    end;
 
 handle_function_('BlockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -171,35 +122,60 @@ handle_function_('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
     ok = assert_party_accessible(PartyID),
     hg_party_machine:call(PartyID, {activate_shop, ID});
 
+%% Claim
+
+handle_function_('CreateClaim', [UserInfo, PartyID, Changeset], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    hg_party_machine:call(PartyID, {create_claim, Changeset});
+
 handle_function_('GetClaim', [UserInfo, PartyID, ID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     hg_party_machine:get_claim(ID, PartyID);
 
-handle_function_('GetPendingClaim', [UserInfo, PartyID], _Opts) ->
+handle_function_('GetClaims', [UserInfo, PartyID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    hg_party_machine:get_pending_claim(PartyID);
+    hg_party_machine:get_claims(PartyID);
 
-handle_function_('AcceptClaim', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('AcceptClaim', [UserInfo, PartyID, ID, ClaimRevision], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {accept_claim, ID});
+    hg_party_machine:call(PartyID, {accept_claim, ID, ClaimRevision});
 
-handle_function_('DenyClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
+handle_function_('UpdateClaim', [UserInfo, PartyID, ID, ClaimRevision, Changeset], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {deny_claim, ID, Reason});
+    hg_party_machine:call(PartyID, {update_claim, ID, ClaimRevision, Changeset});
 
-handle_function_('RevokeClaim', [UserInfo, PartyID, ID, Reason], _Opts) ->
+handle_function_('DenyClaim', [UserInfo, PartyID, ID, ClaimRevision, Reason], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {revoke_claim, ID, Reason});
+    hg_party_machine:call(PartyID, {deny_claim, ID, ClaimRevision, Reason});
+
+handle_function_('RevokeClaim', [UserInfo, PartyID, ID, ClaimRevision, Reason], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    hg_party_machine:call(PartyID, {revoke_claim, ID, ClaimRevision, Reason});
+
+%% Event
+
+handle_function_('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
+    hg_party_machine:get_public_history(PartyID, AfterID, Limit);
+
+%% ShopAccount
 
 handle_function_('GetAccountState', [UserInfo, PartyID, AccountID], _Opts) ->
     ok = assume_user_identity(UserInfo),
