@@ -265,7 +265,7 @@ map_start_error({error, Reason}) ->
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
--spec publish_event(invoice_id(), hg_machine:event(ev())) ->
+-spec publish_event(invoice_id(), ev()) ->
     {true, hg_event_provider:public_event()}.
 
 publish_event(InvoiceID, {Seq, Ev}) ->
