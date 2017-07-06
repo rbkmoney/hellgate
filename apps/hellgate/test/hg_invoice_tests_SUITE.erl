@@ -254,7 +254,7 @@ invoice_cancellation_after_payment_timeout(C) ->
     ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started())) = next_event(InvoiceID, Client),
     ?payment_ev(PaymentID, ?session_ev(?captured(), ?interaction_requested(_))) = next_event(InvoiceID, Client),
     %% wait for payment timeout
-    ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished())) = next_event(InvoiceID, Client),
+    ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_failed(_)))) = next_event(InvoiceID, Client),
     ?payment_ev(PaymentID, ?payment_status_changed(?failed(_))) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
 
@@ -281,7 +281,7 @@ payment_success(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = capture_payment(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
     ?invoice_state(
         ?invoice_w_status(?paid()),
@@ -307,7 +307,10 @@ payment_success_on_second_try(C) ->
     BadForm = #{<<"tag">> => <<"666">>},
     _ = assert_failed_post_request({URL, BadForm}),
     _ = assert_success_post_request({URL, GoodForm}),
-    ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished())) = next_event(InvoiceID, Client),
+    ?payment_ev(
+        PaymentID,
+        ?session_ev(?captured(), ?session_finished(?session_succeeded()))
+    ) = next_event(InvoiceID, Client),
     ?payment_ev(PaymentID, ?payment_status_changed(?captured())) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client).
 
@@ -320,17 +323,11 @@ invoice_success_on_third_payment(C) ->
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID1 = process_payment(InvoiceID, PaymentParams, Client),
-    ?payment_ev(PaymentID1, ?session_ev(?captured(), ?session_started())) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID1, ?session_ev(?captured(), ?interaction_requested(_))) = next_event(InvoiceID, Client),
     %% wait for payment timeout and start new one after
-    ?payment_ev(PaymentID1, ?session_ev(?captured(), ?session_finished())) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID1, ?payment_status_changed(?failed(_))) = next_event(InvoiceID, Client),
+    PaymentID1 = await_payment_failure(InvoiceID, PaymentID1, Client),
     PaymentID2 = process_payment(InvoiceID, PaymentParams, Client),
-    ?payment_ev(PaymentID2, ?session_ev(?captured(), ?session_started())) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID2, ?session_ev(?captured(), ?interaction_requested(_))) = next_event(InvoiceID, Client),
     %% wait for payment timeout and start new one after
-    ?payment_ev(PaymentID2, ?session_ev(?captured(), ?session_finished())) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID2, ?payment_status_changed(?failed(_))) = next_event(InvoiceID, Client),
+    PaymentID2 = await_payment_failure(InvoiceID, PaymentID2, Client),
     PaymentID3 = process_payment(InvoiceID, PaymentParams, Client),
     ?payment_ev(PaymentID3, ?session_ev(?captured(), ?session_started())) = next_event(InvoiceID, Client),
     ?payment_ev(
@@ -340,7 +337,10 @@ invoice_success_on_third_payment(C) ->
     GoodPost = get_post_request(UserInteraction),
     %% simulate user interaction FTW!
     _ = assert_success_post_request(GoodPost),
-    ?payment_ev(PaymentID3, ?session_ev(?captured(), ?session_finished())) = next_event(InvoiceID, Client),
+    ?payment_ev(
+        PaymentID3,
+        ?session_ev(?captured(), ?session_finished(?session_succeeded()))
+    ) = next_event(InvoiceID, Client),
     ?payment_ev(PaymentID3, ?payment_status_changed(?captured())) = next_event(InvoiceID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client).
 
@@ -354,13 +354,13 @@ payment_risk_score_check(C) ->
     % Invoice w/ cost < 500000
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID1 = process_payment(InvoiceID1, make_payment_params(), Client),
-    PaymentID1 = capture_payment(InvoiceID1, PaymentID1, Client),
+    PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client),
     low = get_risk_coverage_from_route(InvoiceID1, PaymentID1, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID1, Client),
     % Invoice w/ cost > 500000
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
-    PaymentID2 = capture_payment(InvoiceID2, PaymentID2, Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
     high = get_risk_coverage_from_route(InvoiceID2, PaymentID2, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID2, Client).
 
@@ -383,10 +383,7 @@ invalid_payment_adjustment(C) ->
     %% no way to create adjustment for a payment not yet finished
     ?invalid_payment_status(?processed()) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
-    ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started())) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID, ?session_ev(?captured(), ?interaction_requested(_))) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished())) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID, ?payment_status_changed(?failed(_))) = next_event(InvoiceID, Client),
+    PaymentID = await_payment_failure(InvoiceID, PaymentID, Client),
     %% no way to create adjustment for a failed payment
     ?invalid_payment_status(?failed(_)) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
@@ -401,7 +398,7 @@ payment_adjustment_success(C) ->
     %% start a healthy man's payment
     PaymentParams = make_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = capture_payment(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
     #domain_InvoicePayment{cash_flow = CF1} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
@@ -553,7 +550,7 @@ external_account_posting(C) ->
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     ?invoice_created(?invoice_w_status(?unpaid())) = next_event(InvoiceID, InvoicingClient),
     PaymentID = process_payment(InvoiceID, make_payment_params(), InvoicingClient),
-    PaymentID = capture_payment(InvoiceID, PaymentID, InvoicingClient),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
         AccountID ||
             #domain_FinalCashFlowPosting{
@@ -605,7 +602,7 @@ next_event(InvoiceID, Timeout, Client) ->
 
 filter_event(?invoice_ev(E)) ->
     filter_event(E);
-filter_event(?payment_ev(_, ?session_ev(_, ?session_proxy_st_changed(_)))) ->
+filter_event(?payment_ev(_, ?session_ev(_, ?proxy_st_changed(_)))) ->
     undefined;
 filter_event(?payment_ev(_, ?session_ev(_, ?session_suspended()))) ->
     undefined;
@@ -712,15 +709,34 @@ process_payment(InvoiceID, PaymentParams, Client) ->
     ?payment(PaymentID) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()))) = next_event(InvoiceID, Client),
     ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_bound(?trx_info(_)))) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished())) = next_event(InvoiceID, Client),
+    ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(_)))) = next_event(InvoiceID, Client),
+    ?payment_ev(
+        PaymentID,
+        ?session_ev(?processed(), ?session_finished(?session_succeeded()))
+    ) = next_event(InvoiceID, Client),
     ?payment_ev(PaymentID, ?payment_status_changed(?processed())) = next_event(InvoiceID, Client),
     PaymentID.
 
-capture_payment(InvoiceID, PaymentID, Client) ->
+await_payment_capture(InvoiceID, PaymentID, Client) ->
     ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started())) = next_event(InvoiceID, Client),
-    ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished())) = next_event(InvoiceID, Client),
+    ?payment_ev(
+        PaymentID,
+        ?session_ev(?captured(), ?session_finished(?session_succeeded()))
+    ) = next_event(InvoiceID, Client),
     ?payment_ev(PaymentID, ?payment_status_changed(?captured())) = next_event(InvoiceID, Client),
+    PaymentID.
+
+await_payment_failure(InvoiceID, PaymentID, Client) ->
+    ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started())) = next_event(InvoiceID, Client),
+    ?payment_ev(
+        PaymentID,
+        ?session_ev(?captured(), ?interaction_requested(_))
+    ) = next_event(InvoiceID, Client),
+    ?payment_ev(
+        PaymentID,
+        ?session_ev(?captured(), ?session_finished(?session_failed(Failure)))
+    ) = next_event(InvoiceID, Client),
+    ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure))) = next_event(InvoiceID, Client),
     PaymentID.
 
 assert_success_post_request(Req) ->
