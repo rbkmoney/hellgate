@@ -553,7 +553,7 @@ handle_proxy_result(
     {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
 handle_proxy_callback_timeout(Action, Session) ->
-    Events = [?session_finished(?session_failed(construct_failure(<<"provider_timeout">>)))],
+    Events = [?session_finished(?session_failed(?operation_timeout()))],
     {wrap_session_events(Events, Session), Action}.
 
 wrap_session_events(SessionEvents, #{target := Target}) ->
@@ -725,11 +725,8 @@ collect_proxy_options(
         ]
     ).
 
-construct_failure(Code) when is_binary(Code) ->
-    #domain_OperationFailure{code = Code}.
-
 convert_failure(#'Failure'{code = Code, description = Description}) ->
-    #domain_OperationFailure{code = Code, description = Description}.
+    ?external_failure(Code, Description).
 
 %%
 

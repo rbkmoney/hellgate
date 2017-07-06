@@ -257,7 +257,7 @@ invoice_cancellation_after_payment_timeout(C) ->
     ] = next_event(InvoiceID, Client),
     %% wait for payment timeout
     [
-        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_failed(_)))),
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?operation_timeout()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(_)))
     ] = next_event(InvoiceID, Client),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
@@ -729,7 +729,10 @@ await_payment_failure(InvoiceID, PaymentID, Client) ->
         )
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_failed(Failure)))),
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?captured(), ?session_finished(?session_failed(Failure = ?operation_timeout())))
+        ),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
     ] = next_event(InvoiceID, Client),
     PaymentID.
