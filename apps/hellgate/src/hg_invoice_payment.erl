@@ -66,11 +66,14 @@
 -type adjustment_id()     :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 -type target()            :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
+-type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
 -type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
 
 -type session() :: #{
-    status      => active | suspended | finished,
-    proxy_state => proxy_state() | undefined
+    target      := target(),
+    status      := active | suspended | finished,
+    trx         => trx_info(),
+    proxy_state => proxy_state()
 }.
 
 %%
@@ -455,131 +458,158 @@ get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{new_cash_flow = Cashflo
     {next | done, hg_machine:result()}.
 
 process_signal(timeout, St, Options) ->
+    hg_log_scope:scope(
+        payment,
+        fun() -> process_timeout(St, Options) end,
+        get_st_meta(St)
+    ).
+
+process_timeout(St, Options) ->
     Action = hg_machine_action:new(),
-    hg_log_scope:scope(payment, fun() ->
-        case get_active_session_status(St) of
-            active ->
-                process(Action, St, Options);
-            suspended ->
-                fail(construct_failure(<<"provider_timeout">>), Action, St)
-        end
-    end, get_st_meta(St)).
+    case get_target_session_status(St) of
+        active ->
+            process(Action, St, Options);
+        suspended ->
+            process_callback_timeout(Action, St, Options)
+    end.
 
 -spec process_call({callback, _}, st(), opts()) ->
     {_, {next | done, hg_machine:result()}}. % FIXME
 
 process_call({callback, Payload}, St, Options) ->
-    hg_log_scope:scope(payment, fun() ->
-        case get_active_session_status(St) of
-            suspended ->
-                Action = hg_machine_action:unset_timer(),
-                handle_callback(Payload, Action, St, Options);
-            active ->
-                % there's ultimately no way how we could end up here
-                error(invalid_session_status)
-        end
-    end, get_st_meta(St)).
+    hg_log_scope:scope(
+        payment,
+        fun() -> process_callback(Payload, St, Options) end,
+        get_st_meta(St)
+    ).
+
+process_callback(Payload, St, Options) ->
+    case get_target_session_status(St) of
+        suspended ->
+            Action = hg_machine_action:unset_timer(),
+            handle_callback(Payload, Action, St, Options);
+        active ->
+            % there's ultimately no way how we could end up here
+            error(invalid_session_status)
+    end.
+
+process_callback_timeout(Action, St, Options) ->
+    Session = get_target_session(St),
+    Result = handle_proxy_callback_timeout(Action, Session),
+    finish_processing(Result, St, Options).
 
 process(Action0, St, Options) ->
-    ProxyContext = construct_proxy_context(St, Options),
+    Session = get_target_session(St),
+    ProxyContext = construct_proxy_context(Session, get_payment(St), Options),
     {ok, ProxyResult} = issue_process_call(ProxyContext, St, Options),
-    handle_proxy_result(ProxyResult, Action0, St, Options).
+    Result = handle_proxy_result(ProxyResult, Action0, Session),
+    finish_processing(Result, St, Options).
 
 handle_callback(Payload, Action0, St, Options) ->
-    ProxyContext = construct_proxy_context(St, Options),
+    Session = get_target_session(St),
+    ProxyContext = construct_proxy_context(Session, get_payment(St), Options),
     {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St, Options),
-    handle_callback_result(CallbackResult, Action0, St, Options).
+    {Response, Result} = handle_callback_result(CallbackResult, Action0, get_target_session(St)),
+    {Response, finish_processing(Result, St, Options)}.
+
+finish_processing({Events, Action}, St, Options) ->
+    St1 = collapse_changes(Events, St),
+    case get_target_session(St1) of
+        #{status := finished, result := ?session_succeeded(), target := Target} ->
+            case Target of
+                {captured, _} ->
+                    _AccountsState = commit_plan(St, Options);
+                {cancelled, _} ->
+                    _AccountsState = rollback_plan(St, Options);
+                {processed, _} ->
+                    ok
+            end,
+            {done, {Events ++ [?payment_status_changed(Target)], Action}};
+        #{status := finished, result := ?session_failed(Failure)} ->
+            % TODO is it always rollback?
+            _AccountsState = rollback_plan(St, Options),
+            {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
+        #{} ->
+            {next, {Events, Action}}
+    end.
 
 handle_callback_result(
     #prxprv_CallbackResult{result = ProxyResult, response = Response},
-    Action0, St, Options
+    Action0,
+    Session
 ) ->
-    {What, {Events, Action}} = handle_proxy_result(ProxyResult, Action0, St, Options),
-    {Response, {What, {[session_event(?session_activated(), St) | Events], Action}}}.
+    Events1 = wrap_session_events([?session_activated()], Session),
+    {Events2, Action} = handle_proxy_result(ProxyResult, Action0, Session),
+    {Response, {Events1 ++ Events2, Action}}.
 
 handle_proxy_result(
     #prxprv_ProxyResult{intent = {_, Intent}, trx = Trx, next_state = ProxyState},
-    Action0, St, Options
+    Action0,
+    Session
 ) ->
-    Events1 = bind_transaction(Trx, St),
-    {What, {Events2, Action}} = handle_proxy_intent(Intent, ProxyState, Action0, St, Options),
-    {What, {Events1 ++ Events2, Action}}.
+    Events1 = bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
+    {Events3, Action} = handle_proxy_intent(Intent, Action0),
+    {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
-bind_transaction(undefined, _St) ->
+handle_proxy_callback_timeout(Action, Session) ->
+    Events = [?session_finished(?session_failed(construct_failure(<<"provider_timeout">>)))],
+    {wrap_session_events(Events, Session), Action}.
+
+wrap_session_events(SessionEvents, #{target := Target}) ->
+    [?session_ev(Target, Ev) || Ev <- SessionEvents].
+
+bind_transaction(undefined, _Session) ->
     % no transaction yet
     [];
-bind_transaction(Trx, St = #st{payment = #domain_InvoicePayment{trx = undefined}}) ->
+bind_transaction(Trx, #{trx := undefined}) ->
     % got transaction, nothing bound so far
-    [session_event(?session_bound(Trx), St)];
-bind_transaction(Trx, #st{payment = #domain_InvoicePayment{trx = Trx}}) ->
+    [?trx_bound(Trx)];
+bind_transaction(Trx, #{trx := Trx}) ->
     % got the same transaction as one which has been bound previously
     [];
-bind_transaction(Trx, St = #st{payment = #domain_InvoicePayment{trx = TrxWas}}) ->
+bind_transaction(Trx, #{trx := TrxWas}) ->
     % got transaction which differs from the bound one
     % verify against proxy contracts
     case Trx#domain_TransactionInfo.id of
         ID when ID =:= TrxWas#domain_TransactionInfo.id ->
-            [session_event(?session_bound(Trx), St)];
+            [?trx_bound(Trx)];
         _ ->
             error(proxy_contract_violated)
     end.
 
-handle_proxy_intent(#'FinishIntent'{status = {success, _}}, _ProxyState, Action, St, Options) ->
-    Target = get_session_target(St),
-    case Target of
-        {captured, _} ->
-            _AccountsState = commit_plan(St, Options);
-        {cancelled, _} ->
-            _AccountsState = rollback_plan(St, Options);
-        {processed, _} ->
-            ok
-    end,
-    Events = [
-        session_event(?session_finished(), St),
-        ?payment_status_changed(Target)
-    ],
-    {done, {Events, Action}};
+update_proxy_state(undefined) ->
+    [];
+update_proxy_state(ProxyState) ->
+    [?proxy_st_changed(ProxyState)].
 
-handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, _ProxyState, Action0, St, Options) ->
-    _AccountsState = rollback_plan(St, Options),
-    fail(convert_failure(Failure), Action0, St);
+handle_proxy_intent(#'FinishIntent'{status = {success, _}}, Action) ->
+    Events = [?session_finished(?session_succeeded())],
+    {Events, Action};
 
-handle_proxy_intent(#'SleepIntent'{timer = Timer}, ProxyState, Action0, St, _Options) ->
+handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, Action) ->
+    Events = [?session_finished(?session_failed(convert_failure(Failure)))],
+    {Events, Action};
+
+handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
-    Events = [session_event(?session_proxy_st_changed(ProxyState), St)],
-    {next, {Events, Action}};
+    Events = [],
+    {Events, Action};
 
-handle_proxy_intent(
-    #'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction},
-    ProxyState, Action0, St, _Options
-) ->
+handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = try_set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
-    Events = [
-        session_event(?session_proxy_st_changed(ProxyState), St),
-        session_event(?session_suspended(), St)
-        | try_emit_interaction_event(UserInteraction, St)
-    ],
-    {next, {Events, Action}}.
+    Events = [?session_suspended() | try_request_interaction(UserInteraction)],
+    {Events, Action}.
 
 try_set_timer(undefined, Action) ->
     Action;
 try_set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).
 
-try_emit_interaction_event(undefined, _St) ->
+try_request_interaction(undefined) ->
     [];
-try_emit_interaction_event(UserInteraction, St) ->
-    [session_event(?interaction_requested(UserInteraction), St)].
-
-session_event(Event, St) ->
-    ?session_ev(get_session_target(St), Event).
-
-fail(Error, Action, St) ->
-    Events = [
-        session_event(?session_finished(), St),
-        ?payment_status_changed(?failed(Error))
-    ],
-    {done, {Events, Action}}.
+try_request_interaction(UserInteraction) ->
+    [?interaction_requested(UserInteraction)].
 
 commit_plan(St, Options) ->
     finalize_plan(fun hg_accounting:commit/2, St, Options).
@@ -592,22 +622,19 @@ finalize_plan(Finalizer, St, Options) ->
     FinalCashflow = get_cashflow(get_payment(St)),
     Finalizer(PlanID, [{1, FinalCashflow}]).
 
-get_cashflow(#domain_InvoicePayment{cash_flow = FinalCashflow}) ->
-    FinalCashflow.
-
 %%
 
-construct_proxy_context(St = #st{payment = Payment}, Options) ->
+construct_proxy_context(Session, Payment, Options) ->
     #prxprv_Context{
-        session = construct_session(get_session_target(St), get_active_session(St)),
+        session = construct_session(Session),
         payment_info = construct_payment_info(Payment, Options),
         options = collect_proxy_options(Payment)
     }.
 
-construct_session(Target, #{proxy_state := ProxyState}) ->
+construct_session(Session = #{target := Target}) ->
     #prxprv_Session{
         target = Target,
-        state = ProxyState
+        state = maps:get(proxy_state, Session, undefined)
     }.
 
 construct_payment_info(Payment, Options) ->
@@ -734,15 +761,6 @@ get_invoice_currency(#domain_Invoice{cost = #domain_Cash{currency = Currency}}) 
 get_payment_id(#st{payment = #domain_InvoicePayment{id = ID}}) ->
     ID.
 
-get_active_session_status(St) ->
-    get_session_status(get_active_session(St)).
-
-get_session_status(#{status := Status}) ->
-    Status.
-
-get_session_target(#st{target = Target}) ->
-    Target.
-
 %%
 
 -spec throw_invalid_request(binary()) -> no_return().
@@ -763,9 +781,19 @@ merge_change(?payment_status_changed(Status), St = #st{payment = Payment}) ->
     St#st{payment = Payment#domain_InvoicePayment{status = Status}};
 merge_change(?adjustment_ev(ID, Event), St) ->
     merge_adjustment_change(ID, Event, St);
+merge_change(?session_ev(Target, ?session_started()), St) ->
+    % FIXME why the hell dedicated handling
+    set_session(Target, create_session(Target, get_trx(get_payment(St))), St#st{target = Target});
 merge_change(?session_ev(Target, Event), St) ->
-    {Session, St1} = merge_session_change(Event, Target, get_session(Target, St), St),
-    set_session(Target, Session, St1).
+    Session = merge_session_change(Event, get_session(Target, St)),
+    St1 = set_session(Target, Session, St),
+    case get_session_status(Session) of
+        finished ->
+            % FIXME leaky transactions
+            set_payment(set_trx(get_session_trx(Session), get_payment(St1)), St1);
+        _ ->
+            St1
+    end.
 
 merge_adjustment_change(_ID, ?adjustment_created(Adjustment), St = #st{adjustments = As}) ->
     St#st{adjustments = [Adjustment | As]};
@@ -782,43 +810,67 @@ merge_adjustment_change(ID, ?adjustment_status_changed(Status), St0) ->
 set_payment(Payment, St = #st{}) ->
     St#st{payment = Payment}.
 
+get_cashflow(#domain_InvoicePayment{cash_flow = FinalCashflow}) ->
+    FinalCashflow.
+
 set_cashflow(Cashflow, Payment = #domain_InvoicePayment{}) ->
     Payment#domain_InvoicePayment{cash_flow = Cashflow}.
+
+get_trx(#domain_InvoicePayment{trx = Trx}) ->
+    Trx.
+
+set_trx(Trx, Payment = #domain_InvoicePayment{}) ->
+    Payment#domain_InvoicePayment{trx = Trx}.
 
 set_adjustment(Adjustment, St = #st{adjustments = As}) ->
     ID = get_adjustment_id(Adjustment),
     St#st{adjustments = lists:keyreplace(ID, #domain_InvoicePaymentAdjustment.id, As, Adjustment)}.
 
-merge_session_change(?session_started(), Target, undefined, St) ->
-    {create_session(), St#st{target = Target}};
-merge_session_change(?session_finished(), _Target, Session, St) ->
-    {Session#{status => finished}, St#st{target = undefined}};
-merge_session_change(?session_activated(), _Target, Session, St) ->
-    {Session#{status => active}, St};
-merge_session_change(?session_suspended(), _Target, Session, St) ->
-    {Session#{status => suspended}, St};
-merge_session_change(?session_bound(Trx), _Target, Session, St) ->
-    Payment = get_payment(St),
-    {Session, set_payment(Payment#domain_InvoicePayment{trx = Trx}, St)};
-merge_session_change(?session_proxy_st_changed(ProxyState), _Target, Session, St) ->
-    {Session#{proxy_state => ProxyState}, St};
-merge_session_change(?interaction_requested(_), _Target, Session, St) ->
-    {Session, St}.
+merge_session_change(?session_finished(Result), Session) ->
+    Session#{status := finished, result => Result};
+merge_session_change(?session_activated(), Session) ->
+    Session#{status := active};
+merge_session_change(?session_suspended(), Session) ->
+    Session#{status := suspended};
+merge_session_change(?trx_bound(Trx), Session) ->
+    Session#{trx := Trx};
+merge_session_change(?proxy_st_changed(ProxyState), Session) ->
+    Session#{proxy_state => ProxyState};
+merge_session_change(?interaction_requested(_), Session) ->
+    Session.
 
-create_session() ->
+create_session(Target, Trx) ->
     #{
+        target => Target,
         status => active,
-        proxy_state => undefined
+        trx    => Trx
     }.
 
-get_active_session(St) ->
-    get_session(get_session_target(St), St).
+get_target_session(St) ->
+    get_session(get_target(St), St).
 
 get_session(Target, #st{sessions = Sessions}) ->
     maps:get(Target, Sessions, undefined).
 
 set_session(Target, Session, St = #st{sessions = Sessions}) ->
     St#st{sessions = Sessions#{Target => Session}}.
+
+get_target_session_status(St) ->
+    get_session_status(get_target_session(St)).
+
+get_session_status(#{status := Status}) ->
+    Status.
+
+get_session_trx(#{trx := Trx}) ->
+    Trx.
+
+get_target(#st{target = Target}) ->
+    Target.
+
+%%
+
+collapse_changes(History, St) ->
+    lists:foldl(fun merge_change/2, St, History).
 
 %%
 

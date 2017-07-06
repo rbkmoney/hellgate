@@ -42,9 +42,9 @@
         #payproc_InvoicePaymentSessionStarted{}
     }
 ).
--define(session_finished(),
+-define(session_finished(Result),
     {invoice_payment_session_finished,
-        #payproc_InvoicePaymentSessionFinished{}
+        #payproc_InvoicePaymentSessionFinished{result = Result}
     }
 ).
 -define(session_suspended(),
@@ -57,12 +57,12 @@
         #payproc_InvoicePaymentSessionActivated{}
     }
 ).
--define(session_bound(Trx),
+-define(trx_bound(Trx),
     {invoice_payment_session_transaction_bound,
         #payproc_InvoicePaymentSessionTransactionBound{trx = Trx}
     }
 ).
--define(session_proxy_st_changed(ProxySt),
+-define(proxy_st_changed(ProxySt),
     {invoice_payment_session_proxy_state_changed,
         #payproc_InvoicePaymentSessionProxyStateChanged{proxy_state = ProxySt}
     }
@@ -71,6 +71,13 @@
     {invoice_payment_session_interaction_requested,
         #payproc_InvoicePaymentSessionInteractionRequested{interaction = UserInteraction}
     }
+).
+
+-define(session_succeeded(),
+    {succeeded, #payproc_SessionSucceeded{}}
+).
+-define(session_failed(Failure),
+    {failed, #payproc_SessionFailed{failure = Failure}}
 ).
 
 %% Adjustments
