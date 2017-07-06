@@ -1,7 +1,7 @@
 -ifndef(__hellgate_invoice_events__).
 -define(__hellgate_invoice_events__, 42).
 
--define(invoice_ev(Body), {invoice_event, Body}).
+-define(invoice_ev(Body), {invoice_change, Body}).
 
 -define(invoice_created(Invoice),
     {invoice_created,
@@ -13,7 +13,7 @@
 ).
 
 -define(payment_ev(PaymentID, Payload),
-    {invoice_payment_event, #payproc_InvoicePaymentEvent{
+    {invoice_payment_change, #payproc_InvoicePaymentChange{
         id = PaymentID,
         payload = Payload
     }}

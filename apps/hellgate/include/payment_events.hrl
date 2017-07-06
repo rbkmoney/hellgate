@@ -31,7 +31,7 @@
 %% Sessions
 
 -define(session_ev(Target, Payload),
-    {invoice_payment_session_event, #payproc_InvoicePaymentSessionEvent{
+    {invoice_payment_session_change, #payproc_InvoicePaymentSessionChange{
         target = Target,
         payload = Payload
     }}
@@ -83,7 +83,7 @@
 %% Adjustments
 
 -define(adjustment_ev(AdjustmentID, Payload),
-    {invoice_payment_adjustment_event, #payproc_InvoicePaymentAdjustmentEvent{
+    {invoice_payment_adjustment_change, #payproc_InvoicePaymentAdjustmentChange{
         id = AdjustmentID,
         payload = Payload
     }}
