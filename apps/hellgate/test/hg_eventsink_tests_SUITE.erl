@@ -85,8 +85,7 @@ end_per_testcase(_Name, _C) ->
 -define(event(ID, InvoiceID, Seq, Payload),
     #payproc_Event{
         id = ID,
-        source = {party, InvoiceID},
-        sequence = Seq,
+        source = {party_id, InvoiceID},
         payload = Payload
     }
 ).
@@ -112,8 +111,7 @@ events_observed(C) ->
 
 consistent_history(C) ->
     Events = hg_client_eventsink:pull_events(5000, 500, ?c(eventsink_client, C)),
-    ok = hg_eventsink_history:assert_total_order(Events),
-    ok = hg_eventsink_history:assert_contiguous_sequences(Events).
+    ok = hg_eventsink_history:assert_total_order(Events).
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 

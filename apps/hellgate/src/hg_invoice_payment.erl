@@ -79,7 +79,7 @@
 -include("invoice_events.hrl").
 
 -type ev() ::
-    {invoice_payment_event, dmsl_payment_processing_thrift:'InvoicePaymentEvent'()} |
+    {invoice_payment_change, dmsl_payment_processing_thrift:'InvoicePaymentChange'()} |
     {session_event, session_ev()}.
 
 -type session_ev() ::

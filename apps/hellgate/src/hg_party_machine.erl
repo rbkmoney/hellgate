@@ -37,7 +37,6 @@
     timestamp            :: timestamp(),
     revision             :: hg_domain:revision(),
     claims   = #{}       :: #{claim_id() => claim()},
-    sequence = 0         :: 0 | sequence(),
     migration_data = #{} :: #{any() => any()}
 }).
 
@@ -64,8 +63,7 @@
 -type public_event() :: dmsl_payment_processing_thrift:'EventPayload'().
 -type private_event() :: none().
 
--type ev() ::
-    {sequence(), public_event() | private_event()}.
+-type ev() :: public_event() | private_event().
 
 -type party()           :: dmsl_domain_thrift:'Party'().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
@@ -74,7 +72,6 @@
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
 -type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
 -type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
--type sequence()        :: pos_integer().
 -type timestamp()       :: dmsl_base_thrift:'Timestamp'().
 
 -spec namespace() ->
@@ -249,16 +246,16 @@ handle_call({revoke_claim, ID, ClaimRevision, Reason}, StEvents0 = {St, _}) ->
     StEvents1 = finalize_claim(Claim, StEvents0),
     respond(ok, StEvents1).
 
-publish_party_event(Source, {ID, Dt, {Seq, Payload = ?party_ev(_)}}) ->
-    {true, #payproc_Event{id = ID, source = Source, created_at = Dt, sequence = Seq, payload = Payload}};
+publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
+    {true, #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}};
 publish_party_event(_Source, {_ID, _Dt, _Event}) ->
     false.
 
 -spec publish_event(party_id(), hg_machine:event(ev())) ->
     {true, hg_event_provider:public_event()} | false.
 
-publish_event(PartyID, {Seq, Ev = ?party_ev(_)}) ->
-    {true, {{party, PartyID}, Seq, Ev}};
+publish_event(PartyID, Ev = ?party_ev(_)) ->
+    {true, {{party_id, PartyID}, Ev}};
 publish_event(_InvoiceID, _) ->
     false.
 
@@ -329,7 +326,7 @@ get_claims(PartyID) ->
 get_public_history(PartyID, AfterID, Limit) ->
     hg_history:get_public_history(
         fun (ID, Lim) -> get_history(PartyID, ID, Lim) end,
-        fun (Event) -> publish_party_event({party, PartyID}, Event) end,
+        fun (Event) -> publish_party_event({party_id, PartyID}, Event) end,
         AfterID, Limit
     ).
 
@@ -468,12 +465,8 @@ finalize_claim(Claim, StEvents = {St, _}) ->
     )),
     apply_state_event(Event, StEvents).
 
-apply_state_event(EventData, {St, EventsAcc}) ->
-    Event = construct_event(EventData, St),
-    {merge_history(Event, St), EventsAcc ++ [Event]}.
-
-construct_event(EventData = ?party_ev(_), #st{sequence = Seq}) ->
-    {Seq + 1, EventData}.
+apply_state_event(Event, {St, EventsAcc}) ->
+    {merge_event(Event, St), EventsAcc ++ [Event]}.
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
@@ -526,38 +519,35 @@ checkout_history([{_ID, EventTimestamp, Ev} | Rest], PrevTimestamp, #st{timestam
         later when PrevTimestamp == undefined ->
             {error, revision_not_found};
         _ ->
-            checkout_history(Rest, EventTimestamp, merge_history(Ev, St))
+            checkout_history(Rest, EventTimestamp, merge_event(Ev, St))
     end;
 checkout_history([], _, St) ->
     {ok, St}.
 
-merge_history({Seq, Event}, St) ->
-    merge_event(Event, St#st{sequence = Seq}).
+merge_event(?party_ev(PartyChange), St) ->
+    merge_party_change(PartyChange, St).
 
-merge_event(?party_ev(Ev), St) ->
-    merge_party_event(Ev, St).
-
-merge_party_event(?party_created(Party), St) ->
+merge_party_change(?party_created(Party), St) ->
     St#st{party = Party};
-merge_party_event(?party_blocking(Blocking), St) ->
+merge_party_change(?party_blocking(Blocking), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:blocking(Blocking, Party)};
-merge_party_event(?party_suspension(Suspension), St) ->
+merge_party_change(?party_suspension(Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:suspension(Suspension, Party)};
-merge_party_event(?shop_blocking(ID, Blocking), St) ->
+merge_party_change(?shop_blocking(ID, Blocking), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:shop_blocking(ID, Blocking, Party)};
-merge_party_event(?shop_suspension(ID, Suspension), St) ->
+merge_party_change(?shop_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:shop_suspension(ID, Suspension, Party)};
-merge_party_event(?claim_created(Claim), St) ->
+merge_party_change(?claim_created(Claim), St) ->
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1);
-merge_party_event(?claim_updated(ID, Changeset, Revision, UpdatedAt), St) ->
+merge_party_change(?claim_updated(ID, Changeset, Revision, UpdatedAt), St) ->
     Claim = hg_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
     set_claim(Claim, St);
-merge_party_event(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) ->
+merge_party_change(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) ->
     Claim = hg_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1).

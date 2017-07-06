@@ -1,7 +1,9 @@
 -ifndef(__hellgate_party_events__).
 -define(__hellgate_party_events__, 42).
 
--define(party_ev(Body), {party_event, Body}).
+%% FIXME old names remain for simplicity, should be changes
+%% FIXME also [PartyChanges] remain for simplicity, cuz we don't have multi-payload events for now
+-define(party_ev(PartyChanges), {party_changes, [PartyChanges]}).
 
 -define(party_created(Party), {party_created, Party}).
 -define(party_blocking(Blocking), {party_blocking, Blocking}).

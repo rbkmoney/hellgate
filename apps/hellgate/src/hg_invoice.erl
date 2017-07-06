@@ -47,7 +47,6 @@
 -record(st, {
     invoice :: undefined | invoice(),
     payments = [] :: [{payment_id(), payment_st()}],
-    sequence = 0 :: 0 | sequence(),
     pending = invoice ::
         invoice |
         {payment, payment_id()}
@@ -205,8 +204,8 @@ get_public_history(InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Lim
 
 publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
     case publish_event(InvoiceID, Event) of
-        {true, {Source, Seq, Ev}} ->
-            {true, #payproc_Event{id = ID, source = Source, created_at = Dt, sequence = Seq, payload = Ev}};
+        {true, {Source, Ev}} ->
+            {true, #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}};
         false ->
             false
     end.
@@ -251,11 +250,10 @@ map_start_error({error, Reason}) ->
 -type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 -type adjustment_id() :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type payment_st() :: hg_invoice_payment:st().
--type sequence() :: pos_integer().
 
 -type ev() ::
-    {public, sequence(), dmsl_payment_processing_thrift:'EventPayload'()} |
-    {private, sequence(), private_event()}.
+    {public, dmsl_payment_processing_thrift:'EventPayload'()} |
+    {private, private_event()}.
 
 -type private_event() ::
     none(). %% TODO hg_invoice_payment:private_event() ?
@@ -270,10 +268,10 @@ map_start_error({error, Reason}) ->
 -spec publish_event(invoice_id(), hg_machine:event(ev())) ->
     {true, hg_event_provider:public_event()} | false.
 
-publish_event(InvoiceID, {public, Seq, Ev = ?invoice_ev(_)}) ->
-    {true, {{invoice, InvoiceID}, Seq, Ev}};
-publish_event(InvoiceID, {public, Seq, {{payment, _}, Ev = ?payment_ev(_)}}) ->
-    {true, {{invoice, InvoiceID}, Seq, ?invoice_ev(Ev)}};
+publish_event(InvoiceID, {public, Ev = ?invoice_ev(_)}) ->
+    {true, {{invoice_id, InvoiceID}, Ev}};
+publish_event(InvoiceID, {public, {{payment, _}, Ev = ?payment_ev(_)}}) ->
+    {true, {{invoice_id, InvoiceID}, ?invoice_ev(Ev)}};
 publish_event(_InvoiceID, _Event) ->
     false.
 
@@ -470,27 +468,17 @@ handle_result(#{state := St} = Params) ->
     EventList = wrap_event_list(Event),
     _ = log_events(EventList, St),
     Action = maps:get(action, Params, hg_machine_action:new()),
-    SeqEvents = sequence_events(EventList, St),
     case maps:get(response, Params, undefined) of
         undefined ->
-            {SeqEvents, Action};
+            {EventList, Action};
         Response ->
-            {{ok, Response}, {SeqEvents, Action}}
+            {{ok, Response}, {EventList, Action}}
     end.
 
 wrap_event_list(Event) when is_tuple(Event) ->
     [Event];
 wrap_event_list(Events) when is_list(Events) ->
     Events.
-
-sequence_events(Evs, St) ->
-    {SequencedEvs, _} = lists:mapfoldl(fun sequence_event_/2, St#st.sequence, Evs),
-    SequencedEvs.
-
-sequence_event_({public, Ev}, Seq) ->
-    {{public, Seq + 1, Ev}, Seq + 1};
-sequence_event_({private, Ev}, Seq) ->
-    {{private, Seq, Ev}, Seq}.
 
 %%
 
@@ -515,11 +503,12 @@ get_payment_status(#domain_InvoicePayment{status = Status}) ->
 
 %%
 
+%% FIXME wrong spec
 -spec collapse_history([ev()]) -> st().
 
 collapse_history(History) ->
     lists:foldl(
-        fun ({_ID, _, {_, Seq, Ev}}, St) -> merge_event(Ev, St#st{sequence = Seq}) end,
+        fun ({_ID, _, {_, Ev}}, St) -> merge_event(Ev, St) end,
         #st{},
         History
     ).

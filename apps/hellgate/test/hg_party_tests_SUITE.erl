@@ -1007,8 +1007,7 @@ assert_claim_accepted(?claim(ClaimID, ?accepted(_)) = Claim, Client) ->
 consistent_history(C) ->
     Client = hg_client_eventsink:start_link(hg_client_api:new(?c(root_url, C))),
     Events = hg_client_eventsink:pull_events(_N = 5000, 1000, Client),
-    ok = hg_eventsink_history:assert_total_order(Events),
-    ok = hg_eventsink_history:assert_contiguous_sequences(Events).
+    ok = hg_eventsink_history:assert_total_order(Events).
 
 %%
 
