@@ -365,8 +365,11 @@ party_creation(C) ->
     PartyID = ?c(party_id, C),
     ContactInfo = #domain_PartyContactInfo{email = <<?MODULE_STRING>>},
     ok = hg_client_party:create(make_party_params(ContactInfo), Client),
-    ?party_created(?party_w_status(PartyID, ?unblocked(_, _), ?active(_))) = next_event(Client),
-    ?claim_created(?claim(_, ?accepted(_), [_ | _])) = next_event(Client),
+    [
+        ?party_created(?party_w_status(PartyID, ?unblocked(_, _), ?active(_))),
+        ?claim_created(?claim(_, ?pending(), [_ | _])),
+        ?claim_status_changed(_, ?accepted(_), _, _)
+    ] = next_event(Client),
     #domain_Party{contact_info = ContactInfo, shops = Shops} = hg_client_party:get(Client),
     [{_ShopID, #domain_Shop{suspension = ?active(_)}}] = maps:to_list(Shops).
 
@@ -717,9 +720,9 @@ complex_claim_acceptance(C) ->
         Client
     ),
     ok = hg_client_party:suspend(Client),
-    ?party_suspension(?suspended(_)) = next_event(Client),
+    [?party_suspension(?suspended(_))] = next_event(Client),
     ok = hg_client_party:activate(Client),
-    ?party_suspension(?active(_)) = next_event(Client),
+    [?party_suspension(?active(_))] = next_event(Client),
     Claim1 = hg_client_party:get_claim(hg_claim:get_id(Claim1), Client),
 
     Claim2 = assert_claim_pending(
@@ -807,7 +810,7 @@ party_blocking(C) ->
     PartyID = ?c(party_id, C),
     Reason = <<"i said so">>,
     ok = hg_client_party:block(Reason, Client),
-    ?party_blocking(?blocked(Reason, _)) = next_event(Client),
+    [?party_blocking(?blocked(Reason, _))] = next_event(Client),
     ?party_w_status(PartyID, ?blocked(Reason, _), _) = hg_client_party:get(Client).
 
 party_unblocking(C) ->
@@ -815,7 +818,7 @@ party_unblocking(C) ->
     PartyID = ?c(party_id, C),
     Reason = <<"enough">>,
     ok = hg_client_party:unblock(Reason, Client),
-    ?party_blocking(?unblocked(Reason, _)) = next_event(Client),
+    [?party_blocking(?unblocked(Reason, _))] = next_event(Client),
     ?party_w_status(PartyID, ?unblocked(Reason, _), _) = hg_client_party:get(Client).
 
 party_already_blocked(C) ->
@@ -834,14 +837,14 @@ party_suspension(C) ->
     Client = ?c(client, C),
     PartyID = ?c(party_id, C),
     ok = hg_client_party:suspend(Client),
-    ?party_suspension(?suspended(_)) = next_event(Client),
+    [?party_suspension(?suspended(_))] = next_event(Client),
     ?party_w_status(PartyID, _, ?suspended(_)) = hg_client_party:get(Client).
 
 party_activation(C) ->
     Client = ?c(client, C),
     PartyID = ?c(party_id, C),
     ok = hg_client_party:activate(Client),
-    ?party_suspension(?active(_)) = next_event(Client),
+    [?party_suspension(?active(_))] = next_event(Client),
     ?party_w_status(PartyID, _, ?active(_)) = hg_client_party:get(Client).
 
 party_already_suspended(C) ->
@@ -857,7 +860,7 @@ shop_blocking(C) ->
     ShopID = ?REAL_SHOP_ID,
     Reason = <<"i said so">>,
     ok = hg_client_party:block_shop(ShopID, Reason, Client),
-    ?shop_blocking(ShopID, ?blocked(Reason, _)) = next_event(Client),
+    [?shop_blocking(ShopID, ?blocked(Reason, _))] = next_event(Client),
     ?shop_w_status(ShopID, ?blocked(Reason, _), _) = hg_client_party:get_shop(ShopID, Client).
 
 shop_unblocking(C) ->
@@ -865,7 +868,7 @@ shop_unblocking(C) ->
     ShopID = ?REAL_SHOP_ID,
     Reason = <<"enough">>,
     ok = hg_client_party:unblock_shop(ShopID, Reason, Client),
-    ?shop_blocking(ShopID, ?unblocked(Reason, _)) = next_event(Client),
+    [?shop_blocking(ShopID, ?unblocked(Reason, _))] = next_event(Client),
     ?shop_w_status(ShopID, ?unblocked(Reason, _), _) = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_blocked(C) ->
@@ -887,14 +890,14 @@ shop_suspension(C) ->
     Client = ?c(client, C),
     ShopID = ?REAL_SHOP_ID,
     ok = hg_client_party:suspend_shop(ShopID, Client),
-    ?shop_suspension(ShopID, ?suspended(_)) = next_event(Client),
+    [?shop_suspension(ShopID, ?suspended(_))] = next_event(Client),
     ?shop_w_status(ShopID, _, ?suspended(_)) = hg_client_party:get_shop(ShopID, Client).
 
 shop_activation(C) ->
     Client = ?c(client, C),
     ShopID = ?REAL_SHOP_ID,
     ok = hg_client_party:activate_shop(ShopID, Client),
-    ?shop_suspension(ShopID, ?active(_)) = next_event(Client),
+    [?shop_suspension(ShopID, ?active(_))] = next_event(Client),
     ?shop_w_status(ShopID, _, ?active(_)) = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_suspended(C) ->
@@ -971,33 +974,36 @@ party_access_control(C) ->
 update_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Changeset, Client) ->
     ok = hg_client_party:update_claim(ClaimID, Revision, Changeset, Client),
     NextRevision = Revision + 1,
-    ?claim_updated(ClaimID, Changeset, NextRevision, _) = next_event(Client),
+    [?claim_updated(ClaimID, Changeset, NextRevision, _)] = next_event(Client),
     ok.
 
 accept_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
     ok = hg_client_party:accept_claim(ClaimID, Revision, Client),
     NextRevision = Revision + 1,
-    ?claim_status_changed(ClaimID, ?accepted(_), NextRevision, _) = next_event(Client),
+    [?claim_status_changed(ClaimID, ?accepted(_), NextRevision, _)] = next_event(Client),
     ok.
 
 deny_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
     ok = hg_client_party:deny_claim(ClaimID, Revision, Reason = <<"The Reason">>, Client),
     NextRevision = Revision + 1,
-    ?claim_status_changed(ClaimID, ?denied(Reason), NextRevision, _) = next_event(Client),
+    [?claim_status_changed(ClaimID, ?denied(Reason), NextRevision, _)] = next_event(Client),
     ok.
 
 revoke_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
     ok = hg_client_party:revoke_claim(ClaimID, Revision, <<>>, Client),
     NextRevision = Revision + 1,
-    ?claim_status_changed(ClaimID, ?revoked(<<>>), NextRevision, _) = next_event(Client),
+    [?claim_status_changed(ClaimID, ?revoked(<<>>), NextRevision, _)] = next_event(Client),
     ok.
 
 assert_claim_pending(?claim(ClaimID, ?pending()) = Claim, Client) ->
-    ?claim_created(?claim(ClaimID)) = next_event(Client),
+    [?claim_created(?claim(ClaimID))] = next_event(Client),
     Claim.
 
 assert_claim_accepted(?claim(ClaimID, ?accepted(_)) = Claim, Client) ->
-    ?claim_created(?claim(ClaimID, ?accepted(_))) = next_event(Client),
+    [
+        ?claim_created(?claim(ClaimID, ?pending())),
+        ?claim_status_changed(ClaimID, ?accepted(_), _, _)
+    ] = next_event(Client),
     Claim.
 
 %%
