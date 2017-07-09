@@ -32,6 +32,12 @@
     {captured, #domain_InvoicePaymentCaptured{}}).
 -define(failed(Failure),
     {failed, #domain_InvoicePaymentFailed{failure = Failure}}).
+-define(cancelled(),
+    {cancelled, #domain_InvoicePaymentCancelled{}}).
+-define(captured_with_reason(Reason),
+    {captured, #domain_InvoicePaymentCaptured{reason = Reason}}).
+-define(cancelled_with_reason(Reason),
+    {cancelled, #domain_InvoicePaymentCancelled{reason = Reason}}).
 
 %% Sessions
 

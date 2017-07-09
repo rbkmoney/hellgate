@@ -53,14 +53,24 @@ filter_terminal(
         category = Category,
         payment_method = PaymentMethod,
         account = #domain_TerminalAccount{currency = Currency},
-        risk_coverage = RiskCoverage
+        risk_coverage = RiskCoverage,
+        payment_flow = PaymentFlow
     },
     VS
 ) ->
-    Category      == maps:get(category, VS) andalso
-    Currency      == maps:get(currency, VS) andalso
-    PaymentMethod == hg_payment_tool:get_method(maps:get(payment_tool, VS)) andalso
-    is_risk_covered(maps:get(risk_score, VS), RiskCoverage).
+    PaymentFlowNew = case PaymentFlow of
+        undefined ->
+            instant;
+        {instant, _} ->
+            instant;
+        {hold, #domain_TerminalPaymentFlowHold{hold_lifetime = HoldLifetime}} ->
+            {hold, HoldLifetime}
+    end,
+    Category       == maps:get(category, VS) andalso
+    Currency       == maps:get(currency, VS) andalso
+    PaymentMethod  == hg_payment_tool:get_method(maps:get(payment_tool, VS)) andalso
+    is_risk_covered(maps:get(risk_score, VS), RiskCoverage) andalso
+    PaymentFlowNew == maps:get(payment_flow, VS).
 
 %%
 

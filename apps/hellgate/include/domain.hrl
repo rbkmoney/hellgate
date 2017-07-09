@@ -12,4 +12,10 @@
 -define(operation_timeout(),
     {operation_timeout, #domain_OperationTimeout{}}).
 
+-define(invoice_payment_flow_instant(),
+    {instant, #domain_InvoicePaymentFlowInstant{}}).
+
+-define(invoice_payment_flow_hold(OnHoldExpiration, HeldUntil),
+    {hold, #domain_InvoicePaymentFlowHold{on_hold_expiration = OnHoldExpiration, held_until = HeldUntil}}).
+
 -endif.

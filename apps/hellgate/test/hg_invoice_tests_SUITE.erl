@@ -28,6 +28,10 @@
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
 -export([consistent_history/1]).
+-export([payment_hold_cancellation/1]).
+-export([payment_hold_auto_cancellation/1]).
+-export([payment_hold_capturing/1]).
+-export([payment_hold_auto_capturing/1]).
 
 %%
 
@@ -78,7 +82,12 @@ all() ->
         invalid_payment_w_deprived_party,
         external_account_posting,
 
-        consistent_history
+        consistent_history,
+
+        payment_hold_cancellation,
+        payment_hold_auto_cancellation,
+        payment_hold_capturing,
+        payment_hold_auto_capturing
     ].
 
 %% starting/stopping
@@ -603,6 +612,113 @@ consistent_history(C) ->
     Events = hg_client_eventsink:pull_events(5000, 1000, Client),
     ok = hg_eventsink_history:assert_total_order(Events).
 
+-spec payment_hold_cancellation(config()) -> _ | no_return().
+
+payment_hold_cancellation(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, capture}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(<<"whynot">>), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?cancelled_with_reason(<<"whynot">>), ?session_finished(?session_succeeded()))
+        ),
+        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(<<"whynot">>)))
+    ] = next_event(InvoiceID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_unpaid()),
+        [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_hold_auto_cancellation(config()) -> _ | no_return().
+
+payment_hold_auto_cancellation(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(_)))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed())),
+        ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled()))
+    ] = next_event(InvoiceID, 8000, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_unpaid()),
+        [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_hold_capturing(config()) -> _ | no_return().
+
+payment_hold_capturing(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(_)))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed())),
+        ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason(<<"ok">>), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason(<<"ok">>), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?captured_with_reason(<<"ok">>))),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client).
+
+-spec payment_hold_auto_capturing(config()) -> _ | no_return().
+
+payment_hold_auto_capturing(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, capture}),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(_)))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed())),
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?captured())),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, 8000, Client).
+
 %%
 
 next_event(InvoiceID, Client) ->
@@ -681,20 +797,31 @@ make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
 
 make_tds_payment_params() ->
     {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
-    make_payment_params(PaymentTool, Session).
+    make_payment_params(PaymentTool, Session, instant).
 
 make_payment_params() ->
     {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
-    make_payment_params(PaymentTool, Session).
+    make_payment_params(PaymentTool, Session, instant).
 
-make_payment_params(PaymentTool, Session) ->
+make_payment_params(FlowType) ->
+    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
+    make_payment_params(PaymentTool, Session, FlowType).
+
+make_payment_params(PaymentTool, Session, FlowType) ->
+    Flow = case FlowType of
+        instant ->
+            {instant, #payproc_InvoicePaymentParamsFlowInstant{}};
+        {hold, OnHoldExpiration} ->
+            {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
+    end,
     #payproc_InvoicePaymentParams{
         payer = #domain_Payer{
             payment_tool = PaymentTool,
             session_id = Session,
             client_info = #domain_ClientInfo{},
             contact_info = #domain_ContactInfo{}
-        }
+        },
+        flow = Flow
     }.
 
 make_adjustment_params() ->
@@ -823,7 +950,8 @@ construct_domain_fixture() ->
                         )
                     ]}
                 }
-            ]}
+            ]},
+            hold_lifetime = #domain_HoldLifetime{seconds = 7}
         }
     },
     DefaultTermSet = #domain_TermSet{
@@ -877,7 +1005,8 @@ construct_domain_fixture() ->
                         )
                     ]}
                 }
-            ]}
+            ]},
+            hold_lifetime = #domain_HoldLifetime{seconds = 7}
         }
     },
     [
@@ -1115,7 +1244,7 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Drovider">>,
                 description = <<"I'm out of ideas of what to write here">>,
-                terminal = {value, [?trm(5), ?trm(6), ?trm(7), ?trm(8)]},
+                terminal = {value, [?trm(5), ?trm(6), ?trm(7), ?trm(8), ?trm(9)]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -1222,6 +1351,31 @@ construct_domain_fixture() ->
                 ],
                 account = AccountRUB
             }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(9),
+            data = #domain_Terminal{
+                name = <<"Terminal for holds">>,
+                description = <<"Terminal for holds">>,
+                payment_method = ?pmt(bank_card, visa),
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(16, 1000, payment_amount)
+                    )
+                ],
+                account = AccountRUB,
+                risk_coverage = low,
+                payment_flow = {hold, #domain_TerminalPaymentFlowHold{
+                    hold_lifetime = #domain_HoldLifetime{seconds = 7}
+                }}
+            }
         }}
     ].
-

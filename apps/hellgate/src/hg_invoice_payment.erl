@@ -38,10 +38,14 @@
 -export([process_call/3]).
 
 -export([start_session/1]).
+-export([start_session_by_flow/1]).
 
 -export([create_adjustment/3]).
 -export([capture_adjustment/3]).
 -export([cancel_adjustment/3]).
+
+-export([capture_payment/2]).
+-export([cancel_payment/2]).
 
 -export([merge_change/2]).
 
@@ -141,10 +145,11 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Invoice = get_invoice(Opts),
     Revision = hg_domain:head(),
     PaymentTerms = get_merchant_payment_terms(Opts),
-    VS0 = collect_varset(Party, Shop, #{}),
+    VS0 = collect_varset(Party, Shop, PaymentParams, PaymentTerms, #{}),
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
-    Payment = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
+    Flow = construct_flow(PaymentParams, PaymentTerms),
+    Payment = construct_payment(PaymentID, Invoice, Flow, PaymentParams, Revision),
     {RiskScore, VS3} = inspect(Shop, Invoice, Payment, VS2),
     Route = validate_route(Payment, hg_routing:choose(VS3, Revision)),
     FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS3, Revision),
@@ -170,14 +175,25 @@ construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revisi
         collect_account_map(Invoice, Shop, Route, VS, Revision)
     ).
 
-construct_payment(PaymentID, Invoice, PaymentParams, Revision) ->
+construct_flow(PaymentParams, PaymentTerms) ->
+    case PaymentParams#payproc_InvoicePaymentParams.flow of
+        {instant, _} ->
+            ?invoice_payment_flow_instant();
+        {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}} ->
+            #domain_HoldLifetime{seconds = HoldLifetime} = get_hold_lifetime(PaymentTerms),
+            HeldUntil = get_held_until(HoldLifetime),
+            ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)
+    end.
+
+construct_payment(PaymentID, Invoice, Flow, PaymentParams, Revision) ->
     #domain_InvoicePayment{
         id              = PaymentID,
         created_at      = hg_datetime:format_now(),
         domain_revision = Revision,
         status          = ?pending(),
         cost            = Invoice#domain_Invoice.cost,
-        payer           = PaymentParams#payproc_InvoicePaymentParams.payer
+        payer           = PaymentParams#payproc_InvoicePaymentParams.payer,
+        flow            = Flow
     }.
 
 validate_payment_params(
@@ -241,6 +257,24 @@ collect_varset(Party, Shop, #domain_InvoicePayment{
     VS0#{
         cost         => Cash,
         payment_tool => PaymentTool
+    }.
+
+collect_varset(
+    Party,
+    Shop,
+    #payproc_InvoicePaymentParams{flow = {Type, _}},
+    Terms,
+    VS
+) ->
+    PaymentFlow = case Type of
+        instant ->
+            instant;
+        hold ->
+            {hold, get_hold_lifetime(Terms)}
+    end,
+    VS0 = collect_varset(Party, Shop, VS),
+    VS0#{
+        payment_flow => PaymentFlow
     }.
 
 %%
@@ -342,6 +376,41 @@ start_session(Target) ->
     Events = [?session_ev(Target, ?session_started())],
     Action = hg_machine_action:instant(),
     {ok, {Events, Action}}.
+
+-spec start_session_by_flow(st()) ->
+    {ok, hg_machine:result()}.
+
+start_session_by_flow(St) ->
+    Payment = get_payment(St),
+    {Target, Action} = case Payment#domain_InvoicePayment.flow of
+        ?invoice_payment_flow_instant() ->
+            {?captured(), hg_machine_action:instant()};
+        ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil) ->
+            HoldTarget = case OnHoldExpiration of
+                cancel ->
+                    ?cancelled();
+                capture ->
+                    ?captured()
+            end,
+            {HoldTarget, hg_machine_action:set_deadline(HeldUntil)}
+    end,
+    Events = [?session_ev(Target, ?session_started())],
+    {ok, {Events, Action}}.
+
+-spec capture_payment(st(), binary()) -> {ok, hg_machine:result()}.
+
+capture_payment(St, Reason) ->
+    do_payment(St, ?captured_with_reason(hg_utils:format_reason(Reason))).
+
+-spec cancel_payment(st(), binary()) -> {ok, hg_machine:result()}.
+
+cancel_payment(St, Reason) ->
+    do_payment(St, ?cancelled_with_reason(hg_utils:format_reason(Reason))).
+
+do_payment(St, Target) ->
+    Payment = get_payment(St),
+    _ = assert_payment_status(processed, Payment),
+    start_session(Target).
 
 %%
 
@@ -929,6 +998,12 @@ get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
 
 get_st_meta(_) ->
     #{}.
+
+get_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = HoldLifetime}) ->
+    HoldLifetime.
+
+get_held_until(HoldLifetime) ->
+    hg_datetime:format_ts(erlang:system_time(second) + HoldLifetime).
 
 %%
 

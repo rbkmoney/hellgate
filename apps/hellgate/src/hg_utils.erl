@@ -8,6 +8,8 @@
 -export([select_defined/2]).
 -export([select_defined/1]).
 
+-export([format_reason/1]).
+
 %%
 
 -spec unique_id() -> dmsl_base_thrift:'ID'().
@@ -63,3 +65,10 @@ unwrap_result({ok, V}) ->
     V;
 unwrap_result({error, E}) ->
     error(E).
+
+-spec format_reason(atom() | binary()) -> binary().
+%% TODO: fix this dirty hack
+format_reason({Pre, V}) ->
+    genlib:format("~s: ~s", [Pre, genlib:to_binary(V)]);
+format_reason(V) ->
+    genlib:to_binary(V).

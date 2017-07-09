@@ -102,6 +102,16 @@ handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     St = assert_invoice_accessible(get_state(InvoiceID)),
     get_payment_state(get_payment_session(PaymentID, St));
 
+handle_function_('CapturePayment', [UserInfo, InvoiceID, PaymentID, Reason], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {capture_payment, PaymentID, Reason});
+
+handle_function_('CancelPayment', [UserInfo, InvoiceID, PaymentID, Reason], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {cancel_payment, PaymentID, Reason});
+
 handle_function_('CreatePaymentAdjustment', [UserInfo, InvoiceID, PaymentID, Params], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
@@ -311,7 +321,7 @@ handle_signal({repair, _}, St) ->
 
 handle_expiration(St) ->
     #{
-        changes => [?invoice_status_changed(?invoice_cancelled(format_reason(overdue)))],
+        changes => [?invoice_status_changed(?invoice_cancelled(hg_utils:format_reason(overdue)))],
         state   => St
     }.
 
@@ -319,6 +329,8 @@ handle_expiration(St) ->
 
 -type call() ::
     {start_payment, payment_params()} |
+    {capture_payment, payment_id(), binary()} |
+    {cancel_payment, payment_id(), binary()} |
     {create_payment_adjustment , payment_id(), adjustment_params()} |
     {capture_payment_adjustment, payment_id(), adjustment_id()} |
     {cancel_payment_adjustment , payment_id(), adjustment_id()} |
@@ -347,13 +359,35 @@ handle_call({start_payment, PaymentParams}, St) ->
     _ = assert_no_pending_payment(St),
     start_payment(PaymentParams, St);
 
+handle_call({capture_payment, PaymentID, Reason}, St) ->
+    _ = assert_invoice_accessible(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    {ok, {Changes, Action}} = hg_invoice_payment:capture_payment(PaymentSession, Reason),
+    #{
+        response => ok,
+        changes => wrap_payment_changes(PaymentID, Changes),
+        action => Action,
+        state => St
+    };
+
+handle_call({cancel_payment, PaymentID, Reason}, St) ->
+    _ = assert_invoice_accessible(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    {ok, {Changes, Action}} = hg_invoice_payment:cancel_payment(PaymentSession, Reason),
+    #{
+        response => ok,
+        changes => wrap_payment_changes(PaymentID, Changes),
+        action => Action,
+        state => St
+    };
+
 handle_call({fulfill, Reason}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(paid, St),
     #{
         response => ok,
-        changes  => [?invoice_status_changed(?invoice_fulfilled(format_reason(Reason)))],
+        changes  => [?invoice_status_changed(?invoice_fulfilled(hg_utils:format_reason(Reason)))],
         state    => St
     };
 
@@ -364,7 +398,7 @@ handle_call({rescind, Reason}, St) ->
     _ = assert_no_pending_payment(St),
     #{
         response => ok,
-        changes  => [?invoice_status_changed(?invoice_cancelled(format_reason(Reason)))],
+        changes  => [?invoice_status_changed(?invoice_cancelled(hg_utils:format_reason(Reason)))],
         action   => hg_machine_action:unset_timer(),
         state    => St
     };
@@ -466,9 +500,10 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
             };
         {done, {Changes1, _}} ->
             PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Changes1),
+            Payment = hg_invoice_payment:get_payment(PaymentSession1),
             case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
-                    {ok, {Changes2, Action}} = hg_invoice_payment:start_session(?captured()),
+                    {ok, {Changes2, Action}} = hg_invoice_payment:start_session_by_flow(PaymentSession1),
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1 ++ Changes2),
                         action  => Action,
@@ -476,14 +511,23 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                     };
                 ?captured() ->
                     Changes2 = [?invoice_status_changed(?invoice_paid())],
+                    Action = get_payment_action(Payment),
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
+                        action  => Action,
                         state   => St
                     };
                 ?failed(_) ->
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1),
                         action  => set_invoice_timer(St),
+                        state   => St
+                    };
+                ?cancelled_with_reason(_) ->
+                    Action = hg_machine_action:unset_timer(),
+                    #{
+                        changes => wrap_payment_changes(PaymentID, Changes1),
+                        action  => Action,
                         state   => St
                     }
             end
@@ -533,6 +577,16 @@ create_payment_id(#st{payments = Payments}) ->
 
 get_payment_status(#domain_InvoicePayment{status = Status}) ->
     Status.
+
+-include("domain.hrl").
+
+get_payment_action(#domain_InvoicePayment{flow = Flow}) ->
+    case Flow of
+        ?invoice_payment_flow_instant() ->
+            hg_machine_action:new();
+        ?invoice_payment_flow_hold(_, _) ->
+            hg_machine_action:unset_timer()
+    end.
 
 %%
 
@@ -588,12 +642,6 @@ try_get_payment_session(PaymentID, #st{payments = Payments}) ->
 
 set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
     St#st{payments = lists:keystore(PaymentID, 1, Payments, {PaymentID, PaymentSession})}.
-
-%%
-
-%% TODO: fix this dirty hack
-format_reason(V) ->
-    genlib:to_binary(V).
 
 %%
 

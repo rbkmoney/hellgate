@@ -48,7 +48,7 @@ build('hellgate', 'docker-host', finalHook) {
     }
 
     try {
-      if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'epic/multiclaims') {
+      if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'epic/holds'){
         runStage('push image') {
           sh "make push_image"
         }
