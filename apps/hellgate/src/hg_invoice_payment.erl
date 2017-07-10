@@ -50,6 +50,10 @@
 
 -record(st, {
     payment          :: undefined | payment(),
+    risk_score       :: undefined | risk_score(),
+    route            :: undefined | route(),
+    cash_flow        :: undefined | cash_flow(),
+    trx              :: undefined | trx_info(),
     target           :: undefined | target(),
     sessions = #{}   :: #{target() => session()},
     adjustments = [] :: [adjustment()]
@@ -66,13 +70,16 @@
 -type adjustment_id()     :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 -type target()            :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
+-type risk_score()        :: dmsl_domain_thrift:'RiskScore'().
+-type route()             :: dmsl_domain_thrift:'InvoicePaymentRoute'().
+-type cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
 -type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
 -type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
 
 -type session() :: #{
     target      := target(),
     status      := active | suspended | finished,
-    trx         => trx_info(),
+    trx         := trx_info(),
     proxy_state => proxy_state()
 }.
 
@@ -131,15 +138,15 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     VS0 = collect_varset(Party, Shop, #{}),
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
-    Payment0 = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
-    {Payment, VS3} = inspect(Shop, Invoice, Payment0, VS2),
+    Payment = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
+    {RiskScore, VS3} = inspect(Shop, Invoice, Payment, VS2),
     Route = validate_route(Payment, hg_routing:choose(VS3, Revision)),
     FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS3, Revision),
     _AccountsState = hg_accounting:plan(
         construct_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
-    Event = ?payment_started(Payment, Route, FinalCashflow),
+    Event = ?payment_started(Payment, RiskScore, Route, FinalCashflow),
     {Payment, {[Event], hg_machine_action:new()}}.
 
 get_merchant_payment_terms(Opts) ->
@@ -500,14 +507,14 @@ process_callback_timeout(Action, St, Options) ->
 
 process(Action0, St, Options) ->
     Session = get_target_session(St),
-    ProxyContext = construct_proxy_context(Session, get_payment(St), Options),
+    ProxyContext = construct_proxy_context(Session, St, Options),
     {ok, ProxyResult} = issue_process_call(ProxyContext, St, Options),
     Result = handle_proxy_result(ProxyResult, Action0, Session),
     finish_processing(Result, St, Options).
 
 handle_callback(Payload, Action0, St, Options) ->
     Session = get_target_session(St),
-    ProxyContext = construct_proxy_context(Session, get_payment(St), Options),
+    ProxyContext = construct_proxy_context(Session, St, Options),
     {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St, Options),
     {Response, Result} = handle_callback_result(CallbackResult, Action0, get_target_session(St)),
     {Response, finish_processing(Result, St, Options)}.
@@ -624,10 +631,12 @@ finalize_plan(Finalizer, St, Options) ->
 
 %%
 
-construct_proxy_context(Session, Payment, Options) ->
+construct_proxy_context(Session, St, Options) ->
+    Payment = get_payment(St),
+    Trx = get_trx(St),
     #prxprv_Context{
         session = construct_session(Session),
-        payment_info = construct_payment_info(Payment, Options),
+        payment_info = construct_payment_info(Payment, Trx, Options),
         options = collect_proxy_options(Payment)
     }.
 
@@ -637,20 +646,22 @@ construct_session(Session = #{target := Target}) ->
         state = maps:get(proxy_state, Session, undefined)
     }.
 
-construct_payment_info(Payment, Options) ->
+construct_payment_info(Payment, Trx, Options) ->
     #prxprv_PaymentInfo{
         shop = construct_proxy_shop(Options),
         invoice = construct_proxy_invoice(Options),
-        payment = construct_proxy_payment(Payment)
+        payment = construct_proxy_payment(Payment, Trx)
     }.
 
-construct_proxy_payment(#domain_InvoicePayment{
-    id = ID,
-    created_at = CreatedAt,
-    trx = Trx,
-    payer = Payer,
-    cost = Cost
-}) ->
+construct_proxy_payment(
+    #domain_InvoicePayment{
+        id = ID,
+        created_at = CreatedAt,
+        payer = Payer,
+        cost = Cost
+    },
+    Trx
+) ->
     #prxprv_InvoicePayment{
         id = ID,
         created_at = CreatedAt,
@@ -659,13 +670,15 @@ construct_proxy_payment(#domain_InvoicePayment{
         cost = construct_proxy_cash(Cost)
     }.
 
-construct_proxy_invoice(#{invoice := #domain_Invoice{
-    id = InvoiceID,
-    created_at = CreatedAt,
-    due = Due,
-    details = Details,
-    cost = Cost
-}}) ->
+construct_proxy_invoice(
+    #{invoice := #domain_Invoice{
+        id = InvoiceID,
+        created_at = CreatedAt,
+        due = Due,
+        details = Details,
+        cost = Cost
+    }}
+) ->
     #prxprv_Invoice{
         id = InvoiceID,
         created_at =  CreatedAt,
@@ -701,7 +714,7 @@ construct_proxy_cash(#domain_Cash{
     }.
 
 collect_proxy_options(
-    #domain_InvoicePayment{
+    #st{
         route = #domain_InvoicePaymentRoute{provider = ProviderRef, terminal = TerminalRef}
     }
 ) ->
@@ -772,8 +785,8 @@ throw_invalid_request(Why) ->
 merge_change(Event, undefined) ->
     merge_change(Event, #st{});
 
-merge_change(?payment_started(Payment, Route, Cashflow), St) ->
-    St#st{payment = Payment#domain_InvoicePayment{route = Route, cash_flow = Cashflow}};
+merge_change(?payment_started(Payment, RiskScore, Route, Cashflow), St) ->
+    St#st{payment = Payment, risk_score = RiskScore, route = Route, cash_flow = Cashflow};
 merge_change(?payment_status_changed(Status), St = #st{payment = Payment}) ->
     St#st{payment = Payment#domain_InvoicePayment{status = Status}};
 merge_change(?adjustment_ev(ID, Event), St) ->
@@ -807,17 +820,17 @@ merge_adjustment_change(ID, ?adjustment_status_changed(Status), St0) ->
 set_payment(Payment, St = #st{}) ->
     St#st{payment = Payment}.
 
-get_cashflow(#domain_InvoicePayment{cash_flow = FinalCashflow}) ->
+get_cashflow(#st{cash_flow = FinalCashflow}) ->
     FinalCashflow.
 
-set_cashflow(Cashflow, Payment = #domain_InvoicePayment{}) ->
-    Payment#domain_InvoicePayment{cash_flow = Cashflow}.
+set_cashflow(Cashflow, St = #st{}) ->
+    St#st{cash_flow = Cashflow}.
 
-get_trx(#domain_InvoicePayment{trx = Trx}) ->
+get_trx(#st{trx = Trx}) ->
     Trx.
 
-set_trx(Trx, Payment = #domain_InvoicePayment{}) ->
-    Payment#domain_InvoicePayment{trx = Trx}.
+set_trx(Trx, St = #st{}) ->
+    St#st{trx = Trx}.
 
 set_adjustment(Adjustment, St = #st{adjustments = As}) ->
     ID = get_adjustment_id(Adjustment),
@@ -883,10 +896,10 @@ issue_call(Func, Args, St, Opts) ->
 
 get_call_options(St, _Opts) ->
     Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, get_route_provider(get_route(get_payment(St)))}),
+    Provider = hg_domain:get(Revision, {provider, get_route_provider(get_route(St))}),
     hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
 
-get_route(#domain_InvoicePayment{route = Route}) ->
+get_route(#st{route = Route}) ->
     Route.
 
 get_route_provider(#domain_InvoicePaymentRoute{provider = ProviderRef}) ->
@@ -898,10 +911,7 @@ inspect(Shop, Invoice, Payment = #domain_InvoicePayment{domain_revision = Revisi
     InspectorRef = reduce_selector(inspector, InspectorSelector, VS, Revision),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
     RiskScore = hg_inspector:inspect(Shop, Invoice, Payment, Inspector),
-    {
-        Payment#domain_InvoicePayment{risk_score = RiskScore},
-        VS#{risk_score => RiskScore}
-    }.
+    {RiskScore, VS#{risk_score => RiskScore}}.
 
 get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
     #{
@@ -916,7 +926,7 @@ get_st_meta(_) ->
 -spec get_log_params(change(), st()) ->
     {ok, #{type := invoice_payment_event, params := list(), message := string()}} | undefined.
 
-get_log_params(?payment_started(Payment, _, Cashflow), _) ->
+get_log_params(?payment_started(Payment, _, _, Cashflow), _) ->
     Params = [{accounts, get_partial_remainders(Cashflow)}],
     make_log_params(invoice_payment_started, Payment, Params);
 get_log_params(?payment_status_changed({Status, _}), State) ->
