@@ -2,8 +2,7 @@
 -define(__hellgate_invoice_events__, 42).
 
 %% FIXME old names remain for simplicity, should be changes
-%% FIXME also [InvoiceChanges] remain for simplicity, cuz we don't have multi-payload events for now
--define(invoice_ev(InvoiceChanges), {invoice_changes, [InvoiceChanges]}).
+-define(invoice_ev(InvoiceChanges), {invoice_changes, InvoiceChanges}).
 
 -define(invoice_created(Invoice),
     {invoice_created,

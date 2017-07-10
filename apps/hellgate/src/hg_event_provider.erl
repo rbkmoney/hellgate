@@ -2,13 +2,14 @@
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
+-type source_event() :: _.
 -type public_event() :: {source(), payload()}.
 -type source()   :: dmsl_payment_processing_thrift:'EventSource'().
 -type payload()  :: dmsl_payment_processing_thrift:'EventPayload'().
 
 -export_type([public_event/0]).
 
--callback publish_event(hg_machine:id(), hg_machine:event()) ->
+-callback publish_event(hg_machine:id(), source_event()) ->
     {true, public_event()} | false.
 
 -export([publish_event/4]).
