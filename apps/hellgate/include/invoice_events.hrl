@@ -1,7 +1,8 @@
 -ifndef(__hellgate_invoice_events__).
 -define(__hellgate_invoice_events__, 42).
 
--define(invoice_ev(Body), {invoice_event, Body}).
+%% FIXME old names remain for simplicity, should be changes
+-define(invoice_ev(InvoiceChanges), {invoice_changes, InvoiceChanges}).
 
 -define(invoice_created(Invoice),
     {invoice_created,
@@ -12,8 +13,8 @@
         #payproc_InvoiceStatusChanged{status = Status}}
 ).
 
--define(payment_ev(Body), {invoice_payment_event, Body}).
--define(adjustment_ev(Body), {invoice_payment_adjustment_event, Body}).
+-define(payment_ev(Body), {invoice_payment_change, Body}).
+-define(adjustment_ev(Body), {invoice_payment_adjustment_change, Body}).
 
 -define(payment_started(Payment),
     {invoice_payment_started,

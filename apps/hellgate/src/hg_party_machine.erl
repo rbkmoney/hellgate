@@ -37,7 +37,6 @@
     timestamp            :: timestamp(),
     revision             :: hg_domain:revision(),
     claims   = #{}       :: #{claim_id() => claim()},
-    sequence = 0         :: 0 | sequence(),
     migration_data = #{} :: #{any() => any()}
 }).
 
@@ -64,8 +63,7 @@
 -type public_event() :: dmsl_payment_processing_thrift:'EventPayload'().
 -type private_event() :: none().
 
--type ev() ::
-    {sequence(), public_event() | private_event()}.
+-type ev() :: public_event() | private_event().
 
 -type party()           :: dmsl_domain_thrift:'Party'().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
@@ -74,7 +72,6 @@
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
 -type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
 -type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
--type sequence()        :: pos_integer().
 -type timestamp()       :: dmsl_base_thrift:'Timestamp'().
 
 -spec namespace() ->
@@ -100,15 +97,13 @@ process_init(PartyID, PartyParams) ->
     Timestamp = hg_datetime:format_now(),
     Revision = hg_domain:head(),
     Party = hg_party:create_party(PartyID, PartyParams, Timestamp),
-
-    {St, Events} = apply_state_event(
-        ?party_ev(?party_created(Party)),
-        {#st{timestamp = Timestamp, revision = Revision}, []}
-    ),
-
+    St = merge_party_change(?party_created(Party), #st{timestamp = Timestamp, revision = Revision}),
     Claim = hg_claim:create_party_initial_claim(get_next_claim_id(St), Party, Timestamp, Revision),
-    {_, StEvents1} = submit_claim(hg_claim:accept(Timestamp, Revision, Party, Claim), {St, Events}),
-    ok(StEvents1).
+    Changes = [
+        ?party_created(Party),
+        ?claim_created(Claim)
+    ] ++ finalize_claim(hg_claim:accept(Timestamp, Revision, Party, Claim), Timestamp),
+    ok(Changes).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
     hg_machine:result(ev()).
@@ -144,121 +139,87 @@ get_call_name(Call) when is_tuple(Call) ->
 get_call_name(Call) when is_atom(Call) ->
     Call.
 
-handle_call({block, Reason}, StEvents0) ->
-    ok = assert_unblocked(StEvents0),
-    StEvents1 = apply_state_event(
-        ?party_ev(?party_blocking(?blocked(Reason, hg_datetime:format_now()))),
-        StEvents0
-    ),
-    respond(ok, StEvents1);
+handle_call({block, Reason}, {St, _}) ->
+    ok = assert_unblocked(St),
+    respond(ok, [?party_blocking(?blocked(Reason, hg_datetime:format_now()))]);
 
-handle_call({unblock, Reason}, StEvents0) ->
-    ok = assert_blocked(StEvents0),
-    StEvents1 = apply_state_event(
-        ?party_ev(?party_blocking(?unblocked(Reason, hg_datetime:format_now()))),
-        StEvents0
-    ),
-    respond(ok, StEvents1);
+handle_call({unblock, Reason}, {St, _}) ->
+    ok = assert_blocked(St),
+    respond(ok, [?party_blocking(?unblocked(Reason, hg_datetime:format_now()))]);
 
-handle_call(suspend, StEvents0) ->
-    ok = assert_unblocked(StEvents0),
-    ok = assert_active(StEvents0),
-    StEvents1 = apply_state_event(
-        ?party_ev(?party_suspension(?suspended(hg_datetime:format_now()))),
-        StEvents0
-    ),
-    respond(ok, StEvents1);
+handle_call(suspend, {St, _}) ->
+    ok = assert_unblocked(St),
+    ok = assert_active(St),
+    respond(ok, [?party_suspension(?suspended(hg_datetime:format_now()))]);
 
-handle_call(activate, StEvents0) ->
-    ok = assert_unblocked(StEvents0),
-    ok = assert_suspended(StEvents0),
-    StEvents1 = apply_state_event(
-        ?party_ev(?party_suspension(?active(hg_datetime:format_now()))),
-        StEvents0
-    ),
-    respond(ok, StEvents1);
+handle_call(activate, {St, _}) ->
+    ok = assert_unblocked(St),
+    ok = assert_suspended(St),
+    respond(ok, [?party_suspension(?active(hg_datetime:format_now()))]);
 
-handle_call({block_shop, ID, Reason}, StEvents0) ->
-    ok = assert_unblocked(StEvents0),
-    ok = assert_shop_unblocked(ID, StEvents0),
-    StEvents1 = apply_state_event(
-        ?party_ev(?shop_blocking(ID, ?blocked(Reason, hg_datetime:format_now()))),
-        StEvents0
-    ),
-    respond(ok, StEvents1);
+handle_call({block_shop, ID, Reason}, {St, _}) ->
+    ok = assert_unblocked(St),
+    ok = assert_shop_unblocked(ID, St),
+    respond(ok, [?shop_blocking(ID, ?blocked(Reason, hg_datetime:format_now()))]);
 
-handle_call({unblock_shop, ID, Reason}, StEvents0) ->
-    ok = assert_unblocked(StEvents0),
-    ok = assert_shop_blocked(ID, StEvents0),
-    StEvents1 = apply_state_event(
-        ?party_ev(?shop_blocking(ID, ?unblocked(Reason, hg_datetime:format_now()))),
-        StEvents0
-    ),
-    respond(ok, StEvents1);
+handle_call({unblock_shop, ID, Reason}, {St, _}) ->
+    ok = assert_unblocked(St),
+    ok = assert_shop_blocked(ID, St),
+    respond(ok, [?shop_blocking(ID, ?unblocked(Reason, hg_datetime:format_now()))]);
 
-handle_call({suspend_shop, ID}, StEvents0) ->
-    ok = assert_unblocked(StEvents0),
-    ok = assert_shop_unblocked(ID, StEvents0),
-    ok = assert_shop_active(ID, StEvents0),
-    StEvents1 = apply_state_event(
-        ?party_ev(?shop_suspension(ID, ?suspended(hg_datetime:format_now()))),
-        StEvents0
-    ),
-    respond(ok, StEvents1);
+handle_call({suspend_shop, ID}, {St, _}) ->
+    ok = assert_unblocked(St),
+    ok = assert_shop_unblocked(ID, St),
+    ok = assert_shop_active(ID, St),
+    respond(ok, [?shop_suspension(ID, ?suspended(hg_datetime:format_now()))]);
 
-handle_call({activate_shop, ID}, StEvents0) ->
-    ok = assert_unblocked(StEvents0),
-    ok = assert_shop_unblocked(ID, StEvents0),
-    ok = assert_shop_suspended(ID, StEvents0),
-    StEvents1 = apply_state_event(
-        ?party_ev(?shop_suspension(ID, ?active(hg_datetime:format_now()))),
-        StEvents0
-    ),
-    respond(ok, StEvents1);
+handle_call({activate_shop, ID}, {St, _}) ->
+    ok = assert_unblocked(St),
+    ok = assert_shop_unblocked(ID, St),
+    ok = assert_shop_suspended(ID, St),
+    respond(ok, [?shop_suspension(ID, ?active(hg_datetime:format_now()))]);
 
-handle_call({create_claim, Changeset}, StEvents0) ->
-    {Claim, StEvents1} = create_claim(Changeset, StEvents0),
-    respond(Claim, StEvents1);
+handle_call({create_claim, Changeset}, {St, _}) ->
+    ok = assert_operable(St),
+    {Claim, Changes} = create_claim(Changeset, St),
+    respond(Claim, Changes);
 
-handle_call({update_claim, ID, ClaimRevision, Changeset}, StEvents0) ->
-    ok = assert_claim_modification_allowed(ID, ClaimRevision, StEvents0),
-    StEvents1 = update_claim(ID, Changeset, StEvents0),
-    respond(ok, StEvents1);
+handle_call({update_claim, ID, ClaimRevision, Changeset}, {St, _}) ->
+    ok = assert_operable(St),
+    ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
+    respond(ok, update_claim(ID, Changeset, St));
 
-handle_call({accept_claim, ID, ClaimRevision}, StEvents0 = {St, _}) ->
-    ok = assert_claim_modification_allowed(ID, ClaimRevision, StEvents0),
+handle_call({accept_claim, ID, ClaimRevision}, {St, _}) ->
+    ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:accept(
         get_st_timestamp(St),
         get_st_revision(St),
         get_st_party(St),
         get_st_claim(ID, St)
     ),
-    StEvents1 = finalize_claim(Claim, StEvents0),
-    respond(ok, StEvents1);
+    respond(ok, finalize_claim(Claim, get_st_timestamp(St)));
 
-handle_call({deny_claim, ID, ClaimRevision, Reason}, StEvents0 = {St, _}) ->
-    ok = assert_claim_modification_allowed(ID, ClaimRevision, StEvents0),
+handle_call({deny_claim, ID, ClaimRevision, Reason}, {St, _}) ->
+    ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:deny(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
-    StEvents1 = finalize_claim(Claim, StEvents0),
-    respond(ok, StEvents1);
+    respond(ok, finalize_claim(Claim, get_st_timestamp(St)));
 
-handle_call({revoke_claim, ID, ClaimRevision, Reason}, StEvents0 = {St, _}) ->
-    ok = assert_operable(StEvents0),
-    ok = assert_claim_modification_allowed(ID, ClaimRevision, StEvents0),
+handle_call({revoke_claim, ID, ClaimRevision, Reason}, {St, _}) ->
+    ok = assert_operable(St),
+    ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:revoke(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
-    StEvents1 = finalize_claim(Claim, StEvents0),
-    respond(ok, StEvents1).
+    respond(ok, finalize_claim(Claim, get_st_timestamp(St))).
 
-publish_party_event(Source, {ID, Dt, {Seq, Payload = ?party_ev(_)}}) ->
-    {true, #payproc_Event{id = ID, source = Source, created_at = Dt, sequence = Seq, payload = Payload}};
+publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
+    {true, #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}};
 publish_party_event(_Source, {_ID, _Dt, _Event}) ->
     false.
 
 -spec publish_event(party_id(), hg_machine:event(ev())) ->
     {true, hg_event_provider:public_event()} | false.
 
-publish_event(PartyID, {Seq, Ev = ?party_ev(_)}) ->
-    {true, {{party, PartyID}, Seq, Ev}};
+publish_event(PartyID, Ev = ?party_ev(_)) ->
+    {true, {{party_id, PartyID}, Ev}};
 publish_event(_InvoiceID, _) ->
     false.
 
@@ -329,7 +290,7 @@ get_claims(PartyID) ->
 get_public_history(PartyID, AfterID, Limit) ->
     hg_history:get_public_history(
         fun (ID, Lim) -> get_history(PartyID, ID, Lim) end,
-        fun (Event) -> publish_party_event({party, PartyID}, Event) end,
+        fun (Event) -> publish_party_event({party_id, PartyID}, Event) end,
         AfterID, Limit
     ).
 
@@ -396,7 +357,7 @@ assert_claim_exists(Claim = #payproc_Claim{}) ->
 assert_claim_exists(undefined) ->
     throw(#payproc_ClaimNotFound{}).
 
-assert_claim_modification_allowed(ID, Revision, {St, _}) ->
+assert_claim_modification_allowed(ID, Revision, St) ->
     Claim = get_st_claim(ID, St),
     ok = hg_claim:assert_revision(Claim, Revision),
     ok = hg_claim:assert_pending(Claim).
@@ -421,10 +382,11 @@ assert_claims_not_conflict(Claim, ClaimsPending, St) ->
 
 %%
 
-create_claim(Changeset, StEvents = {St, _}) ->
+create_claim(Changeset, St) ->
     Timestamp = get_st_timestamp(St),
     Revision = get_st_revision(St),
-    Claim = hg_claim:create(get_next_claim_id(St), Changeset, get_st_party(St), Timestamp, Revision),
+    Party = get_st_party(St),
+    Claim = hg_claim:create(get_next_claim_id(St), Changeset, Party, Timestamp, Revision),
     ClaimsPending = get_st_pending_claims(St),
     % Check for conflicts with other pending claims
     ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
@@ -432,18 +394,15 @@ create_claim(Changeset, StEvents = {St, _}) ->
     case hg_claim:is_need_acceptance(Claim) of
         false ->
             % Submit new accepted claim
-            AcceptedClaim = hg_claim:accept(get_st_timestamp(St), get_st_revision(St), get_st_party(St), Claim),
-            submit_claim(AcceptedClaim, StEvents);
+            AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, Claim),
+            %% FIXME looks ugly
+            {AcceptedClaim, [?claim_created(Claim)] ++ finalize_claim(AcceptedClaim, Timestamp)};
         true ->
             % Submit new pending claim
-            submit_claim(Claim, StEvents)
+            {Claim, [?claim_created(Claim)]}
     end.
 
-submit_claim(Claim, StEvents) ->
-    Event = ?party_ev(?claim_created(Claim)),
-    {Claim, apply_state_event(Event, StEvents)}.
-
-update_claim(ID, Changeset, StEvents = {St, _}) ->
+update_claim(ID, Changeset, St) ->
     Timestamp = get_st_timestamp(St),
     Claim = hg_claim:update(
         Changeset,
@@ -453,27 +412,16 @@ update_claim(ID, Changeset, StEvents = {St, _}) ->
         get_st_revision(St)
     ),
     ClaimsPending = get_st_pending_claims(St),
-    % Check for conflicts with other pending claims
     ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
-    Event = ?party_ev(?claim_updated(ID, Changeset, hg_claim:get_revision(Claim), Timestamp)),
-    apply_state_event(Event, StEvents).
+    [?claim_updated(ID, Changeset, hg_claim:get_revision(Claim), Timestamp)].
 
-% FIXME naming sucks
-finalize_claim(Claim, StEvents = {St, _}) ->
-    Event = ?party_ev(?claim_status_changed(
+finalize_claim(Claim, Timestamp) ->
+    [?claim_status_changed(
         hg_claim:get_id(Claim),
         hg_claim:get_status(Claim),
         hg_claim:get_revision(Claim),
-        get_st_timestamp(St)
-    )),
-    apply_state_event(Event, StEvents).
-
-apply_state_event(EventData, {St, EventsAcc}) ->
-    Event = construct_event(EventData, St),
-    {merge_history(Event, St), EventsAcc ++ [Event]}.
-
-construct_event(EventData = ?party_ev(_), #st{sequence = Seq}) ->
-    {Seq + 1, EventData}.
+        Timestamp
+    )].
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
@@ -489,16 +437,16 @@ apply_accepted_claim(Claim, St) ->
     end.
 
 ok() ->
-    {[], hg_machine_action:new()}.
-ok(StEvents) ->
-    ok(StEvents, hg_machine_action:new()).
-ok({_St, Events}, Action) ->
-    {Events, Action}.
+    {[?party_ev([])], hg_machine_action:new()}.
+ok(Changes) ->
+    ok(Changes, hg_machine_action:new()).
+ok(Changes, Action) when is_list(Changes) ->
+    {[?party_ev(Changes)], Action}.
 
-respond(Response, StEvents) ->
-    respond(Response, StEvents, hg_machine_action:new()).
-respond(Response, {_St, Events}, Action) ->
-    {{ok, Response}, {Events, Action}}.
+respond(Response, Changes) ->
+    respond(Response, Changes, hg_machine_action:new()).
+respond(Response, Changes, Action) when is_list(Changes) ->
+        {{ok, Response}, {[?party_ev(Changes)], Action}}.
 
 respond_w_exception(Exception) ->
     respond_w_exception(Exception, hg_machine_action:new()).
@@ -526,50 +474,47 @@ checkout_history([{_ID, EventTimestamp, Ev} | Rest], PrevTimestamp, #st{timestam
         later when PrevTimestamp == undefined ->
             {error, revision_not_found};
         _ ->
-            checkout_history(Rest, EventTimestamp, merge_history(Ev, St))
+            checkout_history(Rest, EventTimestamp, merge_event(Ev, St))
     end;
 checkout_history([], _, St) ->
     {ok, St}.
 
-merge_history({Seq, Event}, St) ->
-    merge_event(Event, St#st{sequence = Seq}).
+merge_event(?party_ev(PartyChanges), St) when is_list(PartyChanges) ->
+     lists:foldl(fun merge_party_change/2, St, PartyChanges).
 
-merge_event(?party_ev(Ev), St) ->
-    merge_party_event(Ev, St).
-
-merge_party_event(?party_created(Party), St) ->
+merge_party_change(?party_created(Party), St) ->
     St#st{party = Party};
-merge_party_event(?party_blocking(Blocking), St) ->
+merge_party_change(?party_blocking(Blocking), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:blocking(Blocking, Party)};
-merge_party_event(?party_suspension(Suspension), St) ->
+merge_party_change(?party_suspension(Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:suspension(Suspension, Party)};
-merge_party_event(?shop_blocking(ID, Blocking), St) ->
+merge_party_change(?shop_blocking(ID, Blocking), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:shop_blocking(ID, Blocking, Party)};
-merge_party_event(?shop_suspension(ID, Suspension), St) ->
+merge_party_change(?shop_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:shop_suspension(ID, Suspension, Party)};
-merge_party_event(?claim_created(Claim), St) ->
+merge_party_change(?claim_created(Claim), St) ->
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1);
-merge_party_event(?claim_updated(ID, Changeset, Revision, UpdatedAt), St) ->
+merge_party_change(?claim_updated(ID, Changeset, Revision, UpdatedAt), St) ->
     Claim = hg_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
     set_claim(Claim, St);
-merge_party_event(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) ->
+merge_party_change(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) ->
     Claim = hg_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1).
 
-assert_operable(StEvents) ->
-    _ = assert_unblocked(StEvents),
-    _ = assert_active(StEvents).
+assert_operable(St) ->
+    _ = assert_unblocked(St),
+    _ = assert_active(St).
 
-assert_unblocked({St, _}) ->
+assert_unblocked(St) ->
     assert_blocking(get_st_party(St), unblocked).
 
-assert_blocked({St, _}) ->
+assert_blocked(St) ->
     assert_blocking(get_st_party(St), blocked).
 
 assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
@@ -577,10 +522,10 @@ assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
 assert_blocking(#domain_Party{blocking = Blocking}, _) ->
     throw(#payproc_InvalidPartyStatus{status = {blocking, Blocking}}).
 
-assert_active({St, _}) ->
+assert_active(St) ->
     assert_suspension(get_st_party(St), active).
 
-assert_suspended({St, _}) ->
+assert_suspended(St) ->
     assert_suspension(get_st_party(St), suspended).
 
 assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
@@ -588,11 +533,11 @@ assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
 assert_suspension(#domain_Party{suspension = Suspension}, _) ->
     throw(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
 
-assert_shop_unblocked(ID, {St, _}) ->
+assert_shop_unblocked(ID, St) ->
     Shop = hg_party:get_shop(ID, get_st_party(St)),
     assert_shop_blocking(Shop, unblocked).
 
-assert_shop_blocked(ID, {St, _}) ->
+assert_shop_blocked(ID, St) ->
     Shop = hg_party:get_shop(ID, get_st_party(St)),
     assert_shop_blocking(Shop, blocked).
 
@@ -601,11 +546,11 @@ assert_shop_blocking(#domain_Shop{blocking = {Status, _}}, Status) ->
 assert_shop_blocking(#domain_Shop{blocking = Blocking}, _) ->
     throw(#payproc_InvalidShopStatus{status = {blocking, Blocking}}).
 
-assert_shop_active(ID, {St, _}) ->
+assert_shop_active(ID, St) ->
     Shop = hg_party:get_shop(ID, get_st_party(St)),
     assert_shop_suspension(Shop, active).
 
-assert_shop_suspended(ID, {St, _}) ->
+assert_shop_suspended(ID, St) ->
     Shop = hg_party:get_shop(ID, get_st_party(St)),
     assert_shop_suspension(Shop, suspended).
 

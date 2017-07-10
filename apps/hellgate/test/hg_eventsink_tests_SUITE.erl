@@ -85,8 +85,7 @@ end_per_testcase(_Name, _C) ->
 -define(event(ID, InvoiceID, Seq, Payload),
     #payproc_Event{
         id = ID,
-        source = {party, InvoiceID},
-        sequence = Seq,
+        source = {party_id, InvoiceID},
         payload = Payload
     }
 ).
@@ -104,7 +103,7 @@ events_observed(C) ->
     PartyID = ?c(party_id, C),
     _ShopID = hg_ct_helper:create_party_and_shop(PartyMgmtClient),
     Events = hg_client_eventsink:pull_events(10, 3000, EventsinkClient),
-    [?event(_ID, PartyID, 1, ?party_ev(?party_created(_))) | _] = Events,
+    [?event(_ID, PartyID, 1, ?party_ev([?party_created(_) | _])) | _] = Events,
     IDs = [ID || ?event(ID, _, _, _) <- Events],
     IDs = lists:sort(IDs).
 
@@ -112,8 +111,7 @@ events_observed(C) ->
 
 consistent_history(C) ->
     Events = hg_client_eventsink:pull_events(5000, 500, ?c(eventsink_client, C)),
-    ok = hg_eventsink_history:assert_total_order(Events),
-    ok = hg_eventsink_history:assert_contiguous_sequences(Events).
+    ok = hg_eventsink_history:assert_total_order(Events).
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 

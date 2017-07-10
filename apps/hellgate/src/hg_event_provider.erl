@@ -2,15 +2,14 @@
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
--type public_event() :: {source(), sequence(), payload()}.
-
+-type source_event() :: _.
+-type public_event() :: {source(), payload()}.
 -type source()   :: dmsl_payment_processing_thrift:'EventSource'().
--type sequence() :: pos_integer().
 -type payload()  :: dmsl_payment_processing_thrift:'EventPayload'().
 
 -export_type([public_event/0]).
 
--callback publish_event(hg_machine:id(), hg_machine:event()) ->
+-callback publish_event(hg_machine:id(), source_event()) ->
     {true, public_event()} | false.
 
 -export([publish_event/4]).
@@ -26,12 +25,11 @@
 publish_event(Ns, EventID, MachineID, {_ID, Dt, Ev}) ->
     Module = hg_machine:get_handler_module(Ns),
     case Module:publish_event(MachineID, Ev) of
-        {true, {Source, Sequence, Payload}} ->
+        {true, {Source, Payload}} ->
             {true, #payproc_Event{
                 id         = EventID,
                 source     = Source,
                 created_at = Dt,
-                sequence   = Sequence,
                 payload    = Payload
             }};
         false ->

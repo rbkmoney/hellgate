@@ -1,7 +1,7 @@
 -ifndef(__hellgate_party_events__).
 -define(__hellgate_party_events__, 42).
 
--define(party_ev(Body), {party_event, Body}).
+-define(party_ev(PartyChanges), {party_changes, PartyChanges}).
 
 -define(party_created(Party), {party_created, Party}).
 -define(party_blocking(Blocking), {party_blocking, Blocking}).

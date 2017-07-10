@@ -239,7 +239,7 @@ invoice_cancellation(C) ->
 overdue_invoice_cancellation(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(1), 10000, C),
-    ?invoice_status_changed(?invoice_cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
 -spec invoice_cancellation_after_payment_timeout(config()) -> _ | no_return().
 
@@ -250,10 +250,10 @@ invoice_cancellation_after_payment_timeout(C) ->
     InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(3), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
-    ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
+    [?payment_interaction_requested(PaymentID, _)] = next_event(InvoiceID, Client),
     %% wait for payment timeout
-    ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?invoice_cancelled(<<"overdue">>)) = next_event(InvoiceID, Client).
+    [?payment_status_changed(PaymentID, ?failed(_))] = next_event(InvoiceID, Client),
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
 -spec invalid_payment_amount(config()) -> _ | no_return().
 
@@ -278,8 +278,10 @@ payment_success(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
-    ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID, Client),
+    [
+        ?payment_status_changed(PaymentID, ?captured()),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_w_status(PaymentID, ?captured())]
@@ -294,14 +296,16 @@ payment_success_on_second_try(C) ->
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
-    ?payment_interaction_requested(PaymentID, UserInteraction) = next_event(InvoiceID, Client),
+    [?payment_interaction_requested(PaymentID, UserInteraction)] = next_event(InvoiceID, Client),
     %% simulate user interaction
     {URL, GoodForm} = get_post_request(UserInteraction),
     BadForm = #{<<"tag">> => <<"666">>},
     _ = assert_failed_post_request({URL, BadForm}),
     _ = assert_success_post_request({URL, GoodForm}),
-    ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID, Client).
+    [
+        ?payment_status_changed(PaymentID, ?captured()),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client).
 
 -spec invoice_success_on_third_payment(config()) -> _ | no_return().
 
@@ -312,20 +316,22 @@ invoice_success_on_third_payment(C) ->
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID1 = attach_payment(InvoiceID, PaymentParams, Client),
-    ?payment_interaction_requested(PaymentID1, _) = next_event(InvoiceID, Client),
+    [?payment_interaction_requested(PaymentID1, _)] = next_event(InvoiceID, Client),
     %% wait for payment timeout and start new one after
-    ?payment_status_changed(PaymentID1, ?failed(_)) = next_event(InvoiceID, Client),
+    [?payment_status_changed(PaymentID1, ?failed(_))] = next_event(InvoiceID, Client),
     PaymentID2 = attach_payment(InvoiceID, PaymentParams, Client),
-    ?payment_interaction_requested(PaymentID2, _) = next_event(InvoiceID, Client),
+    [?payment_interaction_requested(PaymentID2, _)] = next_event(InvoiceID, Client),
     %% wait for payment timeout and start new one after
-    ?payment_status_changed(PaymentID2, ?failed(_)) = next_event(InvoiceID, Client),
+    [?payment_status_changed(PaymentID2, ?failed(_))] = next_event(InvoiceID, Client),
     PaymentID3 = attach_payment(InvoiceID, PaymentParams, Client),
-    ?payment_interaction_requested(PaymentID3, UserInteraction) = next_event(InvoiceID, Client),
+    [?payment_interaction_requested(PaymentID3, UserInteraction)] = next_event(InvoiceID, Client),
     GoodPost = get_post_request(UserInteraction),
     %% simulate user interaction FTW!
     _ = assert_success_post_request(GoodPost),
-    ?payment_status_changed(PaymentID3, ?captured()) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID, Client).
+    [
+        ?payment_status_changed(PaymentID3, ?captured()),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client).
 
 %% @TODO modify this test by failures of inspector in case of wrong terminal choice
 -spec payment_risk_score_check(config()) -> _ | no_return().
@@ -337,21 +343,29 @@ payment_risk_score_check(C) ->
     % Invoice w/ cost < 500000
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     ?payment(PaymentID1) = hg_client_invoicing:start_payment(InvoiceID1, make_payment_params(), Client),
-    ?payment_started(_, Route1, _) = next_event(InvoiceID1, Client),
+    [?payment_started(_, Route1, _)] = next_event(InvoiceID1, Client),
     low = get_risk_coverage_from_route(Route1),
-    ?payment_bound(PaymentID1, ?trx_info(_)) = next_event(InvoiceID1, Client),
-    ?payment_status_changed(PaymentID1, ?processed()) = next_event(InvoiceID1, Client),
-    ?payment_status_changed(PaymentID1, ?captured())  = next_event(InvoiceID1, Client),
-    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID1, Client),
+    [
+        ?payment_bound(PaymentID1, ?trx_info(_)),
+        ?payment_status_changed(PaymentID1, ?processed())
+    ] = next_event(InvoiceID1, Client),
+    [
+        ?payment_status_changed(PaymentID1, ?captured()),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID1, Client),
     % Invoice w/ cost > 500000
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
     ?payment(PaymentID2) = hg_client_invoicing:start_payment(InvoiceID2, make_payment_params(), Client),
-    ?payment_started(_, Route2, _) = next_event(InvoiceID2, Client),
+    [?payment_started(_, Route2, _)] = next_event(InvoiceID2, Client),
     high = get_risk_coverage_from_route(Route2),
-    ?payment_bound(PaymentID2, ?trx_info(_)) = next_event(InvoiceID2, Client),
-    ?payment_status_changed(PaymentID2, ?processed()) = next_event(InvoiceID2, Client),
-    ?payment_status_changed(PaymentID2, ?captured())  = next_event(InvoiceID2, Client),
-    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID2, Client).
+    [
+        ?payment_bound(PaymentID2, ?trx_info(_)),
+        ?payment_status_changed(PaymentID2, ?processed())
+    ] = next_event(InvoiceID2, Client),
+    [
+        ?payment_status_changed(PaymentID2, ?captured()),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID2, Client).
 
 get_risk_coverage_from_route(#domain_InvoicePaymentRoute{terminal = TermRef}) ->
     Terminal = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
@@ -370,8 +384,8 @@ invalid_payment_adjustment(C) ->
     %% no way to create adjustment for a payment not yet finished
     ?invalid_payment_status(?processed()) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
-    ?payment_interaction_requested(PaymentID, _) = next_event(InvoiceID, Client),
-    ?payment_status_changed(PaymentID, ?failed(_)) = next_event(InvoiceID, Client),
+    [?payment_interaction_requested(PaymentID, _)] = next_event(InvoiceID, Client),
+    [?payment_status_changed(PaymentID, ?failed(_))] = next_event(InvoiceID, Client),
     %% no way to create adjustment for a failed payment
     ?invalid_payment_status(?failed(_)) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
@@ -386,8 +400,10 @@ payment_adjustment_success(C) ->
     %% start a healthy man's payment
     PaymentParams = make_payment_params(),
     PaymentID = attach_payment(InvoiceID, PaymentParams, Client),
-    ?payment_status_changed(PaymentID, ?captured()) = next_event(InvoiceID, Client),
-    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID, Client),
+    [
+        ?payment_status_changed(PaymentID, ?captured()),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client),
     #domain_InvoicePayment{cash_flow = CF1} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
     SysAccount1 = get_cashflow_account({system, settlement}, CF1),
@@ -405,7 +421,7 @@ payment_adjustment_success(C) ->
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, Params, Client),
     Adjustment = #domain_InvoicePaymentAdjustment{reason = Reason} =
         hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
-    ?adjustment_created(PaymentID, Adjustment) = next_event(InvoiceID, Client),
+    [?adjustment_created(PaymentID, Adjustment)] = next_event(InvoiceID, Client),
     %% no way to create another one yet
     ?invalid_adjustment_pending(AdjustmentID) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
@@ -415,7 +431,7 @@ payment_adjustment_success(C) ->
         hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     ?invalid_adjustment_status(?adjustment_captured(_)) =
         hg_client_invoicing:cancel_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
-    ?adjustment_status_changed(PaymentID, AdjustmentID, ?adjustment_captured(_)) =
+    [?adjustment_status_changed(PaymentID, AdjustmentID, ?adjustment_captured(_))] =
         next_event(InvoiceID, Client),
     %% verify that cash deposited correctly everywhere
     #domain_InvoicePayment{cash_flow = CF2} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
@@ -513,7 +529,7 @@ invalid_payment_w_deprived_party(C) ->
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
-    ?invoice_created(?invoice_w_status(?invoice_unpaid())) = next_event(InvoiceID, InvoicingClient),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
     PaymentParams = make_payment_params(),
     Exception = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, InvoicingClient),
     {exception, #'InvalidRequest'{}} = Exception.
@@ -531,9 +547,9 @@ external_account_posting(C) ->
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
-    ?invoice_created(?invoice_w_status(?invoice_unpaid())) = next_event(InvoiceID, InvoicingClient),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
     ?payment(PaymentID) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
-    ?payment_started(_, _, CashFlow) = next_event(InvoiceID, InvoicingClient),
+    [?payment_started(_, _, CashFlow)] = next_event(InvoiceID, InvoicingClient),
     [AssistAccountID] = [
     AccountID ||
         #domain_FinalCashFlowPosting{
@@ -546,10 +562,14 @@ external_account_posting(C) ->
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
     } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}),
     hg_context:cleanup(),
-    ?payment_bound(PaymentID, ?trx_info(_)) = next_event(InvoiceID, InvoicingClient),
-    ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, InvoicingClient),
-    ?payment_status_changed(PaymentID, ?captured())  = next_event(InvoiceID, InvoicingClient),
-    ?invoice_status_changed(?invoice_paid()) = next_event(InvoiceID, InvoicingClient).
+    [
+        ?payment_bound(PaymentID, ?trx_info(_)),
+        ?payment_status_changed(PaymentID, ?processed())
+    ] = next_event(InvoiceID, InvoicingClient),
+    [
+        ?payment_status_changed(PaymentID, ?captured()),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, InvoicingClient).
 
 %%
 
@@ -558,8 +578,7 @@ external_account_posting(C) ->
 consistent_history(C) ->
     Client = hg_client_eventsink:start_link(hg_client_api:new(?config(root_url, C))),
     Events = hg_client_eventsink:pull_events(5000, 1000, Client),
-    ok = hg_eventsink_history:assert_total_order(Events),
-    ok = hg_eventsink_history:assert_contiguous_sequences(Events).
+    ok = hg_eventsink_history:assert_total_order(Events).
 
 %%
 
@@ -568,19 +587,19 @@ next_event(InvoiceID, Client) ->
 
 next_event(InvoiceID, Timeout, Client) ->
     case hg_client_invoicing:pull_event(InvoiceID, Timeout, Client) of
-        {ok, Event} ->
-            unwrap_event(Event);
+        {ok, ?invoice_ev([])} ->
+            next_event(InvoiceID, Timeout, Client);
+        {ok, ?invoice_ev(Event)} ->
+            [unwrap_change(C) || C <- Event];
         Result ->
             Result
     end.
 
-unwrap_event(?invoice_ev(E)) ->
-    unwrap_event(E);
-unwrap_event(?payment_ev(E)) ->
-    unwrap_event(E);
-unwrap_event(?adjustment_ev(E)) ->
-    unwrap_event(E);
-unwrap_event(E) ->
+unwrap_change(?payment_ev(E)) ->
+    unwrap_change(E);
+unwrap_change(?adjustment_ev(E)) ->
+    unwrap_change(E);
+unwrap_change(E) ->
     E.
 
 %%
@@ -674,14 +693,16 @@ start_invoice(ShopID, Product, Due, Amount, C) ->
     PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, Amount),
     InvoiceID = create_invoice(InvoiceParams, Client),
-    ?invoice_created(?invoice_w_status(?invoice_unpaid())) = next_event(InvoiceID, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     InvoiceID.
 
 attach_payment(InvoiceID, PaymentParams, Client) ->
     ?payment(PaymentID) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
-    ?payment_started(?payment_w_status(?pending())) = next_event(InvoiceID, Client),
-    ?payment_bound(PaymentID, ?trx_info(PaymentID)) = next_event(InvoiceID, Client),
-    ?payment_status_changed(PaymentID, ?processed()) = next_event(InvoiceID, Client),
+    [?payment_started(?payment_w_status(?pending()))] = next_event(InvoiceID, Client),
+    [
+        ?payment_bound(PaymentID, ?trx_info(PaymentID)),
+        ?payment_status_changed(PaymentID, ?processed())
+    ] = next_event(InvoiceID, Client),
     PaymentID.
 
 assert_success_post_request(Req) ->
