@@ -8,9 +8,14 @@
         #payproc_InvoicePaymentStarted{payment = Payment}
     }
 ).
--define(payment_started(Payment, Route, CashFlow),
+-define(payment_started(Payment, RiskScore, Route, CashFlow),
     {invoice_payment_started,
-        #payproc_InvoicePaymentStarted{payment = Payment, route = Route, cash_flow = CashFlow}
+        #payproc_InvoicePaymentStarted{
+            payment = Payment,
+            risk_score = RiskScore,
+            route = Route,
+            cash_flow = CashFlow
+        }
     }
 ).
 -define(payment_status_changed(Status),

@@ -120,8 +120,8 @@ end_per_suite(C) ->
 -define(payment(ID), #domain_InvoicePayment{id = ID}).
 -define(adjustment(ID), #domain_InvoicePaymentAdjustment{id = ID}).
 -define(adjustment(ID, Status), #domain_InvoicePaymentAdjustment{id = ID, status = Status}).
--define(invoice_state(Invoice), #payproc_InvoiceState{invoice = Invoice}).
--define(invoice_state(Invoice, Payments), #payproc_InvoiceState{invoice = Invoice, payments = Payments}).
+-define(invoice_state(Invoice), #payproc_Invoice{invoice = Invoice}).
+-define(invoice_state(Invoice, Payments), #payproc_Invoice{invoice = Invoice, payments = Payments}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
@@ -356,22 +356,34 @@ payment_risk_score_check(C) ->
     ok = start_proxy(hg_dummy_inspector, 2, C),
     % Invoice w/ cost < 500000
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID1 = process_payment(InvoiceID1, make_payment_params(), Client),
+    ?payment(PaymentID1) = hg_client_invoicing:start_payment(InvoiceID1, make_payment_params(), Client),
+    ?payment_ev(
+        PaymentID1,
+        ?payment_started(?payment_w_status(?pending()), low, _, _)
+    ) = next_event(InvoiceID1, Client),
+    ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started())) = next_event(InvoiceID1, Client),
+    ?payment_ev(PaymentID1, ?session_ev(?processed(), ?trx_bound(_))) = next_event(InvoiceID1, Client),
+    ?payment_ev(PaymentID1,
+        ?session_ev(?processed(), ?session_finished(?session_succeeded()))
+    ) = next_event(InvoiceID1, Client),
+    ?payment_ev(PaymentID1, ?payment_status_changed(?processed())) = next_event(InvoiceID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client),
-    low = get_risk_coverage_from_route(InvoiceID1, PaymentID1, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID1, Client),
     % Invoice w/ cost > 500000
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
-    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    ?payment(PaymentID2) = hg_client_invoicing:start_payment(InvoiceID2, make_payment_params(), Client),
+    ?payment_ev(
+        PaymentID2,
+        ?payment_started(?payment_w_status(?pending()), high, _, _)
+    ) = next_event(InvoiceID2, Client),
+    ?payment_ev(PaymentID2, ?session_ev(?processed(), ?session_started())) = next_event(InvoiceID2, Client),
+    ?payment_ev(PaymentID2, ?session_ev(?processed(), ?trx_bound(_))) = next_event(InvoiceID2, Client),
+    ?payment_ev(PaymentID2,
+        ?session_ev(?processed(), ?session_finished(?session_succeeded()))
+    ) = next_event(InvoiceID2, Client),
+    ?payment_ev(PaymentID2, ?payment_status_changed(?processed())) = next_event(InvoiceID2, Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
-    high = get_risk_coverage_from_route(InvoiceID2, PaymentID2, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID2, Client).
-
-get_risk_coverage_from_route(InvoiceID, PaymentID, Client) ->
-    Payment = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
-    #domain_InvoicePaymentRoute{terminal = TermRef} = Payment#domain_InvoicePayment.route,
-    Terminal = hg_domain:get(hg_domain:head(), {terminal, TermRef}),
-    Terminal#domain_Terminal.risk_coverage.
 
 -spec invalid_payment_adjustment(config()) -> _ | no_return().
 
@@ -400,10 +412,20 @@ payment_adjustment_success(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a healthy man's payment
     PaymentParams = make_payment_params(),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    ?payment(PaymentID) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    ?payment_ev(
+        PaymentID,
+        ?payment_started(?payment_w_status(?pending()), _, _, CF1)
+    ) = next_event(InvoiceID, Client),
+    ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())) = next_event(InvoiceID, Client),
+    ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(_))) = next_event(InvoiceID, Client),
+    ?payment_ev(
+        PaymentID,
+        ?session_ev(?processed(), ?session_finished(?session_succeeded()))
+    ) = next_event(InvoiceID, Client),
+    ?payment_ev(PaymentID, ?payment_status_changed(?processed())) = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, Client),
-    #domain_InvoicePayment{cash_flow = CF1} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
     SysAccount1 = get_cashflow_account({system, settlement}, CF1),
     %% update terminal cashflow
@@ -438,7 +460,7 @@ payment_adjustment_success(C) ->
         ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_)))
     ) = next_event(InvoiceID, Client),
     %% verify that cash deposited correctly everywhere
-    #domain_InvoicePayment{cash_flow = CF2} = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} = Adjustment,
     PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
     SysAccount2 = get_cashflow_account({system, settlement}, CF2),
     500  = maps:get(own_amount, PrvAccount1) - maps:get(own_amount, PrvAccount2),
@@ -570,10 +592,6 @@ external_account_posting(C) ->
     } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}),
     hg_context:cleanup(),
     ?invoice_status_changed(?paid()) = next_event(InvoiceID, InvoicingClient).
-
-get_payment_cashflow(InvoiceID, PaymentID, Client) ->
-    Payment = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
-    Payment#domain_InvoicePayment.cash_flow.
 
 %%
 
