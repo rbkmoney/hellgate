@@ -40,7 +40,8 @@ get_payment_info(
     #domain_Shop{
         id = ShopID,
         category = CategoryRef,
-        details = ShopDetails
+        details = ShopDetails,
+        location = Location
     },
     #domain_Invoice{
         id = InvoiceID,
@@ -62,7 +63,8 @@ get_payment_info(
     ProxyShop = #proxy_inspector_Shop{
         id = ShopID,
         category = ShopCategory,
-        details = ShopDetails
+        details = ShopDetails,
+        location = Location
     },
     ProxyInvoice = #proxy_inspector_Invoice{
         id = InvoiceID,

@@ -691,6 +691,7 @@ construct_proxy_shop(Options) ->
     #domain_Shop{
         id = ShopID,
         details = ShopDetails,
+        location = Location,
         category = ShopCategoryRef
     } = get_shop(Options),
     ShopCategory = hg_domain:get(
@@ -700,7 +701,8 @@ construct_proxy_shop(Options) ->
     #prxprv_Shop{
         id = ShopID,
         category = ShopCategory,
-        details = ShopDetails
+        details = ShopDetails,
+        location = Location
     }.
 
 construct_proxy_cash(#domain_Cash{
