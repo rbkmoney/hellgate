@@ -60,10 +60,7 @@
 -type response() ::
     ok | {ok, term()} | {exception, term()}.
 
--type public_event() :: dmsl_payment_processing_thrift:'EventPayload'().
--type private_event() :: none().
-
--type ev() :: public_event() | private_event().
+-type ev() :: {party_changes, [dmsl_payment_processing_thrift:'PartyChange'()]}.
 
 -type party()           :: dmsl_domain_thrift:'Party'().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
@@ -211,17 +208,13 @@ handle_call({revoke_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     respond(ok, finalize_claim(Claim, get_st_timestamp(St))).
 
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
-    {true, #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}};
-publish_party_event(_Source, {_ID, _Dt, _Event}) ->
-    false.
+    #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
 
--spec publish_event(party_id(), hg_machine:event(ev())) ->
-    {true, hg_event_provider:public_event()} | false.
+-spec publish_event(party_id(), ev()) ->
+    hg_event_provider:public_event().
 
 publish_event(PartyID, Ev = ?party_ev(_)) ->
-    {true, {{party_id, PartyID}, Ev}};
-publish_event(_InvoiceID, _) ->
-    false.
+    {{party_id, PartyID}, Ev}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -245,8 +238,7 @@ get_party(PartyID) ->
     dmsl_domain_thrift:'Party'() | no_return().
 
 checkout(PartyID, Timestamp) ->
-    {History, _LastID} = get_history(PartyID),
-    case checkout_history(History, Timestamp) of
+    case checkout_history(get_history(PartyID), Timestamp) of
         {ok, St} ->
             get_st_party(St);
         {error, Reason} ->
@@ -284,19 +276,14 @@ get_claims(PartyID) ->
     #st{claims = Claims} = get_state(PartyID),
     maps:values(Claims).
 
--spec get_public_history(party_id(), integer(), non_neg_integer()) ->
-    [ev()].
+-spec get_public_history(party_id(), integer() | undefined, non_neg_integer()) ->
+    [dmsl_payment_processing_thrift:'Event'()].
 
 get_public_history(PartyID, AfterID, Limit) ->
-    hg_history:get_public_history(
-        fun (ID, Lim) -> get_history(PartyID, ID, Lim) end,
-        fun (Event) -> publish_party_event({party_id, PartyID}, Event) end,
-        AfterID, Limit
-    ).
+    [publish_party_event({party_id, PartyID}, Ev) || Ev <- get_history(PartyID, AfterID, Limit)].
 
 get_state(PartyID) ->
-    {History, _LastID} = get_history(PartyID),
-    collapse_history(assert_nonempty_history(History)).
+    collapse_history(assert_nonempty_history(get_history(PartyID))).
 
 get_history(PartyID) ->
     map_history_error(hg_machine:get_history(?NS, PartyID)).
@@ -455,13 +442,13 @@ respond_w_exception(Exception, Action) ->
 
 %%
 
--spec collapse_history([ev()]) -> st().
+-spec collapse_history(hg_machine:history(ev())) -> st().
 
 collapse_history(History) ->
     {ok, St} = checkout_history(History, hg_datetime:format_now()),
     St.
 
--spec checkout_history([ev()], timestamp()) -> {ok, st()} | {error, revision_not_found}.
+-spec checkout_history(hg_machine:history(ev()), timestamp()) -> {ok, st()} | {error, revision_not_found}.
 
 checkout_history(History, Timestamp) ->
     % FIXME hg_domain:head() looks strange here

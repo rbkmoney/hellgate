@@ -31,18 +31,14 @@ handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit
 handle_function('GetLastEventID', [], _Opts) ->
     % TODO handle thrift exceptions here
     case get_history_range(undefined, 1, backward) of
-        {[#'SinkEvent'{id = ID}], _LastID} ->
+        [#'SinkEvent'{id = ID}] ->
             ID;
-        {[], _LastID} ->
+        [] ->
             throw(#payproc_NoLastEvent{})
     end.
 
 get_public_history(After, Limit) ->
-    hg_history:get_public_history(
-        fun get_history_range/2,
-        fun publish_event/1,
-        After, Limit
-    ).
+    [publish_event(Ev) || Ev <- get_history_range(After, Limit)].
 
 get_history_range(After, Limit) ->
     get_history_range(After, Limit, forward).
@@ -50,13 +46,7 @@ get_history_range(After, Limit) ->
 get_history_range(After, Limit, Direction) ->
     HistoryRange = #'HistoryRange'{'after' = After, limit = Limit, direction = Direction},
     {ok, History} = call_event_sink('GetHistory', [HistoryRange]),
-    {History, get_history_last_id(History, After)}.
-
-get_history_last_id([], LastID) ->
-    LastID;
-get_history_last_id(History, _LastID) ->
-    Event = lists:last(History),
-    Event#'SinkEvent'.id.
+    History.
 
 publish_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event = Event}) ->
     hg_event_provider:publish_event(Ns, ID, SourceID, hg_machine:unwrap_event(Event)).
