@@ -66,9 +66,8 @@ clean:
 
 distclean:
 	$(REBAR) clean -a
-	rm -rfv _build _builds _cache _steps _temp
+	rm -rf _build
 
 # CALL_W_CONTAINER
 test: submodules
 	$(REBAR) ct
-
