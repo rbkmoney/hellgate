@@ -187,8 +187,6 @@ process_callback(Tag, Callback) ->
 
 %%
 
--include("invoice_events.hrl").
-
 get_history(InvoiceID) ->
     map_history_error(hg_machine:get_history(?NS, InvoiceID)).
 
@@ -196,28 +194,22 @@ get_history(InvoiceID, AfterID, Limit) ->
     map_history_error(hg_machine:get_history(?NS, InvoiceID, AfterID, Limit)).
 
 get_state(InvoiceID) ->
-    {History, _LastID} = get_history(InvoiceID),
-    collapse_history(History).
+    collapse_history(get_history(InvoiceID)).
 
 get_initial_state(InvoiceID) ->
-    {History, _LastID} = get_history(InvoiceID, undefined, 1),
-    collapse_history(History).
+    collapse_history(get_history(InvoiceID, undefined, 1)).
 
 get_public_history(InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
-    hg_history:get_public_history(
-        fun (ID, Lim) -> get_history(InvoiceID, ID, Lim) end,
-        fun (Event) -> publish_invoice_event(InvoiceID, Event) end,
-        AfterID, Limit
-    ).
+    [publish_invoice_event(InvoiceID, Ev) || Ev <- get_history(InvoiceID, AfterID, Limit)].
 
 publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
-    {true, {Source, Ev}} = publish_event(InvoiceID, Event),
-    {true, #payproc_Event{
+    {Source, Ev} = publish_event(InvoiceID, Event),
+    #payproc_Event{
         id = ID,
         source = Source,
         created_at = Dt,
         payload = Ev
-    }}.
+    }.
 
 start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
@@ -251,6 +243,8 @@ map_start_error({error, Reason}) ->
 
 %%
 
+-include("invoice_events.hrl").
+
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
@@ -263,18 +257,16 @@ map_start_error({error, Reason}) ->
 -type ev() ::
     [dmsl_payment_processing_thrift:'InvoiceChange'()].
 
--include("invoice_events.hrl").
-
 -define(invalid_invoice_status(Status),
     #payproc_InvalidInvoiceStatus{status = Status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
 -spec publish_event(invoice_id(), ev()) ->
-    {true, hg_event_provider:public_event()}.
+    hg_event_provider:public_event().
 
 publish_event(InvoiceID, Changes) when is_list(Changes) ->
-    {true, {{invoice_id, InvoiceID}, ?invoice_ev(Changes)}}.
+    {{invoice_id, InvoiceID}, ?invoice_ev(Changes)}.
 
 %%
 
@@ -606,8 +598,6 @@ set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
 %%
 
 %% TODO: fix this dirty hack
-format_reason({Pre, V}) ->
-    genlib:format("~s: ~s", [Pre, genlib:to_binary(V)]);
 format_reason(V) ->
     genlib:to_binary(V).
 
