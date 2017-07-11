@@ -564,7 +564,9 @@ external_account_posting(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
-    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    ?payment_state(
+        ?payment(PaymentID)
+    ) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), low, _, CF)),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
@@ -609,7 +611,7 @@ next_event(InvoiceID, Client) ->
 next_event(InvoiceID, Timeout, Client) ->
     case hg_client_invoicing:pull_event(InvoiceID, Timeout, Client) of
         {ok, ?invoice_ev(Changes)} ->
-            case lists:filtermap(fun filter_event/1, Changes) of
+            case filter_changes(Changes) of
                 L when length(L) > 0 ->
                     L;
                 [] ->
@@ -619,13 +621,16 @@ next_event(InvoiceID, Timeout, Client) ->
             Result
     end.
 
-filter_event(?payment_ev(_, ?session_ev(_, ?proxy_st_changed(_)))) ->
+filter_changes(Changes) ->
+    lists:filtermap(fun filter_change/1, Changes).
+
+filter_change(?payment_ev(_, ?session_ev(_, ?proxy_st_changed(_)))) ->
     false;
-filter_event(?payment_ev(_, ?session_ev(_, ?session_suspended()))) ->
+filter_change(?payment_ev(_, ?session_ev(_, ?session_suspended()))) ->
     false;
-filter_event(?payment_ev(_, ?session_ev(_, ?session_activated()))) ->
+filter_change(?payment_ev(_, ?session_ev(_, ?session_activated()))) ->
     false;
-filter_event(E) ->
+filter_change(E) ->
     {true, E}.
 
 %%

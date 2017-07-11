@@ -283,9 +283,9 @@ init(ID, InvoiceParams = #payproc_InvoiceParams{party_id = PartyID}) ->
     Invoice = create_invoice(ID, InvoiceParams, PartyID),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
-        event => ?invoice_created(Invoice),
-        action => set_invoice_timer(#st{invoice = Invoice}),
-        state => #st{}
+        changes => [?invoice_created(Invoice)],
+        action  => set_invoice_timer(#st{invoice = Invoice}),
+        state   => #st{}
     }).
 
 %%
@@ -311,8 +311,8 @@ handle_signal({repair, _}, St) ->
 
 handle_expiration(St) ->
     #{
-        event => ?invoice_status_changed(?invoice_cancelled(format_reason(overdue))),
-        state => St
+        changes => [?invoice_status_changed(?invoice_cancelled(format_reason(overdue)))],
+        state   => St
     }.
 
 %%
@@ -353,8 +353,8 @@ handle_call({fulfill, Reason}, St) ->
     _ = assert_invoice_status(paid, St),
     #{
         response => ok,
-        event => ?invoice_status_changed(?invoice_fulfilled(format_reason(Reason))),
-        state => St
+        changes  => [?invoice_status_changed(?invoice_fulfilled(format_reason(Reason)))],
+        state    => St
     };
 
 handle_call({rescind, Reason}, St) ->
@@ -364,45 +364,45 @@ handle_call({rescind, Reason}, St) ->
     _ = assert_no_pending_payment(St),
     #{
         response => ok,
-        event => ?invoice_status_changed(?invoice_cancelled(format_reason(Reason))),
-        action => hg_machine_action:unset_timer(),
-        state => St
+        changes  => [?invoice_status_changed(?invoice_cancelled(format_reason(Reason)))],
+        action   => hg_machine_action:unset_timer(),
+        state    => St
     };
 
 handle_call({create_payment_adjustment, PaymentID, Params}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Opts = get_payment_opts(St),
-    {Adjustment, {Events, Action}} = hg_invoice_payment:create_adjustment(Params, PaymentSession, Opts),
+    {Adjustment, {Changes, Action}} = hg_invoice_payment:create_adjustment(Params, PaymentSession, Opts),
     #{
         response => Adjustment,
-        event => wrap_payment_events(PaymentID, Events),
-        action => Action,
-        state => St
+        changes  => wrap_payment_changes(PaymentID, Changes),
+        action   => Action,
+        state    => St
     };
 
 handle_call({capture_payment_adjustment, PaymentID, ID}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Opts = get_payment_opts(St),
-    {ok, {Events, Action}} = hg_invoice_payment:capture_adjustment(ID, PaymentSession, Opts),
+    {ok, {Changes, Action}} = hg_invoice_payment:capture_adjustment(ID, PaymentSession, Opts),
     #{
         response => ok,
-        event => wrap_payment_events(PaymentID, Events),
-        action => Action,
-        state => St
+        changes  => wrap_payment_changes(PaymentID, Changes),
+        action   => Action,
+        state    => St
     };
 
 handle_call({cancel_payment_adjustment, PaymentID, ID}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Opts = get_payment_opts(St),
-    {ok, {Events, Action}} = hg_invoice_payment:cancel_adjustment(ID, PaymentSession, Opts),
+    {ok, {Changes, Action}} = hg_invoice_payment:cancel_adjustment(ID, PaymentSession, Opts),
     #{
         response => ok,
-        event => wrap_payment_events(PaymentID, Events),
-        action => Action,
-        state => St
+        changes  => wrap_payment_changes(PaymentID, Changes),
+        action   => Action,
+        state    => St
     };
 
 handle_call({callback, Callback}, St) ->
@@ -437,13 +437,13 @@ start_payment(PaymentParams, St) ->
     PaymentID = create_payment_id(St),
     Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
-    {PaymentSession, {Events1, _}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
-    {ok, {Events2, Action}} = hg_invoice_payment:start_session(?processed()),
+    {PaymentSession, {Changes1, _}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
+    {ok, {Changes2, Action}} = hg_invoice_payment:start_session(?processed()),
     #{
         response => PaymentSession,
-        event => wrap_payment_events(PaymentID, Events1 ++ Events2),
-        action => Action,
-        state => St
+        changes  => wrap_payment_changes(PaymentID, Changes1 ++ Changes2),
+        action   => Action,
+        state    => St
     }.
 
 process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
@@ -458,39 +458,39 @@ process_payment_call(Call, PaymentID, PaymentSession, St) ->
 
 handle_payment_result(Result, PaymentID, PaymentSession, St) ->
     case Result of
-        {next, {Events, Action}} ->
+        {next, {Changes, Action}} ->
             #{
-                event => wrap_payment_events(PaymentID, Events),
-                action => Action,
-                state => St
+                changes => wrap_payment_changes(PaymentID, Changes),
+                action  => Action,
+                state   => St
             };
-        {done, {Events1, _}} ->
-            PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Events1),
+        {done, {Changes1, _}} ->
+            PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Changes1),
             case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
-                    {ok, {Events2, Action}} = hg_invoice_payment:start_session(?captured()),
+                    {ok, {Changes2, Action}} = hg_invoice_payment:start_session(?captured()),
                     #{
-                        event => wrap_payment_events(PaymentID, Events1 ++ Events2),
-                        action => Action,
-                        state => St
+                        changes => wrap_payment_changes(PaymentID, Changes1 ++ Changes2),
+                        action  => Action,
+                        state   => St
                     };
                 ?captured() ->
-                    Events2 = [?invoice_status_changed(?invoice_paid())],
+                    Changes2 = [?invoice_status_changed(?invoice_paid())],
                     #{
-                        event => wrap_payment_events(PaymentID, Events1) ++ Events2,
-                        state => St
+                        changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
+                        state   => St
                     };
                 ?failed(_) ->
                     #{
-                        event => wrap_payment_events(PaymentID, Events1),
-                        action => set_invoice_timer(St),
-                        state => St
+                        changes => wrap_payment_changes(PaymentID, Changes1),
+                        action  => set_invoice_timer(St),
+                        state   => St
                     }
             end
     end.
 
-wrap_payment_events(PaymentID, Events) ->
-    [?payment_ev(PaymentID, E) || E <- Events].
+wrap_payment_changes(PaymentID, Changes) ->
+    [?payment_ev(PaymentID, C) || C <- Changes].
 
 get_payment_opts(St = #st{invoice = Invoice}) ->
     #{
@@ -503,21 +503,15 @@ checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp
     hg_party_machine:checkout(PartyID, CreationTimestamp).
 
 handle_result(#{state := St} = Params) ->
-    Event = maps:get(event, Params, []),
-    EventList = wrap_event_list(Event),
-    _ = log_event(EventList, St),
+    Changes = maps:get(changes, Params, []),
     Action = maps:get(action, Params, hg_machine_action:new()),
+    _ = log_changes(Changes, St),
     case maps:get(response, Params, undefined) of
         undefined ->
-            {[EventList], Action};
+            {[Changes], Action};
         Response ->
-            {{ok, Response}, {[EventList], Action}}
+            {{ok, Response}, {[Changes], Action}}
     end.
-
-wrap_event_list(Event) when is_tuple(Event) ->
-    [Event];
-wrap_event_list(Events) when is_list(Events) ->
-    Events.
 
 %%
 
@@ -677,7 +671,7 @@ get_user_identity() ->
 
 -include("domain.hrl").
 
-log_event(Changes, St) ->
+log_changes(Changes, St) ->
     lists:foreach(fun (C) -> log_change(C, St) end, Changes).
 
 log_change(Change, St) ->
@@ -693,9 +687,9 @@ get_log_params(?invoice_created(Invoice), _St) ->
     get_invoice_event_log(invoice_created, unpaid, Invoice);
 get_log_params(?invoice_status_changed({StatusName, _}), #st{invoice = Invoice}) ->
     get_invoice_event_log(invoice_status_changed, StatusName, Invoice);
-get_log_params(?payment_ev(PaymentID, Event), St = #st{invoice = Invoice}) ->
+get_log_params(?payment_ev(PaymentID, Change), St = #st{invoice = Invoice}) ->
     PaymentSession = try_get_payment_session(PaymentID, St),
-    case hg_invoice_payment:get_log_params(Event, PaymentSession) of
+    case hg_invoice_payment:get_log_params(Change, PaymentSession) of
         {ok, Params} ->
             {ok, maps:update_with(
                 params,
