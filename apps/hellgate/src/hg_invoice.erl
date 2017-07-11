@@ -94,13 +94,13 @@ handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
 handle_function_('StartPayment', [UserInfo, InvoiceID, PaymentParams], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
-    call(InvoiceID, {start_payment, PaymentParams});
+    get_payment_state(call(InvoiceID, {start_payment, PaymentParams}));
 
 handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
-    hg_invoice_payment:get_payment(get_payment_session(PaymentID, St));
+    get_payment_state(get_payment_session(PaymentID, St));
 
 handle_function_('CreatePaymentAdjustment', [UserInfo, InvoiceID, PaymentID, Params], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -146,12 +146,18 @@ get_party(PartyID) ->
     hg_party_machine:get_party(PartyID).
 
 get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
-    #payproc_InvoiceState{
+    #payproc_Invoice{
         invoice = Invoice,
         payments = [
-            hg_invoice_payment:get_payment(PaymentSession) ||
+            get_payment_state(PaymentSession) ||
                 {_PaymentID, PaymentSession} <- Payments
         ]
+    }.
+
+get_payment_state(PaymentSession) ->
+    #payproc_InvoicePayment{
+        payment = hg_invoice_payment:get_payment(PaymentSession),
+        adjustments = hg_invoice_payment:get_adjustments(PaymentSession)
     }.
 
 set_invoicing_meta(InvoiceID) ->
@@ -268,7 +274,7 @@ map_start_error({error, Reason}) ->
     {true, hg_event_provider:public_event()}.
 
 publish_event(InvoiceID, Changes) when is_list(Changes) ->
-    {true, {{invoice, InvoiceID}, ?invoice_ev(Changes)}}.
+    {true, {{invoice_id, InvoiceID}, ?invoice_ev(Changes)}}.
 
 %%
 
@@ -439,10 +445,10 @@ start_payment(PaymentParams, St) ->
     PaymentID = create_payment_id(St),
     Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
-    {Payment, {Events1, _}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
+    {PaymentSession, {Events1, _}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
     {ok, {Events2, Action}} = hg_invoice_payment:start_session(?processed()),
     #{
-        response => Payment,
+        response => PaymentSession,
         event => wrap_payment_events(PaymentID, Events1 ++ Events2),
         action => Action,
         state => St
@@ -467,7 +473,7 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                 state => St
             };
         {done, {Events1, _}} ->
-            PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_event/2, PaymentSession, Events1),
+            PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Events1),
             case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
                     {ok, {Events2, Action}} = hg_invoice_payment:start_session(?captured()),

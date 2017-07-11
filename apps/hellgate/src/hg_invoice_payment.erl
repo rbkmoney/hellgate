@@ -27,6 +27,7 @@
 %% St accessors
 
 -export([get_payment/1]).
+-export([get_adjustments/1]).
 -export([get_adjustment/2]).
 
 %% Machine like
@@ -98,6 +99,11 @@
 get_payment(#st{payment = Payment}) ->
     Payment.
 
+-spec get_adjustments(st()) -> [adjustment()].
+
+get_adjustments(#st{adjustments = As}) ->
+    As.
+
 -spec get_adjustment(adjustment_id(), st()) -> adjustment() | no_return().
 
 get_adjustment(ID, #st{adjustments = As}) ->
@@ -128,7 +134,7 @@ init(PaymentID, PaymentParams, Opts) ->
     ).
 
 -spec init_(payment_id(), _, opts()) ->
-    {payment(), hg_machine:result()}.
+    {st(), hg_machine:result()}.
 
 init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     Shop = get_shop(Opts),
@@ -146,8 +152,8 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
         construct_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
-    Event = ?payment_started(Payment, RiskScore, Route, FinalCashflow),
-    {Payment, {[Event], hg_machine_action:new()}}.
+    Events = [?payment_started(Payment, RiskScore, Route, FinalCashflow)],
+    {collapse_changes(Events), {Events, hg_machine_action:new()}}.
 
 get_merchant_payment_terms(Opts) ->
     Invoice = get_invoice(Opts),
@@ -345,15 +351,16 @@ start_session(Target) ->
 create_adjustment(Params, St, Opts) ->
     Payment = get_payment(St),
     Revision = get_adjustment_revision(Params),
+    CashflowWas = get_cashflow(St),
     _ = assert_payment_status(captured, Payment),
     _ = assert_no_adjustment_pending(St),
     Party = get_party(Opts),
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     PaymentTerms = get_merchant_payment_terms(Opts),
-    Route = get_route(Payment),
+    Route = get_route(St),
     VS = collect_varset(Party, Shop, Payment, #{}),
-    FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision),
+    Cashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revision),
     ID = construct_adjustment_id(St),
     Adjustment = #domain_InvoicePaymentAdjustment{
         id                    = ID,
@@ -361,8 +368,8 @@ create_adjustment(Params, St, Opts) ->
         created_at            = hg_datetime:format_now(),
         domain_revision       = Revision,
         reason                = Params#payproc_InvoicePaymentAdjustmentParams.reason,
-        old_cash_flow_inverse = hg_cashflow:revert(get_cashflow(Payment)),
-        new_cash_flow         = FinalCashflow
+        old_cash_flow_inverse = hg_cashflow:revert(CashflowWas),
+        new_cash_flow         = Cashflow
     },
     _AccountsState = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Event = ?adjustment_ev(ID, ?adjustment_created(Adjustment)),
@@ -626,8 +633,8 @@ rollback_plan(St, Options) ->
 
 finalize_plan(Finalizer, St, Options) ->
     PlanID = construct_plan_id(get_invoice(Options), get_payment(St)),
-    FinalCashflow = get_cashflow(get_payment(St)),
-    Finalizer(PlanID, [{1, FinalCashflow}]).
+    Cashflow = get_cashflow(St),
+    Finalizer(PlanID, [{1, Cashflow}]).
 
 %%
 
@@ -637,7 +644,7 @@ construct_proxy_context(Session, St, Options) ->
     #prxprv_Context{
         session = construct_session(Session),
         payment_info = construct_payment_info(Payment, Trx, Options),
-        options = collect_proxy_options(Payment)
+        options = collect_proxy_options(St)
     }.
 
 construct_session(Session = #{target := Target}) ->
@@ -795,14 +802,14 @@ merge_change(?adjustment_ev(ID, Event), St) ->
     merge_adjustment_change(ID, Event, St);
 merge_change(?session_ev(Target, ?session_started()), St) ->
     % FIXME why the hell dedicated handling
-    set_session(Target, create_session(Target, get_trx(get_payment(St))), St#st{target = Target});
+    set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target});
 merge_change(?session_ev(Target, Event), St) ->
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
     case get_session_status(Session) of
         finished ->
             % FIXME leaky transactions
-            set_payment(set_trx(get_session_trx(Session), get_payment(St1)), St1);
+            set_trx(get_session_trx(Session), St1);
         _ ->
             St1
     end.
@@ -814,13 +821,10 @@ merge_adjustment_change(ID, ?adjustment_status_changed(Status), St0) ->
     St1 = set_adjustment(Adjustment#domain_InvoicePaymentAdjustment{status = Status}, St0),
     case Status of
         ?adjustment_captured(_) ->
-            set_payment(set_cashflow(get_adjustment_cashflow(Adjustment), get_payment(St1)), St1);
+            set_cashflow(get_adjustment_cashflow(Adjustment), St1);
         ?adjustment_cancelled(_) ->
             St1
     end.
-
-set_payment(Payment, St = #st{}) ->
-    St#st{payment = Payment}.
 
 get_cashflow(#st{cash_flow = FinalCashflow}) ->
     FinalCashflow.
@@ -881,8 +885,11 @@ get_target(#st{target = Target}) ->
 
 %%
 
-collapse_changes(History, St) ->
-    lists:foldl(fun merge_change/2, St, History).
+collapse_changes(Changes) ->
+    collapse_changes(Changes, undefined).
+
+collapse_changes(Changes, St) ->
+    lists:foldl(fun merge_change/2, St, Changes).
 
 %%
 
@@ -933,7 +940,7 @@ get_log_params(?payment_started(Payment, _, _, Cashflow), _) ->
     make_log_params(invoice_payment_started, Payment, Params);
 get_log_params(?payment_status_changed({Status, _}), State) ->
     Payment = get_payment(State),
-    Cashflow = get_cashflow(Payment),
+    Cashflow = get_cashflow(State),
     Params = [{status, Status}, {accounts, get_partial_remainders(Cashflow)}],
     make_log_params(invoice_payment_status_changed, Payment, Params);
 get_log_params(_, _) ->
