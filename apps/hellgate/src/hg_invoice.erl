@@ -326,11 +326,8 @@ handle_expiration(St) ->
     {rescind, binary()} |
     {callback, callback()}.
 
--type response() ::
-    ok | {ok, term()} | {exception, term()}.
-
 -spec process_call(call(), hg_machine:history(ev())) ->
-    {response(), hg_machine:result(ev())}.
+    {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
     St = collapse_history(History),
@@ -597,35 +594,14 @@ format_reason(V) ->
 
 %%
 
-get_shop_currency(#domain_Shop{account = #domain_ShopAccount{currency = Currency}}) ->
-    Currency.
+assert_shop_exists(Shop) ->
+    hg_invoice_utils:assert_shop_exists(Shop).
 
-assert_party_operable(#domain_Party{blocking = Blocking, suspension = Suspension} = V) ->
-    _ = assert_party_unblocked(Blocking),
-    _ = assert_party_active(Suspension),
-    V.
+assert_party_operable(Party) ->
+    hg_invoice_utils:assert_party_operable(Party).
 
-assert_party_unblocked(V = {Status, _}) ->
-    Status == unblocked orelse throw(#payproc_InvalidPartyStatus{status = {blocking, V}}).
-
-assert_party_active(V = {Status, _}) ->
-    Status == active orelse throw(#payproc_InvalidPartyStatus{status = {suspension, V}}).
-
-assert_shop_exists(#domain_Shop{} = V) ->
-    V;
-assert_shop_exists(undefined) ->
-    throw(#payproc_ShopNotFound{}).
-
-assert_shop_operable(#domain_Shop{blocking = Blocking, suspension = Suspension} = V) ->
-    _ = assert_shop_unblocked(Blocking),
-    _ = assert_shop_active(Suspension),
-    V.
-
-assert_shop_unblocked(V = {Status, _}) ->
-    Status == unblocked orelse throw(#payproc_InvalidShopStatus{status = {blocking, V}}).
-
-assert_shop_active(V = {Status, _}) ->
-    Status == active orelse throw(#payproc_InvalidShopStatus{status = {suspension, V}}).
+assert_shop_operable(Shop) ->
+    hg_invoice_utils:assert_shop_operable(Shop).
 
 %%
 
@@ -638,39 +614,20 @@ validate_invoice_params(
     },
     Shop
 ) ->
-    _ = validate_amount(Amount),
-    _ = validate_currency(Currency, get_shop_currency(Shop)),
+    _ = hg_invoice_utils:validate_amount(Amount),
+    _ = hg_invoice_utils:validate_currency(Currency, Shop),
     ok.
-
-validate_amount(Amount) when Amount > 0 ->
-    %% TODO FIX THIS ASAP! Amount should be specified in contract terms.
-    ok;
-validate_amount(_) ->
-    throw(#'InvalidRequest'{errors = [<<"Invalid amount">>]}).
-
-validate_currency(Currency, Currency) ->
-    ok;
-validate_currency(_, _) ->
-    throw(#'InvalidRequest'{errors = [<<"Invalid currency">>]}).
 
 assert_invoice_accessible(St = #st{}) ->
     assert_party_accessible(get_party_id(St)),
     St.
 
 assert_party_accessible(PartyID) ->
-    UserIdentity = get_user_identity(),
-    case hg_access_control:check_user(UserIdentity, PartyID) of
-        ok ->
-            ok;
-        invalid_user ->
-            throw(#payproc_InvalidUser{})
-    end.
+    hg_invoice_utils:assert_party_accessible(PartyID).
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
-get_user_identity() ->
-    hg_woody_handler_utils:get_user_identity().
 
 %%
 

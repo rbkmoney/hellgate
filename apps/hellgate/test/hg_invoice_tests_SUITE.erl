@@ -30,6 +30,7 @@
 -export([external_account_posting/1]).
 -export([consistent_history/1]).
 
+-export([construct_domain_fixture/0]).
 %%
 
 -behaviour(supervisor).
@@ -41,19 +42,14 @@
 init([]) ->
     {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
 
-%%
-
 
 %% tests descriptions
 
--type config() :: [{atom(), term()}].
--type test_case_name() :: atom().
+-type config() :: hg_ct_helper:config().
+-type test_case_name() :: hg_ct_helper:test_case_name().
 
 cfg(Key, C) ->
-    case lists:keyfind(Key, 1, C) of
-        {Key, V} -> V;
-        _        -> undefined
-    end.
+    hg_ct_helper:cfg(Key, C).
 
 -spec all() -> [test_case_name()].
 
@@ -682,7 +678,7 @@ construct_proxy(ID, Url, Options) ->
 %%
 
 make_userinfo(PartyID) ->
-    #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}}.
+    hg_ct_helper:make_userinfo(PartyID).
 
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).

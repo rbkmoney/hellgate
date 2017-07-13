@@ -112,7 +112,7 @@ process_signal({repair, _}, _History) ->
     ok().
 
 -spec process_call(call(), hg_machine:history(ev())) ->
-    {response(), hg_machine:result(ev())}.
+    {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
     St = collapse_history(History),

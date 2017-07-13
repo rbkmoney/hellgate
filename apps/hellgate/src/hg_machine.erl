@@ -54,6 +54,7 @@
 -export_type([result/0]).
 -export_type([result/1]).
 -export_type([context/0]).
+-export_type([response/0]).
 
 -export([start/3]).
 -export([call/3]).
