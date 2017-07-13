@@ -11,6 +11,7 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
+-export([invalid_invoice_shop/1]).
 -export([invalid_invoice_amount/1]).
 -export([invalid_invoice_currency/1]).
 -export([invalid_party_status/1]).
@@ -58,6 +59,7 @@ cfg(Key, C) ->
 
 all() ->
     [
+        invalid_invoice_shop,
         invalid_invoice_amount,
         invalid_invoice_currency,
         invalid_party_status,
@@ -164,6 +166,15 @@ end_per_testcase(_Name, C) ->
     end,
     _ = unlink(cfg(test_sup, C)),
     exit(cfg(test_sup, C), shutdown).
+
+-spec invalid_invoice_shop(config()) -> _ | no_return().
+
+invalid_invoice_shop(C) ->
+    Client = cfg(client, C),
+    ShopID = genlib:unique(),
+    PartyID = cfg(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    {exception, #payproc_ShopNotFound{}} = hg_client_invoicing:create(InvoiceParams, Client).
 
 -spec invalid_invoice_amount(config()) -> _ | no_return().
 
