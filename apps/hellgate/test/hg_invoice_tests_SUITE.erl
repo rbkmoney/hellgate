@@ -321,11 +321,21 @@ invoice_with_template(C) ->
     TplCost1 = {_, FixedCost} = make_tpl_cost(fixed, 10000, <<"RUB">>),
     TplContext1 = make_invoice_context(<<"default context">>),
     TplID = create_invoice_tpl(C, TplCost1, TplContext1),
-
+    #domain_InvoiceTemplate{
+        owner_id = TplPartyID,
+        shop_id  = TplShopID,
+        details  = TplDetails,
+        cost     = TplCost1,
+        context  = TplContext1
+    } = get_invoice_tpl(TplID, C),
     InvoiceCost1 = FixedCost,
     InvoiceContext1 = make_invoice_context(<<"invoice specific context">>),
+
     Params1 = make_invoice_params_tpl(TplID, InvoiceCost1, InvoiceContext1),
     ?invoice_state(#domain_Invoice{
+        owner_id    = TplPartyID,
+        shop_id     = TplShopID,
+        details     = TplDetails,
         template_id = TplID,
         cost        = InvoiceCost1,
         context     = InvoiceContext1
@@ -333,6 +343,9 @@ invoice_with_template(C) ->
 
     Params2 = make_invoice_params_tpl(TplID),
     ?invoice_state(#domain_Invoice{
+        owner_id    = TplPartyID,
+        shop_id     = TplShopID,
+        details     = TplDetails,
         template_id = TplID,
         cost        = InvoiceCost1,
         context     = TplContext1
@@ -341,6 +354,9 @@ invoice_with_template(C) ->
     TplCost2 = make_tpl_cost(range, {inclusive, 100, <<"RUB">>}, {inclusive, 10000, <<"RUB">>}),
     _ = update_invoice_tpl(TplID, #{cost => TplCost2}, C),
     ?invoice_state(#domain_Invoice{
+        owner_id    = TplPartyID,
+        shop_id     = TplShopID,
+        details     = TplDetails,
         template_id = TplID,
         cost        = InvoiceCost1,
         context     = InvoiceContext1
@@ -349,6 +365,9 @@ invoice_with_template(C) ->
     TplCost3 = make_tpl_cost(unlim, sale, "146%"),
     _ = update_invoice_tpl(TplID, #{cost => TplCost3}, C),
     ?invoice_state(#domain_Invoice{
+        owner_id    = TplPartyID,
+        shop_id     = TplShopID,
+        details     = TplDetails,
         template_id = TplID,
         cost        = InvoiceCost1,
         context     = InvoiceContext1
@@ -830,21 +849,24 @@ make_tpl_cost(Type, P1, P2) ->
     hg_ct_helper:make_invoice_tpl_cost(Type, P1, P2).
 
 create_invoice_tpl(Config) ->
-    Product = <<"rubberduck">>,
-    PartyID = cfg(party_id, Config),
-    ShopID = cfg(shop_id, Config),
-    Client = cfg(client_tpl, Config),
-    Params = hg_ct_helper:make_invoice_tpl_create_params(PartyID, ShopID, Product),
-    hg_client_invoice_templating:create(Params, Client).
+    create_invoice_tpl_(Config, []).
 
 create_invoice_tpl(Config, Cost, Context) ->
-    Product = <<"rubberduck">>,
+    Lifetime = hg_ct_helper:make_lifetime(0, 1, 0),
+    create_invoice_tpl_(Config, [Lifetime, Cost, Context]).
+
+create_invoice_tpl_(Config, AdditionalParams) ->
+    Client = cfg(client_tpl, Config),
     PartyID = cfg(party_id, Config),
     ShopID = cfg(shop_id, Config),
+    Product = <<"rubberduck">>,
+    Params = erlang:apply(hg_ct_helper, make_invoice_tpl_create_params, [PartyID, ShopID, Product | AdditionalParams]),
+    #domain_InvoiceTemplate{id = TplID} = hg_client_invoice_templating:create(Params, Client),
+    TplID.
+
+get_invoice_tpl(TplID, Config) ->
     Client = cfg(client_tpl, Config),
-    Lifetime = hg_ct_helper:make_lifetime(0, 1, 0),
-    Params = hg_ct_helper:make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost, Context),
-    hg_client_invoice_templating:create(Params, Client).
+    hg_client_invoice_templating:get(TplID, Client).
 
 update_invoice_tpl(TplID, Diff, Config) ->
     Client = cfg(client_tpl, Config),

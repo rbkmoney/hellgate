@@ -70,7 +70,7 @@ handle_function_('Create', [UserInfo, Params], _Opts) ->
     Shop  = validate_shop(Params#payproc_InvoiceTemplateCreateParams.shop_id, Party),
     ok    = validate_params(Params, Shop),
     ok    = start(TplID, Params),
-    TplID;
+    get_invoice_template(TplID);
 handle_function_('Update', [UserInfo, TplID, Params], _Opts) ->
     ok    = assume_user_identity(UserInfo),
     _     = set_meta(TplID),
