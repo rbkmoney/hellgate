@@ -471,8 +471,6 @@ assert_adjustment_finalized(_) ->
 
 assert_payment_flow(hold, #domain_InvoicePayment{flow = ?invoice_payment_flow_hold(_, _)}) ->
     ok;
-assert_payment_flow(instant, #domain_InvoicePayment{flow = ?invoice_payment_flow_instant()}) ->
-    ok;
 assert_payment_flow(_, _) ->
     throw(#payproc_InvalidOperation{}).
 
