@@ -6,6 +6,7 @@
 -export([stop/1]).
 
 -export([create/2]).
+-export([create_with_tpl/2]).
 -export([get/2]).
 -export([fulfill/3]).
 -export([rescind/3]).
@@ -30,16 +31,17 @@
 
 %%
 
--type user_info()         :: dmsl_payment_processing_thrift:'UserInfo'().
--type invoice_id()        :: dmsl_domain_thrift:'InvoiceID'().
--type invoice_state()     :: dmsl_payment_processing_thrift:'Invoice'().
--type payment()           :: dmsl_domain_thrift:'InvoicePayment'().
--type payment_id()        :: dmsl_domain_thrift:'InvoicePaymentID'().
--type invoice_params()    :: dmsl_payment_processing_thrift:'InvoiceParams'().
--type payment_params()    :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
--type adjustment()        :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
--type adjustment_id()     :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
--type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
+-type user_info()          :: dmsl_payment_processing_thrift:'UserInfo'().
+-type invoice_id()         :: dmsl_domain_thrift:'InvoiceID'().
+-type invoice_state()      :: dmsl_payment_processing_thrift:'InvoiceState'().
+-type payment()            :: dmsl_domain_thrift:'InvoicePayment'().
+-type payment_id()         :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type invoice_params()     :: dmsl_payment_processing_thrift:'InvoiceParams'().
+-type invoice_params_tpl() :: dmsl_payment_processing_thrift:'InvoiceWithTemplateParams'().
+-type payment_params()     :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
+-type adjustment()         :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
+-type adjustment_id()      :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
+-type adjustment_params()  :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 
 -spec start(user_info(), hg_client_api:t()) -> pid().
 
@@ -68,6 +70,12 @@ stop(Client) ->
 
 create(InvoiceParams, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Create', [InvoiceParams]})).
+
+-spec create_with_tpl(invoice_params_tpl(), pid()) ->
+    invoice_state() | woody_error:business_error().
+
+create_with_tpl(Params, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'CreateWithTemplate', [Params]})).
 
 -spec get(invoice_id(), pid()) ->
     invoice_state() | woody_error:business_error().
@@ -170,7 +178,7 @@ init({UserInfo, ApiClient}) ->
     {reply, term(), st()} | {noreply, st()}.
 
 handle_call({call, Function, Args}, _From, St = #st{user_info = UserInfo, client = Client}) ->
-    {Result, ClientNext} = hg_client_api:call(invoicing, Function, [UserInfo | Args], Client),
+    {Result, ClientNext} = hg_client_api:call(invoicing, Function, prep_args(Function, Args, UserInfo), Client),
     {reply, Result, St#st{client = ClientNext}};
 
 handle_call({pull_event, InvoiceID, Timeout}, _From, St = #st{client = Client}) ->
@@ -225,3 +233,8 @@ get_poller(InvoiceID, #st{user_info = UserInfo, pollers = Pollers}) ->
 
 set_poller(InvoiceID, Poller, St = #st{pollers = Pollers}) ->
     St#st{pollers = maps:put(InvoiceID, Poller, Pollers)}.
+
+prep_args('CreateWithTemplate', Args, _) when is_list(Args) ->
+    Args;
+prep_args(_, Args, UserInfo) ->
+    [UserInfo | Args].

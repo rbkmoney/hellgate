@@ -21,6 +21,10 @@
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
 
+-export([make_invoice_params_tpl/1]).
+-export([make_invoice_params_tpl/2]).
+-export([make_invoice_params_tpl/3]).
+
 -export([make_invoice_tpl_create_params/3]).
 -export([make_invoice_tpl_create_params/4]).
 -export([make_invoice_tpl_create_params/5]).
@@ -29,9 +33,12 @@
 -export([make_invoice_tpl_update_params/1]).
 
 -export([make_invoice_context/0]).
+-export([make_invoice_context/1]).
 
 -export([make_shop_details/1]).
 -export([make_shop_details/2]).
+
+-export([make_cash/2]).
 
 -export([make_lifetime/3]).
 -export([make_invoice_tpl_cost/3]).
@@ -171,7 +178,10 @@ cfg(Key, Config) ->
 -type shop_id()                   :: dmsl_domain_thrift:'ShopID'().
 -type category()                  :: dmsl_domain_thrift:'CategoryRef'().
 -type cost()                      :: integer() | {integer(), binary()}.
+-type cash()                      :: dmsl_domain_thrift:'Cash'().
+-type invoice_tpl_id()            :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type invoice_params()            :: dmsl_payment_processing_thrift:'InvoiceParams'().
+-type invoice_params_tpl()        :: dmsl_payment_processing_thrift:'InvoiceWithTemplateParams'().
 -type timestamp()                 :: integer().
 -type context()                   :: dmsl_base_thrift:'Content'().
 -type lifetime_interval()         :: dmsl_domain_thrift:'LifetimeInterval'().
@@ -325,6 +335,28 @@ make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}) ->
         context  = make_invoice_context()
     }.
 
+-spec make_invoice_params_tpl(invoice_tpl_id()) ->
+    invoice_params_tpl().
+
+make_invoice_params_tpl(TplID) ->
+    make_invoice_params_tpl(TplID, undefined).
+
+-spec make_invoice_params_tpl(invoice_tpl_id(), cost()) ->
+    invoice_params_tpl().
+
+make_invoice_params_tpl(TplID, Cost) ->
+    make_invoice_params_tpl(TplID, Cost, undefined).
+
+-spec make_invoice_params_tpl(invoice_tpl_id(), cost(), context()) ->
+    invoice_params_tpl().
+
+make_invoice_params_tpl(TplID, Cost, Context) ->
+    #payproc_InvoiceWithTemplateParams{
+       template_id = TplID,
+       cost        = Cost,
+       context     = Context
+    }.
+
 -spec make_invoice_tpl_create_params(party_id(), shop_id(), binary()) ->
     invoice_tpl_create_params().
 
@@ -431,6 +463,8 @@ make_invoice_tpl_cost(range, {LowerType, LowerAm, LowerCur}, {UpperType, UpperAm
 make_invoice_tpl_cost(unlim, _, _) ->
     {cost_unlim, #domain_InvoiceTemplateCostUnlimited{}}.
 
+-spec make_cash(non_neg_integer(), currency()) -> cash().
+
 make_cash(Amount, Currency) ->
     #domain_Cash{
         amount   = Amount,
@@ -443,9 +477,14 @@ make_cash_bound(Type, Amount, Currency) when Type =:= inclusive orelse Type =:= 
 -spec make_invoice_context() -> context().
 
 make_invoice_context() ->
+    make_invoice_context(<<"some_merchant_specific_data">>).
+
+-spec make_invoice_context(binary()) -> context().
+
+make_invoice_context(Data) ->
     #'Content'{
         type = <<"application/octet-stream">>,
-        data = <<"some_merchant_specific_data">>
+        data = Data
     }.
 
 -spec make_shop_details(binary()) ->

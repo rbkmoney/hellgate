@@ -76,7 +76,15 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(InvoiceID, InvoiceParams),
+    ok = start(InvoiceID, [undefined, InvoiceParams]),
+    get_invoice_state(get_state(InvoiceID));
+
+handle_function_('CreateWithTemplate', [Params], _Opts) ->
+    InvoiceID = hg_utils:unique_id(),
+    _ = set_invoicing_meta(InvoiceID),
+    TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
+    InvoiceParams = make_invoice_params(Params),
+    ok = start(InvoiceID, [TplID, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
@@ -247,6 +255,7 @@ map_start_error({error, Reason}) ->
 
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
+-type invoice_tpl_id() :: hg_invoice_template:tpl_id().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
@@ -276,11 +285,11 @@ publish_event(InvoiceID, Changes) when is_list(Changes) ->
 namespace() ->
     ?NS.
 
--spec init(invoice_id(), invoice_params()) ->
+-spec init(invoice_id(), [invoice_tpl_id() | invoice_params()]) ->
     hg_machine:result(ev()).
 
-init(ID, InvoiceParams = #payproc_InvoiceParams{party_id = PartyID}) ->
-    Invoice = create_invoice(ID, InvoiceParams, PartyID),
+init(ID, [InvoiceTplID, InvoiceParams]) ->
+    Invoice = create_invoice(ID, InvoiceTplID, InvoiceParams),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
         changes => [?invoice_created(Invoice)],
@@ -512,17 +521,18 @@ handle_result(#{state := St} = Params) ->
 
 %%
 
-create_invoice(ID, V = #payproc_InvoiceParams{}, PartyID) ->
+create_invoice(ID, InvoiceTplID, V = #payproc_InvoiceParams{}) ->
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
-        owner_id        = PartyID,
+        owner_id        = V#payproc_InvoiceParams.party_id,
         created_at      = hg_datetime:format_now(),
         status          = ?invoice_unpaid(),
         cost            = V#payproc_InvoiceParams.cost,
         due             = V#payproc_InvoiceParams.due,
         details         = V#payproc_InvoiceParams.details,
-        context         = V#payproc_InvoiceParams.context
+        context         = V#payproc_InvoiceParams.context,
+        template_id     = InvoiceTplID
     }.
 
 create_payment_id(#st{payments = Payments}) ->
@@ -605,18 +615,8 @@ assert_shop_operable(Shop) ->
 
 %%
 
-validate_invoice_params(
-    #payproc_InvoiceParams{
-        cost = #domain_Cash{
-            currency = Currency,
-            amount = Amount
-        }
-    },
-    Shop
-) ->
-    _ = hg_invoice_utils:validate_amount(Amount),
-    _ = hg_invoice_utils:validate_currency(Currency, Shop),
-    ok.
+validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Shop) ->
+    hg_invoice_utils:validate_cost(Cost, Shop).
 
 assert_invoice_accessible(St = #st{}) ->
     assert_party_accessible(get_party_id(St)),
@@ -628,6 +628,79 @@ assert_party_accessible(PartyID) ->
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
+make_invoice_params(#payproc_InvoiceWithTemplateParams{
+    template_id = TplID,
+    cost = Cost,
+    context = Context
+}) ->
+    #domain_InvoiceTemplate{
+        owner_id = PartyID,
+        shop_id = ShopID,
+        details = Details,
+        invoice_lifetime = Lifetime,
+        cost = TplCost,
+        context = TplContext
+    } = hg_invoice_template:get(TplID),
+    Party = get_party(PartyID),
+    Shop = hg_party:get_shop(ShopID, Party),
+    _ = assert_party_shop_operable(Shop, Party),
+    InvoiceCost = get_templated_cost(Cost, TplCost, Shop),
+    InvoiceDue = make_invoice_due_date(Lifetime),
+    InvoiceContext = make_invoice_context(Context, TplContext),
+    #payproc_InvoiceParams{
+        party_id = PartyID,
+        shop_id = ShopID,
+        details = Details,
+        due = InvoiceDue,
+        cost = InvoiceCost,
+        context = InvoiceContext
+    }.
+
+get_templated_cost(undefined, {cost_fixed, Cost}, Shop) ->
+    get_cost(Cost, Shop);
+get_templated_cost(undefined, _, _) ->
+    throw(#'InvalidRequest'{errors = [?INVOICE_TPL_NO_COST]});
+get_templated_cost(Cost, {cost_fixed, Cost}, Shop) ->
+    get_cost(Cost, Shop);
+get_templated_cost(_Cost, {cost_fixed, _CostTpl}, _Shop) ->
+    throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_COST]});
+get_templated_cost(Cost, {cost_range, Range}, Shop) ->
+    _ = assert_cost_in_range(Cost, Range),
+    get_cost(Cost, Shop);
+get_templated_cost(Cost, {cost_unlim, _}, Shop) ->
+    get_cost(Cost, Shop).
+
+get_cost(Cost, Shop) ->
+    ok = hg_invoice_utils:validate_cost(Cost, Shop),
+    Cost.
+
+assert_cost_in_range(
+    #domain_Cash{amount = Amount, currency = Currency},
+    #domain_CashRange{
+        upper = {UType, #domain_Cash{amount = UAmount, currency = Currency}},
+        lower = {LType, #domain_Cash{amount = LAmount, currency = Currency}}
+    }
+) ->
+    _ = assert_amount_increase(LType, LAmount, Amount),
+    _ = assert_amount_increase(UType, Amount, UAmount),
+    ok;
+assert_cost_in_range(_, _) ->
+    throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_CURRENCY]}).
+
+assert_amount_increase(inclusive, Less, More) when More >= Less ->
+    ok;
+assert_amount_increase(exclusive, Less, More) when More > Less ->
+    ok;
+assert_amount_increase(_, _, _) ->
+    throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_AMOUNT]}).
+
+make_invoice_due_date(#domain_LifetimeInterval{years = YY, months = MM, days = DD}) ->
+    hg_datetime:add_interval(hg_datetime:format_now(), {YY, MM, DD}).
+
+make_invoice_context(undefined, TplContext) ->
+    TplContext;
+make_invoice_context(Context, _) ->
+    Context.
 
 %%
 

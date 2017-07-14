@@ -28,7 +28,7 @@
 
 %% API
 
--export([get_invoice_template/1]).
+-export([get/1]).
 
 -type tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type tpl()    :: dmsl_domain_thrift:'InvoiceTemplate'().
@@ -39,7 +39,10 @@
 
 %%
 
--spec get_invoice_template(tpl_id()) -> tpl().
+-spec get(tpl_id()) -> tpl().
+
+get(TplId) ->
+    get_invoice_template(TplId).
 
 get_invoice_template(ID) ->
     {History, _LastID} = get_history(ID),
@@ -122,31 +125,16 @@ validate_params(#payproc_InvoiceTemplateUpdateParams{cost = Cost}, Shop) ->
     ok = validate_cost(Cost, Shop).
 
 validate_cost({cost_fixed, Cash}, Shop) ->
-    validate_cash(Cash, Shop);
-validate_cost({cost_range, #domain_CashRange{
-    upper = {_, UpperBound},
-    lower = {_, LowerBound}
+    hg_invoice_utils:validate_cost(Cash, Shop);
+validate_cost({cost_range, Range = #domain_CashRange{
+    lower = {_, LowerCost},
+    upper = {_, UpperCost}
 }}, Shop) ->
-    validate_cost_range(UpperBound, LowerBound, Shop);
+    ok = hg_invoice_utils:validate_cash_range(Range),
+    ok = hg_invoice_utils:validate_cost(LowerCost, Shop),
+    ok = hg_invoice_utils:validate_cost(UpperCost, Shop);
 validate_cost({cost_unlim, _}, _Shop) ->
     ok.
-
-validate_cash(#domain_Cash{currency = Currency, amount = Amount}, Shop) ->
-    _ = hg_invoice_utils:validate_amount(Amount),
-    _ = hg_invoice_utils:validate_currency(Currency, Shop),
-    ok.
-
-validate_cost_range(UpperBound, LowerBound, Shop) ->
-    ok = validate_cash(UpperBound, Shop),
-    ok = validate_cash(LowerBound, Shop),
-    validate_cost_range_bounds(UpperBound, LowerBound).
-
-validate_cost_range_bounds(#domain_Cash{amount = Upper}, #domain_Cash{amount = Lower})
-    when Upper >= Lower
-->
-    ok;
-validate_cost_range_bounds(_, _) ->
-    throw(#'InvalidRequest'{errors = [<<"Invalid cost range">>]}).
 
 start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).

@@ -4,18 +4,30 @@
 -module(hg_invoice_utils).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
+-export([validate_cost/2]).
 -export([validate_amount/1]).
 -export([validate_currency/2]).
+-export([validate_cash_range/1]).
 -export([assert_party_accessible/1]).
 -export([assert_party_operable/1]).
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
 
--type amount()   :: dmsl_domain_thrift:'Amount'().
--type currency() :: dmsl_domain_thrift:'CurrencyRef'().
--type party()    :: dmsl_domain_thrift:'Party'().
--type shop()     :: dmsl_domain_thrift:'Shop'().
--type party_id() :: dmsl_domain_thrift:'PartyID'().
+-type amount()     :: dmsl_domain_thrift:'Amount'().
+-type currency()   :: dmsl_domain_thrift:'CurrencyRef'().
+-type cash()       :: dmsl_domain_thrift:'Cash'().
+-type cash_range() :: dmsl_domain_thrift:'CashRange'().
+-type party()      :: dmsl_domain_thrift:'Party'().
+-type shop()       :: dmsl_domain_thrift:'Shop'().
+-type party_id()   :: dmsl_domain_thrift:'PartyID'().
+
+
+-spec validate_cost(cash(), shop()) -> ok.
+
+validate_cost(#domain_Cash{currency = Currency, amount = Amount}, Shop) ->
+    _ = validate_amount(Amount),
+    _ = validate_currency(Currency, Shop),
+    ok.
 
 -spec validate_amount(amount()) -> ok.
 validate_amount(Amount) when Amount > 0 ->
@@ -37,6 +49,20 @@ assert_party_accessible(PartyID) ->
         invalid_user ->
             throw(#payproc_InvalidUser{})
     end.
+
+-spec validate_cash_range(cash_range()) -> ok.
+validate_cash_range(#domain_CashRange{
+    lower = {LType, #domain_Cash{amount = LAmount, currency = Currency}},
+    upper = {UType, #domain_Cash{amount = UAmount, currency = Currency}}
+}) when
+    LType =/= UType andalso UAmount >= LAmount orelse
+    LType =:= UType andalso UAmount > LAmount orelse
+    LType =:= UType andalso UType =:= inclusive andalso UAmount == LAmount
+->
+    ok;
+validate_cash_range(_) ->
+    throw(#'InvalidRequest'{errors = [<<"Invalid cost range">>]}).
+
 
 -spec assert_party_operable(party()) -> party().
 assert_party_operable(#domain_Party{blocking = Blocking, suspension = Suspension} = V) ->
