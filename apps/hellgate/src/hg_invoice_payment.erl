@@ -180,7 +180,7 @@ construct_flow(PaymentParams, PaymentTerms) ->
         {instant, _} ->
             ?invoice_payment_flow_instant();
         {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}} ->
-            #domain_HoldLifetime{seconds = HoldLifetime} = get_hold_lifetime(PaymentTerms),
+            ?hold_lifetime(HoldLifetime) = get_hold_lifetime(PaymentTerms),
             HeldUntil = get_held_until(HoldLifetime),
             ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)
     end.
@@ -410,6 +410,7 @@ cancel_payment(St, Reason) ->
 do_payment(St, Target) ->
     Payment = get_payment(St),
     _ = assert_payment_status(processed, Payment),
+    _ = assert_payment_flow(hold, Payment),
     start_session(Target).
 
 %%
@@ -467,6 +468,13 @@ assert_adjustment_finalized(#domain_InvoicePaymentAdjustment{id = ID, status = {
     throw(#payproc_InvoicePaymentAdjustmentPending{id = ID});
 assert_adjustment_finalized(_) ->
     ok.
+
+assert_payment_flow(hold, #domain_InvoicePayment{flow = ?invoice_payment_flow_hold(_, _)}) ->
+    ok;
+assert_payment_flow(instant, #domain_InvoicePayment{flow = ?invoice_payment_flow_instant()}) ->
+    ok;
+assert_payment_flow(_, _) ->
+    throw(#payproc_InvalidOperation{}).
 
 -spec capture_adjustment(adjustment_id(), st(), opts()) ->
     {ok, hg_machine:result()}.
@@ -999,6 +1007,8 @@ get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
 get_st_meta(_) ->
     #{}.
 
+get_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = undefined}) ->
+    error({misconfiguration, 'Condition for hold payment is absent'});
 get_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = HoldLifetime}) ->
     HoldLifetime.
 

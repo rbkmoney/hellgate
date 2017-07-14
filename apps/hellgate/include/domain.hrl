@@ -18,4 +18,7 @@
 -define(invoice_payment_flow_hold(OnHoldExpiration, HeldUntil),
     {hold, #domain_InvoicePaymentFlowHold{on_hold_expiration = OnHoldExpiration, held_until = HeldUntil}}).
 
+-define(hold_lifetime(HoldLifetime),
+    #domain_HoldLifetime{seconds = HoldLifetime}).
+
 -endif.

@@ -361,6 +361,7 @@ handle_call({start_payment, PaymentParams}, St) ->
 
 handle_call({capture_payment, PaymentID, Reason}, St) ->
     _ = assert_invoice_accessible(St),
+    _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
     {ok, {Changes, Action}} = hg_invoice_payment:capture_payment(PaymentSession, Reason),
     #{
@@ -372,6 +373,7 @@ handle_call({capture_payment, PaymentID, Reason}, St) ->
 
 handle_call({cancel_payment, PaymentID, Reason}, St) ->
     _ = assert_invoice_accessible(St),
+    _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
     {ok, {Changes, Action}} = hg_invoice_payment:cancel_payment(PaymentSession, Reason),
     #{
@@ -523,11 +525,10 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                         action  => set_invoice_timer(St),
                         state   => St
                     };
-                ?cancelled_with_reason(_) ->
-                    Action = hg_machine_action:unset_timer(),
+                ?cancelled() ->
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1),
-                        action  => Action,
+                        action  => set_invoice_timer(St),
                         state   => St
                     }
             end
