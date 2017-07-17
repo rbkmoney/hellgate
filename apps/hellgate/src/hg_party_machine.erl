@@ -520,12 +520,17 @@ assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
 assert_suspension(#domain_Party{suspension = Suspension}, _) ->
     throw(#payproc_InvalidPartyStatus{status = {suspension, Suspension}}).
 
+assert_shop_found(#domain_Shop{} = Shop) ->
+    Shop;
+assert_shop_found(undefined) ->
+    throw(#payproc_ShopNotFound{}).
+
 assert_shop_unblocked(ID, St) ->
-    Shop = hg_party:get_shop(ID, get_st_party(St)),
+    Shop = assert_shop_found(hg_party:get_shop(ID, get_st_party(St))),
     assert_shop_blocking(Shop, unblocked).
 
 assert_shop_blocked(ID, St) ->
-    Shop = hg_party:get_shop(ID, get_st_party(St)),
+    Shop = assert_shop_found(hg_party:get_shop(ID, get_st_party(St))),
     assert_shop_blocking(Shop, blocked).
 
 assert_shop_blocking(#domain_Shop{blocking = {Status, _}}, Status) ->
@@ -534,11 +539,11 @@ assert_shop_blocking(#domain_Shop{blocking = Blocking}, _) ->
     throw(#payproc_InvalidShopStatus{status = {blocking, Blocking}}).
 
 assert_shop_active(ID, St) ->
-    Shop = hg_party:get_shop(ID, get_st_party(St)),
+    Shop = assert_shop_found(hg_party:get_shop(ID, get_st_party(St))),
     assert_shop_suspension(Shop, active).
 
 assert_shop_suspended(ID, St) ->
-    Shop = hg_party:get_shop(ID, get_st_party(St)),
+    Shop = assert_shop_found(hg_party:get_shop(ID, get_st_party(St))),
     assert_shop_suspension(Shop, suspended).
 
 assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
