@@ -73,7 +73,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
     _ = assert_party_accessible(PartyID),
     Party = get_party(PartyID),
-    Shop = hg_party:get_shop(ShopID, Party),
+    Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
     ok = start(InvoiceID, InvoiceParams),
@@ -659,6 +659,11 @@ assert_party_unblocked(V = {Status, _}) ->
 
 assert_party_active(V = {Status, _}) ->
     Status == active orelse throw(#payproc_InvalidPartyStatus{status = {suspension, V}}).
+
+assert_shop_exists(#domain_Shop{} = V) ->
+    V;
+assert_shop_exists(undefined) ->
+    throw(#payproc_ShopNotFound{}).
 
 assert_shop_operable(#domain_Shop{blocking = Blocking, suspension = Suspension} = V) ->
     _ = assert_shop_unblocked(Blocking),

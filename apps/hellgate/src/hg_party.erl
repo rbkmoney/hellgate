@@ -583,6 +583,7 @@ merge_payments_terms(
         payment_methods = Pm0,
         cash_limit = Al0,
         fees = Fee0,
+        hold_lifetime = HL0,
         guarantee_fund = Gf0
     },
     #domain_PaymentsServiceTerms{
@@ -591,6 +592,7 @@ merge_payments_terms(
         payment_methods = Pm1,
         cash_limit = Al1,
         fees = Fee1,
+        hold_lifetime = HL1,
         guarantee_fund = Gf1
     }
 ) ->
@@ -600,6 +602,7 @@ merge_payments_terms(
         payment_methods = update_if_defined(Pm0, Pm1),
         cash_limit = update_if_defined(Al0, Al1),
         fees = update_if_defined(Fee0, Fee1),
+        hold_lifetime = update_if_defined(HL0, HL1),
         guarantee_fund = update_if_defined(Gf0, Gf1)
     };
 merge_payments_terms(undefined, Any) ->
