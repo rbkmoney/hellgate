@@ -79,8 +79,9 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     ok = start(InvoiceID, [undefined, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
-handle_function_('CreateWithTemplate', [Params], _Opts) ->
+handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
     InvoiceID = hg_utils:unique_id(),
+    ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
     InvoiceParams = make_invoice_params(Params),
@@ -642,7 +643,8 @@ make_invoice_params(#payproc_InvoiceWithTemplateParams{
         context = TplContext
     } = hg_invoice_template:get(TplID),
     Party = get_party(PartyID),
-    Shop = hg_party:get_shop(ShopID, Party),
+    Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
+    _ = assert_party_accessible(PartyID),
     _ = assert_party_shop_operable(Shop, Party),
     InvoiceCost = get_templated_cost(Cost, TplCost, Shop),
     InvoiceDue = make_invoice_due_date(Lifetime),

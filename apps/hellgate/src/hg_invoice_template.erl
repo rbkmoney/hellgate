@@ -71,6 +71,7 @@ handle_function_('Create', [UserInfo, Params], _Opts) ->
     ok    = validate_params(Params, Shop),
     ok    = start(TplID, Params),
     get_invoice_template(TplID);
+
 handle_function_('Update', [UserInfo, TplID, Params], _Opts) ->
     ok    = assume_user_identity(UserInfo),
     _     = set_meta(TplID),
@@ -79,9 +80,14 @@ handle_function_('Update', [UserInfo, TplID, Params], _Opts) ->
     Shop  = validate_shop(get_shop_id(Params#payproc_InvoiceTemplateUpdateParams.shop_id, Tpl), Party),
     ok = validate_params(Params, Shop),
     call(TplID, {update, Params});
-handle_function_('Get', [TplID], _Opts) ->
-    _     = set_meta(TplID),
-    get_invoice_template(TplID);
+
+handle_function_('Get', [UserInfo, TplID], _Opts) ->
+    ok  = assume_user_identity(UserInfo),
+    _   = set_meta(TplID),
+    Tpl = get_invoice_template(TplID),
+    _   = hg_invoice_utils:assert_party_accessible(Tpl#domain_InvoiceTemplate.owner_id),
+    Tpl;
+
 handle_function_('Delete', [UserInfo, TplID], _Opts) ->
     ok    = assume_user_identity(UserInfo),
     Tpl   = get_invoice_template(TplID),
@@ -172,8 +178,6 @@ map_history_error({error, Reason}) ->
 %% Machine
 
 -type ev()            :: dmsl_payment_processing_thrift:'EventPayload'().
-%% -type ev() ::
-%%     [dmsl_payment_processing_thrift:'InvoiceChange'()].
 
 -type create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
 -type update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().

@@ -102,8 +102,7 @@ init({UserInfo, ApiClient}) ->
     {reply, term(), st()} | {noreply, st()}.
 
 handle_call({call, Function, Args}, _From, St = #st{user_info = UserInfo, client = Client}) ->
-    {Result, ClientNext} = hg_client_api:call(invoice_templating, Function,
-        prep_args(Function, Args, UserInfo), Client),
+    {Result, ClientNext} = hg_client_api:call(invoice_templating, Function, [UserInfo | Args], Client),
     {reply, Result, St#st{client = ClientNext}};
 
 handle_call({pull_event, InvoiceID, Timeout}, _From, St = #st{client = Client}) ->
@@ -152,11 +151,6 @@ code_change(_OldVsn, _State, _Extra) ->
     {error, noimpl}.
 
 %%
-
-prep_args('Get', Args, _) when is_list(Args) ->
-    Args;
-prep_args(_, Args, UserInfo) ->
-    [UserInfo | Args].
 
 get_poller(ID, #st{user_info = UserInfo, pollers = Pollers}) ->
     maps:get(ID, Pollers, hg_client_event_poller:new(invoice_templating, 'GetEvents', [UserInfo, ID])).

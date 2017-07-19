@@ -178,7 +178,7 @@ init({UserInfo, ApiClient}) ->
     {reply, term(), st()} | {noreply, st()}.
 
 handle_call({call, Function, Args}, _From, St = #st{user_info = UserInfo, client = Client}) ->
-    {Result, ClientNext} = hg_client_api:call(invoicing, Function, prep_args(Function, Args, UserInfo), Client),
+    {Result, ClientNext} = hg_client_api:call(invoicing, Function, [UserInfo | Args], Client),
     {reply, Result, St#st{client = ClientNext}};
 
 handle_call({pull_event, InvoiceID, Timeout}, _From, St = #st{client = Client}) ->
@@ -233,8 +233,3 @@ get_poller(InvoiceID, #st{user_info = UserInfo, pollers = Pollers}) ->
 
 set_poller(InvoiceID, Poller, St = #st{pollers = Pollers}) ->
     St#st{pollers = maps:put(InvoiceID, Poller, Pollers)}.
-
-prep_args('CreateWithTemplate', Args, _) when is_list(Args) ->
-    Args;
-prep_args(_, Args, UserInfo) ->
-    [UserInfo | Args].
