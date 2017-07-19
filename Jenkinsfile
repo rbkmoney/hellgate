@@ -1,4 +1,5 @@
 #!groovy
+// -*- mode: groovy -*-
 
 def finalHook = {
   runStage('store CT logs') {
@@ -48,7 +49,7 @@ build('hellgate', 'docker-host', finalHook) {
     }
 
     try {
-      if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'epic/multiclaims') {
+      if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'ft/hg-226/invoice-templates') {
         runStage('push image') {
           sh "make push_image"
         }
