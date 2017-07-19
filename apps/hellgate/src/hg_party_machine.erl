@@ -57,9 +57,6 @@
     {deny_claim, claim_id(), claim_revision(), binary()}        |
     {revoke_claim, claim_id(), claim_revision(), binary()}.
 
--type response() ::
-    ok | {ok, term()} | {exception, term()}.
-
 -type ev() :: {party_changes, [dmsl_payment_processing_thrift:'PartyChange'()]}.
 
 -type party()           :: dmsl_domain_thrift:'Party'().

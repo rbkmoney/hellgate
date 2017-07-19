@@ -176,7 +176,6 @@ cfg(Key, Config) ->
 -type account()                   :: map().
 -type contract_id()               :: dmsl_domain_thrift:'ContractID'().
 -type shop_id()                   :: dmsl_domain_thrift:'ShopID'().
--type category()                  :: dmsl_domain_thrift:'CategoryRef'().
 -type cost()                      :: integer() | {integer(), binary()}.
 -type cash()                      :: dmsl_domain_thrift:'Cash'().
 -type invoice_tpl_id()            :: dmsl_domain_thrift:'InvoiceTemplateID'().

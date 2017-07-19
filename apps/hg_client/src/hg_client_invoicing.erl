@@ -33,7 +33,7 @@
 
 -type user_info()          :: dmsl_payment_processing_thrift:'UserInfo'().
 -type invoice_id()         :: dmsl_domain_thrift:'InvoiceID'().
--type invoice_state()      :: dmsl_payment_processing_thrift:'InvoiceState'().
+-type invoice_state()      :: dmsl_payment_processing_thrift:'Invoice'().
 -type payment()            :: dmsl_domain_thrift:'InvoicePayment'().
 -type payment_id()         :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type invoice_params()     :: dmsl_payment_processing_thrift:'InvoiceParams'().

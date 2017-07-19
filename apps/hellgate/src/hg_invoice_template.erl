@@ -45,7 +45,7 @@ get(TplId) ->
     get_invoice_template(TplId).
 
 get_invoice_template(ID) ->
-    {History, _LastID} = get_history(ID),
+    History = get_history(ID),
     _ = assert_invoice_template_not_deleted(lists:last(History)),
     collapse_history(History).
 
@@ -172,11 +172,14 @@ map_history_error({error, Reason}) ->
 %% Machine
 
 -type ev()            :: dmsl_payment_processing_thrift:'EventPayload'().
+%% -type ev() ::
+%%     [dmsl_payment_processing_thrift:'InvoiceChange'()].
+
 -type create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
 -type update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
 -type call()          :: {update, update_params()} | delete.
 
--define(ev(Body), {invoice_template_event, Body}).
+-define(ev(Body), {invoice_template_changes, [Body]}).
 
 -define(tpl_created(InvoiceTpl),
     ?ev({invoice_template_created,
@@ -289,9 +292,7 @@ update_field({context, V}, Tpl) ->
 %% Event provider
 
 -spec publish_event(tpl_id(), ev()) ->
-    {true, hg_event_provider:public_event()} | false.
+    hg_event_provider:public_event().
 
 publish_event(ID, Event = ?ev(_)) ->
-    {true, {{invoice_template, ID}, 0, Event}};
-publish_event(_ID, _Event) ->
-    false.
+    {{invoice_template_id, ID}, Event}.

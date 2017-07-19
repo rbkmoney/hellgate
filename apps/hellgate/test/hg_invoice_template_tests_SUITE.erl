@@ -36,7 +36,7 @@
 -type test_case_name() :: hg_ct_helper:test_case_name().
 
 -define(MISSING_PARTY_ID, <<"42">>).
--define(MISSING_SHOP_ID, 42).
+-define(MISSING_SHOP_ID, <<"42">>).
 
 -define(invoice_tpl(ID), #domain_InvoiceTemplate{id = ID}).
 

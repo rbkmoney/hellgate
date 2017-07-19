@@ -438,7 +438,7 @@ contract_termination(C) ->
     } = hg_client_party:get_contract(ContractID, Client).
 
 contract_already_terminated(C) ->
-    Client = ?c(client, C),
+    Client = cfg(client, C),
     ContractID = <<"TESTCONTRACT">>,
     Changeset = [
         ?contract_modification(ContractID, ?contract_termination(<<"JUST TO BE SURE.">>))
