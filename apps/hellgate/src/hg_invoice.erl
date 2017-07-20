@@ -363,7 +363,7 @@ handle_call({capture_payment, PaymentID, Reason}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    {ok, {Changes, Action}} = hg_invoice_payment:capture_payment(PaymentSession, Reason),
+    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason),
     #{
         response => ok,
         changes => wrap_payment_changes(PaymentID, Changes),
@@ -375,7 +375,7 @@ handle_call({cancel_payment, PaymentID, Reason}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    {ok, {Changes, Action}} = hg_invoice_payment:cancel_payment(PaymentSession, Reason),
+    {ok, {Changes, Action}} = hg_invoice_payment:cancel(PaymentSession, Reason),
     #{
         response => ok,
         changes => wrap_payment_changes(PaymentID, Changes),
@@ -505,15 +505,15 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
             Payment = hg_invoice_payment:get_payment(PaymentSession1),
             case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
                 ?processed() ->
-                    {ok, {Changes2, Action}} = hg_invoice_payment:start_session_by_flow(PaymentSession1),
+                    Action = get_payment_action(processed, Payment),
                     #{
-                        changes => wrap_payment_changes(PaymentID, Changes1 ++ Changes2),
+                        changes => wrap_payment_changes(PaymentID, Changes1),
                         action  => Action,
                         state   => St
                     };
                 ?captured() ->
                     Changes2 = [?invoice_status_changed(?invoice_paid())],
-                    Action = get_payment_action(Payment),
+                    Action = get_payment_action(captured, Payment),
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
                         action  => Action,
@@ -581,7 +581,14 @@ get_payment_status(#domain_InvoicePayment{status = Status}) ->
 
 -include("domain.hrl").
 
-get_payment_action(#domain_InvoicePayment{flow = Flow}) ->
+get_payment_action(processed, #domain_InvoicePayment{flow = Flow}) ->
+    case Flow of
+        ?invoice_payment_flow_instant() ->
+            hg_machine_action:instant();
+        ?invoice_payment_flow_hold(_, HeldUntil) ->
+            hg_machine_action:set_deadline(HeldUntil)
+    end;
+get_payment_action(captured, #domain_InvoicePayment{flow = Flow}) ->
     case Flow of
         ?invoice_payment_flow_instant() ->
             hg_machine_action:new();

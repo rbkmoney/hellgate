@@ -81,19 +81,13 @@ is_risk_covered(RiskScore, RiskCoverage) ->
 
 is_flow_suitable(PaymentFlowTerminal, PaymentFlow) ->
     case {PaymentFlowTerminal, PaymentFlow} of
-        {undefined, instant} ->
-            true;
-        {undefined, {hold, _}} ->
-            false;
-        {{instant, _}, instant} ->
-            true;
-        {{instant, _}, {hold, _}} ->
-            false;
-        {{hold, _}, instant} ->
-            true;
         {{hold, TerminalFlowHold}, {hold, ?hold_lifetime(PaymentHoldLifetime)}} ->
             #domain_TerminalPaymentFlowHold{
                 hold_lifetime = ?hold_lifetime(TerminalHoldLifetime)
             } = TerminalFlowHold,
-            TerminalHoldLifetime >= PaymentHoldLifetime
+            TerminalHoldLifetime >= PaymentHoldLifetime;
+        {_, instant} ->
+            true;
+        {_, {hold, _}} ->
+            false
     end.
