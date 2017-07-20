@@ -67,7 +67,7 @@ add_interval(Timestamp, {YY, MM, DD}) ->
     NewDate = genlib_time:shift_date(Date, {nvl(YY), nvl(MM), nvl(DD)}),
     format_ts(genlib_time:daytime_to_unixtime({NewDate, Time})).
 
--spec to_time(binary()) -> timestamp().
+-spec to_time(binary()) -> integer().
 
 to_time(Bin) when is_binary(Bin) ->
     hg_utils:unwrap_result(rfc3339:to_time(Bin, seconds)).
