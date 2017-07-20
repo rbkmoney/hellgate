@@ -955,7 +955,7 @@ construct_domain_fixture() ->
                     ]}
                 }
             ]},
-            hold_lifetime = #domain_HoldLifetime{seconds = 1}
+            hold_lifetime = #domain_HoldLifetime{seconds = 2}
         }
     },
     DefaultTermSet = #domain_TermSet{
@@ -1010,7 +1010,7 @@ construct_domain_fixture() ->
                     ]}
                 }
             ]},
-            hold_lifetime = #domain_HoldLifetime{seconds = 1}
+            hold_lifetime = #domain_HoldLifetime{seconds = 2}
         }
     },
     [
@@ -1378,7 +1378,7 @@ construct_domain_fixture() ->
                 account = AccountRUB,
                 risk_coverage = low,
                 payment_flow = {hold, #domain_TerminalPaymentFlowHold{
-                    hold_lifetime = #domain_HoldLifetime{seconds = 1}
+                    hold_lifetime = #domain_HoldLifetime{seconds = 2}
                 }}
             }
         }}
