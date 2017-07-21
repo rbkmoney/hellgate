@@ -397,10 +397,6 @@ make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost, Context
 make_invoice_tpl_update_params(Diff) ->
     maps:fold(fun update_field/3, #payproc_InvoiceTemplateUpdateParams{}, Diff).
 
-update_field(party_id, V, Params) ->
-    Params#payproc_InvoiceTemplateUpdateParams{party_id = V};
-update_field(shop_id, V, Params) ->
-    Params#payproc_InvoiceTemplateUpdateParams{shop_id = V};
 update_field(details, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{details = V};
 update_field(invoice_lifetime, V, Params) ->
@@ -409,8 +405,6 @@ update_field(cost, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{cost = V};
 update_field(context, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{context = V}.
-
-
 
 -spec make_lifetime() -> lifetime_interval().
 

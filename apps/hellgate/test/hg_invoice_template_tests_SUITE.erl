@@ -18,8 +18,6 @@
 -export([create_invalid_cost_range/1]).
 -export([create_invoice_template/1]).
 -export([get_invoice_template_anyhow/1]).
--export([update_invalid_party/1]).
--export([update_invalid_shop/1]).
 -export([update_invalid_party_status/1]).
 -export([update_invalid_shop_status/1]).
 -export([update_invalid_cost_fixed_amount/1]).
@@ -56,8 +54,6 @@ all() ->
         create_invalid_cost_range,
         create_invoice_template,
         get_invoice_template_anyhow,
-        update_invalid_party,
-        update_invalid_shop,
         update_invalid_party_status,
         update_invalid_shop_status,
         update_invalid_cost_fixed_amount,
@@ -241,22 +237,6 @@ get_invoice_template_anyhow(C) ->
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client).
-
--spec update_invalid_party(config()) -> _ | no_return().
-
-update_invalid_party(C) ->
-    Client = cfg(client, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
-    Diff = make_invoice_tpl_update_params(#{party_id => ?MISSING_PARTY_ID}),
-    {exception, #payproc_InvalidUser{}} = hg_client_invoice_templating:update(TplID, Diff, Client).
-
--spec update_invalid_shop(config()) -> _ | no_return().
-
-update_invalid_shop(C) ->
-    Client = cfg(client, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
-    Diff = make_invoice_tpl_update_params(#{shop_id => ?MISSING_SHOP_ID}),
-    {exception, #payproc_ShopNotFound{}} = hg_client_invoice_templating:update(TplID, Diff, Client).
 
 -spec update_invalid_party_status(config()) -> _ | no_return().
 

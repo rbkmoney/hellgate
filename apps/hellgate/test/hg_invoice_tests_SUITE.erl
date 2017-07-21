@@ -18,7 +18,7 @@
 -export([invalid_shop_status/1]).
 -export([invalid_invoice_template_cost/1]).
 -export([invalid_invoice_template_id/1]).
--export([invoice_with_template/1]).
+-export([invoice_w_template/1]).
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancellation/1]).
 -export([invoice_cancellation_after_payment_timeout/1]).
@@ -65,7 +65,7 @@ all() ->
         invalid_shop_status,
         invalid_invoice_template_cost,
         invalid_invoice_template_id,
-        invoice_with_template,
+        invoice_w_template,
         invoice_cancellation,
         overdue_invoice_cancellation,
         invoice_cancellation_after_payment_timeout,
@@ -314,9 +314,9 @@ invalid_invoice_template_id(C) ->
     Params2 = make_invoice_params_tpl(TplID2),
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoicing:create_with_tpl(Params2, Client).
 
--spec invoice_with_template(config()) -> _ | no_return().
+-spec invoice_w_template(config()) -> _ | no_return().
 
-invoice_with_template(C) ->
+invoice_w_template(C) ->
     Client = cfg(client, C),
     TplCost1 = {_, FixedCost} = make_tpl_cost(fixed, 10000, <<"RUB">>),
     TplContext1 = make_invoice_context(<<"default context">>),

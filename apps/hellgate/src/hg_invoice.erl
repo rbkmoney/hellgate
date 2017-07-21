@@ -256,7 +256,7 @@ map_start_error({error, Reason}) ->
 
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
--type invoice_tpl_id() :: hg_invoice_template:tpl_id().
+-type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
@@ -683,17 +683,17 @@ assert_cost_in_range(
         lower = {LType, #domain_Cash{amount = LAmount, currency = Currency}}
     }
 ) ->
-    _ = assert_amount_increase(LType, LAmount, Amount),
-    _ = assert_amount_increase(UType, Amount, UAmount),
+    _ = assert_less_than(LType, LAmount, Amount),
+    _ = assert_less_than(UType, Amount, UAmount),
     ok;
 assert_cost_in_range(_, _) ->
     throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_CURRENCY]}).
 
-assert_amount_increase(inclusive, Less, More) when More >= Less ->
+assert_less_than(inclusive, Less, More) when Less =< More ->
     ok;
-assert_amount_increase(exclusive, Less, More) when More > Less ->
+assert_less_than(exclusive, Less, More) when Less < More ->
     ok;
-assert_amount_increase(_, _, _) ->
+assert_less_than(_, _, _) ->
     throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_AMOUNT]}).
 
 make_invoice_due_date(#domain_LifetimeInterval{years = YY, months = MM, days = DD}) ->

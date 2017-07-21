@@ -51,7 +51,7 @@ build('hellgate', 'docker-host', finalHook) {
     }
 
     try {
-      if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'epic/invoice-templates') {
+      if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME.startsWith('epic')) {
         runStage('push image') {
           sh "make push_image"
         }

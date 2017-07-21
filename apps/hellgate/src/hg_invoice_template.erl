@@ -33,10 +33,6 @@
 -type tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type tpl()    :: dmsl_domain_thrift:'InvoiceTemplate'().
 
--export_type([tpl_id/0]).
--export_type([tpl/0]).
-
-
 %%
 
 -spec get(tpl_id()) -> tpl().
@@ -66,20 +62,11 @@ handle_function_('Create', [UserInfo, Params], _Opts) ->
     TplID = hg_utils:unique_id(),
     ok    = assume_user_identity(UserInfo),
     _     = set_meta(TplID),
-    Party = validate_party(Params#payproc_InvoiceTemplateCreateParams.party_id),
-    Shop  = validate_shop(Params#payproc_InvoiceTemplateCreateParams.shop_id, Party),
-    ok    = validate_params(Params, Shop),
+    Party = get_party(Params#payproc_InvoiceTemplateCreateParams.party_id),
+    Shop  = get_shop(Params#payproc_InvoiceTemplateCreateParams.shop_id, Party),
+    ok    = validate_create_params(Params, Shop),
     ok    = start(TplID, Params),
     get_invoice_template(TplID);
-
-handle_function_('Update', [UserInfo, TplID, Params], _Opts) ->
-    ok    = assume_user_identity(UserInfo),
-    _     = set_meta(TplID),
-    Tpl   = get_invoice_template(TplID),
-    Party = validate_party(Params#payproc_InvoiceTemplateUpdateParams.party_id, Tpl#domain_InvoiceTemplate.owner_id),
-    Shop  = validate_shop(get_shop_id(Params#payproc_InvoiceTemplateUpdateParams.shop_id, Tpl), Party),
-    ok = validate_params(Params, Shop),
-    call(TplID, {update, Params});
 
 handle_function_('Get', [UserInfo, TplID], _Opts) ->
     ok  = assume_user_identity(UserInfo),
@@ -88,34 +75,33 @@ handle_function_('Get', [UserInfo, TplID], _Opts) ->
     _   = hg_invoice_utils:assert_party_accessible(Tpl#domain_InvoiceTemplate.owner_id),
     Tpl;
 
+handle_function_('Update', [UserInfo, TplID, Params], _Opts) ->
+    ok    = assume_user_identity(UserInfo),
+    _     = set_meta(TplID),
+    Tpl   = get_invoice_template(TplID),
+    Party = get_party(Tpl#domain_InvoiceTemplate.owner_id),
+    Shop  = get_shop(Tpl#domain_InvoiceTemplate.shop_id, Party),
+    ok = validate_update_params(Params, Shop),
+    call(TplID, {update, Params});
+
 handle_function_('Delete', [UserInfo, TplID], _Opts) ->
     ok    = assume_user_identity(UserInfo),
     Tpl   = get_invoice_template(TplID),
-    Party = validate_party(undefined, Tpl#domain_InvoiceTemplate.owner_id),
-    _     = validate_shop(get_shop_id(undefined, Tpl), Party),
+    Party = get_party(Tpl#domain_InvoiceTemplate.owner_id),
+    _     = get_shop(Tpl#domain_InvoiceTemplate.shop_id, Party),
     _     = set_meta(TplID),
     call(TplID, delete).
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
-validate_party(undefined, PartyID) ->
-    validate_party(PartyID);
-validate_party(PartyID, _) ->
-    validate_party(PartyID).
-
-validate_party(PartyID) ->
+get_party(PartyID) ->
     _     = hg_invoice_utils:assert_party_accessible(PartyID),
     Party = hg_party_machine:get_party(PartyID),
     _     = hg_invoice_utils:assert_party_operable(Party),
     Party.
 
-get_shop_id(undefined, #domain_InvoiceTemplate{shop_id = ShopID}) ->
-    ShopID;
-get_shop_id(ShopID, _) ->
-    ShopID.
-
-validate_shop(ShopID, Party) ->
+get_shop(ShopID, Party) ->
     Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _    = hg_invoice_utils:assert_shop_operable(Shop),
     Shop.
@@ -123,11 +109,12 @@ validate_shop(ShopID, Party) ->
 set_meta(ID) ->
     hg_log_scope:set_meta(#{invoice_template_id => ID}).
 
-validate_params(#payproc_InvoiceTemplateCreateParams{cost = Cost}, Shop) ->
-    ok = validate_cost(Cost, Shop);
-validate_params(#payproc_InvoiceTemplateUpdateParams{cost = undefined}, _) ->
+validate_create_params(#payproc_InvoiceTemplateCreateParams{cost = Cost}, Shop) ->
+    ok = validate_cost(Cost, Shop).
+
+validate_update_params(#payproc_InvoiceTemplateUpdateParams{cost = undefined}, _) ->
     ok;
-validate_params(#payproc_InvoiceTemplateUpdateParams{cost = Cost}, Shop) ->
+validate_update_params(#payproc_InvoiceTemplateUpdateParams{cost = Cost}, Shop) ->
     ok = validate_cost(Cost, Shop).
 
 validate_cost({fixed, Cash}, Shop) ->
@@ -183,24 +170,26 @@ map_history_error({error, Reason}) ->
 -type update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
 -type call()          :: {update, update_params()} | delete.
 
--define(ev(Body), {invoice_template_changes, [Body]}).
+-define(ev(Body),
+    {invoice_template_changes, Body}
+).
 
 -define(tpl_created(InvoiceTpl),
-    ?ev({invoice_template_created,
-        #payproc_InvoiceTemplateCreated{invoice_template = InvoiceTpl}})
+    {invoice_template_created,
+        #payproc_InvoiceTemplateCreated{invoice_template = InvoiceTpl}}
 ).
 
 -define(tpl_updated(Diff),
-    ?ev({invoice_template_updated,
-        #payproc_InvoiceTemplateUpdated{diff = Diff}})
+    {invoice_template_updated,
+        #payproc_InvoiceTemplateUpdated{diff = Diff}}
 ).
 
 -define(tpl_deleted,
-    ?ev({invoice_template_deleted,
-        #payproc_InvoiceTemplateDeleted{}})
+    {invoice_template_deleted,
+        #payproc_InvoiceTemplateDeleted{}}
 ).
 
-assert_invoice_template_not_deleted({_, _, ?tpl_deleted}) ->
+assert_invoice_template_not_deleted({_, _, ?ev([?tpl_deleted])}) ->
     throw(#payproc_InvoiceTemplateRemoved{});
 assert_invoice_template_not_deleted(_) ->
     ok.
@@ -216,7 +205,7 @@ namespace() ->
 
 init(ID, Params) ->
     Tpl = create_invoice_template(ID, Params),
-    {[?tpl_created(Tpl)], hg_machine_action:new()}.
+    {[?ev([?tpl_created(Tpl)])], hg_machine_action:new()}.
 
 create_invoice_template(ID, P) ->
     #domain_InvoiceTemplate{
@@ -232,10 +221,14 @@ create_invoice_template(ID, P) ->
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
     hg_machine:result(ev()).
 
-%% There are no timers for invoice templates,
-%% so no handler for such a case.
+process_signal(timeout, _History) ->
+    signal_no_changes();
+
 process_signal({repair, _}, _History) ->
-    {[], hg_machine_action:new()}.
+    signal_no_changes().
+
+signal_no_changes() ->
+    {[?ev([])], hg_machine_action:new()}.
 
 -spec process_call(call(), hg_machine:history(ev())) ->
     {hg_machine:response(), hg_machine:result(ev())}.
@@ -246,10 +239,10 @@ process_call(Call, History) ->
     {{ok, Response}, {[Event], hg_machine_action:new()}}.
 
 handle_call({update, Params}, Tpl) ->
-    Event = ?tpl_updated(Params),
+    Event = ?ev([?tpl_updated(Params)]),
     {merge_event(Event, Tpl), Event};
 handle_call(delete, _Tpl) ->
-    {ok, ?tpl_deleted}.
+    {ok, ?ev([?tpl_deleted])}.
 
 collapse_history(History) ->
     lists:foldl(
@@ -258,19 +251,15 @@ collapse_history(History) ->
         History
     ).
 
-merge_event(?tpl_created(Tpl), _) ->
+merge_event(?ev([?tpl_created(Tpl)]), _) ->
     Tpl;
-merge_event(?tpl_updated(#payproc_InvoiceTemplateUpdateParams{
-    party_id         = PartyID,
-    shop_id          = ShopID,
+merge_event(?ev([?tpl_updated(#payproc_InvoiceTemplateUpdateParams{
     details          = Details,
     invoice_lifetime = InvoiceLifetime,
     cost             = Cost,
     context          = Context
-}), Tpl) ->
+})]), Tpl) ->
     Diff = [
-        {party_id,         PartyID},
-        {shop_id,          ShopID},
         {details,          Details},
         {invoice_lifetime, InvoiceLifetime},
         {cost,             Cost},
@@ -280,10 +269,6 @@ merge_event(?tpl_updated(#payproc_InvoiceTemplateUpdateParams{
 
 update_field({_, undefined}, Tpl) ->
     Tpl;
-update_field({party_id, V}, Tpl) ->
-    Tpl#domain_InvoiceTemplate{owner_id = V};
-update_field({shop_id, V}, Tpl) ->
-    Tpl#domain_InvoiceTemplate{shop_id = V};
 update_field({details, V}, Tpl) ->
     Tpl#domain_InvoiceTemplate{details = V};
 update_field({invoice_lifetime, V}, Tpl) ->
