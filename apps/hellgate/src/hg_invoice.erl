@@ -658,18 +658,18 @@ make_invoice_params(#payproc_InvoiceWithTemplateParams{
         context = InvoiceContext
     }.
 
-get_templated_cost(undefined, {cost_fixed, Cost}, Shop) ->
+get_templated_cost(undefined, {fixed, Cost}, Shop) ->
     get_cost(Cost, Shop);
 get_templated_cost(undefined, _, _) ->
     throw(#'InvalidRequest'{errors = [?INVOICE_TPL_NO_COST]});
-get_templated_cost(Cost, {cost_fixed, Cost}, Shop) ->
+get_templated_cost(Cost, {fixed, Cost}, Shop) ->
     get_cost(Cost, Shop);
-get_templated_cost(_Cost, {cost_fixed, _CostTpl}, _Shop) ->
+get_templated_cost(_Cost, {fixed, _CostTpl}, _Shop) ->
     throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_COST]});
-get_templated_cost(Cost, {cost_range, Range}, Shop) ->
+get_templated_cost(Cost, {range, Range}, Shop) ->
     _ = assert_cost_in_range(Cost, Range),
     get_cost(Cost, Shop);
-get_templated_cost(Cost, {cost_unlim, _}, Shop) ->
+get_templated_cost(Cost, {unlim, _}, Shop) ->
     get_cost(Cost, Shop).
 
 get_cost(Cost, Shop) ->

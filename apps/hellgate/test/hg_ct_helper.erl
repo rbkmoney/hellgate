@@ -453,14 +453,14 @@ make_invoice_tpl_cost() ->
     (unlim, _, _)                          -> invoice_tpl_cost().
 
 make_invoice_tpl_cost(fixed, Amount, Currency) ->
-    {cost_fixed, make_cash(Amount, Currency)};
+    {fixed, make_cash(Amount, Currency)};
 make_invoice_tpl_cost(range, {LowerType, LowerAm, LowerCur}, {UpperType, UpperAm, UpperCur}) ->
-    {cost_range, #domain_CashRange{
+    {range, #domain_CashRange{
         upper = make_cash_bound(UpperType, UpperAm, UpperCur),
         lower = make_cash_bound(LowerType, LowerAm, LowerCur)
     }};
 make_invoice_tpl_cost(unlim, _, _) ->
-    {cost_unlim, #domain_InvoiceTemplateCostUnlimited{}}.
+    {unlim, #domain_InvoiceTemplateCostUnlimited{}}.
 
 -spec make_cash(non_neg_integer(), currency()) -> cash().
 

@@ -130,16 +130,16 @@ validate_params(#payproc_InvoiceTemplateUpdateParams{cost = undefined}, _) ->
 validate_params(#payproc_InvoiceTemplateUpdateParams{cost = Cost}, Shop) ->
     ok = validate_cost(Cost, Shop).
 
-validate_cost({cost_fixed, Cash}, Shop) ->
+validate_cost({fixed, Cash}, Shop) ->
     hg_invoice_utils:validate_cost(Cash, Shop);
-validate_cost({cost_range, Range = #domain_CashRange{
+validate_cost({range, Range = #domain_CashRange{
     lower = {_, LowerCost},
     upper = {_, UpperCost}
 }}, Shop) ->
     ok = hg_invoice_utils:validate_cash_range(Range),
     ok = hg_invoice_utils:validate_cost(LowerCost, Shop),
     ok = hg_invoice_utils:validate_cost(UpperCost, Shop);
-validate_cost({cost_unlim, _}, _Shop) ->
+validate_cost({unlim, _}, _Shop) ->
     ok.
 
 start(ID, Args) ->
