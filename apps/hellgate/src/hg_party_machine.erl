@@ -57,9 +57,6 @@
     {deny_claim, claim_id(), claim_revision(), binary()}        |
     {revoke_claim, claim_id(), claim_revision(), binary()}.
 
--type response() ::
-    ok | {ok, term()} | {exception, term()}.
-
 -type ev() :: {party_changes, [dmsl_payment_processing_thrift:'PartyChange'()]}.
 
 -type party()           :: dmsl_domain_thrift:'Party'().
@@ -112,7 +109,7 @@ process_signal({repair, _}, _History) ->
     ok().
 
 -spec process_call(call(), hg_machine:history(ev())) ->
-    {response(), hg_machine:result(ev())}.
+    {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
     St = collapse_history(History),
