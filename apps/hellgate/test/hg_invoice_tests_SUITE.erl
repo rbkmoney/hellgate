@@ -33,7 +33,6 @@
 -export([external_account_posting/1]).
 -export([consistent_history/1]).
 
--export([construct_domain_fixture/0]).
 %%
 
 -behaviour(supervisor).

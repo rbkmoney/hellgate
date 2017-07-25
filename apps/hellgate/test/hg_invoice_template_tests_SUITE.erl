@@ -1,5 +1,6 @@
 -module(hg_invoice_template_tests_SUITE).
 
+-include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
@@ -447,9 +448,6 @@ make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost) ->
 make_invoice_tpl_update_params(Diff) ->
     hg_ct_helper:make_invoice_tpl_update_params(Diff).
 
-construct_domain_fixture() ->
-    hg_invoice_tests_SUITE:construct_domain_fixture().
-
 make_userinfo(PartyID) ->
     hg_ct_helper:make_userinfo(PartyID).
 
@@ -461,3 +459,70 @@ make_cost(Type, P1, P2) ->
 
 make_invoice_details(Product) ->
     hg_ct_helper:make_invoice_details(Product).
+
+construct_domain_fixture() ->
+    [
+        hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
+        hg_ct_fixture:construct_category(?cat(1), <<"Test category">>),
+        hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
+        hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
+        hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
+        hg_ct_fixture:construct_system_account_set(?sas(1)),
+        hg_ct_fixture:construct_external_account_set(?eas(1)),
+
+        {globals, #domain_GlobalsObject{
+            ref = #domain_GlobalsRef{},
+            data = #domain_Globals{
+                party_prototype = #domain_PartyPrototypeRef{id = 42},
+                providers = {value, ordsets:from_list([])},
+                system_account_set = {value, ?sas(1)},
+                external_account_set = {value, ?eas(1)},
+                default_contract_template = ?tmpl(1),
+                common_merchant_proxy = ?prx(1),
+                inspector = {value, ?insp(1)}
+            }
+        }},
+        {party_prototype, #domain_PartyPrototypeObject{
+            ref = #domain_PartyPrototypeRef{id = 42},
+            data = #domain_PartyPrototype{
+                shop = #domain_ShopPrototype{
+                    shop_id = <<"TESTSHOP">>,
+                    category = ?cat(1),
+                    currency = ?cur(<<"RUB">>),
+                    details  = #domain_ShopDetails{
+                        name = <<"SUPER DEFAULT SHOP">>
+                    },
+                    location = {url, <<"">>}
+                },
+                contract = #domain_ContractPrototype{
+                    contract_id = <<"TESTCONTRACT">>,
+                    test_contract_template = ?tmpl(1),
+                    payout_tool = #domain_PayoutToolPrototype{
+                        payout_tool_id = <<"TESTPAYOUTTOOL">>,
+                        payout_tool_info = {bank_account, #domain_BankAccount{
+                            account = <<"">>,
+                            bank_name = <<"">>,
+                            bank_post_account = <<"">>,
+                            bank_bik = <<"">>
+                        }},
+                        payout_tool_currency = ?cur(<<"RUB">>)
+                    }
+                }
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(1),
+            data = #domain_TermSetHierarchy{
+                parent_terms = undefined,
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = #domain_TermSet{
+                        payments = #domain_PaymentsServiceTerms{
+                            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
+                            categories = {value, ordsets:from_list([?cat(1)])}
+                        }
+                    }
+                }]
+            }
+        }}
+    ].
