@@ -149,7 +149,7 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
     VS3 = validate_payment_flow(PaymentParams, PaymentTerms, VS2),
     CreatedAt = hg_datetime:format_now(),
-    Flow = construct_flow(PaymentParams, PaymentTerms, CreatedAt),
+    Flow = validate_flow(PaymentParams, PaymentTerms, CreatedAt),
     Payment = construct_payment(PaymentID, Invoice, Flow, PaymentParams, CreatedAt, Revision),
     {RiskScore, VS4} = inspect(Shop, Invoice, Payment, VS3),
     Route = validate_route(Payment, hg_routing:choose(VS4, Revision)),
@@ -175,16 +175,6 @@ construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS, Revisi
         collect_cash_flow_context(Invoice, Payment),
         collect_account_map(Invoice, Shop, Route, VS, Revision)
     ).
-
-construct_flow(PaymentParams, PaymentTerms, CreatedAt) ->
-    case PaymentParams#payproc_InvoicePaymentParams.flow of
-        {instant, _} ->
-            ?invoice_payment_flow_instant();
-        {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}} ->
-            ?hold_lifetime(HoldLifetime) = get_hold_lifetime(PaymentTerms),
-            HeldUntil = hg_datetime:format_ts(hg_datetime:to_time(CreatedAt) + HoldLifetime),
-            ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)
-    end.
 
 construct_payment(PaymentID, Invoice, Flow, PaymentParams, CreatedAt, Revision) ->
     #domain_InvoicePayment{
@@ -248,9 +238,24 @@ validate_payment_flow(
         instant ->
             instant;
         hold ->
-            {hold, get_hold_lifetime(Terms)}
+            {hold, validate_hold_lifetime(Terms)}
     end,
     VS#{payment_flow => PaymentFlow}.
+
+validate_flow(PaymentParams, PaymentTerms, CreatedAt) ->
+    case PaymentParams#payproc_InvoicePaymentParams.flow of
+        {instant, _} ->
+            ?invoice_payment_flow_instant();
+        {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}} ->
+            ?hold_lifetime(HoldLifetime) = validate_hold_lifetime(PaymentTerms),
+            HeldUntil = hg_datetime:format_ts(hg_datetime:to_time(CreatedAt) + HoldLifetime),
+            ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)
+    end.
+
+validate_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = undefined}) ->
+    throw_invalid_request(<<"Holds are not available">>);
+validate_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = HoldLifetime}) ->
+    HoldLifetime.
 
 collect_varset(Party, Shop = #domain_Shop{
     category = Category,
@@ -537,7 +542,7 @@ process_timeout(St, Options) ->
         suspended ->
             process_callback_timeout(Action, St, Options);
         finished ->
-            process(Action, St)
+            process_finished_session(Action, St)
     end.
 
 -spec process_call({callback, _}, st(), opts()) ->
@@ -565,7 +570,7 @@ process_callback_timeout(Action, St, Options) ->
     Result = handle_proxy_callback_timeout(Action, Session),
     finish_processing(Result, St, Options).
 
-process(Action, St) ->
+process_finished_session(Action, St) ->
     Payment = get_payment(St),
     Target = case Payment#domain_InvoicePayment.flow of
         ?invoice_payment_flow_instant() ->
@@ -998,11 +1003,6 @@ get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
 
 get_st_meta(_) ->
     #{}.
-
-get_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = undefined}) ->
-    throw_invalid_request(<<"Holds are not available">>);
-get_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = HoldLifetime}) ->
-    HoldLifetime.
 
 %%
 
