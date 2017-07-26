@@ -503,9 +503,9 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
         {done, {Changes1, _}} ->
             PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Changes1),
             Payment = hg_invoice_payment:get_payment(PaymentSession1),
-            case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
+            case get_payment_status(Payment) of
                 ?processed() ->
-                    Action = get_payment_action(processed, Payment),
+                    Action = hg_invoice_payment:get_action(Payment),
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1),
                         action  => Action,
@@ -513,7 +513,7 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                     };
                 ?captured() ->
                     Changes2 = [?invoice_status_changed(?invoice_paid())],
-                    Action = get_payment_action(captured, Payment),
+                    Action = hg_invoice_payment:get_action(Payment),
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
                         action  => Action,
@@ -578,23 +578,6 @@ create_payment_id(#st{payments = Payments}) ->
 
 get_payment_status(#domain_InvoicePayment{status = Status}) ->
     Status.
-
--include("domain.hrl").
-
-get_payment_action(processed, #domain_InvoicePayment{flow = Flow}) ->
-    case Flow of
-        ?invoice_payment_flow_instant() ->
-            hg_machine_action:instant();
-        ?invoice_payment_flow_hold(_, HeldUntil) ->
-            hg_machine_action:set_deadline(HeldUntil)
-    end;
-get_payment_action(captured, #domain_InvoicePayment{flow = Flow}) ->
-    case Flow of
-        ?invoice_payment_flow_instant() ->
-            hg_machine_action:new();
-        ?invoice_payment_flow_hold(_, _) ->
-            hg_machine_action:unset_timer()
-    end.
 
 %%
 

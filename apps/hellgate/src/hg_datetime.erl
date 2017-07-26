@@ -9,7 +9,7 @@
 -export([between/2]).
 -export([between/3]).
 -export([add_interval/2]).
--export([to_time/1]).
+-export([parse_ts/1]).
 
 -include_lib("dmsl/include/dmsl_base_thrift.hrl").
 
@@ -67,9 +67,9 @@ add_interval(Timestamp, {YY, MM, DD}) ->
     NewDate = genlib_time:shift_date(Date, {nvl(YY), nvl(MM), nvl(DD)}),
     format_ts(genlib_time:daytime_to_unixtime({NewDate, Time})).
 
--spec to_time(binary()) -> integer().
+-spec parse_ts(binary()) -> integer().
 
-to_time(Bin) when is_binary(Bin) ->
+parse_ts(Bin) when is_binary(Bin) ->
     hg_utils:unwrap_result(rfc3339:to_time(Bin, seconds)).
 
 %% Internal functions

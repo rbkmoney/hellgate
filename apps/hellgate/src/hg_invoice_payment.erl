@@ -46,6 +46,8 @@
 -export([capture/2]).
 -export([cancel/2]).
 
+-export([get_action/1]).
+
 -export([merge_change/2]).
 
 -export([get_log_params/2]).
@@ -248,7 +250,7 @@ validate_flow(PaymentParams, PaymentTerms, CreatedAt) ->
             ?invoice_payment_flow_instant();
         {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}} ->
             ?hold_lifetime(HoldLifetime) = validate_hold_lifetime(PaymentTerms),
-            HeldUntil = hg_datetime:format_ts(hg_datetime:to_time(CreatedAt) + HoldLifetime),
+            HeldUntil = hg_datetime:format_ts(hg_datetime:parse_ts(CreatedAt) + HoldLifetime),
             ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)
     end.
 
@@ -394,6 +396,22 @@ do_payment(St, Target) ->
     _ = assert_payment_flow(hold, Payment),
     start_session(Target).
 
+-spec get_action(payment()) -> hg_machine_action:t().
+
+get_action(#domain_InvoicePayment{status = {processed, _}, flow = Flow}) ->
+    case Flow of
+        ?invoice_payment_flow_instant() ->
+            hg_machine_action:instant();
+        ?invoice_payment_flow_hold(_, HeldUntil) ->
+            hg_machine_action:set_deadline(HeldUntil)
+    end;
+get_action(#domain_InvoicePayment{status = {captured, _}, flow = Flow}) ->
+    case Flow of
+        ?invoice_payment_flow_instant() ->
+            hg_machine_action:new();
+        ?invoice_payment_flow_hold(_, _) ->
+            hg_machine_action:unset_timer()
+    end.
 %%
 
 -spec create_adjustment(adjustment_params(), st(), opts()) ->
