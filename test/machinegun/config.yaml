@@ -1,0 +1,18 @@
+namespaces:
+    invoice:
+        event_sink: payproc
+        processor:
+            url: http://hellgate:8022/v1/stateproc/invoice
+    invoice_template:
+        event_sink: payproc
+        processor:
+            url: http://hellgate:8022/v1/stateproc/invoice_template
+    party:
+        event_sink: payproc
+        processor:
+            url: http://hellgate:8022/v1/stateproc/party
+    domain-config:
+        processor:
+            url: http://dominant:8022/v1/stateproc
+storage:
+    type: memory

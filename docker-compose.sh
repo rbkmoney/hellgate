@@ -24,10 +24,10 @@ services:
         condition: service_healthy
 
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/machinegun:707c2f8015f21de8dd9aa51a748532fe384c3a60
+    image: dr.rbkmoney.com/rbkmoney/machinegun:535d1492b20e0151ba245cbbd3152efc70726c91
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
-      - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
+      - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s
