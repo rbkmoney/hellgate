@@ -32,7 +32,8 @@
     payment_tool=> dmsl_domain_thrift:'PaymentTool'(),
     party       => dmsl_domain_thrift:'Party'(),
     shop        => dmsl_domain_thrift:'Shop'(),
-    risk_score  => high | low
+    risk_score  => dmsl_domain_thrift:'RiskScore'(),
+    payment_flow=> instant | {hold, dmsl_domain_thrift:'HoldLifetime'()}
 }.
 
 -export_type([varset/0]).

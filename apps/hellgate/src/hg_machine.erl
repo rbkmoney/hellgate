@@ -105,23 +105,22 @@ call(Ns, Ref, Args) ->
     end.
 
 -spec get_history(ns(), id()) ->
-    {ok, {history(), event_id()}} | {error, notfound | failed} | no_return().
+    {ok, history()} | {error, notfound | failed} | no_return().
 
 get_history(Ns, ID) ->
     get_history(Ns, ID, #'HistoryRange'{}).
 
 -spec get_history(ns(), id(), undefined | event_id(), undefined | non_neg_integer()) ->
-    {ok, {history(), event_id()}} | {error, notfound | failed} | no_return().
+    {ok, history()} | {error, notfound | failed} | no_return().
 
 get_history(Ns, ID, AfterID, Limit) ->
     get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}).
 
 get_history(Ns, ID, Range) ->
-    LastID = #'HistoryRange'.'after',
     Descriptor = prepare_descriptor(Ns, {id, ID}, Range),
     case call_automaton('GetMachine', [Descriptor]) of
         {ok, #'Machine'{history = History}} when is_list(History) ->
-            {ok, unwrap_history(History, LastID)};
+            {ok, unwrap_history(History)};
         Error ->
             Error
     end.
@@ -152,7 +151,7 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
--spec handle_function_(func(), woody:args(), #{ns := ns()}) ->    term() | no_return().
+-spec handle_function_(func(), woody:args(), #{ns := ns()}) -> term() | no_return().
 
 handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
     #'SignalArgs'{signal = {Type, Signal}, machine = #'Machine'{id = ID} = Machine} = Args,
@@ -304,12 +303,8 @@ unwrap_event(#'Event'{id = ID, created_at = Dt, event_payload = Payload}) ->
 
 %%
 
-unwrap_history(History, LastID) ->
-    lists:mapfoldl(
-        fun (E, _WasLastID) -> {ID, _, _} = V = unwrap_event(E), {V, ID} end,
-        LastID,
-        History
-    ).
+unwrap_history(History) ->
+    lists:map(fun unwrap_event/1, History).
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].

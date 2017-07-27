@@ -53,14 +53,16 @@ filter_terminal(
         category = Category,
         payment_method = PaymentMethod,
         account = #domain_TerminalAccount{currency = Currency},
-        risk_coverage = RiskCoverage
+        risk_coverage = RiskCoverage,
+        payment_flow = PaymentFlow
     },
     VS
 ) ->
-    Category      == maps:get(category, VS) andalso
-    Currency      == maps:get(currency, VS) andalso
-    PaymentMethod == hg_payment_tool:get_method(maps:get(payment_tool, VS)) andalso
-    is_risk_covered(maps:get(risk_score, VS), RiskCoverage).
+    Category       == maps:get(category, VS) andalso
+    Currency       == maps:get(currency, VS) andalso
+    PaymentMethod  == hg_payment_tool:get_method(maps:get(payment_tool, VS)) andalso
+    is_risk_covered(maps:get(risk_score, VS), RiskCoverage) andalso
+    is_flow_suitable(PaymentFlow, maps:get(payment_flow, VS)).
 
 %%
 
@@ -74,3 +76,18 @@ reduce(Name, S, VS, Revision) ->
 
 is_risk_covered(RiskScore, RiskCoverage) ->
     RiskScore == RiskCoverage.
+
+-include("domain.hrl").
+
+is_flow_suitable(PaymentFlowTerminal, PaymentFlow) ->
+    case {PaymentFlowTerminal, PaymentFlow} of
+        {{hold, TerminalFlowHold}, {hold, ?hold_lifetime(PaymentHoldLifetime)}} ->
+            #domain_TerminalPaymentFlowHold{
+                hold_lifetime = ?hold_lifetime(TerminalHoldLifetime)
+            } = TerminalFlowHold,
+            TerminalHoldLifetime >= PaymentHoldLifetime;
+        {_, instant} ->
+            true;
+        {_, {hold, _}} ->
+            false
+    end.

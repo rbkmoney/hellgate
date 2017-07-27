@@ -36,7 +36,7 @@ get_http_cowboy_spec() ->
 %%
 
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
--include_lib("hellgate/include/invoice_events.hrl").
+-include_lib("hellgate/include/payment_events.hrl").
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
@@ -87,6 +87,9 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
             sleep(1, <<"sleeping">>)
     end;
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
+    finish(PaymentInfo);
+
+process_payment(?cancelled(), _, PaymentInfo, _) ->
     finish(PaymentInfo).
 
 handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->

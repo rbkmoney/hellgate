@@ -9,6 +9,7 @@
 -export([between/2]).
 -export([between/3]).
 -export([add_interval/2]).
+-export([parse_ts/1]).
 
 -include_lib("dmsl/include/dmsl_base_thrift.hrl").
 
@@ -40,12 +41,12 @@ format_now() ->
 compare(T1, T2) when is_binary(T1) andalso is_binary(T2) ->
     compare_int(to_integer(T1), to_integer(T2)).
 
-% Compare exclusivly! undefined == ∞
+% Compare inclusivly! undefined == ∞
 -spec between(timestamp(), timestamp() | undefined, timestamp() | undefined) -> boolean().
 
 between(Timestamp, Start, End) ->
-    LB = to_interval_bound(Start, exclusive),
-    UB = to_interval_bound(End, exclusive),
+    LB = to_interval_bound(Start, inclusive),
+    UB = to_interval_bound(End, inclusive),
     between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}).
 
 -spec between(timestamp(), timestamp_interval()) -> boolean().
@@ -65,6 +66,11 @@ add_interval(Timestamp, {YY, MM, DD}) ->
     {Date, Time} = genlib_time:unixtime_to_daytime(TSSeconds),
     NewDate = genlib_time:shift_date(Date, {nvl(YY), nvl(MM), nvl(DD)}),
     format_ts(genlib_time:daytime_to_unixtime({NewDate, Time})).
+
+-spec parse_ts(binary()) -> integer().
+
+parse_ts(Bin) when is_binary(Bin) ->
+    hg_utils:unwrap_result(rfc3339:to_time(Bin, seconds)).
 
 %% Internal functions
 
