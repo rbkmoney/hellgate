@@ -582,9 +582,8 @@ process_finished_session(St) ->
                     ?captured()
             end
     end,
-    Events = [?session_ev(Target, ?session_started())],
-    Action = hg_machine_action:instant(),
-    {done, {Events, Action}}.
+    {ok, Result} = start_session(Target),
+    {done, Result}.
 
 process(Action0, St, Options) ->
     Session = get_target_session(St),
@@ -604,16 +603,15 @@ finish_processing({Events, Action}, St, Options) ->
     St1 = collapse_changes(Events, St),
     case get_target_session(St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
-            NewAction = case Target of
+            case Target of
                 {captured, _} ->
-                    _AccountsState = commit_plan(St, Options),
-                    Action;
+                    _AccountsState = commit_plan(St, Options);
                 {cancelled, _} ->
-                    _AccountsState = rollback_plan(St, Options),
-                    Action;
+                    _AccountsState = rollback_plan(St, Options);
                 {processed, _} ->
-                    get_action(Target, St)
+                    ok
             end,
+            NewAction = get_action(Target, Action, St),
             {done, {Events ++ [?payment_status_changed(Target)], NewAction}};
         #{status := finished, result := ?session_failed(Failure)} ->
             % TODO is it always rollback?
@@ -623,14 +621,16 @@ finish_processing({Events, Action}, St, Options) ->
             {next, {Events, Action}}
     end.
 
-get_action({processed, _}, St) ->
+get_action({processed, _}, Action, St) ->
     #domain_InvoicePayment{flow = Flow} = get_payment(St),
     case Flow of
         ?invoice_payment_flow_instant() ->
-            hg_machine_action:instant();
+            hg_machine_action:set_timeout(0, Action);
         ?invoice_payment_flow_hold(_, HeldUntil) ->
-            hg_machine_action:set_deadline(HeldUntil)
-    end.
+            hg_machine_action:set_deadline(HeldUntil, Action)
+    end;
+get_action(_, Action, _) ->
+    Action.
 
 handle_callback_result(
     #prxprv_CallbackResult{result = ProxyResult, response = Response},
