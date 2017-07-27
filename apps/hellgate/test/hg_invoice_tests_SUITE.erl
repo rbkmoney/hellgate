@@ -673,7 +673,7 @@ payment_hold_auto_cancellation(C) ->
     Client = cfg(client, C),
     ok = start_proxy(hg_dummy_provider, 1, C),
     ok = start_proxy(hg_dummy_inspector, 2, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 10000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(5), 10000, C),
     PaymentParams = make_payment_params({hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     [
