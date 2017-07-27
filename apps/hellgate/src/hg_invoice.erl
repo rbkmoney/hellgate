@@ -500,12 +500,11 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                 action  => Action,
                 state   => St
             };
-        {done, {Changes1, _}} ->
+        {done, {Changes1, Action}} ->
             PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Changes1),
             Payment = hg_invoice_payment:get_payment(PaymentSession1),
             case get_payment_status(Payment) of
                 ?processed() ->
-                    Action = hg_invoice_payment:get_action(Payment),
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1),
                         action  => Action,
@@ -513,7 +512,6 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                     };
                 ?captured() ->
                     Changes2 = [?invoice_status_changed(?invoice_paid())],
-                    Action = hg_invoice_payment:get_action(Payment),
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
                         action  => Action,

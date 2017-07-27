@@ -46,8 +46,6 @@
 -export([capture/2]).
 -export([cancel/2]).
 
--export([get_action/1]).
-
 -export([merge_change/2]).
 
 -export([get_log_params/2]).
@@ -396,24 +394,6 @@ do_payment(St, Target) ->
     _ = assert_payment_flow(hold, Payment),
     start_session(Target).
 
--spec get_action(payment()) -> hg_machine_action:t().
-
-get_action(#domain_InvoicePayment{status = {processed, _}, flow = Flow}) ->
-    case Flow of
-        ?invoice_payment_flow_instant() ->
-            hg_machine_action:instant();
-        ?invoice_payment_flow_hold(_, HeldUntil) ->
-            hg_machine_action:set_deadline(HeldUntil)
-    end;
-get_action(#domain_InvoicePayment{status = {captured, _}, flow = Flow}) ->
-    case Flow of
-        ?invoice_payment_flow_instant() ->
-            hg_machine_action:new();
-        ?invoice_payment_flow_hold(_, _) ->
-            hg_machine_action:unset_timer()
-    end.
-%%
-
 -spec create_adjustment(adjustment_params(), st(), opts()) ->
     {adjustment(), hg_machine:result()}.
 
@@ -553,14 +533,15 @@ process_signal(timeout, St, Options) ->
     ).
 
 process_timeout(St, Options) ->
-    Action = hg_machine_action:new(),
     case get_target_session_status(St) of
         active ->
+            Action = hg_machine_action:new(),
             process(Action, St, Options);
         suspended ->
+            Action = hg_machine_action:new(),
             process_callback_timeout(Action, St, Options);
         finished ->
-            process_finished_session(Action, St)
+            process_finished_session(St)
     end.
 
 -spec process_call({callback, _}, st(), opts()) ->
@@ -588,17 +569,18 @@ process_callback_timeout(Action, St, Options) ->
     Result = handle_proxy_callback_timeout(Action, Session),
     finish_processing(Result, St, Options).
 
-process_finished_session(Action, St) ->
+process_finished_session(St) ->
     Payment = get_payment(St),
-    Target = case Payment#domain_InvoicePayment.flow of
+    {Target, Action} = case Payment#domain_InvoicePayment.flow of
         ?invoice_payment_flow_instant() ->
-            ?captured();
-        ?invoice_payment_flow_hold(OnHoldExpiration, _) ->
+            {?captured(), hg_machine_action:instant()};
+        ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil) ->
+            HoldAction = hg_machine_action:set_deadline(HeldUntil),
             case OnHoldExpiration of
                 cancel ->
-                    ?cancelled();
+                    {?cancelled(), HoldAction};
                 capture ->
-                    ?captured()
+                    {?captured(), HoldAction}
             end
     end,
     Events = [?session_ev(Target, ?session_started())],
@@ -622,21 +604,32 @@ finish_processing({Events, Action}, St, Options) ->
     St1 = collapse_changes(Events, St),
     case get_target_session(St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
-            case Target of
+            NewAction = case Target of
                 {captured, _} ->
-                    _AccountsState = commit_plan(St, Options);
+                    _AccountsState = commit_plan(St, Options),
+                    get_action(Target, St);
                 {cancelled, _} ->
-                    _AccountsState = rollback_plan(St, Options);
+                    _AccountsState = rollback_plan(St, Options),
+                    Action;
                 {processed, _} ->
-                    ok
+                    hg_machine_action:instant()
             end,
-            {done, {Events ++ [?payment_status_changed(Target)], Action}};
+            {done, {Events ++ [?payment_status_changed(Target)], NewAction}};
         #{status := finished, result := ?session_failed(Failure)} ->
             % TODO is it always rollback?
             _AccountsState = rollback_plan(St, Options),
             {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
         #{} ->
             {next, {Events, Action}}
+    end.
+
+get_action({captured, _}, St) ->
+    #domain_InvoicePayment{flow = Flow} = get_payment(St),
+    case Flow of
+        ?invoice_payment_flow_instant() ->
+            hg_machine_action:new();
+        ?invoice_payment_flow_hold(_, _) ->
+            hg_machine_action:unset_timer()
     end.
 
 handle_callback_result(
