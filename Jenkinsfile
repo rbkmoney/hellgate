@@ -1,4 +1,5 @@
 #!groovy
+// -*- mode: groovy -*-
 
 def finalHook = {
   runStage('store CT logs') {
@@ -19,24 +20,26 @@ build('hellgate', 'docker-host', finalHook) {
   }
 
   pipeDefault() {
-    runStage('compile') {
-      withGithubPrivkey {
-        sh 'make wc_compile'
+    if (env.BRANCH_NAME != 'master') {
+      runStage('compile') {
+        withGithubPrivkey {
+          sh 'make wc_compile'
+        }
       }
-    }
-    runStage('lint') {
-      sh 'make wc_lint'
-    }
-    runStage('xref') {
-      sh 'make wc_xref'
-    }
-    runStage('dialyze') {
-      withWsCache("_build/default/rebar3_19.1_plt") {
-        sh 'make wc_dialyze'
+      runStage('lint') {
+        sh 'make wc_lint'
       }
-    }
-    runStage('test') {
-      sh "make wdeps_test"
+      runStage('xref') {
+        sh 'make wc_xref'
+      }
+      runStage('dialyze') {
+        withWsCache("_build/default/rebar3_19.1_plt") {
+          sh 'make wc_dialyze'
+        }
+      }
+      runStage('test') {
+        sh "make wdeps_test"
+      }
     }
     runStage('make release') {
       withGithubPrivkey {
@@ -48,7 +51,7 @@ build('hellgate', 'docker-host', finalHook) {
     }
 
     try {
-      if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'epic/holds'){
+      if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME.startsWith('epic')) {
         runStage('push image') {
           sh "make push_image"
         }

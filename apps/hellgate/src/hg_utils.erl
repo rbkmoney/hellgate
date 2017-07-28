@@ -66,9 +66,7 @@ unwrap_result({ok, V}) ->
 unwrap_result({error, E}) ->
     error(E).
 
--spec format_reason(atom() | binary()) -> binary().
+-spec format_reason(atom()) -> binary().
 %% TODO: fix this dirty hack
-format_reason({Pre, V}) ->
-    genlib:format("~s: ~s", [Pre, genlib:to_binary(V)]);
 format_reason(V) ->
     genlib:to_binary(V).

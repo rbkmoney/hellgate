@@ -37,7 +37,8 @@ stop() ->
 init([]) ->
     MachineHandlers = [
         hg_party_machine,
-        hg_invoice
+        hg_invoice,
+        hg_invoice_template
     ],
     {ok, {
         #{strategy => one_for_all, intensity => 6, period => 30},
@@ -59,6 +60,7 @@ get_api_child_spec(MachineHandlers) ->
             handlers      => hg_machine:get_service_handlers(MachineHandlers) ++ [
                 construct_service_handler(party_management, hg_party_woody_handler),
                 construct_service_handler(invoicing, hg_invoice),
+                construct_service_handler(invoice_templating, hg_invoice_template),
                 construct_service_handler(proxy_host_provider, hg_proxy_host_provider),
                 construct_service_handler(eventsink, hg_event_sink)
             ]

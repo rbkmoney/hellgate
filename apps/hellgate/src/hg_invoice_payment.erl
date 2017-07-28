@@ -378,12 +378,12 @@ start_session(Target) ->
     Action = hg_machine_action:instant(),
     {ok, {Events, Action}}.
 
--spec capture(st(), binary()) -> {ok, hg_machine:result()}.
+-spec capture(st(), atom()) -> {ok, hg_machine:result()}.
 
 capture(St, Reason) ->
     do_payment(St, ?captured_with_reason(hg_utils:format_reason(Reason))).
 
--spec cancel(st(), binary()) -> {ok, hg_machine:result()}.
+-spec cancel(st(), atom()) -> {ok, hg_machine:result()}.
 
 cancel(St, Reason) ->
     do_payment(St, ?cancelled_with_reason(hg_utils:format_reason(Reason))).

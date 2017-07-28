@@ -17,17 +17,17 @@ services:
         condition: service_healthy
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:18c81bacebe24c5cd39d7df6eb066ec9ee5df004
+    image: dr.rbkmoney.com/rbkmoney/dominant:3bb814997cae3737ff83af6df11b4f75602ebf88
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
         condition: service_healthy
 
   machinegun:
-    image: dr.rbkmoney.com/rbkmoney/machinegun:707c2f8015f21de8dd9aa51a748532fe384c3a60
+    image: dr.rbkmoney.com/rbkmoney/machinegun:535d1492b20e0151ba245cbbd3152efc70726c91
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
-      - ./test/machinegun/sys.config:/opt/machinegun/releases/0.1.0/sys.config
+      - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s
@@ -35,7 +35,7 @@ services:
       retries: 12
 
   shumway:
-    image: dr.rbkmoney.com/rbkmoney/shumway:ef494632710c3248a7d6a33fcbeb7944ce8fdd31
+    image: dr.rbkmoney.com/rbkmoney/shumway:5519e5e1f8febdd94e8fc81646d4917f607223dd
     restart: always
     entrypoint:
       - java

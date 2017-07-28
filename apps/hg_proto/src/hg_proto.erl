@@ -30,6 +30,10 @@ get_service_spec(invoicing, #{}) ->
     Service = {dmsl_payment_processing_thrift, 'Invoicing'},
     {?VERSION_PREFIX ++ "/processing/invoicing", Service};
 
+get_service_spec(invoice_templating, #{}) ->
+    Service = {dmsl_payment_processing_thrift, 'InvoiceTemplating'},
+    {?VERSION_PREFIX ++ "/processing/invoice_templating", Service};
+
 get_service_spec(processor, #{namespace := Ns}) when is_binary(Ns) ->
     Service = {dmsl_state_processing_thrift, 'Processor'},
     {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), Service};

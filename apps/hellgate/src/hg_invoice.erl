@@ -76,7 +76,16 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(InvoiceID, InvoiceParams),
+    ok = start(InvoiceID, [undefined, InvoiceParams]),
+    get_invoice_state(get_state(InvoiceID));
+
+handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
+    InvoiceID = hg_utils:unique_id(),
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID),
+    TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
+    InvoiceParams = make_invoice_params(Params),
+    ok = start(InvoiceID, [TplID, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
@@ -257,6 +266,7 @@ map_start_error({error, Reason}) ->
 
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
+-type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
@@ -286,11 +296,11 @@ publish_event(InvoiceID, Changes) when is_list(Changes) ->
 namespace() ->
     ?NS.
 
--spec init(invoice_id(), invoice_params()) ->
+-spec init(invoice_id(), [invoice_tpl_id() | invoice_params()]) ->
     hg_machine:result(ev()).
 
-init(ID, InvoiceParams = #payproc_InvoiceParams{party_id = PartyID}) ->
-    Invoice = create_invoice(ID, InvoiceParams, PartyID),
+init(ID, [InvoiceTplID, InvoiceParams]) ->
+    Invoice = create_invoice(ID, InvoiceTplID, InvoiceParams),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
         changes => [?invoice_created(Invoice)],
@@ -338,11 +348,8 @@ handle_expiration(St) ->
     {rescind, binary()} |
     {callback, callback()}.
 
--type response() ::
-    ok | {ok, term()} | {exception, term()}.
-
 -spec process_call(call(), hg_machine:history(ev())) ->
-    {response(), hg_machine:result(ev())}.
+    {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
     St = collapse_history(History),
@@ -558,17 +565,18 @@ handle_result(#{state := St} = Params) ->
 
 %%
 
-create_invoice(ID, V = #payproc_InvoiceParams{}, PartyID) ->
+create_invoice(ID, InvoiceTplID, V = #payproc_InvoiceParams{}) ->
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
-        owner_id        = PartyID,
+        owner_id        = V#payproc_InvoiceParams.party_id,
         created_at      = hg_datetime:format_now(),
         status          = ?invoice_unpaid(),
         cost            = V#payproc_InvoiceParams.cost,
         due             = V#payproc_InvoiceParams.due,
         details         = V#payproc_InvoiceParams.details,
-        context         = V#payproc_InvoiceParams.context
+        context         = V#payproc_InvoiceParams.context,
+        template_id     = InvoiceTplID
     }.
 
 create_payment_id(#st{payments = Payments}) ->
@@ -634,80 +642,104 @@ set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
 
 %%
 
-get_shop_currency(#domain_Shop{account = #domain_ShopAccount{currency = Currency}}) ->
-    Currency.
+assert_shop_exists(Shop) ->
+    hg_invoice_utils:assert_shop_exists(Shop).
 
-assert_party_operable(#domain_Party{blocking = Blocking, suspension = Suspension} = V) ->
-    _ = assert_party_unblocked(Blocking),
-    _ = assert_party_active(Suspension),
-    V.
+assert_party_operable(Party) ->
+    hg_invoice_utils:assert_party_operable(Party).
 
-assert_party_unblocked(V = {Status, _}) ->
-    Status == unblocked orelse throw(#payproc_InvalidPartyStatus{status = {blocking, V}}).
-
-assert_party_active(V = {Status, _}) ->
-    Status == active orelse throw(#payproc_InvalidPartyStatus{status = {suspension, V}}).
-
-assert_shop_exists(#domain_Shop{} = V) ->
-    V;
-assert_shop_exists(undefined) ->
-    throw(#payproc_ShopNotFound{}).
-
-assert_shop_operable(#domain_Shop{blocking = Blocking, suspension = Suspension} = V) ->
-    _ = assert_shop_unblocked(Blocking),
-    _ = assert_shop_active(Suspension),
-    V.
-
-assert_shop_unblocked(V = {Status, _}) ->
-    Status == unblocked orelse throw(#payproc_InvalidShopStatus{status = {blocking, V}}).
-
-assert_shop_active(V = {Status, _}) ->
-    Status == active orelse throw(#payproc_InvalidShopStatus{status = {suspension, V}}).
+assert_shop_operable(Shop) ->
+    hg_invoice_utils:assert_shop_operable(Shop).
 
 %%
 
-validate_invoice_params(
-    #payproc_InvoiceParams{
-        cost = #domain_Cash{
-            currency = Currency,
-            amount = Amount
-        }
-    },
-    Shop
-) ->
-    _ = validate_amount(Amount),
-    _ = validate_currency(Currency, get_shop_currency(Shop)),
-    ok.
-
-validate_amount(Amount) when Amount > 0 ->
-    %% TODO FIX THIS ASAP! Amount should be specified in contract terms.
-    ok;
-validate_amount(_) ->
-    throw(#'InvalidRequest'{errors = [<<"Invalid amount">>]}).
-
-validate_currency(Currency, Currency) ->
-    ok;
-validate_currency(_, _) ->
-    throw(#'InvalidRequest'{errors = [<<"Invalid currency">>]}).
+validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Shop) ->
+    hg_invoice_utils:validate_cost(Cost, Shop).
 
 assert_invoice_accessible(St = #st{}) ->
     assert_party_accessible(get_party_id(St)),
     St.
 
 assert_party_accessible(PartyID) ->
-    UserIdentity = get_user_identity(),
-    case hg_access_control:check_user(UserIdentity, PartyID) of
-        ok ->
-            ok;
-        invalid_user ->
-            throw(#payproc_InvalidUser{})
-    end.
+    hg_invoice_utils:assert_party_accessible(PartyID).
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
-get_user_identity() ->
-    hg_woody_handler_utils:get_user_identity().
+make_invoice_params(#payproc_InvoiceWithTemplateParams{
+    template_id = TplID,
+    cost = Cost,
+    context = Context
+}) ->
+    #domain_InvoiceTemplate{
+        owner_id = PartyID,
+        shop_id = ShopID,
+        details = Details,
+        invoice_lifetime = Lifetime,
+        cost = TplCost,
+        context = TplContext
+    } = hg_invoice_template:get(TplID),
+    Party = get_party(PartyID),
+    Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
+    _ = assert_party_accessible(PartyID),
+    _ = assert_party_shop_operable(Shop, Party),
+    InvoiceCost = get_templated_cost(Cost, TplCost, Shop),
+    InvoiceDue = make_invoice_due_date(Lifetime),
+    InvoiceContext = make_invoice_context(Context, TplContext),
+    #payproc_InvoiceParams{
+        party_id = PartyID,
+        shop_id = ShopID,
+        details = Details,
+        due = InvoiceDue,
+        cost = InvoiceCost,
+        context = InvoiceContext
+    }.
+
+get_templated_cost(undefined, {fixed, Cost}, Shop) ->
+    get_cost(Cost, Shop);
+get_templated_cost(undefined, _, _) ->
+    throw(#'InvalidRequest'{errors = [?INVOICE_TPL_NO_COST]});
+get_templated_cost(Cost, {fixed, Cost}, Shop) ->
+    get_cost(Cost, Shop);
+get_templated_cost(_Cost, {fixed, _CostTpl}, _Shop) ->
+    throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_COST]});
+get_templated_cost(Cost, {range, Range}, Shop) ->
+    _ = assert_cost_in_range(Cost, Range),
+    get_cost(Cost, Shop);
+get_templated_cost(Cost, {unlim, _}, Shop) ->
+    get_cost(Cost, Shop).
+
+get_cost(Cost, Shop) ->
+    ok = hg_invoice_utils:validate_cost(Cost, Shop),
+    Cost.
+
+assert_cost_in_range(
+    #domain_Cash{amount = Amount, currency = Currency},
+    #domain_CashRange{
+        upper = {UType, #domain_Cash{amount = UAmount, currency = Currency}},
+        lower = {LType, #domain_Cash{amount = LAmount, currency = Currency}}
+    }
+) ->
+    _ = assert_less_than(LType, LAmount, Amount),
+    _ = assert_less_than(UType, Amount, UAmount),
+    ok;
+assert_cost_in_range(_, _) ->
+    throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_CURRENCY]}).
+
+assert_less_than(inclusive, Less, More) when Less =< More ->
+    ok;
+assert_less_than(exclusive, Less, More) when Less < More ->
+    ok;
+assert_less_than(_, _, _) ->
+    throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_AMOUNT]}).
+
+make_invoice_due_date(#domain_LifetimeInterval{years = YY, months = MM, days = DD}) ->
+    hg_datetime:add_interval(hg_datetime:format_now(), {YY, MM, DD}).
+
+make_invoice_context(undefined, TplContext) ->
+    TplContext;
+make_invoice_context(Context, _) ->
+    Context.
 
 %%
 

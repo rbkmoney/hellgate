@@ -13,6 +13,8 @@
 -type api_call() :: {Name :: atom(), woody:func(), [_]}.
 -opaque t() :: {api_call(), undefined | integer()}.
 
+-define(POLL_INTERVAL, 1000).
+
 -spec new(Name :: atom(), woody:func(), [_]) ->
     t().
 
@@ -21,8 +23,6 @@ new(Name, Function, Args) ->
 
 -spec poll(pos_integer(), pos_integer(), hg_client_api:t(), t()) ->
     {events() | {exception | error, _}, hg_client_api:t(), t()}.
-
--define(POLL_INTERVAL, 1000).
 
 poll(N, Timeout, Client, St) ->
     poll(N, Timeout, [], Client, St, St).
