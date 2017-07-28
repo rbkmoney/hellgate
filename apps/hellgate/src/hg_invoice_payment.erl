@@ -527,7 +527,7 @@ handle_callback(Payload, Action0, St, Options) ->
     Session = get_target_session(St),
     ProxyContext = construct_proxy_context(Session, St, Options),
     {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St, Options),
-    {Response, Result} = handle_callback_result(CallbackResult, Action0, get_target_session(St)),
+    {Response, Result} = handle_callback_result(CallbackResult, Action0, Session),
     {Response, finish_processing(Result, St, Options)}.
 
 finish_processing({Events, Action}, St, Options) ->
@@ -977,14 +977,13 @@ make_log_params(EventType, Payment, Params) ->
     {ok, Result}.
 
 get_partial_remainders(CashFlow) ->
-    Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
+    Remainders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
     lists:map(
-        fun ({Account, Cash}) ->
-            ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency}) = Cash,
+        fun ({Account, ?cash(Amount, ?currency(Currency))}) ->
             Remainder = [{remainder, [{amount, Amount}, {currency, Currency}]}],
             {get_account_key(Account), Remainder}
         end,
-        Reminders
+        Remainders
     ).
 
 get_account_key({AccountParty, AccountType}) ->

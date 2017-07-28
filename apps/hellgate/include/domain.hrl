@@ -3,6 +3,8 @@
 
 -define(cash(Amount, Currency),
     #domain_Cash{amount = Amount, currency = Currency}).
+-define(currency(SymCode),
+    #domain_CurrencyRef{symbolic_code = SymCode}).
 
 -define(external_failure(Code),
     ?external_failure(Code, undefined)).
