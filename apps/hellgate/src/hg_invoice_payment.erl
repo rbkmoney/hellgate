@@ -95,6 +95,7 @@
 -type party()             :: dmsl_domain_thrift:'Party'().
 -type invoice()           :: dmsl_domain_thrift:'Invoice'().
 -type payment()           :: dmsl_domain_thrift:'InvoicePayment'().
+-type payment_params()    :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id()        :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type refund()            :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type refund_id()         :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
@@ -104,7 +105,7 @@
 -type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 -type target()            :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
 -type risk_score()        :: dmsl_domain_thrift:'RiskScore'().
--type route()             :: dmsl_domain_thrift:'InvoicePaymentRoute'().
+-type route()             :: dmsl_domain_thrift:'PaymentRoute'().
 -type cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
 -type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
 -type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
@@ -173,11 +174,11 @@ get_activity(#st{activity = Activity}) ->
 %%
 
 -type opts() :: #{
-    party => party(),
+    party   => party(),
     invoice => invoice()
 }.
 
--spec init(payment_id(), _, opts()) ->
+-spec init(payment_id(), payment_params(), opts()) ->
     {payment(), hg_machine:result()}.
 
 init(PaymentID, PaymentParams, Opts) ->
@@ -189,7 +190,7 @@ init(PaymentID, PaymentParams, Opts) ->
         }
     ).
 
--spec init_(payment_id(), _, opts()) ->
+-spec init_(payment_id(), payment_params(), opts()) ->
     {st(), hg_machine:result()}.
 
 init_(PaymentID, Params, Opts) ->
@@ -300,6 +301,30 @@ validate_hold_lifetime(
 validate_hold_lifetime(undefined, _VS, _Revision) ->
     throw_invalid_request(<<"Holds are not available">>).
 
+validate_payment_params(
+    #payproc_InvoicePaymentParams{
+        payer = {payment_resource, #domain_PaymentResourcePayer{
+                    resource = #domain_DisposablePaymentResource{
+                                    payment_tool = PaymentTool
+                    }
+        }}
+    },
+    Terms,
+    VS
+) ->
+    VS1 = validate_payment_tool(PaymentTool, Terms, VS),
+    VS1#{payment_tool => PaymentTool};
+validate_payment_params(
+    #payproc_InvoicePaymentParams{
+        payer = {customer, #domain_CustomerPayer{
+            customer_id = CustomerID
+        }}
+    },
+    _,
+    VS
+) ->
+    VS#{payment_tool => get_rec_token(CustomerID)}.
+
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
     _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
@@ -325,6 +350,10 @@ validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}};
 validate_risk_score(fatal, _VS) ->
     throw_invalid_request(<<"Fatal error">>).
+validate_route(_Payment, Route = #domain_PaymentRoute{}) ->
+    Route;
+validate_route(Payment, undefined) ->
+    error({misconfiguration, {'No route found for a payment', Payment}}).
 
 validate_route(Route = #domain_InvoicePaymentRoute{}, _Payment, VS) ->
     {Route, VS};
@@ -333,6 +362,9 @@ validate_route(undefined, Payment, _VS) ->
 
 collect_varset(St, Opts) ->
     collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
+
+get_rec_token(_CustomerID) ->
+    ok.
 
 collect_varset(Party, Shop = #domain_Shop{
     category = Category,
@@ -351,6 +383,11 @@ collect_varset(Party, Shop, Payment, VS) ->
         cost         => get_payment_cost(Payment),
         payment_tool => get_payment_tool(Payment)
     }.
+
+get_payment_tool({payment_resource, #domain_PaymentResourcePayer{resource = Resource}}) ->
+    Resource#domain_DisposablePaymentResource.payment_tool;
+get_payment_tool({payment_resource,#domain_CustomerPayer{customer_id = CustomerID}}) ->
+    CustomerID.
 
 %%
 
@@ -872,7 +909,7 @@ get_action(_, Action, _) ->
     Action.
 
 handle_proxy_result(
-    #prxprv_ProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
+    #prxprv_PaymentProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
@@ -882,14 +919,14 @@ handle_proxy_result(
     {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
 handle_callback_result(
-    #prxprv_CallbackResult{result = ProxyResult, response = Response},
+    #prxprv_PaymentCallbackResult{result = ProxyResult, response = Response},
     Action0,
     Session
 ) ->
     {Response, handle_proxy_callback_result(ProxyResult, Action0, Session)}.
 
 handle_proxy_callback_result(
-    #prxprv_CallbackProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
+    #prxprv_PaymentCallbackProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
@@ -898,7 +935,7 @@ handle_proxy_callback_result(
     {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
     {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
 handle_proxy_callback_result(
-    #prxprv_CallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
+    #prxprv_PaymentCallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
@@ -975,7 +1012,7 @@ get_cashflow_plan(St) ->
 %%
 
 construct_proxy_context(St) ->
-    #prxprv_Context{
+    #prxprv_PaymentContext{
         session      = construct_session(get_active_session(St)),
         payment_info = construct_payment_info(St),
         options      = collect_proxy_options(St)
@@ -1020,9 +1057,21 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         trx = Trx,
-        payer = Payer,
-        cost = construct_proxy_cash(Cost)
+        payment_resource = get_payment_resource(Payer),
+        cost = construct_proxy_cash(Cost),
+        contact_info = get_contact_info(Payer)
     }.
+
+get_payment_resource({payment_resource, #domain_PaymentResourcePayer{resource = Resource}}) ->
+    {disposable_payment_resource, Resource};
+get_payment_resource({customer, #domain_CustomerPayer{customer_id = CustomerID}}) ->
+    get_rec_payment_resource(CustomerID).
+
+get_contact_info({payment_resource, #domain_PaymentResourcePayer{contact_info = ContactInfo}}) ->
+    ContactInfo.
+
+get_rec_payment_resource(_CustomerID) ->
+    ok.
 
 construct_proxy_invoice(
     #domain_Invoice{
@@ -1082,7 +1131,7 @@ construct_proxy_refund(#refund_st{
 
 collect_proxy_options(
     #st{
-        route = #domain_InvoicePaymentRoute{provider = ProviderRef, terminal = TerminalRef}
+        route = #domain_PaymentRoute{provider = ProviderRef, terminal = TerminalRef}
     }
 ) ->
     Revision = hg_domain:head(),
@@ -1368,7 +1417,7 @@ get_call_options(St) ->
 get_route(#st{route = Route}) ->
     Route.
 
-get_route_provider_ref(#domain_InvoicePaymentRoute{provider = ProviderRef}) ->
+get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
     ProviderRef.
 
 get_route_provider(Route, Revision) ->
@@ -1644,12 +1693,24 @@ marshal(refund_status, ?refund_failed(Failure)) ->
 
 %%
 
-marshal(payer, #domain_Payer{} = Payer) ->
+marshal(payer, ?payment_resource_payer(Resource, ContactInfo)) ->
     #{
-        <<"payment_tool">>  => hg_payment_tool:marshal(Payer#domain_Payer.payment_tool),
-        <<"session_id">>    => marshal(str, Payer#domain_Payer.session_id),
-        <<"client_info">>   => marshal(client_info, Payer#domain_Payer.client_info),
-        <<"contact_info">>  => marshal(contact_info, Payer#domain_Payer.contact_info)
+        <<"type">>           => <<"payment_resource_payer">>,
+        <<"resource">>       => marshal(disposable_payment_resource, Resource),
+        <<"contact_info">>   => marshal(contact_info, ContactInfo)
+    };
+
+marshal(payer, ?customer_payer(CustomerID)) ->
+    #{
+        <<"type">>          => <<"customer_payer">>,
+        <<"customer_id">>   => marshal(str, CustomerID)
+    };
+
+marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
+    #{
+        <<"payment_tool">>       => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
+        <<"payment_session_id">> => marshal(str, PaymentResource#domain_DisposablePaymentResource.payment_session_id),
+        <<"client_info">>        => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
     };
 
 marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
@@ -1998,24 +2059,59 @@ unmarshal(refund_status, [<<"failed">>, Failure]) ->
 %% Payer
 
 unmarshal(payer, #{
+    <<"type">>           := <<"payment_resource_payer">>,
+    <<"resource">>       := Resource,
+    <<"contact_info">>   := ContactInfo
+}) ->
+    ?payment_resource_payer(
+        unmarshal(disposable_payment_resource, Resource),
+        unmarshal(contact_info, ContactInfo)
+    );
+
+unmarshal(payer, #{
+    <<"type">>         := <<"customer_payer">>,
+    <<"customer_id">>  := CustomerID
+}) ->
+    ?customer_payer(
+        unmarshal(str, CustomerID)
+    );
+
+unmarshal(payer, #{
     <<"payment_tool">>  := PaymentTool,
     <<"session_id">>    := SessionId,
     <<"client_info">>   := ClientInfo,
-    <<"contact_info">>  := ContractInfo
+    <<"contact_info">>  := ContactInfo
 }) ->
-    #domain_Payer{
-        payment_tool    = hg_payment_tool:unmarshal(PaymentTool),
-        session_id      = unmarshal(str, SessionId),
-        client_info     = unmarshal(client_info, ClientInfo),
-        contact_info    = unmarshal(contact_info, ContractInfo)
-    };
+    Resource = #{
+        <<"payment_tool">>         => PaymentTool,
+        <<"payment_session_id">>   => SessionId,
+        <<"client_info">>          => ClientInfo
+    },
+    ?payment_resource_payer(
+        unmarshal(disposable_payment_resource, Resource),
+        unmarshal(contact_info, ContactInfo)
+    );
 
-unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContractInfo)) ->
-    #domain_Payer{
-        payment_tool    = hg_payment_tool:unmarshal([1, PaymentTool]),
-        session_id      = unmarshal(str, SessionId),
-        client_info     = unmarshal(client_info, ClientInfo),
-        contact_info    = unmarshal(contact_info, ContractInfo)
+unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo)) ->
+    Resource = #{
+        <<"payment_tool">>         => PaymentTool,
+        <<"payment_session_id">>   => SessionId,
+        <<"client_info">>          => ClientInfo
+    },
+    ?payment_resource_payer(
+        unmarshal(disposable_payment_resource, Resource),
+        unmarshal(contact_info, ContactInfo)
+    );
+
+unmarshal(disposable_payment_resource, #{
+    <<"payment_tool">> := PaymentTool,
+    <<"payment_session_id">> := PaymentSessionId,
+    <<"client_info">> := ClientInfo
+}) ->
+    #domain_DisposablePaymentResource{
+        payment_tool = hg_payment_tool:unmarshal(PaymentTool),
+        payment_session_id = unmarshal(str, PaymentSessionId),
+        client_info = unmarshal(client_info, ClientInfo)
     };
 
 %% Client info
@@ -2042,9 +2138,9 @@ unmarshal(contact_info, ?legacy_contract_info(PhoneNumber, Email)) ->
         email           = unmarshal(str, Email)
     };
 
-unmarshal(contact_info, ContractInfo) ->
-    PhoneNumber = maps:get(<<"phone_number">>, ContractInfo, undefined),
-    Email = maps:get(<<"email">>, ContractInfo, undefined),
+unmarshal(contact_info, ContactInfo) ->
+    PhoneNumber = maps:get(<<"phone_number">>, ContactInfo, undefined),
+    Email = maps:get(<<"email">>, ContactInfo, undefined),
     #domain_ContactInfo{
         phone_number    = unmarshal(str, PhoneNumber),
         email           = unmarshal(str, Email)

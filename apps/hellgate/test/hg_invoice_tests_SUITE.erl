@@ -23,8 +23,14 @@
 -export([overdue_invoice_cancellation/1]).
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
+
+-export([create_customer/1]).
+-export([delete_customer/1]).
+
 -export([payment_success/1]).
 -export([payment_w_terminal_success/1]).
+% -export([payment_success_with_customer/1]).
+% -export([invalid_payment_customer/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
@@ -55,8 +61,9 @@ init([]) ->
 
 %% tests descriptions
 
--type config() :: hg_ct_helper:config().
--type test_case_name() :: hg_ct_helper:test_case_name().
+-type config()         :: [{atom(), term()}].
+-type test_case_name() :: atom().
+-type test_return()    :: _ | no_return().
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
@@ -65,42 +72,45 @@ cfg(Key, C) ->
 
 all() ->
     [
-        invalid_invoice_shop,
-        invalid_invoice_amount,
-        invalid_invoice_currency,
-        invalid_party_status,
-        invalid_shop_status,
-        invalid_invoice_template_cost,
-        invalid_invoice_template_id,
-        invoice_w_template,
-        invoice_cancellation,
-        overdue_invoice_cancellation,
-        invoice_cancellation_after_payment_timeout,
-        invalid_payment_amount,
-        payment_success,
-        payment_w_terminal_success,
-        payment_success_on_second_try,
-        payment_fail_after_silent_callback,
-        invoice_success_on_third_payment,
+        % invalid_invoice_shop,
+        % invalid_invoice_amount,
+        % invalid_invoice_currency,
+        % invalid_party_status,
+        % invalid_shop_status,
+        % invalid_invoice_template_cost,
+        % invalid_invoice_template_id,
+        % invoice_w_template,
+        % invoice_cancellation,
+        % overdue_invoice_cancellation,
+        % invoice_cancellation_after_payment_timeout,
+        % invalid_payment_amount,
+        % payment_success,
+        % payment_w_terminal_success,
+        % payment_success_on_second_try,
+        % payment_fail_after_silent_callback,
+        % invoice_success_on_third_payment,
 
-        payment_risk_score_check,
+        create_customer,
+        delete_customer
 
-        invalid_payment_adjustment,
-        payment_adjustment_success,
+        % payment_risk_score_check,
 
-        invalid_payment_w_deprived_party,
-        external_account_posting,
+        % invalid_payment_adjustment,
+        % payment_adjustment_success,
 
-        payment_hold_cancellation,
-        payment_hold_auto_cancellation,
-        payment_hold_capturing,
-        payment_hold_auto_capturing,
+        % invalid_payment_w_deprived_party,
+        % external_account_posting,
 
-        payment_refund_success,
+        % payment_hold_cancellation,
+        % payment_hold_auto_cancellation,
+        % payment_hold_capturing,
+        % payment_hold_auto_capturing,
 
-        terms_retrieval,
+        % payment_refund_success,
 
-        consistent_history
+        % terms_retrieval,
+
+        % consistent_history
     ].
 
 %% starting/stopping
@@ -117,10 +127,12 @@ init_per_suite(C) ->
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(RootUrl)),
+    CustomerClient = hg_client_customer:start(make_userinfo(PartyID), hg_client_api:new(RootUrl)),
     ShopID = hg_ct_helper:create_party_and_shop(Client),
     [
         {party_id, PartyID},
         {party_client, Client},
+        {customer_client, CustomerClient},
         {shop_id, ShopID},
         {root_url, RootUrl},
         {apps, Apps}
@@ -140,6 +152,7 @@ end_per_suite(C) ->
 
 -define(invoice(ID), #domain_Invoice{id = ID}).
 -define(payment(ID), #domain_InvoicePayment{id = ID}).
+-define(customer(ID), #payproc_Customer{id = ID}).
 -define(adjustment(ID), #domain_InvoicePaymentAdjustment{id = ID}).
 -define(adjustment(ID, Status), #domain_InvoicePaymentAdjustment{id = ID, status = Status}).
 -define(invoice_state(Invoice), #payproc_Invoice{invoice = Invoice}).
@@ -205,7 +218,7 @@ invalid_invoice_shop(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     {exception, #payproc_ShopNotFound{}} = hg_client_invoicing:create(InvoiceParams, Client).
 
--spec invalid_invoice_amount(config()) -> _ | no_return().
+-spec invalid_invoice_amount(config()) -> test_return().
 
 invalid_invoice_amount(C) ->
     Client = cfg(client, C),
@@ -216,7 +229,7 @@ invalid_invoice_amount(C) ->
         errors = [<<"Invalid amount">>]
     }} = hg_client_invoicing:create(InvoiceParams, Client).
 
--spec invalid_invoice_currency(config()) -> _ | no_return().
+-spec invalid_invoice_currency(config()) -> test_return().
 
 invalid_invoice_currency(C) ->
     Client = cfg(client, C),
@@ -227,7 +240,7 @@ invalid_invoice_currency(C) ->
         errors = [<<"Invalid currency">>]
     }} = hg_client_invoicing:create(InvoiceParams, Client).
 
--spec invalid_party_status(config()) -> _ | no_return().
+-spec invalid_party_status(config()) -> test_return().
 
 invalid_party_status(C) ->
     Client = cfg(client, C),
@@ -256,7 +269,7 @@ invalid_party_status(C) ->
     }} = hg_client_invoicing:create_with_tpl(InvoiceParamsWithTpl, Client),
     ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
--spec invalid_shop_status(config()) -> _ | no_return().
+-spec invalid_shop_status(config()) -> test_return().
 
 invalid_shop_status(C) ->
     Client = cfg(client, C),
@@ -397,7 +410,7 @@ invoice_w_template(C) ->
         context     = InvoiceContext1
     }) = hg_client_invoicing:create_with_tpl(Params1, Client).
 
--spec invoice_cancellation(config()) -> _ | no_return().
+-spec invoice_cancellation(config()) -> test_return().
 
 invoice_cancellation(C) ->
     Client = cfg(client, C),
@@ -408,14 +421,14 @@ invoice_cancellation(C) ->
     ?invalid_invoice_status(_) = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
     ok = hg_client_invoicing:rescind(InvoiceID, <<"whynot">>, Client).
 
--spec overdue_invoice_cancellation(config()) -> _ | no_return().
+-spec overdue_invoice_cancellation(config()) -> test_return().
 
 overdue_invoice_cancellation(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(1), 10000, C),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
--spec invoice_cancellation_after_payment_timeout(config()) -> _ | no_return().
+-spec invoice_cancellation_after_payment_timeout(config()) -> test_return().
 
 invoice_cancellation_after_payment_timeout(C) ->
     Client = cfg(client, C),
@@ -439,7 +452,7 @@ invoice_cancellation_after_payment_timeout(C) ->
     ] = next_event(InvoiceID, Client),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
--spec invalid_payment_amount(config()) -> _ | no_return().
+-spec invalid_payment_amount(config()) -> test_return().
 
 invalid_payment_amount(C) ->
     Client = cfg(client, C),
@@ -453,7 +466,26 @@ invalid_payment_amount(C) ->
         errors = [<<"Invalid amount, more", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
 
--spec payment_success(config()) -> _ | no_return().
+-spec create_customer(config()) -> test_return().
+
+create_customer(C) ->
+    CustomerClient = cfg(customer_client, C),
+    CustomerParams = make_customer_params(C),
+    Customer = hg_client_customer:create(CustomerParams, CustomerClient),
+    {payproc_Customer, CustomerID, _, _, _, _, _, _, _, _} = Customer,
+    Customer = hg_client_customer:get(CustomerID, CustomerClient).
+
+-spec delete_customer(config()) -> test_return().
+
+delete_customer(C) ->
+    CustomerClient = cfg(customer_client, C),
+    CustomerParams = make_customer_params(C),
+    Customer = hg_client_customer:create(CustomerParams, CustomerClient),
+    {payproc_Customer, CustomerID, _, _, _, _, _, _, _, _} = Customer,
+    ok = hg_client_customer:delete(CustomerID, CustomerClient),
+    {exception, #'payproc_CustomerNotFound'{}} = hg_client_customer:get(CustomerID, CustomerClient).
+
+-spec payment_success(config()) -> test_return().
 
 payment_success(C) ->
     Client = cfg(client, C),
@@ -495,7 +527,7 @@ payment_w_terminal_success(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
--spec payment_success_on_second_try(config()) -> _ | no_return().
+-spec payment_success_on_second_try(config()) -> test_return().
 
 payment_success_on_second_try(C) ->
     Client = cfg(client, C),
@@ -548,7 +580,7 @@ payment_fail_after_silent_callback(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
     ] = next_event(InvoiceID, Client).
 
--spec invoice_success_on_third_payment(config()) -> _ | no_return().
+-spec invoice_success_on_third_payment(config()) -> test_return().
 
 invoice_success_on_third_payment(C) ->
     Client = cfg(client, C),
@@ -577,7 +609,7 @@ invoice_success_on_third_payment(C) ->
     PaymentID3 = await_payment_capture_finish(InvoiceID, PaymentID3, Client).
 
 %% @TODO modify this test by failures of inspector in case of wrong terminal choice
--spec payment_risk_score_check(config()) -> _ | no_return().
+-spec payment_risk_score_check(config()) -> test_return().
 
 payment_risk_score_check(C) ->
     Client = cfg(client, C),
@@ -625,7 +657,7 @@ payment_risk_score_check(C) ->
     % fatal risk score is not going to be covered
     {exception, #'InvalidRequest'{errors = [<<"Fatal error">>]}} = Exception.
 
--spec invalid_payment_adjustment(config()) -> _ | no_return().
+-spec invalid_payment_adjustment(config()) -> test_return().
 
 invalid_payment_adjustment(C) ->
     Client = cfg(client, C),
@@ -645,7 +677,7 @@ invalid_payment_adjustment(C) ->
     ?invalid_payment_status(?failed(_)) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
 
--spec payment_adjustment_success(config()) -> _ | no_return().
+-spec payment_adjustment_success(config()) -> test_return().
 
 payment_adjustment_success(C) ->
     Client = cfg(client, C),
@@ -801,7 +833,7 @@ get_adjustment_provider_cashflow(actual) ->
         )
     ].
 
--spec invalid_payment_w_deprived_party(config()) -> _ | no_return().
+-spec invalid_payment_w_deprived_party(config()) -> test_return().
 
 invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
@@ -819,7 +851,7 @@ invalid_payment_w_deprived_party(C) ->
     Exception = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, InvoicingClient),
     {exception, #'InvalidRequest'{}} = Exception.
 
--spec external_account_posting(config()) -> _ | no_return().
+-spec external_account_posting(config()) -> test_return().
 
 external_account_posting(C) ->
     PartyID = <<"LGBT">>,
@@ -908,7 +940,7 @@ payment_refund_success(C) ->
 
 %%
 
--spec consistent_history(config()) -> _ | no_return().
+-spec consistent_history(config()) -> test_return().
 
 consistent_history(C) ->
     Client = hg_client_eventsink:start_link(hg_client_api:new(cfg(root_url, C))),
@@ -1173,18 +1205,28 @@ make_payment_params(PaymentTool, Session, FlowType) ->
             {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
     end,
     #payproc_InvoicePaymentParams{
-        payer = #domain_Payer{
-            payment_tool = PaymentTool,
-            session_id = Session,
-            client_info = #domain_ClientInfo{},
+        payer = {payment_resource, #domain_PaymentResourcePayer{
+            resource = #domain_DisposablePaymentResource{
+                payment_tool = PaymentTool,
+                payment_session_id = Session,
+                client_info = #domain_ClientInfo{}
+            },
             contact_info = #domain_ContactInfo{}
-        },
+        }},
         flow = Flow
     }.
 
 make_refund_params() ->
     #payproc_InvoicePaymentRefundParams{
         reason = <<"ZANOZED">>
+    }.
+
+make_customer_params(C) ->
+    #payproc_CustomerParams{
+        party_id = cfg(party_id, C),
+        shop_id = cfg(shop_id, C),
+        contact_info = #domain_ContactInfo{},
+        metadata = {nl, #json_Null{}}
     }.
 
 make_adjustment_params() ->

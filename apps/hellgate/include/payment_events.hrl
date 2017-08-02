@@ -51,38 +51,38 @@
 ).
 
 -define(session_started(),
-    {invoice_payment_session_started,
-        #payproc_InvoicePaymentSessionStarted{}
+    {session_started,
+        #payproc_SessionStarted{}
     }
 ).
 -define(session_finished(Result),
-    {invoice_payment_session_finished,
-        #payproc_InvoicePaymentSessionFinished{result = Result}
+    {session_finished,
+        #payproc_SessionFinished{result = Result}
     }
 ).
 -define(session_suspended(),
-    {invoice_payment_session_suspended,
-        #payproc_InvoicePaymentSessionSuspended{}
+    {session_suspended,
+        #payproc_SessionSuspended{}
     }
 ).
 -define(session_activated(),
-    {invoice_payment_session_activated,
-        #payproc_InvoicePaymentSessionActivated{}
+    {session_activated,
+        #payproc_SessionActivated{}
     }
 ).
 -define(trx_bound(Trx),
-    {invoice_payment_session_transaction_bound,
-        #payproc_InvoicePaymentSessionTransactionBound{trx = Trx}
+    {session_transaction_bound,
+        #payproc_SessionTransactionBound{trx = Trx}
     }
 ).
 -define(proxy_st_changed(ProxySt),
-    {invoice_payment_session_proxy_state_changed,
-        #payproc_InvoicePaymentSessionProxyStateChanged{proxy_state = ProxySt}
+    {session_proxy_state_changed,
+        #payproc_SessionProxyStateChanged{proxy_state = ProxySt}
     }
 ).
 -define(interaction_requested(UserInteraction),
-    {invoice_payment_session_interaction_requested,
-        #payproc_InvoicePaymentSessionInteractionRequested{interaction = UserInteraction}
+    {session_interaction_requested,
+        #payproc_SessionInteractionRequested{interaction = UserInteraction}
     }
 ).
 

@@ -34,6 +34,14 @@ get_service_spec(invoice_templating, #{}) ->
     Service = {dmsl_payment_processing_thrift, 'InvoiceTemplating'},
     {?VERSION_PREFIX ++ "/processing/invoice_templating", Service};
 
+get_service_spec(customer_management, #{}) ->
+    Service = {dmsl_payment_processing_thrift, 'CustomerManagement'},
+    {?VERSION_PREFIX ++ "/processing/customer_management", Service};
+
+% get_service_spec(payment_processing, #{}) ->
+%     Service = {dmsl_payment_processing_thrift, 'PaymentProcessing'},
+%     {?VERSION_PREFIX ++ "/processing/payment_processing", Service};
+
 get_service_spec(processor, #{namespace := Ns}) when is_binary(Ns) ->
     Service = {mg_proto_state_processing_thrift, 'Processor'},
     {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), Service};

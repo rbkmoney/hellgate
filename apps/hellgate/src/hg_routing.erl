@@ -15,6 +15,7 @@
 
 -type terms()    :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
 -type route()    :: dmsl_domain_thrift:'InvoicePaymentRoute'().
+-type t()        :: dmsl_domain_thrift:'PaymentRoute'().
 
 -spec choose(hg_selector:varset(), hg_domain:revision()) ->
     route() | undefined.
@@ -49,6 +50,7 @@ choose_route(Routes) ->
             undefined
     end.
 
+
 export_route({{ProviderRef, _Provider}, {TerminalRef, _Terminal}}) ->
     % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
     %      `get_terminal_ref/1` instead?
@@ -74,6 +76,17 @@ score_risk_coverage({_Provider, {_TerminalRef, Terminal}}, VS) ->
     RiskScore = getv(risk_score, VS),
     RiskCoverage = Terminal#domain_Terminal.risk_coverage,
     math:exp(-hg_inspector:compare_risk_score(RiskCoverage, RiskScore)).
+
+choose_provider_terminal([{ProviderRef, [TerminalRef | _]} | _], _) ->
+    #domain_PaymentRoute{
+        provider = ProviderRef,
+        terminal = TerminalRef
+    };
+choose_provider_terminal([{_ProviderRef, []} | Rest], VS) ->
+    choose_provider_terminal(Rest, VS);
+choose_provider_terminal([], _) ->
+    undefined.
+
 
 %%
 
@@ -239,10 +252,10 @@ getv(Name, VS) ->
 marshal(Route) ->
     marshal(route, Route).
 
-marshal(route, #domain_InvoicePaymentRoute{} = Route) ->
+marshal(route, #domain_PaymentRoute{} = Route) ->
     [2, #{
-        <<"provider">> => marshal(provider_ref, Route#domain_InvoicePaymentRoute.provider),
-        <<"terminal">> => marshal(terminal_ref, Route#domain_InvoicePaymentRoute.terminal)
+        <<"provider">> => marshal(provider_ref, Route#domain_PaymentRoute.provider),
+        <<"terminal">> => marshal(terminal_ref, Route#domain_PaymentRoute.terminal)
     }];
 
 marshal(provider_ref, #domain_ProviderRef{id = ObjectID}) ->
@@ -266,12 +279,12 @@ unmarshal(route, [2, #{
     <<"provider">> := Provider,
     <<"terminal">> := Terminal
 }]) ->
-    #domain_InvoicePaymentRoute{
+    #domain_PaymentRoute{
         provider = unmarshal(provider_ref, Provider),
         terminal = unmarshal(terminal_ref, Terminal)
     };
 unmarshal(route, [1, ?legacy_route(Provider, Terminal)]) ->
-    #domain_InvoicePaymentRoute{
+    #domain_PaymentRoute{
         provider = unmarshal(provider_ref_legacy, Provider),
         terminal = unmarshal(terminal_ref_legacy, Terminal)
     };

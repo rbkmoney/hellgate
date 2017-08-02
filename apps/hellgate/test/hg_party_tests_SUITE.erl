@@ -94,18 +94,18 @@ cfg(Key, C) ->
 
 all() ->
     [
-        {group, party_access_control},
-        {group, party_creation},
-        {group, party_revisioning},
-        {group, party_blocking_suspension},
-        {group, party_meta},
-        {group, contract_management},
-        {group, shop_management},
-        {group, shop_account_lazy_creation},
+        % {group, party_access_control},
+        % {group, party_creation},
+        % {group, party_revisioning},
+        % {group, party_blocking_suspension},
+        % {group, party_meta},
+        % {group, contract_management},
+        % {group, shop_management},
+        % {group, shop_account_lazy_creation},
 
-        {group, claim_management},
+        % {group, claim_management},
 
-        {group, consistent_history}
+        % {group, consistent_history}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
