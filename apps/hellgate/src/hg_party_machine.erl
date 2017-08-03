@@ -359,7 +359,7 @@ get_st_revision(#st{revision = Revision}) ->
 
 get_st_metadata(NS, #st{meta = Meta}) ->
     case maps:get(NS, Meta, undefined) of
-        MetaData when is_tuple(MetaData) ->
+        MetaData when MetaData =/= undefined ->
             MetaData;
         undefined ->
             throw(#payproc_PartyMetaNamespaceNotFound{})
