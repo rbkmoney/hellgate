@@ -13,6 +13,11 @@
 -export([suspend/1]).
 -export([activate/1]).
 
+-export([get_meta/1]).
+-export([get_metadata/2]).
+-export([set_metadata/3]).
+-export([remove_metadata/2]).
+
 -export([get_contract/2]).
 -export([get_shop/2]).
 
@@ -55,6 +60,9 @@
 -type claim_revision() :: dmsl_payment_processing_thrift:'ClaimRevision'().
 -type changeset() ::  dmsl_payment_processing_thrift:'PartyChangeset'().
 -type shop_account_id() :: dmsl_domain_thrift:'AccountID'().
+-type meta()            :: dmsl_domain_thrift:'PartyMeta'().
+-type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
+-type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
 
 
 -spec start(user_info(), party_id(), hg_client_api:t()) -> pid().
@@ -120,6 +128,30 @@ suspend(Client) ->
 
 activate(Client) ->
     map_result_error(gen_server:call(Client, {call, 'Activate', []})).
+
+-spec get_meta(pid()) ->
+    meta() | woody_error:business_error().
+
+get_meta(Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetMeta', []})).
+
+-spec get_metadata(meta_ns(), pid()) ->
+    meta_data() | woody_error:business_error().
+
+get_metadata(NS, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetMetaData', [NS]})).
+
+-spec set_metadata(meta_ns(), meta_data(), pid()) ->
+    ok | woody_error:business_error().
+
+set_metadata(NS, Data, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'SetMetaData', [NS, Data]})).
+
+-spec remove_metadata(meta_ns(), pid()) ->
+    ok | woody_error:business_error().
+
+remove_metadata(NS, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'RemoveMetaData', [NS]})).
 
 -spec get_contract(dmsl_domain_thrift:'ContractID'(), pid()) ->
     dmsl_domain_thrift:'Contract'() | woody_error:business_error().

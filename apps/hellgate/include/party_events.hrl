@@ -7,6 +7,13 @@
 -define(party_blocking(Blocking), {party_blocking, Blocking}).
 -define(party_suspension(Suspension), {party_suspension, Suspension}).
 
+-define(party_meta_set(NS, Data), {party_meta_set, #payproc_PartyMetaSet{
+    ns = NS,
+    data = Data
+}}).
+
+-define(party_meta_removed(NS), {party_meta_removed, NS}).
+
 -define(shop_blocking(ID, Blocking),
     {shop_blocking, #payproc_ShopBlocking{shop_id = ID, blocking = Blocking}}).
 -define(shop_suspension(ID, Suspension),
