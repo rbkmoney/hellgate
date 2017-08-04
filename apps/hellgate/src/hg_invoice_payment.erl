@@ -611,13 +611,11 @@ handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
     {Events, Action};
 
 handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
-    Action = try_set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
+    Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended() | try_request_interaction(UserInteraction)],
     {Events, Action}.
 
-try_set_timer(undefined, Action) ->
-    Action;
-try_set_timer(Timer, Action) ->
+set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).
 
 try_request_interaction(undefined) ->
