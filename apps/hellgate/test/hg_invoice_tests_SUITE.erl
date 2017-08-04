@@ -33,6 +33,7 @@
 -export([payment_adjustment_success/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
+-export([payment_refund_success/1]).
 -export([consistent_history/1]).
 
 %%
@@ -59,31 +60,33 @@ cfg(Key, C) ->
 
 all() ->
     [
-        invalid_invoice_shop,
-        invalid_invoice_amount,
-        invalid_invoice_currency,
-        invalid_party_status,
-        invalid_shop_status,
-        invalid_invoice_template_cost,
-        invalid_invoice_template_id,
-        invoice_w_template,
-        invoice_cancellation,
-        overdue_invoice_cancellation,
-        invoice_cancellation_after_payment_timeout,
-        invalid_payment_amount,
-        payment_success,
-        payment_w_terminal_success,
-        payment_success_on_second_try,
-        payment_fail_after_silent_callback,
-        invoice_success_on_third_payment,
+        % invalid_invoice_shop,
+        % invalid_invoice_amount,
+        % invalid_invoice_currency,
+        % invalid_party_status,
+        % invalid_shop_status,
+        % invalid_invoice_template_cost,
+        % invalid_invoice_template_id,
+        % invoice_w_template,
+        % invoice_cancellation,
+        % overdue_invoice_cancellation,
+        % invoice_cancellation_after_payment_timeout,
+        % invalid_payment_amount,
+        % payment_success,
+        % payment_w_terminal_success,
+        % payment_success_on_second_try,
+        % payment_fail_after_silent_callback,
+        % invoice_success_on_third_payment,
 
-        payment_risk_score_check,
+        % payment_risk_score_check,
 
-        invalid_payment_adjustment,
-        payment_adjustment_success,
+        % invalid_payment_adjustment,
+        % payment_adjustment_success,
 
-        invalid_payment_w_deprived_party,
-        external_account_posting,
+        % invalid_payment_w_deprived_party,
+        % external_account_posting,
+
+        payment_refund_success,
 
         consistent_history
     ].
@@ -793,6 +796,36 @@ external_account_posting(C) ->
 
 %%
 
+-spec payment_refund_success(config()) -> _ | no_return().
+
+payment_refund_success(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    RefundParams = make_refund_params(),
+    ?invalid_payment_status(?processed()) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    Refund = #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded())))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(ID, ?payment_status_changed(?refunded()))
+    ] = next_event(InvoiceID, Client),
+    ?invalid_payment_status(?refunded()) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
+
+%%
+
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
@@ -821,14 +854,18 @@ next_event(InvoiceID, Timeout, Client) ->
 filter_changes(Changes) ->
     lists:filtermap(fun filter_change/1, Changes).
 
-filter_change(?payment_ev(_, ?session_ev(_, ?proxy_st_changed(_)))) ->
+filter_change(?payment_ev(_, C)) ->
+    filter_change(C);
+filter_change(?refund_ev(_, C)) ->
+    filter_change(C);
+filter_change(?session_ev(_, ?proxy_st_changed(_))) ->
     false;
-filter_change(?payment_ev(_, ?session_ev(_, ?session_suspended()))) ->
+filter_change(?session_ev(_, ?session_suspended())) ->
     false;
-filter_change(?payment_ev(_, ?session_ev(_, ?session_activated()))) ->
+filter_change(?session_ev(_, ?session_activated())) ->
     false;
-filter_change(E) ->
-    {true, E}.
+filter_change(_) ->
+    true.
 
 %%
 
@@ -937,6 +974,11 @@ make_tds_payment_params() ->
 make_payment_params() ->
     {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
     make_payment_params(PaymentTool, Session).
+
+make_refund_params() ->
+    #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>
+    }.
 
 make_payment_params(PaymentTool, Session) ->
     #payproc_InvoicePaymentParams{
