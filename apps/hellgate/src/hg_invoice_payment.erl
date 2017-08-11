@@ -145,15 +145,19 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
     Payment = construct_payment(PaymentID, Invoice, PaymentParams, Revision),
-    {RiskScore, VS3} = inspect(Shop, Invoice, Payment, VS2),
-    Route = validate_route(Payment, hg_routing:choose(VS3, Revision)),
-    FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS3, Revision),
-    _AccountsState = hg_accounting:plan(
-        construct_plan_id(Invoice, Payment),
-        {1, FinalCashflow}
-    ),
-    Events = [?payment_started(Payment, RiskScore, Route, FinalCashflow)],
-    {collapse_changes(Events), {Events, hg_machine_action:new()}}.
+    case inspect(Shop, Invoice, Payment, VS2) of
+        {RiskScore, VS3} when RiskScore == low; RiskScore == high ->
+            Route = validate_route(Payment, hg_routing:choose(VS3, Revision)),
+            FinalCashflow = construct_final_cashflow(Invoice, Payment, Shop, PaymentTerms, Route, VS3, Revision),
+            _AccountsState = hg_accounting:plan(
+                construct_plan_id(Invoice, Payment),
+                {1, FinalCashflow}
+            ),
+            Events = [?payment_started(Payment, RiskScore, Route, FinalCashflow)],
+            {collapse_changes(Events), {Events, hg_machine_action:new()}};
+        {fatal, _} ->
+            throw_invalid_request(<<"Fraud probability detected">>)
+    end.
 
 get_merchant_payment_terms(Opts) ->
     Invoice = get_invoice(Opts),

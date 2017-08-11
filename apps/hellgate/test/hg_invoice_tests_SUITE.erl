@@ -540,7 +540,7 @@ payment_risk_score_check(C) ->
         ?payment_ev(PaymentID2, ?session_ev(?captured(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client),
-    % Invoice w/ cost > 500000
+    % Invoice w/ 500000 < cost < 100000000
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
     ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
     [
@@ -553,7 +553,11 @@ payment_risk_score_check(C) ->
         ?payment_ev(PaymentID2, ?payment_status_changed(?processed())),
         ?payment_ev(PaymentID1, ?session_ev(?captured(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
-    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client).
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    % Invoice w/ 100000000 =< cost
+    InvoiceID3 = start_invoice(<<"rubbersocks">>, make_due_date(10), 100000000, C),
+    Exception = hg_client_invoicing:start_payment(InvoiceID3, PaymentParams, Client),
+    {exception, #'InvalidRequest'{errors = [<<"Fraud probability detected">>]}} = Exception.
 
 -spec invalid_payment_adjustment(config()) -> _ | no_return().
 
@@ -1123,6 +1127,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_inspector(?insp(1), <<"Rejector">>, ?prx(2), #{<<"risk_score">> => <<"low">>}),
         hg_ct_fixture:construct_inspector(?insp(2), <<"Skipper">>, ?prx(2), #{<<"risk_score">> => <<"high">>}),
+        hg_ct_fixture:construct_inspector(?insp(3), <<"Fatalist">>, ?prx(2), #{<<"risk_score">> => <<"fatal">>}),
 
         hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
         hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
@@ -1175,6 +1180,13 @@ construct_domain_fixture() ->
                                     upper = {exclusive, ?cash(100000000, ?cur(<<"RUB">>))}
                                 }}},
                                 then_ = {value, ?insp(2)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {cost_in, #domain_CashRange{
+                                    lower = {inclusive, ?cash( 100000000, ?cur(<<"RUB">>))},
+                                    upper = {exclusive, ?cash(1000000000, ?cur(<<"RUB">>))}
+                                }}},
+                                then_ = {value, ?insp(3)}
                             }
                         ]}
                     }
