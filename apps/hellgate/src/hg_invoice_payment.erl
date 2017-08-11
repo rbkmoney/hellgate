@@ -156,7 +156,7 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
             Events = [?payment_started(Payment, RiskScore, Route, FinalCashflow)],
             {collapse_changes(Events), {Events, hg_machine_action:new()}};
         {fatal, _} ->
-            throw_invalid_request(<<"Fraud probability detected">>)
+            throw_invalid_request(<<"Fatal error">>)
     end.
 
 get_merchant_payment_terms(Opts) ->

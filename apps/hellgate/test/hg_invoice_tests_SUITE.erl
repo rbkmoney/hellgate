@@ -557,7 +557,7 @@ payment_risk_score_check(C) ->
     % Invoice w/ 100000000 =< cost
     InvoiceID3 = start_invoice(<<"rubbersocks">>, make_due_date(10), 100000000, C),
     Exception = hg_client_invoicing:start_payment(InvoiceID3, PaymentParams, Client),
-    {exception, #'InvalidRequest'{errors = [<<"Fraud probability detected">>]}} = Exception.
+    {exception, #'InvalidRequest'{errors = [<<"Fatal error">>]}} = Exception.
 
 -spec invalid_payment_adjustment(config()) -> _ | no_return().
 
