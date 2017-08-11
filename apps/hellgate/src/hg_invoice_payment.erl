@@ -547,6 +547,16 @@ finish_processing({Events, Action}, St, Options) ->
             {next, {Events, Action}}
     end.
 
+handle_proxy_result(
+    #prxprv_ProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
+    Action0,
+    Session
+) ->
+    Events1 = bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
+    {Events3, Action} = handle_proxy_intent(Intent, Action0),
+    {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
+
 handle_callback_result(
     #prxprv_CallbackResult{result = ProxyResult, response = Response},
     Action0,
@@ -554,35 +564,23 @@ handle_callback_result(
 ) ->
     {Response, handle_proxy_callback_result(ProxyResult, Action0, Session)}.
 
-handle_proxy_result(
-    #prxprv_ProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
-    Action0,
-    Session
-) ->
-    handle_proxy_result(Intent, Trx, ProxyState, Action0, Session).
-
 handle_proxy_callback_result(
     #prxprv_CallbackProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
-    Events1 = wrap_session_events([?session_activated()], Session),
-    Action1 = hg_machine_action:unset_timer(Action0),
-    {Events2, Action} = handle_proxy_result(Intent, Trx, ProxyState, Action1, Session),
-    {Events1 ++ Events2, Action};
-
+    Events1 = bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
+    {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
+    {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
 handle_proxy_callback_result(
     #prxprv_CallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
-    handle_proxy_result(undefined, Trx, ProxyState, Action0, Session).
-
-handle_proxy_result(Intent, Trx, ProxyState, Action0, Session) ->
     Events1 = bind_transaction(Trx, Session),
     Events2 = update_proxy_state(ProxyState),
-    {Events3, Action} = handle_proxy_intent(Intent, Action0),
-    {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
+    {wrap_session_events(Events1 ++ Events2, Session), Action0}.
 
 handle_proxy_callback_timeout(Action, Session) ->
     Events = [?session_finished(?session_failed(?operation_timeout()))],
@@ -631,10 +629,7 @@ handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
 handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended() | try_request_interaction(UserInteraction)],
-    {Events, Action};
-
-handle_proxy_intent(undefined, Action0) ->
-    {[], Action0}.
+    {Events, Action}.
 
 set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).
