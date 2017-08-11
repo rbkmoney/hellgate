@@ -25,6 +25,7 @@
 -export([invalid_payment_amount/1]).
 -export([payment_success/1]).
 -export([payment_success_on_second_try/1]).
+-export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
 -export([invalid_payment_adjustment/1]).
@@ -71,6 +72,7 @@ all() ->
         invalid_payment_amount,
         payment_success,
         payment_success_on_second_try,
+        payment_fail_after_silent_callback,
         invoice_success_on_third_payment,
 
         payment_risk_score_check,
@@ -460,8 +462,35 @@ payment_success_on_second_try(C) ->
     {URL, GoodForm} = get_post_request(UserInteraction),
     BadForm = #{<<"tag">> => <<"666">>},
     _ = assert_failed_post_request({URL, BadForm}),
+    %% make noop callback call
+    _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(GoodForm)}),
+    %% ensure that suspend is still holding up
     _ = assert_success_post_request({URL, GoodForm}),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec payment_fail_after_silent_callback(config()) -> _ | no_return().
+
+payment_fail_after_silent_callback(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_tds_payment_params(), Client),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?captured(), ?interaction_requested(UserInteraction))
+        )
+    ] = next_event(InvoiceID, Client),
+    {URL, Form} = get_post_request(UserInteraction),
+    _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(Form)}),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?captured(), ?session_finished(?session_failed(Failure = ?operation_timeout())))
+        ),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
+    ] = next_event(InvoiceID, Client).
 
 -spec invoice_success_on_third_payment(config()) -> _ | no_return().
 

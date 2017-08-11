@@ -8,6 +8,8 @@
 -export([get_service_spec/0]).
 -export([get_http_cowboy_spec/0]).
 
+-export([construct_silent_callback/1]).
+
 %% cowboy http callbacks
 -export([init/3]).
 -export([handle/2]).
@@ -15,6 +17,13 @@
 %%
 
 -define(COWBOY_PORT, 9988).
+
+-define(sleep(To),
+    {sleep, #'SleepIntent'{timer = {timeout, To}}}).
+-define(suspend(Tag, To, UI),
+    {suspend, #'SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
+-define(finish(),
+    {finish, #'FinishIntent'{status = {success, #'Success'{}}}}).
 
 -spec get_service_spec() ->
     hg_proto:service_spec().
@@ -32,6 +41,18 @@ get_http_cowboy_spec() ->
         transport_opts => [{port, ?COWBOY_PORT}],
         proto_opts => [{env, [{dispatch, Dispatch}]}]
     }.
+
+%%
+
+-define(DEFAULT_PAYLOAD , <<"payload">>).
+-define(LAY_LOW_BUDDY   , <<"lay low buddy">>).
+
+-type form() :: #{binary() => binary() | true}.
+
+-spec construct_silent_callback(form()) -> form().
+
+construct_silent_callback(Form) ->
+    Form#{<<"payload">> => ?LAY_LOW_BUDDY}.
 
 %%
 
@@ -89,35 +110,39 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
     finish(PaymentInfo).
 
-handle_callback(<<"payload">>, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
-    respond(<<"sure">>, sleep(1, <<"sleeping">>)).
+handle_callback(?DEFAULT_PAYLOAD, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
+    respond(<<"sure">>, #prxprv_CallbackProxyResult{
+        intent     = ?sleep(1),
+        next_state = <<"sleeping">>
+    });
+handle_callback(?LAY_LOW_BUDDY, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
+    respond(<<"sure">>, #prxprv_CallbackProxyResult{
+        intent     = undefined,
+        next_state = <<"suspended">>
+    }).
 
 finish(#prxprv_PaymentInfo{payment = Payment}) ->
     #prxprv_ProxyResult{
-        intent = {finish, #'FinishIntent'{status = {success, #'Success'{}}}},
+        intent = ?finish(),
         trx    = #domain_TransactionInfo{id = Payment#prxprv_InvoicePayment.id, extra = #{}}
     }.
 
 sleep(Timeout, State) ->
     #prxprv_ProxyResult{
-        intent     = {sleep, #'SleepIntent'{timer = {timeout, Timeout}}},
+        intent     = ?sleep(Timeout),
         next_state = State
     }.
 
 suspend(Tag, Timeout, State, UserInteraction) ->
     #prxprv_ProxyResult{
-        intent     = {suspend, #'SuspendIntent'{
-            tag     = Tag,
-            timeout = {timeout, Timeout},
-            user_interaction = UserInteraction
-        }},
+        intent     = ?suspend(Tag, Timeout, UserInteraction),
         next_state = State
     }.
 
-respond(Response, Result) ->
+respond(Response, CallbackResult) ->
     #prxprv_CallbackResult{
-        response = Response,
-        result = Result
+        response   = Response,
+        result     = CallbackResult
     }.
 
 get_payment_token(#prxprv_PaymentInfo{payment = Payment}) ->
@@ -146,17 +171,18 @@ terminate(_Reason, _Req, _State) ->
 
 handle_user_interaction_response(<<"POST">>, Req) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
-    Form = cow_qs:parse_qs(Body),
-    {_, Tag} = lists:keyfind(<<"tag">>, 1, Form),
-    RespCode = callback_to_hell(Tag),
+    Form = maps:from_list(cow_qs:parse_qs(Body)),
+    Tag = maps:get(<<"tag">>, Form),
+    Payload = maps:get(<<"payload">>, Form, ?DEFAULT_PAYLOAD),
+    RespCode = callback_to_hell(Tag, Payload),
     cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<>>, Req2);
 handle_user_interaction_response(_, Req) ->
     %% Method not allowed.
     cowboy_req:reply(405, Req).
 
-callback_to_hell(Tag) ->
+callback_to_hell(Tag, Payload) ->
     case hg_client_api:call(
-        proxy_host_provider, 'ProcessCallback', [Tag, <<"payload">>],
+        proxy_host_provider, 'ProcessCallback', [Tag, Payload],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ) of
         {{ok, _Response}, _} ->

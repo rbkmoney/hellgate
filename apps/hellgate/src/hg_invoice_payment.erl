@@ -498,9 +498,9 @@ process_call({callback, Payload}, St, Options) ->
     ).
 
 process_callback(Payload, St, Options) ->
+    Action = hg_machine_action:new(),
     case get_target_session_status(St) of
         suspended ->
-            Action = hg_machine_action:unset_timer(),
             handle_callback(Payload, Action, St, Options);
         active ->
             % there's ultimately no way how we could end up here
@@ -552,15 +552,33 @@ handle_callback_result(
     Action0,
     Session
 ) ->
-    Events1 = wrap_session_events([?session_activated()], Session),
-    {Events2, Action} = handle_proxy_result(ProxyResult, Action0, Session),
-    {Response, {Events1 ++ Events2, Action}}.
+    {Response, handle_proxy_callback_result(ProxyResult, Action0, Session)}.
 
 handle_proxy_result(
-    #prxprv_ProxyResult{intent = {_, Intent}, trx = Trx, next_state = ProxyState},
+    #prxprv_ProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
+    handle_proxy_result(Intent, Trx, ProxyState, Action0, Session).
+
+handle_proxy_callback_result(
+    #prxprv_CallbackProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
+    Action0,
+    Session
+) ->
+    Events1 = wrap_session_events([?session_activated()], Session),
+    Action1 = hg_machine_action:unset_timer(Action0),
+    {Events2, Action} = handle_proxy_result(Intent, Trx, ProxyState, Action1, Session),
+    {Events1 ++ Events2, Action};
+
+handle_proxy_callback_result(
+    #prxprv_CallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
+    Action0,
+    Session
+) ->
+    handle_proxy_result(undefined, Trx, ProxyState, Action0, Session).
+
+handle_proxy_result(Intent, Trx, ProxyState, Action0, Session) ->
     Events1 = bind_transaction(Trx, Session),
     Events2 = update_proxy_state(ProxyState),
     {Events3, Action} = handle_proxy_intent(Intent, Action0),
@@ -613,7 +631,10 @@ handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
 handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended() | try_request_interaction(UserInteraction)],
-    {Events, Action}.
+    {Events, Action};
+
+handle_proxy_intent(undefined, Action0) ->
+    {[], Action0}.
 
 set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).
