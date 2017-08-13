@@ -156,7 +156,7 @@ map_start_error({error, Reason}) ->
     error(Reason).
 
 map_history_error({ok, Result}) ->
-    Result;
+    unwrap_events(Result);
 map_history_error({error, notfound}) ->
     throw(#payproc_InvoiceTemplateNotFound{});
 map_history_error({error, Reason}) ->
@@ -205,7 +205,7 @@ namespace() ->
 
 init(ID, Params) ->
     Tpl = create_invoice_template(ID, Params),
-    {[?ev([?tpl_created(Tpl)])], hg_machine_action:new()}.
+    {wrap_events([?ev([?tpl_created(Tpl)])]), hg_machine_action:new()}.
 
 create_invoice_template(ID, P) ->
     #domain_InvoiceTemplate{
@@ -228,15 +228,15 @@ process_signal({repair, _}, _History) ->
     signal_no_changes().
 
 signal_no_changes() ->
-    {[?ev([])], hg_machine_action:new()}.
+    {wrap_events([?ev([])]), hg_machine_action:new()}.
 
 -spec process_call(call(), hg_machine:history(ev())) ->
     {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
-    Tpl = collapse_history(History),
+    Tpl = collapse_history(unwrap_events(History)),
     {Response, Event} = handle_call(Call, Tpl),
-    {{ok, Response}, {[Event], hg_machine_action:new()}}.
+    {{ok, Response}, {wrap_events([Event]), hg_machine_action:new()}}.
 
 handle_call({update, Params}, Tpl) ->
     Event = ?ev([?tpl_updated(Params)]),
@@ -279,9 +279,28 @@ update_field({context, V}, Tpl) ->
     Tpl#domain_InvoiceTemplate{context = V}.
 
 %% Event provider
+-type msgpack_value() :: dmsl_msgpack_thrift:'Value'().
 
--spec publish_event(tpl_id(), ev()) ->
+-spec publish_event(tpl_id(), msgpack_value()) ->
     hg_event_provider:public_event().
 
-publish_event(ID, Event = ?ev(_)) ->
-    {{invoice_template_id, ID}, Event}.
+publish_event(ID, Event) ->
+    {{invoice_template_id, ID}, unmarshal_event(Event)}.
+
+%%
+
+unwrap_event(Event) ->
+    {ID, Dt, Payload} = hg_machine:unwrap_event(Event),
+    {ID, Dt, unmarshal_event(Payload)}.
+
+unwrap_events(History) ->
+    [unwrap_event(E) || E <- History].
+
+wrap_events(Events) ->
+    [marshal_event(E) || E <- Events].
+
+marshal_event(V) ->
+    {bin, term_to_binary(V)}.
+
+unmarshal_event({bin, B}) ->
+    binary_to_term(B).

@@ -222,7 +222,7 @@ get_public_history(InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Lim
     [publish_invoice_event(InvoiceID, Ev) || Ev <- get_history(InvoiceID, AfterID, Limit)].
 
 publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
-    {Source, Ev} = publish_event(InvoiceID, Event),
+    {Source, Ev} = publish_event_list(InvoiceID, Event),
     #payproc_Event{
         id = ID,
         source = Source,
@@ -249,7 +249,7 @@ map_error({error, Reason}) ->
     error(Reason).
 
 map_history_error({ok, Result}) ->
-    Result;
+    unwrap_events(Result);
 map_history_error({error, notfound}) ->
     throw(#payproc_InvoiceNotFound{});
 map_history_error({error, Reason}) ->
@@ -277,15 +277,20 @@ map_start_error({error, Reason}) ->
 -type ev() ::
     [dmsl_payment_processing_thrift:'InvoiceChange'()].
 
+-type msgpack_value() :: dmsl_msgpack_thrift:'Value'().
+
 -define(invalid_invoice_status(Status),
     #payproc_InvalidInvoiceStatus{status = Status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
--spec publish_event(invoice_id(), ev()) ->
+-spec publish_event(invoice_id(), msgpack_value()) ->
     hg_event_provider:public_event().
 
-publish_event(InvoiceID, Changes) when is_list(Changes) ->
+publish_event(InvoiceID, Changes) ->
+    {{invoice_id, InvoiceID}, ?invoice_ev(unmarshal_event(Changes))}.
+
+publish_event_list(InvoiceID, Changes) when is_list(Changes) ->
     {{invoice_id, InvoiceID}, ?invoice_ev(Changes)}.
 
 %%
@@ -314,7 +319,7 @@ init(ID, [InvoiceTplID, InvoiceParams]) ->
     hg_machine:result(ev()).
 
 process_signal(Signal, History) ->
-    handle_result(handle_signal(Signal, collapse_history(History))).
+    handle_result(handle_signal(Signal, collapse_history(unwrap_events(History)))).
 
 handle_signal(timeout, St = #st{pending = {payment, PaymentID}}) ->
     % there's a payment pending
@@ -352,7 +357,7 @@ handle_expiration(St) ->
     {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
-    St = collapse_history(History),
+    St = collapse_history(unwrap_events(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
             {{exception, Exception}, {[], hg_machine_action:new()}}
@@ -558,9 +563,9 @@ handle_result(#{state := St} = Params) ->
     _ = log_changes(Changes, St),
     case maps:get(response, Params, undefined) of
         undefined ->
-            {[Changes], Action};
+            {wrap_events([Changes]), Action};
         Response ->
-            {{ok, Response}, {[Changes], Action}}
+            {{ok, Response}, {wrap_events([Changes]), Action}}
     end.
 
 %%
@@ -796,3 +801,142 @@ get_message(invoice_created) ->
     "Invoice is created";
 get_message(invoice_status_changed) ->
     "Invoice status is changed".
+
+%%
+
+unwrap_events(Events) ->
+    [unwrap_event(Event) || Event <- Events].
+
+unwrap_event(Event) ->
+    {ID, Dt, Payload} = hg_machine:unwrap_event(Event),
+    {ID, Dt, unmarshal_event(Payload)}.
+
+wrap_events(Events) ->
+    [marshal_event(E) || E <- Events].
+
+marshal_event(Events) when is_list(Events) ->
+    {arr, [marshal_event(Event) || Event <- Events]};
+marshal_event(?invoice_created(Invoice)) ->
+    #domain_Invoice{
+        id              = Id,
+        shop_id         = ShopId,
+        owner_id        = PartyId,
+        created_at      = CreatedAt,
+        cost            = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency}),
+        due             = Due,
+        details         = #domain_InvoiceDetails{product = Product},
+        context         = Context,
+        template_id     = TemplateId
+    } = Invoice,
+    MsgpackRequired = #{
+        {str, <<"type">>} => {str, <<"invoice_created">>},
+        {str, <<"id">>} => {str, Id},
+        {str, <<"shop_id">>} => {str, ShopId},
+        {str, <<"owner_id">>} => {str, PartyId},
+        {str, <<"created_at">>} => {str, CreatedAt},
+        {str, <<"cost">>} => {arr, [{i, Amount}, {str, Currency}]},
+        {str, <<"due">>} => {str, Due},
+        {str, <<"product">>} => {str, Product}
+    },
+    MsgpackContext = case Context of
+        undefined ->
+            #{};
+        #'Content'{type = Type, data = Data} ->
+            #{{str, <<"context">>} => {arr, [{str, Type}, {bin, Data}]}}
+    end,
+    MsgpackTemplateId = case TemplateId of
+        undefined ->
+            #{};
+        _ ->
+            #{{str, <<"template_id">>} => {str, TemplateId}}
+    end,
+    {obj, maps:merge(
+        maps:merge(MsgpackContext, MsgpackTemplateId),
+        MsgpackRequired
+    )};
+marshal_event(?invoice_status_changed(Status)) ->
+    MsgpackStatus = case Status of
+        ?invoice_paid() ->
+            #{{str, <<"status">>} => {str, <<"paid">>}};
+        ?invoice_unpaid() ->
+            #{{str, <<"status">>} => {str, <<"unpaid">>}};
+        ?invoice_cancelled(Reason) ->
+            #{
+                {str, <<"status">>} => {str, <<"cancelled">>},
+                {str, <<"reason">>} => {str, Reason}
+            };
+        ?invoice_fulfilled(Reason) ->
+            #{
+                {str, <<"status">>} => {str, <<"fulfilled">>},
+                {str, <<"reason">>} => {str, Reason}
+            }
+    end,
+    {obj, MsgpackStatus#{{str, <<"type">>} => {str, <<"invoice_status_changed">>}}};
+marshal_event(?payment_ev(PaymentID, Payload)) ->
+    {obj, #{
+        {str, <<"type">>} => {str, <<"invoice_payment_change">>},
+        {str, <<"payment_id">>} => {str, PaymentID},
+        {str, <<"payload">>} => hg_invoice_payment:marshal_event(Payload)
+    }}.
+
+unmarshal_event({arr, Events}) ->
+    [unmarshal_event(Event) || Event <- Events];
+unmarshal_event({obj, Obj}) ->
+    unmarshal_event(Obj);
+unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_created">>}} = Event) ->
+    #{
+        {str, <<"id">>} := {str, Id},
+        {str, <<"shop_id">>} := {str, ShopId},
+        {str, <<"owner_id">>} := {str, PartyId},
+        {str, <<"created_at">>} := {str, CreatedAt},
+        {str, <<"cost">>} := {arr, [{i, Amount}, {str, Currency}]},
+        {str, <<"due">>} := {str, Due},
+        {str, <<"product">>} := {str, Product}
+    } = Event,
+    Context = case maps:get({str, <<"context">>}, Event, undefined) of
+        {arr, [{str, Type}, {bin, Data}]} ->
+            #'Content'{type = Type, data = Data};
+        undefined ->
+            undefined
+    end,
+    TerminalId = case maps:get({str, <<"template_id">>}, Event, undefined) of
+        {str, TId} ->
+            TId;
+        undefined ->
+            undefined
+    end,
+    Invoice = #domain_Invoice{
+        id              = Id,
+        shop_id         = ShopId,
+        owner_id        = PartyId,
+        created_at      = CreatedAt,
+        cost            = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency}),
+        due             = Due,
+        details         = #domain_InvoiceDetails{product = Product},
+        status          = ?invoice_unpaid(),
+        context         = Context,
+        template_id     = TerminalId
+    },
+    ?invoice_created(Invoice);
+unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_status_changed">>}} = Event) ->
+    #{{str, <<"status">>} := {str, Status}} = Event,
+    InvoiceStatus = case Status of
+        <<"paid">> ->
+            ?invoice_paid();
+        <<"unpaid">> ->
+            ?invoice_unpaid();
+        <<"cancelled">> ->
+            #{{str, <<"reason">>} := {str, Reason}} = Event,
+            ?invoice_cancelled(Reason);
+        <<"fulfilled">> ->
+            #{{str, <<"reason">>} := {str, Reason}} = Event,
+            ?invoice_fulfilled(Reason)
+    end,
+    ?invoice_status_changed(InvoiceStatus);
+unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_change">>}} = Event) ->
+    #{
+        {str, <<"payment_id">>} := {str, PaymentID},
+        {str, <<"payload">>} := MsgpackPayload
+    } = Event,
+    Payload = hg_invoice_payment:unmarshal_event(MsgpackPayload),
+    ?payment_ev(PaymentID, Payload).

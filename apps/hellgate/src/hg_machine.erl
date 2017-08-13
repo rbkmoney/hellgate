@@ -121,7 +121,7 @@ get_history(Ns, ID, Range) ->
     Descriptor = prepare_descriptor(Ns, {id, ID}, Range),
     case call_automaton('GetMachine', [Descriptor]) of
         {ok, #'Machine'{history = History}} when is_list(History) ->
-            {ok, unwrap_history(History)};
+            {ok, History};
         Error ->
             Error
     end.
@@ -191,16 +191,14 @@ dispatch_signal(Ns, #'InitSignal'{arg = Payload}, #'Machine'{id = ID}) ->
     Result = Module:init(ID, Args),
     marshal_signal_result(Result);
 
-dispatch_signal(Ns, #'TimeoutSignal'{}, #'Machine'{history = History0}) ->
-    History = unwrap_events(History0),
+dispatch_signal(Ns, #'TimeoutSignal'{}, #'Machine'{history = History}) ->
     _ = lager:debug("dispatch timeout with history = ~p", [History]),
     Module = get_handler_module(Ns),
     Result = Module:process_signal(timeout, History),
     marshal_signal_result(Result);
 
-dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, #'Machine'{history = History0}) ->
+dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, #'Machine'{history = History}) ->
     Args = unwrap_args(Payload),
-    History = unwrap_events(History0),
     _ = lager:debug("dispatch repair with args = ~p and history: ~p", [Args, History]),
     Module = get_handler_module(Ns),
     Result = Module:process_signal({repair, Args}, History),
@@ -209,7 +207,7 @@ dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, #'Machine'{history = History
 marshal_signal_result({Events, Action}) ->
     _ = lager:debug("signal result with events = ~p and action = ~p", [Events, Action]),
     Change = #'MachineStateChange'{
-        events = wrap_events(Events),
+        events = Events,
         aux_state = {nl, #msgpack_Nil{}} %%% @TODO get state from process signal?
     },
     #'SignalResult'{
@@ -222,9 +220,8 @@ marshal_signal_result({Events, Action}) ->
         Call :: dmsl_state_processing_thrift:'Args'(),
         Result :: dmsl_state_processing_thrift:'CallResult'().
 
-dispatch_call(Ns, Payload, #'Machine'{history = History0}) ->
+dispatch_call(Ns, Payload, #'Machine'{history = History}) ->
     Args = unwrap_args(Payload),
-    History = unwrap_events(History0),
     _ = lager:debug("dispatch call with args = ~p and history: ~p", [Args, History]),
     Module = get_handler_module(Ns),
     Result = Module:process_call(Args, History),
@@ -233,7 +230,7 @@ dispatch_call(Ns, Payload, #'Machine'{history = History0}) ->
 marshal_call_result({Response, {Events, Action}}) ->
     _ = lager:debug("call response = ~p with event = ~p and action = ~p", [Response, Events, Action]),
     Change = #'MachineStateChange'{
-        events = wrap_events(Events),
+        events = Events,
         aux_state = {nl, #msgpack_Nil{}} %%% @TODO get state from process signal?
     },
 
@@ -294,27 +291,13 @@ init(MachineHandlers) ->
 get_handler_module(Ns) ->
     ets:lookup_element(?TABLE, Ns, 2).
 
-%%
-
 -spec unwrap_event(dmsl_state_processing_thrift:'Event'()) ->
     event().
 
 unwrap_event(#'Event'{id = ID, created_at = Dt, event_payload = Payload}) ->
-    {ID, Dt, unmarshal_term(Payload)}.
+    {ID, Dt, Payload}.
 
 %%
-
-unwrap_history(History) ->
-    lists:map(fun unwrap_event/1, History).
-
-unwrap_events(History) ->
-    [unwrap_event(E) || E <- History].
-
-wrap_events(Events) ->
-    [wrap_event(E) || E <- Events].
-
-wrap_event(Event) ->
-    marshal_term(Event).
 
 wrap_args(Args) ->
     marshal_term(Args).

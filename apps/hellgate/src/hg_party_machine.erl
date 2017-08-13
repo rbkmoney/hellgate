@@ -112,7 +112,7 @@ process_signal({repair, _}, _History) ->
     {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
-    St = collapse_history(History),
+    St = collapse_history(unwrap_events(History)),
     try
         Party = get_st_party(St),
         hg_log_scope:scope(
@@ -207,11 +207,13 @@ handle_call({revoke_claim, ID, ClaimRevision, Reason}, {St, _}) ->
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
 
--spec publish_event(party_id(), ev()) ->
+-type msgpack_value() :: dmsl_msgpack_thrift:'Value'().
+
+-spec publish_event(party_id(), msgpack_value()) ->
     hg_event_provider:public_event().
 
-publish_event(PartyID, Ev = ?party_ev(_)) ->
-    {{party_id, PartyID}, Ev}.
+publish_event(PartyID, Ev) ->
+    {{party_id, PartyID}, unmarshal_event(Ev)}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -289,7 +291,7 @@ get_history(PartyID, AfterID, Limit) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
 
 map_history_error({ok, Result}) ->
-    Result;
+    unwrap_events(Result);
 map_history_error({error, notfound}) ->
     throw(#payproc_PartyNotFound{});
 map_history_error({error, Reason}) ->
@@ -421,21 +423,21 @@ apply_accepted_claim(Claim, St) ->
     end.
 
 ok() ->
-    {[?party_ev([])], hg_machine_action:new()}.
+    {wrap_events([?party_ev([])]), hg_machine_action:new()}.
 ok(Changes) ->
     ok(Changes, hg_machine_action:new()).
 ok(Changes, Action) when is_list(Changes) ->
-    {[?party_ev(Changes)], Action}.
+    {wrap_events([?party_ev(Changes)]), Action}.
 
 respond(Response, Changes) ->
     respond(Response, Changes, hg_machine_action:new()).
 respond(Response, Changes, Action) when is_list(Changes) ->
-        {{ok, Response}, {[?party_ev(Changes)], Action}}.
+        {{ok, Response}, {wrap_events([?party_ev(Changes)]), Action}}.
 
 respond_w_exception(Exception) ->
     respond_w_exception(Exception, hg_machine_action:new()).
 respond_w_exception(Exception, Action) ->
-    {{exception, Exception}, {[], Action}}.
+    {{exception, Exception}, {wrap_events([]), Action}}.
 
 %%
 
@@ -547,3 +549,21 @@ assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
     ok;
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
+
+%%
+
+unwrap_event(Event) ->
+    {ID, Dt, Payload} = hg_machine:unwrap_event(Event),
+    {ID, Dt, unmarshal_event(Payload)}.
+
+unwrap_events(History) ->
+    [unwrap_event(E) || E <- History].
+
+wrap_events(Events) ->
+    [marshal_event(E) || E <- Events].
+
+marshal_event(V) ->
+    {bin, term_to_binary(V)}.
+
+unmarshal_event({bin, B}) ->
+    binary_to_term(B).
