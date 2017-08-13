@@ -1207,6 +1207,7 @@ unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_started">>}} = E
         binary_to_term(Cashflow)
     );
 unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_status_changed">>}} = Event) ->
+
     PaymentStatus = unmarshal_payment_status(Event),
     ?payment_status_changed(PaymentStatus);
 unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_session_change">>}} = Event) ->
@@ -1214,6 +1215,7 @@ unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_session_change">
         {str, <<"payload">>} := {obj, #{{str, <<"type">>} := {str, MsgpackType}} = MsgpackPayload},
         {str, <<"target">>} := {obj, MsgpackTarget}
     } = Event,
+    Target = unmarshal_payment_status(MsgpackTarget),
     Payload = case MsgpackType of
         <<"invoice_payment_session_started">> ->
             ?session_started();
@@ -1243,7 +1245,6 @@ unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_session_change">
             #{{str, <<"interaction">>} := {bin, UserInteraction}} = MsgpackPayload,
             ?interaction_requested(binary_to_term(UserInteraction))
     end,
-    Target = unmarshal_payment_status(MsgpackTarget),
     ?session_ev(Target, Payload);
 unmarshal_event(#{
         {str, <<"type">>} := {str, <<"invoice_payment_adjustment_change">>},
@@ -1257,43 +1258,39 @@ marshal_reason(undefined) ->
 marshal_reason(Reason) ->
     #{{str, <<"reason">>} => {str, Reason}}.
 
-marshal_payment_status(Status) ->
-    case Status of
-        ?pending() ->
-            #{{str, <<"status">>} => {str, <<"pending">>}};
-        ?processed() ->
-            #{{str, <<"status">>} => {str, <<"processed">>}};
-        ?failed(Failure) ->
-            #{{str, <<"status">>} => {str, <<"failed">>}, {str, <<"failure">>} => {bin, term_to_binary(Failure)}};
-        ?captured_with_reason(Reason) ->
-            MsgpackReason = marshal_reason(Reason),
-            MsgpackReason#{{str, <<"status">>} => {str, <<"captured">>}};
-        ?cancelled_with_reason(Reason) ->
-            MsgpackReason = marshal_reason(Reason),
-            MsgpackReason#{{str, <<"status">>} => {str, <<"cancelled">>}}
-    end.
+marshal_payment_status(?pending()) ->
+    #{{str, <<"status">>} => {str, <<"pending">>}};
+marshal_payment_status(?processed()) ->
+    #{{str, <<"status">>} => {str, <<"processed">>}};
+marshal_payment_status(?failed(Failure)) ->
+    #{{str, <<"status">>} => {str, <<"failed">>}, {str, <<"failure">>} => {bin, term_to_binary(Failure)}};
+marshal_payment_status(?captured_with_reason(Reason)) ->
+    MsgpackReason = marshal_reason(Reason),
+    MsgpackReason#{{str, <<"status">>} => {str, <<"captured">>}};
+marshal_payment_status(?cancelled_with_reason(Reason)) ->
+    MsgpackReason = marshal_reason(Reason),
+    MsgpackReason#{{str, <<"status">>} => {str, <<"cancelled">>}}.
 
 unmarshal_payment_status(#{{str, <<"status">>} := {str, Status}} = Event) ->
-    case Status of
-        <<"pending">> ->
-            ?pending();
-        <<"processed">> ->
-            ?processed();
-        <<"failed">> ->
-            #{{str, <<"failure">>} := {bin, Failure}} = Event,
-            ?failed(binary_to_term(Failure));
-        <<"captured">> ->
-            case maps:get({str, <<"reason">>}, Event, undefined) of
-                undefined ->
-                    ?captured();
-                {str, Reason} ->
-                    ?captured_with_reason(Reason)
-            end;
-        <<"cancelled">> ->
-            case maps:get({str, <<"reason">>}, Event, undefined) of
-                undefined ->
-                    ?cancelled();
-                {str, Reason} ->
-                    ?cancelled_with_reason(Reason)
-            end
+    unmarshal_payment_status_(Status, Event).
+    
+unmarshal_payment_status_(<<"pending">>, _) ->
+    ?pending();
+unmarshal_payment_status_(<<"processed">>, _) ->
+    ?processed();
+unmarshal_payment_status_(<<"failed">>, #{{str, <<"failure">>} := {bin, Failure}}) ->
+    ?failed(binary_to_term(Failure));
+unmarshal_payment_status_(<<"captured">>, Event) ->
+    case maps:get({str, <<"reason">>}, Event, undefined) of
+        undefined ->
+            ?captured();
+        {str, Reason} ->
+            ?captured_with_reason(Reason)
+    end;
+unmarshal_payment_status_(<<"cancelled">>, Event) ->
+    case maps:get({str, <<"reason">>}, Event, undefined) of
+        undefined ->
+            ?cancelled();
+        {str, Reason} ->
+            ?cancelled_with_reason(Reason)
     end.
