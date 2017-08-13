@@ -877,7 +877,9 @@ marshal_event(?payment_ev(PaymentID, Payload)) ->
         {str, <<"type">>} => {str, <<"invoice_payment_change">>},
         {str, <<"payment_id">>} => {str, PaymentID},
         {str, <<"payload">>} => hg_invoice_payment:marshal_event(Payload)
-    }}.
+    }};
+marshal_event(Event) ->
+    {bin, term_to_binary(Event)}.
 
 unmarshal_event({arr, Events}) ->
     [unmarshal_event(Event) || Event <- Events];
@@ -939,4 +941,13 @@ unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_change">>}} = Ev
         {str, <<"payload">>} := MsgpackPayload
     } = Event,
     Payload = hg_invoice_payment:unmarshal_event(MsgpackPayload),
-    ?payment_ev(PaymentID, Payload).
+    ?payment_ev(PaymentID, Payload);
+unmarshal_event({bin, Bin}) ->
+    Events = binary_to_term(Bin),
+    [adapt_event(Event) || Event <- Events].
+
+adapt_event(?payment_ev(PaymentID, Payload)) ->
+    NewPayload = hg_invoice_payment:adapt_event(Payload),
+    ?payment_ev(PaymentID, NewPayload);
+adapt_event(Other) ->
+    Other.

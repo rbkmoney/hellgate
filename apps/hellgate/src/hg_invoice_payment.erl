@@ -52,6 +52,7 @@
 
 -export([marshal_event/1]).
 -export([unmarshal_event/1]).
+-export([adapt_event/1]).
 
 %%
 
@@ -1273,7 +1274,7 @@ marshal_payment_status(?cancelled_with_reason(Reason)) ->
 
 unmarshal_payment_status(#{{str, <<"status">>} := {str, Status}} = Event) ->
     unmarshal_payment_status_(Status, Event).
-    
+
 unmarshal_payment_status_(<<"pending">>, _) ->
     ?pending();
 unmarshal_payment_status_(<<"processed">>, _) ->
@@ -1294,3 +1295,11 @@ unmarshal_payment_status_(<<"cancelled">>, Event) ->
         {str, Reason} ->
             ?cancelled_with_reason(Reason)
     end.
+
+-spec adapt_event(change()) -> change().
+
+adapt_event(?payment_started(Payment, RiskScore, Route, Cashflow)) ->
+    NewPayment = Payment#domain_InvoicePayment{flow = ?invoice_payment_flow_instant()},
+    ?payment_started(NewPayment, RiskScore, Route, Cashflow);
+adapt_event(Other) ->
+    Other.
