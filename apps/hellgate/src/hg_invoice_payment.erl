@@ -1155,10 +1155,49 @@ marshal_event(?session_ev(Target, Payload)) ->
         {str, <<"payload">>} => {obj, MsgpackPayload}
     }};
 marshal_event(?adjustment_ev(AdjustmentID, Payload)) ->
+    MsgpackPayload = case Payload of
+        ?adjustment_created(Adjustment) ->
+            #domain_InvoicePaymentAdjustment{
+                created_at            = CreatedAt,
+                domain_revision       = Revision,
+                reason                = Reason,
+                old_cash_flow_inverse = OldCashFlowInverse,
+                new_cash_flow         = NewCashFlow
+            } = Adjustment,
+        #{
+            {str, <<"type">>} => {str, <<"invoice_payment_adjustment_created">>},
+            {str, <<"adjustment">>} => {obj,
+                #{
+                    {str, <<"status">>} => {str, <<"pending">>},
+                    {str, <<"created_at">>} => {str, CreatedAt},
+                    {str, <<"domain_revision">>} => {i, Revision},
+                    {str, <<"reason">>} => {str, Reason},
+                    {str, <<"old_cash_flow_inverse">>} => {bin, term_to_binary(OldCashFlowInverse)},
+                    {str, <<"new_cash_flow">>} => {bin, term_to_binary(NewCashFlow)}
+                }
+            }
+        };
+        ?adjustment_status_changed(Status) ->
+            MsgpackStatus = case Status of
+                ?adjustment_pending() ->
+                    #{{str, <<"status">>} => {str, <<"pending">>}};
+                ?adjustment_captured(At) ->
+                    #{
+                        {str, <<"status">>} => {str, <<"captured">>},
+                        {str, <<"at">>} => {str, At}
+                    };
+                ?adjustment_cancelled(At) ->
+                    #{
+                        {str, <<"status">>} => {str, <<"cancelled">>},
+                        {str, <<"at">>} => {str, At}
+                    }
+            end,
+            MsgpackStatus#{{str, <<"type">>} => {str, <<"invoice_payment_adjustment_status_changed">>}}
+    end,
     {obj, #{
         {str, <<"type">>} => {str, <<"invoice_payment_adjustment_change">>},
         {str, <<"id">>} => {str, AdjustmentID},
-        {str, <<"payload">>} => {bin, term_to_binary(Payload)}
+        {str, <<"payload">>} => {obj, MsgpackPayload}
     }}.
 
 -spec unmarshal_event(msgpack_value()) -> change().
@@ -1247,12 +1286,52 @@ unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_session_change">
             ?interaction_requested(binary_to_term(UserInteraction))
     end,
     ?session_ev(Target, Payload);
-unmarshal_event(#{
-        {str, <<"type">>} := {str, <<"invoice_payment_adjustment_change">>},
+unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_adjustment_change">>}} = Event) ->
+    #{
         {str, <<"id">>} := {str, AdjustmentID},
-        {str, <<"payload">>} := {bin, Payload}
-    }) ->
-    ?adjustment_ev(AdjustmentID, binary_to_term(Payload)).
+        {str, <<"payload">>} := {obj, MsgpackPayload}
+    } = Event,
+    Payload = case MsgpackPayload of
+        #{
+            {str, <<"type">>} := {str, <<"invoice_payment_adjustment_created">>},
+            {str, <<"adjustment">>} := {obj,
+                #{
+                    {str, <<"status">>} := {str, <<"pending">>},
+                    {str, <<"created_at">>} := {str, CreatedAt},
+                    {str, <<"domain_revision">>} := {i, Revision},
+                    {str, <<"reason">>} := {str, Reason},
+                    {str, <<"old_cash_flow_inverse">>} := {bin, OldCashFlowInverse},
+                    {str, <<"new_cash_flow">>} := {bin, NewCashFlow}
+                }
+            }
+        } ->
+            Adjustment = #domain_InvoicePaymentAdjustment{
+                id                    = AdjustmentID,
+                status                = ?adjustment_pending(),
+                created_at            = CreatedAt,
+                domain_revision       = Revision,
+                reason                = Reason,
+                old_cash_flow_inverse = binary_to_term(OldCashFlowInverse),
+                new_cash_flow         = binary_to_term(NewCashFlow)
+            },
+            ?adjustment_created(Adjustment);
+        #{
+            {str, <<"type">>} := {str, <<"invoice_payment_adjustment_status_changed">>},
+            {str, <<"status">>} := {str, MsgpackStatus}
+        } = StatusChangedEvent ->
+            Status = case MsgpackStatus of
+                <<"pending">> ->
+                    ?adjustment_pending();
+                <<"captured">> ->
+                    #{{str, <<"at">>} := {str, At}} = StatusChangedEvent,
+                    ?adjustment_captured(At);
+                <<"cancelled">> ->
+                    #{{str, <<"at">>} := {str, At}} = StatusChangedEvent,
+                    ?adjustment_cancelled(At)
+            end,
+            ?adjustment_status_changed(Status)
+    end,
+    ?adjustment_ev(AdjustmentID, Payload).
 
 marshal_reason(undefined) ->
     #{};
