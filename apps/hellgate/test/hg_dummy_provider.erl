@@ -147,8 +147,12 @@ respond(Response, CallbackResult) ->
 
 get_payment_token(#prxprv_PaymentInfo{payment = Payment}) ->
     #prxprv_InvoicePayment{payer = #domain_Payer{payment_tool = PaymentTool}} = Payment,
-    {'bank_card', #domain_BankCard{token = Token}} = PaymentTool,
-    Token.
+    case PaymentTool of
+        {'bank_card', #domain_BankCard{token = Token}} ->
+            Token;
+        {payment_terminal, #domain_PaymentTerminal{}} ->
+            undefined
+    end.
 
 %%
 

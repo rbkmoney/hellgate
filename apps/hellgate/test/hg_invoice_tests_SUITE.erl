@@ -24,6 +24,7 @@
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 -export([payment_success/1]).
+-export([payment_w_terminal_success/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
@@ -71,6 +72,7 @@ all() ->
         invoice_cancellation_after_payment_timeout,
         invalid_payment_amount,
         payment_success,
+        payment_w_terminal_success,
         payment_success_on_second_try,
         payment_fail_after_silent_callback,
         invoice_success_on_third_payment,
@@ -436,6 +438,21 @@ payment_success(C) ->
     ok = start_proxy(hg_dummy_inspector, 2, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_w_terminal_success(config()) -> _ | no_return().
+
+payment_w_terminal_success(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberruble">>, make_due_date(10), 42000, C),
+    PaymentParams = make_terminal_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
@@ -909,6 +926,10 @@ delete_invoice_tpl(TplID, Config) ->
     Client = cfg(client_tpl, Config),
     hg_client_invoice_templating:delete(TplID, Client).
 
+make_terminal_payment_params() ->
+    {PaymentTool, Session} = hg_ct_helper:make_terminal_payment_tool(),
+    make_payment_params(PaymentTool, Session).
+
 make_tds_payment_params() ->
     {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
     make_payment_params(PaymentTool, Session).
@@ -1029,7 +1050,8 @@ construct_domain_fixture() ->
                     if_   = {constant, true},
                     then_ = {value, ordsets:from_list([
                         ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, mastercard),
+                        ?pmt(payment_terminal, euroset)
                     ])}
                 }
             ]},
@@ -1120,6 +1142,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -1142,7 +1165,8 @@ construct_domain_fixture() ->
                 party_prototype = #domain_PartyPrototypeRef{id = 42},
                 providers = {value, ordsets:from_list([
                     ?prv(1),
-                    ?prv(2)
+                    ?prv(2),
+                    ?prv(3)
                 ])},
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {decisions, [
@@ -1459,6 +1483,44 @@ construct_domain_fixture() ->
                     )
                 ],
                 account = AccountRUB
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(3),
+            data = #domain_Provider{
+                name = <<"Crovider">>,
+                description = <<"Payment terminal provider">>,
+                terminal = {value, [?trm(9)]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"crovider">>
+                    }
+                },
+                abs_account = <<"0987654321">>
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(9),
+            data = #domain_Terminal{
+                name = <<"Payment Terminal Terminal">>,
+                description = <<"Euroset">>,
+                payment_method = ?pmt(payment_terminal, euroset),
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(18, 1000, payment_amount)
+                    )
+                ],
+                account = AccountRUB,
+                risk_coverage = low
             }
         }}
     ].

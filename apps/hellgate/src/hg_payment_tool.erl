@@ -17,7 +17,9 @@
 -spec get_method(t()) -> method().
 
 get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem}}) ->
-    #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}.
+    #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}};
+get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
+    #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}.
 
 %%
 
