@@ -509,7 +509,7 @@ bank_card_tds_token() ->
 bank_card_simple_token() ->
     <<"TOKEN42">>.
 
--spec make_terminal_payment_tool() -> hg_domain_thrift:'PaymentTool'().
+-spec make_terminal_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_terminal_payment_tool() ->
     {
@@ -519,7 +519,7 @@ make_terminal_payment_tool() ->
         <<"">>
     }.
 
--spec make_tds_payment_tool() -> hg_domain_thrift:'PaymentTool'().
+-spec make_tds_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_tds_payment_tool() ->
     {
@@ -532,7 +532,7 @@ make_tds_payment_tool() ->
         <<"SESSION666">>
     }.
 
--spec make_simple_payment_tool() -> hg_domain_thrift:'PaymentTool'().
+-spec make_simple_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_simple_payment_tool() ->
     {

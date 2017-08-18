@@ -90,9 +90,8 @@ process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
     finish(PaymentInfo);
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
-    Token3DS = hg_ct_helper:bank_card_tds_token(),
-    case get_payment_token(PaymentInfo) of
-        Token3DS ->
+    case is_tds_payment(PaymentInfo) of
+        true ->
             Tag = hg_utils:unique_id(),
             Uri = genlib:to_binary("http://127.0.0.1:" ++ integer_to_list(?COWBOY_PORT)),
             UserInteraction = {
@@ -103,7 +102,7 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
                 }
             },
             suspend(Tag, 2, <<"suspended">>, UserInteraction);
-        _ ->
+        false ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>)
     end;
@@ -145,13 +144,14 @@ respond(Response, CallbackResult) ->
         result     = CallbackResult
     }.
 
-get_payment_token(#prxprv_PaymentInfo{payment = Payment}) ->
+is_tds_payment(#prxprv_PaymentInfo{payment = Payment}) ->
+    Token3DS = hg_ct_helper:bank_card_tds_token(),
     #prxprv_InvoicePayment{payer = #domain_Payer{payment_tool = PaymentTool}} = Payment,
     case PaymentTool of
-        {'bank_card', #domain_BankCard{token = Token}} ->
-            Token;
-        {payment_terminal, #domain_PaymentTerminal{}} ->
-            undefined
+        {'bank_card', #domain_BankCard{token = Token3DS}} ->
+            true;
+        _ ->
+            false
     end.
 
 %%
