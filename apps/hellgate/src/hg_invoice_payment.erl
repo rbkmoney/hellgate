@@ -53,7 +53,6 @@
 
 -export([marshal/1]).
 -export([unmarshal/1]).
--export([adapt_event/1]).
 
 %%
 
@@ -1265,6 +1264,20 @@ unmarshal(str, {str, String}) ->
 
 %% Changes
 
+unmarshal(1, change, ?payment_started(Payment, RiskScore, Route, Cashflow)) ->
+    NewPayment =
+        #domain_InvoicePayment{
+        id              = Payment#domain_InvoicePayment.id,
+        created_at      = Payment#domain_InvoicePayment.created_at,
+        domain_revision = Payment#domain_InvoicePayment.domain_revision,
+        status          = Payment#domain_InvoicePayment.status,
+        cost            = Payment#domain_InvoicePayment.cost,
+        payer           = Payment#domain_InvoicePayment.payer,
+        flow            = ?invoice_payment_flow_instant()
+    },
+    ?payment_started(NewPayment, RiskScore, Route, Cashflow);
+unmarshal(1, change, Change) ->
+    Change;
 unmarshal(2, change, #{
     {str, "change"} := {str, "invoice_payment_started"},
     {str, "payment"} := Payment,
@@ -1424,20 +1437,3 @@ unmarshal(2, adj_status, #{
     {str, "at"} := {str, At}
 }) ->
     ?adjustment_cancelled(?BIN(At)).
-
--spec adapt_event(change()) -> change().
-
-adapt_event(?payment_started(Payment, RiskScore, Route, Cashflow)) ->
-    NewPayment =
-        #domain_InvoicePayment{
-        id              = Payment#domain_InvoicePayment.id,
-        created_at      = Payment#domain_InvoicePayment.created_at,
-        domain_revision = Payment#domain_InvoicePayment.domain_revision,
-        status          = Payment#domain_InvoicePayment.status,
-        cost            = Payment#domain_InvoicePayment.cost,
-        payer           = Payment#domain_InvoicePayment.payer,
-        flow            = ?invoice_payment_flow_instant()
-    },
-    ?payment_started(NewPayment, RiskScore, Route, Cashflow);
-adapt_event(Other) ->
-    Other.

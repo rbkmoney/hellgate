@@ -891,9 +891,9 @@ marshal(str, String) ->
 
 %% Version 1
 
-unmarshal(Bin) when is_binary(Bin) ->
-    Events = binary_to_term(Bin),
-    [adapt_event(Event) || Event <- Events];
+unmarshal({bin, Bin}) when is_binary(Bin) ->
+    Changes = binary_to_term(Bin),
+    [unmarshal(1, change, Change) || Change <- Changes];
 
 %% Versions > 1
 
@@ -912,6 +912,11 @@ unmarshal(str, {str, Str}) ->
 
 %% Changes
 
+unmarshal(1, change, ?payment_ev(PaymentID, Payload)) ->
+    NewPayload = hg_invoice_payment:unmarshal(?WRAP_VERSION_DATA(1, Payload)),
+    ?payment_ev(PaymentID, NewPayload);
+unmarshal(1, change, Change) ->
+    Change;
 unmarshal(2, change, #{
     {str, "change"} := {str, "invoice_created"},
     {str, "invoice"} := Invoice
@@ -928,7 +933,6 @@ unmarshal(2, change, #{
     {str, "payload"} := Payload
 }) ->
     ?payment_ev(?BIN(PaymentID), hg_invoice_payment:unmarshal(Payload));
-
 %% Change components
 
 unmarshal(2, invoice, #{
@@ -986,9 +990,3 @@ unmarshal(2, details, #{
 
 unmarshal(2, cash, [Amount, {str, SymbolicCode}]) ->
     ?cash(Amount, ?currency(?BIN(SymbolicCode))).
-
-adapt_event(?payment_ev(PaymentID, Payload)) ->
-    NewPayload = hg_invoice_payment:adapt_event(Payload),
-    ?payment_ev(PaymentID, NewPayload);
-adapt_event(Other) ->
-    Other.
