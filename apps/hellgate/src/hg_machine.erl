@@ -67,9 +67,6 @@
 -export([get_service_handlers/1]).
 -export([get_handler_module/1]).
 
-%% FIXME feels like hack
--export([unwrap_event/1]).
-
 -export([start_link/1]).
 -export([init/1]).
 
@@ -121,7 +118,7 @@ get_history(Ns, ID, Range) ->
     Descriptor = prepare_descriptor(Ns, {id, ID}, Range),
     case call_automaton('GetMachine', [Descriptor]) of
         {ok, #'Machine'{history = History}} when is_list(History) ->
-            {ok, History};
+            {ok, unwrap_history(History)};
         Error ->
             Error
     end.
@@ -194,14 +191,14 @@ dispatch_signal(Ns, #'InitSignal'{arg = Payload}, #'Machine'{id = ID}) ->
 dispatch_signal(Ns, #'TimeoutSignal'{}, #'Machine'{history = History}) ->
     _ = lager:debug("dispatch timeout with history = ~p", [History]),
     Module = get_handler_module(Ns),
-    Result = Module:process_signal(timeout, History),
+    Result = Module:process_signal(timeout, unwrap_history(History)),
     marshal_signal_result(Result);
 
 dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, #'Machine'{history = History}) ->
     Args = unwrap_args(Payload),
     _ = lager:debug("dispatch repair with args = ~p and history: ~p", [Args, History]),
     Module = get_handler_module(Ns),
-    Result = Module:process_signal({repair, Args}, History),
+    Result = Module:process_signal({repair, Args}, unwrap_history(History)),
     marshal_signal_result(Result).
 
 marshal_signal_result({Events, Action}) ->
@@ -224,7 +221,7 @@ dispatch_call(Ns, Payload, #'Machine'{history = History}) ->
     Args = unwrap_args(Payload),
     _ = lager:debug("dispatch call with args = ~p and history: ~p", [Args, History]),
     Module = get_handler_module(Ns),
-    Result = Module:process_call(Args, History),
+    Result = Module:process_call(Args, unwrap_history(History)),
     marshal_call_result(Result).
 
 marshal_call_result({Response, {Events, Action}}) ->
@@ -291,11 +288,11 @@ init(MachineHandlers) ->
 get_handler_module(Ns) ->
     ets:lookup_element(?TABLE, Ns, 2).
 
--spec unwrap_event(dmsl_state_processing_thrift:'Event'()) ->
-    event().
-
 unwrap_event(#'Event'{id = ID, created_at = Dt, event_payload = Payload}) ->
     {ID, Dt, Payload}.
+
+unwrap_history(History) ->
+    [unwrap_event(Event) || Event <- History].
 
 %%
 

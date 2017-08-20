@@ -21,6 +21,7 @@
 -module(hg_invoice_payment).
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_msgpack_thrift.hrl").
 
 %% API
 
@@ -50,8 +51,8 @@
 
 -export([get_log_params/2]).
 
--export([marshal_event/1]).
--export([unmarshal_event/1]).
+-export([marshal/1]).
+-export([unmarshal/1]).
 -export([adapt_event/1]).
 
 %%
@@ -1038,11 +1039,11 @@ get_log_params(_, _) ->
 make_log_params(EventType, Payment, Params) ->
     #domain_InvoicePayment{
         id = ID,
-        cost = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency})
+        cost = ?cash(Amount, ?currency(SymbolicCode))
     } = Payment,
     Result = #{
         type => invoice_payment_event,
-        params => [{type, EventType}, {id, ID}, {cost, [{amount, Amount}, {currency, Currency}]} | Params],
+        params => [{type, EventType}, {id, ID}, {cost, [{amount, Amount}, {currency, SymbolicCode}]} | Params],
         message => get_message(EventType)
     },
     {ok, Result}.
@@ -1051,8 +1052,8 @@ get_partial_remainders(CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
     lists:map(
         fun ({Account, Cash}) ->
-            ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency}) = Cash,
-            Remainder = [{remainder, [{amount, Amount}, {currency, Currency}]}],
+            ?cash(Amount, ?currency(SymbolicCode)) = Cash,
+            Remainder = [{remainder, [{amount, Amount}, {currency, SymbolicCode}]}],
             {get_account_key(Account), Remainder}
         end,
         Reminders
@@ -1066,319 +1067,377 @@ get_message(invoice_payment_started) ->
 get_message(invoice_payment_status_changed) ->
     "Invoice payment status is changed".
 
-%%
--type msgpack_value() :: dmsl_msgpack_thrift:'Value'().
+%% Marshalling
 
--spec marshal_event(change()) -> msgpack_value().
+-include("msgpack_marshalling.hrl").
 
-marshal_event(Events) when is_list(Events) ->
-    {arr, [marshal_event(Event) || Event <- Events]};
-marshal_event(?payment_started(Payment, RiskScore, Route, Cashflow)) ->
-    #domain_InvoicePayment{
-        id              = PaymentID,
-        created_at      = CreatedAt,
-        domain_revision = Revision,
-        cost            = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency}),
-        payer           = Payer,
-        flow            = Flow
-    } = Payment,
-    MsgpackFlow = case Flow of
-        ?invoice_payment_flow_instant() ->
-            #{{str, <<"type">>} => {str, <<"instant">>}};
-        ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil) ->
-            #{
-                {str, <<"type">>} => {str, <<"hold">>},
-                {str, <<"on_hold_expiration">>} => {str, atom_to_binary(OnHoldExpiration, utf8)},
-                {str, <<"held_until">>} => {str, HeldUntil}
-            }
-    end,
-    MsgpackPayment = #{
-        {str, <<"id">>} => {str, PaymentID},
-        {str, <<"created_at">>} => {str, CreatedAt},
-        {str, <<"domain_revision">>} => {i, Revision},
-        {str, <<"cost">>} => {arr, [{i, Amount}, {str, Currency}]},
-        {str, <<"payer">>} => {bin, term_to_binary(Payer)},
-        {str, <<"flow">>} => {obj, MsgpackFlow}
-    },
-    {obj, #{
-        {str, <<"type">>} => {str, <<"invoice_payment_started">>},
-        {str, <<"payment">>} => {obj, MsgpackPayment},
-        {str, <<"risk_score">>} => {str, atom_to_binary(RiskScore, utf8)},
-        {str, <<"route">>} => {bin, term_to_binary(Route)},
-        {str, <<"cash_flow">>} => {bin, term_to_binary(Cashflow)}
-    }};
-marshal_event(?payment_status_changed(Status)) ->
-    MsgpackStatus = marshal_payment_status(Status),
-    {obj, MsgpackStatus#{{str, <<"type">>} => {str, <<"invoice_payment_status_changed">>}}};
-marshal_event(?session_ev(Target, Payload)) ->
-    MsgpackTarget = marshal_payment_status(Target),
-    MsgpackPayload = case Payload of
-        ?session_started() ->
-            #{{str, <<"type">>} => {str, <<"invoice_payment_session_started">>}};
-        ?session_finished(Result) ->
-            MsgpackResult = case Result of
-                ?session_succeeded() ->
-                    #{{str, <<"status">>} => {str, <<"succeeded">>}};
-                ?session_failed(PayloadFailure) ->
-                    #{
-                        {str, <<"status">>} => {str, <<"failed">>},
-                        {str, <<"failure">>} => {bin, term_to_binary(PayloadFailure)}
-                    }
-            end,
-            #{
-                {str, <<"type">>} => {str, <<"invoice_payment_session_finished">>},
-                {str, <<"result">>} => {obj, MsgpackResult}
-            };
-        ?session_suspended() ->
-            #{{str, <<"type">>} => {str, <<"invoice_payment_session_suspended">>}};
-        ?session_activated() ->
-            #{{str, <<"type">>} => {str, <<"invoice_payment_session_activated">>}};
-        ?trx_bound(Trx) ->
-            #{
-                {str, <<"type">>} => {str, <<"invoice_payment_session_transaction_bound">>},
-                {str, <<"trx">>} => {bin, term_to_binary(Trx)}
-            };
-        ?proxy_st_changed(ProxySt) ->
-            #{
-                {str, <<"type">>} => {str, <<"invoice_payment_session_proxy_state_changed">>},
-                {str, <<"proxy_state">>} => {bin, term_to_binary(ProxySt)}
-            };
-        ?interaction_requested(UserInteraction) ->
-            #{
-                {str, <<"type">>} => {str, <<"invoice_payment_session_interaction_requested">>},
-                {str, <<"interaction">>} => {bin, term_to_binary(UserInteraction)}
-            }
-    end,
-    {obj, #{
-        {str, <<"type">>} => {str, <<"invoice_payment_session_change">>},
-        {str, <<"target">>} => {obj, MsgpackTarget},
-        {str, <<"payload">>} => {obj, MsgpackPayload}
-    }};
-marshal_event(?adjustment_ev(AdjustmentID, Payload)) ->
-    MsgpackPayload = case Payload of
-        ?adjustment_created(Adjustment) ->
-            #domain_InvoicePaymentAdjustment{
-                created_at            = CreatedAt,
-                domain_revision       = Revision,
-                reason                = Reason,
-                old_cash_flow_inverse = OldCashFlowInverse,
-                new_cash_flow         = NewCashFlow
-            } = Adjustment,
-        #{
-            {str, <<"type">>} => {str, <<"invoice_payment_adjustment_created">>},
-            {str, <<"adjustment">>} => {obj,
-                #{
-                    {str, <<"status">>} => {str, <<"pending">>},
-                    {str, <<"created_at">>} => {str, CreatedAt},
-                    {str, <<"domain_revision">>} => {i, Revision},
-                    {str, <<"reason">>} => {str, Reason},
-                    {str, <<"old_cash_flow_inverse">>} => {bin, term_to_binary(OldCashFlowInverse)},
-                    {str, <<"new_cash_flow">>} => {bin, term_to_binary(NewCashFlow)}
-                }
-            }
-        };
-        ?adjustment_status_changed(Status) ->
-            MsgpackStatus = case Status of
-                ?adjustment_pending() ->
-                    #{{str, <<"status">>} => {str, <<"pending">>}};
-                ?adjustment_captured(At) ->
-                    #{
-                        {str, <<"status">>} => {str, <<"captured">>},
-                        {str, <<"at">>} => {str, At}
-                    };
-                ?adjustment_cancelled(At) ->
-                    #{
-                        {str, <<"status">>} => {str, <<"cancelled">>},
-                        {str, <<"at">>} => {str, At}
-                    }
-            end,
-            MsgpackStatus#{{str, <<"type">>} => {str, <<"invoice_payment_adjustment_status_changed">>}}
-    end,
-    {obj, #{
-        {str, <<"type">>} => {str, <<"invoice_payment_adjustment_change">>},
-        {str, <<"id">>} => {str, AdjustmentID},
-        {str, <<"payload">>} => {obj, MsgpackPayload}
-    }}.
+-spec marshal(change()) ->
+    term().
 
--spec unmarshal_event(msgpack_value()) -> change().
+marshal(Change) ->
+    marshal(change, Change).
 
-unmarshal_event({arr, Events}) ->
-    [unmarshal_event(Event)|| Event <- Events];
-unmarshal_event({obj, Obj}) ->
-    unmarshal_event(Obj);
-unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_started">>}} = Event) ->
-    #{
-        {str, <<"payment">>} := {obj, MsgpackPayment},
-        {str, <<"risk_score">>} := {str, RiskScore},
-        {str, <<"route">>} := {bin, Route},
-        {str, <<"cash_flow">>} := {bin, Cashflow}
-    } = Event,
-    #{
-        {str, <<"id">>} := {str, PaymentID},
-        {str, <<"created_at">>} := {str, CreatedAt},
-        {str, <<"domain_revision">>} := {i, Revision},
-        {str, <<"cost">>} := {arr, [{i, Amount}, {str, Currency}]},
-        {str, <<"payer">>} := {bin, Payer},
-        {str, <<"flow">>} := {obj, MsgpackFlow}
-    } = MsgpackPayment,
-    Flow = case MsgpackFlow of
-        #{{str, <<"type">>} := {str, <<"instant">>}} ->
-            ?invoice_payment_flow_instant();
-        #{
-            {str, <<"type">>} := {str, <<"hold">>},
-            {str, <<"on_hold_expiration">>} := {str, OnHoldExpiration},
-            {str, <<"held_until">>} := {str, HeldUntil}
-        } ->
-            ?invoice_payment_flow_hold(binary_to_atom(OnHoldExpiration, utf8), HeldUntil)
-    end,
-    Payment = #domain_InvoicePayment{
-        id              = PaymentID,
-        created_at      = CreatedAt,
-        domain_revision = Revision,
-        cost            = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency}),
-        payer           = binary_to_term(Payer),
-        status          = ?pending(),
-        flow            = Flow
-    },
+%% Changes
+
+marshal(change, ?payment_started(Payment, RiskScore, Route, Cashflow)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_started"},
+        {str, "payment"} => marshal(payment, Payment),
+        {str, "risk_score"} => marshal(risk_score, RiskScore),
+        {str, "route"} => term_to_binary(Route),
+        {str, "cash_flow"} => term_to_binary(Cashflow)
+    });
+marshal(change, ?payment_status_changed(Status)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_status_changed"},
+        {str, "status"} => marshal(status, Status)
+    });
+marshal(change, ?session_ev(Target, Payload)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_session_change"},
+        {str, "target"} => marshal(status, Target),
+        {str, "payload"} => marshal(session_change, Payload)
+    });
+marshal(change, ?adjustment_ev(AdjustmentID, Payload)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_adjustment_change"},
+        {str, "id"} => {str, AdjustmentID},
+        {str, "payload"} => marshal(adj_change, Payload)
+    });
+
+%% Change components
+
+marshal(payment, #domain_InvoicePayment{} = Payment) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "id"} => {str, Payment#domain_InvoicePayment.id},
+        {str, "created_at"} => {str, Payment#domain_InvoicePayment.created_at},
+        {str, "domain_revision"} => Payment#domain_InvoicePayment.domain_revision,
+        {str, "cost"} => marshal(cash, Payment#domain_InvoicePayment.cost),
+        {str, "payer"} => term_to_binary(Payment#domain_InvoicePayment.payer),
+        {str, "flow"} => marshal(flow, Payment#domain_InvoicePayment.flow)
+    });
+
+marshal(cash, ?cash(Amount, ?currency(SymbolicCode))) ->
+    ?WRAP_VERSION_DATA(2, [Amount, {str, SymbolicCode}]);
+
+marshal(flow, ?invoice_payment_flow_instant()) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "type"} => {str, "instant"}});
+marshal(flow, ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "type"} => {str, "hold"},
+        {str, "on_hold_expiration"} => marshal(on_hold_expiration, OnHoldExpiration),
+        {str, "held_until"} => {str, HeldUntil}
+    });
+
+marshal(status, ?pending()) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "pending"}});
+marshal(status, ?processed()) ->
+   ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "processed"}});
+marshal(status, ?failed(Failure)) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "failed"}, {str, "failure"} => term_to_binary(Failure)});
+marshal(status, ?captured_with_reason(Reason)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "status"} => {str, "captured"},
+        {str, "reason"} => marshal(str, Reason)
+    });
+marshal(status, ?cancelled_with_reason(Reason)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "status"} => {str, "cancelled"},
+        {str, "reason"} => marshal(str, Reason)
+    });
+
+marshal(session_change, ?session_started()) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "change"} => {str, "invoice_payment_session_started"}});
+marshal(session_change, ?session_finished(Result)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_session_finished"},
+        {str, "result"} => marshal(session_status, Result)
+    });
+marshal(session_change, ?session_suspended()) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "change"} => {str, "invoice_payment_session_suspended"}});
+marshal(session_change, ?session_activated()) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "change"} => {str, "invoice_payment_session_activated"}});
+marshal(session_change, ?trx_bound(Trx)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_session_transaction_bound"},
+        {str, "trx"} => term_to_binary(Trx)
+    });
+marshal(session_change, ?proxy_st_changed(ProxySt)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_session_proxy_state_changed"},
+        {str, "proxy_state"} => ProxySt
+    });
+marshal(session_change, ?interaction_requested(UserInteraction)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_session_interaction_requested"},
+        {str, "interaction"} => term_to_binary(UserInteraction)
+    });
+marshal(session_status, ?session_succeeded()) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "succeeded"}});
+marshal(session_status, ?session_failed(PayloadFailure)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "status"} => {str, "failed"},
+        {str, "failure"} => term_to_binary(PayloadFailure)
+    });
+
+marshal(adj_change, ?adjustment_created(Adjustment)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_adjustment_created"},
+        {str, "adjustment"} => marshal(adj, Adjustment)
+    });
+marshal(adj_change, ?adjustment_status_changed(Status)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "change"} => {str, "invoice_payment_adjustment_status_changed"},
+        {str, "status"} => marshal(adj_status, Status)
+    });
+
+marshal(adj, #domain_InvoicePaymentAdjustment{} = Adjustment) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "id"} => {str, Adjustment#domain_InvoicePaymentAdjustment.id},
+        {str, "created_at"} => {str, Adjustment#domain_InvoicePaymentAdjustment.created_at},
+        {str, "domain_revision"} => Adjustment#domain_InvoicePaymentAdjustment.domain_revision,
+        {str, "reason"} => {str, Adjustment#domain_InvoicePaymentAdjustment.reason},
+        {str, "old_cash_flow_inverse"} => term_to_binary(
+            Adjustment#domain_InvoicePaymentAdjustment.old_cash_flow_inverse),
+        {str, "new_cash_flow"} => term_to_binary(Adjustment#domain_InvoicePaymentAdjustment.new_cash_flow)
+    });
+
+marshal(adj_status, ?adjustment_pending()) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "pending"}});
+marshal(adj_status, ?adjustment_captured(At)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "status"} => {str, "captured"},
+        {str, "at"} => {str, At}
+    });
+marshal(adj_status, ?adjustment_cancelled(At)) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "status"} => {str, "cancelled"},
+        {str, "at"} => {str, At}
+    });
+
+marshal(on_hold_expiration, cancel) ->
+    {str, "cancel"};
+marshal(on_hold_expiration, capture) ->
+    {str, "capture"};
+
+marshal(risk_score, low) ->
+    {str, "low"};
+marshal(risk_score, high) ->
+    {str, "high"};
+marshal(risk_score, fatal) ->
+    {str, "fatal"};
+
+%% Optional components
+
+marshal(str, undefined) ->
+    undefined;
+marshal(str, String) ->
+    {str, String}.
+
+%% Unmarshalling
+
+-spec unmarshal(term()) -> change().
+
+unmarshal(Change) ->
+    unmarshal(change, Change).
+
+unmarshal(Type, #{{str, "version"} := Version, {str, "data"} := Data}) ->
+    unmarshal(Version, Type, Data);
+
+unmarshal(on_hold_expiration, {str, "cancel"}) ->
+    cancel;
+unmarshal(on_hold_expiration, {str, "capture"}) ->
+    capture;
+
+unmarshal(risk_score, {str, "low"}) ->
+    low;
+unmarshal(risk_score, {str, "high"}) ->
+    high;
+unmarshal(risk_score, {str, "fatal"}) ->
+    fatal;
+
+%% Optional components
+
+unmarshal(str, undefined) ->
+    undefined;
+unmarshal(str, {str, String}) ->
+    ?BIN(String).
+
+%% Changes
+
+unmarshal(2, change, #{
+    {str, "change"} := {str, "invoice_payment_started"},
+    {str, "payment"} := Payment,
+    {str, "risk_score"} := RiskScore,
+    {str, "route"} := Route,
+    {str, "cash_flow"} := Cashflow
+}) ->
     ?payment_started(
-        Payment,
-        binary_to_atom(RiskScore, utf8),
+        unmarshal(payment, Payment),
+        unmarshal(risk_score, RiskScore),
         binary_to_term(Route),
         binary_to_term(Cashflow)
     );
-unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_status_changed">>}} = Event) ->
+unmarshal(2, change, #{
+    {str, "change"} := {str, "invoice_payment_status_changed"},
+    {str, "status"} := Status
+}) ->
+    ?payment_status_changed(unmarshal(status, Status));
+unmarshal(2, change, #{
+    {str, "change"} := {str, "invoice_payment_session_change"},
+    {str, "payload"} := Payload,
+    {str, "target"} := Target
+}) ->
+    ?session_ev(unmarshal(status, Target), unmarshal(session_change, Payload));
+unmarshal(2, change, #{
+    {str, "change"} := {str, "invoice_payment_adjustment_change"},
+    {str, "id"} := {str, AdjustmentID},
+    {str, "payload"} := Payload
+}) ->
+    ?adjustment_ev(?BIN(AdjustmentID), unmarshal(adj_change, Payload));
 
-    PaymentStatus = unmarshal_payment_status(Event),
-    ?payment_status_changed(PaymentStatus);
-unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_session_change">>}} = Event) ->
-    #{
-        {str, <<"payload">>} := {obj, #{{str, <<"type">>} := {str, MsgpackType}} = MsgpackPayload},
-        {str, <<"target">>} := {obj, MsgpackTarget}
-    } = Event,
-    Target = unmarshal_payment_status(MsgpackTarget),
-    Payload = case MsgpackType of
-        <<"invoice_payment_session_started">> ->
-            ?session_started();
-        <<"invoice_payment_session_finished">> ->
-            #{{str, <<"result">>} := {obj,
-                #{{str, <<"status">>} := {str, ResultStatus}} = MsgpackResult
-            }} = MsgpackPayload,
-            Result = case ResultStatus of
-                <<"succeeded">> ->
-                    ?session_succeeded();
-                <<"failed">> ->
-                    #{{str, <<"failure">>} := {bin, FailureSessionFinished}} = MsgpackResult,
-                    ?session_failed(binary_to_term(FailureSessionFinished))
-            end,
-            ?session_finished(Result);
-        <<"invoice_payment_session_suspended">> ->
-            ?session_suspended();
-        <<"invoice_payment_session_activated">> ->
-            ?session_activated();
-        <<"invoice_payment_session_transaction_bound">> ->
-            #{{str, <<"trx">>} := {bin, Trx}} = MsgpackPayload,
-            ?trx_bound(binary_to_term(Trx));
-        <<"invoice_payment_session_proxy_state_changed">> ->
-            #{{str, <<"proxy_state">>} := {bin, ProxySt}} = MsgpackPayload,
-            ?proxy_st_changed(binary_to_term(ProxySt));
-        <<"invoice_payment_session_interaction_requested">> ->
-            #{{str, <<"interaction">>} := {bin, UserInteraction}} = MsgpackPayload,
-            ?interaction_requested(binary_to_term(UserInteraction))
-    end,
-    ?session_ev(Target, Payload);
-unmarshal_event(#{{str, <<"type">>} := {str, <<"invoice_payment_adjustment_change">>}} = Event) ->
-    #{
-        {str, <<"id">>} := {str, AdjustmentID},
-        {str, <<"payload">>} := {obj, MsgpackPayload}
-    } = Event,
-    Payload = case MsgpackPayload of
-        #{
-            {str, <<"type">>} := {str, <<"invoice_payment_adjustment_created">>},
-            {str, <<"adjustment">>} := {obj,
-                #{
-                    {str, <<"status">>} := {str, <<"pending">>},
-                    {str, <<"created_at">>} := {str, CreatedAt},
-                    {str, <<"domain_revision">>} := {i, Revision},
-                    {str, <<"reason">>} := {str, Reason},
-                    {str, <<"old_cash_flow_inverse">>} := {bin, OldCashFlowInverse},
-                    {str, <<"new_cash_flow">>} := {bin, NewCashFlow}
-                }
-            }
-        } ->
-            Adjustment = #domain_InvoicePaymentAdjustment{
-                id                    = AdjustmentID,
-                status                = ?adjustment_pending(),
-                created_at            = CreatedAt,
-                domain_revision       = Revision,
-                reason                = Reason,
-                old_cash_flow_inverse = binary_to_term(OldCashFlowInverse),
-                new_cash_flow         = binary_to_term(NewCashFlow)
-            },
-            ?adjustment_created(Adjustment);
-        #{
-            {str, <<"type">>} := {str, <<"invoice_payment_adjustment_status_changed">>},
-            {str, <<"status">>} := {str, MsgpackStatus}
-        } = StatusChangedEvent ->
-            Status = case MsgpackStatus of
-                <<"pending">> ->
-                    ?adjustment_pending();
-                <<"captured">> ->
-                    #{{str, <<"at">>} := {str, At}} = StatusChangedEvent,
-                    ?adjustment_captured(At);
-                <<"cancelled">> ->
-                    #{{str, <<"at">>} := {str, At}} = StatusChangedEvent,
-                    ?adjustment_cancelled(At)
-            end,
-            ?adjustment_status_changed(Status)
-    end,
-    ?adjustment_ev(AdjustmentID, Payload).
+%% Change components
 
-marshal_reason(undefined) ->
-    #{};
-marshal_reason(Reason) ->
-    #{{str, <<"reason">>} => {str, Reason}}.
+unmarshal(2, payment, #{
+    {str, "id"} := {str, PaymentID},
+    {str, "created_at"} := {str, CreatedAt},
+    {str, "domain_revision"} := Revision,
+    {str, "cost"} := Cash,
+    {str, "payer"} := Payer,
+    {str, "flow"} := Flow
+}) ->
+    #domain_InvoicePayment{
+        id              = ?BIN(PaymentID),
+        created_at      = ?BIN(CreatedAt),
+        domain_revision = Revision,
+        cost            = unmarshal(cash, Cash),
+        payer           = binary_to_term(Payer),
+        status          = ?pending(),
+        flow            = unmarshal(flow, Flow)
+    };
 
-marshal_payment_status(?pending()) ->
-    #{{str, <<"status">>} => {str, <<"pending">>}};
-marshal_payment_status(?processed()) ->
-    #{{str, <<"status">>} => {str, <<"processed">>}};
-marshal_payment_status(?failed(Failure)) ->
-    #{{str, <<"status">>} => {str, <<"failed">>}, {str, <<"failure">>} => {bin, term_to_binary(Failure)}};
-marshal_payment_status(?captured_with_reason(Reason)) ->
-    MsgpackReason = marshal_reason(Reason),
-    MsgpackReason#{{str, <<"status">>} => {str, <<"captured">>}};
-marshal_payment_status(?cancelled_with_reason(Reason)) ->
-    MsgpackReason = marshal_reason(Reason),
-    MsgpackReason#{{str, <<"status">>} => {str, <<"cancelled">>}}.
+unmarshal(2, cash, [Amount, {str, SymbolicCode}]) ->
+    ?cash(Amount, ?currency(?BIN(SymbolicCode)));
 
-unmarshal_payment_status(#{{str, <<"status">>} := {str, Status}} = Event) ->
-    unmarshal_payment_status_(Status, Event).
+unmarshal(2, flow, #{{str, "type"} := {str, "instant"}}) ->
+    ?invoice_payment_flow_instant();
+unmarshal(2, flow, #{
+    {str, "type"} := {str, "hold"},
+    {str, "on_hold_expiration"} := OnHoldExpiration,
+    {str, "held_until"} := {str, HeldUntil}
+}) ->
+    ?invoice_payment_flow_hold(unmarshal(on_hold_expiration, OnHoldExpiration), ?BIN(HeldUntil));
 
-unmarshal_payment_status_(<<"pending">>, _) ->
+unmarshal(2, status, #{{str, "status"} := {str, "pending"}}) ->
     ?pending();
-unmarshal_payment_status_(<<"processed">>, _) ->
+unmarshal(2, status, #{{str, "status"} := {str, "processed"}}) ->
     ?processed();
-unmarshal_payment_status_(<<"failed">>, #{{str, <<"failure">>} := {bin, Failure}}) ->
+unmarshal(2, status, #{
+    {str, "status"} := {str, "failed"},
+    {str, "failure"} := Failure
+}) ->
     ?failed(binary_to_term(Failure));
-unmarshal_payment_status_(<<"captured">>, Event) ->
-    case maps:get({str, <<"reason">>}, Event, undefined) of
-        undefined ->
-            ?captured();
-        {str, Reason} ->
-            ?captured_with_reason(Reason)
-    end;
-unmarshal_payment_status_(<<"cancelled">>, Event) ->
-    case maps:get({str, <<"reason">>}, Event, undefined) of
-        undefined ->
-            ?cancelled();
-        {str, Reason} ->
-            ?cancelled_with_reason(Reason)
-    end.
+unmarshal(2, status, #{
+    {str, "status"} := {str, "captured"},
+    {str, "reason"} := Reason
+}) ->
+    ?captured_with_reason(unmarshal(str, Reason));
+unmarshal(2, status, #{
+    {str, "status"} := {str, "cancelled"},
+    {str, "reason"} := Reason
+}) ->
+    ?cancelled_with_reason(unmarshal(str, Reason));
+
+unmarshal(2, session_change, #{{str, "change"} := {str, "invoice_payment_session_started"}}) ->
+    ?session_started();
+unmarshal(2, session_change, #{
+    {str, "change"} := {str, "invoice_payment_session_finished"},
+    {str, "result"} := Result
+}) ->
+    ?session_finished(unmarshal(session_status, Result));
+unmarshal(2, session_change, #{{str, "change"} := {str, "invoice_payment_session_suspended"}}) ->
+    ?session_suspended();
+unmarshal(2, session_change, #{{str, "change"} := {str, "invoice_payment_session_activated"}}) ->
+    ?session_activated();
+unmarshal(2, session_change, #{
+    {str, "change"} := {str, "invoice_payment_session_transaction_bound"},
+    {str, "trx"} := Trx
+}) ->
+    ?trx_bound(binary_to_term(Trx));
+unmarshal(2, session_change, #{
+    {str, "change"} := {str, "invoice_payment_session_proxy_state_changed"},
+    {str, "proxy_state"} := ProxySt
+}) ->
+    ?proxy_st_changed(ProxySt);
+unmarshal(2, session_change, #{
+    {str, "change"} := {str, "invoice_payment_session_interaction_requested"},
+    {str, "interaction"} := UserInteraction
+}) ->
+    ?interaction_requested(binary_to_term(UserInteraction));
+
+unmarshal(2, session_status, #{{str, "status"} := {str, "succeeded"}}) ->
+    ?session_succeeded();
+unmarshal(2, session_status, #{
+    {str, "status"} := {str, "failed"},
+    {str, "failure"} := Failure
+}) ->
+    ?session_failed(binary_to_term(Failure));
+
+unmarshal(2, adj_change, #{
+    {str, "change"} := {str, "invoice_payment_adjustment_created"},
+    {str, "adjustment"} := Adjustment
+}) ->
+    ?adjustment_created(unmarshal(adj, Adjustment));
+unmarshal(2, adj_change, #{
+    {str, "change"} := {str, "invoice_payment_adjustment_status_changed"},
+    {str, "status"} := Status
+}) ->
+    ?adjustment_status_changed(unmarshal(adj_status, Status));
+
+unmarshal(2, adj, #{
+    {str, "id"} := {str, AdjustmentID},
+    {str, "created_at"} := {str, CreatedAt},
+    {str, "domain_revision"} := Revision,
+    {str, "reason"} := {str, Reason},
+    {str, "old_cash_flow_inverse"} := OldCashFlowInverse,
+    {str, "new_cash_flow"} := NewCashFlow
+}) ->
+    #domain_InvoicePaymentAdjustment{
+        id                    = ?BIN(AdjustmentID),
+        status                = ?adjustment_pending(),
+        created_at            = ?BIN(CreatedAt),
+        domain_revision       = Revision,
+        reason                = ?BIN(Reason),
+        old_cash_flow_inverse = binary_to_term(OldCashFlowInverse),
+        new_cash_flow         = binary_to_term(NewCashFlow)
+    };
+
+unmarshal(2, adj_status, #{{str, "status"} := {str, "pending"}}) ->
+    ?adjustment_pending();
+unmarshal(2, adj_status, #{
+    {str, "status"} := {str, "captured"},
+    {str, "at"} := {str, At}
+}) ->
+    ?adjustment_captured(?BIN(At));
+unmarshal(2, adj_status, #{
+    {str, "status"} := {str, "cancelled"},
+    {str, "at"} := {str, At}
+}) ->
+    ?adjustment_cancelled(?BIN(At)).
 
 -spec adapt_event(change()) -> change().
 
 adapt_event(?payment_started(Payment, RiskScore, Route, Cashflow)) ->
-    NewPayment = Payment#domain_InvoicePayment{flow = ?invoice_payment_flow_instant()},
+    NewPayment =
+        #domain_InvoicePayment{
+        id              = Payment#domain_InvoicePayment.id,
+        created_at      = Payment#domain_InvoicePayment.created_at,
+        domain_revision = Payment#domain_InvoicePayment.domain_revision,
+        status          = Payment#domain_InvoicePayment.status,
+        cost            = Payment#domain_InvoicePayment.cost,
+        payer           = Payment#domain_InvoicePayment.payer,
+        flow            = ?invoice_payment_flow_instant()
+    },
     ?payment_started(NewPayment, RiskScore, Route, Cashflow);
 adapt_event(Other) ->
     Other.

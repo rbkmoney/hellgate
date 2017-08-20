@@ -49,7 +49,8 @@ get_history_range(After, Limit, Direction) ->
     History.
 
 publish_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event = Event}) ->
-    hg_event_provider:publish_event(Ns, ID, SourceID, hg_machine:unwrap_event(Event)).
+    #'Event'{id = EventID, created_at = Dt, event_payload = Payload} = Event,
+    hg_event_provider:publish_event(Ns, ID, SourceID,  {EventID, Dt, Payload}).
 
 -define(EVENTSINK_ID, <<"payproc">>).
 

@@ -552,8 +552,7 @@ assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
 
 %%
 
-unwrap_event(Event) ->
-    {ID, Dt, Payload} = hg_machine:unwrap_event(Event),
+unwrap_event({ID, Dt, Payload}) ->
     {ID, Dt, unmarshal_event(Payload)}.
 
 unwrap_events(History) ->
