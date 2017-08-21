@@ -1083,8 +1083,8 @@ marshal(change, ?payment_started(Payment, RiskScore, Route, Cashflow)) ->
         {str, "change"} => {str, "invoice_payment_started"},
         {str, "payment"} => marshal(payment, Payment),
         {str, "risk_score"} => marshal(risk_score, RiskScore),
-        {str, "route"} => term_to_binary(Route),
-        {str, "cash_flow"} => term_to_binary(Cashflow)
+        {str, "route"} => marshal(route, Route),
+        {str, "cash_flow"} => marshal(final_cash_flow, Cashflow)
     });
 marshal(change, ?payment_status_changed(Status)) ->
     ?WRAP_VERSION_DATA(2, #{
@@ -1196,9 +1196,10 @@ marshal(adj, #domain_InvoicePaymentAdjustment{} = Adjustment) ->
         {str, "created_at"} => {str, Adjustment#domain_InvoicePaymentAdjustment.created_at},
         {str, "domain_revision"} => Adjustment#domain_InvoicePaymentAdjustment.domain_revision,
         {str, "reason"} => {str, Adjustment#domain_InvoicePaymentAdjustment.reason},
-        {str, "old_cash_flow_inverse"} => term_to_binary(
+        {str, "old_cash_flow_inverse"} => marshal(final_cash_flow,
             Adjustment#domain_InvoicePaymentAdjustment.old_cash_flow_inverse),
-        {str, "new_cash_flow"} => term_to_binary(Adjustment#domain_InvoicePaymentAdjustment.new_cash_flow)
+        {str, "new_cash_flow"} => marshal(final_cash_flow,
+            Adjustment#domain_InvoicePaymentAdjustment.new_cash_flow)
     });
 
 marshal(adj_status, ?adjustment_pending()) ->
@@ -1213,6 +1214,51 @@ marshal(adj_status, ?adjustment_cancelled(At)) ->
         {str, "status"} => {str, "cancelled"},
         {str, "at"} => {str, At}
     });
+
+marshal(route, #domain_InvoicePaymentRoute{} = Route) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "provider"} => marshal(provider_ref, Route#domain_InvoicePaymentRoute.provider),
+        {str, "terminal"} => marshal(terminal_ref, Route#domain_InvoicePaymentRoute.terminal)
+    });
+
+marshal(provider_ref, #domain_ProviderRef{id = ObjectID}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "id"} => ObjectID});
+
+marshal(terminal_ref, #domain_TerminalRef{id = ObjectID}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "id"} => ObjectID});
+
+marshal(final_cash_flow, CashFlow) ->
+    ?WRAP_VERSION_DATA(2, [marshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow]);
+
+marshal(final_cash_flow_posting, #domain_FinalCashFlowPosting{} = CashFlowPosting) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "source"} =>
+            marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.source),
+        {str, "destination"} =>
+            marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.destination),
+        {str, "volume"} => marshal(cash, CashFlowPosting#domain_FinalCashFlowPosting.volume),
+        {str, "details"} => marshal(str, CashFlowPosting#domain_FinalCashFlowPosting.details)
+    });
+
+marshal(final_cash_flow_account, #domain_FinalCashFlowAccount{} = CashFlowAccount) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "account_type"} =>
+            marshal(account_type, CashFlowAccount#domain_FinalCashFlowAccount.account_type),
+        {str, "account_id"} => CashFlowAccount#domain_FinalCashFlowAccount.account_id
+    });
+
+marshal(account_type, {merchant, settlement}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "merchant"} => {str, "settlement"}});
+marshal(account_type, {merchant, guarantee}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "merchant"} => {str, "guarantee"}});
+marshal(account_type, {provider, settlement}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "provider"} => {str, "settlement"}});
+marshal(account_type, {system, settlement}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "system"} => {str, "settlement"}});
+marshal(account_type, {external, income}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "external"} => {str, "income"}});
+marshal(account_type, {external, outcome}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "external"} => {str, "outcome"}});
 
 marshal(on_hold_expiration, cancel) ->
     {str, "cancel"};
@@ -1288,8 +1334,8 @@ unmarshal(2, change, #{
     ?payment_started(
         unmarshal(payment, Payment),
         unmarshal(risk_score, RiskScore),
-        binary_to_term(Route),
-        binary_to_term(Cashflow)
+        unmarshal(route, Route),
+        unmarshal(final_cash_flow, Cashflow)
     );
 unmarshal(2, change, #{
     {str, "change"} := {str, "invoice_payment_status_changed"},
@@ -1421,8 +1467,8 @@ unmarshal(2, adj, #{
         created_at            = ?BIN(CreatedAt),
         domain_revision       = Revision,
         reason                = ?BIN(Reason),
-        old_cash_flow_inverse = binary_to_term(OldCashFlowInverse),
-        new_cash_flow         = binary_to_term(NewCashFlow)
+        old_cash_flow_inverse = unmarshal(final_cash_flow, OldCashFlowInverse),
+        new_cash_flow         = unmarshal(final_cash_flow, NewCashFlow)
     };
 
 unmarshal(2, adj_status, #{{str, "status"} := {str, "pending"}}) ->
@@ -1436,4 +1482,54 @@ unmarshal(2, adj_status, #{
     {str, "status"} := {str, "cancelled"},
     {str, "at"} := {str, At}
 }) ->
-    ?adjustment_cancelled(?BIN(At)).
+    ?adjustment_cancelled(?BIN(At));
+unmarshal(2, route, #{
+    {str, "provider"} := Provider,
+    {str, "terminal"} := Terminal
+}) ->
+    #domain_InvoicePaymentRoute{
+        provider = unmarshal(provider_ref, Provider),
+        terminal = unmarshal(terminal_ref, Terminal)
+    };
+unmarshal(2, provider_ref, #{{str, "id"} := ObjectID}) ->
+    #domain_ProviderRef{id = ObjectID};
+unmarshal(2, terminal_ref, #{{str, "id"} := ObjectID}) ->
+    #domain_TerminalRef{id = ObjectID};
+
+unmarshal(2, final_cash_flow, CashFlow) ->
+    [unmarshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow];
+
+unmarshal(2, final_cash_flow_posting, #{
+    {str, "source"} := Source,
+    {str, "destination"} := Destination,
+    {str, "volume"} := Volume,
+    {str, "details"} := Details
+}) ->
+    #domain_FinalCashFlowPosting{
+        source = unmarshal(final_cash_flow_account, Source),
+        destination = unmarshal(final_cash_flow_account, Destination),
+        volume = unmarshal(cash, Volume),
+        details = unmarshal(str, Details)
+    };
+
+unmarshal(2, final_cash_flow_account, #{
+    {str, "account_type"} := AccountType,
+    {str, "account_id"} := AccountId
+}) ->
+    #domain_FinalCashFlowAccount{
+        account_type = unmarshal(account_type, AccountType),
+        account_id = AccountId
+    };
+
+unmarshal(2, account_type, #{{str, "merchant"} := {str, "settlement"}}) ->
+    {merchant, settlement};
+unmarshal(2, account_type, #{{str, "merchant"} := {str, "guarantee"}}) ->
+    {merchant, guarantee};
+unmarshal(2, account_type, #{{str, "provider"} := {str, "settlement"}}) ->
+    {provider, settlement};
+unmarshal(2, account_type, #{{str, "system"} := {str, "settlement"}}) ->
+    {system, settlement};
+unmarshal(2, account_type, #{{str, "external"} := {str, "income"}}) ->
+    {external, income};
+unmarshal(2, account_type, #{{str, "external"} := {str, "outcome"}}) ->
+    {external, outcome}.
