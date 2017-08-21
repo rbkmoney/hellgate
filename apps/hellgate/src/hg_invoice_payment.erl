@@ -1133,7 +1133,7 @@ marshal(status, ?pending()) ->
 marshal(status, ?processed()) ->
    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "processed"}});
 marshal(status, ?failed(Failure)) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "failed"}, {str, "failure"} => term_to_binary(Failure)});
+    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "failed"}, {str, "failure"} => marshal(failure, Failure)});
 marshal(status, ?captured_with_reason(Reason)) ->
     ?WRAP_VERSION_DATA(2, #{
         {str, "status"} => {str, "captured"},
@@ -1159,7 +1159,7 @@ marshal(session_change, ?session_activated()) ->
 marshal(session_change, ?trx_bound(Trx)) ->
     ?WRAP_VERSION_DATA(2, #{
         {str, "change"} => {str, "invoice_payment_session_transaction_bound"},
-        {str, "trx"} => term_to_binary(Trx)
+        {str, "trx"} => marshal(trx, Trx)
     });
 marshal(session_change, ?proxy_st_changed(ProxySt)) ->
     ?WRAP_VERSION_DATA(2, #{
@@ -1169,14 +1169,14 @@ marshal(session_change, ?proxy_st_changed(ProxySt)) ->
 marshal(session_change, ?interaction_requested(UserInteraction)) ->
     ?WRAP_VERSION_DATA(2, #{
         {str, "change"} => {str, "invoice_payment_session_interaction_requested"},
-        {str, "interaction"} => term_to_binary(UserInteraction)
+        {str, "interaction"} => marshal(interaction, UserInteraction)
     });
 marshal(session_status, ?session_succeeded()) ->
     ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "succeeded"}});
 marshal(session_status, ?session_failed(PayloadFailure)) ->
     ?WRAP_VERSION_DATA(2, #{
         {str, "status"} => {str, "failed"},
-        {str, "failure"} => term_to_binary(PayloadFailure)
+        {str, "failure"} => marshal(failure, PayloadFailure)
     });
 
 marshal(adj_change, ?adjustment_created(Adjustment)) ->
@@ -1276,6 +1276,56 @@ marshal(payment_tool, {bank_card, #domain_BankCard{} = BankCard}) ->
         {str, "masked_pan"} => {str, BankCard#domain_BankCard.masked_pan}
     });
 
+marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "ip_address"} => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
+        {str, "fingerprint"} => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
+    });
+
+marshal(contact_info, #domain_ContactInfo{} = ContactInfo) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "phone_number"} => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
+        {str, "email"} => marshal(str, ContactInfo#domain_ContactInfo.email)
+    });
+
+marshal(trx, #domain_TransactionInfo{} = TransactionInfo) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "id"} => {str, TransactionInfo#domain_TransactionInfo.id},
+        {str, "timestamp"} => marshal(str, TransactionInfo#domain_TransactionInfo.timestamp),
+        {str, "extra"} => marshal(map_string, TransactionInfo#domain_TransactionInfo.extra)
+    });
+
+marshal(map_string, MapString) ->
+    maps:from_list([{{str, K}, {str, V}} || {K, V} <- maps:to_list(MapString)]);
+
+marshal(interaction, {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "redirect"} => #{{str, "get_request"} => #{{str, "uri"} => {str, URI}}}});
+marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}}) ->
+    ?WRAP_VERSION_DATA(2, #{{str, "redirect"} => #{{str, "post_request"} => #{
+        {str, "uri"} => {str, URI},
+        {str, "form"} => marshal(map_string, Form)
+    }}});
+
+marshal(failure, {operation_timeout, _}) ->
+    ?WRAP_VERSION_DATA(2, {str, "operation_timeout"});
+marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "code"} => {str, ExternalFailure#domain_ExternalFailure.code},
+        {str, "description"} => marshal(str, ExternalFailure#domain_ExternalFailure.description)
+    });
+
+marshal(on_hold_expiration, cancel) ->
+    {str, "cancel"};
+marshal(on_hold_expiration, capture) ->
+    {str, "capture"};
+
+marshal(risk_score, low) ->
+    {str, "low"};
+marshal(risk_score, high) ->
+    {str, "high"};
+marshal(risk_score, fatal) ->
+    {str, "fatal"};
+
 marshal(payment_system, visa) ->
     {str, "visa"};
 marshal(payment_system, mastercard) ->
@@ -1300,30 +1350,6 @@ marshal(payment_system, jcb) ->
     {str, "jcb"};
 marshal(payment_system, nspkmir) ->
     {str, "nspkmir"};
-
-marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "ip_address"} => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
-        {str, "fingerprint"} => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
-    });
-
-marshal(contact_info, #domain_ContactInfo{} = ContactInfo) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "phone_number"} => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
-        {str, "email"} => marshal(str, ContactInfo#domain_ContactInfo.email)
-    });
-
-marshal(on_hold_expiration, cancel) ->
-    {str, "cancel"};
-marshal(on_hold_expiration, capture) ->
-    {str, "capture"};
-
-marshal(risk_score, low) ->
-    {str, "low"};
-marshal(risk_score, high) ->
-    {str, "high"};
-marshal(risk_score, fatal) ->
-    {str, "fatal"};
 
 %% Optional components
 
@@ -1378,6 +1404,9 @@ unmarshal(payment_system, {str, "jcb"}) ->
     jcb;
 unmarshal(payment_system, {str, "nspkmir"}) ->
     nspkmir;
+
+unmarshal(map_string, MapString) ->
+    maps:from_list([{?BIN(K), ?BIN(V)} || {{str, K}, {str, V}} <- maps:to_list(MapString)]);
 
 %% Optional components
 
@@ -1473,7 +1502,7 @@ unmarshal(2, status, #{
     {str, "status"} := {str, "failed"},
     {str, "failure"} := Failure
 }) ->
-    ?failed(binary_to_term(Failure));
+    ?failed(unmarshal(failure, Failure));
 unmarshal(2, status, #{
     {str, "status"} := {str, "captured"},
     {str, "reason"} := Reason
@@ -1500,7 +1529,7 @@ unmarshal(2, session_change, #{
     {str, "change"} := {str, "invoice_payment_session_transaction_bound"},
     {str, "trx"} := Trx
 }) ->
-    ?trx_bound(binary_to_term(Trx));
+    ?trx_bound(unmarshal(trx, Trx));
 unmarshal(2, session_change, #{
     {str, "change"} := {str, "invoice_payment_session_proxy_state_changed"},
     {str, "proxy_state"} := ProxySt
@@ -1510,7 +1539,7 @@ unmarshal(2, session_change, #{
     {str, "change"} := {str, "invoice_payment_session_interaction_requested"},
     {str, "interaction"} := UserInteraction
 }) ->
-    ?interaction_requested(binary_to_term(UserInteraction));
+    ?interaction_requested(unmarshal(interaction, UserInteraction));
 
 unmarshal(2, session_status, #{{str, "status"} := {str, "succeeded"}}) ->
     ?session_succeeded();
@@ -1518,7 +1547,7 @@ unmarshal(2, session_status, #{
     {str, "status"} := {str, "failed"},
     {str, "failure"} := Failure
 }) ->
-    ?session_failed(binary_to_term(Failure));
+    ?session_failed(unmarshal(failure, Failure));
 
 unmarshal(2, adj_change, #{
     {str, "change"} := {str, "invoice_payment_adjustment_created"},
@@ -1654,4 +1683,31 @@ unmarshal(2, contact_info, #{
     #domain_ContactInfo{
         phone_number = unmarshal(str, PhoneNumber),
         email = unmarshal(str, Email)
-    }.
+    };
+
+unmarshal(2, trx, #{
+    {str, "id"} := {str, ID},
+    {str, "timestamp"} := Timestamp,
+    {str, "extra"} := Extra
+}) ->
+    #domain_TransactionInfo{
+        id = ?BIN(ID),
+        timestamp = unmarshal(str, Timestamp),
+        extra = unmarshal(map_string, Extra)
+    };
+
+unmarshal(2, interaction, #{{str, "redirect"} := #{{str, "get_request"} := #{{str, "uri"} := {str, URI}}}}) ->
+    {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
+unmarshal(2, interaction, #{{str, "redirect"} := #{{str, "post_request"} := #{
+    {str, "uri"} := {str, URI},
+    {str, "form"} := Form
+}}}) ->
+    {redirect, {post_request, #'BrowserPostRequest'{uri = ?BIN(URI), form = unmarshal(map_string, Form)}}};
+
+unmarshal(2, failure, {str, "operation_timeout"}) ->
+    {operation_timeout, #domain_OperationTimeout{}};
+unmarshal(2, failure, #{
+    {str, "code"} := {str, Code},
+    {str, "description"} := Description
+}) ->
+    {external_failure, #domain_ExternalFailure{code = ?BIN(Code), description = unmarshal(str, Description)}}.

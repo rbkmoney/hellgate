@@ -285,21 +285,21 @@ update_field({context, V}, Tpl) ->
     hg_event_provider:public_event().
 
 publish_event(ID, Event) ->
-    {{invoice_template_id, ID}, unmarshal_event(Event)}.
+    {{invoice_template_id, ID}, unmarshal(Event)}.
 
 %%
 
 unwrap_event({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal_event(Payload)}.
+    {ID, Dt, unmarshal(Payload)}.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
 
 wrap_events(Events) ->
-    [marshal_event(E) || E <- Events].
+    [marshal(E) || E <- Events].
 
-marshal_event(V) ->
+marshal(V) ->
     {bin, term_to_binary(V)}.
 
-unmarshal_event({bin, B}) ->
+unmarshal({bin, B}) ->
     binary_to_term(B).

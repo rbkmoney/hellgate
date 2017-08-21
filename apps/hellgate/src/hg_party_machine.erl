@@ -213,7 +213,7 @@ publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     hg_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
-    {{party_id, PartyID}, unmarshal_event(Ev)}.
+    {{party_id, PartyID}, unmarshal(Ev)}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -553,16 +553,16 @@ assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
 %%
 
 unwrap_event({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal_event(Payload)}.
+    {ID, Dt, unmarshal(Payload)}.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
 
 wrap_events(Events) ->
-    [marshal_event(E) || E <- Events].
+    [marshal(E) || E <- Events].
 
-marshal_event(V) ->
+marshal(V) ->
     {bin, term_to_binary(V)}.
 
-unmarshal_event({bin, B}) ->
+unmarshal({bin, B}) ->
     binary_to_term(B).
