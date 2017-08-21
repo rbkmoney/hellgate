@@ -1111,13 +1111,10 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         {str, "id"} => {str, Payment#domain_InvoicePayment.id},
         {str, "created_at"} => {str, Payment#domain_InvoicePayment.created_at},
         {str, "domain_revision"} => Payment#domain_InvoicePayment.domain_revision,
-        {str, "cost"} => marshal(cash, Payment#domain_InvoicePayment.cost),
+        {str, "cost"} => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
         {str, "payer"} => marshal(payer, Payment#domain_InvoicePayment.payer),
         {str, "flow"} => marshal(flow, Payment#domain_InvoicePayment.flow)
     });
-
-marshal(cash, ?cash(Amount, ?currency(SymbolicCode))) ->
-    ?WRAP_VERSION_DATA(2, [Amount, {str, SymbolicCode}]);
 
 marshal(flow, ?invoice_payment_flow_instant()) ->
     ?WRAP_VERSION_DATA(2, #{{str, "type"} => {str, "instant"}});
@@ -1236,7 +1233,7 @@ marshal(final_cash_flow_posting, #domain_FinalCashFlowPosting{} = CashFlowPostin
             marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.source),
         {str, "destination"} =>
             marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.destination),
-        {str, "volume"} => marshal(cash, CashFlowPosting#domain_FinalCashFlowPosting.volume),
+        {str, "volume"} => hg_cash:marshal(CashFlowPosting#domain_FinalCashFlowPosting.volume),
         {str, "details"} => marshal(str, CashFlowPosting#domain_FinalCashFlowPosting.details)
     });
 
@@ -1476,14 +1473,11 @@ unmarshal(2, payment, #{
         id              = ?BIN(PaymentID),
         created_at      = ?BIN(CreatedAt),
         domain_revision = Revision,
-        cost            = unmarshal(cash, Cash),
+        cost            = hg_cash:unmarshal(Cash),
         payer           = unmarshal(payer, Payer),
         status          = ?pending(),
         flow            = unmarshal(flow, Flow)
     };
-
-unmarshal(2, cash, [Amount, {str, SymbolicCode}]) ->
-    ?cash(Amount, ?currency(?BIN(SymbolicCode)));
 
 unmarshal(2, flow, #{{str, "type"} := {str, "instant"}}) ->
     ?invoice_payment_flow_instant();
@@ -1615,7 +1609,7 @@ unmarshal(2, final_cash_flow_posting, #{
     #domain_FinalCashFlowPosting{
         source = unmarshal(final_cash_flow_account, Source),
         destination = unmarshal(final_cash_flow_account, Destination),
-        volume = unmarshal(cash, Volume),
+        volume = hg_cash:unmarshal(Volume),
         details = unmarshal(str, Details)
     };
 

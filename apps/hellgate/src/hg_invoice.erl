@@ -844,15 +844,12 @@ marshal(invoice, #domain_Invoice{} = Invoice) ->
         {str, "shop_id"} => {str, Invoice#domain_Invoice.shop_id},
         {str, "owner_id"} => {str, Invoice#domain_Invoice.owner_id},
         {str, "created_at"} => {str, Invoice#domain_Invoice.created_at},
-        {str, "cost"} => marshal(cash, Invoice#domain_Invoice.cost),
+        {str, "cost"} => hg_cash:marshal(Invoice#domain_Invoice.cost),
         {str, "due"} => {str, Invoice#domain_Invoice.due},
         {str, "details"} => marshal(details, Invoice#domain_Invoice.details),
         {str, "context"} => marshal(context, Invoice#domain_Invoice.context),
         {str, "template_id"} => marshal(str, Invoice#domain_Invoice.template_id)
     });
-
-marshal(cash, ?cash(Amount, ?currency(SymbolicCode))) ->
-    ?WRAP_VERSION_DATA(2, [Amount, {str, SymbolicCode}]);
 
 marshal(details, #domain_InvoiceDetails{} = Details) ->
     ?WRAP_VERSION_DATA(2, #{
@@ -951,7 +948,7 @@ unmarshal(2, invoice, #{
         shop_id         = ?BIN(ShopID),
         owner_id        = ?BIN(PartyID),
         created_at      = ?BIN(CreatedAt),
-        cost            = unmarshal(cash, Cash),
+        cost            = hg_cash:unmarshal(Cash),
         due             = ?BIN(Due),
         details         = unmarshal(details, Details),
         status          = ?invoice_unpaid(),
@@ -986,7 +983,4 @@ unmarshal(2, details, #{
     #domain_InvoiceDetails{
         product = ?BIN(Product),
         description = unmarshal(str, Description)
-    };
-
-unmarshal(2, cash, [Amount, {str, SymbolicCode}]) ->
-    ?cash(Amount, ?currency(?BIN(SymbolicCode))).
+    }.
