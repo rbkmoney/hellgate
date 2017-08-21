@@ -1112,7 +1112,7 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         {str, "created_at"} => {str, Payment#domain_InvoicePayment.created_at},
         {str, "domain_revision"} => Payment#domain_InvoicePayment.domain_revision,
         {str, "cost"} => marshal(cash, Payment#domain_InvoicePayment.cost),
-        {str, "payer"} => term_to_binary(Payment#domain_InvoicePayment.payer),
+        {str, "payer"} => marshal(payer, Payment#domain_InvoicePayment.payer),
         {str, "flow"} => marshal(flow, Payment#domain_InvoicePayment.flow)
     });
 
@@ -1260,6 +1260,59 @@ marshal(account_type, {external, income}) ->
 marshal(account_type, {external, outcome}) ->
     ?WRAP_VERSION_DATA(2, #{{str, "external"} => {str, "outcome"}});
 
+marshal(payer, #domain_Payer{} = Payer) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "payment_tool"} => marshal(payment_tool, Payer#domain_Payer.payment_tool),
+        {str, "session_id"} => {str, Payer#domain_Payer.session_id},
+        {str, "client_info"} => marshal(client_info, Payer#domain_Payer.client_info),
+        {str, "contact_info"} => marshal(contact_info, Payer#domain_Payer.contact_info)
+    });
+
+marshal(payment_tool, {bank_card, #domain_BankCard{} = BankCard}) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "token"} => {str, BankCard#domain_BankCard.token},
+        {str, "payment_system"} => marshal(payment_system, BankCard#domain_BankCard.payment_system),
+        {str, "bin"} => {str, BankCard#domain_BankCard.bin},
+        {str, "masked_pan"} => {str, BankCard#domain_BankCard.masked_pan}
+    });
+
+marshal(payment_system, visa) ->
+    {str, "visa"};
+marshal(payment_system, mastercard) ->
+    {str, "mastercard"};
+marshal(payment_system, visaelectron) ->
+    {str, "visaelectron"};
+marshal(payment_system, maestro) ->
+    {str, "maestro"};
+marshal(payment_system, forbrugsforeningen) ->
+    {str, "forbrugsforeningen"};
+marshal(payment_system, dankort) ->
+    {str, "dankort"};
+marshal(payment_system, amex) ->
+    {str, "amex"};
+marshal(payment_system, dinersclub) ->
+    {str, "dinersclub"};
+marshal(payment_system, discover) ->
+    {str, "discover"};
+marshal(payment_system, unionpay) ->
+    {str, "unionpay"};
+marshal(payment_system, jcb) ->
+    {str, "jcb"};
+marshal(payment_system, nspkmir) ->
+    {str, "nspkmir"};
+
+marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "ip_address"} => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
+        {str, "fingerprint"} => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
+    });
+
+marshal(contact_info, #domain_ContactInfo{} = ContactInfo) ->
+    ?WRAP_VERSION_DATA(2, #{
+        {str, "phone_number"} => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
+        {str, "email"} => marshal(str, ContactInfo#domain_ContactInfo.email)
+    });
+
 marshal(on_hold_expiration, cancel) ->
     {str, "cancel"};
 marshal(on_hold_expiration, capture) ->
@@ -1300,6 +1353,31 @@ unmarshal(risk_score, {str, "high"}) ->
     high;
 unmarshal(risk_score, {str, "fatal"}) ->
     fatal;
+
+unmarshal(payment_system, {str, "visa"}) ->
+    visa;
+unmarshal(payment_system, {str, "mastercard"}) ->
+    mastercard;
+unmarshal(payment_system, {str, "visaelectron"}) ->
+    visaelectron;
+unmarshal(payment_system, {str, "maestro"}) ->
+    maestro;
+unmarshal(payment_system, {str, "forbrugsforeningen"}) ->
+    forbrugsforeningen;
+unmarshal(payment_system, {str, "dankort"}) ->
+    dankort;
+unmarshal(payment_system, {str, "amex"}) ->
+    amex;
+unmarshal(payment_system, {str, "dinersclub"}) ->
+    dinersclub;
+unmarshal(payment_system, {str, "discover"}) ->
+    discover;
+unmarshal(payment_system, {str, "unionpay"}) ->
+    unionpay;
+unmarshal(payment_system, {str, "jcb"}) ->
+    jcb;
+unmarshal(payment_system, {str, "nspkmir"}) ->
+    nspkmir;
 
 %% Optional components
 
@@ -1370,7 +1448,7 @@ unmarshal(2, payment, #{
         created_at      = ?BIN(CreatedAt),
         domain_revision = Revision,
         cost            = unmarshal(cash, Cash),
-        payer           = binary_to_term(Payer),
+        payer           = unmarshal(payer, Payer),
         status          = ?pending(),
         flow            = unmarshal(flow, Flow)
     };
@@ -1532,4 +1610,48 @@ unmarshal(2, account_type, #{{str, "system"} := {str, "settlement"}}) ->
 unmarshal(2, account_type, #{{str, "external"} := {str, "income"}}) ->
     {external, income};
 unmarshal(2, account_type, #{{str, "external"} := {str, "outcome"}}) ->
-    {external, outcome}.
+    {external, outcome};
+
+unmarshal(2, payer, #{
+    {str, "payment_tool"} := PaymentTool,
+    {str, "session_id"} := {str, SessionId},
+    {str, "client_info"} := ClientInfo,
+    {str, "contact_info"} := ContractInfo
+}) ->
+    #domain_Payer{
+        payment_tool = unmarshal(payment_tool, PaymentTool),
+        session_id = ?BIN(SessionId),
+        client_info = unmarshal(client_info, ClientInfo),
+        contact_info = unmarshal(contact_info, ContractInfo)
+    };
+
+unmarshal(2, payment_tool, #{
+    {str, "token"} := {str, Token},
+    {str, "payment_system"} := PaymentSystem,
+    {str, "bin"} := {str, Bin},
+    {str, "masked_pan"} := {str, MaskedPan}
+}) ->
+    {bank_card, #domain_BankCard{
+        token = ?BIN(Token),
+        payment_system = unmarshal(payment_system, PaymentSystem),
+        bin = ?BIN(Bin),
+        masked_pan = ?BIN(MaskedPan)
+    }};
+
+unmarshal(2, client_info, #{
+    {str, "ip_address"} := IpAddress,
+    {str, "fingerprint"} := Fingerprint
+}) ->
+    #domain_ClientInfo{
+        ip_address = unmarshal(str, IpAddress),
+        fingerprint = unmarshal(str, Fingerprint)
+    };
+
+unmarshal(2, contact_info, #{
+    {str, "phone_number"} := PhoneNumber,
+    {str, "email"} := Email
+}) ->
+    #domain_ContactInfo{
+        phone_number = unmarshal(str, PhoneNumber),
+        email = unmarshal(str, Email)
+    }.
