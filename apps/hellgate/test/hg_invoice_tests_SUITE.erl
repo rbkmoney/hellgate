@@ -60,31 +60,31 @@ cfg(Key, C) ->
 
 all() ->
     [
-        % invalid_invoice_shop,
-        % invalid_invoice_amount,
-        % invalid_invoice_currency,
-        % invalid_party_status,
-        % invalid_shop_status,
-        % invalid_invoice_template_cost,
-        % invalid_invoice_template_id,
-        % invoice_w_template,
-        % invoice_cancellation,
-        % overdue_invoice_cancellation,
-        % invoice_cancellation_after_payment_timeout,
-        % invalid_payment_amount,
-        % payment_success,
-        % payment_w_terminal_success,
-        % payment_success_on_second_try,
-        % payment_fail_after_silent_callback,
-        % invoice_success_on_third_payment,
+        invalid_invoice_shop,
+        invalid_invoice_amount,
+        invalid_invoice_currency,
+        invalid_party_status,
+        invalid_shop_status,
+        invalid_invoice_template_cost,
+        invalid_invoice_template_id,
+        invoice_w_template,
+        invoice_cancellation,
+        overdue_invoice_cancellation,
+        invoice_cancellation_after_payment_timeout,
+        invalid_payment_amount,
+        payment_success,
+        payment_w_terminal_success,
+        payment_success_on_second_try,
+        payment_fail_after_silent_callback,
+        invoice_success_on_third_payment,
 
-        % payment_risk_score_check,
+        payment_risk_score_check,
 
-        % invalid_payment_adjustment,
-        % payment_adjustment_success,
+        invalid_payment_adjustment,
+        payment_adjustment_success,
 
-        % invalid_payment_w_deprived_party,
-        % external_account_posting,
+        invalid_payment_w_deprived_party,
+        external_account_posting,
 
         payment_refund_success,
 
@@ -98,7 +98,7 @@ all() ->
 init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
-    % _ = dbg:tpl({'hg_client_party', '_', '_'}, x),
+    % _ = dbg:tpl({'hg_invoice_payment', 'merge_change', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, dmt_client, hellgate, {cowboy, CowboySpec}]),
     ok = hg_domain:insert(construct_domain_fixture()),
@@ -147,6 +147,8 @@ end_per_suite(C) ->
     {exception, #payproc_InvalidPaymentAdjustmentStatus{status = Status}}).
 -define(invalid_adjustment_pending(ID),
     {exception, #payproc_InvoicePaymentAdjustmentPending{id = ID}}).
+
+-define(ordset(Es), ordsets:from_list(Es)).
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -401,8 +403,7 @@ overdue_invoice_cancellation(C) ->
 
 invoice_cancellation_after_payment_timeout(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(3), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -437,8 +438,7 @@ invalid_payment_amount(C) ->
 
 payment_success(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -452,8 +452,7 @@ payment_success(C) ->
 
 payment_w_terminal_success(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberruble">>, make_due_date(10), 42000, C),
     PaymentParams = make_terminal_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -467,8 +466,7 @@ payment_w_terminal_success(C) ->
 
 payment_success_on_second_try(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -492,8 +490,7 @@ payment_success_on_second_try(C) ->
 
 payment_fail_after_silent_callback(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentID = process_payment(InvoiceID, make_tds_payment_params(), Client),
     [
@@ -516,8 +513,7 @@ payment_fail_after_silent_callback(C) ->
 
 invoice_success_on_third_payment(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID1 = process_payment(InvoiceID, PaymentParams, Client),
@@ -543,8 +539,7 @@ invoice_success_on_third_payment(C) ->
 
 payment_risk_score_check(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     % Invoice w/ cost < 500000
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
@@ -583,8 +578,7 @@ payment_risk_score_check(C) ->
 
 invalid_payment_adjustment(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a smoker's payment
     PaymentParams = make_tds_payment_params(),
@@ -601,8 +595,7 @@ invalid_payment_adjustment(C) ->
 
 payment_adjustment_success(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a healthy man's payment
     PaymentParams = make_payment_params(),
@@ -625,7 +618,13 @@ payment_adjustment_success(C) ->
     ok = hg_domain:upsert(
         {terminal, #domain_TerminalObject{
             ref = ?trm(100),
-            data = Terminal#domain_Terminal{cash_flow = get_adjustment_terminal_cashflow(actual)}
+            data = Terminal#domain_Terminal{
+                terms = #domain_PaymentsProvisionTerms{
+                    cash_flow = {value,
+                        get_adjustment_terminal_cashflow(actual)
+                    }
+                }
+            }
         }}
     ),
     %% make an adjustment
@@ -682,7 +681,21 @@ get_adjustment_fixture(Revision) ->
                 description = <<>>,
                 abs_account = <<>>,
                 terminal = {value, [?trm(100)]},
-                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}}
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(1)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa)
+                    ])},
+                    cash_flow = {value,
+                        get_adjustment_terminal_cashflow(initial)
+                    }
+                }
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -690,9 +703,6 @@ get_adjustment_fixture(Revision) ->
             data = #domain_Terminal{
                 name = <<"Adjustable Terminal">>,
                 description = <<>>,
-                payment_method = ?pmt(bank_card, visa),
-                category = ?cat(1),
-                cash_flow = get_adjustment_terminal_cashflow(initial),
                 account = AccountRUB,
                 risk_coverage = low
             }
@@ -741,8 +751,7 @@ invalid_payment_w_deprived_party(C) ->
     PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
     InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
     ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
@@ -758,9 +767,9 @@ external_account_posting(C) ->
     UserInfo = make_userinfo(PartyID),
     PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
     InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
-    ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    _ = hg_ct_helper:create_party_and_shop(PartyClient),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
@@ -800,8 +809,7 @@ external_account_posting(C) ->
 
 payment_refund_success(C) ->
     Client = cfg(client, C),
-    ok = start_proxy(hg_dummy_provider, 1, C),
-    ok = start_proxy(hg_dummy_inspector, 2, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -811,6 +819,8 @@ payment_refund_success(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     Refund = #domain_InvoicePaymentRefund{id = RefundID} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))
@@ -821,6 +831,8 @@ payment_refund_success(C) ->
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(ID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
+    #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
 
@@ -880,13 +892,19 @@ start_service_handler(Name, Module, C, HandlerOpts) ->
     {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
 
-start_proxy(Module, ProxyID, Context) ->
-    start_proxy(Module, ProxyID, #{}, Context).
-start_proxy(Module, ProxyID, ProxyOpts, Context) ->
-    setup_proxy(start_service_handler(Module, Context, #{}), ProxyID, ProxyOpts).
+start_proxies(Proxies) ->
+    setup_proxies(lists:map(
+        fun
+            Mapper({Module, ProxyID, Context}) ->
+                Mapper({Module, ProxyID, #{}, Context});
+            Mapper({Module, ProxyID, ProxyOpts, Context}) ->
+                construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
+        end,
+        Proxies
+    )).
 
-setup_proxy(ProxyUrl, ProxyID, ProxyOpts) ->
-    ok = hg_domain:upsert(construct_proxy(ProxyID, ProxyUrl, ProxyOpts)).
+setup_proxies(Proxies) ->
+    ok = hg_domain:upsert(Proxies).
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
@@ -1073,14 +1091,13 @@ get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
 construct_domain_fixture() ->
-    AccountUSD = hg_ct_fixture:construct_terminal_account(?cur(<<"USD">>)),
     AccountRUB = hg_ct_fixture:construct_terminal_account(?cur(<<"RUB">>)),
     TestTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            currencies = {value, ordsets:from_list([
+            currencies = {value, ?ordset([
                 ?cur(<<"RUB">>)
             ])},
-            categories = {value, ordsets:from_list([
+            categories = {value, ?ordset([
                 ?cat(1)
             ])},
             payment_methods = {decisions, [
@@ -1090,7 +1107,7 @@ construct_domain_fixture() ->
                 },
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
-                    then_ = {value, ordsets:from_list([
+                    then_ = {value, ?ordset([
                         ?pmt(bank_card, visa),
                         ?pmt(bank_card, mastercard),
                         ?pmt(payment_terminal, euroset)
@@ -1117,20 +1134,33 @@ construct_domain_fixture() ->
                         )
                     ]}
                 }
-            ]}
+            ]},
+            refunds = #domain_PaymentRefundsServiceTerms{
+                payment_methods = {value, ?ordset([
+                    ?pmt(bank_card, visa),
+                    ?pmt(bank_card, mastercard)
+                ])},
+                fees = {value, [
+                    ?cfpost(
+                        {merchant, settlement},
+                        {system, settlement},
+                        ?fixed(100, ?cur(<<"RUB">>))
+                    )
+                ]}
+            }
         }
     },
     DefaultTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            currencies = {value, ordsets:from_list([
+            currencies = {value, ?ordset([
                 ?cur(<<"RUB">>),
                 ?cur(<<"USD">>)
             ])},
-            categories = {value, ordsets:from_list([
+            categories = {value, ?ordset([
                 ?cat(2),
                 ?cat(3)
             ])},
-            payment_methods = {value, ordsets:from_list([
+            payment_methods = {value, ?ordset([
                 ?pmt(bank_card, visa),
                 ?pmt(bank_card, mastercard)
             ])},
@@ -1171,7 +1201,15 @@ construct_domain_fixture() ->
                         )
                     ]}
                 }
-            ]}
+            ]},
+            refunds = #domain_PaymentRefundsServiceTerms{
+                payment_methods = {value, ?ordset([
+                    ?pmt(bank_card, visa),
+                    ?pmt(bank_card, mastercard)
+                ])},
+                fees = {value, [
+                ]}
+            }
         }
     },
     [
@@ -1205,7 +1243,7 @@ construct_domain_fixture() ->
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
                 party_prototype = #domain_PartyPrototypeRef{id = 42},
-                providers = {value, ordsets:from_list([
+                providers = {value, ?ordset([
                     ?prv(1),
                     ?prv(2),
                     ?prv(3)
@@ -1290,7 +1328,6 @@ construct_domain_fixture() ->
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
-                parent_terms = undefined,
                 term_sets = [#domain_TimedTermSet{
                     action_time = #'TimestampInterval'{},
                     terms = TestTermSet
@@ -1300,7 +1337,6 @@ construct_domain_fixture() ->
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(2),
             data = #domain_TermSetHierarchy{
-                parent_terms = undefined,
                 term_sets = [#domain_TimedTermSet{
                     action_time = #'TimestampInterval'{},
                     terms = DefaultTermSet
@@ -1312,14 +1348,70 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
-                terminal = {value, [?trm(1), ?trm(2), ?trm(3), ?trm(4)]},
+                terminal = {value, ?ordset([
+                    ?trm(1),
+                    ?trm(2)
+                ])},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
                         <<"override">> => <<"brovider">>
                     }
                 },
-                abs_account = <<"1234567890">>
+                abs_account = <<"1234567890">>,
+                terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(1)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_flow = {decisions, [
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {payment_tool, {bank_card, {payment_system_is, visa}}}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, payment_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(18, 1000, payment_amount)
+                                )
+                            ]}
+                        },
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {payment_tool, {bank_card, {payment_system_is, mastercard}}}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, payment_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(19, 1000, payment_amount)
+                                )
+                            ]}
+                        }
+                    ]},
+                    refunds = #domain_PaymentRefundsProvisionTerms{
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {merchant, settlement},
+                                {provider, settlement},
+                                ?share(1, 1, payment_amount)
+                            )
+                        ]}
+                    }
+                }
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -1327,21 +1419,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                payment_method = ?pmt(bank_card, visa),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(18, 1000, payment_amount)
-                    )
-                ],
-                account = AccountUSD,
+                account = AccountRUB,
                 risk_coverage = high
             }
         }},
@@ -1350,66 +1428,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 2">>,
                 description = <<"Brominal 2">>,
-                payment_method = ?pmt(bank_card, visa),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(18, 1000, payment_amount)
-                    )
-                ],
-                account = AccountUSD,
-                risk_coverage = low
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(3),
-            data = #domain_Terminal{
-                name = <<"Brominal 3">>,
-                description = <<"Brominal 3">>,
-                payment_method = ?pmt(bank_card, mastercard),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(19, 1000, payment_amount)
-                    )
-                ],
-                account = AccountRUB,
-                risk_coverage = high
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(4),
-            data = #domain_Terminal{
-                name = <<"Brominal 4">>,
-                description = <<"Brominal 4">>,
-                payment_method = ?pmt(bank_card, mastercard),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(19, 1000, payment_amount)
-                    )
-                ],
                 account = AccountRUB,
                 risk_coverage = low
             }
@@ -1419,37 +1437,38 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Drovider">>,
                 description = <<"I'm out of ideas of what to write here">>,
-                terminal = {value, [?trm(5), ?trm(6), ?trm(7), ?trm(8)]},
+                terminal = {value, [?trm(6), ?trm(7)]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
                         <<"override">> => <<"drovider">>
                     }
                 },
-                abs_account = <<"1234567890">>
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(5),
-            data = #domain_Terminal{
-                name = <<"Drominal 1">>,
-                description = <<"Drominal 1">>,
-                payment_method = ?pmt(bank_card, visa),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(16, 1000, payment_amount)
-                    )
-                ],
-                account = AccountRUB,
-                risk_coverage = high
+                abs_account = <<"1234567890">>,
+                terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(2)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, payment_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(16, 1000, payment_amount)
+                        )
+                    ]}
+                }
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -1457,28 +1476,31 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                payment_method = ?pmt(bank_card, visa),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(16, 1000, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {external, outcome},
-                        ?fixed(20, ?cur(<<"RUB">>)),
-                        <<"Assist fee">>
-                    )
-                ],
                 account = AccountRUB,
-                risk_coverage = low
+                risk_coverage = low,
+                terms = #domain_PaymentsProvisionTerms{
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa)
+                    ])},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, payment_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(16, 1000, payment_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {external, outcome},
+                            ?fixed(20, ?cur(<<"RUB">>)),
+                            <<"Assist fee">>
+                        )
+                    ]}
+                }
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -1486,45 +1508,8 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
-                payment_method = ?pmt(bank_card, visa),
-                category = ?cat(3),
-                risk_coverage = high,
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(16, 1000, payment_amount)
-                    )
-                ],
-                account = AccountRUB
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(8),
-            data = #domain_Terminal{
-                name = <<"Terminal 8">>,
-                description = <<"Terminal 8">>,
-                payment_method = ?pmt(bank_card, visa),
-                category = ?cat(2),
-                risk_coverage = low,
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(16, 1000, payment_amount)
-                    )
-                ],
-                account = AccountRUB
+                account = AccountRUB,
+                risk_coverage = high
             }
         }},
         {provider, #domain_ProviderObject{
@@ -1539,7 +1524,30 @@ construct_domain_fixture() ->
                         <<"override">> => <<"crovider">>
                     }
                 },
-                abs_account = <<"0987654321">>
+                abs_account = <<"0987654321">>,
+                terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(1)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(payment_terminal, euroset)
+                    ])},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, payment_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(21, 1000, payment_amount)
+                        )
+                    ]}
+                }
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -1547,20 +1555,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
                 description = <<"Euroset">>,
-                payment_method = ?pmt(payment_terminal, euroset),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(18, 1000, payment_amount)
-                    )
-                ],
                 account = AccountRUB,
                 risk_coverage = low
             }

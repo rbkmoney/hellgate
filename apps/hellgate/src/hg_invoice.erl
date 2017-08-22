@@ -592,6 +592,7 @@ merge_change(?payment_ev(PaymentID, Event), St) ->
     St1 = set_payment_session(PaymentID, PaymentSession1, St),
     case hg_invoice_payment:get_activity(PaymentSession1) of
         A when A /= undefined ->
+            % TODO Shouldn't we have here some kind of stack instead?
             St1#st{activity = {payment, PaymentID}};
         undefined ->
             St1#st{activity = invoice}

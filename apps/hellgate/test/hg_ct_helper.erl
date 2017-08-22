@@ -7,6 +7,7 @@
 -export([cfg/2]).
 
 -export([create_party_and_shop/1]).
+-export([create_battle_ready_shop/3]).
 -export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
@@ -82,7 +83,7 @@ start_app(lager = AppName) ->
         {error_logger_hwm, 600},
         {suppress_application_start_stop, true},
         {handlers, [
-            {lager_common_test_backend, info}
+            {lager_common_test_backend, debug}
         ]}
     ]), #{}};
 
@@ -179,8 +180,10 @@ cfg(Key, Config) ->
 -type account_id()                :: dmsl_domain_thrift:'AccountID'().
 -type account()                   :: map().
 -type contract_id()               :: dmsl_domain_thrift:'ContractID'().
+-type contract_tpl()              :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type shop_id()                   :: dmsl_domain_thrift:'ShopID'().
 -type cost()                      :: integer() | {integer(), binary()}.
+-type category()                  :: dmsl_domain_thrift:'CategoryRef'().
 -type cash()                      :: dmsl_domain_thrift:'Cash'().
 -type invoice_tpl_id()            :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type invoice_params()            :: dmsl_payment_processing_thrift:'InvoiceParams'().
@@ -200,7 +203,7 @@ cfg(Key, Config) ->
 create_party_and_shop(Client) ->
     _ = hg_client_party:create(make_party_params(), Client),
     #domain_Party{shops = Shops} = hg_client_party:get(Client),
-    [{ShopID, _Shop}] = maps:to_list(Shops),
+    [{ShopID, _Shop} | _] = maps:to_list(Shops),
     ShopID.
 
 make_party_params() ->
@@ -209,6 +212,45 @@ make_party_params() ->
             email = <<?MODULE_STRING>>
         }
     }.
+
+-spec create_battle_ready_shop(category(), contract_tpl(), Client :: pid()) ->
+    shop_id().
+
+create_battle_ready_shop(Category, TemplateRef, Client) ->
+    ContractID = hg_utils:unique_id(),
+    ContractParams = make_battle_ready_contract_params(TemplateRef),
+    PayoutToolID = hg_utils:unique_id(),
+    PayoutToolParams = make_battle_ready_payout_tool_params(),
+    ShopID = hg_utils:unique_id(),
+    ShopParams = #payproc_ShopParams{
+        category = Category,
+        location = {url, <<>>},
+        details = make_shop_details(<<"Battle Ready Shop">>),
+        contract_id = ContractID,
+        payout_tool_id = PayoutToolID
+    },
+    Changeset = [
+        {contract_modification, #payproc_ContractModificationUnit{
+            id           = ContractID,
+            modification = {creation, ContractParams}
+        }},
+        {contract_modification, #payproc_ContractModificationUnit{
+            id           = ContractID,
+            modification = {payout_tool_modification, #payproc_PayoutToolModificationUnit{
+                payout_tool_id = PayoutToolID,
+                modification   = {creation, PayoutToolParams}
+            }}
+        }},
+        {shop_modification, #payproc_ShopModificationUnit{
+            id           = ShopID,
+            modification = {creation, ShopParams}
+        }}
+    ],
+    #payproc_Claim{id = ClaimID, revision = ClaimRevision} =
+        hg_client_party:create_claim(Changeset, Client),
+    ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client),
+    _Shop = hg_client_party:get_shop(ShopID, Client),
+    ShopID.
 
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().

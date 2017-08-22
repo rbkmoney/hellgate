@@ -533,7 +533,7 @@ is_adjustment_active(
     #domain_ContractAdjustment{created_at = CreatedAt, valid_since = ValidSince, valid_until = ValidUntil},
     Timestamp
 ) ->
-    hg_datetime:between(Timestamp, update_if_defined(CreatedAt, ValidSince), ValidUntil).
+    hg_datetime:between(Timestamp, hg_utils:select_defined(ValidSince, CreatedAt), ValidUntil).
 
 
 get_term_set(TermsRef, Timestamp) ->
@@ -583,7 +583,7 @@ merge_payments_terms(
         payment_methods = Pm0,
         cash_limit = Al0,
         fees = Fee0,
-        guarantee_fund = Gf0
+        refunds = Rf0
     },
     #domain_PaymentsServiceTerms{
         currencies = Curr1,
@@ -591,26 +591,36 @@ merge_payments_terms(
         payment_methods = Pm1,
         cash_limit = Al1,
         fees = Fee1,
-        guarantee_fund = Gf1
+        refunds = Rf1
     }
 ) ->
     #domain_PaymentsServiceTerms{
-        currencies = update_if_defined(Curr0, Curr1),
-        categories = update_if_defined(Cat0, Cat1),
-        payment_methods = update_if_defined(Pm0, Pm1),
-        cash_limit = update_if_defined(Al0, Al1),
-        fees = update_if_defined(Fee0, Fee1),
-        guarantee_fund = update_if_defined(Gf0, Gf1)
+        currencies      = hg_utils:select_defined(Curr1, Curr0),
+        categories      = hg_utils:select_defined(Cat1, Cat0),
+        payment_methods = hg_utils:select_defined(Pm1, Pm0),
+        cash_limit      = hg_utils:select_defined(Al1, Al0),
+        fees            = hg_utils:select_defined(Fee1, Fee0),
+        refunds         = merge_refunds_terms(Rf1, Rf0)
     };
-merge_payments_terms(undefined, Any) ->
-    Any;
-merge_payments_terms(Any, undefined) ->
-    Any.
+merge_payments_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
 
-update_if_defined(Value, undefined) ->
-    Value;
-update_if_defined(_, Value) ->
-    Value.
+merge_refunds_terms(
+    #domain_PaymentRefundsServiceTerms{
+        payment_methods = Pm0,
+        fees = Fee0
+    },
+    #domain_PaymentRefundsServiceTerms{
+        payment_methods = Pm1,
+        fees = Fee1
+    }
+) ->
+    #domain_PaymentRefundsServiceTerms{
+        payment_methods = hg_utils:select_defined(Pm1, Pm0),
+        fees            = hg_utils:select_defined(Fee1, Fee0)
+    };
+merge_refunds_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
     case find_shop_account(AccountID, maps:to_list(Shops)) of

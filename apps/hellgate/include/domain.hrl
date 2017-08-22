@@ -6,6 +6,12 @@
 -define(currency(SymCode),
     #domain_CurrencyRef{symbolic_code = SymCode}).
 
+-define(route(ProviderRef, TerminalRef),
+    #domain_InvoicePaymentRoute{
+        provider = ProviderRef,
+        terminal = TerminalRef
+    }).
+
 -define(external_failure(Code),
     ?external_failure(Code, undefined)).
 -define(external_failure(Code, Description),
