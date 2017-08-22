@@ -15,7 +15,6 @@
 
 -module(hg_invoice).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("dmsl/include/dmsl_msgpack_thrift.hrl").
 
 -define(NS, <<"invoice">>).
 
@@ -209,10 +208,12 @@ process_callback(Tag, Callback) ->
 -include("invoice_events.hrl").
 
 get_history(InvoiceID) ->
-    map_history_error(hg_machine:get_history(?NS, InvoiceID)).
+    History = hg_machine:get_history(?NS, InvoiceID),
+    map_history_error(unmarshal_history_result(History)).
 
 get_history(InvoiceID, AfterID, Limit) ->
-    map_history_error(hg_machine:get_history(?NS, InvoiceID, AfterID, Limit)).
+    History = hg_machine:get_history(?NS, InvoiceID, AfterID, Limit),
+    map_history_error(unmarshal_history_result(History)).
 
 get_state(InvoiceID) ->
     collapse_history(get_history(InvoiceID)).
@@ -250,7 +251,7 @@ map_error({error, Reason}) ->
     error(Reason).
 
 map_history_error({ok, Result}) ->
-    unwrap_events(Result);
+    Result;
 map_history_error({error, notfound}) ->
     throw(#payproc_InvoiceNotFound{});
 map_history_error({error, Reason}) ->
@@ -260,6 +261,11 @@ map_start_error({ok, _}) ->
     ok;
 map_start_error({error, Reason}) ->
     error(Reason).
+
+unmarshal_history_result({ok, Result}) ->
+    {ok, unmarshal(Result)};
+unmarshal_history_result(Error) ->
+    Error.
 
 %%
 
@@ -276,18 +282,18 @@ map_start_error({error, Reason}) ->
 -type ev() ::
     [dmsl_payment_processing_thrift:'InvoiceChange'()].
 
--type msgpack_change() :: dmsl_msgpack_thrift:'Value'().
+-type msgpack_ev() :: dmsl_msgpack_thrift:'Value'().
 
 -define(invalid_invoice_status(Status),
     #payproc_InvalidInvoiceStatus{status = Status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
--spec publish_event(invoice_id(), msgpack_change()) ->
+-spec publish_event(invoice_id(), msgpack_ev()) ->
     hg_event_provider:public_event().
 
 publish_event(InvoiceID, Changes) ->
-    {{invoice_id, InvoiceID}, ?invoice_ev(unmarshal(Changes))}.
+    {{invoice_id, InvoiceID}, ?invoice_ev(unmarshal({list, changes}, Changes))}.
 
 %%
 
@@ -298,7 +304,7 @@ namespace() ->
     ?NS.
 
 -spec init(invoice_id(), [invoice_tpl_id() | invoice_params()]) ->
-    hg_machine:result(msgpack_change()).
+    hg_machine:result().
 
 init(ID, [InvoiceTplID, InvoiceParams]) ->
     Invoice = create_invoice(ID, InvoiceTplID, InvoiceParams),
@@ -312,10 +318,10 @@ init(ID, [InvoiceTplID, InvoiceParams]) ->
 %%
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
-    hg_machine:result(msgpack_change()).
+    hg_machine:result().
 
 process_signal(Signal, History) ->
-    handle_result(handle_signal(Signal, collapse_history(unwrap_events(History)))).
+    handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
 handle_signal(timeout, St = #st{pending = {payment, PaymentID}}) ->
     % there's a payment pending
@@ -353,7 +359,7 @@ handle_expiration(St) ->
     {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
-    St = collapse_history(unwrap_events(History)),
+    St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
             {{exception, Exception}, {[], hg_machine_action:new()}}
@@ -798,189 +804,170 @@ get_message(invoice_created) ->
 get_message(invoice_status_changed) ->
     "Invoice status is changed".
 
-%%
-
-unwrap_events(Events) ->
-    [unwrap_event(Event) || Event <- Events].
-
-unwrap_event({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal(Payload)}.
-
 %% Marshalling
 
--include("msgpack_marshalling.hrl").
-
 marshal(Changes) when is_list(Changes) ->
-    marshal(list, Changes).
-
-marshal(list, Changes) ->
-    hg_msgpack_marshalling:marshal(
-        [marshal(change, Change) || Change <- Changes]);
+    [marshal(change, Change) || Change <- Changes].
 
 %% Changes
 
 marshal(change, ?invoice_created(Invoice)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_created"},
-        {str, "invoice"} => marshal(invoice, Invoice)
-    });
+    [2, #{
+        <<"change">>    => <<"created">>,
+        <<"invoice">>   => marshal(invoice, Invoice)
+    }];
 marshal(change, ?invoice_status_changed(Status)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_status_changed"},
-        {str, "status"} => marshal(status, Status)
-    });
+    [2, #{
+        <<"change">>    => <<"status_changed">>,
+        <<"status">>    => marshal(status, Status)
+    }];
 marshal(change, ?payment_ev(PaymentID, Payload)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_change"},
-        {str, "id"} => {str, PaymentID},
-        {str, "payload"} => hg_invoice_payment:marshal(Payload)
-    });
+    [2, #{
+        <<"change">>    => <<"payment_change">>,
+        <<"id">>        => marshal(str, PaymentID),
+        <<"payload">>   => hg_invoice_payment:marshal(Payload)
+    }];
 
 %% Change components
 
 marshal(invoice, #domain_Invoice{} = Invoice) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "id"} => {str, Invoice#domain_Invoice.id},
-        {str, "shop_id"} => {str, Invoice#domain_Invoice.shop_id},
-        {str, "owner_id"} => {str, Invoice#domain_Invoice.owner_id},
-        {str, "created_at"} => {str, Invoice#domain_Invoice.created_at},
-        {str, "cost"} => hg_cash:marshal(Invoice#domain_Invoice.cost),
-        {str, "due"} => {str, Invoice#domain_Invoice.due},
-        {str, "details"} => marshal(details, Invoice#domain_Invoice.details),
-        {str, "context"} => marshal(context, Invoice#domain_Invoice.context),
-        {str, "template_id"} => marshal(str, Invoice#domain_Invoice.template_id)
-    });
+    [1, #{
+        <<"id">>            => marshal(str, Invoice#domain_Invoice.id),
+        <<"shop_id">>       => marshal(str, Invoice#domain_Invoice.shop_id),
+        <<"owner_id">>      => marshal(str, Invoice#domain_Invoice.owner_id),
+        <<"created_at">>    => marshal(str, Invoice#domain_Invoice.created_at),
+        <<"cost">>          => hg_cash:marshal(Invoice#domain_Invoice.cost),
+        <<"due">>           => marshal(str, Invoice#domain_Invoice.due),
+        <<"details">>       => marshal(details, Invoice#domain_Invoice.details),
+        <<"context">>       => marshal(context, Invoice#domain_Invoice.context),
+        <<"template_id">>   => marshal(str, Invoice#domain_Invoice.template_id)
+    }];
 
 marshal(details, #domain_InvoiceDetails{} = Details) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "product"} => {str, Details#domain_InvoiceDetails.product},
-        {str, "description"} => marshal(str, Details#domain_InvoiceDetails.description)
-    });
+    [
+        marshal(str, Details#domain_InvoiceDetails.product),
+        marshal(str, Details#domain_InvoiceDetails.description)
+    ];
 
 marshal(status, ?invoice_paid()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "paid"}});
+    <<"paid">>;
 marshal(status, ?invoice_unpaid()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "unpaid"}});
+    <<"unpaid">>;
 marshal(status, ?invoice_cancelled(Reason)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "status"} => {str, "cancelled"},
-        {str, "reason"} => {str, Reason}
-    });
+    [
+        <<"cancelled">>,
+        marshal(str, Reason)
+    ];
 marshal(status, ?invoice_fulfilled(Reason)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "status"} => {str, "fulfilled"},
-        {str, "reason"} => {str, Reason}
-    });
+    [
+        <<"fulfilled">>,
+        marshal(str, Reason)
+    ];
 
-%% Change components (optional)
-
-marshal(context, undefined) ->
-    undefined;
 marshal(context, #'Content'{type = Type, data = Data}) ->
-    ?WRAP_VERSION_DATA(2, [{str, Type}, Data]);
+    [
+        marshal(str, Type),
+        marshal(bin, {bin, Data})
+    ];
 
-marshal(str, undefined) ->
-    undefined;
-marshal(str, String) ->
-    {str, String}.
+marshal(_, Other) ->
+    Other.
 
 %% Unmarshalling
+
+unmarshal(Events) when is_list(Events) ->
+    [unmarshal(Event) || Event <- Events];
+
+unmarshal({ID, Dt, Payload}) ->
+    {ID, Dt, unmarshal({list, changes}, Payload)};
 
 %% Version 1
 
 unmarshal({bin, Bin}) when is_binary(Bin) ->
     Changes = binary_to_term(Bin),
-    [unmarshal(1, change, Change) || Change <- Changes];
+    [unmarshal(change, [1, Change]) || Change <- Changes].
 
-%% Versions > 1
+%% Version > 1
 
-unmarshal(Changes) ->
-    [unmarshal(change, Change) || Change <- hg_msgpack_marshalling:unmarshal(Changes)].
-
-unmarshal(Type, #{{str, "version"} := Version, {str, "data"} := Data}) ->
-    unmarshal(Version, Type, Data);
-
-%% Optional components
-
-unmarshal(str, undefined) ->
-    undefined;
-unmarshal(str, {str, Str}) ->
-    ?BIN(Str).
+unmarshal({list, changes}, Changes) ->
+    [unmarshal(change, Change) || Change <- Changes];
 
 %% Changes
 
-unmarshal(1, change, ?payment_ev(PaymentID, Payload)) ->
-    NewPayload = hg_invoice_payment:unmarshal(?WRAP_VERSION_DATA(1, Payload)),
-    ?payment_ev(PaymentID, NewPayload);
-unmarshal(1, change, Change) ->
-    Change;
-unmarshal(2, change, #{
-    {str, "change"} := {str, "invoice_created"},
-    {str, "invoice"} := Invoice
-}) ->
+unmarshal(change, [2, #{
+    <<"change">>    := <<"created">>,
+    <<"invoice">>   := Invoice
+}]) ->
     ?invoice_created(unmarshal(invoice, Invoice));
-unmarshal(2, change, #{
-    {str, "change"} := {str, "invoice_status_changed"},
-    {str, "status"} := Status
-}) ->
+unmarshal(change, [2, #{
+    <<"change">>    := <<"status_changed">>,
+    <<"status">>    := Status
+}]) ->
     ?invoice_status_changed(unmarshal(status, Status));
-unmarshal(2, change, #{
-    {str, "change"} := {str, "invoice_payment_change"},
-    {str, "id"} := {str, PaymentID},
-    {str, "payload"} := Payload
-}) ->
-    ?payment_ev(?BIN(PaymentID), hg_invoice_payment:unmarshal(Payload));
+unmarshal(change, [2, #{
+    <<"change">>    := <<"payment_change">>,
+    <<"id">>        := PaymentID,
+    <<"payload">>   := Payload
+}]) ->
+    ?payment_ev(
+        unmarshal(str, PaymentID),
+        hg_invoice_payment:unmarshal(Payload)
+    );
+
+unmarshal(change, [1, ?payment_ev(PaymentID, Payload)]) ->
+    NewPayload = hg_invoice_payment:unmarshal([1, Payload]),
+    ?payment_ev(PaymentID, NewPayload);
+unmarshal(change, [1, Change]) ->
+    Change;
+
 %% Change components
 
-unmarshal(2, invoice, #{
-    {str, "id"} := {str, ID},
-    {str, "shop_id"} := {str, ShopID},
-    {str, "owner_id"} := {str, PartyID},
-    {str, "created_at"} := {str, CreatedAt},
-    {str, "cost"} := Cash,
-    {str, "due"} := {str, Due},
-    {str, "details"} := Details,
-    {str, "context"} := Context,
-    {str, "template_id"} := TerminalID
-}) ->
+unmarshal(invoice, [1, #{
+    <<"id">>            := ID,
+    <<"shop_id">>       := ShopID,
+    <<"owner_id">>      := PartyID,
+    <<"created_at">>    := CreatedAt,
+    <<"cost">>          := Cash,
+    <<"due">>           := Due,
+    <<"details">>       := Details
+} = Invoice]) ->
+    Context = maps:get(<<"context">>, Invoice, undefined),
+    TemplateID = maps:get(<<"template_id">>, Invoice, undefined),
     #domain_Invoice{
-        id              = ?BIN(ID),
-        shop_id         = ?BIN(ShopID),
-        owner_id        = ?BIN(PartyID),
-        created_at      = ?BIN(CreatedAt),
+        id              = unmarshal(str, ID),
+        shop_id         = unmarshal(str, ShopID),
+        owner_id        = unmarshal(str, PartyID),
+        created_at      = unmarshal(str, CreatedAt),
         cost            = hg_cash:unmarshal(Cash),
-        due             = ?BIN(Due),
+        due             = unmarshal(str, Due),
         details         = unmarshal(details, Details),
         status          = ?invoice_unpaid(),
         context         = unmarshal(context, Context),
-        template_id     = unmarshal(str, TerminalID)
+        template_id     = unmarshal(str, TemplateID)
     };
 
-unmarshal(2, status, #{{str, "status"} := {str, "paid"}}) ->
+unmarshal(status, <<"paid">>) ->
     ?invoice_paid();
-unmarshal(2, status, #{{str, "status"} := {str, "unpaid"}}) ->
+unmarshal(status, <<"unpaid">>) ->
     ?invoice_unpaid();
-unmarshal(2, status, #{
-    {str, "status"} := {str, "cancelled"},
-    {str, "reason"} := {str, Reason}
-}) ->
-    ?invoice_cancelled(?BIN(Reason));
-unmarshal(2, status, #{
-    {str, "status"} := {str, "fulfilled"},
-    {str, "reason"} := {str, Reason}
-}) ->
-    ?invoice_fulfilled(?BIN(Reason));
+unmarshal(status, [<<"cancelled">>, Reason]) ->
+    ?invoice_cancelled(unmarshal(str, Reason));
+unmarshal(status, [<<"fulfilled">>, Reason]) ->
+    ?invoice_fulfilled(unmarshal(str, Reason));
 
-unmarshal(_, context, undefined) ->
-    undefined;
-unmarshal(2, context, [{str, Type}, Data]) ->
-    #'Content'{type = ?BIN(Type), data = Data};
+unmarshal(context, [Type, {bin, Data}]) ->
+    #'Content'{
+        type = unmarshal(str, Type),
+        data = unmarshal(bin, Data)
+    };
 
-unmarshal(2, details, #{
-    {str, "product"} := {str, Product},
-    {str, "description"} := Description
-}) ->
+unmarshal(details, [Product]) ->
+    unmarshal(details, [Product, undefined]);
+unmarshal(details, [Product, Description]) ->
     #domain_InvoiceDetails{
-        product = ?BIN(Product),
+        product     = unmarshal(str, Product),
         description = unmarshal(str, Description)
-    }.
+    };
+
+unmarshal(_, Other) ->
+    Other.

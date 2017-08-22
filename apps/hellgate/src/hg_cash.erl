@@ -9,8 +9,6 @@
 
 %% Marshalling
 
--include("msgpack_marshalling.hrl").
-
 -spec marshal(cash()) ->
     term().
 
@@ -18,17 +16,15 @@ marshal(Cash) ->
     marshal(cash, Cash).
 
 marshal(cash, ?cash(Amount, ?currency(SymbolicCode))) ->
-    ?WRAP_VERSION_DATA(2, [Amount, {str, SymbolicCode}]).
+    [1, [Amount, SymbolicCode]].
 
 %% Unmarshalling
 
--spec unmarshal(term()) -> cash().
+-spec unmarshal(term()) ->
+    cash().
 
 unmarshal(Cash) ->
     unmarshal(cash, Cash).
 
-unmarshal(Type, #{{str, "version"} := Version, {str, "data"} := Data}) ->
-    unmarshal(Version, Type, Data).
-
-unmarshal(2, cash, [Amount, {str, SymbolicCode}]) ->
-    ?cash(Amount, ?currency(?BIN(SymbolicCode))).
+unmarshal(cash, [1, [Amount, SymbolicCode]]) ->
+    ?cash(Amount, ?currency(SymbolicCode)).

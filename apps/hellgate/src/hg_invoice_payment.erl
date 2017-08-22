@@ -1068,8 +1068,6 @@ get_message(invoice_payment_status_changed) ->
 
 %% Marshalling
 
--include("msgpack_marshalling.hrl").
-
 -spec marshal(change()) ->
     term().
 
@@ -1079,281 +1077,210 @@ marshal(Change) ->
 %% Changes
 
 marshal(change, ?payment_started(Payment, RiskScore, Route, Cashflow)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_started"},
-        {str, "payment"} => marshal(payment, Payment),
-        {str, "risk_score"} => marshal(risk_score, RiskScore),
-        {str, "route"} => marshal(route, Route),
-        {str, "cash_flow"} => marshal(final_cash_flow, Cashflow)
-    });
+    [2, #{
+        <<"change">>        => <<"started">>,
+        <<"payment">>       => marshal(payment, Payment),
+        <<"risk_score">>    => marshal(risk_score, RiskScore),
+        <<"route">>         => hg_routing:marshal(Route),
+        <<"cash_flow">>     => hg_cashflow:marshal(Cashflow)
+    }];
 marshal(change, ?payment_status_changed(Status)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_status_changed"},
-        {str, "status"} => marshal(status, Status)
-    });
+    [2, #{
+        <<"change">>        => <<"status_changed">>,
+        <<"status">>        => marshal(status, Status)
+    }];
 marshal(change, ?session_ev(Target, Payload)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_session_change"},
-        {str, "target"} => marshal(status, Target),
-        {str, "payload"} => marshal(session_change, Payload)
-    });
+    [2, #{
+        <<"change">>        => <<"session_change">>,
+        <<"target">>        => marshal(status, Target),
+        <<"payload">>       => marshal(session_change, Payload)
+    }];
 marshal(change, ?adjustment_ev(AdjustmentID, Payload)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_adjustment_change"},
-        {str, "id"} => {str, AdjustmentID},
-        {str, "payload"} => marshal(adj_change, Payload)
-    });
+    [2, #{
+        <<"change">>        => <<"adjustment_change">>,
+        <<"id">>            => marshal(str, AdjustmentID),
+        <<"payload">>       => marshal(adj_change, Payload)
+    }];
 
 %% Change components
 
 marshal(payment, #domain_InvoicePayment{} = Payment) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "id"} => {str, Payment#domain_InvoicePayment.id},
-        {str, "created_at"} => {str, Payment#domain_InvoicePayment.created_at},
-        {str, "domain_revision"} => Payment#domain_InvoicePayment.domain_revision,
-        {str, "cost"} => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
-        {str, "payer"} => marshal(payer, Payment#domain_InvoicePayment.payer),
-        {str, "flow"} => marshal(flow, Payment#domain_InvoicePayment.flow)
-    });
+    [2, #{
+        <<"id">>                => marshal(str, Payment#domain_InvoicePayment.id),
+        <<"created_at">>        => marshal(str, Payment#domain_InvoicePayment.created_at),
+        <<"domain_revision">>   => marshal(str, Payment#domain_InvoicePayment.domain_revision),
+        <<"cost">>              => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
+        <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
+        <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow)
+    }];
 
 marshal(flow, ?invoice_payment_flow_instant()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "type"} => {str, "instant"}});
+    #{<<"type">> => <<"instant">>};
 marshal(flow, ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "type"} => {str, "hold"},
-        {str, "on_hold_expiration"} => marshal(on_hold_expiration, OnHoldExpiration),
-        {str, "held_until"} => {str, HeldUntil}
-    });
+    #{
+        <<"type">>                  => <<"hold">>,
+        <<"on_hold_expiration">>    => marshal(on_hold_expiration, OnHoldExpiration),
+        <<"held_until">>            => marshal(str, HeldUntil)
+    };
 
 marshal(status, ?pending()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "pending"}});
+    <<"pending">>;
 marshal(status, ?processed()) ->
-   ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "processed"}});
+    <<"processed">>;
 marshal(status, ?failed(Failure)) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "failed"}, {str, "failure"} => marshal(failure, Failure)});
+    [
+        <<"failed">>,
+        marshal(failure, Failure)
+    ];
 marshal(status, ?captured_with_reason(Reason)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "status"} => {str, "captured"},
-        {str, "reason"} => marshal(str, Reason)
-    });
+    [
+        <<"captured">>,
+        marshal(str, Reason)
+    ];
 marshal(status, ?cancelled_with_reason(Reason)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "status"} => {str, "cancelled"},
-        {str, "reason"} => marshal(str, Reason)
-    });
+    [
+        <<"cancelled">>,
+        marshal(str, Reason)
+    ];
 
 marshal(session_change, ?session_started()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "change"} => {str, "invoice_payment_session_started"}});
+    <<"started">>;
 marshal(session_change, ?session_finished(Result)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_session_finished"},
-        {str, "result"} => marshal(session_status, Result)
-    });
+    [
+        <<"finished">>,
+        marshal(session_status, Result)
+    ];
 marshal(session_change, ?session_suspended()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "change"} => {str, "invoice_payment_session_suspended"}});
+    <<"suspended">>;
 marshal(session_change, ?session_activated()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "change"} => {str, "invoice_payment_session_activated"}});
+    <<"activated">>;
 marshal(session_change, ?trx_bound(Trx)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_session_transaction_bound"},
-        {str, "trx"} => marshal(trx, Trx)
-    });
+    [
+        <<"transaction_bound">>,
+        marshal(trx, Trx)
+    ];
 marshal(session_change, ?proxy_st_changed(ProxySt)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_session_proxy_state_changed"},
-        {str, "proxy_state"} => ProxySt
-    });
+    [
+        <<"proxy_state_changed">>,
+        marshal(bin, {bin, ProxySt})
+    ];
 marshal(session_change, ?interaction_requested(UserInteraction)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_session_interaction_requested"},
-        {str, "interaction"} => marshal(interaction, UserInteraction)
-    });
+    [
+        <<"interaction_requested">>,
+        marshal(interaction, UserInteraction)
+    ];
+
 marshal(session_status, ?session_succeeded()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "succeeded"}});
+    <<"succeeded">>;
 marshal(session_status, ?session_failed(PayloadFailure)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "status"} => {str, "failed"},
-        {str, "failure"} => marshal(failure, PayloadFailure)
-    });
+    [
+        <<"failed">>,
+        marshal(failure, PayloadFailure)
+    ];
 
 marshal(adj_change, ?adjustment_created(Adjustment)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_adjustment_created"},
-        {str, "adjustment"} => marshal(adj, Adjustment)
-    });
+    [
+        <<"created">>,
+        marshal(adj, Adjustment)
+    ];
 marshal(adj_change, ?adjustment_status_changed(Status)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "change"} => {str, "invoice_payment_adjustment_status_changed"},
-        {str, "status"} => marshal(adj_status, Status)
-    });
+    [
+        <<"status_changed">>,
+        marshal(adj_status, Status)
+    ];
 
 marshal(adj, #domain_InvoicePaymentAdjustment{} = Adjustment) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "id"} => {str, Adjustment#domain_InvoicePaymentAdjustment.id},
-        {str, "created_at"} => {str, Adjustment#domain_InvoicePaymentAdjustment.created_at},
-        {str, "domain_revision"} => Adjustment#domain_InvoicePaymentAdjustment.domain_revision,
-        {str, "reason"} => {str, Adjustment#domain_InvoicePaymentAdjustment.reason},
-        {str, "old_cash_flow_inverse"} => marshal(final_cash_flow,
+    [1, #{
+        <<"id">>                    => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.id),
+        <<"created_at">>            => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.created_at),
+        <<"domain_revision">>       => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.domain_revision),
+        <<"reason">>                => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.reason),
+        <<"old_cash_flow_inverse">> => hg_cashflow:marshal(
             Adjustment#domain_InvoicePaymentAdjustment.old_cash_flow_inverse),
-        {str, "new_cash_flow"} => marshal(final_cash_flow,
+        <<"new_cash_flow">>         => hg_cashflow:marshal(
             Adjustment#domain_InvoicePaymentAdjustment.new_cash_flow)
-    });
+    }];
 
 marshal(adj_status, ?adjustment_pending()) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "status"} => {str, "pending"}});
+    <<"pending">>;
 marshal(adj_status, ?adjustment_captured(At)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "status"} => {str, "captured"},
-        {str, "at"} => {str, At}
-    });
+    [
+        <<"captured">>,
+        marshal(str, At)
+    ];
 marshal(adj_status, ?adjustment_cancelled(At)) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "status"} => {str, "cancelled"},
-        {str, "at"} => {str, At}
-    });
-
-marshal(route, #domain_InvoicePaymentRoute{} = Route) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "provider"} => marshal(provider_ref, Route#domain_InvoicePaymentRoute.provider),
-        {str, "terminal"} => marshal(terminal_ref, Route#domain_InvoicePaymentRoute.terminal)
-    });
-
-marshal(provider_ref, #domain_ProviderRef{id = ObjectID}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "id"} => ObjectID});
-
-marshal(terminal_ref, #domain_TerminalRef{id = ObjectID}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "id"} => ObjectID});
-
-marshal(final_cash_flow, CashFlow) ->
-    ?WRAP_VERSION_DATA(2, [marshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow]);
-
-marshal(final_cash_flow_posting, #domain_FinalCashFlowPosting{} = CashFlowPosting) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "source"} =>
-            marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.source),
-        {str, "destination"} =>
-            marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.destination),
-        {str, "volume"} => hg_cash:marshal(CashFlowPosting#domain_FinalCashFlowPosting.volume),
-        {str, "details"} => marshal(str, CashFlowPosting#domain_FinalCashFlowPosting.details)
-    });
-
-marshal(final_cash_flow_account, #domain_FinalCashFlowAccount{} = CashFlowAccount) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "account_type"} =>
-            marshal(account_type, CashFlowAccount#domain_FinalCashFlowAccount.account_type),
-        {str, "account_id"} => CashFlowAccount#domain_FinalCashFlowAccount.account_id
-    });
-
-marshal(account_type, {merchant, settlement}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "merchant"} => {str, "settlement"}});
-marshal(account_type, {merchant, guarantee}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "merchant"} => {str, "guarantee"}});
-marshal(account_type, {provider, settlement}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "provider"} => {str, "settlement"}});
-marshal(account_type, {system, settlement}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "system"} => {str, "settlement"}});
-marshal(account_type, {external, income}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "external"} => {str, "income"}});
-marshal(account_type, {external, outcome}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "external"} => {str, "outcome"}});
+    [
+        <<"cancelled">>,
+        marshal(str, At)
+    ];
 
 marshal(payer, #domain_Payer{} = Payer) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "payment_tool"} => marshal(payment_tool, Payer#domain_Payer.payment_tool),
-        {str, "session_id"} => {str, Payer#domain_Payer.session_id},
-        {str, "client_info"} => marshal(client_info, Payer#domain_Payer.client_info),
-        {str, "contact_info"} => marshal(contact_info, Payer#domain_Payer.contact_info)
-    });
-
-marshal(payment_tool, {bank_card, #domain_BankCard{} = BankCard}) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "token"} => {str, BankCard#domain_BankCard.token},
-        {str, "payment_system"} => marshal(payment_system, BankCard#domain_BankCard.payment_system),
-        {str, "bin"} => {str, BankCard#domain_BankCard.bin},
-        {str, "masked_pan"} => {str, BankCard#domain_BankCard.masked_pan}
-    });
+    [1, #{
+        <<"payment_tool">>  => hg_payment_tool:marshal(Payer#domain_Payer.payment_tool),
+        <<"session_id">>    => marshal(str, Payer#domain_Payer.session_id),
+        <<"client_info">>   => marshal(client_info, Payer#domain_Payer.client_info),
+        <<"contact_info">>  => marshal(contact_info, Payer#domain_Payer.contact_info)
+    }];
 
 marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "ip_address"} => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
-        {str, "fingerprint"} => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
-    });
+    #{
+        <<"ip_address">>    => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
+        <<"fingerprint">>   => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
+    };
 
 marshal(contact_info, #domain_ContactInfo{} = ContactInfo) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "phone_number"} => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
-        {str, "email"} => marshal(str, ContactInfo#domain_ContactInfo.email)
-    });
+    #{
+        <<"phone_number">>  => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
+        <<"email">>         => marshal(str, ContactInfo#domain_ContactInfo.email)
+    };
 
 marshal(trx, #domain_TransactionInfo{} = TransactionInfo) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "id"} => {str, TransactionInfo#domain_TransactionInfo.id},
-        {str, "timestamp"} => marshal(str, TransactionInfo#domain_TransactionInfo.timestamp),
-        {str, "extra"} => marshal(map_string, TransactionInfo#domain_TransactionInfo.extra)
-    });
-
-marshal(map_string, MapString) ->
-    maps:from_list([{{str, K}, {str, V}} || {K, V} <- maps:to_list(MapString)]);
+    [1, #{
+        <<"id">>            => marshal(str, TransactionInfo#domain_TransactionInfo.id),
+        <<"timestamp">>     => marshal(str, TransactionInfo#domain_TransactionInfo.timestamp),
+        <<"extra">>         => marshal(map_str, TransactionInfo#domain_TransactionInfo.extra)
+    }];
 
 marshal(interaction, {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "redirect"} => #{{str, "get_request"} => #{{str, "uri"} => {str, URI}}}});
+    [1, #{<<"redirect">> =>
+        [
+            <<"get_request">>,
+            marshal(str, URI)
+        ]
+    }];
 marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}}) ->
-    ?WRAP_VERSION_DATA(2, #{{str, "redirect"} => #{{str, "post_request"} => #{
-        {str, "uri"} => {str, URI},
-        {str, "form"} => marshal(map_string, Form)
-    }}});
+    [1, #{<<"redirect">> =>
+        [
+            <<"post_request">>,
+            #{
+                <<"uri">>   => marshal(str, URI),
+                <<"form">>  => marshal(map_str, Form)
+            }
+        ]
+    }];
 
 marshal(failure, {operation_timeout, _}) ->
-    ?WRAP_VERSION_DATA(2, {str, "operation_timeout"});
+    [1, <<"operation_timeout">>];
 marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
-    ?WRAP_VERSION_DATA(2, #{
-        {str, "code"} => {str, ExternalFailure#domain_ExternalFailure.code},
-        {str, "description"} => marshal(str, ExternalFailure#domain_ExternalFailure.description)
-    });
+    [1, [<<"external_failure">>, #{
+        <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
+        <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
+    }]];
 
 marshal(on_hold_expiration, cancel) ->
-    {str, "cancel"};
+    <<"cancel">>;
 marshal(on_hold_expiration, capture) ->
-    {str, "capture"};
+    <<"capture">>;
 
 marshal(risk_score, low) ->
-    {str, "low"};
+    <<"low">>;
 marshal(risk_score, high) ->
-    {str, "high"};
+    <<"high">>;
 marshal(risk_score, fatal) ->
-    {str, "fatal"};
+    <<"fatal">>;
 
-marshal(payment_system, visa) ->
-    {str, "visa"};
-marshal(payment_system, mastercard) ->
-    {str, "mastercard"};
-marshal(payment_system, visaelectron) ->
-    {str, "visaelectron"};
-marshal(payment_system, maestro) ->
-    {str, "maestro"};
-marshal(payment_system, forbrugsforeningen) ->
-    {str, "forbrugsforeningen"};
-marshal(payment_system, dankort) ->
-    {str, "dankort"};
-marshal(payment_system, amex) ->
-    {str, "amex"};
-marshal(payment_system, dinersclub) ->
-    {str, "dinersclub"};
-marshal(payment_system, discover) ->
-    {str, "discover"};
-marshal(payment_system, unionpay) ->
-    {str, "unionpay"};
-marshal(payment_system, jcb) ->
-    {str, "jcb"};
-marshal(payment_system, nspkmir) ->
-    {str, "nspkmir"};
-
-%% Optional components
-
-marshal(str, undefined) ->
-    undefined;
-marshal(str, String) ->
-    {str, String}.
+marshal(_, Other) ->
+    Other.
 
 %% Unmarshalling
 
@@ -1362,61 +1289,66 @@ marshal(str, String) ->
 unmarshal(Change) ->
     unmarshal(change, Change).
 
-unmarshal(Type, #{{str, "version"} := Version, {str, "data"} := Data}) ->
-    unmarshal(Version, Type, Data);
-
-unmarshal(on_hold_expiration, {str, "cancel"}) ->
-    cancel;
-unmarshal(on_hold_expiration, {str, "capture"}) ->
-    capture;
-
-unmarshal(risk_score, {str, "low"}) ->
-    low;
-unmarshal(risk_score, {str, "high"}) ->
-    high;
-unmarshal(risk_score, {str, "fatal"}) ->
-    fatal;
-
-unmarshal(payment_system, {str, "visa"}) ->
-    visa;
-unmarshal(payment_system, {str, "mastercard"}) ->
-    mastercard;
-unmarshal(payment_system, {str, "visaelectron"}) ->
-    visaelectron;
-unmarshal(payment_system, {str, "maestro"}) ->
-    maestro;
-unmarshal(payment_system, {str, "forbrugsforeningen"}) ->
-    forbrugsforeningen;
-unmarshal(payment_system, {str, "dankort"}) ->
-    dankort;
-unmarshal(payment_system, {str, "amex"}) ->
-    amex;
-unmarshal(payment_system, {str, "dinersclub"}) ->
-    dinersclub;
-unmarshal(payment_system, {str, "discover"}) ->
-    discover;
-unmarshal(payment_system, {str, "unionpay"}) ->
-    unionpay;
-unmarshal(payment_system, {str, "jcb"}) ->
-    jcb;
-unmarshal(payment_system, {str, "nspkmir"}) ->
-    nspkmir;
-
-unmarshal(map_string, MapString) ->
-    maps:from_list([{?BIN(K), ?BIN(V)} || {{str, K}, {str, V}} <- maps:to_list(MapString)]);
-
-%% Optional components
-
-unmarshal(str, undefined) ->
-    undefined;
-unmarshal(str, {str, String}) ->
-    ?BIN(String).
-
 %% Changes
 
-unmarshal(1, change, ?payment_started(Payment, RiskScore, Route, Cashflow)) ->
-    NewPayment =
-        #domain_InvoicePayment{
+unmarshal(change, [2, #{
+    <<"change">>        := <<"started">>,
+    <<"payment">>       := Payment,
+    <<"risk_score">>    := RiskScore,
+    <<"route">>         := Route,
+    <<"cash_flow">>     := Cashflow
+}]) ->
+    ?payment_started(
+        unmarshal(payment, Payment),
+        unmarshal(risk_score, RiskScore),
+        hg_routing:unmarshal(Route),
+        hg_cashflow:unmarshal(Cashflow)
+    );
+unmarshal(change, [2, #{
+    <<"change">>    := <<"status_changed">>,
+    <<"status">>    := Status
+}]) ->
+    ?payment_status_changed(unmarshal(status, Status));
+unmarshal(change, [2, #{
+    <<"change">>    := <<"session_change">>,
+    <<"payload">>   := Payload,
+    <<"target">>    := Target
+}]) ->
+    ?session_ev(unmarshal(status, Target), unmarshal(session_change, Payload));
+unmarshal(change, [2, #{
+    <<"change">>    := <<"adjustment_change">>,
+    <<"id">>        := AdjustmentID,
+    <<"payload">>   := Payload
+}]) ->
+    ?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adj_change, Payload));
+
+unmarshal(change, [1, ?payment_started(Payment, RiskScore, Route, Cashflow)]) ->
+    ?payment_started(unmarshal(payment, [1, Payment]), RiskScore, Route, Cashflow);
+unmarshal(change, [1, Change]) ->
+    Change;
+
+%% Change components
+
+unmarshal(payment, [2, #{
+    <<"id">>                := PaymentID,
+    <<"created_at">>        := CreatedAt,
+    <<"domain_revision">>   := Revision,
+    <<"cost">>              := Cash,
+    <<"payer">>             := Payer,
+    <<"flow">>              := Flow
+}]) ->
+    #domain_InvoicePayment{
+        id              = unmarshal(str, PaymentID),
+        created_at      = unmarshal(str, CreatedAt),
+        domain_revision = unmarshal(str, Revision),
+        cost            = hg_cash:unmarshal(Cash),
+        payer           = unmarshal(payer, Payer),
+        status          = ?pending(),
+        flow            = unmarshal(flow, Flow)
+    };
+
+unmarshal(payment, [1, #domain_InvoicePayment{} = Payment]) ->
+    #domain_InvoicePayment{
         id              = Payment#domain_InvoicePayment.id,
         created_at      = Payment#domain_InvoicePayment.created_at,
         domain_revision = Payment#domain_InvoicePayment.domain_revision,
@@ -1424,284 +1356,157 @@ unmarshal(1, change, ?payment_started(Payment, RiskScore, Route, Cashflow)) ->
         cost            = Payment#domain_InvoicePayment.cost,
         payer           = Payment#domain_InvoicePayment.payer,
         flow            = ?invoice_payment_flow_instant()
-    },
-    ?payment_started(NewPayment, RiskScore, Route, Cashflow);
-unmarshal(1, change, Change) ->
-    Change;
-unmarshal(2, change, #{
-    {str, "change"} := {str, "invoice_payment_started"},
-    {str, "payment"} := Payment,
-    {str, "risk_score"} := RiskScore,
-    {str, "route"} := Route,
-    {str, "cash_flow"} := Cashflow
-}) ->
-    ?payment_started(
-        unmarshal(payment, Payment),
-        unmarshal(risk_score, RiskScore),
-        unmarshal(route, Route),
-        unmarshal(final_cash_flow, Cashflow)
-    );
-unmarshal(2, change, #{
-    {str, "change"} := {str, "invoice_payment_status_changed"},
-    {str, "status"} := Status
-}) ->
-    ?payment_status_changed(unmarshal(status, Status));
-unmarshal(2, change, #{
-    {str, "change"} := {str, "invoice_payment_session_change"},
-    {str, "payload"} := Payload,
-    {str, "target"} := Target
-}) ->
-    ?session_ev(unmarshal(status, Target), unmarshal(session_change, Payload));
-unmarshal(2, change, #{
-    {str, "change"} := {str, "invoice_payment_adjustment_change"},
-    {str, "id"} := {str, AdjustmentID},
-    {str, "payload"} := Payload
-}) ->
-    ?adjustment_ev(?BIN(AdjustmentID), unmarshal(adj_change, Payload));
-
-%% Change components
-
-unmarshal(2, payment, #{
-    {str, "id"} := {str, PaymentID},
-    {str, "created_at"} := {str, CreatedAt},
-    {str, "domain_revision"} := Revision,
-    {str, "cost"} := Cash,
-    {str, "payer"} := Payer,
-    {str, "flow"} := Flow
-}) ->
-    #domain_InvoicePayment{
-        id              = ?BIN(PaymentID),
-        created_at      = ?BIN(CreatedAt),
-        domain_revision = Revision,
-        cost            = hg_cash:unmarshal(Cash),
-        payer           = unmarshal(payer, Payer),
-        status          = ?pending(),
-        flow            = unmarshal(flow, Flow)
     };
 
-unmarshal(2, flow, #{{str, "type"} := {str, "instant"}}) ->
+unmarshal(flow, #{<<"type">> := <<"instant">>}) ->
     ?invoice_payment_flow_instant();
-unmarshal(2, flow, #{
-    {str, "type"} := {str, "hold"},
-    {str, "on_hold_expiration"} := OnHoldExpiration,
-    {str, "held_until"} := {str, HeldUntil}
+unmarshal(flow, #{
+    <<"type">>                  := <<"hold">>,
+    <<"on_hold_expiration">>    := OnHoldExpiration,
+    <<"held_until">>            := HeldUntil
 }) ->
-    ?invoice_payment_flow_hold(unmarshal(on_hold_expiration, OnHoldExpiration), ?BIN(HeldUntil));
+    ?invoice_payment_flow_hold(
+        unmarshal(on_hold_expiration, OnHoldExpiration),
+        unmarshal(str, HeldUntil));
 
-unmarshal(2, status, #{{str, "status"} := {str, "pending"}}) ->
+unmarshal(status, <<"pending">>) ->
     ?pending();
-unmarshal(2, status, #{{str, "status"} := {str, "processed"}}) ->
+unmarshal(status, <<"processed">>) ->
     ?processed();
-unmarshal(2, status, #{
-    {str, "status"} := {str, "failed"},
-    {str, "failure"} := Failure
-}) ->
+unmarshal(status, [<<"failed">>, Failure]) ->
     ?failed(unmarshal(failure, Failure));
-unmarshal(2, status, #{
-    {str, "status"} := {str, "captured"},
-    {str, "reason"} := Reason
-}) ->
+unmarshal(status, [<<"captured">>]) ->
+    unmarshal(status, [<<"captured">>, undefined]);
+unmarshal(status, [<<"captured">>, Reason]) ->
     ?captured_with_reason(unmarshal(str, Reason));
-unmarshal(2, status, #{
-    {str, "status"} := {str, "cancelled"},
-    {str, "reason"} := Reason
-}) ->
+unmarshal(status, [<<"cancelled">>]) ->
+    unmarshal(status, [<<"cancelled">>, undefined]);
+unmarshal(status, [<<"cancelled">>, Reason]) ->
     ?cancelled_with_reason(unmarshal(str, Reason));
 
-unmarshal(2, session_change, #{{str, "change"} := {str, "invoice_payment_session_started"}}) ->
+unmarshal(session_change, <<"started">>) ->
     ?session_started();
-unmarshal(2, session_change, #{
-    {str, "change"} := {str, "invoice_payment_session_finished"},
-    {str, "result"} := Result
-}) ->
+unmarshal(session_change, [<<"finished">>, Result]) ->
     ?session_finished(unmarshal(session_status, Result));
-unmarshal(2, session_change, #{{str, "change"} := {str, "invoice_payment_session_suspended"}}) ->
+unmarshal(session_change, <<"suspended">>) ->
     ?session_suspended();
-unmarshal(2, session_change, #{{str, "change"} := {str, "invoice_payment_session_activated"}}) ->
+unmarshal(session_change, <<"activated">>) ->
     ?session_activated();
-unmarshal(2, session_change, #{
-    {str, "change"} := {str, "invoice_payment_session_transaction_bound"},
-    {str, "trx"} := Trx
-}) ->
+unmarshal(session_change, [<<"transaction_bound">>, Trx]) ->
     ?trx_bound(unmarshal(trx, Trx));
-unmarshal(2, session_change, #{
-    {str, "change"} := {str, "invoice_payment_session_proxy_state_changed"},
-    {str, "proxy_state"} := ProxySt
-}) ->
-    ?proxy_st_changed(ProxySt);
-unmarshal(2, session_change, #{
-    {str, "change"} := {str, "invoice_payment_session_interaction_requested"},
-    {str, "interaction"} := UserInteraction
-}) ->
+unmarshal(session_change, [<<"proxy_state_changed">>, {bin, ProxySt}]) ->
+    ?proxy_st_changed(unmarshal(bin, ProxySt));
+unmarshal(session_change, [<<"interaction_requested">>, UserInteraction]) ->
     ?interaction_requested(unmarshal(interaction, UserInteraction));
 
-unmarshal(2, session_status, #{{str, "status"} := {str, "succeeded"}}) ->
+unmarshal(session_status, <<"succeeded">>) ->
     ?session_succeeded();
-unmarshal(2, session_status, #{
-    {str, "status"} := {str, "failed"},
-    {str, "failure"} := Failure
-}) ->
+unmarshal(session_status, [<<"failed">>, Failure]) ->
     ?session_failed(unmarshal(failure, Failure));
 
-unmarshal(2, adj_change, #{
-    {str, "change"} := {str, "invoice_payment_adjustment_created"},
-    {str, "adjustment"} := Adjustment
-}) ->
+unmarshal(adj_change, [<<"created">>, Adjustment]) ->
     ?adjustment_created(unmarshal(adj, Adjustment));
-unmarshal(2, adj_change, #{
-    {str, "change"} := {str, "invoice_payment_adjustment_status_changed"},
-    {str, "status"} := Status
-}) ->
+unmarshal(adj_change, [<<"status_changed">>, Status]) ->
     ?adjustment_status_changed(unmarshal(adj_status, Status));
 
-unmarshal(2, adj, #{
-    {str, "id"} := {str, AdjustmentID},
-    {str, "created_at"} := {str, CreatedAt},
-    {str, "domain_revision"} := Revision,
-    {str, "reason"} := {str, Reason},
-    {str, "old_cash_flow_inverse"} := OldCashFlowInverse,
-    {str, "new_cash_flow"} := NewCashFlow
-}) ->
+unmarshal(adj, [1, #{
+    <<"id">>                    := AdjustmentID,
+    <<"created_at">>            := CreatedAt,
+    <<"domain_revision">>       := Revision,
+    <<"reason">>                := Reason,
+    <<"old_cash_flow_inverse">> := OldCashFlowInverse,
+    <<"new_cash_flow">>         := NewCashFlow
+}]) ->
     #domain_InvoicePaymentAdjustment{
-        id                    = ?BIN(AdjustmentID),
+        id                    = unmarshal(str, AdjustmentID),
         status                = ?adjustment_pending(),
-        created_at            = ?BIN(CreatedAt),
-        domain_revision       = Revision,
-        reason                = ?BIN(Reason),
-        old_cash_flow_inverse = unmarshal(final_cash_flow, OldCashFlowInverse),
-        new_cash_flow         = unmarshal(final_cash_flow, NewCashFlow)
+        created_at            = unmarshal(str, CreatedAt),
+        domain_revision       = unmarshal(int, Revision),
+        reason                = unmarshal(str, Reason),
+        old_cash_flow_inverse = hg_cashflow:unmarshal(OldCashFlowInverse),
+        new_cash_flow         = hg_cashflow:unmarshal(NewCashFlow)
     };
 
-unmarshal(2, adj_status, #{{str, "status"} := {str, "pending"}}) ->
+unmarshal(adj_status, <<"pending">>) ->
     ?adjustment_pending();
-unmarshal(2, adj_status, #{
-    {str, "status"} := {str, "captured"},
-    {str, "at"} := {str, At}
-}) ->
-    ?adjustment_captured(?BIN(At));
-unmarshal(2, adj_status, #{
-    {str, "status"} := {str, "cancelled"},
-    {str, "at"} := {str, At}
-}) ->
-    ?adjustment_cancelled(?BIN(At));
-unmarshal(2, route, #{
-    {str, "provider"} := Provider,
-    {str, "terminal"} := Terminal
-}) ->
-    #domain_InvoicePaymentRoute{
-        provider = unmarshal(provider_ref, Provider),
-        terminal = unmarshal(terminal_ref, Terminal)
-    };
-unmarshal(2, provider_ref, #{{str, "id"} := ObjectID}) ->
-    #domain_ProviderRef{id = ObjectID};
-unmarshal(2, terminal_ref, #{{str, "id"} := ObjectID}) ->
-    #domain_TerminalRef{id = ObjectID};
+unmarshal(adj_status, [<<"captured">>, At]) ->
+    ?adjustment_captured(At);
+unmarshal(adj_status, [<<"cancelled">>, At]) ->
+    ?adjustment_cancelled(At);
 
-unmarshal(2, final_cash_flow, CashFlow) ->
-    [unmarshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow];
-
-unmarshal(2, final_cash_flow_posting, #{
-    {str, "source"} := Source,
-    {str, "destination"} := Destination,
-    {str, "volume"} := Volume,
-    {str, "details"} := Details
-}) ->
-    #domain_FinalCashFlowPosting{
-        source = unmarshal(final_cash_flow_account, Source),
-        destination = unmarshal(final_cash_flow_account, Destination),
-        volume = hg_cash:unmarshal(Volume),
-        details = unmarshal(str, Details)
-    };
-
-unmarshal(2, final_cash_flow_account, #{
-    {str, "account_type"} := AccountType,
-    {str, "account_id"} := AccountId
-}) ->
-    #domain_FinalCashFlowAccount{
-        account_type = unmarshal(account_type, AccountType),
-        account_id = AccountId
-    };
-
-unmarshal(2, account_type, #{{str, "merchant"} := {str, "settlement"}}) ->
-    {merchant, settlement};
-unmarshal(2, account_type, #{{str, "merchant"} := {str, "guarantee"}}) ->
-    {merchant, guarantee};
-unmarshal(2, account_type, #{{str, "provider"} := {str, "settlement"}}) ->
-    {provider, settlement};
-unmarshal(2, account_type, #{{str, "system"} := {str, "settlement"}}) ->
-    {system, settlement};
-unmarshal(2, account_type, #{{str, "external"} := {str, "income"}}) ->
-    {external, income};
-unmarshal(2, account_type, #{{str, "external"} := {str, "outcome"}}) ->
-    {external, outcome};
-
-unmarshal(2, payer, #{
-    {str, "payment_tool"} := PaymentTool,
-    {str, "session_id"} := {str, SessionId},
-    {str, "client_info"} := ClientInfo,
-    {str, "contact_info"} := ContractInfo
-}) ->
+unmarshal(payer, [1, #{
+    <<"payment_tool">>  := PaymentTool,
+    <<"session_id">>    := SessionId,
+    <<"client_info">>   := ClientInfo,
+    <<"contact_info">>  := ContractInfo
+}]) ->
     #domain_Payer{
-        payment_tool = unmarshal(payment_tool, PaymentTool),
-        session_id = ?BIN(SessionId),
-        client_info = unmarshal(client_info, ClientInfo),
-        contact_info = unmarshal(contact_info, ContractInfo)
+        payment_tool    = hg_payment_tool:unmarshal(PaymentTool),
+        session_id      = unmarshal(str, SessionId),
+        client_info     = unmarshal(client_info, ClientInfo),
+        contact_info    = unmarshal(contact_info, ContractInfo)
     };
 
-unmarshal(2, payment_tool, #{
-    {str, "token"} := {str, Token},
-    {str, "payment_system"} := PaymentSystem,
-    {str, "bin"} := {str, Bin},
-    {str, "masked_pan"} := {str, MaskedPan}
-}) ->
-    {bank_card, #domain_BankCard{
-        token = ?BIN(Token),
-        payment_system = unmarshal(payment_system, PaymentSystem),
-        bin = ?BIN(Bin),
-        masked_pan = ?BIN(MaskedPan)
+unmarshal(client_info, ClientInfo) ->
+    IpAddress = maps:get(<<"ip_address">>, ClientInfo, undefined),
+    Fingerprint = maps:get(<<"fingerprint">>, ClientInfo, undefined),
+    #domain_ClientInfo{
+        ip_address      = unmarshal(str, IpAddress),
+        fingerprint     = unmarshal(str, Fingerprint)
+    };
+
+unmarshal(contact_info, ContractInfo) ->
+    PhoneNumber = maps:get(<<"phone_number">>, ContractInfo, undefined),
+    Email = maps:get(<<"email">>, ContractInfo, undefined),
+    #domain_ContactInfo{
+        phone_number    = unmarshal(str, PhoneNumber),
+        email           = unmarshal(str, Email)
+    };
+
+unmarshal(trx, [1, #{
+    <<"id">>    := ID,
+    <<"extra">> := Extra
+} = TRX]) ->
+    Timestamp = maps:get(<<"timestamp">>, TRX, undefined),
+    #domain_TransactionInfo{
+        id          = unmarshal(str, ID),
+        timestamp   = unmarshal(str, Timestamp),
+        extra       = unmarshal(map_str, Extra)
+    };
+
+unmarshal(interaction, [1, #{<<"redirect">> := [<<"get_request">>, URI]}]) ->
+    {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
+unmarshal(interaction, [1, #{<<"redirect">> := [<<"post_request">>, #{
+    <<"uri">>   := URI,
+    <<"form">>  := Form
+}]}]) ->
+    {redirect, {post_request,
+        #'BrowserPostRequest'{
+            uri     = unmarshal(str, URI),
+            form    = unmarshal(map_str, Form)
+        }
     }};
 
-unmarshal(2, client_info, #{
-    {str, "ip_address"} := IpAddress,
-    {str, "fingerprint"} := Fingerprint
-}) ->
-    #domain_ClientInfo{
-        ip_address = unmarshal(str, IpAddress),
-        fingerprint = unmarshal(str, Fingerprint)
-    };
-
-unmarshal(2, contact_info, #{
-    {str, "phone_number"} := PhoneNumber,
-    {str, "email"} := Email
-}) ->
-    #domain_ContactInfo{
-        phone_number = unmarshal(str, PhoneNumber),
-        email = unmarshal(str, Email)
-    };
-
-unmarshal(2, trx, #{
-    {str, "id"} := {str, ID},
-    {str, "timestamp"} := Timestamp,
-    {str, "extra"} := Extra
-}) ->
-    #domain_TransactionInfo{
-        id = ?BIN(ID),
-        timestamp = unmarshal(str, Timestamp),
-        extra = unmarshal(map_string, Extra)
-    };
-
-unmarshal(2, interaction, #{{str, "redirect"} := #{{str, "get_request"} := #{{str, "uri"} := {str, URI}}}}) ->
-    {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
-unmarshal(2, interaction, #{{str, "redirect"} := #{{str, "post_request"} := #{
-    {str, "uri"} := {str, URI},
-    {str, "form"} := Form
-}}}) ->
-    {redirect, {post_request, #'BrowserPostRequest'{uri = ?BIN(URI), form = unmarshal(map_string, Form)}}};
-
-unmarshal(2, failure, {str, "operation_timeout"}) ->
+unmarshal(failure, [1, <<"operation_timeout">>]) ->
     {operation_timeout, #domain_OperationTimeout{}};
-unmarshal(2, failure, #{
-    {str, "code"} := {str, Code},
-    {str, "description"} := Description
-}) ->
-    {external_failure, #domain_ExternalFailure{code = ?BIN(Code), description = unmarshal(str, Description)}}.
+unmarshal(failure, [1, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]]) ->
+    Description = maps:get(<<"description">>, ExternalFailure, undefined),
+    {external_failure, #domain_ExternalFailure{
+        code        = unmarshal(str, Code),
+        description = unmarshal(str, Description)
+    }};
+
+unmarshal(on_hold_expiration, <<"cancel">>) ->
+    cancel;
+unmarshal(on_hold_expiration, <<"capture">>) ->
+    capture;
+
+unmarshal(risk_score, <<"low">>) ->
+    low;
+unmarshal(risk_score, <<"high">>) ->
+    high;
+unmarshal(risk_score, <<"fatal">>) ->
+    fatal;
+
+unmarshal(_, Other) ->
+    Other.
