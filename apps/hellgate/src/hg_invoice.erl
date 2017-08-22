@@ -839,7 +839,7 @@ marshal(invoice, #domain_Invoice{} = Invoice) ->
         <<"cost">>          => hg_cash:marshal(Invoice#domain_Invoice.cost),
         <<"due">>           => marshal(str, Invoice#domain_Invoice.due),
         <<"details">>       => marshal(details, Invoice#domain_Invoice.details),
-        <<"context">>       => marshal(context, Invoice#domain_Invoice.context),
+        <<"context">>       => hg_content:marshal(Invoice#domain_Invoice.context),
         <<"template_id">>   => marshal(str, Invoice#domain_Invoice.template_id)
     }];
 
@@ -862,12 +862,6 @@ marshal(status, ?invoice_fulfilled(Reason)) ->
     [
         <<"fulfilled">>,
         marshal(str, Reason)
-    ];
-
-marshal(context, #'Content'{type = Type, data = Data}) ->
-    [
-        marshal(str, Type),
-        marshal(bin, {bin, Data})
     ];
 
 marshal(_, Other) ->
@@ -914,7 +908,7 @@ unmarshal(change, [2, #{
         hg_invoice_payment:unmarshal(Payload)
     );
 
-unmarshal(change, [1, ?payment_ev(PaymentID, Payload)]) ->
+unmarshal(change, [1, {'payproc_InvoicePaymentChange', PaymentID, Payload}]) ->
     NewPayload = hg_invoice_payment:unmarshal([1, Payload]),
     ?payment_ev(PaymentID, NewPayload);
 unmarshal(change, [1, Change]) ->
@@ -942,7 +936,7 @@ unmarshal(invoice, [1, #{
         due             = unmarshal(str, Due),
         details         = unmarshal(details, Details),
         status          = ?invoice_unpaid(),
-        context         = unmarshal(context, Context),
+        context         = hg_content:unmarshal(Context),
         template_id     = unmarshal(str, TemplateID)
     };
 
@@ -954,12 +948,6 @@ unmarshal(status, [<<"cancelled">>, Reason]) ->
     ?invoice_cancelled(unmarshal(str, Reason));
 unmarshal(status, [<<"fulfilled">>, Reason]) ->
     ?invoice_fulfilled(unmarshal(str, Reason));
-
-unmarshal(context, [Type, {bin, Data}]) ->
-    #'Content'{
-        type = unmarshal(str, Type),
-        data = unmarshal(bin, Data)
-    };
 
 unmarshal(details, [Product]) ->
     unmarshal(details, [Product, undefined]);

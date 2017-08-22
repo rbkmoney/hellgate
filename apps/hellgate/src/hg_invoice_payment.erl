@@ -1111,7 +1111,8 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         <<"domain_revision">>   => marshal(str, Payment#domain_InvoicePayment.domain_revision),
         <<"cost">>              => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
         <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
-        <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow)
+        <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow),
+        <<"context">>           => hg_content:marshal(Payment#domain_InvoicePayment.context)
     }];
 
 marshal(flow, ?invoice_payment_flow_instant()) ->
@@ -1322,7 +1323,11 @@ unmarshal(change, [2, #{
 }]) ->
     ?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adj_change, Payload));
 
-unmarshal(change, [1, ?payment_started(Payment, RiskScore, Route, Cashflow)]) ->
+unmarshal(change, [1,
+    {'invoice_payment_started',
+        {'payproc_InvoicePaymentStarted', Payment, RiskScore, Route, Cashflow}
+    }
+]) ->
     ?payment_started(unmarshal(payment, [1, Payment]), RiskScore, Route, Cashflow);
 unmarshal(change, [1, Change]) ->
     Change;
@@ -1336,7 +1341,8 @@ unmarshal(payment, [2, #{
     <<"cost">>              := Cash,
     <<"payer">>             := Payer,
     <<"flow">>              := Flow
-}]) ->
+} = Payment]) ->
+    Context = maps:get(<<"context">>, Payment, undefined),
     #domain_InvoicePayment{
         id              = unmarshal(str, PaymentID),
         created_at      = unmarshal(str, CreatedAt),
@@ -1344,18 +1350,22 @@ unmarshal(payment, [2, #{
         cost            = hg_cash:unmarshal(Cash),
         payer           = unmarshal(payer, Payer),
         status          = ?pending(),
-        flow            = unmarshal(flow, Flow)
+        flow            = unmarshal(flow, Flow),
+        context         = hg_content:unmarshal(Context)
     };
 
-unmarshal(payment, [1, #domain_InvoicePayment{} = Payment]) ->
+unmarshal(payment, [1,
+    {'domain_InvoicePayment', Id, CreatedAt, DomainRevision, Status, Payer, Cost, Context}
+]) ->
     #domain_InvoicePayment{
-        id              = Payment#domain_InvoicePayment.id,
-        created_at      = Payment#domain_InvoicePayment.created_at,
-        domain_revision = Payment#domain_InvoicePayment.domain_revision,
-        status          = Payment#domain_InvoicePayment.status,
-        cost            = Payment#domain_InvoicePayment.cost,
-        payer           = Payment#domain_InvoicePayment.payer,
-        flow            = ?invoice_payment_flow_instant()
+        id              = Id,
+        created_at      = CreatedAt,
+        domain_revision = DomainRevision,
+        status          = Status,
+        cost            = Cost,
+        payer           = Payer,
+        flow            = ?invoice_payment_flow_instant(),
+        context         = Context
     };
 
 unmarshal(flow, #{<<"type">> := <<"instant">>}) ->
