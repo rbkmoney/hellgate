@@ -873,18 +873,18 @@ unmarshal(Events) when is_list(Events) ->
     [unmarshal(Event) || Event <- Events];
 
 unmarshal({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal({list, changes}, Payload)};
-
-%% Version 1
-
-unmarshal({bin, Bin}) when is_binary(Bin) ->
-    Changes = binary_to_term(Bin),
-    [unmarshal(change, [1, Change]) || Change <- Changes].
+    {ID, Dt, unmarshal({list, changes}, Payload)}.
 
 %% Version > 1
 
-unmarshal({list, changes}, Changes) ->
+unmarshal({list, changes}, Changes) when is_list(Changes) ->
     [unmarshal(change, Change) || Change <- Changes];
+
+%% Version 1
+
+unmarshal({list, changes}, {bin, Bin}) when is_binary(Bin) ->
+    Changes = binary_to_term(Bin),
+    [unmarshal(change, [1, Change]) || Change <- Changes];
 
 %% Changes
 
@@ -908,7 +908,7 @@ unmarshal(change, [2, #{
         hg_invoice_payment:unmarshal(Payload)
     );
 
-unmarshal(change, [1, {'payproc_InvoicePaymentChange', PaymentID, Payload}]) ->
+unmarshal(change, [1, {invoice_payment_change, {'payproc_InvoicePaymentChange', PaymentID, Payload}}]) ->
     NewPayload = hg_invoice_payment:unmarshal([1, Payload]),
     ?payment_ev(PaymentID, NewPayload);
 unmarshal(change, [1, Change]) ->
