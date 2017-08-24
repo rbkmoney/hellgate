@@ -282,7 +282,7 @@ unmarshal_history_result(Error) ->
 -type ev() ::
     [dmsl_payment_processing_thrift:'InvoiceChange'()].
 
--type msgpack_ev() :: dmsl_msgpack_thrift:'Value'().
+-type msgpack_ev() :: hg_msgpack_marshalling:value().
 
 -define(invalid_invoice_status(Status),
     #payproc_InvalidInvoiceStatus{status = Status}).
@@ -804,6 +804,7 @@ get_message(invoice_created) ->
 get_message(invoice_status_changed) ->
     "Invoice status is changed".
 
+-include("legacy_structures.hrl").
 %% Marshalling
 
 marshal(Changes) when is_list(Changes) ->
@@ -831,7 +832,7 @@ marshal(change, ?payment_ev(PaymentID, Payload)) ->
 %% Change components
 
 marshal(invoice, #domain_Invoice{} = Invoice) ->
-    [1, #{
+    #{
         <<"id">>            => marshal(str, Invoice#domain_Invoice.id),
         <<"shop_id">>       => marshal(str, Invoice#domain_Invoice.shop_id),
         <<"owner_id">>      => marshal(str, Invoice#domain_Invoice.owner_id),
@@ -841,7 +842,7 @@ marshal(invoice, #domain_Invoice{} = Invoice) ->
         <<"details">>       => marshal(details, Invoice#domain_Invoice.details),
         <<"context">>       => hg_content:marshal(Invoice#domain_Invoice.context),
         <<"template_id">>   => marshal(str, Invoice#domain_Invoice.template_id)
-    }];
+    };
 
 marshal(details, #domain_InvoiceDetails{} = Details) ->
     [
@@ -908,15 +909,19 @@ unmarshal(change, [2, #{
         hg_invoice_payment:unmarshal(Payload)
     );
 
-unmarshal(change, [1, {invoice_payment_change, {'payproc_InvoicePaymentChange', PaymentID, Payload}}]) ->
-    NewPayload = hg_invoice_payment:unmarshal([1, Payload]),
-    ?payment_ev(PaymentID, NewPayload);
-unmarshal(change, [1, Change]) ->
-    Change;
+unmarshal(change, [1, ?legacy_invoice_created(Invoice)]) ->
+    ?invoice_created(unmarshal(invoice, Invoice));
+unmarshal(change, [1, ?legacy_invoice_status_changed(Status)]) ->
+    ?invoice_status_changed(unmarshal(status, Status));
+unmarshal(change, [1, ?legacy_payment_ev(PaymentID, Payload)]) ->
+    ?payment_ev(
+        unmarshal(str, PaymentID),
+        hg_invoice_payment:unmarshal([1, Payload])
+    );
 
 %% Change components
 
-unmarshal(invoice, [1, #{
+unmarshal(invoice, #{
     <<"id">>            := ID,
     <<"shop_id">>       := ShopID,
     <<"owner_id">>      := PartyID,
@@ -924,7 +929,7 @@ unmarshal(invoice, [1, #{
     <<"cost">>          := Cash,
     <<"due">>           := Due,
     <<"details">>       := Details
-} = Invoice]) ->
+} = Invoice) ->
     Context = maps:get(<<"context">>, Invoice, undefined),
     TemplateID = maps:get(<<"template_id">>, Invoice, undefined),
     #domain_Invoice{
@@ -940,6 +945,22 @@ unmarshal(invoice, [1, #{
         template_id     = unmarshal(str, TemplateID)
     };
 
+unmarshal(invoice,
+    ?legacy_invoice(ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cash, Context, TemplateID)
+) ->
+    #domain_Invoice{
+        id              = unmarshal(str, ID),
+        shop_id         = unmarshal(str, ShopID),
+        owner_id        = unmarshal(str, PartyID),
+        created_at      = unmarshal(str, CreatedAt),
+        cost            = hg_cash:unmarshal([1, Cash]),
+        due             = unmarshal(str, Due),
+        details         = unmarshal(details, Details),
+        status          = unmarshal(status, Status),
+        context         = hg_content:unmarshal(Context),
+        template_id     = unmarshal(str, TemplateID)
+    };
+
 unmarshal(status, <<"paid">>) ->
     ?invoice_paid();
 unmarshal(status, <<"unpaid">>) ->
@@ -949,9 +970,22 @@ unmarshal(status, [<<"cancelled">>, Reason]) ->
 unmarshal(status, [<<"fulfilled">>, Reason]) ->
     ?invoice_fulfilled(unmarshal(str, Reason));
 
-unmarshal(details, [Product]) ->
-    unmarshal(details, [Product, undefined]);
+unmarshal(status, ?legacy_invoice_paid()) ->
+    ?invoice_paid();
+unmarshal(status, ?legacy_invoice_unpaid()) ->
+    ?invoice_unpaid();
+unmarshal(status, ?legacy_invoice_cancelled(Reason)) ->
+    ?invoice_cancelled(unmarshal(str, Reason));
+unmarshal(status, ?legacy_invoice_fulfilled(Reason)) ->
+    ?invoice_fulfilled(unmarshal(str, Reason));
+
 unmarshal(details, [Product, Description]) ->
+    #domain_InvoiceDetails{
+        product     = unmarshal(str, Product),
+        description = unmarshal(str, Description)
+    };
+
+unmarshal(details, ?legacy_invoice_details(Product, Description)) ->
     #domain_InvoiceDetails{
         product     = unmarshal(str, Product),
         description = unmarshal(str, Description)

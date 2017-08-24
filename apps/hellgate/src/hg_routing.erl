@@ -95,47 +95,62 @@ is_flow_suitable(PaymentFlowTerminal, PaymentFlow) ->
             false
     end.
 
+-include("legacy_structures.hrl").
 %% Marshalling
 
 -spec marshal(t()) ->
-    term().
+    hg_msgpack_marshalling:value().
 
 marshal(Route) ->
     marshal(route, Route).
 
 marshal(route, #domain_InvoicePaymentRoute{} = Route) ->
-    [1, #{
+    #{
         <<"provider">> => marshal(provider_ref, Route#domain_InvoicePaymentRoute.provider),
         <<"terminal">> => marshal(terminal_ref, Route#domain_InvoicePaymentRoute.terminal)
-    }];
+    };
 
 marshal(provider_ref, #domain_ProviderRef{id = ObjectID}) ->
-    [1, marshal(int, ObjectID)];
+    marshal(int, ObjectID);
 
 marshal(terminal_ref, #domain_TerminalRef{id = ObjectID}) ->
-    [1, marshal(int, ObjectID)];
+    marshal(int, ObjectID);
 
 marshal(_, Other) ->
     Other.
 
 %% Unmarshalling
 
--spec unmarshal(term()) -> t().
+-spec unmarshal(hg_msgpack_marshalling:value()) ->
+    t().
 
 unmarshal(Route) ->
     unmarshal(route, Route).
 
-unmarshal(route, [1, #{
+unmarshal(route, #{
     <<"provider">> := Provider,
     <<"terminal">> := Terminal
-}]) ->
+}) ->
     #domain_InvoicePaymentRoute{
         provider = unmarshal(provider_ref, Provider),
         terminal = unmarshal(terminal_ref, Terminal)
     };
-unmarshal(provider_ref, [1, ObjectID]) ->
+unmarshal(route, ?legacy_route(Provider, Terminal)) ->
+    #domain_InvoicePaymentRoute{
+        provider = unmarshal(provider_ref, Provider),
+        terminal = unmarshal(terminal_ref, Terminal)
+    };
+
+unmarshal(provider_ref, ?legacy_provider(ObjectID)) ->
     #domain_ProviderRef{id = unmarshal(int, ObjectID)};
-unmarshal(terminal_ref, [1, ObjectID]) ->
+
+unmarshal(provider_ref, ObjectID) ->
+    #domain_ProviderRef{id = unmarshal(int, ObjectID)};
+
+unmarshal(terminal_ref, ?legacy_terminal(ObjectID)) ->
+    #domain_TerminalRef{id = unmarshal(int, ObjectID)};
+
+unmarshal(terminal_ref, ObjectID) ->
     #domain_TerminalRef{id = unmarshal(int, ObjectID)};
 
 unmarshal(_, Other) ->

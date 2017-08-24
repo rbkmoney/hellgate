@@ -5,9 +5,13 @@
 -export([marshal/1]).
 -export([unmarshal/1]).
 
--spec marshal(term()) ->
+-export_type([value/0]).
+
+-type value() :: term().
+
+-spec marshal(value()) ->
     dmsl_msgpack_thrift:'Value'().
-marshal(null) ->
+marshal(undefined) ->
     {nl, #msgpack_Nil{}};
 marshal(Boolean) when is_boolean(Boolean) ->
     {b, Boolean};
@@ -21,28 +25,22 @@ marshal({bin, Binary}) ->
     {bin, Binary};
 marshal(Object) when is_map(Object) ->
     {obj, maps:fold(
-        fun (_, undefined, Acc) ->
-            Acc;
+        fun
+            (_, undefined, Acc) ->
+                Acc;
             (K, V, Acc) ->
-            maps:put(marshal(K), marshal(V), Acc)
+                maps:put(marshal(K), marshal(V), Acc)
         end,
         #{},
         Object
     )};
 marshal(Array) when is_list(Array) ->
-    {arr, lists:filtermap(
-        fun (undefined) ->
-            false;
-            (El) ->
-            {true, marshal(El)}
-        end,
-        Array
-    )}.
+    {arr, lists:map(fun marshal/1, Array)}.
 
 -spec unmarshal(dmsl_msgpack_thrift:'Value'()) ->
-    term().
+    value().
 unmarshal({nl, #msgpack_Nil{}}) ->
-    null;
+    undefined;
 unmarshal({b, Boolean}) ->
     Boolean;
 unmarshal({i, Integer}) ->

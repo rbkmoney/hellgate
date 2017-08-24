@@ -10,21 +10,24 @@
 %% Marshalling
 
 -spec marshal(cash()) ->
-    term().
+    hg_msgpack_marshalling:value().
 
 marshal(Cash) ->
     marshal(cash, Cash).
 
 marshal(cash, ?cash(Amount, ?currency(SymbolicCode))) ->
-    [1, [Amount, SymbolicCode]].
+    [2, [Amount, SymbolicCode]].
 
 %% Unmarshalling
 
--spec unmarshal(term()) ->
+-spec unmarshal(hg_msgpack_marshalling:value()) ->
     cash().
 
 unmarshal(Cash) ->
     unmarshal(cash, Cash).
 
-unmarshal(cash, [1, [Amount, SymbolicCode]]) ->
+unmarshal(cash, [2, [Amount, SymbolicCode]]) ->
+    ?cash(Amount, ?currency(SymbolicCode));
+
+unmarshal(cash, [1, {'domain_Cash', Amount, {'domain_CurrencyRef', SymbolicCode}}]) ->
     ?cash(Amount, ?currency(SymbolicCode)).
