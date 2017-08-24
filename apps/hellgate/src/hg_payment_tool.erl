@@ -20,7 +20,9 @@
 -spec get_method(t()) -> method().
 
 get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem}}) ->
-    #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}.
+    #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}};
+get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
+    #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}.
 
 %%
 
@@ -53,6 +55,8 @@ marshal(payment_tool, {bank_card, #domain_BankCard{} = BankCard}) ->
         <<"bin">>               => marshal(str, BankCard#domain_BankCard.bin),
         <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.masked_pan)
     }];
+marshal(payment_tool, {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
+    [2, marshal(terminal_type, TerminalType)];
 
 marshal(payment_system, visa) ->
     <<"visa">>;
@@ -79,6 +83,9 @@ marshal(payment_system, jcb) ->
 marshal(payment_system, nspkmir) ->
     <<"nspkmir">>;
 
+marshal(terminal_type, euroset) ->
+    <<"euroset">>;
+
 marshal(_, Other) ->
     Other.
 
@@ -101,6 +108,10 @@ unmarshal(payment_tool, [2, #{
         payment_system      = unmarshal(payment_system, PaymentSystem),
         bin                 = unmarshal(str, Bin),
         masked_pan          = unmarshal(str, MaskedPan)
+    }};
+unmarshal(payment_tool, [2, TerminalType]) ->
+    {payment_terminal, #domain_PaymentTerminal{
+        terminal_type = unmarshal(terminal_type, TerminalType)
     }};
 
 unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
@@ -135,6 +146,9 @@ unmarshal(payment_system, <<"jcb">>) ->
     jcb;
 unmarshal(payment_system, <<"nspkmir">>) ->
     nspkmir;
+
+unmarshal(terminal_type, <<"euroset">>) ->
+    euroset;
 
 unmarshal(payment_system, PaymentSystem) when is_atom(PaymentSystem) ->
     PaymentSystem;

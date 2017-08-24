@@ -47,8 +47,12 @@
 
 -export([bank_card_tds_token/0]).
 -export([bank_card_simple_token/0]).
+-export([make_terminal_payment_tool/0]).
 -export([make_tds_payment_tool/0]).
 -export([make_simple_payment_tool/0]).
+-export([make_meta_ns/0]).
+-export([make_meta_data/0]).
+-export([make_meta_data/1]).
 -export([get_hellgate_url/0]).
 
 
@@ -505,7 +509,17 @@ bank_card_tds_token() ->
 bank_card_simple_token() ->
     <<"TOKEN42">>.
 
--spec make_tds_payment_tool() -> hg_domain_thrift:'PaymentTool'().
+-spec make_terminal_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+
+make_terminal_payment_tool() ->
+    {
+        {payment_terminal, #domain_PaymentTerminal{
+            terminal_type = euroset
+        }},
+        <<"">>
+    }.
+
+-spec make_tds_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_tds_payment_tool() ->
     {
@@ -518,7 +532,7 @@ make_tds_payment_tool() ->
         <<"SESSION666">>
     }.
 
--spec make_simple_payment_tool() -> hg_domain_thrift:'PaymentTool'().
+-spec make_simple_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_simple_payment_tool() ->
     {
@@ -530,6 +544,25 @@ make_simple_payment_tool() ->
         }},
         <<"SESSION42">>
     }.
+
+-spec make_meta_ns() -> dmsl_domain_thrift:'PartyMetaNamespace'().
+
+make_meta_ns() ->
+    list_to_binary(lists:concat(["NS-", erlang:system_time()])).
+
+-spec make_meta_data() -> dmsl_domain_thrift:'PartyMetaData'().
+
+make_meta_data() ->
+    make_meta_data(<<"NS-0">>).
+
+-spec make_meta_data(dmsl_domain_thrift:'PartyMetaNamespace'()) -> dmsl_domain_thrift:'PartyMetaData'().
+
+make_meta_data(NS) ->
+    {obj, #{
+        {str, <<"NS">>} => {str, NS},
+        {i, 42} => {str, <<"42">>},
+        {str, <<"STRING!">>} => {arr, []}
+    }}.
 
 -spec get_hellgate_url() -> string().
 

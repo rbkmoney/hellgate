@@ -189,7 +189,33 @@ handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     Party = hg_party_machine:get_party(PartyID),
-    hg_party:get_shop_account(ShopID, Party).
+    hg_party:get_shop_account(ShopID, Party);
+
+%% PartyMeta
+
+handle_function_('GetMeta', [UserInfo, PartyID], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    hg_party_machine:get_meta(PartyID);
+
+handle_function_('GetMetaData', [UserInfo, PartyID, NS], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    hg_party_machine:get_metadata(NS, PartyID);
+
+handle_function_('SetMetaData', [UserInfo, PartyID, NS, Data], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    hg_party_machine:call(PartyID, {set_metadata, NS, Data});
+
+handle_function_('RemoveMetaData', [UserInfo, PartyID, NS], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    hg_party_machine:call(PartyID, {remove_metadata, NS}).
 
 %%
 

@@ -40,6 +40,11 @@
 -export([party_already_suspended/1]).
 -export([party_already_active/1]).
 
+-export([party_meta_retrieval/1]).
+-export([party_metadata_setting/1]).
+-export([party_metadata_retrieval/1]).
+-export([party_metadata_removing/1]).
+
 -export([shop_not_found_on_retrieval/1]).
 -export([shop_creation/1]).
 -export([shop_already_exists/1]).
@@ -91,6 +96,7 @@ all() ->
         {group, party_creation},
         {group, party_revisioning},
         {group, party_blocking_suspension},
+        {group, party_meta},
         {group, contract_management},
         {group, shop_management},
         {group, shop_account_lazy_creation},
@@ -131,6 +137,13 @@ groups() ->
             party_unblocking,
             party_activation,
             party_already_active
+        ]},
+        {party_meta, [sequence], [
+            party_creation,
+            party_metadata_setting,
+            party_metadata_retrieval,
+            party_metadata_removing,
+            party_meta_retrieval
         ]},
         {contract_management, [sequence], [
             party_creation,
@@ -265,6 +278,9 @@ end_per_testcase(_Name, _C) ->
 -define(party_active(),
     {exception, #payproc_InvalidPartyStatus{status = {suspension, ?active(_)}}}).
 
+-define(namespace_not_found(),
+    {exception, #payproc_PartyMetaNamespaceNotFound{}}).
+
 -define(contract_not_found(),
     {exception, #payproc_ContractNotFound{}}).
 -define(invalid_contract_status(Status),
@@ -333,6 +349,11 @@ end_per_testcase(_Name, _C) ->
 -spec party_activation(config()) -> _ | no_return().
 -spec party_already_suspended(config()) -> _ | no_return().
 -spec party_already_active(config()) -> _ | no_return().
+
+-spec party_meta_retrieval(config()) -> _ | no_return().
+-spec party_metadata_setting(config()) -> _ | no_return().
+-spec party_metadata_retrieval(config()) -> _ | no_return().
+-spec party_metadata_removing(config()) -> _ | no_return().
 
 -spec shop_blocking(config()) -> _ | no_return().
 -spec shop_unblocking(config()) -> _ | no_return().
@@ -853,6 +874,42 @@ party_already_suspended(C) ->
 party_already_active(C) ->
     Client = cfg(client, C),
     ?party_active() = hg_client_party:activate(Client).
+
+party_metadata_setting(C) ->
+    Client = cfg(client, C),
+    NS = hg_ct_helper:make_meta_ns(),
+    Data = hg_ct_helper:make_meta_data(NS),
+    ok = hg_client_party:set_metadata(NS, Data, Client),
+    % lets check for idempotency
+    ok = hg_client_party:set_metadata(NS, Data, Client).
+
+party_metadata_retrieval(C) ->
+    Client = cfg(client, C),
+    ?namespace_not_found() = hg_client_party:get_metadata(<<"NoSuchNamespace">>, Client),
+    NS = hg_ct_helper:make_meta_ns(),
+    Data0 = hg_ct_helper:make_meta_data(),
+    ok = hg_client_party:set_metadata(NS, Data0, Client),
+    Data0 = hg_client_party:get_metadata(NS, Client),
+    % lets change it and check again
+    Data1 = hg_ct_helper:make_meta_data(NS),
+    ok = hg_client_party:set_metadata(NS, Data1, Client),
+    Data1 = hg_client_party:get_metadata(NS, Client).
+
+party_metadata_removing(C) ->
+    Client = cfg(client, C),
+    ?namespace_not_found() = hg_client_party:remove_metadata(<<"NoSuchNamespace">>, Client),
+    NS = hg_ct_helper:make_meta_ns(),
+    ok = hg_client_party:set_metadata(NS, hg_ct_helper:make_meta_data(), Client),
+    ok = hg_client_party:remove_metadata(NS, Client),
+    ?namespace_not_found() = hg_client_party:remove_metadata(NS, Client).
+
+party_meta_retrieval(C) ->
+    Client = cfg(client, C),
+    Meta0 = hg_client_party:get_meta(Client),
+    NS = hg_ct_helper:make_meta_ns(),
+    ok = hg_client_party:set_metadata(NS, hg_ct_helper:make_meta_data(), Client),
+    Meta1 = hg_client_party:get_meta(Client),
+    Meta0 =/= Meta1.
 
 shop_blocking(C) ->
     Client = cfg(client, C),

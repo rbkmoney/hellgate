@@ -27,6 +27,8 @@
 -export([get_claim/2]).
 -export([get_claims/1]).
 -export([get_public_history/3]).
+-export([get_meta/1]).
+-export([get_metadata/2]).
 
 %%
 
@@ -37,6 +39,7 @@
     timestamp            :: timestamp(),
     revision             :: hg_domain:revision(),
     claims   = #{}       :: #{claim_id() => claim()},
+    meta = #{}           :: meta(),
     migration_data = #{} :: #{any() => any()}
 }).
 
@@ -47,6 +50,8 @@
     {unblock, binary()}                                         |
     suspend                                                     |
     activate                                                    |
+    {set_metadata, meta_ns(), meta_data()}                      |
+    {remove_metadata, meta_ns()}                                |
     {block_shop, shop_id(), binary()}                           |
     {unblock_shop, shop_id(), binary()}                         |
     {suspend_shop, shop_id()}                                   |
@@ -67,6 +72,9 @@
 -type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
 -type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
 -type timestamp()       :: dmsl_base_thrift:'Timestamp'().
+-type meta()            :: dmsl_domain_thrift:'PartyMeta'().
+-type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
+-type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
 
 -spec namespace() ->
     hg_machine:ns().
@@ -150,6 +158,13 @@ handle_call(activate, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_suspended(St),
     respond(ok, [?party_suspension(?active(hg_datetime:format_now()))]);
+
+handle_call({set_metadata, NS, Data}, _) ->
+    respond(ok, [?party_meta_set(NS, Data)]);
+
+handle_call({remove_metadata, NS}, {St, _}) ->
+    _ = get_st_metadata(NS, St),
+    respond(ok, [?party_meta_removed(NS)]);
 
 handle_call({block_shop, ID, Reason}, {St, _}) ->
     ok = assert_unblocked(St),
@@ -275,6 +290,19 @@ get_claims(PartyID) ->
     #st{claims = Claims} = get_state(PartyID),
     maps:values(Claims).
 
+-spec get_meta(party_id()) ->
+    meta() | no_return().
+
+get_meta(PartyID) ->
+    #st{meta = Meta} = get_state(PartyID),
+    Meta.
+
+-spec get_metadata(meta_ns(), party_id()) ->
+    meta_data() | no_return().
+
+get_metadata(NS, PartyID) ->
+    get_st_metadata(NS, get_state(PartyID)).
+
 -spec get_public_history(party_id(), integer() | undefined, non_neg_integer()) ->
     [dmsl_payment_processing_thrift:'Event'()].
 
@@ -327,6 +355,17 @@ get_st_timestamp(#st{timestamp = Timestamp}) ->
 
 get_st_revision(#st{revision = Revision}) ->
     Revision.
+
+-spec get_st_metadata(meta_ns(), st()) ->
+    meta_data().
+
+get_st_metadata(NS, #st{meta = Meta}) ->
+    case maps:get(NS, Meta, undefined) of
+        MetaData when MetaData =/= undefined ->
+            MetaData;
+        undefined ->
+            throw(#payproc_PartyMetaNamespaceNotFound{})
+    end.
 
 %% TODO remove this hack as soon as machinegun learns to tell the difference between
 %%      nonexsitent machine and empty history
@@ -476,6 +515,12 @@ merge_party_change(?party_blocking(Blocking), St) ->
 merge_party_change(?party_suspension(Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:suspension(Suspension, Party)};
+merge_party_change(?party_meta_set(NS, Data), #st{meta = Meta} = St) ->
+    NewMeta = Meta#{NS => Data},
+    St#st{meta = NewMeta};
+merge_party_change(?party_meta_removed(NS), #st{meta = Meta} = St) ->
+    NewMeta = maps:remove(NS, Meta),
+    St#st{meta = NewMeta};
 merge_party_change(?shop_blocking(ID, Blocking), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:shop_blocking(ID, Blocking, Party)};
