@@ -1328,7 +1328,7 @@ unmarshal(change, [1, ?legacy_payment_started(Payment, RiskScore, Route, Cashflo
     ?payment_started(
         unmarshal(payment, Payment),
         unmarshal(risk_score, RiskScore),
-        hg_routing:unmarshal(Route),
+        hg_routing:unmarshal([1, Route]),
         hg_cashflow:unmarshal([1, Cashflow])
     );
 unmarshal(change, [1, ?legacy_payment_status_changed(Status)]) ->
@@ -1533,7 +1533,7 @@ unmarshal(payer, #{
 
 unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContractInfo)) ->
     #domain_Payer{
-        payment_tool    = hg_payment_tool:unmarshal(PaymentTool),
+        payment_tool    = hg_payment_tool:unmarshal([1, PaymentTool]),
         session_id      = unmarshal(str, SessionId),
         client_info     = unmarshal(client_info, ClientInfo),
         contact_info    = unmarshal(contact_info, ContractInfo)

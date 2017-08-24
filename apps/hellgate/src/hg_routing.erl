@@ -105,10 +105,10 @@ marshal(Route) ->
     marshal(route, Route).
 
 marshal(route, #domain_InvoicePaymentRoute{} = Route) ->
-    #{
+    [2, #{
         <<"provider">> => marshal(provider_ref, Route#domain_InvoicePaymentRoute.provider),
         <<"terminal">> => marshal(terminal_ref, Route#domain_InvoicePaymentRoute.terminal)
-    };
+    }];
 
 marshal(provider_ref, #domain_ProviderRef{id = ObjectID}) ->
     marshal(int, ObjectID);
@@ -127,15 +127,15 @@ marshal(_, Other) ->
 unmarshal(Route) ->
     unmarshal(route, Route).
 
-unmarshal(route, #{
+unmarshal(route, [2, #{
     <<"provider">> := Provider,
     <<"terminal">> := Terminal
-}) ->
+}]) ->
     #domain_InvoicePaymentRoute{
         provider = unmarshal(provider_ref, Provider),
         terminal = unmarshal(terminal_ref, Terminal)
     };
-unmarshal(route, ?legacy_route(Provider, Terminal)) ->
+unmarshal(route, [1, ?legacy_route(Provider, Terminal)]) ->
     #domain_InvoicePaymentRoute{
         provider = unmarshal(provider_ref, Provider),
         terminal = unmarshal(terminal_ref, Terminal)

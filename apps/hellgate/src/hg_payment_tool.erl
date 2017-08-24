@@ -47,12 +47,12 @@ marshal(PaymentTool) ->
     marshal(payment_tool, PaymentTool).
 
 marshal(payment_tool, {bank_card, #domain_BankCard{} = BankCard}) ->
-    #{
+    [2, #{
         <<"token">>             => marshal(str, BankCard#domain_BankCard.token),
         <<"payment_system">>    => marshal(payment_system, BankCard#domain_BankCard.payment_system),
         <<"bin">>               => marshal(str, BankCard#domain_BankCard.bin),
         <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.masked_pan)
-    };
+    }];
 
 marshal(payment_system, visa) ->
     <<"visa">>;
@@ -90,12 +90,12 @@ marshal(_, Other) ->
 unmarshal(PaymentTool) ->
     unmarshal(payment_tool, PaymentTool).
 
-unmarshal(payment_tool, #{
+unmarshal(payment_tool, [2, #{
     <<"token">>             := Token,
     <<"payment_system">>    := PaymentSystem,
     <<"bin">>               := Bin,
     <<"masked_pan">>        := MaskedPan
-}) ->
+}]) ->
     {bank_card, #domain_BankCard{
         token               = unmarshal(str, Token),
         payment_system      = unmarshal(payment_system, PaymentSystem),
@@ -103,7 +103,7 @@ unmarshal(payment_tool, #{
         masked_pan          = unmarshal(str, MaskedPan)
     }};
 
-unmarshal(payment_tool, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)) ->
+unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
     {bank_card, #domain_BankCard{
         token               = unmarshal(str, Token),
         payment_system      = unmarshal(payment_system, PaymentSystem),
