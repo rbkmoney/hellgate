@@ -845,10 +845,11 @@ marshal(invoice, #domain_Invoice{} = Invoice) ->
     };
 
 marshal(details, #domain_InvoiceDetails{} = Details) ->
-    [
-        marshal(str, Details#domain_InvoiceDetails.product),
-        marshal(str, Details#domain_InvoiceDetails.description)
-    ];
+    #{
+        <<"product">> => marshal(str, Details#domain_InvoiceDetails.product),
+        <<"description">> => marshal(str, Details#domain_InvoiceDetails.description),
+        <<"cart">> => marshal(cart, Details#domain_InvoiceDetails.cart)
+    };
 
 marshal(status, ?invoice_paid()) ->
     <<"paid">>;
@@ -864,6 +865,17 @@ marshal(status, ?invoice_fulfilled(Reason)) ->
         <<"fulfilled">>,
         marshal(str, Reason)
     ];
+
+marshal(cart, #domain_InvoiceCart{lines = Lines}) ->
+    [marshal(line, Line) || Line <- Lines];
+
+marshal(line, #domain_InvoiceLine{} = InvoiceLine) ->
+    #{
+        <<"product">> => marshal(str, InvoiceLine#domain_InvoiceLine.product),
+        <<"quantity">> => marshal(int, InvoiceLine#domain_InvoiceLine.quantity),
+        <<"price">> => hg_cash:marshal(InvoiceLine#domain_InvoiceLine.price),
+        <<"metadata">> => marshal(map_str, InvoiceLine#domain_InvoiceLine.metadata)
+    };
 
 marshal(_, Other) ->
     Other.
@@ -979,16 +991,36 @@ unmarshal(status, ?legacy_invoice_cancelled(Reason)) ->
 unmarshal(status, ?legacy_invoice_fulfilled(Reason)) ->
     ?invoice_fulfilled(unmarshal(str, Reason));
 
-unmarshal(details, [Product, Description]) ->
+unmarshal(details, #{<<"product">> := Product} = Details) ->
+    Description = maps:get(<<"description">>, Details, undefined),
+    Cart = maps:get(<<"cart">>, Details, undefined),
     #domain_InvoiceDetails{
         product     = unmarshal(str, Product),
-        description = unmarshal(str, Description)
+        description = unmarshal(str, Description),
+        cart        = marshal(cart, Cart)
     };
 
-unmarshal(details, ?legacy_invoice_details(Product, Description)) ->
+unmarshal(details, ?legacy_invoice_details(Product, Description, Cart)) ->
     #domain_InvoiceDetails{
         product     = unmarshal(str, Product),
-        description = unmarshal(str, Description)
+        description = unmarshal(str, Description),
+        cart        = marshal(cart, Cart)
+    };
+
+unmarshal(cart, Lines) ->
+    #domain_InvoiceCart{lines = [unmarshal(line, Line) || Line <- Lines]};
+
+unmarshal(line, #{
+    <<"product">> := Product,
+    <<"quantity">> := Quantity,
+    <<"price">> := Price,
+    <<"metadata">> := Metadata
+}) ->
+    #domain_InvoiceLine{
+        product = unmarshal(str, Product),
+        quantity = unmarshal(int, Quantity),
+        price = hg_cash:unmarshal(Price),
+        metadata = unmarshal(map_str, Metadata)
     };
 
 unmarshal(_, Other) ->

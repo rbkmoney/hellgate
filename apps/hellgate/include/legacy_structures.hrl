@@ -22,8 +22,8 @@
 -define(legacy_invoice_fulfilled(Reason), 
     {fulfilled, {domain_InvoiceFulfilled, Reason}}).
 
--define(legacy_invoice_details(Product, Description), 
-    {domain_InvoiceDetails, Product, Description}).
+-define(legacy_invoice_details(Product, Description, Cart),
+    {domain_InvoiceDetails, Product, Description, Cart}).
 
 %% Payment
 
