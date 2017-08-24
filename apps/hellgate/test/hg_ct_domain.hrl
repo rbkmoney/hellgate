@@ -14,6 +14,9 @@
 -define(eas(ID),    #domain_ExternalAccountSetRef{id = ID}).
 -define(insp(ID),   #domain_InspectorRef{id = ID}).
 
+-define(cashrng(Lower, Upper),
+    #domain_CashRange{lower = Lower, upper = Upper}).
+
 -define(trmacc(Cur, Stl), #domain_TerminalAccount{currency = ?cur(Cur), settlement = Stl}).
 -define(partycond(ID, Def), {condition, {party, #domain_PartyCondition{id = ID, definition = Def}}}).
 

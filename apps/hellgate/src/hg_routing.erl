@@ -51,7 +51,7 @@ collect_providers(Globals, VS, Revision) ->
                     false
             end
         end,
-        ProviderRefs
+        ordsets:to_list(ProviderRefs)
     ).
 
 acceptable_provider(ProviderRef, VS, Revision) ->
@@ -73,7 +73,7 @@ collect_terminals({_ProviderRef, Provider}, VS, Revision) ->
                     false
             end
         end,
-        TerminalRefs
+        ordsets:to_list(TerminalRefs)
     ).
 
 acceptable_terminal(TerminalRef, #domain_Provider{terms = Terms0}, VS, Revision) ->
@@ -97,7 +97,8 @@ acceptable_payment_terms(
     #domain_PaymentsProvisionTerms{
         currencies      = CurrenciesSelector,
         categories      = CategoriesSelector,
-        payment_methods = PMsSelector
+        payment_methods = PMsSelector,
+        cash_limit      = CashLimitSelector
     },
     VS,
     Revision
@@ -107,6 +108,7 @@ acceptable_payment_terms(
     _ = try_accept_payment_term(currency     , CurrenciesSelector , VS, Revision),
     _ = try_accept_payment_term(category     , CategoriesSelector , VS, Revision),
     _ = try_accept_payment_term(payment_tool , PMsSelector        , VS, Revision),
+    _ = try_accept_payment_term(cost         , CashLimitSelector  , VS, Revision),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
     throw(false).
@@ -117,10 +119,12 @@ try_accept_payment_term(Name, Selector, VS, Revision) when Selector /= undefined
 try_accept_payment_term(_Name, undefined, _VS, _Revision) ->
     throw(false).
 
+test_payment_term(cost, Cost, CashRange) ->
+    hg_condition:test_cash_range(Cost, CashRange) == within;
 test_payment_term(payment_tool, PT, PMs) ->
-    lists:member(hg_payment_tool:get_method(PT), PMs);
+    ordsets:is_element(hg_payment_tool:get_method(PT), PMs);
 test_payment_term(_Name, V, Vs) ->
-    lists:member(V, Vs).
+    ordsets:is_element(V, Vs).
 
 merge_payment_terms(
     Terms0 = #domain_PaymentsProvisionTerms{},
@@ -138,6 +142,10 @@ merge_payment_terms(
         payment_methods = hg_utils:select_defined(
             Terms1#domain_PaymentsProvisionTerms.payment_methods,
             Terms0#domain_PaymentsProvisionTerms.payment_methods
+        ),
+        cash_limit = hg_utils:select_defined(
+            Terms1#domain_PaymentsProvisionTerms.cash_limit,
+            Terms0#domain_PaymentsProvisionTerms.cash_limit
         ),
         cash_flow = hg_utils:select_defined(
             Terms1#domain_PaymentsProvisionTerms.cash_flow,
@@ -169,7 +177,7 @@ merge_refund_terms(Terms0, Terms1) ->
 reduce(Name, S, VS, Revision) ->
     case hg_selector:reduce(S, VS, Revision) of
         {value, V} ->
-            ordsets:to_list(V);
+            V;
         Ambiguous ->
             error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
     end.

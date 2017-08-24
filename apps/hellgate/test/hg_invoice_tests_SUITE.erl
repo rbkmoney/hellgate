@@ -1370,6 +1370,10 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, visa),
                         ?pmt(bank_card, mastercard)
                     ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(      1000, ?cur(<<"RUB">>))},
+                        {exclusive, ?cash(1000000000, ?cur(<<"RUB">>))}
+                    )},
                     cash_flow = {decisions, [
                         #domain_CashFlowDecision{
                             if_   = {condition, {payment_tool, {bank_card, {payment_system_is, visa}}}},
@@ -1456,6 +1460,10 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, visa),
                         ?pmt(bank_card, mastercard)
                     ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(    1000, ?cur(<<"RUB">>))},
+                        {exclusive, ?cash(10000000, ?cur(<<"RUB">>))}
+                    )},
                     cash_flow = {value, [
                         ?cfpost(
                             {provider, settlement},
@@ -1535,6 +1543,10 @@ construct_domain_fixture() ->
                     payment_methods = {value, ?ordset([
                         ?pmt(payment_terminal, euroset)
                     ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(    1000, ?cur(<<"RUB">>))},
+                        {exclusive, ?cash(10000000, ?cur(<<"RUB">>))}
+                    )},
                     cash_flow = {value, [
                         ?cfpost(
                             {provider, settlement},
