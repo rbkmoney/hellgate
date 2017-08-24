@@ -1004,7 +1004,7 @@ unmarshal(details, ?legacy_invoice_details(Product, Description, Cart)) ->
     #domain_InvoiceDetails{
         product     = unmarshal(str, Product),
         description = unmarshal(str, Description),
-        cart        = marshal(cart, Cart)
+        cart        = unmarshal(cart, Cart)
     };
 
 unmarshal(cart, Lines) ->
