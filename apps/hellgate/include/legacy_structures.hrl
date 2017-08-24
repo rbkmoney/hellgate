@@ -67,16 +67,16 @@
 
 -define(legacy_session_started(),
     {invoice_payment_session_started, 
-    	{payproc_InvoicePaymentSessionStarted}}).
+        {payproc_InvoicePaymentSessionStarted}}).
 -define(legacy_session_finished(Result),
     {invoice_payment_session_finished, 
-    	{payproc_InvoicePaymentSessionFinishedResult, Result}}).
+        {payproc_InvoicePaymentSessionFinished, Result}}).
 -define(legacy_session_suspended(),
     {invoice_payment_session_suspended, 
-    	{payproc_InvoicePaymentSessionSuspended}}).
+        {payproc_InvoicePaymentSessionSuspended}}).
 -define(legacy_session_activated(),
     {invoice_payment_session_activated, 
-    	{payproc_InvoicePaymentSessionActivated}}).
+        {payproc_InvoicePaymentSessionActivated}}).
 -define(legacy_trx_bound(Trx),
     {invoice_payment_session_transaction_bound,
         {payproc_InvoicePaymentSessionTransactionBound, Trx}}).

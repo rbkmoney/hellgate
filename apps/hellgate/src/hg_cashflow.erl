@@ -261,7 +261,7 @@ unmarshal(final_cash_flow_posting,
     #domain_FinalCashFlowPosting{
         source          = unmarshal(final_cash_flow_account, Source),
         destination     = unmarshal(final_cash_flow_account, Destination),
-        volume          = hg_cash:unmarshal(Volume),
+        volume          = hg_cash:unmarshal([1, Volume]),
         details         = unmarshal(str, Details)
     };
 

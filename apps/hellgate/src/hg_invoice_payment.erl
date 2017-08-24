@@ -1334,9 +1334,9 @@ unmarshal(change, [1, ?legacy_payment_started(Payment, RiskScore, Route, Cashflo
 unmarshal(change, [1, ?legacy_payment_status_changed(Status)]) ->
     ?payment_status_changed(unmarshal(status, Status));
 unmarshal(change, [1, ?legacy_session_ev(Target, Payload)]) ->
-    ?session_ev(unmarshal(status, Target), unmarshal(session_change, Payload));
+    ?session_ev(unmarshal(status, Target), unmarshal(session_change, [1, Payload]));
 unmarshal(change, [1, ?legacy_adjustment_ev(AdjustmentID, Payload)]) ->
-    ?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adj_change, Payload));
+    ?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adj_change, [1, Payload]));
 
 %% Payment
 
@@ -1368,7 +1368,7 @@ unmarshal(payment,
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
         status          = unmarshal(status, Status),
-        cost            = hg_cash:unmarshal(Cash),
+        cost            = hg_cash:unmarshal([1, Cash]),
         payer           = unmarshal(payer, Payer),
         flow            = ?invoice_payment_flow_instant(),
         context         = hg_content:unmarshal(Context)
@@ -1405,7 +1405,7 @@ unmarshal(status, ?legacy_pending()) ->
 unmarshal(status, ?legacy_processed()) ->
     ?processed();
 unmarshal(status, ?legacy_failed(Failure)) ->
-    ?failed(unmarshal(failure, Failure));
+    ?failed(unmarshal(failure, [1, Failure]));
 unmarshal(status, ?legacy_captured(Reason)) ->
     ?captured_with_reason(unmarshal(str, Reason));
 unmarshal(status, ?legacy_cancelled(Reason)) ->
@@ -1462,9 +1462,9 @@ unmarshal(adj_change, [2, [<<"created">>, Adjustment]]) ->
 unmarshal(adj_change, [2, [<<"status_changed">>, Status]]) ->
     ?adjustment_status_changed(unmarshal(adj_status, Status));
 
-unmarshal(adj_change, [2, ?legacy_adjustment_created(Adjustment)]) ->
+unmarshal(adj_change, [1, ?legacy_adjustment_created(Adjustment)]) ->
     ?adjustment_created(unmarshal(adj, Adjustment));
-unmarshal(adj_change, [2, ?legacy_adjustment_status_changed(Status)]) ->
+unmarshal(adj_change, [1, ?legacy_adjustment_status_changed(Status)]) ->
     ?adjustment_status_changed(unmarshal(adj_status, Status));
 
 %% Adjustment
@@ -1496,8 +1496,8 @@ unmarshal(adj,
         created_at            = unmarshal(str, CreatedAt),
         domain_revision       = unmarshal(int, Revision),
         reason                = unmarshal(str, Reason),
-        old_cash_flow_inverse = hg_cashflow:unmarshal(OldCashFlowInverse),
-        new_cash_flow         = hg_cashflow:unmarshal(NewCashFlow)
+        old_cash_flow_inverse = hg_cashflow:unmarshal([1, OldCashFlowInverse]),
+        new_cash_flow         = hg_cashflow:unmarshal([1, NewCashFlow])
     };
 
 %% Adjustment status
