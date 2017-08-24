@@ -874,8 +874,17 @@ marshal(line, #domain_InvoiceLine{} = InvoiceLine) ->
         <<"product">> => marshal(str, InvoiceLine#domain_InvoiceLine.product),
         <<"quantity">> => marshal(int, InvoiceLine#domain_InvoiceLine.quantity),
         <<"price">> => hg_cash:marshal(InvoiceLine#domain_InvoiceLine.price),
-        <<"metadata">> => marshal(map_str, InvoiceLine#domain_InvoiceLine.metadata)
+        <<"metadata">> => marshal(metadata, InvoiceLine#domain_InvoiceLine.metadata)
     };
+
+marshal(metadata, Metadata) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(marshal(str, K), marshal(bin, {bin, term_to_binary(V)}), Acc)
+        end,
+        #{},
+        Metadata
+    );
 
 marshal(_, Other) ->
     Other.
@@ -1020,8 +1029,17 @@ unmarshal(line, #{
         product = unmarshal(str, Product),
         quantity = unmarshal(int, Quantity),
         price = hg_cash:unmarshal(Price),
-        metadata = unmarshal(map_str, Metadata)
+        metadata = unmarshal(metadata, Metadata)
     };
+
+unmarshal(metadata, Metadata) ->
+    maps:fold(
+        fun(K, {bin, V}, Acc) ->
+            maps:put(unmarshal(str, K), unmarshal(msgpack, binary_to_term(V)), Acc)
+        end,
+        #{},
+        Metadata
+    );
 
 unmarshal(_, Other) ->
     Other.
