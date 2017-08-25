@@ -880,7 +880,7 @@ marshal(line, #domain_InvoiceLine{} = InvoiceLine) ->
 marshal(metadata, Metadata) ->
     maps:fold(
         fun(K, V, Acc) ->
-            maps:put(marshal(str, K), marshal(bin, {bin, term_to_binary(V)}), Acc)
+            maps:put(marshal(str, K), hg_msgpack_marshalling:unmarshal(V), Acc)
         end,
         #{},
         Metadata
@@ -951,8 +951,8 @@ unmarshal(invoice, #{
     <<"due">>           := Due,
     <<"details">>       := Details
 } = Invoice) ->
-    Context = maps:get(<<"context">>, Invoice, undefined),
-    TemplateID = maps:get(<<"template_id">>, Invoice, undefined),
+    Context = maps:get(<<"context">>, Invoice, null),
+    TemplateID = maps:get(<<"template_id">>, Invoice, null),
     #domain_Invoice{
         id              = unmarshal(str, ID),
         shop_id         = unmarshal(str, ShopID),
@@ -1001,22 +1001,21 @@ unmarshal(status, ?legacy_invoice_fulfilled(Reason)) ->
     ?invoice_fulfilled(unmarshal(str, Reason));
 
 unmarshal(details, #{<<"product">> := Product} = Details) ->
-    Description = maps:get(<<"description">>, Details, undefined),
-    Cart = maps:get(<<"cart">>, Details, undefined),
-    #domain_InvoiceDetails{
-        product     = unmarshal(str, Product),
-        description = unmarshal(str, Description),
-        cart        = marshal(cart, Cart)
-    };
-
-unmarshal(details, ?legacy_invoice_details(Product, Description, Cart)) ->
+    Description = maps:get(<<"description">>, Details, null),
+    Cart = maps:get(<<"cart">>, Details, null),
     #domain_InvoiceDetails{
         product     = unmarshal(str, Product),
         description = unmarshal(str, Description),
         cart        = unmarshal(cart, Cart)
     };
 
-unmarshal(cart, Lines) ->
+unmarshal(details, ?legacy_invoice_details(Product, Description)) ->
+    #domain_InvoiceDetails{
+        product     = unmarshal(str, Product),
+        description = unmarshal(str, Description)
+    };
+
+unmarshal(cart, Lines) when is_list(Lines) ->
     #domain_InvoiceCart{lines = [unmarshal(line, Line) || Line <- Lines]};
 
 unmarshal(line, #{
@@ -1035,7 +1034,7 @@ unmarshal(line, #{
 unmarshal(metadata, Metadata) ->
     maps:fold(
         fun(K, {bin, V}, Acc) ->
-            maps:put(unmarshal(str, K), unmarshal(msgpack, binary_to_term(V)), Acc)
+            maps:put(unmarshal(str, K), hg_msgpack_marshalling:marshal(V), Acc)
         end,
         #{},
         Metadata

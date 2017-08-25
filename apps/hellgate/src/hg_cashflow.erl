@@ -247,7 +247,7 @@ unmarshal(final_cash_flow_posting, #{
     <<"destination">>   := Destination,
     <<"volume">>        := Volume
 } = CashFlow) ->
-    Details = maps:get(<<"details">>, CashFlow, undefined),
+    Details = maps:get(<<"details">>, CashFlow, null),
     #domain_FinalCashFlowPosting{
         source          = unmarshal(final_cash_flow_account, Source),
         destination     = unmarshal(final_cash_flow_account, Destination),
