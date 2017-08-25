@@ -197,7 +197,7 @@ marshal(final_cash_flow, CashFlow) ->
     [2, [marshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow]];
 
 marshal(final_cash_flow_posting, #domain_FinalCashFlowPosting{} = CashFlowPosting) ->
-    #{
+    genlib_map:compact(#{
         <<"source">>        =>
             marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.source),
         <<"destination">>   =>
@@ -206,7 +206,7 @@ marshal(final_cash_flow_posting, #domain_FinalCashFlowPosting{} = CashFlowPostin
             hg_cash:marshal(CashFlowPosting#domain_FinalCashFlowPosting.volume),
         <<"details">>       =>
             marshal(str, CashFlowPosting#domain_FinalCashFlowPosting.details)
-    };
+    });
 
 marshal(final_cash_flow_account, #domain_FinalCashFlowAccount{} = CashFlowAccount) ->
     #{

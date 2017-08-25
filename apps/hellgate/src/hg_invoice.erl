@@ -832,7 +832,7 @@ marshal(change, ?payment_ev(PaymentID, Payload)) ->
 %% Change components
 
 marshal(invoice, #domain_Invoice{} = Invoice) ->
-    #{
+    genlib_map:compact(#{
         <<"id">>            => marshal(str, Invoice#domain_Invoice.id),
         <<"shop_id">>       => marshal(str, Invoice#domain_Invoice.shop_id),
         <<"owner_id">>      => marshal(str, Invoice#domain_Invoice.owner_id),
@@ -842,14 +842,14 @@ marshal(invoice, #domain_Invoice{} = Invoice) ->
         <<"details">>       => marshal(details, Invoice#domain_Invoice.details),
         <<"context">>       => hg_content:marshal(Invoice#domain_Invoice.context),
         <<"template_id">>   => marshal(str, Invoice#domain_Invoice.template_id)
-    };
+    });
 
 marshal(details, #domain_InvoiceDetails{} = Details) ->
-    #{
+    genlib_map:compact(#{
         <<"product">> => marshal(str, Details#domain_InvoiceDetails.product),
         <<"description">> => marshal(str, Details#domain_InvoiceDetails.description),
         <<"cart">> => marshal(cart, Details#domain_InvoiceDetails.cart)
-    };
+    });
 
 marshal(status, ?invoice_paid()) ->
     <<"paid">>;

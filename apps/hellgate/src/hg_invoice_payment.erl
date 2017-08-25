@@ -1124,7 +1124,7 @@ marshal(change, ?adjustment_ev(AdjustmentID, Payload)) ->
 %% Change components
 
 marshal(payment, #domain_InvoicePayment{} = Payment) ->
-    #{
+    genlib_map:compact(#{
         <<"id">>                => marshal(str, Payment#domain_InvoicePayment.id),
         <<"created_at">>        => marshal(str, Payment#domain_InvoicePayment.created_at),
         <<"domain_revision">>   => marshal(str, Payment#domain_InvoicePayment.domain_revision),
@@ -1132,7 +1132,7 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
         <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow),
         <<"context">>           => hg_content:marshal(Payment#domain_InvoicePayment.context)
-    };
+    });
 
 marshal(flow, ?invoice_payment_flow_instant()) ->
     #{<<"type">> => <<"instant">>};
@@ -1243,23 +1243,23 @@ marshal(payer, #domain_Payer{} = Payer) ->
     };
 
 marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
-    #{
+    genlib_map:compact(#{
         <<"ip_address">>    => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
         <<"fingerprint">>   => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
-    };
+    });
 
 marshal(contact_info, #domain_ContactInfo{} = ContactInfo) ->
-    #{
+    genlib_map:compact(#{
         <<"phone_number">>  => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
         <<"email">>         => marshal(str, ContactInfo#domain_ContactInfo.email)
-    };
+    });
 
 marshal(trx, #domain_TransactionInfo{} = TransactionInfo) ->
-    #{
+    genlib_map:compact(#{
         <<"id">>            => marshal(str, TransactionInfo#domain_TransactionInfo.id),
         <<"timestamp">>     => marshal(str, TransactionInfo#domain_TransactionInfo.timestamp),
         <<"extra">>         => marshal(map_str, TransactionInfo#domain_TransactionInfo.extra)
-    };
+    });
 
 marshal(interaction, {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}}) ->
     #{<<"redirect">> =>
@@ -1282,10 +1282,10 @@ marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, 
 marshal(failure, {operation_timeout, _}) ->
     [2, <<"operation_timeout">>];
 marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
-    [2, [<<"external_failure">>, #{
+    [2, [<<"external_failure">>, genlib_map:compact(#{
         <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
         <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
-    }]];
+    })]];
 
 marshal(on_hold_expiration, cancel) ->
     <<"cancel">>;

@@ -25,11 +25,8 @@ marshal({bin, Binary}) ->
     {bin, Binary};
 marshal(Object) when is_map(Object) ->
     {obj, maps:fold(
-        fun
-            (_, undefined, Acc) ->
-                Acc;
-            (K, V, Acc) ->
-                maps:put(marshal(K), marshal(V), Acc)
+        fun(K, V, Acc) ->
+            maps:put(marshal(K), marshal(V), Acc)
         end,
         #{},
         Object
