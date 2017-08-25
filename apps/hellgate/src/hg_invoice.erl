@@ -951,8 +951,8 @@ unmarshal(invoice, #{
     <<"due">>           := Due,
     <<"details">>       := Details
 } = Invoice) ->
-    Context = maps:get(<<"context">>, Invoice, null),
-    TemplateID = maps:get(<<"template_id">>, Invoice, null),
+    Context = maps:get(<<"context">>, Invoice, undefined),
+    TemplateID = maps:get(<<"template_id">>, Invoice, undefined),
     #domain_Invoice{
         id              = unmarshal(str, ID),
         shop_id         = unmarshal(str, ShopID),
@@ -1001,8 +1001,8 @@ unmarshal(status, ?legacy_invoice_fulfilled(Reason)) ->
     ?invoice_fulfilled(unmarshal(str, Reason));
 
 unmarshal(details, #{<<"product">> := Product} = Details) ->
-    Description = maps:get(<<"description">>, Details, null),
-    Cart = maps:get(<<"cart">>, Details, null),
+    Description = maps:get(<<"description">>, Details, undefined),
+    Cart = maps:get(<<"cart">>, Details, undefined),
     #domain_InvoiceDetails{
         product     = unmarshal(str, Product),
         description = unmarshal(str, Description),

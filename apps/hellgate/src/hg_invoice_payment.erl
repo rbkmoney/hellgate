@@ -1366,7 +1366,7 @@ unmarshal(payment, #{
     <<"payer">>             := Payer,
     <<"flow">>              := Flow
 } = Payment) ->
-    Context = maps:get(<<"context">>, Payment, null),
+    Context = maps:get(<<"context">>, Payment, undefined),
     #domain_InvoicePayment{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
@@ -1566,8 +1566,8 @@ unmarshal(client_info, ?legacy_client_info(IpAddress, Fingerprint)) ->
     };
 
 unmarshal(client_info, ClientInfo) ->
-    IpAddress = maps:get(<<"ip_address">>, ClientInfo, null),
-    Fingerprint = maps:get(<<"fingerprint">>, ClientInfo, null),
+    IpAddress = maps:get(<<"ip_address">>, ClientInfo, undefined),
+    Fingerprint = maps:get(<<"fingerprint">>, ClientInfo, undefined),
     #domain_ClientInfo{
         ip_address      = unmarshal(str, IpAddress),
         fingerprint     = unmarshal(str, Fingerprint)
@@ -1582,8 +1582,8 @@ unmarshal(contact_info, ?legacy_contract_info(PhoneNumber, Email)) ->
     };
 
 unmarshal(contact_info, ContractInfo) ->
-    PhoneNumber = maps:get(<<"phone_number">>, ContractInfo, null),
-    Email = maps:get(<<"email">>, ContractInfo, null),
+    PhoneNumber = maps:get(<<"phone_number">>, ContractInfo, undefined),
+    Email = maps:get(<<"email">>, ContractInfo, undefined),
     #domain_ContactInfo{
         phone_number    = unmarshal(str, PhoneNumber),
         email           = unmarshal(str, Email)
@@ -1593,7 +1593,7 @@ unmarshal(trx, #{
     <<"id">>    := ID,
     <<"extra">> := Extra
 } = TRX) ->
-    Timestamp = maps:get(<<"timestamp">>, TRX, null),
+    Timestamp = maps:get(<<"timestamp">>, TRX, undefined),
     #domain_TransactionInfo{
         id          = unmarshal(str, ID),
         timestamp   = unmarshal(str, Timestamp),
@@ -1633,7 +1633,7 @@ unmarshal(interaction, ?legacy_post_request(URI, Form)) ->
 unmarshal(failure, [2, <<"operation_timeout">>]) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [2, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]]) ->
-    Description = maps:get(<<"description">>, ExternalFailure, null),
+    Description = maps:get(<<"description">>, ExternalFailure, undefined),
     {external_failure, #domain_ExternalFailure{
         code        = unmarshal(str, Code),
         description = unmarshal(str, Description)
