@@ -20,7 +20,8 @@
     dmsl_domain_thrift:'ProviderSelector'() |
     dmsl_domain_thrift:'TerminalSelector'() |
     dmsl_domain_thrift:'SystemAccountSetSelector'() |
-    dmsl_domain_thrift:'ExternalAccountSetSelector'().
+    dmsl_domain_thrift:'ExternalAccountSetSelector'() |
+    dmsl_domain_thrift:'HoldLifetimeSelector'().
 
 -type value() ::
     _. %% FIXME

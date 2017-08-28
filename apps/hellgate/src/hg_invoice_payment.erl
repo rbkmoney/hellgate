@@ -250,12 +250,12 @@ validate_payment_flow(
     end,
     VS#{payment_flow => PaymentFlow}.
 
-validate_flow(PaymentParams, {Revision, PaymentTerms}, CreatedAt, VS) ->
+validate_flow(PaymentParams, {Revision, Terms}, CreatedAt, VS) ->
     case PaymentParams#payproc_InvoicePaymentParams.flow of
         {instant, _} ->
             ?invoice_payment_flow_instant();
         {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}} ->
-            ?hold_lifetime(HoldLifetime) = validate_hold_lifetime(PaymentTerms, VS, Revision),
+            ?hold_lifetime(HoldLifetime) = validate_hold_lifetime(Terms, VS, Revision),
             HeldUntil = hg_datetime:format_ts(hg_datetime:parse_ts(CreatedAt) + HoldLifetime),
             ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)
     end.
