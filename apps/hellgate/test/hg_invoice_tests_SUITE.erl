@@ -1215,7 +1215,12 @@ construct_domain_fixture() ->
                     ]}
                 }
             ]},
-            hold_lifetime = #domain_HoldLifetime{seconds = 3}
+            hold_lifetime = {decisions, [
+                #domain_HoldLifetimeDecision{
+                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, #domain_HoldLifetime{seconds = 3}}
+                }
+            ]}
         }
     },
     DefaultTermSet = #domain_TermSet{
@@ -1270,7 +1275,12 @@ construct_domain_fixture() ->
                     ]}
                 }
             ]},
-            hold_lifetime = #domain_HoldLifetime{seconds = 3}
+            hold_lifetime = {decisions, [
+                #domain_HoldLifetimeDecision{
+                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, #domain_HoldLifetime{seconds = 3}}
+                }
+            ]}
         }
     },
     [
