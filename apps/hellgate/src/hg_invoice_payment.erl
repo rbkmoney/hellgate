@@ -151,9 +151,9 @@ init_(PaymentID, PaymentParams, #{party := Party} = Opts) ->
     VS0 = collect_varset(Party, Shop, #{}),
     VS1 = validate_payment_params(PaymentParams, {Revision, PaymentTerms}, VS0),
     VS2 = validate_payment_cost(Invoice, {Revision, PaymentTerms}, VS1),
-    VS3 = validate_payment_flow(PaymentParams, PaymentTerms, VS2),
+    VS3 = validate_payment_flow(PaymentParams, {Revision, PaymentTerms}, VS2),
     CreatedAt = hg_datetime:format_now(),
-    Flow = validate_flow(PaymentParams, PaymentTerms, CreatedAt),
+    Flow = validate_flow(PaymentParams, {Revision, PaymentTerms}, CreatedAt, VS3),
     Payment = construct_payment(PaymentID, Invoice, Flow, PaymentParams, CreatedAt, Revision),
     case inspect(Shop, Invoice, Payment, VS3) of
         {RiskScore, VS4} when RiskScore == low; RiskScore == high ->
@@ -239,31 +239,31 @@ validate_route(Payment, undefined) ->
 
 validate_payment_flow(
     #payproc_InvoicePaymentParams{flow = {Type, _}},
-    Terms,
+    {Revision, Terms},
     VS
 ) ->
     PaymentFlow = case Type of
         instant ->
             instant;
         hold ->
-            {hold, validate_hold_lifetime(Terms)}
+            {hold, validate_hold_lifetime(Terms, VS, Revision)}
     end,
     VS#{payment_flow => PaymentFlow}.
 
-validate_flow(PaymentParams, PaymentTerms, CreatedAt) ->
+validate_flow(PaymentParams, {Revision, Terms}, CreatedAt, VS) ->
     case PaymentParams#payproc_InvoicePaymentParams.flow of
         {instant, _} ->
             ?invoice_payment_flow_instant();
         {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}} ->
-            ?hold_lifetime(HoldLifetime) = validate_hold_lifetime(PaymentTerms),
+            ?hold_lifetime(HoldLifetime) = validate_hold_lifetime(Terms, VS, Revision),
             HeldUntil = hg_datetime:format_ts(hg_datetime:parse_ts(CreatedAt) + HoldLifetime),
             ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)
     end.
 
-validate_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = undefined}) ->
+validate_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = undefined}, _, _) ->
     throw_invalid_request(<<"Holds are not available">>);
-validate_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = HoldLifetime}) ->
-    HoldLifetime.
+validate_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = HoldLifetimeSelector}, VS, Revision) ->
+    reduce_selector_for_holds(HoldLifetimeSelector, VS, Revision).
 
 collect_varset(Party, Shop = #domain_Shop{
     category = Category,
@@ -374,6 +374,16 @@ reduce_selector(Name, Selector, VS, Revision) ->
             V;
         Ambiguous ->
             error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
+
+reduce_selector_for_holds(Selector, VS, Revision) ->
+    case hg_selector:reduce(Selector, VS, Revision) of
+        {value, V} ->
+            V;
+        {decisions, []} ->
+            throw_invalid_request(<<"Holds are not available">>);
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {hold_lifetime, Ambiguous}}})
     end.
 
 %%
