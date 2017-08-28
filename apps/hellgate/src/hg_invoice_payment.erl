@@ -380,8 +380,10 @@ reduce_selector_for_holds(Selector, VS, Revision) ->
     case hg_selector:reduce(Selector, VS, Revision) of
         {value, V} ->
             V;
-        _ ->
-            throw_invalid_request(<<"Holds are not available">>)
+        {decisions,[]} ->
+            throw_invalid_request(<<"Holds are not available">>);
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {hold_lifetime, Ambiguous}}})
     end.
 
 %%
