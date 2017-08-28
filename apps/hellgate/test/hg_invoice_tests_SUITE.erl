@@ -24,7 +24,9 @@
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 -export([payment_success/1]).
+-export([payment_w_terminal_success/1]).
 -export([payment_success_on_second_try/1]).
+-export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
 -export([invalid_payment_adjustment/1]).
@@ -74,7 +76,9 @@ all() ->
         invoice_cancellation_after_payment_timeout,
         invalid_payment_amount,
         payment_success,
+        payment_w_terminal_success,
         payment_success_on_second_try,
+        payment_fail_after_silent_callback,
         invoice_success_on_third_payment,
 
         payment_risk_score_check,
@@ -456,6 +460,24 @@ payment_success(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
+-spec payment_w_terminal_success(config()) -> _ | no_return().
+
+payment_w_terminal_success(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberruble">>, make_due_date(10), 42000, C),
+    PaymentParams = make_terminal_payment_params(),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
 -spec payment_success_on_second_try(config()) -> _ | no_return().
 
 payment_success_on_second_try(C) ->
@@ -478,8 +500,38 @@ payment_success_on_second_try(C) ->
     {URL, GoodForm} = get_post_request(UserInteraction),
     BadForm = #{<<"tag">> => <<"666">>},
     _ = assert_failed_post_request({URL, BadForm}),
+    %% make noop callback call
+    _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(GoodForm)}),
+    %% ensure that suspend is still holding up
     _ = assert_success_post_request({URL, GoodForm}),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec payment_fail_after_silent_callback(config()) -> _ | no_return().
+
+payment_fail_after_silent_callback(C) ->
+    Client = cfg(client, C),
+    ok = start_proxy(hg_dummy_provider, 1, C),
+    ok = start_proxy(hg_dummy_inspector, 2, C),
+    InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_tds_payment_params(), Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?captured(), ?interaction_requested(UserInteraction))
+        )
+    ] = next_event(InvoiceID, Client),
+    {URL, Form} = get_post_request(UserInteraction),
+    _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(Form)}),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?captured(), ?session_finished(?session_failed(Failure = ?operation_timeout())))
+        ),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
+    ] = next_event(InvoiceID, Client).
 
 -spec invoice_success_on_third_payment(config()) -> _ | no_return().
 
@@ -540,7 +592,7 @@ payment_risk_score_check(C) ->
         ?payment_ev(PaymentID1, ?session_ev(?captured(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client),
-    % Invoice w/ cost > 500000
+    % Invoice w/ 500000 < cost < 100000000
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
     ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
     [
@@ -555,7 +607,11 @@ payment_risk_score_check(C) ->
     [
         ?payment_ev(PaymentID2, ?session_ev(?captured(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
-    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client).
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    % Invoice w/ 100000000 =< cost
+    InvoiceID3 = start_invoice(<<"rubbersocks">>, make_due_date(10), 100000000, C),
+    Exception = hg_client_invoicing:start_payment(InvoiceID3, PaymentParams, Client),
+    {exception, #'InvalidRequest'{errors = [<<"Fatal error">>]}} = Exception.
 
 -spec invalid_payment_adjustment(config()) -> _ | no_return().
 
@@ -999,6 +1055,10 @@ delete_invoice_tpl(TplID, Config) ->
     Client = cfg(client_tpl, Config),
     hg_client_invoice_templating:delete(TplID, Client).
 
+make_terminal_payment_params() ->
+    {PaymentTool, Session} = hg_ct_helper:make_terminal_payment_tool(),
+    make_payment_params(PaymentTool, Session, instant).
+
 make_tds_payment_params() ->
     {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
     make_payment_params(PaymentTool, Session, instant).
@@ -1129,7 +1189,8 @@ construct_domain_fixture() ->
                     if_   = {constant, true},
                     then_ = {value, ordsets:from_list([
                         ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, mastercard),
+                        ?pmt(payment_terminal, euroset)
                     ])}
                 }
             ]},
@@ -1154,7 +1215,7 @@ construct_domain_fixture() ->
                     ]}
                 }
             ]},
-            hold_lifetime = #domain_HoldLifetime{seconds = 2}
+            hold_lifetime = #domain_HoldLifetime{seconds = 3}
         }
     },
     DefaultTermSet = #domain_TermSet{
@@ -1209,7 +1270,7 @@ construct_domain_fixture() ->
                     ]}
                 }
             ]},
-            hold_lifetime = #domain_HoldLifetime{seconds = 2}
+            hold_lifetime = #domain_HoldLifetime{seconds = 3}
         }
     },
     [
@@ -1222,6 +1283,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -1229,6 +1291,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_inspector(?insp(1), <<"Rejector">>, ?prx(2), #{<<"risk_score">> => <<"low">>}),
         hg_ct_fixture:construct_inspector(?insp(2), <<"Skipper">>, ?prx(2), #{<<"risk_score">> => <<"high">>}),
+        hg_ct_fixture:construct_inspector(?insp(3), <<"Fatalist">>, ?prx(2), #{<<"risk_score">> => <<"fatal">>}),
 
         hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
         hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
@@ -1243,7 +1306,8 @@ construct_domain_fixture() ->
                 party_prototype = #domain_PartyPrototypeRef{id = 42},
                 providers = {value, ordsets:from_list([
                     ?prv(1),
-                    ?prv(2)
+                    ?prv(2),
+                    ?prv(3)
                 ])},
                 system_account_set = {value, ?sas(1)},
                 external_account_set = {decisions, [
@@ -1281,6 +1345,13 @@ construct_domain_fixture() ->
                                     upper = {exclusive, ?cash(100000000, ?cur(<<"RUB">>))}
                                 }}},
                                 then_ = {value, ?insp(2)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {cost_in, #domain_CashRange{
+                                    lower = {inclusive, ?cash( 100000000, ?cur(<<"RUB">>))},
+                                    upper = {exclusive, ?cash(1000000000, ?cur(<<"RUB">>))}
+                                }}},
+                                then_ = {value, ?insp(3)}
                             }
                         ]}
                     }
@@ -1577,8 +1648,46 @@ construct_domain_fixture() ->
                 account = AccountRUB,
                 risk_coverage = low,
                 payment_flow = {hold, #domain_TerminalPaymentFlowHold{
-                    hold_lifetime = #domain_HoldLifetime{seconds = 2}
+                    hold_lifetime = #domain_HoldLifetime{seconds = 3}
                 }}
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(3),
+            data = #domain_Provider{
+                name = <<"Crovider">>,
+                description = <<"Payment terminal provider">>,
+                terminal = {value, [?trm(10)]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"crovider">>
+                    }
+                },
+                abs_account = <<"0987654321">>
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(10),
+            data = #domain_Terminal{
+                name = <<"Payment Terminal Terminal">>,
+                description = <<"Euroset">>,
+                payment_method = ?pmt(payment_terminal, euroset),
+                category = ?cat(1),
+                cash_flow = [
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, payment_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(18, 1000, payment_amount)
+                    )
+                ],
+                account = AccountRUB,
+                risk_coverage = low
             }
         }}
     ].
