@@ -263,7 +263,7 @@ validate_flow(PaymentParams, {Revision, Terms}, CreatedAt, VS) ->
 validate_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = undefined}, _, _) ->
     throw_invalid_request(<<"Holds are not available">>);
 validate_hold_lifetime(#domain_PaymentsServiceTerms{hold_lifetime = HoldLifetimeSelector}, VS, Revision) ->
-    reduce_selector(hold_lifetime, HoldLifetimeSelector, VS, Revision).
+    reduce_selector_for_holds(HoldLifetimeSelector, VS, Revision).
 
 collect_varset(Party, Shop = #domain_Shop{
     category = Category,
@@ -374,6 +374,14 @@ reduce_selector(Name, Selector, VS, Revision) ->
             V;
         Ambiguous ->
             error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
+
+reduce_selector_for_holds(Selector, VS, Revision) ->
+    case hg_selector:reduce(Selector, VS, Revision) of
+        {value, V} ->
+            V;
+        _ ->
+            throw_invalid_request(<<"Holds are not available">>)
     end.
 
 %%
