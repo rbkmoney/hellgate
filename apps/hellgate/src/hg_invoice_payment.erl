@@ -461,7 +461,7 @@ collect_varset(St, Opts) ->
 get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = Terms}) when Terms /= undefined ->
     Terms;
 get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = undefined}) ->
-    throw(#payproc_InvalidOperation{}).
+    throw(#payproc_OperationNotPermitted{}).
 
 get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = Terms}, _Payment) when Terms /= undefined ->
     Terms;
