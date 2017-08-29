@@ -276,6 +276,9 @@ validate_route(_Payment, Route = #domain_InvoicePaymentRoute{}) ->
 validate_route(Payment, undefined) ->
     error({misconfiguration, {'No route found for a payment', Payment}}).
 
+collect_varset(St, Opts) ->
+    collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
+
 collect_varset(Party, Shop = #domain_Shop{
     category = Category,
     account = #domain_ShopAccount{currency = Currency}
@@ -454,9 +457,6 @@ assert_refund_finished(ID, #domain_InvoicePaymentRefund{status = ?refund_pending
     throw(#payproc_InvoicePaymentRefundPending{id = ID});
 assert_refund_finished(_ID, #domain_InvoicePaymentRefund{}) ->
     ok.
-
-collect_varset(St, Opts) ->
-    collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
 
 get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = Terms}) when Terms /= undefined ->
     Terms;
