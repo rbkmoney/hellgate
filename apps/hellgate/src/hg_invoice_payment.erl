@@ -433,7 +433,7 @@ refund(Params, St0, Opts) ->
         reason          = Params#payproc_InvoicePaymentRefundParams.reason
     },
     MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts)),
-    VS1 = validate_refund(Refund, Payment, MerchantTerms, VS0, Revision),
+    VS1 = validate_refund(Payment, MerchantTerms, VS0, Revision),
     ProviderTerms = get_provider_refunds_terms(get_provider_payments_terms(Route, Revision), Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
     % TODO specific cashflow context needed, with defined `refund_amount` for instance
@@ -468,7 +468,7 @@ get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = Terms}, _Pay
 get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = undefined}, Payment) ->
     error({misconfiguration, {'No refund terms for a payment', Payment}}).
 
-validate_refund(_Refund, Payment, RefundTerms, VS0, Revision) ->
+validate_refund(Payment, RefundTerms, VS0, Revision) ->
     VS1 = validate_payment_tool(
         get_payment_tool(Payment),
         RefundTerms#domain_PaymentRefundsServiceTerms.payment_methods,
