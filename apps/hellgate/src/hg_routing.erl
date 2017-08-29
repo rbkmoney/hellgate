@@ -13,10 +13,8 @@
 -type terms()    :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
 -type route()    :: dmsl_domain_thrift:'InvoicePaymentRoute'().
 
--type t() :: route().
-
 -spec choose(hg_selector:varset(), hg_domain:revision()) ->
-    t() | undefined.
+    route() | undefined.
 
 choose(VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
@@ -32,7 +30,7 @@ choose_provider_terminal([{_Provider, []} | Rest], VS) ->
 choose_provider_terminal([], _) ->
     undefined.
 
--spec get_payments_terms(t(), hg_domain:revision()) -> terms().
+-spec get_payments_terms(route(), hg_domain:revision()) -> terms().
 
 get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
     #domain_Provider{terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
