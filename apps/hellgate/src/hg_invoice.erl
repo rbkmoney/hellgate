@@ -1033,7 +1033,7 @@ unmarshal(line, #{
 
 unmarshal(metadata, Metadata) ->
     maps:fold(
-        fun(K, {bin, V}, Acc) ->
+        fun(K, V, Acc) ->
             maps:put(unmarshal(str, K), hg_msgpack_marshalling:marshal(V), Acc)
         end,
         #{},
