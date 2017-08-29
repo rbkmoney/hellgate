@@ -671,7 +671,9 @@ get_adjustment_fixture(Revision) ->
         {globals, #domain_GlobalsObject{
             ref = ?glob(),
             data = Globals#domain_Globals{
-                providers = {value, ordsets:from_list([?prv(100)])}
+                providers = {value, ?ordset([
+                    ?prv(100)
+                ])}
             }}
         },
         {provider, #domain_ProviderObject{
@@ -689,6 +691,10 @@ get_adjustment_fixture(Revision) ->
                     categories = {value, ?ordset([
                         ?cat(1)
                     ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(     1000, <<"RUB">>)},
+                        {exclusive, ?cash(100000000, <<"RUB">>)}
+                    )},
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa)
                     ])},
