@@ -1266,7 +1266,7 @@ get_log_params(_, _) ->
 make_log_params(EventType, Payment, Params) ->
     #domain_InvoicePayment{
         id = ID,
-        cost = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency})
+        cost = ?cash(Amount, Currency)
     } = Payment,
     Result = #{
         type => invoice_payment_event,
@@ -1278,7 +1278,7 @@ make_log_params(EventType, Payment, Params) ->
 get_partial_remainders(CashFlow) ->
     Remainders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
     lists:map(
-        fun ({Account, ?cash(Amount, ?currency(Currency))}) ->
+        fun ({Account, ?cash(Amount, Currency)}) ->
             Remainder = [{remainder, [{amount, Amount}, {currency, Currency}]}],
             {get_account_key(Account), Remainder}
         end,

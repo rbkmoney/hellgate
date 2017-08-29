@@ -737,7 +737,7 @@ get_adjustment_terminal_cashflow(actual) ->
         ?cfpost(
             {system, settlement},
             {external, outcome},
-            ?fixed(20, ?cur(<<"RUB">>))
+            ?fixed(20, <<"RUB">>)
         )
     ].
 
@@ -1117,10 +1117,10 @@ construct_domain_fixture() ->
             cash_limit = {decisions, [
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(     1000, ?cur(<<"RUB">>))},
-                        upper = {exclusive, ?cash(420000000, ?cur(<<"RUB">>))}
-                    }}
+                    then_ = {value, ?cashrng(
+                        {inclusive, ?cash(     1000, <<"RUB">>)},
+                        {exclusive, ?cash(420000000, <<"RUB">>)}
+                    )}
                 }
             ]},
             fees = {decisions, [
@@ -1144,7 +1144,7 @@ construct_domain_fixture() ->
                     ?cfpost(
                         {merchant, settlement},
                         {system, settlement},
-                        ?fixed(100, ?cur(<<"RUB">>))
+                        ?fixed(100, <<"RUB">>)
                     )
                 ]}
             }
@@ -1167,17 +1167,17 @@ construct_domain_fixture() ->
             cash_limit = {decisions, [
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
-                        upper = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
-                    }}
+                    then_ = {value, ?cashrng(
+                        {inclusive, ?cash(     1000, <<"RUB">>)},
+                        {exclusive, ?cash(  4200000, <<"RUB">>)}
+                    )}
                 },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                    then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(      200, ?cur(<<"USD">>))},
-                        upper = {exclusive, ?cash(   313370, ?cur(<<"USD">>))}
-                    }}
+                    then_ = {value, ?cashrng(
+                        {inclusive, ?cash(      200, <<"USD">>)},
+                        {exclusive, ?cash(   313370, <<"USD">>)}
+                    )}
                 }
             ]},
             fees = {decisions, [
@@ -1272,24 +1272,24 @@ construct_domain_fixture() ->
                                 then_ = {value, ?insp(2)}
                             },
                             #domain_InspectorDecision{
-                                if_ = {condition, {cost_in, #domain_CashRange{
-                                    lower = {inclusive, ?cash(        0, ?cur(<<"RUB">>))},
-                                    upper = {exclusive, ?cash(   500000, ?cur(<<"RUB">>))}
-                                }}},
+                                if_ = {condition, {cost_in, ?cashrng(
+                                    {inclusive, ?cash(        0, <<"RUB">>)},
+                                    {exclusive, ?cash(   500000, <<"RUB">>)}
+                                )}},
                                 then_ = {value, ?insp(1)}
                             },
                             #domain_InspectorDecision{
-                                if_ = {condition, {cost_in, #domain_CashRange{
-                                    lower = {inclusive, ?cash(   500000, ?cur(<<"RUB">>))},
-                                    upper = {exclusive, ?cash(100000000, ?cur(<<"RUB">>))}
-                                }}},
+                                if_ = {condition, {cost_in, ?cashrng(
+                                    {inclusive, ?cash(   500000, <<"RUB">>)},
+                                    {exclusive, ?cash(100000000, <<"RUB">>)}
+                                )}},
                                 then_ = {value, ?insp(2)}
                             },
                             #domain_InspectorDecision{
-                                if_ = {condition, {cost_in, #domain_CashRange{
-                                    lower = {inclusive, ?cash( 100000000, ?cur(<<"RUB">>))},
-                                    upper = {exclusive, ?cash(1000000000, ?cur(<<"RUB">>))}
-                                }}},
+                                if_ = {condition, {cost_in, ?cashrng(
+                                    {inclusive, ?cash( 100000000, <<"RUB">>)},
+                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                )}},
                                 then_ = {value, ?insp(3)}
                             }
                         ]}
@@ -1371,8 +1371,8 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, mastercard)
                     ])},
                     cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(      1000, ?cur(<<"RUB">>))},
-                        {exclusive, ?cash(1000000000, ?cur(<<"RUB">>))}
+                        {inclusive, ?cash(      1000, <<"RUB">>)},
+                        {exclusive, ?cash(1000000000, <<"RUB">>)}
                     )},
                     cash_flow = {decisions, [
                         #domain_CashFlowDecision{
@@ -1461,8 +1461,8 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, mastercard)
                     ])},
                     cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, ?cur(<<"RUB">>))},
-                        {exclusive, ?cash(10000000, ?cur(<<"RUB">>))}
+                        {inclusive, ?cash(    1000, <<"RUB">>)},
+                        {exclusive, ?cash(10000000, <<"RUB">>)}
                     )},
                     cash_flow = {value, [
                         ?cfpost(
@@ -1504,7 +1504,7 @@ construct_domain_fixture() ->
                         ?cfpost(
                             {system, settlement},
                             {external, outcome},
-                            ?fixed(20, ?cur(<<"RUB">>)),
+                            ?fixed(20, <<"RUB">>),
                             <<"Assist fee">>
                         )
                     ]}
@@ -1544,8 +1544,8 @@ construct_domain_fixture() ->
                         ?pmt(payment_terminal, euroset)
                     ])},
                     cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, ?cur(<<"RUB">>))},
-                        {exclusive, ?cash(10000000, ?cur(<<"RUB">>))}
+                        {inclusive, ?cash(    1000, <<"RUB">>)},
+                        {exclusive, ?cash(10000000, <<"RUB">>)}
                     )},
                     cash_flow = {value, [
                         ?cfpost(

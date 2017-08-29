@@ -776,7 +776,7 @@ get_invoice_params(Invoice) ->
     #domain_Invoice{
         id = Id,
         owner_id = PartyID,
-        cost = ?cash(Amount, #domain_CurrencyRef{symbolic_code = Currency}),
+        cost = ?cash(Amount, Currency),
         shop_id = ShopID
     } = Invoice,
     [{id, Id}, {owner_id, PartyID}, {cost, [{amount, Amount}, {currency, Currency}]}, {shop_id, ShopID}].
