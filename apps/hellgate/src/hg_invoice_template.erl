@@ -201,7 +201,7 @@ namespace() ->
     ?NS.
 
 -spec init(tpl_id(), create_params()) ->
-    hg_machine:result(ev()).
+    hg_machine:result().
 
 init(ID, Params) ->
     Tpl = create_invoice_template(ID, Params),
@@ -219,7 +219,7 @@ create_invoice_template(ID, P) ->
     }.
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
-    hg_machine:result(ev()).
+    hg_machine:result().
 
 process_signal(timeout, _History) ->
     signal_no_changes();
@@ -231,7 +231,7 @@ signal_no_changes() ->
     {[], hg_machine_action:new()}.
 
 -spec process_call(call(), hg_machine:history(ev())) ->
-    {hg_machine:response(), hg_machine:result(ev())}.
+    {hg_machine:response(), hg_machine:result()}.
 
 process_call(Call, History) ->
     Tpl = collapse_history(unmarshal(History)),
