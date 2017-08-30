@@ -65,6 +65,17 @@ construct_silent_callback(Form) ->
 handle_function(
     'ProcessPayment',
     [#prxprv_Context{
+        session = #prxprv_Session{target = ?refunded(), state = State},
+        payment_info = PaymentInfo,
+        options = _
+    }],
+    Opts
+) ->
+    process_refund(State, PaymentInfo, Opts);
+
+handle_function(
+    'ProcessPayment',
+    [#prxprv_Context{
         session = #prxprv_Session{target = Target, state = State},
         payment_info = PaymentInfo,
         options = _
@@ -82,12 +93,12 @@ handle_function(
     }],
     Opts
 ) ->
-    handle_callback(Payload, Target, State, PaymentInfo, Opts).
+    handle_payment_callback(Payload, Target, State, PaymentInfo, Opts).
 
 process_payment(?processed(), undefined, _, _) ->
     sleep(1, <<"sleeping">>);
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
-    finish(PaymentInfo);
+    finish(get_payment_id(PaymentInfo));
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
     case is_tds_payment(PaymentInfo) of
@@ -107,23 +118,26 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
             sleep(1, <<"sleeping">>)
     end;
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
-    finish(PaymentInfo).
+    finish(get_payment_id(PaymentInfo)).
 
-handle_callback(?DEFAULT_PAYLOAD, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
+handle_payment_callback(?DEFAULT_PAYLOAD, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_CallbackProxyResult{
         intent     = ?sleep(1),
         next_state = <<"sleeping">>
     });
-handle_callback(?LAY_LOW_BUDDY, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
+handle_payment_callback(?LAY_LOW_BUDDY, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_CallbackProxyResult{
         intent     = undefined,
         next_state = <<"suspended">>
     }).
 
-finish(#prxprv_PaymentInfo{payment = Payment}) ->
+process_refund(undefined, PaymentInfo, _) ->
+    finish(hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
+
+finish(TrxID) ->
     #prxprv_ProxyResult{
         intent = ?finish(),
-        trx    = #domain_TransactionInfo{id = Payment#prxprv_InvoicePayment.id, extra = #{}}
+        trx    = #domain_TransactionInfo{id = TrxID, extra = #{}}
     }.
 
 sleep(Timeout, State) ->
@@ -144,6 +158,10 @@ respond(Response, CallbackResult) ->
         result     = CallbackResult
     }.
 
+get_payment_id(#prxprv_PaymentInfo{payment = Payment}) ->
+    #prxprv_InvoicePayment{id = PaymentID} = Payment,
+    PaymentID.
+
 is_tds_payment(#prxprv_PaymentInfo{payment = Payment}) ->
     Token3DS = hg_ct_helper:bank_card_tds_token(),
     #prxprv_InvoicePayment{payer = #domain_Payer{payment_tool = PaymentTool}} = Payment,
@@ -153,6 +171,10 @@ is_tds_payment(#prxprv_PaymentInfo{payment = Payment}) ->
         _ ->
             false
     end.
+
+get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
+    #prxprv_InvoicePaymentRefund{id = RefundID} = Refund,
+    RefundID.
 
 %%
 

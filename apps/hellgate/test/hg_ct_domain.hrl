@@ -14,13 +14,16 @@
 -define(eas(ID),    #domain_ExternalAccountSetRef{id = ID}).
 -define(insp(ID),   #domain_InspectorRef{id = ID}).
 
+-define(cashrng(Lower, Upper),
+    #domain_CashRange{lower = Lower, upper = Upper}).
+
 -define(trmacc(Cur, Stl), #domain_TerminalAccount{currency = ?cur(Cur), settlement = Stl}).
 -define(partycond(ID, Def), {condition, {party, #domain_PartyCondition{id = ID, definition = Def}}}).
 
--define(fixed(Amount, CurrencyRef),
+-define(fixed(Amount, Currency),
     {fixed, #domain_CashVolumeFixed{cash = #domain_Cash{
         amount = Amount,
-        currency = CurrencyRef
+        currency = ?currency(Currency)
     }}}).
 -define(share(P, Q, C), {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C}}).
 

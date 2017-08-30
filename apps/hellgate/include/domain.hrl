@@ -1,8 +1,16 @@
 -ifndef(__hellgate_domain__).
 -define(__hellgate_domain__, 42).
 
--define(cash(Amount, Currency),
-    #domain_Cash{amount = Amount, currency = Currency}).
+-define(currency(SymCode),
+    #domain_CurrencyRef{symbolic_code = SymCode}).
+-define(cash(Amount, SymCode),
+    #domain_Cash{amount = Amount, currency = ?currency(SymCode)}).
+
+-define(route(ProviderRef, TerminalRef),
+    #domain_InvoicePaymentRoute{
+        provider = ProviderRef,
+        terminal = TerminalRef
+    }).
 
 -define(external_failure(Code),
     ?external_failure(Code, undefined)).
