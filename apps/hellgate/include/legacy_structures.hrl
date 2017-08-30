@@ -13,17 +13,31 @@
 -define(legacy_invoice(ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cost, Context, TemplateID),
     {domain_Invoice, ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cost, Context, TemplateID}).
 
--define(legacy_invoice_paid(), 
+-define(legacy_invoice_paid(),
     {paid, {domain_InvoicePaid}}).
--define(legacy_invoice_unpaid(), 
+-define(legacy_invoice_unpaid(),
     {unpaid, {domain_InvoiceUnpaid}}).
--define(legacy_invoice_cancelled(Reason), 
+-define(legacy_invoice_cancelled(Reason),
     {cancelled, {domain_InvoiceCancelled, Reason}}).
--define(legacy_invoice_fulfilled(Reason), 
+-define(legacy_invoice_fulfilled(Reason),
     {fulfilled, {domain_InvoiceFulfilled, Reason}}).
 
 -define(legacy_invoice_details(Product, Description),
     {domain_InvoiceDetails, Product, Description}).
+
+%% Invoice template
+
+-define(legacy_invoice_tpl_created(InvoiceTpl),
+    {invoice_template_created, {payproc_InvoiceTemplateCreated, InvoiceTpl}}
+).
+
+-define(legacy_invoice_tpl_updated(Diff),
+    {invoice_template_updated, {payproc_InvoiceTemplateUpdated, Diff}}
+).
+
+-define(legacy_invoice_tpl_deleted(),
+    {invoice_template_deleted, {payproc_InvoiceTemplateDeleted}}
+).
 
 %% Payment
 
@@ -37,7 +51,7 @@
     {invoice_payment_session_change,
         {payproc_InvoicePaymentSessionChange, Target, Payload}}).
 -define(legacy_adjustment_ev(AdjustmentID, Payload),
-    {invoice_payment_adjustment_change, 
+    {invoice_payment_adjustment_change,
         {payproc_InvoicePaymentAdjustmentChange, AdjustmentID, Payload}}).
 
 -define(legacy_payment(ID, CreatedAt, DomainRevision, Status, Payer, Cash, Context),
@@ -66,22 +80,22 @@
 %% Sessions
 
 -define(legacy_session_started(),
-    {invoice_payment_session_started, 
+    {invoice_payment_session_started,
         {payproc_InvoicePaymentSessionStarted}}).
 -define(legacy_session_finished(Result),
-    {invoice_payment_session_finished, 
+    {invoice_payment_session_finished,
         {payproc_InvoicePaymentSessionFinished, Result}}).
 -define(legacy_session_suspended(),
-    {invoice_payment_session_suspended, 
+    {invoice_payment_session_suspended,
         {payproc_InvoicePaymentSessionSuspended}}).
 -define(legacy_session_activated(),
-    {invoice_payment_session_activated, 
+    {invoice_payment_session_activated,
         {payproc_InvoicePaymentSessionActivated}}).
 -define(legacy_trx_bound(Trx),
     {invoice_payment_session_transaction_bound,
         {payproc_InvoicePaymentSessionTransactionBound, Trx}}).
 -define(legacy_proxy_st_changed(ProxySt),
-    {invoice_payment_session_proxy_state_changed, 
+    {invoice_payment_session_proxy_state_changed,
         {payproc_InvoicePaymentSessionProxyStateChanged, ProxySt}}).
 -define(legacy_interaction_requested(UserInteraction),
     {invoice_payment_session_interaction_requested,
@@ -145,5 +159,5 @@
 
 -define(legacy_terminal(ObjectID),
     {domain_TerminalRef, ObjectID}).
-    
+
 -endif.
