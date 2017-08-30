@@ -885,7 +885,7 @@ payment_hold_auto_cancellation(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_finished(?session_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?cancelled()))
-    ] = next_event(InvoiceID, 1500, Client),
+    ] = next_event(InvoiceID, 3000, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_unpaid()),
         [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
@@ -927,7 +927,7 @@ payment_hold_auto_capturing(C) ->
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?captured())),
         ?invoice_status_changed(?invoice_paid())
-    ] = next_event(InvoiceID, 1500, Client).
+    ] = next_event(InvoiceID, 3000, Client).
 
 %%
 
@@ -1218,7 +1218,7 @@ construct_domain_fixture() ->
             hold_lifetime = {decisions, [
                 #domain_HoldLifetimeDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, #domain_HoldLifetime{seconds = 3}}
+                    then_ = {value, #domain_HoldLifetime{seconds = 2}}
                 }
             ]}
         }
@@ -1278,7 +1278,7 @@ construct_domain_fixture() ->
             hold_lifetime = {decisions, [
                 #domain_HoldLifetimeDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, #domain_HoldLifetime{seconds = 3}}
+                    then_ = {value, #domain_HoldLifetime{seconds = 2}}
                 }
             ]}
         }
@@ -1658,7 +1658,7 @@ construct_domain_fixture() ->
                 account = AccountRUB,
                 risk_coverage = low,
                 payment_flow = {hold, #domain_TerminalPaymentFlowHold{
-                    hold_lifetime = #domain_HoldLifetime{seconds = 3}
+                    hold_lifetime = #domain_HoldLifetime{seconds = 2}
                 }}
             }
         }},
