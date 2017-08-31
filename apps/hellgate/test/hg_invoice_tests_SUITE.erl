@@ -33,6 +33,10 @@
 -export([payment_adjustment_success/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
+-export([payment_hold_cancellation/1]).
+-export([payment_hold_auto_cancellation/1]).
+-export([payment_hold_capturing/1]).
+-export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
 -export([consistent_history/1]).
 
@@ -69,22 +73,27 @@ all() ->
         invalid_invoice_template_id,
         invoice_w_template,
         invoice_cancellation,
-        overdue_invoice_cancellation,
-        invoice_cancellation_after_payment_timeout,
-        invalid_payment_amount,
+        % overdue_invoice_cancellation,
+        % invoice_cancellation_after_payment_timeout,
+        % invalid_payment_amount,
         payment_success,
-        payment_w_terminal_success,
-        payment_success_on_second_try,
-        payment_fail_after_silent_callback,
-        invoice_success_on_third_payment,
+        % payment_w_terminal_success,
+        % payment_success_on_second_try,
+        % payment_fail_after_silent_callback,
+        % invoice_success_on_third_payment,
 
-        payment_risk_score_check,
+        % payment_risk_score_check,
 
-        invalid_payment_adjustment,
-        payment_adjustment_success,
+        % invalid_payment_adjustment,
+        % payment_adjustment_success,
 
-        invalid_payment_w_deprived_party,
-        external_account_posting,
+        % invalid_payment_w_deprived_party,
+        % external_account_posting,
+
+        payment_hold_cancellation,
+        payment_hold_auto_cancellation,
+        payment_hold_capturing,
+        payment_hold_auto_capturing,
 
         payment_refund_success,
 
@@ -408,6 +417,9 @@ invoice_cancellation_after_payment_timeout(C) ->
     PaymentParams = make_tds_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?interaction_requested(_)))
     ] = next_event(InvoiceID, Client),
     %% wait for payment timeout
@@ -471,6 +483,9 @@ payment_success_on_second_try(C) ->
     PaymentParams = make_tds_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(
             PaymentID,
             ?session_ev(?captured(), ?interaction_requested(UserInteraction))
@@ -484,7 +499,7 @@ payment_success_on_second_try(C) ->
     _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(GoodForm)}),
     %% ensure that suspend is still holding up
     _ = assert_success_post_request({URL, GoodForm}),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Client).
 
 -spec payment_fail_after_silent_callback(config()) -> _ | no_return().
 
@@ -493,6 +508,9 @@ payment_fail_after_silent_callback(C) ->
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentID = process_payment(InvoiceID, make_tds_payment_params(), Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(
             PaymentID,
@@ -524,6 +542,9 @@ invoice_success_on_third_payment(C) ->
     PaymentID2 = await_payment_failure(InvoiceID, PaymentID2, Client),
     PaymentID3 = process_payment(InvoiceID, PaymentParams, Client),
     [
+        ?payment_ev(PaymentID3, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(
             PaymentID3,
             ?session_ev(_, ?interaction_requested(UserInteraction))
@@ -532,7 +553,7 @@ invoice_success_on_third_payment(C) ->
     GoodPost = get_post_request(UserInteraction),
     %% simulate user interaction FTW!
     _ = assert_success_post_request(GoodPost),
-    PaymentID3 = await_payment_capture(InvoiceID, PaymentID3, Client).
+    PaymentID3 = await_payment_capture_finish(InvoiceID, PaymentID3, Client).
 
 %% @TODO modify this test by failures of inspector in case of wrong terminal choice
 -spec payment_risk_score_check(config()) -> _ | no_return().
@@ -551,8 +572,7 @@ payment_risk_score_check(C) ->
     [
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?trx_bound(_))),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID1, ?payment_status_changed(?processed())),
-        ?payment_ev(PaymentID2, ?session_ev(?captured(), ?session_started()))
+        ?payment_ev(PaymentID1, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client),
     % Invoice w/ 500000 < cost < 100000000
@@ -565,8 +585,7 @@ payment_risk_score_check(C) ->
     [
         ?payment_ev(PaymentID2, ?session_ev(?processed(), ?trx_bound(_))),
         ?payment_ev(PaymentID2, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID2, ?payment_status_changed(?processed())),
-        ?payment_ev(PaymentID1, ?session_ev(?captured(), ?session_started()))
+        ?payment_ev(PaymentID2, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID2, Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
     % Invoice w/ 100000000 =< cost
@@ -583,10 +602,13 @@ invalid_payment_adjustment(C) ->
     %% start a smoker's payment
     PaymentParams = make_tds_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
     %% no way to create adjustment for a payment not yet finished
     ?invalid_payment_status(?processed()) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
-    PaymentID = await_payment_failure(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_failure_finish(InvoiceID, PaymentID, Client),
     %% no way to create adjustment for a failed payment
     ?invalid_payment_status(?failed(_)) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
@@ -607,8 +629,7 @@ payment_adjustment_success(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(_))),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?processed())),
-        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
@@ -789,8 +810,7 @@ external_account_posting(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(_))),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?processed())),
-        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID, InvoicingClient),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
@@ -850,6 +870,87 @@ consistent_history(C) ->
     Client = hg_client_eventsink:start_link(hg_client_api:new(cfg(root_url, C))),
     Events = hg_client_eventsink:pull_events(5000, 1000, Client),
     ok = hg_eventsink_history:assert_total_order(Events).
+
+-spec payment_hold_cancellation(config()) -> _ | no_return().
+
+payment_hold_cancellation(C) ->
+    Client = cfg(client, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 10000, C),
+    PaymentParams = make_payment_params({hold, capture}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(<<"whynot">>), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?cancelled_with_reason(<<"whynot">>), ?session_finished(?session_succeeded()))
+        ),
+        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(<<"whynot">>)))
+    ] = next_event(InvoiceID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_unpaid()),
+        [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
+
+-spec payment_hold_auto_cancellation(config()) -> _ | no_return().
+
+payment_hold_auto_cancellation(C) ->
+    Client = cfg(client, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(5), 10000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled()))
+    ] = next_event(InvoiceID, 3000, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_unpaid()),
+        [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
+
+-spec payment_hold_capturing(config()) -> _ | no_return().
+
+payment_hold_capturing(C) ->
+    Client = cfg(client, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason(<<"ok">>), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason(<<"ok">>), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?captured_with_reason(<<"ok">>))),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client).
+
+-spec payment_hold_auto_capturing(config()) -> _ | no_return().
+
+payment_hold_auto_capturing(C) ->
+    Client = cfg(client, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, capture}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?captured())),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, 3000, Client).
 
 %%
 
@@ -989,29 +1090,39 @@ delete_invoice_tpl(TplID, Config) ->
 
 make_terminal_payment_params() ->
     {PaymentTool, Session} = hg_ct_helper:make_terminal_payment_tool(),
-    make_payment_params(PaymentTool, Session).
+    make_payment_params(PaymentTool, Session, instant).
 
 make_tds_payment_params() ->
     {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
-    make_payment_params(PaymentTool, Session).
+    make_payment_params(PaymentTool, Session, instant).
 
 make_payment_params() ->
+    make_payment_params(instant).
+
+make_payment_params(FlowType) ->
     {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
-    make_payment_params(PaymentTool, Session).
+    make_payment_params(PaymentTool, Session, FlowType).
 
-make_refund_params() ->
-    #payproc_InvoicePaymentRefundParams{
-        reason = <<"ZANOZED">>
-    }.
-
-make_payment_params(PaymentTool, Session) ->
+make_payment_params(PaymentTool, Session, FlowType) ->
+    Flow = case FlowType of
+        instant ->
+            {instant, #payproc_InvoicePaymentParamsFlowInstant{}};
+        {hold, OnHoldExpiration} ->
+            {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
+    end,
     #payproc_InvoicePaymentParams{
         payer = #domain_Payer{
             payment_tool = PaymentTool,
             session_id = Session,
             client_info = #domain_ClientInfo{},
             contact_info = #domain_ContactInfo{}
-        }
+        },
+        flow = Flow
+    }.
+
+make_refund_params() ->
+    #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>
     }.
 
 make_adjustment_params() ->
@@ -1053,12 +1164,17 @@ process_payment(InvoiceID, PaymentParams, Client) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(_)))),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?processed())),
-        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
 await_payment_capture(InvoiceID, PaymentID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    await_payment_capture_finish(InvoiceID, PaymentID, Client).
+
+await_payment_capture_finish(InvoiceID, PaymentID, Client) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?captured())),
@@ -1067,6 +1183,12 @@ await_payment_capture(InvoiceID, PaymentID, Client) ->
     PaymentID.
 
 await_payment_failure(InvoiceID, PaymentID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    await_payment_failure_finish(InvoiceID, PaymentID, Client).
+
+await_payment_failure_finish(InvoiceID, PaymentID, Client) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?interaction_requested(_)))
     ] = next_event(InvoiceID, Client),
@@ -1141,6 +1263,18 @@ construct_domain_fixture() ->
                     ]}
                 }
             ]},
+            holds = #domain_PaymentHoldsServiceTerms{
+                payment_methods = {value, ?ordset([
+                    ?pmt(bank_card, visa),
+                    ?pmt(bank_card, mastercard)
+                ])},
+                lifetime = {decisions, [
+                    #domain_HoldLifetimeDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, #domain_HoldLifetime{seconds = 2}}
+                    }
+                ]}
+            },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
                     ?pmt(bank_card, visa),
@@ -1208,6 +1342,18 @@ construct_domain_fixture() ->
                     ]}
                 }
             ]},
+            holds = #domain_PaymentHoldsServiceTerms{
+                payment_methods = {value, ?ordset([
+                    ?pmt(bank_card, visa),
+                    ?pmt(bank_card, mastercard)
+                ])},
+                lifetime = {decisions, [
+                    #domain_HoldLifetimeDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, #domain_HoldLifetime{seconds = 2}}
+                    }
+                ]}
+            },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
                     ?pmt(bank_card, visa),
@@ -1412,6 +1558,14 @@ construct_domain_fixture() ->
                             ]}
                         }
                     ]},
+                    holds = #domain_PaymentHoldsProvisionTerms{
+                        lifetime = {decisions, [
+                            #domain_HoldLifetimeDecision{
+                                if_   = {condition, {payment_tool, {bank_card, {payment_system_is, visa}}}},
+                                then_ = {value, ?hold_lifetime(3)}
+                            }
+                        ]}
+                    },
                     refunds = #domain_PaymentRefundsProvisionTerms{
                         cash_flow = {value, [
                             ?cfpost(
@@ -1531,7 +1685,7 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Crovider">>,
                 description = <<"Payment terminal provider">>,
-                terminal = {value, [?trm(9)]},
+                terminal = {value, [?trm(10)]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -1569,7 +1723,7 @@ construct_domain_fixture() ->
             }
         }},
         {terminal, #domain_TerminalObject{
-            ref = ?trm(9),
+            ref = ?trm(10),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
                 description = <<"Euroset">>,
@@ -1578,3 +1732,4 @@ construct_domain_fixture() ->
             }
         }}
     ].
+%

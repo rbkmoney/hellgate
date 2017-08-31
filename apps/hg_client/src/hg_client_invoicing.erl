@@ -13,6 +13,8 @@
 
 -export([start_payment/3]).
 -export([get_payment/3]).
+-export([cancel_payment/4]).
+-export([capture_payment/4]).
 
 -export([refund_payment/4]).
 -export([get_payment_refund/4]).
@@ -115,6 +117,18 @@ start_payment(InvoiceID, PaymentParams, Client) ->
 
 get_payment(InvoiceID, PaymentID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetPayment', [InvoiceID, PaymentID]})).
+
+-spec cancel_payment(invoice_id(), payment_id(), binary(), pid()) ->
+    ok | woody_error:business_error().
+
+cancel_payment(InvoiceID, PaymentID, Reason, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'CancelPayment', [InvoiceID, PaymentID, Reason]})).
+
+-spec capture_payment(invoice_id(), payment_id(), binary(), pid()) ->
+    ok | woody_error:business_error().
+
+capture_payment(InvoiceID, PaymentID, Reason, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'CapturePayment', [InvoiceID, PaymentID, Reason]})).
 
 -spec refund_payment(invoice_id(), payment_id(), refund_params(), pid()) ->
     refund() | woody_error:business_error().

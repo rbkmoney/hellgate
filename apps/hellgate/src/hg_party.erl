@@ -583,6 +583,7 @@ merge_payments_terms(
         payment_methods = Pm0,
         cash_limit = Al0,
         fees = Fee0,
+        holds = Hl0,
         refunds = Rf0
     },
     #domain_PaymentsServiceTerms{
@@ -591,6 +592,7 @@ merge_payments_terms(
         payment_methods = Pm1,
         cash_limit = Al1,
         fees = Fee1,
+        holds = Hl1,
         refunds = Rf1
     }
 ) ->
@@ -600,9 +602,27 @@ merge_payments_terms(
         payment_methods = hg_utils:select_defined(Pm1, Pm0),
         cash_limit      = hg_utils:select_defined(Al1, Al0),
         fees            = hg_utils:select_defined(Fee1, Fee0),
-        refunds         = merge_refunds_terms(Rf1, Rf0)
+        holds           = merge_holds_terms(Hl0, Hl1),
+        refunds         = merge_refunds_terms(Rf0, Rf1)
     };
 merge_payments_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_holds_terms(
+    #domain_PaymentHoldsServiceTerms{
+        payment_methods = Pm0,
+        lifetime = Lft0
+    },
+    #domain_PaymentHoldsServiceTerms{
+        payment_methods = Pm1,
+        lifetime = Lft1
+    }
+) ->
+    #domain_PaymentHoldsServiceTerms{
+        payment_methods = hg_utils:select_defined(Pm1, Pm0),
+        lifetime        = hg_utils:select_defined(Lft1, Lft0)
+    };
+merge_holds_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 merge_refunds_terms(

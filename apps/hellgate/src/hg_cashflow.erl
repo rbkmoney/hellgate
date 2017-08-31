@@ -24,6 +24,9 @@
 
 -export([get_partial_remainders/1]).
 
+-export([marshal/1]).
+-export([unmarshal/1]).
+
 %%
 
 -define(posting(Source, Destination, Volume, Details),
@@ -177,3 +180,121 @@ modify_remainder(#domain_FinalCashFlowAccount{account_type = AccountType}, ?cash
         ?cash(Amount, Currency),
         Acc
     ).
+
+%% Marshalling
+
+-include("legacy_structures.hrl").
+
+-spec marshal(final_cash_flow()) ->
+    hg_msgpack_marshalling:value().
+
+marshal(CashFlow) ->
+    marshal(final_cash_flow, CashFlow).
+
+marshal(final_cash_flow, CashFlow) ->
+    [2, [marshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow]];
+
+marshal(final_cash_flow_posting, #domain_FinalCashFlowPosting{} = CashFlowPosting) ->
+    genlib_map:compact(#{
+        <<"source">>        =>
+            marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.source),
+        <<"destination">>   =>
+            marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.destination),
+        <<"volume">>        =>
+            hg_cash:marshal(CashFlowPosting#domain_FinalCashFlowPosting.volume),
+        <<"details">>       =>
+            marshal(str, CashFlowPosting#domain_FinalCashFlowPosting.details)
+    });
+
+marshal(final_cash_flow_account, #domain_FinalCashFlowAccount{} = CashFlowAccount) ->
+    #{
+        <<"type">>  =>
+            marshal(account_type, CashFlowAccount#domain_FinalCashFlowAccount.account_type),
+        <<"id">>    =>
+             marshal(str, CashFlowAccount#domain_FinalCashFlowAccount.account_id)
+    };
+
+marshal(account_type, {merchant, settlement}) ->
+    [<<"merchant">>, <<"settlement">>];
+marshal(account_type, {merchant, guarantee}) ->
+    [<<"merchant">>, <<"guarantee">>];
+marshal(account_type, {provider, settlement}) ->
+    [<<"provider">>, <<"settlement">>];
+marshal(account_type, {system, settlement}) ->
+    [<<"system">>, <<"settlement">>];
+marshal(account_type, {external, income}) ->
+    [<<"external">>, <<"income">>];
+marshal(account_type, {external, outcome}) ->
+    [<<"external">>, <<"outcome">>];
+
+marshal(_, Other) ->
+    Other.
+
+%% Unmarshalling
+
+-spec unmarshal(hg_msgpack_marshalling:value()) -> final_cash_flow().
+
+unmarshal(CashFlow) ->
+    unmarshal(final_cash_flow, CashFlow).
+
+unmarshal(final_cash_flow, [_, CashFlow]) ->
+    [unmarshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow];
+
+unmarshal(final_cash_flow_posting, #{
+    <<"source">>        := Source,
+    <<"destination">>   := Destination,
+    <<"volume">>        := Volume
+} = CashFlow) ->
+    Details = maps:get(<<"details">>, CashFlow, undefined),
+    #domain_FinalCashFlowPosting{
+        source          = unmarshal(final_cash_flow_account, Source),
+        destination     = unmarshal(final_cash_flow_account, Destination),
+        volume          = hg_cash:unmarshal(Volume),
+        details         = unmarshal(str, Details)
+    };
+
+unmarshal(final_cash_flow_posting,
+    ?legacy_final_cash_flow_posting(Code, Source, Destination, Volume, Details)
+) ->
+    #domain_FinalCashFlowPosting{
+        source          = unmarshal(final_cash_flow_account, Source),
+        destination     = unmarshal(final_cash_flow_account, Destination),
+        volume          = hg_cash:unmarshal([1, Volume]),
+        details         = unmarshal(str, Details)
+    };
+
+unmarshal(final_cash_flow_account, #{
+    <<"type">>  := AccountType,
+    <<"id">>    := AccountId
+}) ->
+    #domain_FinalCashFlowAccount{
+        account_type    = unmarshal(account_type, AccountType),
+        account_id      = unmarshal(str, AccountId)
+    };
+
+unmarshal(final_cash_flow_account,
+    ?legacy_final_cash_flow_account(AccountType, AccountId)
+) ->
+    #domain_FinalCashFlowAccount{
+        account_type    = unmarshal(account_type, AccountType),
+        account_id      = unmarshal(str, AccountId)
+    };
+
+unmarshal(account_type, [<<"merchant">>, <<"settlement">>]) ->
+    {merchant, settlement};
+unmarshal(account_type, [<<"merchant">>, <<"guarantee">>]) ->
+    {merchant, guarantee};
+unmarshal(account_type, [<<"provider">>, <<"settlement">>]) ->
+    {provider, settlement};
+unmarshal(account_type, [<<"system">>, <<"settlement">>]) ->
+    {system, settlement};
+unmarshal(account_type, [<<"external">>, <<"income">>]) ->
+    {external, income};
+unmarshal(account_type, [<<"external">>, <<"outcome">>]) ->
+    {external, outcome};
+
+unmarshal(account_type, {AccType1, AccType2} = AccType) when is_atom(AccType1), is_atom(AccType2) ->
+    AccType;
+
+unmarshal(_, Other) ->
+    Other.

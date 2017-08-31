@@ -118,6 +118,9 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
             sleep(1, <<"sleeping">>)
     end;
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
+    finish(get_payment_id(PaymentInfo));
+
+process_payment(?cancelled(), _, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo)).
 
 handle_payment_callback(?DEFAULT_PAYLOAD, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->

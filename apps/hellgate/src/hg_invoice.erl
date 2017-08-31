@@ -109,6 +109,16 @@ handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     St = assert_invoice_accessible(get_state(InvoiceID)),
     get_payment_state(get_payment_session(PaymentID, St));
 
+handle_function_('CapturePayment', [UserInfo, InvoiceID, PaymentID, Reason], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {capture_payment, PaymentID, Reason});
+
+handle_function_('CancelPayment', [UserInfo, InvoiceID, PaymentID, Reason], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {cancel_payment, PaymentID, Reason});
+
 handle_function_('RefundPayment', [UserInfo, InvoiceID, PaymentID, Params], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
@@ -206,12 +216,15 @@ process_callback(Tag, Callback) ->
     end.
 
 %%
+-include("invoice_events.hrl").
 
 get_history(InvoiceID) ->
-    map_history_error(hg_machine:get_history(?NS, InvoiceID)).
+    History = hg_machine:get_history(?NS, InvoiceID),
+    map_history_error(unmarshal_history_result(History)).
 
 get_history(InvoiceID, AfterID, Limit) ->
-    map_history_error(hg_machine:get_history(?NS, InvoiceID, AfterID, Limit)).
+    History = hg_machine:get_history(?NS, InvoiceID, AfterID, Limit),
+    map_history_error(unmarshal_history_result(History)).
 
 get_state(InvoiceID) ->
     collapse_history(get_history(InvoiceID)).
@@ -223,12 +236,11 @@ get_public_history(InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Lim
     [publish_invoice_event(InvoiceID, Ev) || Ev <- get_history(InvoiceID, AfterID, Limit)].
 
 publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
-    {Source, Ev} = publish_event(InvoiceID, Event),
     #payproc_Event{
         id = ID,
-        source = Source,
+        source = {invoice_id, InvoiceID},
         created_at = Dt,
-        payload = Ev
+        payload = ?invoice_ev(Event)
     }.
 
 start(ID, Args) ->
@@ -261,9 +273,12 @@ map_start_error({ok, _}) ->
 map_start_error({error, Reason}) ->
     error(Reason).
 
-%%
+unmarshal_history_result({ok, Result}) ->
+    {ok, unmarshal(Result)};
+unmarshal_history_result(Error) ->
+    Error.
 
--include("invoice_events.hrl").
+%%
 
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
@@ -279,16 +294,18 @@ map_start_error({error, Reason}) ->
 -type ev() ::
     [dmsl_payment_processing_thrift:'InvoiceChange'()].
 
+-type msgpack_ev() :: hg_msgpack_marshalling:value().
+
 -define(invalid_invoice_status(Status),
     #payproc_InvalidInvoiceStatus{status = Status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
--spec publish_event(invoice_id(), ev()) ->
+-spec publish_event(invoice_id(), msgpack_ev()) ->
     hg_event_provider:public_event().
 
-publish_event(InvoiceID, Changes) when is_list(Changes) ->
-    {{invoice_id, InvoiceID}, ?invoice_ev(Changes)}.
+publish_event(InvoiceID, Changes) ->
+    {{invoice_id, InvoiceID}, ?invoice_ev(unmarshal({list, changes}, Changes))}.
 
 %%
 
@@ -299,7 +316,7 @@ namespace() ->
     ?NS.
 
 -spec init(invoice_id(), [invoice_tpl_id() | invoice_params()]) ->
-    hg_machine:result(ev()).
+    hg_machine:result().
 
 init(ID, [InvoiceTplID, InvoiceParams]) ->
     Invoice = create_invoice(ID, InvoiceTplID, InvoiceParams),
@@ -313,10 +330,10 @@ init(ID, [InvoiceTplID, InvoiceParams]) ->
 %%
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
-    hg_machine:result(ev()).
+    hg_machine:result().
 
 process_signal(Signal, History) ->
-    handle_result(handle_signal(Signal, collapse_history(History))).
+    handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
 handle_signal(timeout, St = #st{activity = {payment, PaymentID}}) ->
     % there's a payment pending
@@ -333,7 +350,7 @@ handle_signal({repair, _}, St) ->
 
 handle_expiration(St) ->
     #{
-        changes => [?invoice_status_changed(?invoice_cancelled(format_reason(overdue)))],
+        changes => [?invoice_status_changed(?invoice_cancelled(hg_utils:format_reason(overdue)))],
         state   => St
     }.
 
@@ -342,6 +359,8 @@ handle_expiration(St) ->
 -type call() ::
     {start_payment, payment_params()} |
     {refund_payment , payment_id(), refund_params()} |
+    {capture_payment, payment_id(), binary()} |
+    {cancel_payment, payment_id(), binary()} |
     {create_payment_adjustment , payment_id(), adjustment_params()} |
     {capture_payment_adjustment, payment_id(), adjustment_id()} |
     {cancel_payment_adjustment , payment_id(), adjustment_id()} |
@@ -353,7 +372,7 @@ handle_expiration(St) ->
     {hg_machine:response(), hg_machine:result(ev())}.
 
 process_call(Call, History) ->
-    St = collapse_history(History),
+    St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
             {{exception, Exception}, {[], hg_machine_action:new()}}
@@ -367,13 +386,37 @@ handle_call({start_payment, PaymentParams}, St) ->
     _ = assert_no_pending_payment(St),
     start_payment(PaymentParams, St);
 
+handle_call({capture_payment, PaymentID, Reason}, St) ->
+    _ = assert_invoice_accessible(St),
+    _ = assert_invoice_operable(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason),
+    #{
+        response => ok,
+        changes => wrap_payment_changes(PaymentID, Changes),
+        action => Action,
+        state => St
+    };
+
+handle_call({cancel_payment, PaymentID, Reason}, St) ->
+    _ = assert_invoice_accessible(St),
+    _ = assert_invoice_operable(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    {ok, {Changes, Action}} = hg_invoice_payment:cancel(PaymentSession, Reason),
+    #{
+        response => ok,
+        changes => wrap_payment_changes(PaymentID, Changes),
+        action => Action,
+        state => St
+    };
+
 handle_call({fulfill, Reason}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(paid, St),
     #{
         response => ok,
-        changes  => [?invoice_status_changed(?invoice_fulfilled(format_reason(Reason)))],
+        changes  => [?invoice_status_changed(?invoice_fulfilled(hg_utils:format_reason(Reason)))],
         state    => St
     };
 
@@ -384,7 +427,7 @@ handle_call({rescind, Reason}, St) ->
     _ = assert_no_pending_payment(St),
     #{
         response => ok,
-        changes  => [?invoice_status_changed(?invoice_cancelled(format_reason(Reason)))],
+        changes  => [?invoice_status_changed(?invoice_cancelled(hg_utils:format_reason(Reason)))],
         action   => hg_machine_action:unset_timer(),
         state    => St
     };
@@ -485,13 +528,13 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                 action  => Action,
                 state   => St
             };
-        {done, {Changes1, _}} ->
+        {done, {Changes1, Action}} ->
             PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Changes1),
-            case get_payment_status(hg_invoice_payment:get_payment(PaymentSession1)) of
+            Payment = hg_invoice_payment:get_payment(PaymentSession1),
+            case get_payment_status(Payment) of
                 ?processed() ->
-                    {ok, {Changes2, Action}} = hg_invoice_payment:start_session(?captured()),
                     #{
-                        changes => wrap_payment_changes(PaymentID, Changes1 ++ Changes2),
+                        changes => wrap_payment_changes(PaymentID, Changes1),
                         action  => Action,
                         state   => St
                     };
@@ -499,6 +542,7 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                     Changes2 = [?invoice_status_changed(?invoice_paid())],
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
+                        action  => Action,
                         state   => St
                     };
                 ?refunded() ->
@@ -507,6 +551,12 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                         state   => St
                     };
                 ?failed(_) ->
+                    #{
+                        changes => wrap_payment_changes(PaymentID, Changes1),
+                        action  => set_invoice_timer(St),
+                        state   => St
+                    };
+                ?cancelled() ->
                     #{
                         changes => wrap_payment_changes(PaymentID, Changes1),
                         action  => set_invoice_timer(St),
@@ -542,9 +592,9 @@ handle_result(#{state := St} = Params) ->
     _ = log_changes(Changes, St),
     case maps:get(response, Params, undefined) of
         undefined ->
-            {[Changes], Action};
+            {[marshal(Changes)], Action};
         Response ->
-            {{ok, Response}, {[Changes], Action}}
+            {{ok, Response}, {[marshal(Changes)], Action}}
     end.
 
 %%
@@ -622,12 +672,6 @@ try_get_payment_session(PaymentID, #st{payments = Payments}) ->
 
 set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
     St#st{payments = lists:keystore(PaymentID, 1, Payments, {PaymentID, PaymentSession})}.
-
-%%
-
-%% TODO: fix this dirty hack
-format_reason(V) ->
-    genlib:to_binary(V).
 
 %%
 
@@ -774,14 +818,253 @@ get_invoice_event_log(EventType, StatusName, Invoice) ->
 
 get_invoice_params(Invoice) ->
     #domain_Invoice{
-        id = Id,
+        id = ID,
         owner_id = PartyID,
         cost = ?cash(Amount, Currency),
         shop_id = ShopID
     } = Invoice,
-    [{id, Id}, {owner_id, PartyID}, {cost, [{amount, Amount}, {currency, Currency}]}, {shop_id, ShopID}].
+    [{id, ID}, {owner_id, PartyID}, {cost, [{amount, Amount}, {currency, Currency}]}, {shop_id, ShopID}].
 
 get_message(invoice_created) ->
     "Invoice is created";
 get_message(invoice_status_changed) ->
     "Invoice status is changed".
+
+-include("legacy_structures.hrl").
+%% Marshalling
+
+marshal(Changes) when is_list(Changes) ->
+    [marshal(change, Change) || Change <- Changes].
+
+%% Changes
+
+marshal(change, ?invoice_created(Invoice)) ->
+    [2, #{
+        <<"change">>    => <<"created">>,
+        <<"invoice">>   => marshal(invoice, Invoice)
+    }];
+marshal(change, ?invoice_status_changed(Status)) ->
+    [2, #{
+        <<"change">>    => <<"status_changed">>,
+        <<"status">>    => marshal(status, Status)
+    }];
+marshal(change, ?payment_ev(PaymentID, Payload)) ->
+    [2, #{
+        <<"change">>    => <<"payment_change">>,
+        <<"id">>        => marshal(str, PaymentID),
+        <<"payload">>   => hg_invoice_payment:marshal(Payload)
+    }];
+
+%% Change components
+
+marshal(invoice, #domain_Invoice{} = Invoice) ->
+    genlib_map:compact(#{
+        <<"id">>            => marshal(str, Invoice#domain_Invoice.id),
+        <<"shop_id">>       => marshal(str, Invoice#domain_Invoice.shop_id),
+        <<"owner_id">>      => marshal(str, Invoice#domain_Invoice.owner_id),
+        <<"created_at">>    => marshal(str, Invoice#domain_Invoice.created_at),
+        <<"cost">>          => hg_cash:marshal(Invoice#domain_Invoice.cost),
+        <<"due">>           => marshal(str, Invoice#domain_Invoice.due),
+        <<"details">>       => marshal(details, Invoice#domain_Invoice.details),
+        <<"context">>       => hg_content:marshal(Invoice#domain_Invoice.context),
+        <<"template_id">>   => marshal(str, Invoice#domain_Invoice.template_id)
+    });
+
+marshal(details, #domain_InvoiceDetails{} = Details) ->
+    genlib_map:compact(#{
+        <<"product">> => marshal(str, Details#domain_InvoiceDetails.product),
+        <<"description">> => marshal(str, Details#domain_InvoiceDetails.description),
+        <<"cart">> => marshal(cart, Details#domain_InvoiceDetails.cart)
+    });
+
+marshal(status, ?invoice_paid()) ->
+    <<"paid">>;
+marshal(status, ?invoice_unpaid()) ->
+    <<"unpaid">>;
+marshal(status, ?invoice_cancelled(Reason)) ->
+    [
+        <<"cancelled">>,
+        marshal(str, Reason)
+    ];
+marshal(status, ?invoice_fulfilled(Reason)) ->
+    [
+        <<"fulfilled">>,
+        marshal(str, Reason)
+    ];
+
+marshal(cart, #domain_InvoiceCart{lines = Lines}) ->
+    [marshal(line, Line) || Line <- Lines];
+
+marshal(line, #domain_InvoiceLine{} = InvoiceLine) ->
+    #{
+        <<"product">> => marshal(str, InvoiceLine#domain_InvoiceLine.product),
+        <<"quantity">> => marshal(int, InvoiceLine#domain_InvoiceLine.quantity),
+        <<"price">> => hg_cash:marshal(InvoiceLine#domain_InvoiceLine.price),
+        <<"metadata">> => marshal(metadata, InvoiceLine#domain_InvoiceLine.metadata)
+    };
+
+marshal(metadata, Metadata) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(marshal(str, K), hg_msgpack_marshalling:unmarshal(V), Acc)
+        end,
+        #{},
+        Metadata
+    );
+
+marshal(_, Other) ->
+    Other.
+
+%% Unmarshalling
+
+unmarshal(Events) when is_list(Events) ->
+    [unmarshal(Event) || Event <- Events];
+
+unmarshal({ID, Dt, Payload}) ->
+    {ID, Dt, unmarshal({list, changes}, Payload)}.
+
+%% Version > 1
+
+unmarshal({list, changes}, Changes) when is_list(Changes) ->
+    [unmarshal(change, Change) || Change <- Changes];
+
+%% Version 1
+
+unmarshal({list, changes}, {bin, Bin}) when is_binary(Bin) ->
+    Changes = binary_to_term(Bin),
+    [unmarshal(change, [1, Change]) || Change <- Changes];
+
+%% Changes
+
+unmarshal(change, [2, #{
+    <<"change">>    := <<"created">>,
+    <<"invoice">>   := Invoice
+}]) ->
+    ?invoice_created(unmarshal(invoice, Invoice));
+unmarshal(change, [2, #{
+    <<"change">>    := <<"status_changed">>,
+    <<"status">>    := Status
+}]) ->
+    ?invoice_status_changed(unmarshal(status, Status));
+unmarshal(change, [2, #{
+    <<"change">>    := <<"payment_change">>,
+    <<"id">>        := PaymentID,
+    <<"payload">>   := Payload
+}]) ->
+    ?payment_ev(
+        unmarshal(str, PaymentID),
+        hg_invoice_payment:unmarshal(Payload)
+    );
+
+unmarshal(change, [1, ?legacy_invoice_created(Invoice)]) ->
+    ?invoice_created(unmarshal(invoice, Invoice));
+unmarshal(change, [1, ?legacy_invoice_status_changed(Status)]) ->
+    ?invoice_status_changed(unmarshal(status, Status));
+unmarshal(change, [1, ?legacy_payment_ev(PaymentID, Payload)]) ->
+    ?payment_ev(
+        unmarshal(str, PaymentID),
+        hg_invoice_payment:unmarshal([1, Payload])
+    );
+
+%% Change components
+
+unmarshal(invoice, #{
+    <<"id">>            := ID,
+    <<"shop_id">>       := ShopID,
+    <<"owner_id">>      := PartyID,
+    <<"created_at">>    := CreatedAt,
+    <<"cost">>          := Cash,
+    <<"due">>           := Due,
+    <<"details">>       := Details
+} = Invoice) ->
+    Context = maps:get(<<"context">>, Invoice, undefined),
+    TemplateID = maps:get(<<"template_id">>, Invoice, undefined),
+    #domain_Invoice{
+        id              = unmarshal(str, ID),
+        shop_id         = unmarshal(str, ShopID),
+        owner_id        = unmarshal(str, PartyID),
+        created_at      = unmarshal(str, CreatedAt),
+        cost            = hg_cash:unmarshal(Cash),
+        due             = unmarshal(str, Due),
+        details         = unmarshal(details, Details),
+        status          = ?invoice_unpaid(),
+        context         = hg_content:unmarshal(Context),
+        template_id     = unmarshal(str, TemplateID)
+    };
+
+unmarshal(invoice,
+    ?legacy_invoice(ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cash, Context, TemplateID)
+) ->
+    #domain_Invoice{
+        id              = unmarshal(str, ID),
+        shop_id         = unmarshal(str, ShopID),
+        owner_id        = unmarshal(str, PartyID),
+        created_at      = unmarshal(str, CreatedAt),
+        cost            = hg_cash:unmarshal([1, Cash]),
+        due             = unmarshal(str, Due),
+        details         = unmarshal(details, Details),
+        status          = unmarshal(status, Status),
+        context         = hg_content:unmarshal(Context),
+        template_id     = unmarshal(str, TemplateID)
+    };
+
+unmarshal(status, <<"paid">>) ->
+    ?invoice_paid();
+unmarshal(status, <<"unpaid">>) ->
+    ?invoice_unpaid();
+unmarshal(status, [<<"cancelled">>, Reason]) ->
+    ?invoice_cancelled(unmarshal(str, Reason));
+unmarshal(status, [<<"fulfilled">>, Reason]) ->
+    ?invoice_fulfilled(unmarshal(str, Reason));
+
+unmarshal(status, ?legacy_invoice_paid()) ->
+    ?invoice_paid();
+unmarshal(status, ?legacy_invoice_unpaid()) ->
+    ?invoice_unpaid();
+unmarshal(status, ?legacy_invoice_cancelled(Reason)) ->
+    ?invoice_cancelled(unmarshal(str, Reason));
+unmarshal(status, ?legacy_invoice_fulfilled(Reason)) ->
+    ?invoice_fulfilled(unmarshal(str, Reason));
+
+unmarshal(details, #{<<"product">> := Product} = Details) ->
+    Description = maps:get(<<"description">>, Details, undefined),
+    Cart = maps:get(<<"cart">>, Details, undefined),
+    #domain_InvoiceDetails{
+        product     = unmarshal(str, Product),
+        description = unmarshal(str, Description),
+        cart        = unmarshal(cart, Cart)
+    };
+
+unmarshal(details, ?legacy_invoice_details(Product, Description)) ->
+    #domain_InvoiceDetails{
+        product     = unmarshal(str, Product),
+        description = unmarshal(str, Description)
+    };
+
+unmarshal(cart, Lines) when is_list(Lines) ->
+    #domain_InvoiceCart{lines = [unmarshal(line, Line) || Line <- Lines]};
+
+unmarshal(line, #{
+    <<"product">> := Product,
+    <<"quantity">> := Quantity,
+    <<"price">> := Price,
+    <<"metadata">> := Metadata
+}) ->
+    #domain_InvoiceLine{
+        product = unmarshal(str, Product),
+        quantity = unmarshal(int, Quantity),
+        price = hg_cash:unmarshal(Price),
+        metadata = unmarshal(metadata, Metadata)
+    };
+
+unmarshal(metadata, Metadata) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(unmarshal(str, K), hg_msgpack_marshalling:marshal(V), Acc)
+        end,
+        #{},
+        Metadata
+    );
+
+unmarshal(_, Other) ->
+    Other.
