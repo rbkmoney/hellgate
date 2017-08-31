@@ -16,7 +16,7 @@
 -export([construct_inspector/4]).
 -export([construct_contract_template/2]).
 -export([construct_contract_template/4]).
--export([construct_terminal_account/1]).
+-export([construct_provider_account_set/1]).
 -export([construct_system_account_set/1]).
 -export([construct_system_account_set/3]).
 -export([construct_external_account_set/1]).
@@ -151,13 +151,19 @@ construct_contract_template(Ref, TermsRef, ValidSince, ValidUntil) ->
         }
     }}.
 
--spec construct_terminal_account(currency()) -> dmsl_domain_thrift:'TerminalAccount'().
+-spec construct_provider_account_set([currency()]) -> dmsl_domain_thrift:'ProviderAccountSet'().
 
-construct_terminal_account(?cur(C)) ->
+construct_provider_account_set(Currencies) ->
     _ = hg_context:set(woody_context:new()),
-    Account = ?trmacc(C, hg_accounting:create_account(C)),
+    AccountSet = lists:foldl(
+        fun (Cur = ?cur(Code), Acc) ->
+            Acc#{Cur => ?prvacc(hg_accounting:create_account(Code))}
+        end,
+        #{},
+        Currencies
+    ),
     _ = hg_context:cleanup(),
-    Account.
+    AccountSet.
 
 -spec construct_system_account_set(system_account_set()) ->
     {system_account_set, dmsl_domain_thrift:'SystemAccountSetObject'()}.

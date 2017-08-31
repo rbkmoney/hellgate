@@ -17,7 +17,7 @@
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).
 
--define(trmacc(Cur, Stl), #domain_TerminalAccount{currency = ?cur(Cur), settlement = Stl}).
+-define(prvacc(Stl), #domain_ProviderAccount{settlement = Stl}).
 -define(partycond(ID, Def), {condition, {party, #domain_PartyCondition{id = ID, definition = Def}}}).
 
 -define(fixed(Amount, Currency),
