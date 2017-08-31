@@ -1520,7 +1520,7 @@ marshal(session_status, ?session_failed(PayloadFailure)) ->
 marshal(adjustment_change, ?adjustment_created(Adjustment)) ->
     [2, [<<"created">>, marshal(adjustment, Adjustment)]];
 marshal(adjustment_change, ?adjustment_status_changed(Status)) ->
-    [2, [<<"status_changed">>, marshal(adj_status, Status)]];
+    [2, [<<"status_changed">>, marshal(adjustment_status, Status)]];
 
 %% Refund change
 
