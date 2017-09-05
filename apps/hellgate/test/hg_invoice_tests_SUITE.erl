@@ -877,7 +877,7 @@ consistent_history(C) ->
 payment_hold_cancellation(C) ->
     Client = cfg(client, C),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 10000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(5), 10000, C),
     PaymentParams = make_payment_params({hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
@@ -1271,7 +1271,7 @@ construct_domain_fixture() ->
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
                         if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, #domain_HoldLifetime{seconds = 2}}
+                        then_ = {value, #domain_HoldLifetime{seconds = 3}}
                     }
                 ]}
             },
@@ -1350,7 +1350,7 @@ construct_domain_fixture() ->
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
                         if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, #domain_HoldLifetime{seconds = 2}}
+                        then_ = {value, #domain_HoldLifetime{seconds = 3}}
                     }
                 ]}
             },
@@ -1563,7 +1563,7 @@ construct_domain_fixture() ->
                         lifetime = {decisions, [
                             #domain_HoldLifetimeDecision{
                                 if_   = {condition, {payment_tool, {bank_card, {payment_system_is, visa}}}},
-                                then_ = {value, ?hold_lifetime(3)}
+                                then_ = {value, ?hold_lifetime(5)}
                             }
                         ]}
                     },
