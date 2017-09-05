@@ -144,7 +144,7 @@ test_payment_term(cost, Cost, CashRange) ->
     hg_condition:test_cash_range(Cost, CashRange) == within;
 
 test_payment_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
-    Lifetime < Allowed.
+    Lifetime =< Allowed.
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
