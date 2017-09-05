@@ -132,9 +132,7 @@ try_accept_payment_term(Name, Selector, VS, Revision) ->
 
 try_accept_payment_term(Name, Value, Selector, VS, Revision) when Selector /= undefined ->
     Values = reduce(Name, Selector, VS, Revision),
-    test_payment_term(Name, Value, Values) orelse throw(false);
-try_accept_payment_term(_Name, _Value, undefined, _VS, _Revision) ->
-    throw(false).
+    test_payment_term(Name, Value, Values) orelse throw(false).
 
 test_payment_term(currency, V, Vs) ->
     ordsets:is_element(V, Vs);
@@ -146,15 +144,10 @@ test_payment_term(cost, Cost, CashRange) ->
     hg_condition:test_cash_range(Cost, CashRange) == within;
 
 test_payment_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
-    Lifetime < Allowed.
+    Lifetime =< Allowed.
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
-        currencies      = Currencies0,
-        categories      = Categories0,
-        payment_methods = PaymentMethods0,
-        cash_limit      = CashLimit0,
-        cash_flow       = Cashflow0,
         holds           = Holds0,
         refunds         = Refunds0
     },
@@ -169,34 +162,20 @@ merge_payment_terms(
     }
 ) ->
     #domain_PaymentsProvisionTerms{
-        currencies      = hg_utils:select_defined(Currencies1, Currencies0),
-        categories      = hg_utils:select_defined(Categories1, Categories0),
-        payment_methods = hg_utils:select_defined(PaymentMethods1, PaymentMethods0),
-        cash_limit      = hg_utils:select_defined(CashLimit1, CashLimit0),
-        cash_flow       = hg_utils:select_defined(Cashflow1, Cashflow0),
+        currencies      = Currencies1,
+        categories      = Categories1,
+        payment_methods = PaymentMethods1,
+        cash_limit      = CashLimit1,
+        cash_flow       = Cashflow1,
         holds           = merge_holds_terms(Holds1, Holds0),
         refunds         = merge_refunds_terms(Refunds1, Refunds0)
     };
 merge_payment_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
-merge_holds_terms(
-    #domain_PaymentHoldsProvisionTerms{lifetime = Lifetime0},
-    #domain_PaymentHoldsProvisionTerms{lifetime = Lifetime1}
-) ->
-    #domain_PaymentHoldsProvisionTerms{
-        lifetime = hg_utils:select_defined(Lifetime1, Lifetime0)
-    };
 merge_holds_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
-merge_refunds_terms(
-    #domain_PaymentRefundsProvisionTerms{cash_flow = Cashflow0},
-    #domain_PaymentRefundsProvisionTerms{cash_flow = Cashflow1}
-) ->
-    #domain_PaymentRefundsProvisionTerms{
-        cash_flow = hg_utils:select_defined(Cashflow1, Cashflow0)
-    };
 merge_refunds_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 

@@ -205,9 +205,9 @@ init_(PaymentID, Params, Opts) ->
     {RiskScore, VS2} = validate_risk_score(inspect(Shop, Invoice, Payment, VS1), VS1),
     {Route    , VS3} = validate_route(hg_routing:choose(VS2, Revision), Payment, VS2),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
-    Terminal = get_terminal(Route, Revision),
+    Provider = get_route_provider(Route, Revision),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS3, Revision),
-    FinalCashflow = construct_final_cashflow(Payment, Shop, Terminal, Cashflow, VS3, Revision),
+    FinalCashflow = construct_final_cashflow(Payment, Shop, Provider, Cashflow, VS3, Revision),
     _AccountsState = hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
@@ -355,11 +355,11 @@ collect_cashflow(
     ProviderCashflow = reduce_selector(provider_payment_cash_flow, ProviderCashflowSelector, VS, Revision),
     MerchantCashflow ++ ProviderCashflow.
 
-construct_final_cashflow(Payment, Shop, Terminal, Cashflow, VS, Revision) ->
+construct_final_cashflow(Payment, Shop, Provider, Cashflow, VS, Revision) ->
     hg_cashflow:finalize(
         Cashflow,
         collect_cash_flow_context(Payment),
-        collect_account_map(Payment, Shop, Terminal, VS, Revision)
+        collect_account_map(Payment, Shop, Provider, VS, Revision)
     ).
 
 collect_cash_flow_context(
@@ -372,16 +372,17 @@ collect_cash_flow_context(
 collect_account_map(
     Payment,
     #domain_Shop{account = MerchantAccount},
-    #domain_Terminal{account = ProviderAccount},
+    #domain_Provider{accounts = ProviderAccounts},
     VS,
     Revision
 ) ->
     Currency = get_currency(get_payment_cost(Payment)),
+    ProviderAccount = choose_provider_account(Currency, ProviderAccounts),
     SystemAccount = choose_system_account(Currency, VS, Revision),
     M = #{
         {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
         {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
-        {provider , settlement} => ProviderAccount#domain_TerminalAccount.settlement ,
+        {provider , settlement} => ProviderAccount#domain_ProviderAccount.settlement ,
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
     },
     % External account probably can be optional for some payments
@@ -394,6 +395,9 @@ collect_account_map(
         undefined ->
             M
     end.
+
+choose_provider_account(Currency, Accounts) ->
+    choose_account(provider, Currency, Accounts).
 
 choose_system_account(Currency, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
@@ -480,7 +484,7 @@ refund(Params, St0, Opts) ->
     Payment = get_payment(St),
     Route = get_route(St),
     Shop = get_shop(Opts),
-    Terminal = get_terminal(Route, Revision),
+    Provider = get_route_provider(Route, Revision),
     _ = assert_payment_status(captured, Payment),
     _ = assert_no_refund_pending(St),
     ID = construct_refund_id(St),
@@ -497,7 +501,7 @@ refund(Params, St0, Opts) ->
     ProviderTerms = get_provider_refunds_terms(get_provider_payments_terms(Route, Revision), Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
     % TODO specific cashflow context needed, with defined `refund_amount` for instance
-    FinalCashflow = construct_final_cashflow(Payment, Shop, Terminal, Cashflow, VS1, Revision),
+    FinalCashflow = construct_final_cashflow(Payment, Shop, Provider, Cashflow, VS1, Revision),
     Changes = [
         ?refund_created(Refund, FinalCashflow),
         ?session_ev(?refunded(), ?session_started())
@@ -579,11 +583,11 @@ create_adjustment(Params, St, Opts) ->
     Shop = get_shop(Opts),
     MerchantTerms = get_merchant_payments_terms(Opts),
     Route = get_route(St),
-    Terminal = get_terminal(Route, Revision),
+    Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     VS = collect_varset(St, Opts),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
-    FinalCashflow = construct_final_cashflow(Payment, Shop, Terminal, Cashflow, VS, Revision),
+    FinalCashflow = construct_final_cashflow(Payment, Shop, Provider, Cashflow, VS, Revision),
     ID = construct_adjustment_id(St),
     Adjustment = #domain_InvoicePaymentAdjustment{
         id                    = ID,
@@ -1111,9 +1115,6 @@ get_payer_payment_tool(#domain_Payer{payment_tool = PaymentTool}) ->
 get_currency(#domain_Cash{currency = Currency}) ->
     Currency.
 
-get_terminal(#domain_InvoicePaymentRoute{terminal = TerminalRef}, Revision) ->
-    hg_domain:get(Revision, {terminal, TerminalRef}).
-
 %%
 
 -spec throw_invalid_request(binary()) -> no_return().
@@ -1325,14 +1326,17 @@ issue_call(Func, Args, St) ->
 
 get_call_options(St) ->
     Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, get_route_provider(get_route(St))}),
+    Provider = hg_domain:get(Revision, {provider, get_route_provider_ref(get_route(St))}),
     hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
 
 get_route(#st{route = Route}) ->
     Route.
 
-get_route_provider(#domain_InvoicePaymentRoute{provider = ProviderRef}) ->
+get_route_provider_ref(#domain_InvoicePaymentRoute{provider = ProviderRef}) ->
     ProviderRef.
+
+get_route_provider(Route, Revision) ->
+    hg_domain:get(Revision, {provider, get_route_provider_ref(Route)}).
 
 inspect(Shop, Invoice, Payment = #domain_InvoicePayment{domain_revision = Revision}, VS) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
@@ -1520,7 +1524,7 @@ marshal(session_status, ?session_failed(PayloadFailure)) ->
 marshal(adjustment_change, ?adjustment_created(Adjustment)) ->
     [2, [<<"created">>, marshal(adjustment, Adjustment)]];
 marshal(adjustment_change, ?adjustment_status_changed(Status)) ->
-    [2, [<<"status_changed">>, marshal(adj_status, Status)]];
+    [2, [<<"status_changed">>, marshal(adjustment_status, Status)]];
 
 %% Refund change
 

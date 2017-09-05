@@ -73,22 +73,22 @@ all() ->
         invalid_invoice_template_id,
         invoice_w_template,
         invoice_cancellation,
-        % overdue_invoice_cancellation,
-        % invoice_cancellation_after_payment_timeout,
-        % invalid_payment_amount,
+        overdue_invoice_cancellation,
+        invoice_cancellation_after_payment_timeout,
+        invalid_payment_amount,
         payment_success,
-        % payment_w_terminal_success,
-        % payment_success_on_second_try,
-        % payment_fail_after_silent_callback,
-        % invoice_success_on_third_payment,
+        payment_w_terminal_success,
+        payment_success_on_second_try,
+        payment_fail_after_silent_callback,
+        invoice_success_on_third_payment,
 
-        % payment_risk_score_check,
+        payment_risk_score_check,
 
-        % invalid_payment_adjustment,
-        % payment_adjustment_success,
+        invalid_payment_adjustment,
+        payment_adjustment_success,
 
-        % invalid_payment_w_deprived_party,
-        % external_account_posting,
+        invalid_payment_w_deprived_party,
+        external_account_posting,
 
         payment_hold_cancellation,
         payment_hold_auto_cancellation,
@@ -635,14 +635,16 @@ payment_adjustment_success(C) ->
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
     SysAccount1 = get_cashflow_account({system, settlement}, CF1),
     %% update terminal cashflow
-    Terminal = hg_domain:get(hg_domain:head(), {terminal, ?trm(100)}),
+    ProviderRef = ?prv(100),
+    Provider = hg_domain:get(hg_domain:head(), {provider, ProviderRef}),
+    ProviderTerms = Provider#domain_Provider.terms,
     ok = hg_domain:upsert(
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(100),
-            data = Terminal#domain_Terminal{
-                terms = #domain_PaymentsProvisionTerms{
+        {provider, #domain_ProviderObject{
+            ref = ProviderRef,
+            data = Provider#domain_Provider{
+                terms = ProviderTerms#domain_PaymentsProvisionTerms{
                     cash_flow = {value,
-                        get_adjustment_terminal_cashflow(actual)
+                        get_adjustment_provider_cashflow(actual)
                     }
                 }
             }
@@ -686,7 +688,6 @@ get_cashflow_account(Type, CF) ->
     hg_ct_helper:get_account(ID).
 
 get_adjustment_fixture(Revision) ->
-    AccountRUB = hg_ct_fixture:construct_terminal_account(?cur(<<"RUB">>)),
     Globals = hg_domain:get(Revision, {globals, ?glob()}),
     [
         {globals, #domain_GlobalsObject{
@@ -705,6 +706,7 @@ get_adjustment_fixture(Revision) ->
                 abs_account = <<>>,
                 terminal = {value, [?trm(100)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
@@ -720,7 +722,7 @@ get_adjustment_fixture(Revision) ->
                         ?pmt(bank_card, visa)
                     ])},
                     cash_flow = {value,
-                        get_adjustment_terminal_cashflow(initial)
+                        get_adjustment_provider_cashflow(initial)
                     }
                 }
             }
@@ -730,13 +732,12 @@ get_adjustment_fixture(Revision) ->
             data = #domain_Terminal{
                 name = <<"Adjustable Terminal">>,
                 description = <<>>,
-                account = AccountRUB,
                 risk_coverage = low
             }
         }}
     ].
 
-get_adjustment_terminal_cashflow(initial) ->
+get_adjustment_provider_cashflow(initial) ->
     [
         ?cfpost(
             {provider, settlement},
@@ -749,7 +750,7 @@ get_adjustment_terminal_cashflow(initial) ->
             ?share(21, 1000, payment_amount)
         )
     ];
-get_adjustment_terminal_cashflow(actual) ->
+get_adjustment_provider_cashflow(actual) ->
     [
         ?cfpost(
             {provider, settlement},
@@ -876,7 +877,7 @@ consistent_history(C) ->
 payment_hold_cancellation(C) ->
     Client = cfg(client, C),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 10000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(5), 10000, C),
     PaymentParams = make_payment_params({hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
@@ -1219,7 +1220,6 @@ get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
 construct_domain_fixture() ->
-    AccountRUB = hg_ct_fixture:construct_terminal_account(?cur(<<"RUB">>)),
     TestTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             currencies = {value, ?ordset([
@@ -1271,7 +1271,7 @@ construct_domain_fixture() ->
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
                         if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, #domain_HoldLifetime{seconds = 2}}
+                        then_ = {value, #domain_HoldLifetime{seconds = 3}}
                     }
                 ]}
             },
@@ -1350,7 +1350,7 @@ construct_domain_fixture() ->
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
                         if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, #domain_HoldLifetime{seconds = 2}}
+                        then_ = {value, #domain_HoldLifetime{seconds = 3}}
                     }
                 ]}
             },
@@ -1511,6 +1511,7 @@ construct_domain_fixture() ->
                     }
                 },
                 abs_account = <<"1234567890">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
@@ -1562,7 +1563,7 @@ construct_domain_fixture() ->
                         lifetime = {decisions, [
                             #domain_HoldLifetimeDecision{
                                 if_   = {condition, {payment_tool, {bank_card, {payment_system_is, visa}}}},
-                                then_ = {value, ?hold_lifetime(3)}
+                                then_ = {value, ?hold_lifetime(5)}
                             }
                         ]}
                     },
@@ -1583,7 +1584,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                account = AccountRUB,
                 risk_coverage = high
             }
         }},
@@ -1592,7 +1592,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 2">>,
                 description = <<"Brominal 2">>,
-                account = AccountRUB,
                 risk_coverage = low
             }
         }},
@@ -1609,6 +1608,7 @@ construct_domain_fixture() ->
                     }
                 },
                 abs_account = <<"1234567890">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
@@ -1644,12 +1644,21 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                account = AccountRUB,
                 risk_coverage = low,
                 terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(2)
+                    ])},
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa)
                     ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(    1000, <<"RUB">>)},
+                        {exclusive, ?cash( 5000000, <<"RUB">>)}
+                    )},
                     cash_flow = {value, [
                         ?cfpost(
                             {provider, settlement},
@@ -1676,7 +1685,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
-                account = AccountRUB,
                 risk_coverage = high
             }
         }},
@@ -1693,6 +1701,7 @@ construct_domain_fixture() ->
                     }
                 },
                 abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
@@ -1727,7 +1736,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
                 description = <<"Euroset">>,
-                account = AccountRUB,
                 risk_coverage = low
             }
         }}
