@@ -15,7 +15,7 @@
 marshal(Cash) ->
     marshal(cash, Cash).
 
-marshal(cash, ?cash(Amount, ?currency(SymbolicCode))) ->
+marshal(cash, ?cash(Amount, SymbolicCode)) ->
     [2, [Amount, SymbolicCode]].
 
 %% Unmarshalling
@@ -27,7 +27,7 @@ unmarshal(Cash) ->
     unmarshal(cash, Cash).
 
 unmarshal(cash, [2, [Amount, SymbolicCode]]) ->
-    ?cash(Amount, ?currency(SymbolicCode));
+    ?cash(Amount, SymbolicCode);
 
 unmarshal(cash, [1, {'domain_Cash', Amount, {'domain_CurrencyRef', SymbolicCode}}]) ->
-    ?cash(Amount, ?currency(SymbolicCode)).
+    ?cash(Amount, SymbolicCode).

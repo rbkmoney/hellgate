@@ -28,12 +28,14 @@
     {pending, #domain_InvoicePaymentPending{}}).
 -define(processed(),
     {processed, #domain_InvoicePaymentProcessed{}}).
--define(captured(),
-    {captured, #domain_InvoicePaymentCaptured{}}).
--define(failed(Failure),
-    {failed, #domain_InvoicePaymentFailed{failure = Failure}}).
 -define(cancelled(),
     {cancelled, #domain_InvoicePaymentCancelled{}}).
+-define(captured(),
+    {captured, #domain_InvoicePaymentCaptured{}}).
+-define(refunded(),
+    {refunded, #domain_InvoicePaymentRefunded{}}).
+-define(failed(Failure),
+    {failed, #domain_InvoicePaymentFailed{failure = Failure}}).
 -define(captured_with_reason(Reason),
     {captured, #domain_InvoicePaymentCaptured{reason = Reason}}).
 -define(cancelled_with_reason(Reason),
@@ -118,5 +120,33 @@
     {captured, #domain_InvoicePaymentAdjustmentCaptured{at = At}}).
 -define(adjustment_cancelled(At),
     {cancelled, #domain_InvoicePaymentAdjustmentCancelled{at = At}}).
+
+%% Refunds
+
+-define(refund_ev(RefundID, Payload),
+    {invoice_payment_refund_change, #payproc_InvoicePaymentRefundChange{
+        id = RefundID,
+        payload = Payload
+    }}
+).
+
+-define(refund_created(Refund, CashFlow),
+    {invoice_payment_refund_created,
+        #payproc_InvoicePaymentRefundCreated{refund = Refund, cash_flow = CashFlow}
+    }
+).
+
+-define(refund_status_changed(Status),
+    {invoice_payment_refund_status_changed,
+        #payproc_InvoicePaymentRefundStatusChanged{status = Status}
+    }
+).
+
+-define(refund_pending(),
+    {pending, #domain_InvoicePaymentRefundPending{}}).
+-define(refund_succeeded(),
+    {succeeded, #domain_InvoicePaymentRefundSucceeded{}}).
+-define(refund_failed(Failure),
+    {failed, #domain_InvoicePaymentRefundFailed{failure = Failure}}).
 
 -endif.

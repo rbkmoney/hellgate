@@ -34,7 +34,7 @@
     party       => dmsl_domain_thrift:'Party'(),
     shop        => dmsl_domain_thrift:'Shop'(),
     risk_score  => dmsl_domain_thrift:'RiskScore'(),
-    payment_flow=> instant | {hold, dmsl_domain_thrift:'HoldLifetime'()}
+    flow        => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()}
 }.
 
 -export_type([varset/0]).
@@ -76,9 +76,7 @@ reduce({decisions, Ps}, VS, Rev) ->
             S;
         Ps1 ->
             {decisions, Ps1}
-    end;
-reduce({predicates, Ps}, VS, Rev) ->
-    reduce({decisions, Ps}, VS, Rev).
+    end.
 
 reduce_decisions([{Type, V, S} | Rest], VS, Rev) ->
     case reduce_predicate(V, VS, Rev) of

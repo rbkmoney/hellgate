@@ -202,7 +202,7 @@ get_claims(Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetClaims', []})).
 
 -spec create_claim(changeset(), pid()) ->
-    ok | woody_error:business_error().
+    claim() | woody_error:business_error().
 
 create_claim(Changeset, Client) ->
     map_result_error(gen_server:call(Client, {call, 'CreateClaim', [Changeset]})).
