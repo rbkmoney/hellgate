@@ -1064,16 +1064,27 @@ get_log_params(_, _) ->
     undefined.
 
 make_log_params(EventType, Payment, Params) ->
+    PaymentParams = make_log_params(Payment),
+    {ok, #{
+        type => invoice_payment_event,
+        params => [{type, EventType} | Params] ++ PaymentParams,
+        message => get_message(EventType)
+    }}.
+
+make_log_params(
     #domain_InvoicePayment{
         id = ID,
-        cost = ?cash(Amount, ?currency(SymbolicCode))
-    } = Payment,
-    Result = #{
-        type => invoice_payment_event,
-        params => [{type, EventType}, {id, ID}, {cost, [{amount, Amount}, {currency, SymbolicCode}]} | Params],
-        message => get_message(EventType)
-    },
-    {ok, Result}.
+        cost = Cost,
+        flow = Flow
+    }
+) ->
+    [{id, ID}, {cost, make_log_params(Cost)}, {flow, make_log_params(Flow)}];
+make_log_params(?cash(Amount, ?currency(SymbolicCode))) ->
+    [{amount, Amount}, {currency, SymbolicCode}];
+make_log_params(?invoice_payment_flow_instant()) ->
+    instant;
+make_log_params(?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)) ->
+    [{hold, [{on_hold_expiration, OnHoldExpiration}, {held_until, HeldUntil}]}].
 
 get_partial_remainders(CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
