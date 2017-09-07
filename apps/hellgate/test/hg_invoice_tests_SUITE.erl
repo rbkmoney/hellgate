@@ -1501,8 +1501,7 @@ construct_domain_fixture() ->
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
                 terminal = {value, ?ordset([
-                    ?trm(1),
-                    ?trm(2)
+                    ?trm(1)
                 ])},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
@@ -1585,14 +1584,6 @@ construct_domain_fixture() ->
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
                 risk_coverage = high
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(2),
-            data = #domain_Terminal{
-                name = <<"Brominal 2">>,
-                description = <<"Brominal 2">>,
-                risk_coverage = low
             }
         }},
         {provider, #domain_ProviderObject{
