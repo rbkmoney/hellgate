@@ -1082,9 +1082,9 @@ make_log_params(
 make_log_params(?cash(Amount, ?currency(SymbolicCode))) ->
     [{amount, Amount}, {currency, SymbolicCode}];
 make_log_params(?invoice_payment_flow_instant()) ->
-    instant;
-make_log_params(?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)) ->
-    [{hold, [{on_hold_expiration, OnHoldExpiration}, {held_until, HeldUntil}]}].
+    [{type, instant}];
+make_log_params(?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
+    [{type, hold}, {on_hold_expiration, OnHoldExpiration}].
 
 get_partial_remainders(CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
