@@ -1064,7 +1064,7 @@ get_log_params(_, _) ->
     undefined.
 
 make_log_params(EventType, Payment, Params) ->
-    PaymentParams = make_log_params(Payment),
+    PaymentParams = make_log_params(payment, Payment),
     {ok, #{
         type => invoice_payment_event,
         params => [{type, EventType} | Params] ++ PaymentParams,
@@ -1072,18 +1072,19 @@ make_log_params(EventType, Payment, Params) ->
     }}.
 
 make_log_params(
+    payment,
     #domain_InvoicePayment{
         id = ID,
         cost = Cost,
         flow = Flow
     }
 ) ->
-    [{id, ID}, {cost, make_log_params(Cost)}, {flow, make_log_params(Flow)}];
-make_log_params(?cash(Amount, ?currency(SymbolicCode))) ->
+    [{id, ID}, {cost, make_log_params(cash, Cost)}, {flow, make_log_params(flow, Flow)}];
+make_log_params(cash, ?cash(Amount, ?currency(SymbolicCode))) ->
     [{amount, Amount}, {currency, SymbolicCode}];
-make_log_params(?invoice_payment_flow_instant()) ->
+make_log_params(flow, ?invoice_payment_flow_instant()) ->
     [{type, instant}];
-make_log_params(?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
+make_log_params(flow, ?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
     [{type, hold}, {on_hold_expiration, OnHoldExpiration}].
 
 get_partial_remainders(CashFlow) ->
