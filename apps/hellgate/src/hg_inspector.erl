@@ -2,6 +2,8 @@
 
 -export([inspect/4]).
 
+-export([compare_risk_score/2]).
+
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 -include_lib("dmsl/include/dmsl_proxy_inspector_thrift.hrl").
 
@@ -10,6 +12,7 @@
 -type payment() :: dmsl_domain_thrift:'InvoicePayment'().
 -type inspector() :: dmsl_domain_thrift:'Inspector'().
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
+-type risk_magnitude() :: integer().
 
 -spec inspect(shop(), invoice(), payment(), inspector()) -> risk_score() | no_return().
 inspect(
@@ -95,3 +98,14 @@ issue_call(Func, Args, CallOpts) ->
 
 get_proxy_def(Ref, Revision) ->
     hg_domain:get(Revision, {proxy, Ref}).
+
+%%
+
+-spec compare_risk_score(risk_score(), risk_score()) -> risk_magnitude().
+compare_risk_score(RS1, RS2) ->
+    get_risk_magnitude(RS1) - get_risk_magnitude(RS2).
+
+get_risk_magnitude(RiskScore) ->
+    {enum, Info} = dmsl_domain_thrift:enum_info('RiskScore'),
+    {RiskScore, Magnitude} = lists:keyfind(RiskScore, 1, Info),
+    Magnitude.
