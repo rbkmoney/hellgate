@@ -1047,30 +1047,45 @@ get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
 get_st_meta(_) ->
     #{}.
 
-%%
+%% Business metrics logging
 
 -spec get_log_params(change(), st()) ->
     {ok, #{type := invoice_payment_event, params := list(), message := string()}} | undefined.
 
 get_log_params(?payment_started(Payment, _, _, Cashflow), _) ->
-    Params = [{accounts, get_partial_remainders(Cashflow)}],
-    make_log_params(invoice_payment_started, Payment, Params);
+    Params = #{
+        payment => Payment,
+        cashflow => Cashflow,
+        event_type => invoice_payment_started
+    },
+    make_log_params(event, Params);
 get_log_params(?payment_status_changed({Status, _}), State) ->
     Payment = get_payment(State),
     Cashflow = get_cashflow(State),
-    Params = [{status, Status}, {accounts, get_partial_remainders(Cashflow)}],
-    make_log_params(invoice_payment_status_changed, Payment, Params);
+    Params = #{
+        status => Status,
+        payment => Payment,
+        cashflow => Cashflow,
+        event_type => invoice_payment_status_changed
+    },
+    make_log_params(event, Params);
 get_log_params(_, _) ->
     undefined.
 
-make_log_params(EventType, Payment, Params) ->
-    PaymentParams = make_log_params(payment, Payment),
+make_log_params(event, Params) ->
+    LogParams = maps:fold(
+        fun(K, V, Acc) ->
+            Acc ++ make_log_params(K, V)
+        end,
+        [],
+        Params
+    ),
+    Message = get_message(maps:get(event_type, Params)),
     {ok, #{
         type => invoice_payment_event,
-        params => [{type, EventType} | Params] ++ PaymentParams,
-        message => get_message(EventType)
-    }}.
-
+        params => LogParams,
+        message => Message
+    }};
 make_log_params(
     payment,
     #domain_InvoicePayment{
@@ -1085,18 +1100,22 @@ make_log_params(cash, ?cash(Amount, ?currency(SymbolicCode))) ->
 make_log_params(flow, ?invoice_payment_flow_instant()) ->
     [{type, instant}];
 make_log_params(flow, ?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
-    [{type, hold}, {on_hold_expiration, OnHoldExpiration}].
-
-get_partial_remainders(CashFlow) ->
+    [{type, hold}, {on_hold_expiration, OnHoldExpiration}];
+make_log_params(cashflow, CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
-    lists:map(
+    Accounts = lists:map(
         fun ({Account, Cash}) ->
             ?cash(Amount, ?currency(SymbolicCode)) = Cash,
             Remainder = [{remainder, [{amount, Amount}, {currency, SymbolicCode}]}],
             {get_account_key(Account), Remainder}
         end,
         Reminders
-    ).
+    ),
+    [{accounts, Accounts}];
+make_log_params(status, Status) ->
+    [{status, Status}];
+make_log_params(event_type, EventType) ->
+    [{type, EventType}].
 
 get_account_key({AccountParty, AccountType}) ->
     list_to_binary(lists:concat([atom_to_list(AccountParty), ".", atom_to_list(AccountType)])).
@@ -1106,8 +1125,9 @@ get_message(invoice_payment_started) ->
 get_message(invoice_payment_status_changed) ->
     "Invoice payment status is changed".
 
--include("legacy_structures.hrl").
 %% Marshalling
+
+-include("legacy_structures.hrl").
 
 -spec marshal(change()) ->
     hg_msgpack_marshalling:value().
