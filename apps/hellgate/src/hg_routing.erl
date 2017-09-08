@@ -23,15 +23,36 @@ choose(VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     % TODO not the optimal strategy
     Providers = collect_providers(Globals, VS, Revision),
-    Choices = [{Provider, collect_terminals(Provider, VS, Revision)} || Provider <- Providers],
-    choose_provider_terminal(Choices, VS).
+    Choices = collect_routes(Providers, VS, Revision),
+    choose_route(Choices).
 
-choose_provider_terminal([{{ProviderRef, _}, [{TerminalRef, _} | _]} | _], _) ->
-    ?route(ProviderRef, TerminalRef);
-choose_provider_terminal([{_Provider, []} | Rest], VS) ->
-    choose_provider_terminal(Rest, VS);
-choose_provider_terminal([], _) ->
-    undefined.
+collect_routes(Providers, VS, Revision) ->
+    lists:flatmap(
+        fun (Provider) ->
+            Terminals = collect_terminals(Provider, VS, Revision),
+            lists:map(
+                fun (Terminal) ->
+                    Route = {Provider, Terminal},
+                    {score_route(Route, VS), Route}
+                end,
+                Terminals
+            )
+        end,
+        Providers
+    ).
+
+choose_route(Routes) ->
+    case lists:reverse(lists:keysort(1, Routes)) of
+        [{_Score, Route} | _] ->
+            export_route(Route);
+        [] ->
+            undefined
+    end.
+
+export_route({{ProviderRef, _Provider}, {TerminalRef, _Terminal}}) ->
+    % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
+    %      `get_terminal_ref/1` instead?
+    ?route(ProviderRef, TerminalRef).
 
 -spec get_payments_terms(route(), hg_domain:revision()) -> terms().
 
@@ -39,6 +60,20 @@ get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
     #domain_Provider{terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
     #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
     merge_payment_terms(Terms0, Terms1).
+
+%%
+
+%% NOTE
+%% Score ∈ [0.0 .. 1.0]
+%% Higher score is better, e.g. route is more likely to be chosen.
+
+score_route(Route, VS) ->
+    score_risk_coverage(Route, VS).
+
+score_risk_coverage({_Provider, {_TerminalRef, Terminal}}, VS) ->
+    RiskScore = getv(risk_score, VS),
+    RiskCoverage = Terminal#domain_Terminal.risk_coverage,
+    math:exp(-hg_inspector:compare_risk_score(RiskCoverage, RiskScore)).
 
 %%
 
@@ -90,7 +125,8 @@ acceptable_terminal(TerminalRef, #domain_Provider{terms = Terms0}, VS, Revision)
     {true, {TerminalRef, Terminal}}.
 
 acceptable_risk(RiskCoverage, VS) ->
-    RiskCoverage == getv(risk_score, VS) orelse throw(false).
+    RiskScore = getv(risk_score, VS),
+    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0 orelse throw(false).
 
 %%
 
@@ -236,20 +272,20 @@ unmarshal(route, [2, #{
     };
 unmarshal(route, [1, ?legacy_route(Provider, Terminal)]) ->
     #domain_InvoicePaymentRoute{
-        provider = unmarshal(provider_ref, Provider),
-        terminal = unmarshal(terminal_ref, Terminal)
+        provider = unmarshal(provider_ref_legacy, Provider),
+        terminal = unmarshal(terminal_ref_legacy, Terminal)
     };
-
-unmarshal(provider_ref, ?legacy_provider(ObjectID)) ->
-    #domain_ProviderRef{id = unmarshal(int, ObjectID)};
 
 unmarshal(provider_ref, ObjectID) ->
     #domain_ProviderRef{id = unmarshal(int, ObjectID)};
 
-unmarshal(terminal_ref, ?legacy_terminal(ObjectID)) ->
-    #domain_TerminalRef{id = unmarshal(int, ObjectID)};
+unmarshal(provider_ref_legacy, ?legacy_provider(ObjectID)) ->
+    #domain_ProviderRef{id = unmarshal(int, ObjectID)};
 
 unmarshal(terminal_ref, ObjectID) ->
+    #domain_TerminalRef{id = unmarshal(int, ObjectID)};
+
+unmarshal(terminal_ref_legacy, ?legacy_terminal(ObjectID)) ->
     #domain_TerminalRef{id = unmarshal(int, ObjectID)};
 
 unmarshal(_, Other) ->
