@@ -1058,7 +1058,7 @@ get_log_params(?payment_started(Payment, _, _, Cashflow), _) ->
         cashflow => Cashflow,
         event_type => invoice_payment_started
     },
-    make_log_params(event, Params);
+    make_log_params(Params);
 get_log_params(?payment_status_changed({Status, _}), State) ->
     Payment = get_payment(State),
     Cashflow = get_cashflow(State),
@@ -1068,11 +1068,11 @@ get_log_params(?payment_status_changed({Status, _}), State) ->
         cashflow => Cashflow,
         event_type => invoice_payment_status_changed
     },
-    make_log_params(event, Params);
+    make_log_params(Params);
 get_log_params(_, _) ->
     undefined.
 
-make_log_params(event, Params) ->
+make_log_params(Params) ->
     LogParams = maps:fold(
         fun(K, V, Acc) ->
             Acc ++ make_log_params(K, V)
@@ -1085,7 +1085,8 @@ make_log_params(event, Params) ->
         type => invoice_payment_event,
         params => LogParams,
         message => Message
-    }};
+    }}.
+
 make_log_params(
     payment,
     #domain_InvoicePayment{
