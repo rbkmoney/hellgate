@@ -566,7 +566,12 @@ payment_risk_score_check(C) ->
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending()), low, _, _)),
+        ?payment_ev(PaymentID1, ?payment_started(
+            ?payment_w_status(?pending()),
+            low,                      % low risk score...
+            ?route(?prv(1), ?trm(1)), % ...covered with high risk coverage terminal
+            _
+        )),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
     [
@@ -579,7 +584,12 @@ payment_risk_score_check(C) ->
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
     ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID2, ?payment_started(?payment_w_status(?pending()), high, _, _)),
+        ?payment_ev(PaymentID2, ?payment_started(
+            ?payment_w_status(?pending()),
+            high,                     % high risk score...
+            ?route(?prv(1), ?trm(1)), % ...covered with the same terminal
+            _
+        )),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
     [
@@ -591,6 +601,7 @@ payment_risk_score_check(C) ->
     % Invoice w/ 100000000 =< cost
     InvoiceID3 = start_invoice(<<"rubbersocks">>, make_due_date(10), 100000000, C),
     Exception = hg_client_invoicing:start_payment(InvoiceID3, PaymentParams, Client),
+    % fatal risk score is not going to be covered
     {exception, #'InvalidRequest'{errors = [<<"Fatal error">>]}} = Exception.
 
 -spec invalid_payment_adjustment(config()) -> _ | no_return().
