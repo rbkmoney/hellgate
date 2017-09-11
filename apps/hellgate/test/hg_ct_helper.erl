@@ -25,10 +25,10 @@
 -export([make_invoice_params_tpl/2]).
 -export([make_invoice_params_tpl/3]).
 
--export([make_invoice_tpl_create_params/3]).
--export([make_invoice_tpl_create_params/4]).
 -export([make_invoice_tpl_create_params/5]).
 -export([make_invoice_tpl_create_params/6]).
+-export([make_invoice_tpl_details/1]).
+-export([make_invoice_tpl_details/2]).
 
 -export([make_invoice_tpl_update_params/1]).
 
@@ -189,6 +189,7 @@ cfg(Key, Config) ->
 -type context()                   :: dmsl_base_thrift:'Content'().
 -type lifetime_interval()         :: dmsl_domain_thrift:'LifetimeInterval'().
 -type invoice_details()           :: dmsl_domain_thrift:'InvoiceDetails'().
+-type invoice_tpl_details()       :: dmsl_domain_thrift:'InvoiceTemplateDetails'().
 -type invoice_tpl_cost()          :: dmsl_domain_thrift:'InvoiceTemplateCost'().
 -type currency()                  :: dmsl_domain_thrift:'CurrencySymbolicCode'().
 -type invoice_tpl_create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
@@ -360,41 +361,47 @@ make_invoice_params_tpl(TplID, Cost, Context) ->
        context     = Context
     }.
 
--spec make_invoice_tpl_create_params(party_id(), shop_id(), binary()) ->
+-spec make_invoice_tpl_create_params(party_id(), shop_id(), lifetime_interval(), binary(), invoice_tpl_details()) ->
     invoice_tpl_create_params().
 
-make_invoice_tpl_create_params(PartyID, ShopID, Product) ->
-    make_invoice_tpl_create_params(PartyID, ShopID, Product, make_lifetime()).
+make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
+    make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, make_invoice_context()).
 
--spec make_invoice_tpl_create_params(party_id(), shop_id(), binary(),
-    lifetime_interval())
-->
+-spec make_invoice_tpl_create_params(
+    party_id(),
+    shop_id(),
+    lifetime_interval(),
+    binary(),
+    invoice_tpl_details(),
+    context()
+) ->
     invoice_tpl_create_params().
 
-make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime) ->
-    make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, make_invoice_tpl_cost()).
--spec make_invoice_tpl_create_params(party_id(), shop_id(), binary(),
-    lifetime_interval(), invoice_tpl_cost())
-->
-    invoice_tpl_create_params().
-
-make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost) ->
-    make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost, make_invoice_context()).
-
--spec make_invoice_tpl_create_params(party_id(), shop_id(), binary(),
-    lifetime_interval(), invoice_tpl_cost(), context())
-->
-    invoice_tpl_create_params().
-
-make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost, Context) ->
+make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, Context) ->
     #payproc_InvoiceTemplateCreateParams{
         party_id         = PartyID,
         shop_id          = ShopID,
-        details          = make_invoice_details(Product),
         invoice_lifetime = Lifetime,
-        cost             = Cost,
+        product          = Product,
+        details          = Details,
         context          = Context
     }.
+
+-spec make_invoice_tpl_details(dmsl_domain_thrift:'InvoiceCart'()) ->
+    invoice_tpl_details().
+
+make_invoice_tpl_details(#domain_InvoiceCart{} = Cart) ->
+    {cart, Cart}.
+
+-spec make_invoice_tpl_details(binary(), cost()) ->
+    invoice_tpl_details().
+
+make_invoice_tpl_details(Product, Price) ->
+    {product, #domain_InvoiceTemplateProduct{
+        product = Product,
+        price = Price,
+        metadata = #{}
+    }}.
 
 -spec make_invoice_tpl_update_params(map()) -> invoice_tpl_update_params().
 
@@ -405,15 +412,12 @@ update_field(details, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{details = V};
 update_field(invoice_lifetime, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{invoice_lifetime = V};
-update_field(cost, V, Params) ->
-    Params#payproc_InvoiceTemplateUpdateParams{cost = V};
+update_field(product, V, Params) ->
+    Params#payproc_InvoiceTemplateUpdateParams{product = V};
+update_field(description, V, Params) ->
+    Params#payproc_InvoiceTemplateUpdateParams{description = V};
 update_field(context, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{context = V}.
-
--spec make_lifetime() -> lifetime_interval().
-
-make_lifetime() ->
-    make_lifetime(0, 0, 1).
 
 -spec make_lifetime(non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
     lifetime_interval().
@@ -437,11 +441,6 @@ make_invoice_details(Product, Description) ->
         product = Product,
         description = Description
     }.
-
--spec make_invoice_tpl_cost() -> invoice_tpl_cost().
-
-make_invoice_tpl_cost() ->
-    make_invoice_tpl_cost(fixed, 10000, <<"RUB">>).
 
 -type cash_bound() :: {inclusive | exclusive, non_neg_integer(), currency()}.
 

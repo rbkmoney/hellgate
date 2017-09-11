@@ -1,11 +1,11 @@
 -ifndef(__hellgate_domain__).
 -define(__hellgate_domain__, 42).
 
--define(cash(Amount, Currency),
-    #domain_Cash{amount = Amount, currency = Currency}).
-
 -define(currency(SymbolicCode),
     #domain_CurrencyRef{symbolic_code = SymbolicCode}).
+
+-define(cash(Amount, SymCode),
+    #domain_Cash{amount = Amount, currency = ?currency(SymCode)}).
 
 -define(external_failure(Code),
     ?external_failure(Code, undefined)).

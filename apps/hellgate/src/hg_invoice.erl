@@ -681,44 +681,83 @@ make_invoice_params(#payproc_InvoiceWithTemplateParams{
     #domain_InvoiceTemplate{
         owner_id = PartyID,
         shop_id = ShopID,
-        details = Details,
         invoice_lifetime = Lifetime,
-        cost = TplCost,
+        product = Product,
+        description = Description,
+        details = TplDetails,
         context = TplContext
     } = hg_invoice_template:get(TplID),
     Party = get_party(PartyID),
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_accessible(PartyID),
     _ = assert_party_shop_operable(Shop, Party),
-    InvoiceCost = get_templated_cost(Cost, TplCost, Shop),
+    Cart = make_invoice_cart(Cost, TplDetails, Shop),
+    InvoiceDetails = #domain_InvoiceDetails{
+        product = Product,
+        description = Description,
+        cart = Cart
+    },
+    InvoiceCost = get_cart_amount(Cart),
     InvoiceDue = make_invoice_due_date(Lifetime),
     InvoiceContext = make_invoice_context(Context, TplContext),
     #payproc_InvoiceParams{
         party_id = PartyID,
         shop_id = ShopID,
-        details = Details,
+        details = InvoiceDetails,
         due = InvoiceDue,
         cost = InvoiceCost,
         context = InvoiceContext
     }.
 
-get_templated_cost(undefined, {fixed, Cost}, Shop) ->
+make_invoice_cart(_, {cart, Cart}, _) ->
+    Cart;
+make_invoice_cart(Cost, {product, TplProduct}, Shop) ->
+    #domain_InvoiceTemplateProduct{
+        product = Product,
+        price = TplPrice,
+        metadata = Metadata
+    } = TplProduct,
+    #domain_InvoiceCart{lines = [
+        #domain_InvoiceLine{
+            product = Product,
+            quantity = 1,
+            price = get_templated_price(Cost, TplPrice, Shop),
+            metadata = Metadata
+        }
+    ]}.
+
+get_templated_price(undefined, {fixed, Cost}, Shop) ->
     get_cost(Cost, Shop);
-get_templated_cost(undefined, _, _) ->
+get_templated_price(undefined, _, _) ->
     throw(#'InvalidRequest'{errors = [?INVOICE_TPL_NO_COST]});
-get_templated_cost(Cost, {fixed, Cost}, Shop) ->
+get_templated_price(Cost, {fixed, Cost}, Shop) ->
     get_cost(Cost, Shop);
-get_templated_cost(_Cost, {fixed, _CostTpl}, _Shop) ->
+get_templated_price(_Cost, {fixed, _CostTpl}, _Shop) ->
     throw(#'InvalidRequest'{errors = [?INVOICE_TPL_BAD_COST]});
-get_templated_cost(Cost, {range, Range}, Shop) ->
+get_templated_price(Cost, {range, Range}, Shop) ->
     _ = assert_cost_in_range(Cost, Range),
     get_cost(Cost, Shop);
-get_templated_cost(Cost, {unlim, _}, Shop) ->
+get_templated_price(Cost, {unlim, _}, Shop) ->
     get_cost(Cost, Shop).
 
 get_cost(Cost, Shop) ->
     ok = hg_invoice_utils:validate_cost(Cost, Shop),
     Cost.
+
+get_cart_amount(#domain_InvoiceCart{lines = [FirstLine | Cart]}) ->
+    lists:foldl(
+        fun (Line, CashAcc) ->
+            hg_cash:add(get_line_amount(Line), CashAcc)
+        end,
+        get_line_amount(FirstLine),
+        Cart
+    ).
+
+get_line_amount(#domain_InvoiceLine{
+    quantity = Quantity,
+    price = #domain_Cash{amount = Amount, currency = Currency}
+}) ->
+    #domain_Cash{amount = Amount * Quantity, currency = Currency}.
 
 assert_cost_in_range(
     #domain_Cash{amount = Amount, currency = Currency},
@@ -794,7 +833,7 @@ get_invoice_params(Invoice) ->
     #domain_Invoice{
         id = ID,
         owner_id = PartyID,
-        cost = ?cash(Amount, ?currency(SymbolicCode)),
+        cost = ?cash(Amount, SymbolicCode),
         shop_id = ShopID
     } = Invoice,
     [{id, ID}, {owner_id, PartyID}, {cost, [{amount, Amount}, {currency, SymbolicCode}]}, {shop_id, ShopID}].
