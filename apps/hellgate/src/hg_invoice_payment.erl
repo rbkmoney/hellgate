@@ -1653,7 +1653,7 @@ marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, 
         ]
     };
 marshal(interaction, {payment_terminal_reciept, #'PaymentTerminalReceipt'{short_payment_id = SPID, due = DueDate}}) ->
-    #{<<"payment_terminal_reciept">> =>
+    #{<<"payment_terminal_receipt">> =>
         #{
             <<"spid">>  => marshal(str, SPID),
             <<"due">>   => marshal(str, DueDate)
@@ -2040,7 +2040,7 @@ unmarshal(interaction, #{<<"redirect">> := [<<"post_request">>, #{
             form    = unmarshal(map_str, Form)
         }
     }};
-unmarshal(interaction, #{<<"payment_terminal_reciept">> := #{
+unmarshal(interaction, #{<<"payment_terminal_receipt">> := #{
     <<"spid">>  := SPID,
     <<"due">>   := DueDate
 }}) ->

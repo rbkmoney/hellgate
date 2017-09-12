@@ -194,7 +194,7 @@ get_short_payment_id(#prxprv_PaymentInfo{invoice = Invoice, payment = Payment}) 
     <<(Invoice#prxprv_Invoice.id)/binary, ".", (Payment#prxprv_InvoicePayment.id)/binary>>.
 
 get_invoice_due_date(#prxprv_PaymentInfo{invoice = Invoice}) ->
-    Invoice#prxprv_Invoice.id.
+    Invoice#prxprv_Invoice.due.
 
 %%
 
