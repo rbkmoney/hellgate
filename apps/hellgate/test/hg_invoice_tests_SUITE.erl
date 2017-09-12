@@ -468,7 +468,21 @@ payment_w_terminal_success(C) ->
     InvoiceID = start_invoice(<<"rubberruble">>, make_due_date(10), 42000, C),
     PaymentParams = make_terminal_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?captured(), ?interaction_requested(UserInteraction))
+        )
+    ] = next_event(InvoiceID, Client),
+    %% simulate user interaction
+    {URL, GoodForm} = get_post_request(UserInteraction),
+    BadForm = #{<<"tag">> => <<"666">>},
+    _ = assert_failed_post_request({URL, BadForm}),
+    _ = assert_success_post_request({URL, GoodForm}),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
@@ -1226,7 +1240,10 @@ post_request({URL, Form}) ->
     hackney:request(Method, URL, Headers, Body).
 
 get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, form = Form}}}) ->
-    {URL, Form}.
+    {URL, Form};
+get_post_request({payment_terminal_reciept, #'PaymentTerminalReceipt'{short_payment_id = SPID}}) ->
+    URL = hg_dummy_provider:get_callback_url(),
+    {URL, #{<<"tag">> => SPID}}.
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 

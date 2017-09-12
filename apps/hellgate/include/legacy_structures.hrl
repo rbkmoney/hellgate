@@ -115,6 +115,9 @@
 -define(legacy_post_request(URI, Form),
     {redirect, {post_request, {'BrowserPostRequest', URI, Form}}}).
 
+-define(legacy_payment_terminal_reciept(SPID, DueDate),
+    {payment_terminal_reciept, {'PaymentTerminalReceipt', SPID, DueDate}}).
+
 %% Adjustments
 
 -define(legacy_adjustment_created(Adjustment),

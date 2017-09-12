@@ -1652,6 +1652,13 @@ marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, 
             }
         ]
     };
+marshal(interaction, {payment_terminal_reciept, #'PaymentTerminalReceipt'{short_payment_id = SPID, due = DueDate}}) ->
+    #{<<"payment_terminal_reciept">> =>
+        #{
+            <<"spid">>  => marshal(str, SPID),
+            <<"due">>   => marshal(str, DueDate)
+        }
+    };
 
 marshal(failure, {operation_timeout, _}) ->
     [2, <<"operation_timeout">>];
@@ -2033,6 +2040,14 @@ unmarshal(interaction, #{<<"redirect">> := [<<"post_request">>, #{
             form    = unmarshal(map_str, Form)
         }
     }};
+unmarshal(interaction, #{<<"payment_terminal_reciept">> := #{
+    <<"spid">>  := SPID,
+    <<"due">>   := DueDate
+}}) ->
+    {payment_terminal_reciept, #'PaymentTerminalReceipt'{
+        short_payment_id = unmarshal(str, SPID),
+        due = unmarshal(str, DueDate)
+    }};
 
 unmarshal(interaction, ?legacy_get_request(URI)) ->
     {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
@@ -2042,6 +2057,11 @@ unmarshal(interaction, ?legacy_post_request(URI, Form)) ->
             uri     = unmarshal(str, URI),
             form    = unmarshal(map_str, Form)
         }
+    }};
+unmarshal(interaction, ?legacy_payment_terminal_reciept(SPID, DueDate)) ->
+    {payment_terminal_reciept, #'PaymentTerminalReceipt'{
+        short_payment_id = unmarshal(str, SPID),
+        due = unmarshal(str, DueDate)
     }};
 
 unmarshal(failure, [2, <<"operation_timeout">>]) ->

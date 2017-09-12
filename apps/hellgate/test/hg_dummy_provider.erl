@@ -8,6 +8,7 @@
 -export([get_service_spec/0]).
 -export([get_http_cowboy_spec/0]).
 
+-export([get_callback_url/0]).
 -export([construct_silent_callback/1]).
 
 %% cowboy http callbacks
@@ -101,10 +102,10 @@ process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo));
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
-    case is_tds_payment(PaymentInfo) of
-        true ->
+    case get_payment_tool_type(PaymentInfo) of
+        {bank_card, with_tds} ->
             Tag = hg_utils:unique_id(),
-            Uri = genlib:to_binary("http://127.0.0.1:" ++ integer_to_list(?COWBOY_PORT)),
+            Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
                 {
@@ -113,9 +114,17 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
                 }
             },
             suspend(Tag, 2, <<"suspended">>, UserInteraction);
-        false ->
+        {bank_card, without_tds} ->
             %% simple workflow without 3DS
-            sleep(1, <<"sleeping">>)
+            sleep(1, <<"sleeping">>);
+        {payment_terminal, euroset} ->
+            %% workflow for euroset terminal, similar to 3DS workflow
+            SPID = get_short_payment_id(PaymentInfo),
+            UserInteraction = {payment_terminal_reciept, #'PaymentTerminalReceipt'{
+               short_payment_id = SPID,
+               due = get_invoice_due_date(PaymentInfo)
+            }},
+            suspend(SPID, 2, <<"suspended">>, UserInteraction)
     end;
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo));
@@ -165,19 +174,27 @@ get_payment_id(#prxprv_PaymentInfo{payment = Payment}) ->
     #prxprv_InvoicePayment{id = PaymentID} = Payment,
     PaymentID.
 
-is_tds_payment(#prxprv_PaymentInfo{payment = Payment}) ->
+get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
+    #prxprv_InvoicePaymentRefund{id = RefundID} = Refund,
+    RefundID.
+
+get_payment_tool_type(#prxprv_PaymentInfo{payment = Payment}) ->
     Token3DS = hg_ct_helper:bank_card_tds_token(),
     #prxprv_InvoicePayment{payer = #domain_Payer{payment_tool = PaymentTool}} = Payment,
     case PaymentTool of
         {'bank_card', #domain_BankCard{token = Token3DS}} ->
-            true;
-        _ ->
-            false
+            {bank_card, with_tds};
+        {'bank_card', _} ->
+            {bank_card, without_tds};
+        {'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}} ->
+            {payment_terminal, euroset}
     end.
 
-get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
-    #prxprv_InvoicePaymentRefund{id = RefundID} = Refund,
-    RefundID.
+get_short_payment_id(#prxprv_PaymentInfo{invoice = Invoice, payment = Payment}) ->
+    <<(Invoice#prxprv_Invoice.id)/binary, ".", (Payment#prxprv_InvoicePayment.id)/binary>>.
+
+get_invoice_due_date(#prxprv_PaymentInfo{invoice = Invoice}) ->
+    Invoice#prxprv_Invoice.id.
 
 %%
 
@@ -197,6 +214,11 @@ handle(Req, State) ->
 
 terminate(_Reason, _Req, _State) ->
     ok.
+
+-spec get_callback_url() -> binary().
+
+get_callback_url() ->
+    genlib:to_binary("http://127.0.0.1:" ++ integer_to_list(?COWBOY_PORT)).
 
 handle_user_interaction_response(<<"POST">>, Req) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
