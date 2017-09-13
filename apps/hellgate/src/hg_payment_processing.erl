@@ -5,7 +5,6 @@
 -module(hg_payment_processing).
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 
 -define(NS, <<"payment_processing">>).
 
@@ -44,6 +43,9 @@
 -type disposable_payment_resource() :: dmsl_domain_thrift:'DisposablePaymentResource'().
 
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
+
+-type meta() :: dmsl_domain_thrift:'Metadata'().
+-type ev()   :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
 
 -type session() :: #{
     status      := active | suspended | finished,

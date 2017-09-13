@@ -91,13 +91,11 @@ handle_function_('StartBinding', [CustomerID, BindingParams], _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_operable(get_state(CustomerID)),
     call(CustomerID, {start_binding, BindingParams});
-% handle_function_('GetActiveBinding', [UserInfo, CustomerID], _Opts) ->
-%     ok = assume_user_identity(UserInfo),
-%     ok = set_meta(CustomerID),
-%     St = ensure_customer_accessible(get_state(CustomerID)),
-%     ok = assert_customer_operable(St),
-%     ok = assert_customer_status(ready, St),
-%     get_binding_state(get_active_binding(St));
+handle_function_('GetActiveBinding', [CustomerID], _Opts) ->
+    ok = set_meta(CustomerID),
+    St = get_state(CustomerID),
+    ok = assert_customer_operable(St),
+    get_active_binding(get_customer_state(St));
 handle_function_('GetEvents', [CustomerID, Range], _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_operable(get_state(CustomerID)),
@@ -109,6 +107,11 @@ get_customer_state(St) ->
     History = get_history(get_customer_id(St)),
     ok = assert_customer_not_deleted(lists:last(History)),
     get_customer(St).
+
+-spec get_active_binding(customer()) ->
+    binding().
+get_active_binding(Customer) ->
+    Customer#payproc_Customer.active_binding.
 
 %%
 
@@ -279,8 +282,6 @@ handle_result(#{state := St} = Params) ->
     _Result.
 start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
-    % Opts = get_binding_opts(St),
-
     {Binding, {Changes, Action}} = init_binding(BindingID, BindingParams),
     #{
         response => Binding,
@@ -433,7 +434,7 @@ assert_customer_not_deleted({_, _, [?customer_deleted()]}) ->
 assert_customer_not_deleted(_) ->
     ok.
 
-% %%
+%%
 
 -spec log_changes([customer_event()], st()) ->
     ok.

@@ -7,7 +7,8 @@
 
 % Events
 
--define(recurrent_payment_tool_event(CustomerChanges), {recurrent_payment_tool_changes, RecurrentPaymentToolChanges}).
+-define(recurrent_payment_tool_event(RecurrentPaymentToolChanges),
+    {recurrent_payment_tool_changes, RecurrentPaymentToolChanges}).
 
 -define(recurrent_payment_tool_has_created(RecurrentPaymentTool),
     {recurrent_payment_tool_has_created,
