@@ -287,7 +287,7 @@ invalid_invoice_template_cost(C) ->
     }} = hg_client_invoicing:create_with_tpl(Params1, Client),
 
     Cost2 = make_tpl_cost(fixed, 100, <<"RUB">>),
-    _ = update_invoice_tpl(TplID, #{cost => Cost2}, C),
+    _ = update_invoice_tpl(TplID, Cost2, C),
     Params2 = make_invoice_params_tpl(TplID, make_cash(50, <<"RUB">>)),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_BAD_COST]
@@ -298,7 +298,7 @@ invalid_invoice_template_cost(C) ->
     }} = hg_client_invoicing:create_with_tpl(Params3, Client),
 
     Cost3 = make_tpl_cost(range, {inclusive, 100, <<"RUB">>}, {inclusive, 10000, <<"RUB">>}),
-    _ = update_invoice_tpl(TplID, #{cost => Cost3}, C),
+    _ = update_invoice_tpl(TplID, Cost3, C),
     Params4 = make_invoice_params_tpl(TplID, make_cash(50, <<"RUB">>)),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_BAD_AMOUNT]
@@ -336,8 +336,6 @@ invoice_w_template(C) ->
     #domain_InvoiceTemplate{
         owner_id = TplPartyID,
         shop_id  = TplShopID,
-        details  = TplDetails,
-        cost     = TplCost1,
         context  = TplContext1
     } = get_invoice_tpl(TplID, C),
     InvoiceCost1 = FixedCost,
@@ -347,7 +345,6 @@ invoice_w_template(C) ->
     ?invoice_state(#domain_Invoice{
         owner_id    = TplPartyID,
         shop_id     = TplShopID,
-        details     = TplDetails,
         template_id = TplID,
         cost        = InvoiceCost1,
         context     = InvoiceContext1
@@ -357,29 +354,26 @@ invoice_w_template(C) ->
     ?invoice_state(#domain_Invoice{
         owner_id    = TplPartyID,
         shop_id     = TplShopID,
-        details     = TplDetails,
         template_id = TplID,
         cost        = InvoiceCost1,
         context     = TplContext1
     }) = hg_client_invoicing:create_with_tpl(Params2, Client),
 
     TplCost2 = make_tpl_cost(range, {inclusive, 100, <<"RUB">>}, {inclusive, 10000, <<"RUB">>}),
-    _ = update_invoice_tpl(TplID, #{cost => TplCost2}, C),
+    _ = update_invoice_tpl(TplID, TplCost2, C),
     ?invoice_state(#domain_Invoice{
         owner_id    = TplPartyID,
         shop_id     = TplShopID,
-        details     = TplDetails,
         template_id = TplID,
         cost        = InvoiceCost1,
         context     = InvoiceContext1
     }) = hg_client_invoicing:create_with_tpl(Params1, Client),
 
     TplCost3 = make_tpl_cost(unlim, sale, "146%"),
-    _ = update_invoice_tpl(TplID, #{cost => TplCost3}, C),
+    _ = update_invoice_tpl(TplID, TplCost3, C),
     ?invoice_state(#domain_Invoice{
         owner_id    = TplPartyID,
         shop_id     = TplShopID,
-        details     = TplDetails,
         template_id = TplID,
         cost        = InvoiceCost1,
         context     = InvoiceContext1
@@ -1027,18 +1021,18 @@ make_tpl_cost(Type, P1, P2) ->
     hg_ct_helper:make_invoice_tpl_cost(Type, P1, P2).
 
 create_invoice_tpl(Config) ->
-    create_invoice_tpl_(Config, []).
+    Cost = hg_ct_helper:make_invoice_tpl_cost(fixed, 100, <<"RUB">>),
+    Context = make_invoice_context(),
+    create_invoice_tpl(Config, Cost, Context).
 
 create_invoice_tpl(Config, Cost, Context) ->
-    Lifetime = hg_ct_helper:make_lifetime(0, 1, 0),
-    create_invoice_tpl_(Config, [Lifetime, Cost, Context]).
-
-create_invoice_tpl_(Config, AdditionalParams) ->
     Client = cfg(client_tpl, Config),
     PartyID = cfg(party_id, Config),
     ShopID = cfg(shop_id, Config),
+    Lifetime = hg_ct_helper:make_lifetime(0, 1, 0),
     Product = <<"rubberduck">>,
-    Params = erlang:apply(hg_ct_helper, make_invoice_tpl_create_params, [PartyID, ShopID, Product | AdditionalParams]),
+    Details = hg_ct_helper:make_invoice_tpl_details(Product, Cost),
+    Params = hg_ct_helper:make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, Context),
     #domain_InvoiceTemplate{id = TplID} = hg_client_invoice_templating:create(Params, Client),
     TplID.
 
@@ -1046,9 +1040,11 @@ get_invoice_tpl(TplID, Config) ->
     Client = cfg(client_tpl, Config),
     hg_client_invoice_templating:get(TplID, Client).
 
-update_invoice_tpl(TplID, Diff, Config) ->
+update_invoice_tpl(TplID, Cost, Config) ->
     Client = cfg(client_tpl, Config),
-    Params = hg_ct_helper:make_invoice_tpl_update_params(Diff),
+    Product = <<"rubberduck">>,
+    Details = hg_ct_helper:make_invoice_tpl_details(Product, Cost),
+    Params = hg_ct_helper:make_invoice_tpl_update_params(#{details => Details}),
     hg_client_invoice_templating:update(TplID, Params, Client).
 
 delete_invoice_tpl(TplID, Config) ->
@@ -1198,8 +1194,8 @@ construct_domain_fixture() ->
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(     1000, ?cur(<<"RUB">>))},
-                        upper = {exclusive, ?cash(420000000, ?cur(<<"RUB">>))}
+                        lower = {inclusive, ?cash(     1000, <<"RUB">>)},
+                        upper = {exclusive, ?cash(420000000, <<"RUB">>)}
                     }}
                 }
             ]},
@@ -1241,15 +1237,15 @@ construct_domain_fixture() ->
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(1000, ?cur(<<"RUB">>))},
-                        upper = {exclusive, ?cash(4200000, ?cur(<<"RUB">>))}
+                        lower = {inclusive, ?cash(1000, <<"RUB">>)},
+                        upper = {exclusive, ?cash(4200000, <<"RUB">>)}
                     }}
                 },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
                     then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(      200, ?cur(<<"USD">>))},
-                        upper = {exclusive, ?cash(   313370, ?cur(<<"USD">>))}
+                        lower = {inclusive, ?cash(      200, <<"USD">>)},
+                        upper = {exclusive, ?cash(   313370, <<"USD">>)}
                     }}
                 }
             ]},
@@ -1344,22 +1340,22 @@ construct_domain_fixture() ->
                             },
                             #domain_InspectorDecision{
                                 if_ = {condition, {cost_in, #domain_CashRange{
-                                    lower = {inclusive, ?cash(        0, ?cur(<<"RUB">>))},
-                                    upper = {exclusive, ?cash(   500000, ?cur(<<"RUB">>))}
+                                    lower = {inclusive, ?cash(        0, <<"RUB">>)},
+                                    upper = {exclusive, ?cash(   500000, <<"RUB">>)}
                                 }}},
                                 then_ = {value, ?insp(1)}
                             },
                             #domain_InspectorDecision{
                                 if_ = {condition, {cost_in, #domain_CashRange{
-                                    lower = {inclusive, ?cash(   500000, ?cur(<<"RUB">>))},
-                                    upper = {exclusive, ?cash(100000000, ?cur(<<"RUB">>))}
+                                    lower = {inclusive, ?cash(   500000, <<"RUB">>)},
+                                    upper = {exclusive, ?cash(100000000, <<"RUB">>)}
                                 }}},
                                 then_ = {value, ?insp(2)}
                             },
                             #domain_InspectorDecision{
                                 if_ = {condition, {cost_in, #domain_CashRange{
-                                    lower = {inclusive, ?cash( 100000000, ?cur(<<"RUB">>))},
-                                    upper = {exclusive, ?cash(1000000000, ?cur(<<"RUB">>))}
+                                    lower = {inclusive, ?cash( 100000000, <<"RUB">>)},
+                                    upper = {exclusive, ?cash(1000000000, <<"RUB">>)}
                                 }}},
                                 then_ = {value, ?insp(3)}
                             }

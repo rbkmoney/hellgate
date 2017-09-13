@@ -115,8 +115,7 @@ create_invalid_party(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = ?MISSING_PARTY_ID,
-    Product = <<"rubberduck">>,
-    Params = make_invoice_tpl_create_params(PartyID, ShopID, Product),
+    Params = make_invoice_tpl_create_params(PartyID, ShopID),
     {exception, #payproc_InvalidUser{}} = hg_client_invoice_templating:create(Params, Client).
 
 -spec create_invalid_shop(config()) -> _ | no_return().
@@ -125,8 +124,7 @@ create_invalid_shop(C) ->
     Client = cfg(client, C),
     ShopID = ?MISSING_SHOP_ID,
     PartyID = cfg(party_id, C),
-    Product = <<"rubberduck">>,
-    Params = make_invoice_tpl_create_params(PartyID, ShopID, Product),
+    Params = make_invoice_tpl_create_params(PartyID, ShopID),
     {exception, #payproc_ShopNotFound{}} = hg_client_invoice_templating:create(Params, Client).
 
 -spec create_invalid_party_status(config()) -> _ | no_return().
@@ -137,13 +135,13 @@ create_invalid_party_status(C) ->
     ok = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
-    }} = create_invoice_tpl(C, <<"rubberduck">>),
+    }} = create_invoice_tpl(C),
     ok = hg_client_party:activate(PartyClient),
 
     ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
-    }} = create_invoice_tpl(C, <<"rubberduck">>),
+    }} = create_invoice_tpl(C),
     ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec create_invalid_shop_status(config()) -> _ | no_return().
@@ -155,13 +153,13 @@ create_invalid_shop_status(C) ->
     ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
-    }} = create_invoice_tpl(C, <<"rubberduck">>),
+    }} = create_invoice_tpl(C),
     ok = hg_client_party:activate_shop(ShopID, PartyClient),
 
     ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
-    }} = create_invoice_tpl(C, <<"rubberduck">>),
+    }} = create_invoice_tpl(C),
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec create_invalid_cost_fixed_amount(config()) -> _ | no_return().
@@ -205,12 +203,12 @@ create_invoice_template(C) ->
 
 create_cost(Cost, C) ->
     Product = <<"rubberduck">>,
-    Details = make_invoice_details(Product),
+    Details = hg_ct_helper:make_invoice_tpl_details(Product, Cost),
     Lifetime = make_lifetime(0, 0, 2),
     #domain_InvoiceTemplate{
-       details = Details,
-       invoice_lifetime = Lifetime,
-       cost = Cost
+        product = Product,
+        invoice_lifetime = Lifetime,
+        details = Details
     } = create_invoice_tpl(C, Product, Lifetime, Cost),
     ok.
 
@@ -220,7 +218,7 @@ get_invoice_template_anyhow(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
-    InvoiceTpl = ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    InvoiceTpl = ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
     ok = hg_client_party:suspend(PartyClient),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
@@ -244,8 +242,10 @@ get_invoice_template_anyhow(C) ->
 update_invalid_party_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
-    Diff = make_invoice_tpl_update_params(#{details => make_invoice_details(<<"teddy bear">>)}),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
+    Diff = make_invoice_tpl_update_params(
+        #{details => hg_ct_helper:make_invoice_tpl_details(<<"teddy bear">>, make_cost(fixed, 42, <<"RUB">>))}
+    ),
     ok = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
@@ -264,9 +264,10 @@ update_invalid_shop_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
-    Diff = make_invoice_tpl_update_params(#{details => make_invoice_details(<<"teddy bear">>)}),
-
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
+    Diff = make_invoice_tpl_update_params(
+        #{details => hg_ct_helper:make_invoice_tpl_details(<<"teddy bear">>, make_cost(fixed, 42, <<"RUB">>))}
+    ),
     ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
@@ -283,7 +284,7 @@ update_invalid_shop_status(C) ->
 
 update_invalid_cost_fixed_amount(C) ->
     Client = cfg(client, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
     Cost = make_cost(fixed, -100, <<"RUB">>),
     update_invalid_cost(Cost, amount, TplID, Client).
 
@@ -291,7 +292,7 @@ update_invalid_cost_fixed_amount(C) ->
 
 update_invalid_cost_fixed_currency(C) ->
     Client = cfg(client, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
     Cost = make_cost(fixed, 100, <<"KEK">>),
     update_invalid_cost(Cost, currency, TplID, Client).
 
@@ -299,7 +300,7 @@ update_invalid_cost_fixed_currency(C) ->
 
 update_invalid_cost_range(C) ->
     Client = cfg(client, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
     Cost1 = make_cost(range, {exclusive, 100, <<"RUB">>}, {exclusive, 100, <<"RUB">>}),
     update_invalid_cost(Cost1, <<"Invalid cost range">>, TplID, Client),
@@ -322,21 +323,22 @@ update_invoice_template(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
-    NewDetails = make_invoice_details(<<"teddy bear">>),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
+    NewProduct = <<"teddy bear">>,
     CostUnlim = make_cost(unlim, sale, "50%"),
+    NewDetails = hg_ct_helper:make_invoice_tpl_details(NewProduct, CostUnlim),
     NewLifetime = make_lifetime(10, 32, 51),
     Diff1 = make_invoice_tpl_update_params(#{
         details => NewDetails,
-        cost => CostUnlim,
+        product => NewProduct,
         invoice_lifetime => NewLifetime
     }),
     Tpl1 = #domain_InvoiceTemplate{
         id = TplID,
         owner_id = PartyID,
         shop_id = ShopID,
+        product = NewProduct,
         details = NewDetails,
-        cost = CostUnlim,
         invoice_lifetime = NewLifetime
     } = hg_client_invoice_templating:update(TplID, Diff1, Client),
 
@@ -345,10 +347,12 @@ update_invoice_template(C) ->
     _    = update_cost(make_cost(range, {inclusive, 42, <<"RUB">>}, {inclusive, 100, <<"RUB">>}), Tpl3, Client).
 
 update_cost(Cost, Tpl, Client) ->
-    TplNext = Tpl#domain_InvoiceTemplate{cost = Cost},
+    {product, #domain_InvoiceTemplateProduct{product = Product}} = Tpl#domain_InvoiceTemplate.details,
+    NewDetails = hg_ct_helper:make_invoice_tpl_details(Product, Cost),
+    TplNext = Tpl#domain_InvoiceTemplate{details = NewDetails},
     TplNext = hg_client_invoice_templating:update(
         Tpl#domain_InvoiceTemplate.id,
-        make_invoice_tpl_update_params(#{cost => Cost}),
+        make_invoice_tpl_update_params(#{details => NewDetails}),
         Client
     ).
 
@@ -357,7 +361,7 @@ update_cost(Cost, Tpl, Client) ->
 delete_invalid_party_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
     ok = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
@@ -377,7 +381,7 @@ delete_invalid_shop_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
     ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
@@ -395,7 +399,7 @@ delete_invalid_shop_status(C) ->
 
 delete_invoice_template(C) ->
     Client = cfg(client, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
     ok = hg_client_invoice_templating:delete(TplID, Client),
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoice_templating:get(TplID, Client),
     Diff = make_invoice_tpl_update_params(#{}),
@@ -404,18 +408,19 @@ delete_invoice_template(C) ->
 
 %%
 
-create_invoice_tpl(Config, Product) ->
+create_invoice_tpl(Config) ->
     Client = cfg(client, Config),
     ShopID = cfg(shop_id, Config),
     PartyID = cfg(party_id, Config),
-    Params = make_invoice_tpl_create_params(PartyID, ShopID, Product),
+    Params = make_invoice_tpl_create_params(PartyID, ShopID),
     hg_client_invoice_templating:create(Params, Client).
 
 create_invoice_tpl(Config, Product, Lifetime, Cost) ->
     Client = cfg(client, Config),
     ShopID = cfg(shop_id, Config),
     PartyID = cfg(party_id, Config),
-    Params = make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost),
+    Details = hg_ct_helper:make_invoice_tpl_details(Product, Cost),
+    Params = make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details),
     hg_client_invoice_templating:create(Params, Client).
 
 update_invalid_cost(Cost, amount, TplID, Client) ->
@@ -423,7 +428,8 @@ update_invalid_cost(Cost, amount, TplID, Client) ->
 update_invalid_cost(Cost, currency, TplID, Client) ->
     update_invalid_cost(Cost, <<"Invalid currency">>, TplID, Client);
 update_invalid_cost(Cost, Error, TplID, Client) ->
-    Diff = make_invoice_tpl_update_params(#{cost => Cost}),
+    Details = hg_ct_helper:make_invoice_tpl_details(<<"RNGName">>, Cost),
+    Diff = make_invoice_tpl_update_params(#{details => Details}),
     {exception, #'InvalidRequest'{
         errors = [Error]
     }} = hg_client_invoice_templating:update(TplID, Diff, Client).
@@ -439,11 +445,14 @@ create_invalid_cost(Cost, Error, Config) ->
         errors = [Error]
     }} = create_invoice_tpl(Config, Product, Lifetime, Cost).
 
-make_invoice_tpl_create_params(PartyID, ShopID, Product) ->
-    hg_ct_helper:make_invoice_tpl_create_params(PartyID, ShopID, Product).
+make_invoice_tpl_create_params(PartyID, ShopID) ->
+    Lifetime = make_lifetime(0, 0, 2),
+    Product = <<"rubberduck">>,
+    Details = hg_ct_helper:make_invoice_tpl_details(<<"rubberduck">>, make_cost(fixed, 100, <<"RUB">>)),
+    make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details).
 
-make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost) ->
-    hg_ct_helper:make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost).
+make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
+    hg_ct_helper:make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details).
 
 make_invoice_tpl_update_params(Diff) ->
     hg_ct_helper:make_invoice_tpl_update_params(Diff).
@@ -456,9 +465,6 @@ make_lifetime(Y, M, D) ->
 
 make_cost(Type, P1, P2) ->
     hg_ct_helper:make_invoice_tpl_cost(Type, P1, P2).
-
-make_invoice_details(Product) ->
-    hg_ct_helper:make_invoice_details(Product).
 
 construct_domain_fixture() ->
     [
