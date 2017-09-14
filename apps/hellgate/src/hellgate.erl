@@ -62,7 +62,7 @@ get_api_child_spec(MachineHandlers) ->
                 construct_service_handler(invoicing, hg_invoice),
                 construct_service_handler(invoice_templating, hg_invoice_template),
                 construct_service_handler(proxy_host_provider, hg_proxy_host_provider),
-                construct_service_handler(eventsink, hg_event_sink)
+                construct_service_handler(eventsink, hg_event_sink_handler)
             ]
         }
     ).
