@@ -1,22 +1,22 @@
 -module(hg_machine).
 
--type id() :: dmsl_base_thrift:'ID'().
--type ref() :: dmsl_state_processing_thrift:'Reference'().
--type ns() :: dmsl_base_thrift:'Namespace'().
+-type id() :: mg_proto_base_thrift:'ID'().
+-type ref() :: mg_proto_state_processing_thrift:'Reference'().
+-type ns() :: mg_proto_base_thrift:'Namespace'().
 -type args() :: _.
 
--type machine() :: dmsl_state_processing_thrift:'Machine'().
+-type machine() :: mg_proto_state_processing_thrift:'Machine'().
 
 -type event() :: event(_).
 -type event(T) :: {event_id(), timestamp(), T}.
--type event_id() :: dmsl_base_thrift:'EventID'().
--type timestamp() :: dmsl_base_thrift:'Timestamp'().
+-type event_id() :: mg_proto_base_thrift:'EventID'().
+-type timestamp() :: mg_proto_base_thrift:'Timestamp'().
 
 -type history() :: history(_).
 -type history(T) :: [event(T)].
 
--type history_range() :: dmsl_state_processing_thrift:'HistoryRange'().
--type descriptor()    :: dmsl_state_processing_thrift:'MachineDescriptor'().
+-type history_range() :: mg_proto_state_processing_thrift:'HistoryRange'().
+-type descriptor()    :: mg_proto_state_processing_thrift:'MachineDescriptor'().
 
 -type result(T) :: {[T], hg_machine_action:t()}.
 -type result() :: result(_).
@@ -78,7 +78,7 @@
 
 %%
 
--include_lib("dmsl/include/dmsl_state_processing_thrift.hrl").
+-include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 
 %%
@@ -175,11 +175,11 @@ handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
 -spec dispatch_signal(ns(), Signal, machine()) ->
     Result when
         Signal ::
-            dmsl_state_processing_thrift:'InitSignal'() |
-            dmsl_state_processing_thrift:'TimeoutSignal'() |
-            dmsl_state_processing_thrift:'RepairSignal'(),
+            mg_proto_state_processing_thrift:'InitSignal'() |
+            mg_proto_state_processing_thrift:'TimeoutSignal'() |
+            mg_proto_state_processing_thrift:'RepairSignal'(),
         Result ::
-            dmsl_state_processing_thrift:'SignalResult'().
+            mg_proto_state_processing_thrift:'SignalResult'().
 
 dispatch_signal(Ns, #'InitSignal'{arg = Payload}, #'Machine'{id = ID}) ->
     Args = unwrap_args(Payload),
@@ -214,8 +214,8 @@ marshal_signal_result({Events, Action}) ->
 
 -spec dispatch_call(ns(), Call, machine()) ->
     Result when
-        Call :: dmsl_state_processing_thrift:'Args'(),
-        Result :: dmsl_state_processing_thrift:'CallResult'().
+        Call :: mg_proto_state_processing_thrift:'Args'(),
+        Result :: mg_proto_state_processing_thrift:'CallResult'().
 
 dispatch_call(Ns, Payload, #'Machine'{history = History}) ->
     Args = unwrap_args(Payload),

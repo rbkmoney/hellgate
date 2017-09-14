@@ -82,11 +82,11 @@ get_service_modname(ServiceName) ->
     {get_service_module(ServiceName), ServiceName}.
 
 get_service_module('Automaton') ->
-    dmsl_state_processing_thrift;
+    mg_proto_state_processing_thrift;
 get_service_module('Accounter') ->
     dmsl_accounter_thrift;
 get_service_module('EventSink') ->
-    dmsl_state_processing_thrift;
+    mg_proto_state_processing_thrift;
 get_service_module('ProviderProxy') ->
     dmsl_proxy_provider_thrift;
 get_service_module('InspectorProxy') ->

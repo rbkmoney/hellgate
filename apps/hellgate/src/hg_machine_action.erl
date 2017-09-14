@@ -13,7 +13,7 @@
 -export([set_tag/1]).
 -export([set_tag/2]).
 
--include_lib("dmsl/include/dmsl_state_processing_thrift.hrl").
+-include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 %%
 
@@ -22,8 +22,8 @@
 -type datetime_rfc3339() :: binary().
 -type datetime() :: calendar:datetime() | datetime_rfc3339().
 
--type timer() :: dmsl_base_thrift:'Timer'().
--type t() :: dmsl_state_processing_thrift:'ComplexAction'().
+-type timer() :: mg_proto_base_thrift:'Timer'().
+-type t() :: mg_proto_state_processing_thrift:'ComplexAction'().
 
 -export_type([t/0]).
 

@@ -1,44 +1,39 @@
 -module(hg_event_sink).
 
-%% Woody handler called by hg_woody_wrapper
+-export([get_events/2]).
+-export([get_last_event_id/0]).
 
--behaviour(hg_woody_wrapper).
+-include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
--export([handle_function/3]).
 
-%%
+-type event() :: mg_proto_state_processing_thrift:'Event'().
+-type event_id() :: mg_proto_base_thrift:'ID'().
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("dmsl/include/dmsl_state_processing_thrift.hrl").
+-spec get_events(event_id(), integer()) ->
+        [event()] | {error, event_not_found}.
 
--type event_id() :: dmsl_base_thrift:'EventID'().
--type event()    :: dmsl_payment_processing_thrift:'Event'().
-
--spec handle_function
-    ('GetEvents', woody:args(), hg_woody_wrapper:handler_opts()) ->
-        [event()] | no_return();
-    ('GetLastEventID', woody:args(), hg_woody_wrapper:handler_opts()) ->
-        event_id() | no_return().
-
-handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->
+get_events(After, Limit) ->
     try
         get_public_history(After, Limit)
     catch
         {exception, #'EventNotFound'{}} ->
-            throw(#payproc_EventNotFound{})
-    end;
+            {error, event_not_found}
+    end.
 
-handle_function('GetLastEventID', [], _Opts) ->
-    % TODO handle thrift exceptions here
+-spec get_last_event_id() ->
+        event() | {error, no_last_event}.
+
+get_last_event_id() ->
     case get_history_range(undefined, 1, backward) of
         [#'SinkEvent'{id = ID}] ->
-            ID;
+            {ok, ID};
         [] ->
-            throw(#payproc_NoLastEvent{})
+            {error, no_last_event}
     end.
 
 get_public_history(After, Limit) ->
-    [publish_event(Ev) || Ev <- get_history_range(After, Limit)].
+    History = [publish_event(Ev) || Ev <- get_history_range(After, Limit)],
+    {ok, History}.
 
 get_history_range(After, Limit) ->
     get_history_range(After, Limit, forward).
