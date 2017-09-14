@@ -534,9 +534,18 @@ merge_party_change(?claim_updated(ID, Changeset, Revision, UpdatedAt), St) ->
     Claim = hg_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
     set_claim(Claim, St);
 merge_party_change(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) ->
-    Claim = hg_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Status1 = ensure_claim_status_reason(Status),
+    Claim = hg_claim:set_status(Status1, Revision, UpdatedAt, get_st_claim(ID, St)),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1).
+
+% FIXME Remove as soon as offline services switch to rbkmoney/damsel@2223cc6
+ensure_claim_status_reason(?denied(undefined)) ->
+    ?denied(<<>>);
+ensure_claim_status_reason(?revoked(undefined)) ->
+    ?revoked(<<>>);
+ensure_claim_status_reason(Status) ->
+    Status.
 
 assert_operable(St) ->
     _ = assert_unblocked(St),
