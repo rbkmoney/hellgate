@@ -5,11 +5,11 @@
 
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
--type event() :: mg_proto_state_processing_thrift:'Event'().
--type event_id() :: mg_proto_base_thrift:'ID'().
+-type event_id() :: dmsl_base_thrift:'EventID'().
+-type event()    :: dmsl_payment_processing_thrift:'Event'().
 
 -spec get_events(event_id(), integer()) ->
-        [event()] | {error, event_not_found}.
+    {ok, [event()]} | {error, event_not_found}.
 
 get_events(After, Limit) ->
     try
@@ -20,7 +20,7 @@ get_events(After, Limit) ->
     end.
 
 -spec get_last_event_id() ->
-        event() | {error, no_last_event}.
+    {ok, event_id()} | {error, no_last_event}.
 
 get_last_event_id() ->
     case get_history_range(undefined, 1, backward) of
