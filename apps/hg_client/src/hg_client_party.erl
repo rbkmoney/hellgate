@@ -219,13 +219,13 @@ update_claim(ID, Revision, Changeset, Client) ->
 accept_claim(ID, Revision, Client) ->
     map_result_error(gen_server:call(Client, {call, 'AcceptClaim', [ID, Revision]})).
 
--spec deny_claim(claim_id(), claim_revision(), binary(), pid()) ->
+-spec deny_claim(claim_id(), claim_revision(), binary() | undefined, pid()) ->
     ok | woody_error:business_error().
 
 deny_claim(ID, Revision, Reason, Client) ->
     map_result_error(gen_server:call(Client, {call, 'DenyClaim', [ID, Revision, Reason]})).
 
--spec revoke_claim(claim_id(), claim_revision(), binary(), pid()) ->
+-spec revoke_claim(claim_id(), claim_revision(), binary() | undefined, pid()) ->
     ok | woody_error:business_error().
 
 revoke_claim(ID, Revision, Reason, Client) ->
