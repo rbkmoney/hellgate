@@ -610,4 +610,21 @@ marshal(V) ->
     {bin, term_to_binary(V)}.
 
 unmarshal({bin, B}) ->
-    binary_to_term(B).
+    ensure_event(binary_to_term(B)).
+
+% FIXME Remove as soon as offline services switch to rbkmoney/damsel@2223cc6
+
+ensure_event(?party_ev(Changes)) ->
+    ?party_ev([ensure_change(C) || C <- Changes]).
+
+ensure_change(?claim_status_changed(ID, Status, Revision, UpdatedAt)) ->
+    ?claim_status_changed(ID, ensure_claim_status_reason(Status), Revision, UpdatedAt);
+ensure_change(Change) ->
+    Change.
+
+ensure_claim_status_reason(?denied(undefined)) ->
+    ?denied(<<>>);
+ensure_claim_status_reason(?revoked(undefined)) ->
+    ?revoked(<<>>);
+ensure_claim_status_reason(Status) ->
+    Status.

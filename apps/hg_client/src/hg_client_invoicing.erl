@@ -10,14 +10,20 @@
 -export([get/2]).
 -export([fulfill/3]).
 -export([rescind/3]).
+
 -export([start_payment/3]).
 -export([get_payment/3]).
 -export([cancel_payment/4]).
 -export([capture_payment/4]).
+
+-export([refund_payment/4]).
+-export([get_payment_refund/4]).
+
 -export([create_adjustment/4]).
 -export([get_adjustment/4]).
 -export([capture_adjustment/4]).
 -export([cancel_adjustment/4]).
+
 -export([pull_event/2]).
 -export([pull_event/3]).
 
@@ -44,6 +50,9 @@
 -type adjustment()         :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
 -type adjustment_id()      :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type adjustment_params()  :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
+-type refund()             :: dmsl_domain_thrift:'InvoicePaymentRefund'().
+-type refund_id()          :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
+-type refund_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 
 -spec start(user_info(), hg_client_api:t()) -> pid().
 
@@ -120,6 +129,18 @@ cancel_payment(InvoiceID, PaymentID, Reason, Client) ->
 
 capture_payment(InvoiceID, PaymentID, Reason, Client) ->
     map_result_error(gen_server:call(Client, {call, 'CapturePayment', [InvoiceID, PaymentID, Reason]})).
+
+-spec refund_payment(invoice_id(), payment_id(), refund_params(), pid()) ->
+    refund() | woody_error:business_error().
+
+refund_payment(InvoiceID, PaymentID, Params, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'RefundPayment', [InvoiceID, PaymentID, Params]})).
+
+-spec get_payment_refund(invoice_id(), payment_id(), refund_id(), pid()) ->
+    refund() | woody_error:business_error().
+
+get_payment_refund(InvoiceID, PaymentID, RefundID, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetPaymentRefund', [InvoiceID, PaymentID, RefundID]})).
 
 -spec create_adjustment(invoice_id(), payment_id(), adjustment_params(), pid()) ->
     adjustment() | woody_error:business_error().

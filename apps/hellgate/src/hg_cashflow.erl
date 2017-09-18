@@ -158,34 +158,32 @@ resolve_constant(Constant, Context) ->
 
 get_partial_remainders(CashFlow) ->
     lists:foldl(
-        fun (CashFlowPosting, Acc) ->
-            ?final_posting(
-                #domain_FinalCashFlowAccount{account_type = Source},
-                #domain_FinalCashFlowAccount{account_type = Destination},
-                ?cash(Amount, Currency),
-            _) = CashFlowPosting,
-            maps:update_with(
-                Source,
-                fun (?cash(A, C)) when C == Currency ->
-                    ?cash(A - Amount, Currency)
-                end,
-                 ?cash(-Amount, Currency),
-                maps:update_with(
-                    Destination,
-                    fun (?cash(A, C)) when C == Currency ->
-                         ?cash(A + Amount, Currency)
-                    end,
-                    ?cash(Amount, Currency),
-                    Acc
-                )
-            )
+        fun (?final_posting(Source, Destination, Volume, _), Acc) ->
+            decrement_remainder(Source, Volume, increment_remainder(Destination, Volume, Acc))
         end,
         #{},
         CashFlow
     ).
 
--include("legacy_structures.hrl").
+increment_remainder(AccountType, Cash, Acc) ->
+    modify_remainder(AccountType, Cash, Acc).
+
+decrement_remainder(AccountType, ?cash(Amount, Currency), Acc) ->
+    modify_remainder(AccountType, ?cash(-Amount, Currency), Acc).
+
+modify_remainder(#domain_FinalCashFlowAccount{account_type = AccountType}, ?cash(Amount, Currency), Acc) ->
+    maps:update_with(
+        AccountType,
+        fun (?cash(A, C)) when C == Currency ->
+             ?cash(A + Amount, Currency)
+        end,
+        ?cash(Amount, Currency),
+        Acc
+    ).
+
 %% Marshalling
+
+-include("legacy_structures.hrl").
 
 -spec marshal(final_cash_flow()) ->
     hg_msgpack_marshalling:value().
