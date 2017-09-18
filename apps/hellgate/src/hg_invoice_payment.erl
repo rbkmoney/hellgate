@@ -303,11 +303,10 @@ validate_hold_lifetime(undefined, _VS, _Revision) ->
 
 validate_payment_params(
     #payproc_InvoicePaymentParams{
-        payer = {payment_resource, #domain_PaymentResourcePayer{
-                    resource = #domain_DisposablePaymentResource{
-                                    payment_tool = PaymentTool
-                    }
-        }}
+        payer = ?payment_resource_payer(
+            #domain_DisposablePaymentResource{payment_tool = PaymentTool},
+            _ContactInfo
+        )
     },
     Terms,
     VS
@@ -316,9 +315,7 @@ validate_payment_params(
     VS1#{payment_tool => PaymentTool};
 validate_payment_params(
     #payproc_InvoicePaymentParams{
-        payer = {customer, #domain_CustomerPayer{
-            customer_id = CustomerID
-        }}
+        payer = ?customer_payer(CustomerID)
     },
     _,
     VS
@@ -386,8 +383,16 @@ collect_varset(Party, Shop, Payment, VS) ->
 
 get_payment_tool({payment_resource, #domain_PaymentResourcePayer{resource = Resource}}) ->
     Resource#domain_DisposablePaymentResource.payment_tool;
-get_payment_tool({payment_resource,#domain_CustomerPayer{customer_id = CustomerID}}) ->
-    CustomerID.
+get_payment_tool({payment_resource,#domain_CustomerPayer{customer_id = CustomerId}}) ->
+    % Или все таки тут надо докопаться до источника рек токена (disposablepaymentresource)?
+    % Customer = get_customer(CustomerId),
+    % ActiveBindingId = get_active_binding_id(Customer),
+    % ActiveBinding = get_active_binding(ActiveBindingId),
+    % RecPaymentToolId = get_rec_payment_tool_id(ActiveBinding),
+    % RecPaymentTool = get_rec_payment_tool(RecPaymentToolId),
+    % RecToken = get_rec_token(RecPaymentTool),
+    % RecToken.
+    CustomerId.
 
 %%
 
@@ -1856,7 +1861,7 @@ unmarshal(payment, #{
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
         cost            = hg_cash:unmarshal(Cash),
-        payer           = unmarshal(payer, Payer),
+        payer           = unmarshal(payer, [2, Payer]),
         status          = ?pending(),
         flow            = unmarshal(flow, Flow),
         context         = hg_content:unmarshal(Context)
@@ -1871,7 +1876,7 @@ unmarshal(payment,
         domain_revision = unmarshal(int, Revision),
         status          = unmarshal(status, Status),
         cost            = hg_cash:unmarshal([1, Cash]),
-        payer           = unmarshal(payer, Payer),
+        payer           = unmarshal(payer, [1, Payer]),
         flow            = ?invoice_payment_flow_instant(),
         context         = hg_content:unmarshal(Context)
     };
@@ -2068,20 +2073,20 @@ unmarshal(payer, #{
         unmarshal(contact_info, ContactInfo)
     );
 
-unmarshal(payer, #{
+unmarshal(payer, [2, #{
     <<"type">>         := <<"customer_payer">>,
     <<"customer_id">>  := CustomerID
-}) ->
+}]) ->
     ?customer_payer(
         unmarshal(str, CustomerID)
     );
 
-unmarshal(payer, #{
+unmarshal(payer, [1, #{
     <<"payment_tool">>  := PaymentTool,
     <<"session_id">>    := SessionId,
     <<"client_info">>   := ClientInfo,
     <<"contact_info">>  := ContactInfo
-}) ->
+}]) ->
     Resource = #{
         <<"payment_tool">>         => PaymentTool,
         <<"payment_session_id">>   => SessionId,
@@ -2092,7 +2097,7 @@ unmarshal(payer, #{
         unmarshal(contact_info, ContactInfo)
     );
 
-unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo)) ->
+unmarshal(payer, [1, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo)]) ->
     Resource = #{
         <<"payment_tool">>         => PaymentTool,
         <<"payment_session_id">>   => SessionId,

@@ -33,30 +33,17 @@
 }).
 -type st() :: #st{}.
 
--type event_id() :: dmsl_base_thrift:'EventID'().
-
 -type customer()         :: dmsl_payment_processing_thrift:'Customer'().
 -type customer_id()      :: dmsl_payment_processing_thrift:'CustomerID'().
 -type customer_params()  :: dmsl_payment_processing_thrift:'CustomerParams'().
 -type customer_event()   :: dmsl_payment_processing_thrift:'CustomerChange'().
 
--type binding()        :: dmsl_payment_processing_thrift:'CustomerBinding'().
 -type binding_id()     :: dmsl_payment_processing_thrift:'CustomerBindingID'().
 -type binding_params() :: dmsl_payment_processing_thrift:'CustomerBindingParams'().
--type binding_event()  :: dmsl_payment_processing_thrift:'CustomerBindingChanged'().
 
--type rec_payment_tool_id() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
-
--type party()    :: dmsl_domain_thrift:'Party'().
--type party_id() :: dmsl_domain_thrift:'PartyID'().
--type shop()     :: dmsl_domain_thrift:'Shop'().
--type shop_id()  :: dmsl_domain_thrift:'ShopID'().
-
-% -type metadata()   :: dmsl_payment_processing_thrift:'Metadata'().
--type created_at() :: dmsl_base_thrift:'Timestamp'().
-% -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
-
+%%
 %% Woody handler
+%%
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_handler:handler_opts()) ->
     term() | no_return().
@@ -75,80 +62,44 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     Party = get_party(PartyID),
     Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
     ok = assert_party_shop_operable(Shop, Party),
-    ok = validate_customer_params(CustomerParams),
     ok = start(CustomerID, CustomerParams),
-    get_customer_state(get_state(CustomerID));
+    get_customer(get_state(CustomerID));
 handle_function_('Get', [CustomerID], _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
     ok = assert_customer_operable(St),
-    get_customer_state(St);
+    get_customer(St);
 handle_function_('Delete', [CustomerID], _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_operable(get_state(CustomerID)),
     call(CustomerID, delete);
-handle_function_('StartBinding', [CustomerID, BindingParams], _Opts) ->
-    ok = set_meta(CustomerID),
-    ok = assert_customer_operable(get_state(CustomerID)),
-    call(CustomerID, {start_binding, BindingParams});
-handle_function_('GetActiveBinding', [CustomerID], _Opts) ->
-    ok = set_meta(CustomerID),
-    St = get_state(CustomerID),
-    ok = assert_customer_operable(St),
-    get_active_binding(get_customer_state(St));
 handle_function_('GetEvents', [CustomerID, Range], _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_operable(get_state(CustomerID)),
     get_public_history(CustomerID, Range).
 
--spec get_customer_state(st()) ->
-    customer().
-get_customer_state(St) ->
-    History = get_history(get_customer_id(St)),
-    ok = assert_customer_not_deleted(lists:last(History)),
-    get_customer(St).
-
--spec get_active_binding(customer()) ->
-    binding().
-get_active_binding(Customer) ->
-    Customer#payproc_Customer.active_binding.
-
 %%
 
--spec get_party(party_id()) ->
-    party() | no_return().
 get_party(PartyID) ->
     hg_party_machine:get_party(PartyID).
 
--spec set_meta(customer_id()) ->
-    ok.
 set_meta(ID) ->
     hg_log_scope:set_meta(#{customer_id => ID}).
 
--spec get_history(customer_id()) ->
-    {ok, hg_machine:history()} | {error, notfound | failed} | no_return().
 get_history(CustomerID) ->
     History = hg_machine:get_history(?NS, CustomerID),
     map_history_error(unmarshal_history_result(History)).
 
--spec get_history(customer_id(), undefined | event_id(), undefined | non_neg_integer()) ->
-    {ok, hg_machine:history()} | {error, notfound | failed} | no_return().
 get_history(CustomerID, AfterID, Limit) ->
     History = hg_machine:get_history(?NS, CustomerID, AfterID, Limit),
-    map_history_error(unmarshal_history_result(History)).
+    unmarshal_history_result(map_history_error(History)).
 
--spec get_state(customer_id()) ->
-    st().
 get_state(CustomerID) ->
     collapse_history(get_history(CustomerID)).
 
--spec get_public_history(customer_id(), term()) ->
-    list().
 get_public_history(CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_customer_event(CustomerID, Ev) || Ev <- get_history(CustomerID, AfterID, Limit)].
 
--spec publish_customer_event(customer_id(), {event_id(), created_at(), customer_event()}) ->
-    term().
 publish_customer_event(CustomerID, {ID, Dt, Event}) ->
     {Source, Ev} = publish_event(CustomerID, Event),
     #payproc_CustomerEvent{
@@ -203,7 +154,9 @@ unmarshal_history_result({ok, Result}) ->
 unmarshal_history_result(Error) ->
     Error.
 
-% %% Event provider callbacks
+%%
+%% Event provider callbacks
+%%
 
 -include("customer_events.hrl").
 
@@ -212,7 +165,9 @@ unmarshal_history_result(Error) ->
 publish_event(CustomerID, Changes) when is_list(Changes) ->
     {{customer_id, CustomerID}, ?customer_event(unmarshal({list, changes}, Changes))}.
 
+%%
 %% hg_machine callbacks
+%%
 
 -spec namespace() ->
     hg_machine:ns().
@@ -231,10 +186,8 @@ init(CustomerID, CustomerParams) ->
 -spec process_signal(hg_machine:signal(), hg_machine:history(customer_event())) ->
     hg_machine:result(customer_event()).
 process_signal(Signal, History) ->
-    handle_result(handle_signal(Signal, collapse_history(History))).
+    handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
--spec handle_signal(atom(), st()) ->
-    _Result.
 handle_signal(timeout, _St = #st{}) ->
     ok.
 
@@ -250,8 +203,6 @@ process_call(Call, History) ->
             {{exception, Exception}, {[], hg_machine_action:new()}}
     end.
 
--spec handle_call(call(), st()) ->
-    _Result.
 handle_call(delete, St) ->
     #{
         response => ok,
@@ -263,12 +214,9 @@ handle_call({start_binding, BindingParams}, St) ->
 handle_call(_Call, _St) ->
     not_implemented.
 
--spec handle_result(_Result) ->
-    {hg_machine:response(), hg_machine:result(customer_event())}.
-handle_result(#{state := St} = Params) ->
+handle_result(Params) ->
     Changes = maps:get(changes, Params, []),
     Action = maps:get(action, Params, hg_machine_action:new()),
-    ok = log_changes(Changes, St),
     case maps:get(response, Params, undefined) of
         undefined ->
             {[marshal(Changes)], Action};
@@ -276,10 +224,8 @@ handle_result(#{state := St} = Params) ->
             {{ok, Response}, {[marshal(Changes)], Action}}
     end.
 
-% %%
+%%
 
--spec start_binding(binding_params(), st()) ->
-    _Result.
 start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
     {Binding, {Changes, Action}} = init_binding(BindingID, BindingParams),
@@ -290,19 +236,15 @@ start_binding(BindingParams, St) ->
         state    => St
     }.
 
--spec init_binding(binding_id(), binding_params()) ->
-    {binding(), {_Changes, _Action}}.
 init_binding(BindingID, BindingParams) ->
     % RecPaymentTool = hg_payment_processing:start_rec_payment_tool(),
     % RecPaymentToolID = get_rec_payment_tool_id(RecPaymentTool),
     RecPaymentToolID = 1,
     Binding = create_binding(BindingID, BindingParams, RecPaymentToolID),
-    Changes = [?customer_binding_pending()],
+    Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding))],
     Action = hg_machine_action:new(),
     {Binding, {Changes, Action}}.
 
--spec create_binding(binding_id(), binding_params(), rec_payment_tool_id()) ->
-    binding().
 create_binding(BindingID, BindingParams, RecPaymentToolID) ->
     #payproc_CustomerBinding{
         id                  = BindingID,
@@ -317,23 +259,11 @@ create_binding_id(#st{customer = #payproc_Customer{bindings = Bindings}}) ->
     lager:info("Bindings ~p ~p", [Bindings, length(Bindings)]),
     integer_to_binary(length(Bindings) + 1).
 
-% -spec get_binding_opts(st()) ->
-%     map().
-% get_binding_opts(St = #st{customer = Customer}) ->
-%     #{
-%         party    => get_party(get_party_id(St)),
-%         customer => Customer
-%     }.
-
--spec wrap_binding_changes(binding_id(), [binding_event()]) ->
-    customer_event().
 wrap_binding_changes(BindingID, Changes) ->
     [?customer_binding_changed(BindingID, C) || C <- Changes].
 
 %%
 
--spec create_customer(customer_id(), customer_params()) ->
-    customer().
 create_customer(CustomerID, Params = #payproc_CustomerParams{}) ->
     #payproc_Customer{
         id             = CustomerID,
@@ -349,10 +279,7 @@ create_customer(CustomerID, Params = #payproc_CustomerParams{}) ->
 
 %%
 
--spec collapse_history([hg_machine:event(customer_event())]) ->
-    st().
 collapse_history(History) ->
-    lager:info("kek ~p", [History]),
     lists:foldl(
         fun ({_ID, _, Changes}, St0) ->
             lists:foldl(fun merge_change/2, St0, Changes)
@@ -361,135 +288,71 @@ collapse_history(History) ->
         History
     ).
 
--spec merge_change(term(), st()) ->
-    st().
 merge_change(?customer_created(Customer), St) ->
     St#st{customer = Customer};
-merge_change(?customer_deleted(), St = #st{customer = C}) ->
-    St#st{customer = C#payproc_Customer{status = ?customer_unready()}}.
+merge_change(?customer_deleted(), St) ->
+    St#st{customer = undefined};
+merge_change(?customer_status_changed(Status), St) ->
+    St#st.customer#payproc_Customer{status = Status};
+merge_change(?customer_binding_changed(BindingID, Payload), St) ->
+    merge_binding_change(Payload, BindingID, St).
 
--spec get_party_id(st()) ->
-    party_id().
+merge_binding_change(?customer_binding_started(CustomerBinding), _BindingID, St) ->
+    Bindings = get_bindings(St),
+    St#st.customer#payproc_Customer{bindings = Bindings ++ [CustomerBinding]};
+merge_binding_change(?customer_binding_status_changed(BindingStatus), BindingID, St) ->
+    Bindings = get_bindings(St),
+    Binding = proplists:lookup(BindingID, Bindings),
+
+    UpdatedBinding = Binding#payproc_CustomerBinding{status = BindingStatus},
+    UpdatedBindings = lists:keyreplace(BindingID, 1, Bindings, {BindingID, UpdatedBinding}),
+
+    St#st.customer#payproc_Customer{bindings = UpdatedBindings}.
+
 get_party_id(#st{customer = #payproc_Customer{owner_id = PartyID}}) ->
     PartyID.
 
--spec get_shop_id(st()) ->
-    shop_id().
 get_shop_id(#st{customer = #payproc_Customer{shop_id = ShopID}}) ->
     ShopID.
 
--spec get_customer_id(st()) ->
-    customer_id().
-get_customer_id(#st{customer = #payproc_Customer{id = ID}}) ->
-    ID.
+get_bindings(#st{customer = #payproc_Customer{bindings = Bindings}}) ->
+    Bindings.
 
--spec get_customer(st()) ->
-    customer().
 get_customer(#st{customer = Customer}) ->
     Customer.
 
+%%
+%% Validators and stuff
+%%
 
-% %% Validators and stuff
-
--spec validate_customer_params(term()) ->
-    ok.
-validate_customer_params(#payproc_CustomerParams{}) ->
+assert_customer_not_deleted(#st{customer = undefined}) ->
+    throw(#payproc_CustomerNotFound{});
+assert_customer_not_deleted(_) ->
     ok.
 
--spec assert_customer_operable(st()) ->
-    ok.
 assert_customer_operable(St = #st{}) ->
+    ok = assert_customer_not_deleted(St),
     Party = get_party(get_party_id(St)),
     Shop  = hg_party:get_shop(get_shop_id(St), Party),
     ok    = assert_party_shop_operable(Shop, Party),
     ok.
 
--spec assert_party_shop_operable(shop(), party()) ->
-    ok.
 assert_party_shop_operable(Shop, Party) ->
     ok = assert_party_operable(Party),
     ok = assert_shop_operable(Shop),
     ok.
 
--spec ensure_shop_exists(shop()) ->
-    shop().
 ensure_shop_exists(Shop) ->
     Shop = hg_invoice_utils:assert_shop_exists(Shop),
     Shop.
 
--spec assert_party_operable(party()) ->
-    ok.
 assert_party_operable(Party) ->
     Party = hg_invoice_utils:assert_party_operable(Party),
     ok.
 
--spec assert_shop_operable(shop()) ->
-    ok.
 assert_shop_operable(Shop) ->
     Shop = hg_invoice_utils:assert_shop_operable(Shop),
     ok.
-
-assert_customer_not_deleted({_, _, [?customer_deleted()]}) ->
-    throw(#payproc_CustomerNotFound{});
-assert_customer_not_deleted(_) ->
-    ok.
-
-%%
-
--spec log_changes([customer_event()], st()) ->
-    ok.
-log_changes(Changes, St) ->
-    lists:foreach(fun (C) -> log_change(C, St) end, Changes).
-
--spec log_change(customer_event(), st()) ->
-    ok.
-log_change(Change, St) ->
-    case get_log_params(Change, St) of
-        {ok, #{type := Type, params := Params, message := Message}} ->
-            _ = lager:log(info, [{Type, Params}], Message),
-            ok;
-        undefined ->
-            ok
-    end.
-
--spec get_log_params(customer_event(), st()) ->
-    tuple().
-get_log_params(?customer_created(Customer), _St) ->
-    get_customer_event_log(customer_created, unready, Customer);
-get_log_params(?customer_deleted(), #st{customer = Customer}) ->
-    get_customer_event_log(customer_deleted, unready, Customer).
-
--spec get_customer_event_log(atom(), atom(), customer()) ->
-    tuple().
-get_customer_event_log(EventType, StatusName, Customer) ->
-    {ok, #{
-        type    => customer_event,
-        params  => [{type, EventType}, {status, StatusName} | get_customer_params(Customer)],
-        message => get_message(EventType)
-    }}.
-
--spec get_customer_params(customer()) ->
-    list().
-get_customer_params(Customer) ->
-    #payproc_Customer{
-        id             = ID,
-        owner_id       = PartyID,
-        shop_id        = ShopID,
-        status         = Status,
-        created_at     = CreatedAt,
-        bindings       = Bindings,
-        metadata       = Metadata,
-        active_binding = ActiveBinding
-    } = Customer,
-    [{id, ID}, {party_id, PartyID}, {shop_id, ShopID}, {status, Status}, {created_at, CreatedAt},
-     {bindings, Bindings}, {metadata, Metadata}, {active_binding, ActiveBinding}].
-
--spec get_message(atom()) ->
-    string().
-get_message(customer_created) ->
-    "Customer is created";
-get_message(_EventType) ->
-    "Unknown event type".
 
 %%
 %% Marshalling
@@ -501,14 +364,14 @@ marshal(Changes) when is_list(Changes) ->
 %% Changes
 
 marshal(change, ?customer_created(Customer)) ->
-    #{
+    [1, #{
         <<"change">>    => <<"created">>,
-        <<"customer">>   => marshal(customer, Customer)
-    };
+        <<"customer">>  => marshal(customer, Customer)
+    }];
 marshal(change, ?customer_deleted()) ->
-    #{
-        <<"change">>    => <<"customer_deleted">>
-    };
+    [1, #{
+        <<"change">> => <<"deleted">>
+    }];
 
 %% Change components
 
@@ -521,8 +384,8 @@ marshal(customer, #payproc_Customer{} = Customer) ->
         <<"created_at">> => marshal(str, Customer#payproc_Customer.created_at),
         <<"bindings">> => marshal(bindings, Customer#payproc_Customer.bindings),
         <<"contact_info">> => marshal(contact_info, Customer#payproc_Customer.contact_info),
-        <<"metadata">> => marshal(metadata, Customer#payproc_Customer.metadata),
-        <<"active_binding">> => marshal(binding, Customer#payproc_Customer.active_binding)
+        <<"metadata">> => marshal(obj, Customer#payproc_Customer.metadata),
+        <<"active_binding">> => marshal(str, Customer#payproc_Customer.active_binding)
     };
 
 marshal(customer_status, ?customer_unready()) ->
@@ -561,12 +424,12 @@ marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
     });
 
 marshal(binding_status, ?customer_binding_pending()) ->
-    <<"customer_binding_pending">>;
+    <<"pending">>;
 marshal(binding_status, ?customer_binding_succeeded()) ->
-    <<"customer_binding_succeeded">>;
+    <<"succeeded">>;
 marshal(binding_status, ?customer_binding_failed(Failure)) ->
     [
-        <<"customer_binding_succeeded">>,
+        <<"succeeded">>,
         marshal(failure, Failure)
     ];
 
@@ -578,13 +441,12 @@ marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}
         <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
     })];
 
-marshal(metadata, {nl, #json_Null{}}) ->
-    <<"null">>;
-
 marshal(_, Other) ->
     Other.
 
+%%
 %% Unmarshalling
+%%
 
 unmarshal(Events) when is_list(Events) ->
     [unmarshal(Event) || Event <- Events];
@@ -597,15 +459,15 @@ unmarshal({list, changes}, Changes) when is_list(Changes) ->
 
 %% Changes
 
-unmarshal(change, #{
+unmarshal(change, [1, #{
     <<"change">>    := <<"created">>,
     <<"customer">>  := Customer
-}) ->
+}]) ->
     ?customer_created(unmarshal(customer, Customer));
 
-unmarshal(change, #{
-    <<"change">> := <<"customer_deleted">>
-}) ->
+unmarshal(change, [1, #{
+    <<"change">> := <<"deleted">>
+}]) ->
     ?customer_deleted();
 
 unmarshal(customer, #{
@@ -627,8 +489,8 @@ unmarshal(customer, #{
         created_at = unmarshal(str, CreatedAt),
         bindings = unmarshal(bindings, Bindings),
         contact_info = unmarshal(contact_info, ContactInfo),
-        metadata = unmarshal(metadata, Metadata),
-        active_binding = unmarshal(binding, ActiveBinding)
+        metadata = unmarshal(obj, Metadata),
+        active_binding = unmarshal(str, ActiveBinding)
     };
 
 unmarshal(customer_status, <<"unready">>) ->
@@ -671,12 +533,12 @@ unmarshal(client_info, ClientInfo) ->
         fingerprint     = unmarshal(str, Fingerprint)
     };
 
-unmarshal(binding_status, <<"customer_binding_pending">>) ->
+unmarshal(binding_status, <<"pending">>) ->
     ?customer_binding_pending();
-unmarshal(binding_status, <<"customer_binding_succeeded">>) ->
+unmarshal(binding_status, <<"succeeded">>) ->
     ?customer_binding_succeeded();
 unmarshal(binding_status, [
-    <<"customer_binding_succeeded">>,
+    <<"succeeded">>,
     Failure
 ]) ->
     ?customer_binding_failed(unmarshal(failure, Failure));
@@ -697,9 +559,6 @@ unmarshal(contact_info, ContactInfo) ->
         phone_number    = unmarshal(str, PhoneNumber),
         email           = unmarshal(str, Email)
     };
-
-unmarshal(metadata, <<"null">>) ->
-    {nl, #json_Null{}};
 
 unmarshal(_, Other) ->
     Other.
