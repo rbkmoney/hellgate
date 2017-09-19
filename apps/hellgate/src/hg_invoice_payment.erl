@@ -362,6 +362,9 @@ construct_final_cashflow(Payment, Shop, Provider, Cashflow, VS, Revision) ->
         collect_account_map(Payment, Shop, Provider, VS, Revision)
     ).
 
+construct_final_cashflow(Cashflow, Context, AccountMap) ->
+    hg_cashflow:finalize(Cashflow, Context, AccountMap).
+
 collect_cash_flow_context(
     #domain_InvoicePayment{cost = Cost}
 ) ->
@@ -432,6 +435,19 @@ choose_account(Name, Currency, Accounts) ->
             error({misconfiguration, {'No account for a given currency', {Name, Currency}}})
     end.
 
+get_account_state(AccountType, AccountMap, AccountsState) ->
+    % FIXME move me closer to hg_accounting
+    case AccountMap of
+        #{AccountType := AccountID} ->
+            #{AccountID := AccountState} = AccountsState,
+            AccountState;
+        #{} ->
+            undefined
+    end.
+
+get_available_amount(#{min_available_amount := V}) ->
+    V.
+
 construct_payment_plan_id(St) ->
     construct_payment_plan_id(get_invoice(get_opts(St)), get_payment(St)).
 
@@ -501,18 +517,29 @@ refund(Params, St0, Opts) ->
     ProviderTerms = get_provider_refunds_terms(get_provider_payments_terms(Route, Revision), Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
     % TODO specific cashflow context needed, with defined `refund_amount` for instance
-    FinalCashflow = construct_final_cashflow(Payment, Shop, Provider, Cashflow, VS1, Revision),
+    AccountMap = collect_account_map(Payment, Shop, Provider, VS1, Revision),
+    FinalCashflow = construct_final_cashflow(Cashflow, collect_cash_flow_context(Payment), AccountMap),
     Changes = [
         ?refund_created(Refund, FinalCashflow),
         ?session_ev(?refunded(), ?session_started())
     ],
     RefundSt = collapse_refund_changes(Changes),
-    _AccountsState = prepare_refund_cashflow(RefundSt, St),
-    Action = hg_machine_action:instant(),
-    {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
+    AccountsState = prepare_refund_cashflow(RefundSt, St),
+    % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
+    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AccountsState)) of
+        % TODO we must pull this rule out of refund terms
+        Available when Available >= 0 ->
+            Action = hg_machine_action:instant(),
+            {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}};
+        Available when Available < 0 ->
+            _AccountsState = rollback_refund_cashflow(RefundSt, St),
+            throw(#payproc_OperationNotPermitted{})
+    end.
 
-construct_refund_id(#st{refunds = Rs}) ->
-    integer_to_binary(maps:size(Rs) + 1).
+construct_refund_id(#st{}) ->
+    % FIXME we employ unique id in order not to reuse plan id occasionally
+    %       should track sequence with some aux state instead
+    hg_utils:unique_id().
 
 assert_no_refund_pending(#st{refunds = Rs}) ->
     genlib_map:foreach(fun (ID, R) -> assert_refund_finished(ID, get_refund(R)) end, Rs).
