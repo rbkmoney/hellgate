@@ -1814,6 +1814,10 @@ unmarshal(status, ?legacy_processed()) ->
     ?processed();
 unmarshal(status, ?legacy_failed(Failure)) ->
     ?failed(unmarshal(failure, [1, Failure]));
+unmarshal(status, ?legacy_captured()) ->
+    ?captured();
+unmarshal(status, ?legacy_cancelled()) ->
+    ?cancelled();
 unmarshal(status, ?legacy_captured(Reason)) ->
     ?captured_with_reason(unmarshal(str, Reason));
 unmarshal(status, ?legacy_cancelled(Reason)) ->
