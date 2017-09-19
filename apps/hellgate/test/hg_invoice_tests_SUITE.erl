@@ -26,6 +26,7 @@
 
 -export([create_customer/1]).
 -export([delete_customer/1]).
+-export([start_binding  /1]).
 
 -export([payment_success/1]).
 -export([payment_w_terminal_success/1]).
@@ -91,7 +92,8 @@ all() ->
         % invoice_success_on_third_payment,
 
         create_customer,
-        delete_customer
+        delete_customer,
+        start_binding
 
         % payment_risk_score_check,
 
@@ -484,6 +486,19 @@ delete_customer(C) ->
     {payproc_Customer, CustomerID, _, _, _, _, _, _, _, _} = Customer,
     ok = hg_client_customer:delete(CustomerID, CustomerClient),
     {exception, #'payproc_CustomerNotFound'{}} = hg_client_customer:get(CustomerID, CustomerClient).
+
+-spec start_binding(config()) -> test_return().
+
+start_binding(C) ->
+    CustomerClient = cfg(customer_client, C),
+    CustomerParams = make_customer_params(C),
+    Customer = hg_client_customer:create(CustomerParams, CustomerClient),
+    {payproc_Customer, CustomerID, _, _, _, _, _, _, _, _} = Customer,
+    CustomerBindingParams = make_customer_binding_params(),
+    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, CustomerClient),
+    Customer1 = hg_client_customer:get(CustomerID, CustomerClient),
+    {payproc_Customer, CustomerID, _, _, _, _, Bindings, _, _, _} = Customer1,
+    Bindings = [CustomerBinding].
 
 -spec payment_success(config()) -> test_return().
 
@@ -1227,6 +1242,11 @@ make_customer_params(C) ->
         shop_id = cfg(shop_id, C),
         contact_info = #domain_ContactInfo{},
         metadata = {nl, #json_Null{}}
+    }.
+
+make_customer_binding_params() ->
+    #payproc_CustomerBindingParams{
+        payment_resource = hg_ct_helper:make_disposable_payment_resource()
     }.
 
 make_adjustment_params() ->

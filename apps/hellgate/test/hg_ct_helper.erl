@@ -51,6 +51,7 @@
 -export([make_terminal_payment_tool/0]).
 -export([make_tds_payment_tool/0]).
 -export([make_simple_payment_tool/0]).
+-export([make_disposable_payment_resource/0]).
 -export([make_meta_ns/0]).
 -export([make_meta_data/0]).
 -export([make_meta_data/1]).
@@ -586,6 +587,25 @@ make_simple_payment_tool() ->
             masked_pan     = <<"4242">>
         }},
         <<"SESSION42">>
+    }.
+
+-spec make_disposable_payment_resource() ->
+    {
+        hg_domain_thrift:'PaymentTool'(),
+        hg_domain_thrift:'PaymentSessionID'(),
+        hg_domain_thrift:'ClientInfo'()
+    }.
+
+make_disposable_payment_resource() ->
+    #domain_DisposablePaymentResource{
+        payment_tool = {bank_card, #domain_BankCard{
+            token          = bank_card_simple_token(),
+            payment_system = visa,
+            bin            = <<"424242">>,
+            masked_pan     = <<"4242">>
+        }},
+        payment_session_id = <<"SESSION42">>,
+        client_info = #domain_ClientInfo{}
     }.
 
 -spec make_meta_ns() -> dmsl_domain_thrift:'PartyMetaNamespace'().

@@ -7,9 +7,10 @@
 -export([start_link/2]).
 -export([stop      /1]).
 
--export([create/2]).
--export([get   /2]).
--export([delete/2]).
+-export([create       /2]).
+-export([get          /2]).
+-export([delete       /2]).
+-export([start_binding/3]).
 
 %% GenServer
 
@@ -25,18 +26,22 @@
 
 -type user_info()       :: dmsl_payment_processing_thrift:'UserInfo'().
 -type id()              :: dmsl_payment_processing_thrift:'CustomerID'().
--type customer_params() :: dmsl_payment_processing_thrift:'CustomerParams'().
+
 -type customer()        :: dmsl_payment_processing_thrift:'Customer'().
+-type customer_params() :: dmsl_payment_processing_thrift:'CustomerParams'().
+
+-type customer_binding()        :: dmsl_payment_processing_thrift:'CustomerBinding'().
+-type customer_binding_params() :: dmsl_payment_processing_thrift:'CustomerBindingParams'().
 
 %% API
 
--spec start(user_info(), hg_client_api:t()) -> pid().
-
+-spec start(user_info(), hg_client_api:t()) ->
+    pid().
 start(UserInfo, ApiClient) ->
     start(start, UserInfo, ApiClient).
 
--spec start_link(user_info(), hg_client_api:t()) -> pid().
-
+-spec start_link(user_info(), hg_client_api:t()) ->
+    pid().
 start_link(UserInfo, ApiClient) ->
     start(start_link, UserInfo, ApiClient).
 
@@ -44,8 +49,8 @@ start(Mode, UserInfo, ApiClient) ->
     {ok, Pid} = gen_server:Mode(?MODULE, {UserInfo, ApiClient}, []),
     Pid.
 
--spec stop(pid()) -> ok.
-
+-spec stop(pid()) ->
+    ok.
 stop(Client) ->
     _ = exit(Client, shutdown),
     ok.
@@ -54,21 +59,23 @@ stop(Client) ->
 
 -spec create(customer_params(), pid()) ->
     customer() | woody_error:business_error().
-
 create(Params, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Create', [Params]})).
 
 -spec get(id(), pid()) ->
     customer() | woody_error:business_error().
-
 get(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', [ID]})).
 
 -spec delete(id(), pid()) ->
     ok | woody_error:business_error().
-
 delete(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Delete', [ID]})).
+
+-spec start_binding(pid(), customer_binding_params(), pid()) ->
+    customer_binding().
+start_binding(ID, CustomerBindingParams, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'StartBinding', [ID, CustomerBindingParams]})).
 
 map_result_error({ok, Result}) ->
     Result;

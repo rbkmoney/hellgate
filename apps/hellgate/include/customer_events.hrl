@@ -44,15 +44,15 @@
         #payproc_CustomerReady{}}).
 
 -define(customer_binding_pending(),
-    {customer_binding_pending,
+    {pending,
         #payproc_CustomerBindingPending{}}).
 
 -define(customer_binding_succeeded(),
-    {customer_binding_succeeded,
+    {succeeded,
         #payproc_CustomerBindingSucceeded{}}).
 
 -define(customer_binding_failed(Failure),
-    {customer_binding_failed,
+    {failed,
         #payproc_CustomerBindingFailed{failure = Failure}}).
 
 -endif.

@@ -52,8 +52,6 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
--spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
-    term() | no_return().
 handle_function_('Create', [CustomerParams], _Opts) ->
     CustomerID = hg_utils:unique_id(),
     ok = set_meta(CustomerID),
@@ -73,6 +71,10 @@ handle_function_('Delete', [CustomerID], _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_operable(get_state(CustomerID)),
     call(CustomerID, delete);
+handle_function_('StartBinding', [CustomerID, CustomerBindingParams], _Opts) ->
+    ok = set_meta(CustomerID),
+    ok = assert_customer_operable(get_state(CustomerID)),
+    call(CustomerID, {start_binding, CustomerBindingParams});
 handle_function_('GetEvents', [CustomerID, Range], _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_operable(get_state(CustomerID)),
@@ -231,7 +233,7 @@ start_binding(BindingParams, St) ->
     {Binding, {Changes, Action}} = init_binding(BindingID, BindingParams),
     #{
         response => Binding,
-        changes  => wrap_binding_changes(BindingID, Changes),
+        changes  => Changes,
         action   => Action,
         state    => St
     }.
@@ -239,7 +241,7 @@ start_binding(BindingParams, St) ->
 init_binding(BindingID, BindingParams) ->
     % RecPaymentTool = hg_payment_processing:start_rec_payment_tool(),
     % RecPaymentToolID = get_rec_payment_tool_id(RecPaymentTool),
-    RecPaymentToolID = 1,
+    RecPaymentToolID = <<"tsL9R7G7Iu">>,
     Binding = create_binding(BindingID, BindingParams, RecPaymentToolID),
     Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding))],
     Action = hg_machine_action:new(),
@@ -256,11 +258,7 @@ create_binding(BindingID, BindingParams, RecPaymentToolID) ->
 -spec create_binding_id(st()) ->
     binding_id().
 create_binding_id(#st{customer = #payproc_Customer{bindings = Bindings}}) ->
-    lager:info("Bindings ~p ~p", [Bindings, length(Bindings)]),
     integer_to_binary(length(Bindings) + 1).
-
-wrap_binding_changes(BindingID, Changes) ->
-    [?customer_binding_changed(BindingID, C) || C <- Changes].
 
 %%
 
@@ -297,26 +295,23 @@ merge_change(?customer_status_changed(Status), St) ->
 merge_change(?customer_binding_changed(BindingID, Payload), St) ->
     merge_binding_change(Payload, BindingID, St).
 
-merge_binding_change(?customer_binding_started(CustomerBinding), _BindingID, St) ->
-    Bindings = get_bindings(St),
-    St#st.customer#payproc_Customer{bindings = Bindings ++ [CustomerBinding]};
-merge_binding_change(?customer_binding_status_changed(BindingStatus), BindingID, St) ->
-    Bindings = get_bindings(St),
+merge_binding_change(?customer_binding_started(CustomerBinding), _BindingID, St = #st{customer = Customer}) ->
+    Bindings = Customer#payproc_Customer.bindings,
+    St#st{customer = Customer#payproc_Customer{bindings = Bindings ++ [CustomerBinding]}};
+merge_binding_change(?customer_binding_status_changed(BindingStatus), BindingID, St = #st{customer = Customer}) ->
+    Bindings = Customer#payproc_Customer.bindings,
     Binding = proplists:lookup(BindingID, Bindings),
 
     UpdatedBinding = Binding#payproc_CustomerBinding{status = BindingStatus},
     UpdatedBindings = lists:keyreplace(BindingID, 1, Bindings, {BindingID, UpdatedBinding}),
 
-    St#st.customer#payproc_Customer{bindings = UpdatedBindings}.
+    St#st{customer = Customer#payproc_Customer{bindings = UpdatedBindings}}.
 
 get_party_id(#st{customer = #payproc_Customer{owner_id = PartyID}}) ->
     PartyID.
 
 get_shop_id(#st{customer = #payproc_Customer{shop_id = ShopID}}) ->
     ShopID.
-
-get_bindings(#st{customer = #payproc_Customer{bindings = Bindings}}) ->
-    Bindings.
 
 get_customer(#st{customer = Customer}) ->
     Customer.
@@ -372,6 +367,17 @@ marshal(change, ?customer_deleted()) ->
     [1, #{
         <<"change">> => <<"deleted">>
     }];
+marshal(change, ?customer_status_changed(CustomerStatus)) ->
+    [1, #{
+        <<"change">> => <<"status_changed">>,
+        <<"status">> => marshal(customer_status, CustomerStatus)
+    }];
+marshal(change, ?customer_binding_changed(CustomerBindingID, Payload)) ->
+    [1, #{
+        <<"change">>     => <<"binding_changed">>,
+        <<"binding_id">> => marshal(str, CustomerBindingID),
+        <<"payload">>    => marshal(binding_change_payload, Payload)
+    }];
 
 %% Change components
 
@@ -384,7 +390,7 @@ marshal(customer, #payproc_Customer{} = Customer) ->
         <<"created_at">> => marshal(str, Customer#payproc_Customer.created_at),
         <<"bindings">> => marshal(bindings, Customer#payproc_Customer.bindings),
         <<"contact_info">> => marshal(contact_info, Customer#payproc_Customer.contact_info),
-        <<"metadata">> => marshal(obj, Customer#payproc_Customer.metadata),
+        <<"metadata">> => marshal(metadata, Customer#payproc_Customer.metadata),
         <<"active_binding">> => marshal(str, Customer#payproc_Customer.active_binding)
     };
 
@@ -433,6 +439,17 @@ marshal(binding_status, ?customer_binding_failed(Failure)) ->
         marshal(failure, Failure)
     ];
 
+marshal(binding_change_payload, ?customer_binding_started(CustomerBinding)) ->
+    [
+        <<"started">>,
+        marshal(binding, CustomerBinding)
+    ];
+marshal(binding_change_payload, ?customer_binding_status_changed(CustomerBindingStatus)) ->
+    [
+        <<"status_changed">>,
+        marshal(binding_status, CustomerBindingStatus)
+    ];
+
 marshal(failure, {operation_timeout, _}) ->
     <<"operation_timeout">>;
 marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
@@ -440,6 +457,9 @@ marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}
         <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
         <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
     })];
+
+marshal(metadata, {nl, #json_Null{}}) ->
+    <<"null">>;
 
 marshal(_, Other) ->
     Other.
@@ -464,11 +484,24 @@ unmarshal(change, [1, #{
     <<"customer">>  := Customer
 }]) ->
     ?customer_created(unmarshal(customer, Customer));
-
 unmarshal(change, [1, #{
     <<"change">> := <<"deleted">>
 }]) ->
     ?customer_deleted();
+unmarshal(change, [1, #{
+    <<"change">> := <<"status_changed">>,
+    <<"status">> := CustomerStatus
+}]) ->
+    ?customer_status_changed(unmarshal(customer_status, CustomerStatus));
+unmarshal(change, [1, #{
+    <<"change">>     := <<"binding_changed">>,
+    <<"binding_id">> := CustomerBindingID,
+    <<"payload">>    := Payload
+}]) ->
+    ?customer_binding_changed(
+        unmarshal(str, CustomerBindingID),
+        unmarshal(binding_change_payload, Payload)
+    );
 
 unmarshal(customer, #{
     <<"id">> := Id,
@@ -489,7 +522,7 @@ unmarshal(customer, #{
         created_at = unmarshal(str, CreatedAt),
         bindings = unmarshal(bindings, Bindings),
         contact_info = unmarshal(contact_info, ContactInfo),
-        metadata = unmarshal(obj, Metadata),
+        metadata = unmarshal(metadata, Metadata),
         active_binding = unmarshal(str, ActiveBinding)
     };
 
@@ -543,6 +576,17 @@ unmarshal(binding_status, [
 ]) ->
     ?customer_binding_failed(unmarshal(failure, Failure));
 
+unmarshal(binding_change_payload, [
+    <<"started">>,
+    CustomerBinding
+]) ->
+    ?customer_binding_started(unmarshal(binding, CustomerBinding));
+unmarshal(binding_change_payload, [
+    <<"status_changed">>,
+    CustomerBindingStatus
+]) ->
+    ?customer_binding_status_changed(unmarshal(binding_status, CustomerBindingStatus));
+
 unmarshal(failure, <<"operation_timeout">>) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]) ->
@@ -559,6 +603,9 @@ unmarshal(contact_info, ContactInfo) ->
         phone_number    = unmarshal(str, PhoneNumber),
         email           = unmarshal(str, Email)
     };
+
+unmarshal(metadata, <<"null">>) ->
+    {nl, #json_Null{}};
 
 unmarshal(_, Other) ->
     Other.

@@ -4,66 +4,65 @@
 
 -module(hg_payment_processing).
 
-% -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
-% -define(NS, <<"payment_processing">>).
+-define(NS, <<"payment_processing">>).
 
-% %% Woody handler called by hg_woody_wrapper
+%% Woody handler called by hg_woody_wrapper
 
-% -behaviour(hg_woody_wrapper).
-% -export([handle_function/3]).
+-behaviour(hg_woody_wrapper).
+-export([handle_function/3]).
 
-% %% Machine callbacks
+%% Machine callbacks
 
-% -behaviour(hg_machine).
-% -export([namespace     /0]).
-% -export([init          /2]).
-% -export([process_signal/2]).
-% -export([process_call  /2]).
+-behaviour(hg_machine).
+-export([namespace     /0]).
+-export([init          /2]).
+-export([process_signal/2]).
+-export([process_call  /2]).
 
-% %% Event provider callbacks
+%% Event provider callbacks
 
-% -behaviour(hg_event_provider).
-% -export([publish_event/2]).
+-behaviour(hg_event_provider).
+-export([publish_event/2]).
 
-% %% Types
+%% Types
+>>>>>>> HG-231: Add start_binding function
 
-% -record(st, {
-%     rec_payment_tool :: undefined | rec_payment_tool(),
-%     route            :: undefined | route(),
-%     session          :: undefined | session()
-% }).
-% -type st() :: #st{}.
-% -export_type([st/0]).
+-record(st, {
+    rec_payment_tool :: undefined | rec_payment_tool(),
+    route            :: undefined | route(),
+    session          :: undefined | session()
+}).
+-type st() :: #st{}.
+-export_type([st/0]).
+
 
 -type rec_payment_tool_id()     :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type rec_payment_tool_event()  :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
 
-% -type disposable_payment_resource() :: dmsl_domain_thrift:'DisposablePaymentResource'().
+-type disposable_payment_resource() :: dmsl_domain_thrift:'DisposablePaymentResource'().
 
-% -type route() :: dmsl_domain_thrift:'PaymentRoute'().
+-type route() :: dmsl_domain_thrift:'PaymentRoute'().
 
-% -type meta() :: dmsl_domain_thrift:'Metadata'().
-% -type ev()   :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
+-type session() :: #{
+    status      := active | suspended | finished,
+    trx         := trx_info(),
+    proxy_state => proxy_state()
+}.
 
-% -type session() :: #{
-%     status      := active | suspended | finished,
-%     trx         := trx_info(),
-%     proxy_state => proxy_state()
-% }.
+-type proxy_state()   :: dmsl_proxy_thrift:'ProxyState'().
+-type trx_info()      :: dmsl_domain_thrift:'TransactionInfo'().
 
-% -type proxy_state()   :: dmsl_proxy_thrift:'ProxyState'().
-% -type trx_info()      :: dmsl_domain_thrift:'TransactionInfo'().
+%% Woody handler
 
-% %% Woody handler
-
-% -spec handle_function(woody:func(), woody:args(), hg_woody_handler:handler_opts()) ->
-%     term() | no_return().
-% handle_function(Func, Args, Opts) ->
-%     hg_log_scope:scope(payment_processing,
-%         fun() -> handle_function_(Func, Args, Opts) end
-%     ).
+-spec handle_function(woody:func(), woody:args(), hg_woody_handler:handler_opts()) ->
+    term() | no_return().
+handle_function(Func, Args, Opts) ->
+    hg_log_scope:scope(payment_processing,
+        fun() -> handle_function_(Func, Args, Opts) end
+    ).
 
 handle_function_('CreateRecurrentPaymentTool', [PaymentResource], _Opts) ->
     RecPaymentToolID = hg_utils:unique_id(),
@@ -99,6 +98,9 @@ collapse_history(History) ->
         #st{},
         History
     ).
+
+merge_change(_, St) ->
+    St.
 
 %%
 
