@@ -33,12 +33,7 @@ handle_function_('Checkout', [UserInfo, PartyID, Timestamp], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    try
-        hg_party_machine:checkout(PartyID, Timestamp)
-    catch
-        error:revision_not_found ->
-            throw(#payproc_PartyNotExistsYet{})
-    end;
+    checkout_party(PartyID, Timestamp);
 
 handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -77,12 +72,20 @@ handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     Party = hg_party_machine:get_party(PartyID),
-    case hg_party:get_contract(ContractID, Party) of
-        #domain_Contract{} = Contract ->
-            Contract;
-        undefined ->
-            throw(#payproc_ContractNotFound{})
-    end;
+    ensure_contract(hg_party:get_contract(ContractID, Party));
+
+handle_function_('ComputeContractTerms', [UserInfo, PartyID, ContractID, Timestamp], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    Party = checkout_party(PartyID, Timestamp),
+    Contract = ensure_contract(hg_party:get_contract(ContractID, Party)),
+    Revision = hg_domain:head(),
+    hg_party:reduce_terms(
+        hg_party:get_terms(Contract, Timestamp, Revision),
+        #{party => Party},
+        Revision
+    );
 
 %% Shop
 
@@ -91,12 +94,7 @@ handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     Party = hg_party_machine:get_party(PartyID),
-    case hg_party:get_shop(ID, Party) of
-        #domain_Shop{} = Shop ->
-            Shop;
-        undefined ->
-            throw(#payproc_ShopNotFound{})
-    end;
+    ensure_shop(hg_party:get_shop(ID, Party));
 
 handle_function_('BlockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -121,6 +119,22 @@ handle_function_('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     hg_party_machine:call(PartyID, {activate_shop, ID});
+
+handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    Party = checkout_party(PartyID, Timestamp),
+    Shop = hg_party:get_shop(ShopID, Party),
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    Revision = hg_domain:head(),
+    VS = #{
+        party => Party,
+        shop => Shop,
+        category => Shop#domain_Shop.category,
+        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency
+    },
+    hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
 
 %% Claim
 
@@ -238,3 +252,21 @@ set_party_mgmt_meta(PartyID) ->
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
+
+checkout_party(PartyID, Timestamp) ->
+    try
+        hg_party_machine:checkout(PartyID, Timestamp)
+    catch
+        error:revision_not_found ->
+            throw(#payproc_PartyNotExistsYet{})
+    end.
+
+ensure_contract(#domain_Contract{} = Contract) ->
+    Contract;
+ensure_contract(undefined) ->
+    throw(#payproc_ContractNotFound{}).
+
+ensure_shop(#domain_Shop{} = Shop) ->
+    Shop;
+ensure_shop(undefined) ->
+    throw(#payproc_ShopNotFound{}).
