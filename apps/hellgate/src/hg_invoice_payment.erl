@@ -208,7 +208,7 @@ init_(PaymentID, Params, Opts) ->
     Provider = get_route_provider(Route, Revision),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS3, Revision),
     FinalCashflow = construct_final_cashflow(Payment, Shop, Provider, Cashflow, VS3, Revision),
-    _AccountsState = hg_accounting:plan(
+    _AffectedAccounts = hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
@@ -435,11 +435,11 @@ choose_account(Name, Currency, Accounts) ->
             error({misconfiguration, {'No account for a given currency', {Name, Currency}}})
     end.
 
-get_account_state(AccountType, AccountMap, AccountsState) ->
+get_account_state(AccountType, AccountMap, Accounts) ->
     % FIXME move me closer to hg_accounting
     case AccountMap of
         #{AccountType := AccountID} ->
-            #{AccountID := AccountState} = AccountsState,
+            #{AccountID := AccountState} = Accounts,
             AccountState;
         #{} ->
             undefined
@@ -524,15 +524,15 @@ refund(Params, St0, Opts) ->
         ?session_ev(?refunded(), ?session_started())
     ],
     RefundSt = collapse_refund_changes(Changes),
-    AccountsState = prepare_refund_cashflow(RefundSt, St),
+    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
-    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AccountsState)) of
+    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
             Action = hg_machine_action:instant(),
             {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}};
         Available when Available < 0 ->
-            _AccountsState = rollback_refund_cashflow(RefundSt, St),
+            _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
             throw(#payproc_OperationNotPermitted{})
     end.
 
@@ -625,7 +625,7 @@ create_adjustment(Params, St, Opts) ->
         old_cash_flow_inverse = hg_cashflow:revert(get_cashflow(St)),
         new_cash_flow         = FinalCashflow
     },
-    _AccountsState = prepare_adjustment_cashflow(Adjustment, St, Opts),
+    _AffectedAccounts = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Event = ?adjustment_ev(ID, ?adjustment_created(Adjustment)),
     {Adjustment, {[Event], hg_machine_action:new()}}.
 
@@ -671,7 +671,7 @@ cancel_adjustment(ID, St, Options) ->
 finalize_adjustment(ID, Intent, St, Options) ->
     Adjustment = get_adjustment(ID, St),
     ok = assert_adjustment_status(pending, Adjustment),
-    _AccountsState = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
+    _AffectedAccounts = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
     Status = case Intent of
         capture ->
             ?adjustment_captured(hg_datetime:format_now());
@@ -812,7 +812,7 @@ finish_processing(payment, {Events, Action}, St) ->
     St1 = collapse_changes(Events, St),
     case get_session(Target, St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
-            _AccountsState = case Target of
+            _AffectedAccounts = case Target of
                 ?captured() ->
                     commit_payment_cashflow(St);
                 ?cancelled() ->
@@ -824,7 +824,7 @@ finish_processing(payment, {Events, Action}, St) ->
             {done, {Events ++ [?payment_status_changed(Target)], NewAction}};
         #{status := finished, result := ?session_failed(Failure)} ->
             % TODO is it always rollback?
-            _AccountsState = rollback_payment_cashflow(St),
+            _AffectedAccounts = rollback_payment_cashflow(St),
             {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
         #{} ->
             {next, {Events, Action}}
@@ -836,14 +836,14 @@ finish_processing({refund, ID}, {Events, Action}, St) ->
     RefundSt1 = try_get_refund_state(ID, St1),
     case get_refund_session(RefundSt1) of
         #{status := finished, result := ?session_succeeded()} ->
-            _AccountsState = commit_refund_cashflow(RefundSt1, St1),
+            _AffectedAccounts = commit_refund_cashflow(RefundSt1, St1),
             Events2 = [
                 ?refund_ev(ID, ?refund_status_changed(?refund_succeeded())),
                 ?payment_status_changed(?refunded())
             ],
             {done, {Events1 ++ Events2, Action}};
         #{status := finished, result := ?session_failed(Failure)} ->
-            _AccountsState = rollback_refund_cashflow(RefundSt1, St1),
+            _AffectedAccounts = rollback_refund_cashflow(RefundSt1, St1),
             Events2 = [
                 ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
             ],
