@@ -19,7 +19,9 @@
 -export([remove_metadata/2]).
 
 -export([get_contract/2]).
+-export([compute_contract_terms/3]).
 -export([get_shop/2]).
+-export([compute_shop_terms/3]).
 
 -export([block_shop/3]).
 -export([unblock_shop/3]).
@@ -51,18 +53,20 @@
 
 %%
 
--type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
--type party_id() :: dmsl_domain_thrift:'PartyID'().
--type party_params() :: dmsl_payment_processing_thrift:'PartyParams'().
--type shop_id() :: dmsl_domain_thrift:'ShopID'().
--type claim_id() :: dmsl_payment_processing_thrift:'ClaimID'().
--type claim() :: dmsl_payment_processing_thrift:'ClaimID'().
--type claim_revision() :: dmsl_payment_processing_thrift:'ClaimRevision'().
--type changeset() ::  dmsl_payment_processing_thrift:'PartyChangeset'().
+-type user_info()       :: dmsl_payment_processing_thrift:'UserInfo'().
+-type party_id()        :: dmsl_domain_thrift:'PartyID'().
+-type party_params()    :: dmsl_payment_processing_thrift:'PartyParams'().
+-type contract_id()     :: dmsl_domain_thrift:'ContractID'().
+-type shop_id()         :: dmsl_domain_thrift:'ShopID'().
+-type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
+-type claim()           :: dmsl_payment_processing_thrift:'Claim'().
+-type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
+-type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
 -type shop_account_id() :: dmsl_domain_thrift:'AccountID'().
 -type meta()            :: dmsl_domain_thrift:'PartyMeta'().
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
+-type timestamp()       :: dmsl_base_thrift:'Timestamp'().
 
 
 -spec start(user_info(), party_id(), hg_client_api:t()) -> pid().
@@ -99,7 +103,7 @@ create(PartyParams, Client) ->
 get(Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', []})).
 
--spec checkout(dmsl_base_thrift:'Timestamp'(), pid()) ->
+-spec checkout(timestamp(), pid()) ->
     dmsl_domain_thrift:'Party'() | woody_error:business_error().
 
 checkout(Timestamp, Client) ->
@@ -153,11 +157,17 @@ set_metadata(NS, Data, Client) ->
 remove_metadata(NS, Client) ->
     map_result_error(gen_server:call(Client, {call, 'RemoveMetaData', [NS]})).
 
--spec get_contract(dmsl_domain_thrift:'ContractID'(), pid()) ->
+-spec get_contract(contract_id(), pid()) ->
     dmsl_domain_thrift:'Contract'() | woody_error:business_error().
 
 get_contract(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetContract', [ID]})).
+
+-spec compute_contract_terms(contract_id(), timestamp(), pid()) ->
+    dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
+
+compute_contract_terms(ID, Timestamp, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputeContractTerms', [ID, Timestamp]})).
 
 -spec get_shop(shop_id(), pid()) ->
     dmsl_domain_thrift:'Shop'() | woody_error:business_error().
@@ -188,6 +198,12 @@ suspend_shop(ID, Client) ->
 
 activate_shop(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'ActivateShop', [ID]})).
+
+-spec compute_shop_terms(shop_id(), timestamp(), pid()) ->
+    dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
+
+compute_shop_terms(ID, Timestamp, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputeShopTerms', [ID, Timestamp]})).
 
 -spec get_claim(claim_id(), pid()) ->
     claim() | woody_error:business_error().
