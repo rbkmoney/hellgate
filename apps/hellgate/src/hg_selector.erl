@@ -95,12 +95,12 @@ reduce_decisions([{Type, V, S} | Rest], VS, Rev) ->
 reduce_decisions([], _, _) ->
     [].
 
-reduce_predicate(?const(B), _, _) when is_boolean(B) ->
+reduce_predicate(?const(B), _, _) ->
     ?const(B);
 
 reduce_predicate({condition, C0}, VS, Rev) ->
     case reduce_condition(C0, VS, Rev) of
-        ?const(B) when is_boolean(B) ->
+        ?const(B) ->
             ?const(B);
         C1 ->
             {condition, C1}
@@ -108,31 +108,31 @@ reduce_predicate({condition, C0}, VS, Rev) ->
 
 reduce_predicate({is_not, P0}, VS, Rev) ->
     case reduce_predicate(P0, VS, Rev) of
-        ?const(B) when is_boolean(B) ->
+        ?const(B) ->
             ?const(not B);
         P1 ->
             {is_not, P1}
     end;
 
 reduce_predicate({all_of, Ps}, VS, Rev) ->
-    reduce_combination(?const(false), Ps, VS, Rev, []);
+    reduce_combination(all_of, false, Ps, VS, Rev, []);
 
 reduce_predicate({any_of, Ps}, VS, Rev) ->
-    reduce_combination(?const(true), Ps, VS, Rev, []).
+    reduce_combination(any_of, true, Ps, VS, Rev, []).
 
-reduce_combination(Fix, [P | Ps], VS, Rev, PAcc) ->
+reduce_combination(Type, Fix, [P | Ps], VS, Rev, PAcc) ->
     case reduce_predicate(P, VS, Rev) of
-        Fix ->
-            Fix;
-        ?const(B) when is_boolean(B) ->
-            reduce_combination(Fix, Ps, VS, Rev, PAcc);
+        ?const(Fix) ->
+            ?const(Fix);
+        ?const(_) ->
+            reduce_combination(Type, Fix, Ps, VS, Rev, PAcc);
         P1 ->
-            reduce_combination(Fix, Ps, VS, Rev, [P1 | PAcc])
+            reduce_combination(Type, Fix, Ps, VS, Rev, [P1 | PAcc])
     end;
-reduce_combination(_, [], _, _, []) ->
-    ?const(false);
-reduce_combination(_, [], _, _, PAcc) ->
-    PAcc.
+reduce_combination(_, Fix, [], _, _, []) ->
+    ?const(not Fix);
+reduce_combination(Type, _, [], _, _, PAcc) ->
+    {Type, lists:reverse(PAcc)}.
 
 reduce_condition(C, VS, Rev) ->
     case hg_condition:test(C, VS, Rev) of

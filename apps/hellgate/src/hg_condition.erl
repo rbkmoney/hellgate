@@ -38,10 +38,10 @@ test_party(_, _, _) ->
 
 test_party_(undefined, _, _) ->
     true;
-test_party_({shop_is, ID}, _, #domain_Shop{id = ID}) ->
-    true;
+test_party_({shop_is, ID1}, _, #domain_Shop{id = ID2}) ->
+    ID1 =:= ID2;
 test_party_(_, _, _) ->
-    false.
+    undefined.
 
 %%
 
