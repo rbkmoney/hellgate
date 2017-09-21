@@ -48,6 +48,8 @@ get_http_cowboy_spec() ->
 -define(DEFAULT_PAYLOAD , <<"payload">>).
 -define(LAY_LOW_BUDDY   , <<"lay low buddy">>).
 
+-define(REC_TOKEN, <<"rec_token">>).
+
 -type form() :: #{binary() => binary() | true}.
 
 -spec construct_silent_callback(form()) -> form().
@@ -62,6 +64,28 @@ construct_silent_callback(Form) ->
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
+
+handle_function(
+    'GenerateToken',
+    [#prxprv_RecurrentTokenGenerationContext{
+        session = #prxprv_RecurrentTokenGenerationSession{state = State},
+        token_info = TokenInfo,
+        options = _
+    }],
+    Opts
+) ->
+    generate_token(State, TokenInfo, Opts);
+
+handle_function(
+    'HandleRecurrentTokenGenerationCallback',
+    [Payload, #prxprv_RecurrentTokenGenerationContext{
+        session = #prxprv_RecurrentTokenGenerationSession{state = State},
+        token_info = TokenInfo,
+        options = _
+    }],
+    Opts
+) ->
+    handle_token_callback(Payload, State, TokenInfo, Opts);
 
 handle_function(
     'ProcessPayment',
@@ -95,6 +119,75 @@ handle_function(
     Opts
 ) ->
     handle_payment_callback(Payload, Target, State, PaymentInfo, Opts).
+
+%
+% Recurrent tokens
+%
+
+generate_token(undefined, _TokenInfo, _Opts) ->
+    token_sleep(1, <<"sleeping">>);
+generate_token(<<"sleeping">>, TokenInfo, _Opts) ->
+    #prxprv_RecurrentTokenInfo{
+        payment_tool = PaymentTool
+    } = TokenInfo,
+    case is_tds_payment_tool(PaymentTool) of
+        true ->
+            Tag = hg_utils:unique_id(),
+            Uri = genlib:to_binary("http://127.0.0.1:" ++ integer_to_list(?COWBOY_PORT)),
+            UserInteraction = {
+                'redirect',
+                {
+                    'post_request',
+                    #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
+                }
+            },
+            token_suspend(Tag, 2, <<"suspended">>, UserInteraction);
+        false ->
+            token_sleep(1, <<"finishing">>)
+    end;
+generate_token(<<"finishing">>, TokenInfo, _Opts) ->
+    Token = ?REC_TOKEN,
+    token_finish(TokenInfo, Token).
+
+handle_token_callback(?DEFAULT_PAYLOAD, <<"suspended">>, _PaymentInfo, _Opts) ->
+    token_respond(<<"sure">>, #prxprv_RecurrentTokenGenerationProxyResult{
+        intent     = ?sleep(1),
+        next_state = <<"sleeping">>
+    });
+handle_token_callback(?LAY_LOW_BUDDY, <<"suspended">>, _PaymentInfo, _Opts) ->
+    token_respond(<<"sure">>, #prxprv_RecurrentTokenGenerationProxyResult{
+        intent     = undefined,
+        next_state = <<"suspended">>
+    }).
+
+token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
+    #prxprv_RecurrentTokenGenerationProxyResult{
+        intent = ?finish(),
+        token  = Token,
+        trx    = #domain_TransactionInfo{id = PaymentTool#prxprv_RecurrentPaymentTool.id, extra = #{}}
+    }.
+
+token_sleep(Timeout, State) ->
+    #prxprv_RecurrentTokenGenerationProxyResult{
+        intent     = ?sleep(Timeout),
+        next_state = State
+    }.
+
+token_suspend(Tag, Timeout, State, UserInteraction) ->
+    #prxprv_RecurrentTokenGenerationProxyResult{
+        intent     = ?suspend(Tag, Timeout, UserInteraction),
+        next_state = State
+    }.
+
+token_respond(Response, CallbackResult) ->
+    #prxprv_RecurrentTokenGenerationCallbackResult{
+        response   = Response,
+        result     = CallbackResult
+    }.
+
+%
+% Payments
+%
 
 process_payment(?processed(), undefined, _, _) ->
     sleep(1, <<"sleeping">>);
@@ -180,6 +273,14 @@ get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
 
 get_payment_tool_type(#prxprv_PaymentInfo{payment = Payment}) ->
     Token3DS = hg_ct_helper:bank_card_tds_token(),
+    case PaymentTool of
+        {'bank_card', #domain_BankCard{token = Token3DS}} ->
+            true;
+        _ ->
+            false
+    end.
+
+is_tds_payment(#prxprv_PaymentInfo{payment = Payment}) ->
     #prxprv_InvoicePayment{
         payment_resource = {
             disposable_payment_resource,
