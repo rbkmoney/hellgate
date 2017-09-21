@@ -533,7 +533,7 @@ refund(Params, St0, Opts) ->
             {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}};
         Available when Available < 0 ->
             _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
-            throw(#payproc_OperationNotPermitted{})
+            throw(#payproc_InsufficientAccountBalance{})
     end.
 
 construct_refund_id(#st{}) ->

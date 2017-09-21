@@ -158,6 +158,8 @@ end_per_suite(C) ->
     {exception, #payproc_InvoicePaymentAdjustmentPending{id = ID}}).
 -define(operation_not_permitted(),
     {exception, #payproc_OperationNotPermitted{}}).
+-define(insufficient_account_balance(),
+    {exception, #payproc_InsufficientAccountBalance{}}).
 
 -define(ordset(Es), ordsets:from_list(Es)).
 
@@ -874,7 +876,7 @@ payment_refund_success(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     % not enough funds on the merchant account
-    ?operation_not_permitted() =
+    ?insufficient_account_balance() =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
