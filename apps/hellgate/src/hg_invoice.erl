@@ -52,6 +52,8 @@
 
 -type st() :: #st{}.
 
+-include("domain.hrl").
+
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
@@ -159,7 +161,32 @@ handle_function_('Fulfill', [UserInfo, InvoiceID, Reason], _Opts) ->
 handle_function_('Rescind', [UserInfo, InvoiceID, Reason], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
-    call(InvoiceID, {rescind, Reason}).
+    call(InvoiceID, {rescind, Reason});
+
+handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID),
+    St = assert_invoice_accessible(get_state(InvoiceID)),
+    ShopID = get_shop_id(St),
+    Party = get_party(get_party_id(St)),
+    Shop  = hg_party:get_shop(ShopID, Party),
+    Contract = hg_party:get_contract(hg_party:get_shop_contract_id(Shop), Party),
+    Timestamp = get_created_at(St),
+    Revision = hg_domain:head(),
+    Category = hg_party:get_shop_category(Shop),
+    Cash = get_cost(St),
+    ?cash(_, Currency) = Cash,
+    hg_party:reduce_terms(
+        hg_party:get_terms(Contract, Timestamp, Revision),
+        #{
+            party => Party,
+            shop => Shop,
+            category => Category,
+            currency => ?currency(Currency),
+            cost => Cash
+        },
+        Revision
+    ).
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
@@ -654,6 +681,12 @@ get_party_id(#st{invoice = #domain_Invoice{owner_id = PartyID}}) ->
 get_shop_id(#st{invoice = #domain_Invoice{shop_id = ShopID}}) ->
     ShopID.
 
+get_created_at(#st{invoice = #domain_Invoice{created_at = CreatedAt}}) ->
+    CreatedAt.
+
+get_cost(#st{invoice = #domain_Invoice{cost = Cash}}) ->
+    Cash.
+
 get_payment_session(PaymentID, St) ->
     case try_get_payment_session(PaymentID, St) of
         PaymentSession when PaymentSession /= undefined ->
@@ -775,8 +808,6 @@ make_invoice_context(Context, _) ->
     Context.
 
 %%
-
--include("domain.hrl").
 
 log_changes(Changes, St) ->
     lists:foreach(fun (C) -> log_change(C, St) end, Changes).

@@ -24,6 +24,8 @@
 -export([capture_adjustment/4]).
 -export([cancel_adjustment/4]).
 
+-export([compute_terms/2]).
+
 -export([pull_event/2]).
 -export([pull_event/3]).
 
@@ -53,6 +55,7 @@
 -type refund()             :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type refund_id()          :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
 -type refund_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
+-type term_set()           :: dmsl_domain_thrift:'TermSet'().
 
 -spec start(user_info(), hg_client_api:t()) -> pid().
 
@@ -169,6 +172,12 @@ capture_adjustment(InvoiceID, PaymentID, ID, Client) ->
 cancel_adjustment(InvoiceID, PaymentID, ID, Client) ->
     Args = [InvoiceID, PaymentID, ID],
     map_result_error(gen_server:call(Client, {call, 'CancelPaymentAdjustment', Args})).
+
+-spec compute_terms(invoice_id(), pid()) -> term_set().
+
+compute_terms(InvoiceID, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputeTerms', [InvoiceID]})).
+
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
