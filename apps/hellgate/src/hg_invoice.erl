@@ -206,7 +206,7 @@ set_invoicing_meta(InvoiceID, PaymentID) ->
     {ok, callback_response()} | {error, invalid_callback | notfound | failed} | no_return().
 
 process_callback(Tag, Callback) ->
-    case hg_machine:call(?NS, {tag, Tag}, {callback, Callback}) of
+    case hg_machine:call(?NS, {tag, Tag}, {callback, Tag, Callback}) of
         {ok, {ok, _} = Ok} ->
             Ok;
         {ok, {exception, invalid_callback}} ->
@@ -469,13 +469,13 @@ handle_call({cancel_payment_adjustment, PaymentID, ID}, St) ->
         St
     );
 
-handle_call({callback, Callback}, St) ->
-    dispatch_callback(Callback, St).
+handle_call({callback, Tag, Callback}, St) ->
+    dispatch_callback(Tag, Callback, St).
 
-dispatch_callback({provider, Payload}, St = #st{activity = {payment, PaymentID}}) ->
+dispatch_callback(Tag, {provider, Payload}, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
-    process_payment_call({callback, Payload}, PaymentID, PaymentSession, St);
-dispatch_callback(_Callback, _St) ->
+    process_payment_call({callback, Tag, Payload}, PaymentID, PaymentSession, St);
+dispatch_callback(_Tag, _Callback, _St) ->
     throw(invalid_callback).
 
 assert_invoice_status(Status, #st{invoice = Invoice}) ->

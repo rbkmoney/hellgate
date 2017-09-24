@@ -1020,7 +1020,7 @@ filter_change(?refund_ev(_, C)) ->
     filter_change(C);
 filter_change(?session_ev(_, ?proxy_st_changed(_))) ->
     false;
-filter_change(?session_ev(_, ?session_suspended())) ->
+filter_change(?session_ev(_, ?session_suspended(_))) ->
     false;
 filter_change(?session_ev(_, ?session_activated())) ->
     false;
