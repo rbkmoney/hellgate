@@ -263,7 +263,7 @@ checkout(PartyID, Timestamp) ->
     term() | no_return().
 
 call(PartyID, Call) ->
-    map_error(hg_machine:call(?NS, {id, PartyID}, Call)).
+    map_error(hg_machine:call(?NS, PartyID, Call)).
 
 map_error({ok, CallResult}) ->
     case CallResult of
@@ -321,9 +321,7 @@ get_history(PartyID, AfterID, Limit) ->
 map_history_error({ok, Result}) ->
     unwrap_events(Result);
 map_history_error({error, notfound}) ->
-    throw(#payproc_PartyNotFound{});
-map_history_error({error, Reason}) ->
-    error(Reason).
+    throw(#payproc_PartyNotFound{}).
 
 %%
 

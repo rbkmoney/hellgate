@@ -216,21 +216,22 @@ process_callback(Tag, Callback) ->
     end.
 
 %%
+
 -include("invoice_events.hrl").
 
-get_history(InvoiceID) ->
-    History = hg_machine:get_history(?NS, InvoiceID),
-    map_history_error(unmarshal_history_result(History)).
+get_history(Ref) ->
+    History = hg_machine:get_history(?NS, Ref),
+    unmarshal(map_history_error(History)).
 
-get_history(InvoiceID, AfterID, Limit) ->
-    History = hg_machine:get_history(?NS, InvoiceID, AfterID, Limit),
-    map_history_error(unmarshal_history_result(History)).
+get_history(Ref, AfterID, Limit) ->
+    History = hg_machine:get_history(?NS, Ref, AfterID, Limit),
+    unmarshal(map_history_error(History)).
 
-get_state(InvoiceID) ->
-    collapse_history(get_history(InvoiceID)).
+get_state(Ref) ->
+    collapse_history(get_history(Ref)).
 
-get_initial_state(InvoiceID) ->
-    collapse_history(get_history(InvoiceID, undefined, 1)).
+get_initial_state(Ref) ->
+    collapse_history(get_history(Ref, undefined, 1)).
 
 get_public_history(InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_invoice_event(InvoiceID, Ev) || Ev <- get_history(InvoiceID, AfterID, Limit)].
@@ -247,7 +248,7 @@ start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
 
 call(ID, Args) ->
-    map_error(hg_machine:call(?NS, {id, ID}, Args)).
+    map_error(hg_machine:call(?NS, ID, Args)).
 
 map_error({ok, CallResult}) ->
     case CallResult of
@@ -264,19 +265,12 @@ map_error({error, Reason}) ->
 map_history_error({ok, Result}) ->
     Result;
 map_history_error({error, notfound}) ->
-    throw(#payproc_InvoiceNotFound{});
-map_history_error({error, Reason}) ->
-    error(Reason).
+    throw(#payproc_InvoiceNotFound{}).
 
 map_start_error({ok, _}) ->
     ok;
 map_start_error({error, Reason}) ->
     error(Reason).
-
-unmarshal_history_result({ok, Result}) ->
-    {ok, unmarshal(Result)};
-unmarshal_history_result(Error) ->
-    Error.
 
 %%
 

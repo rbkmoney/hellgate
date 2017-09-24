@@ -133,7 +133,7 @@ start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
 
 call(ID, Args) ->
-    map_error(hg_machine:call(?NS, {id, ID}, Args)).
+    map_error(hg_machine:call(?NS, ID, Args)).
 
 get_history(TplID) ->
     unmarshal(map_history_error(hg_machine:get_history(?NS, TplID))).
@@ -158,9 +158,7 @@ map_start_error({error, Reason}) ->
 map_history_error({ok, Result}) ->
     Result;
 map_history_error({error, notfound}) ->
-    throw(#payproc_InvoiceTemplateNotFound{});
-map_history_error({error, Reason}) ->
-    error(Reason).
+    throw(#payproc_InvoiceTemplateNotFound{}).
 
 %% Machine
 
