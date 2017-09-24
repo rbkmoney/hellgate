@@ -34,6 +34,9 @@
 -export([get_adjustment/2]).
 
 -export([get_activity/1]).
+-export([get_tags/1]).
+
+-export([construct_payment_info/2]).
 
 %% Business logic
 
@@ -90,6 +93,7 @@
 -type refund_state() :: #refund_st{}.
 
 -type st() :: #st{}.
+
 -export_type([st/0]).
 
 -type party()             :: dmsl_domain_thrift:'Party'().
@@ -119,6 +123,13 @@
     result      => session_result(),
     proxy_state => proxy_state()
 }.
+
+-type opts() :: #{
+    party => party(),
+    invoice => invoice()
+}.
+
+-export_type([opts/0]).
 
 %%
 
@@ -172,12 +183,15 @@ get_refund(ID, St) ->
 get_activity(#st{activity = Activity}) ->
     Activity.
 
-%%
+-spec get_tags(st()) -> [tag()].
 
--type opts() :: #{
-    party => party(),
-    invoice => invoice()
-}.
+get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
+    lists:usort(lists:flatten(
+        [get_session_tags(S)                     || S <- maps:values(Sessions)] ++
+        [get_session_tags(get_refund_session(R)) || R <- maps:values(Refunds) ]
+    )).
+
+%%
 
 -spec init(payment_id(), _, opts()) ->
     {payment(), hg_machine:result()}.
@@ -968,10 +982,26 @@ get_cashflow_plan(St) ->
 
 %%
 
+-type payment_info() :: dmsl_proxy_provider_thrift:'PaymentInfo'().
+
+-spec construct_payment_info(st(), opts()) ->
+    payment_info().
+
+construct_payment_info(St, Opts) ->
+    construct_payment_info(
+        get_activity(St),
+        St,
+        #prxprv_PaymentInfo{
+            shop = construct_proxy_shop(get_shop(Opts)),
+            invoice = construct_proxy_invoice(get_invoice(Opts)),
+            payment = construct_proxy_payment(get_payment(St), get_trx(St))
+        }
+    ).
+
 construct_proxy_context(St) ->
     #prxprv_Context{
         session      = construct_session(get_active_session(St)),
-        payment_info = construct_payment_info(St),
+        payment_info = construct_payment_info(St, get_opts(St)),
         options      = collect_proxy_options(St)
     }.
 
@@ -980,19 +1010,6 @@ construct_session(Session = #{target := Target}) ->
         target = Target,
         state = maps:get(proxy_state, Session, undefined)
     }.
-
-construct_payment_info(St) ->
-    Payment = get_payment(St),
-    Trx = get_trx(St),
-    construct_payment_info(
-        get_activity(St),
-        St,
-        #prxprv_PaymentInfo{
-            shop = construct_proxy_shop(get_shop(get_opts(St))),
-            invoice = construct_proxy_invoice(get_invoice(get_opts(St))),
-            payment = construct_proxy_payment(Payment, Trx)
-        }
-    ).
 
 construct_payment_info(payment, _St, PaymentInfo) ->
     PaymentInfo;

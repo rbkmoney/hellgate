@@ -20,6 +20,12 @@
 
 -export([process_callback/2]).
 
+%% Public interface
+
+-export([get/1]).
+-export([get_payment/2]).
+-export([get_payment_opts/1]).
+
 %% Woody handler called by hg_woody_wrapper
 
 -behaviour(hg_woody_wrapper).
@@ -51,6 +57,42 @@
 }).
 
 -type st() :: #st{}.
+
+-spec get(hg_machine:ref()) ->
+    {ok, st()} | {error, notfound}.
+
+get(Ref) ->
+    case hg_machine:get_history(?NS, Ref) of
+        {ok, History} ->
+            {ok, collapse_history(unmarshal(History))};
+        Error ->
+            Error
+    end.
+
+-spec get_payment(hg_machine:tag(), st()) ->
+    {ok, payment_st()} | {error, notfound}.
+
+get_payment({tag, Tag}, #st{payments = Ps}) ->
+    case lists:dropwhile(fun ({_, PS}) -> not lists:member(Tag, get_payment_tags(PS)) end, Ps) of
+        [{_ID, PaymentSession} | _] ->
+            {ok, PaymentSession};
+        [] ->
+            {error, notfound}
+    end.
+
+get_payment_tags(PaymentSession) ->
+    hg_invoice_payment:get_tags(PaymentSession).
+
+-spec get_payment_opts(st()) ->
+    hg_invoice_payment:opts().
+
+get_payment_opts(St = #st{invoice = Invoice}) ->
+    #{
+        party => checkout_party(St),
+        invoice => Invoice
+    }.
+
+%%
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
@@ -568,12 +610,6 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St) ->
         changes  => wrap_payment_changes(PaymentID, Changes),
         action   => Action,
         state    => St
-    }.
-
-get_payment_opts(St = #st{invoice = Invoice}) ->
-    #{
-        party => checkout_party(St),
-        invoice => Invoice
     }.
 
 checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp}}) ->
