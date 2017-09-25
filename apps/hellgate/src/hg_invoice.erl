@@ -52,8 +52,6 @@
 
 -type st() :: #st{}.
 
--include("domain.hrl").
-
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
@@ -797,6 +795,8 @@ make_invoice_context(Context, _) ->
     Context.
 
 %%
+
+-include("domain.hrl").
 
 log_changes(Changes, St) ->
     lists:foreach(fun (C) -> log_change(C, St) end, Changes).
