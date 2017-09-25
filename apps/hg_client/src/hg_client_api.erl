@@ -26,8 +26,7 @@ new(RootUrl, Context) ->
     {RootUrl, Context}.
 
 construct_context() ->
-    ReqID = genlib_format:format_int_base(genlib_time:ticks(), 62),
-    woody_context:new(ReqID).
+    woody_context:new().
 
 -spec call(Name :: atom(), woody:func(), [any()], t()) ->
     {{ok, _Response} | {exception, _} | {error, _}, t()}.

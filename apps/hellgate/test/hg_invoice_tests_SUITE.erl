@@ -129,7 +129,7 @@ init_per_suite(C) ->
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(RootUrl)),
-    CustomerClient = hg_client_customer:start(make_userinfo(PartyID), hg_client_api:new(RootUrl)),
+    CustomerClient = hg_client_customer:start(create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(Client),
     [
         {party_id, PartyID},
@@ -1138,8 +1138,14 @@ construct_proxy(ID, Url, Options) ->
 
 %%
 
+create_client(RootUrl, PartyID) ->
+    hg_client_api:new(RootUrl, woody_user_identity:put(make_user_identity(PartyID), woody_context:new())).
+
 make_userinfo(PartyID) ->
     hg_ct_helper:make_userinfo(PartyID).
+
+make_user_identity(PartyID) ->
+    #{id => genlib:to_binary(PartyID), realm => <<"external">>}.
 
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).

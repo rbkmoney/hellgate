@@ -36,7 +36,7 @@
 -type customer()         :: dmsl_payment_processing_thrift:'Customer'().
 -type customer_id()      :: dmsl_payment_processing_thrift:'CustomerID'().
 -type customer_params()  :: dmsl_payment_processing_thrift:'CustomerParams'().
--type customer_event()   :: dmsl_payment_processing_thrift:'CustomerChange'().
+-type customer_change()  :: dmsl_payment_processing_thrift:'CustomerChange'().
 
 -type binding_id()     :: dmsl_payment_processing_thrift:'CustomerBindingID'().
 -type binding_params() :: dmsl_payment_processing_thrift:'CustomerBindingParams'().
@@ -57,6 +57,7 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     ok = set_meta(CustomerID),
     PartyID = CustomerParams#payproc_CustomerParams.party_id,
     ShopID = CustomerParams#payproc_CustomerParams.shop_id,
+    ok = assert_party_accessible(PartyID),
     Party = get_party(PartyID),
     Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
     ok = assert_party_shop_operable(Shop, Party),
@@ -65,22 +66,22 @@ handle_function_('Create', [CustomerParams], _Opts) ->
 handle_function_('Get', [CustomerID], _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
-    ok = assert_customer_operable(St),
+    ok = assert_customer_accessible(St),
     get_customer(St);
 handle_function_('Delete', [CustomerID], _Opts) ->
     ok = set_meta(CustomerID),
-    ok = assert_customer_operable(get_state(CustomerID)),
     call(CustomerID, delete);
 handle_function_('StartBinding', [CustomerID, CustomerBindingParams], _Opts) ->
     ok = set_meta(CustomerID),
-    ok = assert_customer_operable(get_state(CustomerID)),
     call(CustomerID, {start_binding, CustomerBindingParams});
 handle_function_('GetEvents', [CustomerID, Range], _Opts) ->
     ok = set_meta(CustomerID),
-    ok = assert_customer_operable(get_state(CustomerID)),
+    ok = assert_customer_accessible(get_initial_state(CustomerID)),
     get_public_history(CustomerID, Range).
 
 %%
+
+-include("customer_events.hrl").
 
 get_party(PartyID) ->
     hg_party_machine:get_party(PartyID).
@@ -90,25 +91,28 @@ set_meta(ID) ->
 
 get_history(CustomerID) ->
     History = hg_machine:get_history(?NS, CustomerID),
-    map_history_error(unmarshal_history_result(History)).
+    unmarshal(map_history_error(History)).
 
 get_history(CustomerID, AfterID, Limit) ->
     History = hg_machine:get_history(?NS, CustomerID, AfterID, Limit),
-    unmarshal_history_result(map_history_error(History)).
+    unmarshal(map_history_error(History)).
 
 get_state(CustomerID) ->
     collapse_history(get_history(CustomerID)).
 
+get_initial_state(CustomerID) ->
+    collapse_history(get_history(CustomerID, undefined, 1)).
+
 get_public_history(CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_customer_event(CustomerID, Ev) || Ev <- get_history(CustomerID, AfterID, Limit)].
 
-publish_customer_event(CustomerID, {ID, Dt, Event}) ->
-    {Source, Ev} = publish_event(CustomerID, Event),
+publish_customer_event(CustomerID, Event) ->
+    {ID, Dt, Payload} = unmarshal(Event),
     #payproc_CustomerEvent{
         id = ID,
         created_at = Dt,
-        source = Source,
-        payload = Ev
+        source = CustomerID,
+        payload = Payload
     }.
 
 -spec start(customer_id(), customer_params()) ->
@@ -151,18 +155,11 @@ map_start_error({ok, _}) ->
 map_start_error({error, Reason}) ->
     error(Reason).
 
-unmarshal_history_result({ok, Result}) ->
-    {ok, unmarshal(Result)};
-unmarshal_history_result(Error) ->
-    Error.
-
 %%
 %% Event provider callbacks
 %%
 
--include("customer_events.hrl").
-
--spec publish_event(customer_id(), customer_event()) ->
+-spec publish_event(customer_id(), [customer_change()]) ->
     hg_event_provider:public_event().
 publish_event(CustomerID, Changes) when is_list(Changes) ->
     {CustomerID, ?customer_event(unmarshal({list, changes}, Changes))}.
@@ -177,27 +174,26 @@ namespace() ->
     ?NS.
 
 -spec init(customer_id(), customer_params()) ->
-    hg_machine:result(customer_event()).
+    hg_machine:result().
 init(CustomerID, CustomerParams) ->
     Customer = create_customer(CustomerID, CustomerParams),
     handle_result(#{
-        changes => [?customer_created(Customer)],
-        state   => #st{}
+        changes => [?customer_created(Customer)]
     }).
 
--spec process_signal(hg_machine:signal(), hg_machine:history(customer_event())) ->
-    hg_machine:result(customer_event()).
+-spec process_signal(hg_machine:signal(), hg_machine:history()) ->
+    hg_machine:result().
 process_signal(Signal, History) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
 handle_signal(timeout, _St = #st{}) ->
-    ok.
+    #{}.
 
 -type call() :: {start_binding, binding_params()}
               | delete.
 
--spec process_call(call(), hg_machine:history(customer_event())) ->
-    {hg_machine:response(), hg_machine:result(customer_event())}.
+-spec process_call(call(), hg_machine:history()) ->
+    {hg_machine:response(), hg_machine:result()}.
 process_call(Call, History) ->
     St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
@@ -206,24 +202,23 @@ process_call(Call, History) ->
     end.
 
 handle_call(delete, St) ->
+    ok = assert_customer_operable(St),
     #{
         response => ok,
-        changes  => [?customer_deleted()],
-        state    => St
+        changes  => [?customer_deleted()]
     };
 handle_call({start_binding, BindingParams}, St) ->
-    start_binding(BindingParams, St);
-handle_call(_Call, _St) ->
-    not_implemented.
+    ok = assert_customer_operable(St),
+    start_binding(BindingParams, St).
 
 handle_result(Params) ->
     Changes = maps:get(changes, Params, []),
     Action = maps:get(action, Params, hg_machine_action:new()),
-    case maps:get(response, Params, undefined) of
-        undefined ->
-            {[marshal(Changes)], Action};
-        Response ->
-            {{ok, Response}, {[marshal(Changes)], Action}}
+    case maps:find(response, Params) of
+        {ok, Response} ->
+            {{ok, Response}, {[marshal(Changes)], Action}};
+        error ->
+            {[marshal(Changes)], Action}
     end.
 
 %%
@@ -234,8 +229,7 @@ start_binding(BindingParams, St) ->
     #{
         response => Binding,
         changes  => Changes,
-        action   => Action,
-        state    => St
+        action   => Action
     }.
 
 init_binding(BindingID, BindingParams) ->
@@ -287,25 +281,21 @@ collapse_history(History) ->
     ).
 
 merge_change(?customer_created(Customer), St) ->
-    St#st{customer = Customer};
+    set_customer(Customer, St);
 merge_change(?customer_deleted(), St) ->
-    St#st{customer = undefined};
+    set_customer(undefined, St);
 merge_change(?customer_status_changed(Status), St) ->
-    St#st.customer#payproc_Customer{status = Status};
+    Customer = get_customer(St),
+    set_customer(Customer#payproc_Customer{status = Status}, St);
 merge_change(?customer_binding_changed(BindingID, Payload), St) ->
-    merge_binding_change(Payload, BindingID, St).
+    Customer = get_customer(St),
+    Binding = try_get_customer_binding(BindingID, Customer),
+    set_customer(set_customer_binding(merge_binding_change(Payload, Binding), Customer), St).
 
-merge_binding_change(?customer_binding_started(CustomerBinding), _BindingID, St = #st{customer = Customer}) ->
-    Bindings = Customer#payproc_Customer.bindings,
-    St#st{customer = Customer#payproc_Customer{bindings = Bindings ++ [CustomerBinding]}};
-merge_binding_change(?customer_binding_status_changed(BindingStatus), BindingID, St = #st{customer = Customer}) ->
-    Bindings = Customer#payproc_Customer.bindings,
-    Binding = proplists:lookup(BindingID, Bindings),
-
-    UpdatedBinding = Binding#payproc_CustomerBinding{status = BindingStatus},
-    UpdatedBindings = lists:keyreplace(BindingID, 1, Bindings, {BindingID, UpdatedBinding}),
-
-    St#st{customer = Customer#payproc_Customer{bindings = UpdatedBindings}}.
+merge_binding_change(?customer_binding_started(Binding), undefined) ->
+    Binding;
+merge_binding_change(?customer_binding_status_changed(BindingStatus), Binding) ->
+    Binding#payproc_CustomerBinding{status = BindingStatus}.
 
 get_party_id(#st{customer = #payproc_Customer{owner_id = PartyID}}) ->
     PartyID.
@@ -316,17 +306,42 @@ get_shop_id(#st{customer = #payproc_Customer{shop_id = ShopID}}) ->
 get_customer(#st{customer = Customer}) ->
     Customer.
 
+set_customer(Customer, St = #st{}) ->
+    St#st{customer = Customer}.
+
+try_get_customer_binding(BindingID, #payproc_Customer{bindings = Bindings}) ->
+    case lists:keyfind(BindingID, #payproc_CustomerBinding.id, Bindings) of
+        Binding = #payproc_CustomerBinding{} ->
+            Binding;
+        false ->
+            undefined
+    end.
+
+set_customer_binding(Binding, Customer = #payproc_Customer{bindings = Bindings}) ->
+    BindingID = Binding#payproc_CustomerBinding.id,
+    Customer#payproc_Customer{
+        bindings = lists:keystore(BindingID, #payproc_CustomerBinding.id, Bindings, Binding)
+    }.
+
 %%
 %% Validators and stuff
 %%
 
-assert_customer_not_deleted(#st{customer = undefined}) ->
+assert_customer_present(#st{customer = undefined}) ->
     throw(#payproc_CustomerNotFound{});
-assert_customer_not_deleted(_) ->
+assert_customer_present(_) ->
     ok.
 
+assert_customer_accessible(St = #st{}) ->
+    ok = assert_customer_present(St),
+    ok = assert_party_accessible(get_party_id(St)),
+    ok.
+
+assert_party_accessible(PartyID) ->
+    hg_invoice_utils:assert_party_accessible(PartyID).
+
 assert_customer_operable(St = #st{}) ->
-    ok = assert_customer_not_deleted(St),
+    ok    = assert_customer_accessible(St),
     Party = get_party(get_party_id(St)),
     Shop  = hg_party:get_shop(get_shop_id(St), Party),
     ok    = assert_party_shop_operable(Shop, Party),
@@ -353,8 +368,11 @@ assert_shop_operable(Shop) ->
 %% Marshalling
 %%
 
-marshal(Changes) when is_list(Changes) ->
-    [marshal(change, Change) || Change <- Changes].
+marshal(Changes) ->
+    marshal({list, change}, Changes).
+
+marshal({list, T}, Vs) when is_list(Vs) ->
+    [marshal(T, V) || V <- Vs];
 
 %% Changes
 
@@ -472,10 +490,10 @@ unmarshal(Events) when is_list(Events) ->
     [unmarshal(Event) || Event <- Events];
 
 unmarshal({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal({list, changes}, Payload)}.
+    {ID, Dt, unmarshal({list, change}, Payload)}.
 
-unmarshal({list, changes}, Changes) when is_list(Changes) ->
-    [unmarshal(change, Change) || Change <- Changes];
+unmarshal({list, T}, Vs) when is_list(Vs) ->
+    [unmarshal(T, V) || V <- Vs];
 
 %% Changes
 

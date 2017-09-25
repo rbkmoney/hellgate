@@ -3,8 +3,8 @@
 
 %% API
 
--export([start     /2]).
--export([start_link/2]).
+-export([start     /1]).
+-export([start_link/1]).
 -export([stop      /1]).
 
 -export([create       /2]).
@@ -24,7 +24,6 @@
 
 %% Types
 
--type user_info()       :: dmsl_payment_processing_thrift:'UserInfo'().
 -type id()              :: dmsl_payment_processing_thrift:'CustomerID'().
 
 -type customer()        :: dmsl_payment_processing_thrift:'Customer'().
@@ -35,18 +34,18 @@
 
 %% API
 
--spec start(user_info(), hg_client_api:t()) ->
+-spec start(hg_client_api:t()) ->
     pid().
-start(UserInfo, ApiClient) ->
-    start(start, UserInfo, ApiClient).
+start(ApiClient) ->
+    start(start, ApiClient).
 
--spec start_link(user_info(), hg_client_api:t()) ->
+-spec start_link(hg_client_api:t()) ->
     pid().
-start_link(UserInfo, ApiClient) ->
-    start(start_link, UserInfo, ApiClient).
+start_link(ApiClient) ->
+    start(start_link, ApiClient).
 
-start(Mode, UserInfo, ApiClient) ->
-    {ok, Pid} = gen_server:Mode(?MODULE, {UserInfo, ApiClient}, []),
+start(Mode, ApiClient) ->
+    {ok, Pid} = gen_server:Mode(?MODULE, ApiClient, []),
     Pid.
 
 -spec stop(pid()) ->
@@ -87,7 +86,6 @@ map_result_error({error, Error}) ->
 %%
 
 -record(st, {
-    user_info :: user_info(),
     pollers   :: #{id() => hg_client_event_poller:t()},
     client    :: hg_client_api:t()
 }).
@@ -95,16 +93,16 @@ map_result_error({error, Error}) ->
 
 -type callref() :: {pid(), Tag :: reference()}.
 
--spec init({user_info(), hg_client_api:t()}) ->
+-spec init(hg_client_api:t()) ->
     {ok, st()}.
 
-init({UserInfo, ApiClient}) ->
-    {ok, #st{user_info = UserInfo, pollers = #{}, client = ApiClient}}.
+init(ApiClient) ->
+    {ok, #st{pollers = #{}, client = ApiClient}}.
 
 -spec handle_call(term(), callref(), st()) ->
     {reply, term(), st()} | {noreply, st()}.
 
-handle_call({call, Function, Args}, _From, St = #st{user_info = _UserInfo, client = Client}) ->
+handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
     {Result, ClientNext} = hg_client_api:call(customer_management, Function, Args, Client),
     {reply, Result, St#st{client = ClientNext}};
 
@@ -115,7 +113,7 @@ handle_call({pull_event, CustomerID, Timeout}, _From, St = #st{client = Client})
     case Result of
         [] ->
             {reply, timeout, StNext};
-        [#payproc_Event{payload = Payload}] ->
+        [#payproc_CustomerEvent{payload = Payload}] ->
             {reply, {ok, Payload}, StNext};
         Error ->
             {reply, Error, StNext}
@@ -155,8 +153,8 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %%
 
-get_poller(ID, #st{user_info = UserInfo, pollers = Pollers}) ->
-    maps:get(ID, Pollers, hg_client_event_poller:new(customer_management, 'GetEvents', [UserInfo, ID])).
+get_poller(ID, #st{pollers = Pollers}) ->
+    maps:get(ID, Pollers, hg_client_event_poller:new(customer_management, 'GetEvents', [ID])).
 
 set_poller(ID, Poller, St = #st{pollers = Pollers}) ->
     St#st{pollers = maps:put(ID, Poller, Pollers)}.
