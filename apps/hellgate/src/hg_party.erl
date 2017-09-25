@@ -50,8 +50,6 @@
 -export([get_new_shop_currency/4]).
 -export([get_shop/2]).
 -export([get_shop_account/2]).
--export([get_shop_contract_id/1]).
--export([get_shop_category/1]).
 -export([get_account_state/2]).
 
 %% Asserts
@@ -395,18 +393,6 @@ get_shop_account(#domain_Shop{account = undefined}) ->
     throw(#payproc_ShopAccountNotFound{});
 get_shop_account(#domain_Shop{account = Account}) ->
     Account.
-
--spec get_shop_contract_id(shop()) ->
-    contract_id().
-
-get_shop_contract_id(#domain_Shop{contract_id = ContractID}) ->
-    ContractID.
-
--spec get_shop_category(shop()) ->
-    category().
-
-get_shop_category(#domain_Shop{category = Category}) ->
-    Category.
 
 -spec get_account_state(dmsl_accounter_thrift:'AccountID'(), party()) ->
     dmsl_payment_processing_thrift:'AccountState'().

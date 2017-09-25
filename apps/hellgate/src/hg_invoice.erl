@@ -168,25 +168,12 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
     _ = set_invoicing_meta(InvoiceID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
     ShopID = get_shop_id(St),
-    Party = get_party(get_party_id(St)),
-    Shop  = hg_party:get_shop(ShopID, Party),
-    Contract = hg_party:get_contract(hg_party:get_shop_contract_id(Shop), Party),
+    PartyID = get_party_id(St),
     Timestamp = get_created_at(St),
+    ShopTerms = compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp),
     Revision = hg_domain:head(),
-    Category = hg_party:get_shop_category(Shop),
     Cash = get_cost(St),
-    ?cash(_, Currency) = Cash,
-    hg_party:reduce_terms(
-        hg_party:get_terms(Contract, Timestamp, Revision),
-        #{
-            party => Party,
-            shop => Shop,
-            category => Category,
-            currency => ?currency(Currency),
-            cost => Cash
-        },
-        Revision
-    ).
+    hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision).
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
@@ -223,6 +210,13 @@ set_invoicing_meta(InvoiceID) ->
 set_invoicing_meta(InvoiceID, PaymentID) ->
     hg_log_scope:set_meta(#{invoice_id => InvoiceID, payment_id => PaymentID}).
 
+compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp) ->
+    case hg_woody_wrapper:call('PartyManagement', 'ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp]) of
+        {ok, TermSet} ->
+            TermSet;
+        Error ->
+            Error
+    end.
 %%
 
 -type tag()               :: dmsl_base_thrift:'Tag'().
