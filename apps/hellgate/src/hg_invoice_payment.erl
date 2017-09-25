@@ -849,17 +849,21 @@ process_finished_session(St) ->
     {ok, Result} = start_session(Target),
     {done, Result}.
 
-handle_callback(Payload, Action, St) ->
-    ProxyContext = construct_proxy_context(St),
-    {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St),
-    {Response, Result} = handle_callback_result(CallbackResult, Action, get_active_session(St)),
-    {Response, finish_processing(Result, St)}.
+process(Action0, St, Options) ->
+    Session = get_target_session(St),
+    ProxyContext = construct_proxy_context(Session, St, Options),
+    {ok, ProxyResult} = hg_proxy_provider:issue_process_call('ProcessPayment', ProxyContext, St, Options),
+    Result = handle_proxy_result(ProxyResult, Action0, Session),
+    finish_processing(Result, St, Options).
 
-finish_processing(Result, St) ->
-    finish_processing(get_activity(St), Result, St).
+handle_callback(Payload, Action0, St, Options) ->
+    Session = get_target_session(St),
+    ProxyContext = construct_proxy_context(Session, St, Options),
+    {ok, CallbackResult} = issue_callback_call('HandlePaymentCallback', Payload, ProxyContext, St, Options),
+    {Response, Result} = handle_callback_result(CallbackResult, Action0, get_target_session(St)),
+    {Response, finish_processing(Result, St, Options)}.
 
-finish_processing(payment, {Events, Action}, St) ->
-    Target = get_target(St),
+finish_processing({Events, Action}, St, Options) ->
     St1 = collapse_changes(Events, St),
     case get_session(Target, St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
@@ -918,9 +922,9 @@ handle_proxy_result(
     Action0,
     Session
 ) ->
-    Events1 = bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
-    {Events3, Action} = handle_proxy_intent(Intent, Action0),
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events2 = hg_proxy_provider:update_proxy_state(ProxyState),
+    {Events3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
     {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
 handle_callback_result(
@@ -935,67 +939,25 @@ handle_proxy_callback_result(
     Action0,
     Session
 ) ->
-    Events1 = bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
-    {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events2 = hg_proxy_provider:update_proxy_state(ProxyState),
+    {Events3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
     {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
 handle_proxy_callback_result(
     #prxprv_PaymentCallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
-    Events1 = bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events2 = hg_proxy_provider:update_proxy_state(ProxyState),
     {wrap_session_events(Events1 ++ Events2, Session), Action0}.
 
 handle_proxy_callback_timeout(Action, Session) ->
     Events = [?session_finished(?session_failed(?operation_timeout()))],
     {wrap_session_events(Events, Session), Action}.
 
-wrap_session_events(SessionEvents, #{target := Target}) ->
-    [?session_ev(Target, Ev) || Ev <- SessionEvents].
-
-bind_transaction(undefined, _Session) ->
-    % no transaction yet
-    [];
-bind_transaction(Trx, #{trx := undefined}) ->
-    % got transaction, nothing bound so far
-    [?trx_bound(Trx)];
-bind_transaction(Trx, #{trx := Trx}) ->
-    % got the same transaction as one which has been bound previously
-    [];
-bind_transaction(Trx, #{trx := TrxWas}) ->
-    % got transaction which differs from the bound one
-    % verify against proxy contracts
-    case Trx#domain_TransactionInfo.id of
-        ID when ID =:= TrxWas#domain_TransactionInfo.id ->
-            [?trx_bound(Trx)];
-        _ ->
-            error(proxy_contract_violated)
-    end.
-
-update_proxy_state(undefined) ->
-    [];
-update_proxy_state(ProxyState) ->
-    [?proxy_st_changed(ProxyState)].
-
-handle_proxy_intent(#'FinishIntent'{status = {success, _}}, Action) ->
-    Events = [?session_finished(?session_succeeded())],
-    {Events, Action};
-
-handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, Action) ->
-    Events = [?session_finished(?session_failed(convert_failure(Failure)))],
-    {Events, Action};
-
-handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
-    Action = hg_machine_action:set_timer(Timer, Action0),
-    Events = [],
-    {Events, Action};
-
-handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
-    Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
-    Events = [?session_suspended() | try_request_interaction(UserInteraction)],
-    {Events, Action}.
+wrap_session_events(SessionEvents, Action) ->
+    hg_proxy_provider:wrap_session_events(SessionEvents, Action).
 
 set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).
@@ -1018,9 +980,9 @@ get_cashflow_plan(St) ->
 
 construct_proxy_context(St) ->
     #prxprv_PaymentContext{
-        session      = construct_session(get_active_session(St)),
-        payment_info = construct_payment_info(St),
-        options      = collect_proxy_options(St)
+        session = construct_session(Session),
+        payment_info = construct_payment_info(Payment, Trx, Options),
+        options = hg_proxy_provider:collect_proxy_options(St)
     }.
 
 construct_session(Session = #{target := Target}) ->

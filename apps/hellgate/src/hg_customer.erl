@@ -165,7 +165,7 @@ unmarshal_history_result(Error) ->
 -spec publish_event(customer_id(), customer_event()) ->
     hg_event_provider:public_event().
 publish_event(CustomerID, Changes) when is_list(Changes) ->
-    {{customer_id, CustomerID}, ?customer_event(unmarshal({list, changes}, Changes))}.
+    {CustomerID, ?customer_event(unmarshal({list, changes}, Changes))}.
 
 %%
 %% hg_machine callbacks

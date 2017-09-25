@@ -5,6 +5,7 @@
 -module(hg_payment_processing).
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 
 -define(NS, <<"payment_processing">>).
 
@@ -36,7 +37,6 @@
 }).
 -type st() :: #st{}.
 -export_type([st/0]).
-
 
 -type rec_payment_tool_id()     :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
@@ -189,8 +189,67 @@ process(Action, St) ->
     Session = get_session(St),
     ProxyContext = construct_proxy_context(Session, St),
     {ok, ProxyResult} = hg_proxy_provider:issue_process_call(ProxyContext, St),
-    Result = handle_proxy_result(ProxyResult, Action, Session),
-    finish_processing(Result, St).
+    Result = handle_proxy_result(ProxyResult, Action, Session).
+
+%%
+
+construct_proxy_context(Session, St) ->
+    #prxprv_RecurrentTokenGenerationContext{
+        session = construct_session(Session),
+        token_info = construct_token_info(St),
+        options = hg_proxy_provider:collect_proxy_options(St)
+    }.
+
+construct_session(Session) ->
+    #prxprv_RecurrentTokenGenerationSession{
+        state = maps:get(proxy_state, Session, undefined)
+    }.
+
+construct_token_info(St) ->
+    Trx = get_trx(St),
+    PaymentTool = get_rec_payment_tool(St),
+    #prxprv_RecurrentTokenInfo{
+        payment_tool = construct_proxy_payment_tool(PaymentTool),
+        trx = Trx
+    }.
+
+get_trx(#st{session = #{trx := Trx}}) ->
+    Trx.
+
+get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
+    RecPaymentTool.
+
+construct_proxy_payment_tool(
+    #payproc_RecurrentPaymentTool{
+        id = ID,
+        created_at = CreatedAt,
+        payment_resource = PaymentResource,
+        rec_token = RecToken
+    }
+) ->
+    #prxprv_RecurrentPaymentTool{
+        id = ID,
+        created_at = CreatedAt,
+        payment_resource = PaymentResource,
+        rec_token = RecToken
+    }.
+
+%%
+
+handle_proxy_result(
+    #prxprv_RecurrentTokenGenerationProxyResult{
+        intent = {_Type, Intent},
+        trx = Trx,
+        next_state = ProxyState,
+        token = Token
+    },
+    Action0,
+    Session
+) ->
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events2 = hg_proxy_provider:update_proxy_state(ProxyState),
+    {Events3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
+    {hg_proxy_provider:wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
 %%
 
