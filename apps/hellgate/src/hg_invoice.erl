@@ -209,12 +209,8 @@ set_invoicing_meta(InvoiceID, PaymentID) ->
     hg_log_scope:set_meta(#{invoice_id => InvoiceID, payment_id => PaymentID}).
 
 compute_shop_terms(Args) ->
-    case hg_woody_wrapper:call('PartyManagement', 'ComputeShopTerms', Args) of
-        {ok, TermSet} ->
-            TermSet;
-        Error ->
-            Error
-    end.
+    {ok, TermSet} = hg_woody_wrapper:call('PartyManagement', 'ComputeShopTerms', Args),
+    TermSet.
 
 %%
 
