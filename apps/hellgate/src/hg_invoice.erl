@@ -161,14 +161,14 @@ handle_function_('Rescind', [UserInfo, InvoiceID, Reason], _Opts) ->
     _ = set_invoicing_meta(InvoiceID),
     call(InvoiceID, {rescind, Reason});
 
-handle_function_('ComputeTerms', [UserInfo, InvoiceID], Opts) ->
+handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
     ShopID = get_shop_id(St),
     PartyID = get_party_id(St),
     Timestamp = get_created_at(St),
-    ShopTerms = compute_shop_terms([UserInfo, PartyID, ShopID, Timestamp], Opts),
+    ShopTerms = compute_shop_terms([UserInfo, PartyID, ShopID, Timestamp]),
     Revision = hg_domain:head(),
     Cash = get_cost(St),
     hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision).
@@ -208,8 +208,14 @@ set_invoicing_meta(InvoiceID) ->
 set_invoicing_meta(InvoiceID, PaymentID) ->
     hg_log_scope:set_meta(#{invoice_id => InvoiceID, payment_id => PaymentID}).
 
-compute_shop_terms(Args, Opts) ->
-    hg_party_woody_handler:handle_function('ComputeShopTerms', Args, Opts).
+compute_shop_terms(Args) ->
+    case hg_woody_wrapper:call('PartyManagement', 'ComputeShopTerms', Args) of
+        {ok, TermSet} ->
+            TermSet;
+        Error ->
+            Error
+    end.
+
 %%
 
 -type tag()               :: dmsl_base_thrift:'Tag'().
