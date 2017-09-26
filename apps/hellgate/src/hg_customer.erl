@@ -369,82 +369,119 @@ assert_shop_operable(Shop) ->
 %%
 
 marshal(Changes) ->
-    marshal({list, change}, Changes).
+    Version = 1,
+    marshal({list, {change, Version}}, Changes).
 
 marshal({list, T}, Vs) when is_list(Vs) ->
     [marshal(T, V) || V <- Vs];
 
 %% Changes
 
-marshal(change, ?customer_created(Customer)) ->
-    [1, #{
+marshal({change, Version}, Change) ->
+    [Version, marshal(change_payload, Change)];
+
+marshal(change_payload, ?customer_created(Customer)) ->
+    #{
         <<"change">>    => <<"created">>,
         <<"customer">>  => marshal(customer, Customer)
-    }];
-marshal(change, ?customer_deleted()) ->
-    [1, #{
+    };
+marshal(change_payload, ?customer_deleted()) ->
+    #{
         <<"change">> => <<"deleted">>
-    }];
-marshal(change, ?customer_status_changed(CustomerStatus)) ->
-    [1, #{
-        <<"change">> => <<"status_changed">>,
+    };
+marshal(change_payload, ?customer_status_changed(CustomerStatus)) ->
+    #{
+        <<"change">> => <<"status">>,
         <<"status">> => marshal(customer_status, CustomerStatus)
-    }];
-marshal(change, ?customer_binding_changed(CustomerBindingID, Payload)) ->
-    [1, #{
-        <<"change">>     => <<"binding_changed">>,
+    };
+marshal(change_payload, ?customer_binding_changed(CustomerBindingID, Payload)) ->
+    #{
+        <<"change">>     => <<"binding">>,
         <<"binding_id">> => marshal(str, CustomerBindingID),
         <<"payload">>    => marshal(binding_change_payload, Payload)
-    }];
+    };
 
 %% Change components
 
-marshal(customer, #payproc_Customer{} = Customer) ->
-    #{
-        <<"id">> => marshal(str, Customer#payproc_Customer.id),
-        <<"owner_id">> => marshal(str, Customer#payproc_Customer.owner_id),
-        <<"shop_id">> => marshal(str, Customer#payproc_Customer.shop_id),
-        <<"status">> => marshal(customer_status, Customer#payproc_Customer.status),
-        <<"created_at">> => marshal(str, Customer#payproc_Customer.created_at),
-        <<"bindings">> => marshal(bindings, Customer#payproc_Customer.bindings),
-        <<"contact_info">> => marshal(contact_info, Customer#payproc_Customer.contact_info),
-        <<"metadata">> => marshal(metadata, Customer#payproc_Customer.metadata),
-        <<"active_binding">> => marshal(str, Customer#payproc_Customer.active_binding)
-    };
+marshal(
+    customer,
+    #payproc_Customer{
+        id             = ID,
+        owner_id       = OwnerID,
+        shop_id        = ShopID,
+        created_at     = CreatedAt,
+        bindings       = Bindings,
+        contact_info   = ContactInfo,
+        metadata       = Metadata,
+        active_binding = ActiveBinding
+    }
+) ->
+    genlib_map:compact(#{
+        <<"id">>         => marshal(str             , ID),
+        <<"owner_id">>   => marshal(str             , OwnerID),
+        <<"shop_id">>    => marshal(str             , ShopID),
+        <<"created_at">> => marshal(str             , CreatedAt),
+        <<"bindings">>   => marshal({list, binding} , Bindings),
+        <<"contact">>    => marshal(contact_info    , ContactInfo),
+        <<"metadata">>   => marshal(metadata        , Metadata),
+        <<"active">>     => marshal(str             , ActiveBinding)
+    });
 
 marshal(customer_status, ?customer_unready()) ->
     <<"unready">>;
 marshal(customer_status, ?customer_ready()) ->
     <<"ready">>;
 
-marshal(bindings, Bindings) ->
-    [marshal(binding, Binding) || Binding <- Bindings];
-
-marshal(binding, #payproc_CustomerBinding{} = CustomerBinding) ->
+marshal(
+    binding,
+    #payproc_CustomerBinding{
+        id                  = ID,
+        rec_payment_tool_id = RecPaymentToolID,
+        payment_resource    = PaymentResource
+    }
+) ->
     #{
-        <<"id">> => marshal(str, CustomerBinding#payproc_CustomerBinding.id),
-        <<"rec_payment_tool_id">> => marshal(str, CustomerBinding#payproc_CustomerBinding.rec_payment_tool_id),
-        <<"payment_resource">> => marshal(disposable_payment_resource, CustomerBinding#payproc_CustomerBinding.payment_resource),
-        <<"status">> => marshal(binding_status, CustomerBinding#payproc_CustomerBinding.status)
+        <<"id">>            => marshal(str                         , ID),
+        <<"recpaytool_id">> => marshal(str                         , RecPaymentToolID),
+        <<"payresource">>   => marshal(disposable_payment_resource , PaymentResource)
     };
 
-marshal(contact_info, #domain_ContactInfo{} = ContactInfo) ->
+marshal(
+    contact_info,
+    #domain_ContactInfo{
+        phone_number = PhoneNumber,
+        email        = Email
+    }
+) ->
     genlib_map:compact(#{
-        <<"phone_number">>  => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
-        <<"email">>         => marshal(str, ContactInfo#domain_ContactInfo.email)
+        <<"phone">> => marshal(str, PhoneNumber),
+        <<"email">> => marshal(str, Email)
     });
 
-marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
+marshal(
+    disposable_payment_resource,
+    #domain_DisposablePaymentResource{
+        payment_tool       = PaymentTool,
+        payment_session_id = PaymentSessionID,
+        client_info        = ClientInfo
+    }
+) ->
     #{
-        <<"payment_tool">>       => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
-        <<"payment_session_id">> => marshal(str, PaymentResource#domain_DisposablePaymentResource.payment_session_id),
-        <<"client_info">>        => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
+        <<"paytool">>     => hg_payment_tool:marshal(PaymentTool),
+        <<"session">>     => marshal(str           , PaymentSessionID),
+        <<"client_info">> => marshal(client_info   , ClientInfo)
     };
 
-marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
+marshal(
+    client_info,
+    #domain_ClientInfo{
+        ip_address  = IPAddress,
+        fingerprint = Fingerprint
+    }
+) ->
     genlib_map:compact(#{
-        <<"ip_address">>    => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
-        <<"fingerprint">>   => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
+        <<"ip">>          => marshal(str, IPAddress),
+        <<"fingerprint">> => marshal(str, Fingerprint)
     });
 
 marshal(binding_status, ?customer_binding_pending()) ->
@@ -453,7 +490,7 @@ marshal(binding_status, ?customer_binding_succeeded()) ->
     <<"succeeded">>;
 marshal(binding_status, ?customer_binding_failed(Failure)) ->
     [
-        <<"succeeded">>,
+        <<"failed">>,
         marshal(failure, Failure)
     ];
 
@@ -464,7 +501,7 @@ marshal(binding_change_payload, ?customer_binding_started(CustomerBinding)) ->
     ];
 marshal(binding_change_payload, ?customer_binding_status_changed(CustomerBindingStatus)) ->
     [
-        <<"status_changed">>,
+        <<"status">>,
         marshal(binding_status, CustomerBindingStatus)
     ];
 
@@ -476,8 +513,8 @@ marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}
         <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
     })];
 
-marshal(metadata, {nl, #json_Null{}}) ->
-    <<"null">>;
+marshal(metadata, Metadata) ->
+    hg_msgpack_marshalling:marshal(json, Metadata);
 
 marshal(_, Other) ->
     Other.
@@ -497,51 +534,55 @@ unmarshal({list, T}, Vs) when is_list(Vs) ->
 
 %% Changes
 
-unmarshal(change, [1, #{
+unmarshal(change, [Version, V]) ->
+    unmarshal({change, Version}, V);
+
+unmarshal({change, 1}, #{
     <<"change">>    := <<"created">>,
     <<"customer">>  := Customer
-}]) ->
+}) ->
     ?customer_created(unmarshal(customer, Customer));
-unmarshal(change, [1, #{
+unmarshal({change, 1}, #{
     <<"change">> := <<"deleted">>
-}]) ->
+}) ->
     ?customer_deleted();
-unmarshal(change, [1, #{
-    <<"change">> := <<"status_changed">>,
+unmarshal({change, 1}, #{
+    <<"change">> := <<"status">>,
     <<"status">> := CustomerStatus
-}]) ->
+}) ->
     ?customer_status_changed(unmarshal(customer_status, CustomerStatus));
-unmarshal(change, [1, #{
-    <<"change">>     := <<"binding_changed">>,
+unmarshal({change, 1}, #{
+    <<"change">>     := <<"binding">>,
     <<"binding_id">> := CustomerBindingID,
     <<"payload">>    := Payload
-}]) ->
+}) ->
     ?customer_binding_changed(
         unmarshal(str, CustomerBindingID),
         unmarshal(binding_change_payload, Payload)
     );
 
-unmarshal(customer, #{
-    <<"id">> := Id,
-    <<"owner_id">> := OwnerId,
-    <<"shop_id">> := ShopId,
-    <<"status">> := Status,
-    <<"created_at">> := CreatedAt,
-    <<"bindings">> := Bindings,
-    <<"contact_info">> := ContactInfo,
-    <<"metadata">> := Metadata,
-    <<"active_binding">> := ActiveBinding
-}) ->
+unmarshal(
+    customer,
+    #{
+        <<"id">>         := ID,
+        <<"owner_id">>   := OwnerID,
+        <<"shop_id">>    := ShopID,
+        <<"created_at">> := CreatedAt,
+        <<"bindings">>   := Bindings,
+        <<"contact">>    := ContactInfo,
+        <<"metadata">>   := Metadata
+    } = V
+) ->
     #payproc_Customer{
-        id = unmarshal(str, Id),
-        owner_id = unmarshal(str, OwnerId),
-        shop_id = unmarshal(str, ShopId),
-        status = unmarshal(customer_status, Status),
-        created_at = unmarshal(str, CreatedAt),
-        bindings = unmarshal(bindings, Bindings),
-        contact_info = unmarshal(contact_info, ContactInfo),
-        metadata = unmarshal(metadata, Metadata),
-        active_binding = unmarshal(str, ActiveBinding)
+        id             = unmarshal(str             , ID),
+        owner_id       = unmarshal(str             , OwnerID),
+        shop_id        = unmarshal(str             , ShopID),
+        status         = ?customer_unready(),
+        created_at     = unmarshal(str             , CreatedAt),
+        bindings       = unmarshal({list, binding} , Bindings),
+        contact_info   = unmarshal(contact_info    , ContactInfo),
+        metadata       = unmarshal(metadata        , Metadata),
+        active_binding = unmarshal(str             , genlib_map:get(<<"active">>, V))
     };
 
 unmarshal(customer_status, <<"unready">>) ->
@@ -549,81 +590,69 @@ unmarshal(customer_status, <<"unready">>) ->
 unmarshal(customer_status, <<"ready">>) ->
     ?customer_ready();
 
-unmarshal(bindings, Bindings) ->
-    [unmarshal(binding, Binding) || Binding <- Bindings];
-
-unmarshal(binding, #{
-    <<"id">> := Id,
-    <<"rec_payment_tool_id">> := RecPaymentToolId,
-    <<"payment_resource">> := PaymentResource,
-    <<"status">> := Status
-}) ->
+unmarshal(
+    binding,
+    #{
+        <<"id">>             := ID,
+        <<"recpaytool_id">>  := RecPaymentToolID,
+        <<"payresource">>    := PaymentResource
+    }
+) ->
     #payproc_CustomerBinding{
-        id = unmarshal(str, Id),
-        rec_payment_tool_id = unmarshal(str, RecPaymentToolId),
-        payment_resource = unmarshal(disposable_payment_resource, PaymentResource),
-        status = unmarshal(binding_status, Status)
+        id                  = unmarshal(str                         , ID),
+        rec_payment_tool_id = unmarshal(str                         , RecPaymentToolID),
+        payment_resource    = unmarshal(disposable_payment_resource , PaymentResource),
+        status              = ?customer_binding_pending()
     };
 
-unmarshal(disposable_payment_resource, #{
-    <<"payment_tool">> := PaymentTool,
-    <<"payment_session_id">> := PaymentSessionId,
-    <<"client_info">> := ClientInfo
-}) ->
+unmarshal(
+    disposable_payment_resource,
+    #{
+        <<"paytool">>     := PaymentTool,
+        <<"session">>     := PaymentSessionID,
+        <<"client_info">> := ClientInfo
+    }
+) ->
     #domain_DisposablePaymentResource{
-        payment_tool = hg_payment_tool:unmarshal(PaymentTool),
-        payment_session_id = unmarshal(str, PaymentSessionId),
-        client_info = unmarshal(client_info, ClientInfo)
+        payment_tool       = hg_payment_tool:unmarshal(PaymentTool),
+        payment_session_id = unmarshal(str           , PaymentSessionID),
+        client_info        = unmarshal(client_info   , ClientInfo)
     };
 
 unmarshal(client_info, ClientInfo) ->
-    IpAddress = maps:get(<<"ip_address">>, ClientInfo, undefined),
-    Fingerprint = maps:get(<<"fingerprint">>, ClientInfo, undefined),
     #domain_ClientInfo{
-        ip_address      = unmarshal(str, IpAddress),
-        fingerprint     = unmarshal(str, Fingerprint)
+        ip_address      = unmarshal(str, genlib_map:get(<<"ip">>, ClientInfo)),
+        fingerprint     = unmarshal(str, genlib_map:get(<<"fingerprint">>, ClientInfo))
     };
 
 unmarshal(binding_status, <<"pending">>) ->
     ?customer_binding_pending();
 unmarshal(binding_status, <<"succeeded">>) ->
     ?customer_binding_succeeded();
-unmarshal(binding_status, [
-    <<"succeeded">>,
-    Failure
-]) ->
+unmarshal(binding_status, [<<"failed">>, Failure]) ->
     ?customer_binding_failed(unmarshal(failure, Failure));
 
-unmarshal(binding_change_payload, [
-    <<"started">>,
-    CustomerBinding
-]) ->
-    ?customer_binding_started(unmarshal(binding, CustomerBinding));
-unmarshal(binding_change_payload, [
-    <<"status_changed">>,
-    CustomerBindingStatus
-]) ->
-    ?customer_binding_status_changed(unmarshal(binding_status, CustomerBindingStatus));
+unmarshal(binding_change_payload, [<<"started">>, Binding]) ->
+    ?customer_binding_started(unmarshal(binding, Binding));
+unmarshal(binding_change_payload, [<<"status">>, BindingStatus]) ->
+    ?customer_binding_status_changed(unmarshal(binding_status, BindingStatus));
 
 unmarshal(failure, <<"operation_timeout">>) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]) ->
-    Description = maps:get(<<"description">>, ExternalFailure, undefined),
     {external_failure, #domain_ExternalFailure{
         code        = unmarshal(str, Code),
-        description = unmarshal(str, Description)
+        description = unmarshal(str, genlib_map:get(<<"description">>, ExternalFailure))
     }};
 
 unmarshal(contact_info, ContactInfo) ->
-    PhoneNumber = maps:get(<<"phone_number">>, ContactInfo, undefined),
-    Email = maps:get(<<"email">>, ContactInfo, undefined),
     #domain_ContactInfo{
-        phone_number    = unmarshal(str, PhoneNumber),
-        email           = unmarshal(str, Email)
+        phone_number    = unmarshal(str, genlib_map:get(<<"phone">>, ContactInfo)),
+        email           = unmarshal(str, genlib_map:get(<<"email">>, ContactInfo))
     };
 
-unmarshal(metadata, <<"null">>) ->
-    {nl, #json_Null{}};
+unmarshal(metadata, Metadata) ->
+    hg_msgpack_marshalling:unmarshal(json, Metadata);
 
 unmarshal(_, Other) ->
     Other.
