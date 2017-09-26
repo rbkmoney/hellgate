@@ -63,6 +63,10 @@
     {processed, {domain_InvoicePaymentProcessed}}).
 -define(legacy_failed(Failure),
     {failed, {domain_InvoicePaymentFailed, Failure}}).
+-define(legacy_captured(),
+    {captured, {domain_InvoicePaymentCaptured}}).
+-define(legacy_cancelled(),
+    {cancelled, {domain_InvoicePaymentCancelled}}).
 -define(legacy_captured(Reason),
     {captured, {domain_InvoicePaymentCaptured, Reason}}).
 -define(legacy_cancelled(Reason),
