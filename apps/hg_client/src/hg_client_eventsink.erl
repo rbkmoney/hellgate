@@ -65,8 +65,10 @@ pull_events(N, Timeout, Client) when N > 0 ->
 
 %%
 
+-type event() :: dmsl_payment_processing_thrift:'Event'().
+
 -record(st, {
-    poller    :: hg_client_event_poller:t(),
+    poller    :: hg_client_event_poller:st(event()),
     client    :: hg_client_api:t()
 }).
 
@@ -79,7 +81,10 @@ pull_events(N, Timeout, Client) when N > 0 ->
 init(ApiClient) ->
     {ok, #st{
         client = ApiClient,
-        poller = hg_client_event_poller:new(eventsink, 'GetEvents', [])
+        poller = hg_client_event_poller:new(
+            {eventsink, 'GetEvents', []},
+            fun (Event) -> Event#payproc_Event.id end
+        )
     }}.
 
 -spec handle_call(term(), callref(), st()) ->

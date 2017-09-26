@@ -282,10 +282,12 @@ map_result_error({error, Error}) ->
 
 %%
 
+-type event() :: dmsl_payment_processing_thrift:'Event'().
+
 -record(st, {
     user_info :: user_info(),
     party_id  :: party_id(),
-    poller    :: hg_client_event_poller:t(),
+    poller    :: hg_client_event_poller:st(event()),
     client    :: hg_client_api:t()
 }).
 
@@ -300,7 +302,10 @@ init({UserInfo, PartyID, ApiClient}) ->
         user_info = UserInfo,
         party_id = PartyID,
         client = ApiClient,
-        poller = hg_client_event_poller:new(party_management, 'GetEvents', [UserInfo, PartyID])
+        poller = hg_client_event_poller:new(
+            {party_management, 'GetEvents', [UserInfo, PartyID]},
+            fun (Event) -> Event#payproc_Event.id end
+        )
     }}.
 
 -spec handle_call(term(), callref(), st()) ->

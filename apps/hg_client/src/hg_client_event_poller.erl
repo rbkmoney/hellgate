@@ -1,61 +1,74 @@
 -module(hg_client_event_poller).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
--export([new/3]).
+-export([new/2]).
 -export([poll/4]).
 
--export_type([t/0]).
+-export_type([st/1]).
 
 %%
 
--type events() :: [dmsl_payment_processing_thrift:'Event'()].
+-type event_id() :: integer().
 
--type api_call() :: {Name :: atom(), woody:func(), [_]}.
--opaque t() :: {api_call(), undefined | integer()}.
+-type rpc() :: {Name :: atom(), woody:func(), [_]}.
+
+-opaque st(Event) :: #{
+    rpc           := rpc(),
+    get_event_id  := get_event_id(Event),
+    last_event_id => integer()
+}.
+
+-type get_event_id(Event) :: fun((Event) -> event_id()).
 
 -define(POLL_INTERVAL, 1000).
 
--spec new(Name :: atom(), woody:func(), [_]) ->
-    t().
+-spec new(rpc(), get_event_id(Event)) ->
+    st(Event).
 
-new(Name, Function, Args) ->
-    {{Name, Function, Args}, undefined}.
+new(RPC, GetEventID) ->
+    #{
+        rpc          => RPC,
+        get_event_id => GetEventID
+    }.
 
--spec poll(pos_integer(), pos_integer(), hg_client_api:t(), t()) ->
-    {events() | {exception | error, _}, hg_client_api:t(), t()}.
+-spec poll(pos_integer(), pos_integer(), hg_client_api:t(), st(Event)) ->
+    {[Event] | {exception | error, _}, hg_client_api:t(), st(Event)}.
 
 poll(N, Timeout, Client, St) ->
-    poll(N, Timeout, [], Client, St, St).
+    poll(N, Timeout, [], Client, St).
 
-poll(_, Timeout, Acc, Client, _, St) when Timeout =< 0 ->
+poll(_, Timeout, Acc, Client, St) when Timeout =< 0 ->
     {Acc, Client, St};
-poll(N, Timeout, Acc, Client, StWas, {Call = {Name, Function, Args}, After}) ->
+poll(N, Timeout, Acc, Client, St) ->
     StartTs = genlib_time:ticks(),
-    Range = construct_range(After, N, Acc),
-    {Result, ClientNext} = hg_client_api:call(Name, Function, Args ++ [Range], Client),
+    Range = construct_range(St, N),
+    {Result, ClientNext} = call(Range, Client, St),
     case Result of
         {ok, Events} when length(Events) == N ->
-            {Acc ++ Events, ClientNext, {Call, get_last_event_id(After, Events)}};
+            StNext = update_last_event_id(Events, St),
+            {Acc ++ Events, ClientNext, StNext};
         {ok, Events} when is_list(Events) ->
-            StNext = {Call, get_last_event_id(After, Events)},
             TimeoutLeft = wait_timeout(StartTs, Timeout),
-            poll(N - length(Events), TimeoutLeft, Acc ++ Events, ClientNext, StWas, StNext);
+            StNext = update_last_event_id(Events, St),
+            poll(N - length(Events), TimeoutLeft, Acc ++ Events, ClientNext, StNext);
         _Error ->
-            {Result, ClientNext, StWas}
+            {Result, ClientNext, St}
     end.
 
-construct_range(After, N, []) ->
-    #payproc_EventRange{'after' = After, limit = N};
-construct_range(_After, N, Events) ->
-    #payproc_Event{id = LastEvent} = lists:last(Events),
-    #payproc_EventRange{'after' = LastEvent, limit = N}.
+construct_range(St, N) ->
+    #payproc_EventRange{'after' = get_last_event_id(St), limit = N}.
 
 wait_timeout(StartTs, TimeoutWas) ->
     _ = timer:sleep(?POLL_INTERVAL),
     TimeoutWas - (genlib_time:ticks() - StartTs) div 1000.
 
-get_last_event_id(After, []) ->
-    After;
-get_last_event_id(_After, Events) ->
-    #payproc_Event{id = EventID} = lists:last(Events),
-    EventID.
+update_last_event_id([], St) ->
+    St;
+update_last_event_id(Events, St = #{get_event_id := GetEventID}) ->
+    St#{last_event_id => GetEventID(lists:last(Events))}.
+
+call(Range, Client, #{rpc := {Name, Function, Args}}) ->
+    hg_client_api:call(Name, Function, Args ++ [Range], Client).
+
+get_last_event_id(St) ->
+    maps:get(last_event_id, St, undefined).

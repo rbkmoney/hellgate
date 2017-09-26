@@ -83,9 +83,11 @@ map_result_error({error, Error}) ->
 
 %%
 
+-type event() :: dmsl_payment_processing_thrift:'Event'().
+
 -record(st, {
     user_info :: user_info(),
-    pollers   :: #{id() => hg_client_event_poller:t()},
+    pollers   :: #{id() => hg_client_event_poller:st(event())},
     client    :: hg_client_api:t()
 }).
 
@@ -153,7 +155,13 @@ code_change(_OldVsn, _State, _Extra) ->
 %%
 
 get_poller(ID, #st{user_info = UserInfo, pollers = Pollers}) ->
-    maps:get(ID, Pollers, hg_client_event_poller:new(invoice_templating, 'GetEvents', [UserInfo, ID])).
+    maps:get(ID, Pollers, construct_poller(UserInfo, ID)).
 
 set_poller(ID, Poller, St = #st{pollers = Pollers}) ->
     St#st{pollers = maps:put(ID, Poller, Pollers)}.
+
+construct_poller(UserInfo, ID) ->
+    hg_client_event_poller:new(
+        {invoice_templating, 'GetEvents', [UserInfo, ID]},
+        fun (Event) -> Event#payproc_Event.id end
+    ).
