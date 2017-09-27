@@ -15,7 +15,6 @@
 
 -type terms()    :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
 -type route()    :: dmsl_domain_thrift:'InvoicePaymentRoute'().
--type t()        :: dmsl_domain_thrift:'PaymentRoute'().
 
 -spec choose(hg_selector:varset(), hg_domain:revision()) ->
     route() | undefined.
@@ -76,17 +75,6 @@ score_risk_coverage({_Provider, {_TerminalRef, Terminal}}, VS) ->
     RiskScore = getv(risk_score, VS),
     RiskCoverage = Terminal#domain_Terminal.risk_coverage,
     math:exp(-hg_inspector:compare_risk_score(RiskCoverage, RiskScore)).
-
-choose_provider_terminal([{ProviderRef, [TerminalRef | _]} | _], _) ->
-    #domain_PaymentRoute{
-        provider = ProviderRef,
-        terminal = TerminalRef
-    };
-choose_provider_terminal([{_ProviderRef, []} | Rest], VS) ->
-    choose_provider_terminal(Rest, VS);
-choose_provider_terminal([], _) ->
-    undefined.
-
 
 %%
 

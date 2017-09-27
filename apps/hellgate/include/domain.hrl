@@ -7,7 +7,7 @@
     #domain_Cash{amount = Amount, currency = ?currency(SymCode)}).
 
 -define(route(ProviderRef, TerminalRef),
-    #domain_InvoicePaymentRoute{
+    #domain_PaymentRoute{
         provider = ProviderRef,
         terminal = TerminalRef
     }).

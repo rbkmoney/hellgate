@@ -28,8 +28,6 @@
 -export([publish_event/2]).
 
 %% Types
->>>>>>> HG-231: Add start_binding function
-
 -record(st, {
     rec_payment_tool :: undefined | rec_payment_tool(),
     route            :: undefined | route(),
@@ -189,81 +187,7 @@ process(Action, St) ->
     Result = handle_proxy_result(ProxyResult, Action, Session),
     finish_processing(Result, St).
 
-%%
 
-construct_proxy_context(Session, St) ->
-    #prxprv_RecurrentTokenGenerationContext{
-        session = construct_session(Session),
-        token_info = construct_token_info(St),
-        options = hg_proxy_provider:collect_proxy_options(St)
-    }.
-
-construct_session(Session) ->
-    #prxprv_RecurrentTokenGenerationSession{
-        state = maps:get(proxy_state, Session, undefined)
-    }.
-
-construct_token_info(St) ->
-    Trx = get_trx(St),
-    PaymentTool = get_rec_payment_tool(St),
-    #prxprv_RecurrentTokenInfo{
-        payment_tool = construct_proxy_payment_tool(PaymentTool),
-        trx = Trx
-    }.
-
-get_trx(#st{session = #{trx := Trx}}) ->
-    Trx.
-
-set_trx(Trx, St = #st{}) ->
-    Session = get_session(St),
-    St#st{session = Session#{trx => Trx}}.
-
-get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
-    RecPaymentTool.
-
-construct_proxy_payment_tool(
-    #payproc_RecurrentPaymentTool{
-        id = ID,
-        created_at = CreatedAt,
-        payment_resource = PaymentResource,
-        rec_token = RecToken
-    }
-) ->
-    #prxprv_RecurrentPaymentTool{
-        id = ID,
-        created_at = CreatedAt,
-        payment_resource = PaymentResource,
-        rec_token = RecToken
-    }.
-
-%%
-
-handle_proxy_result(
-    #prxprv_RecurrentTokenGenerationProxyResult{
-        intent = {_Type, Intent},
-        trx = Trx,
-        next_state = ProxyState,
-        token = Token
-    },
-    Action0,
-    Session
-) ->
-    Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
-    {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
-    Changes = Changes1 ++ Changes2 ++ Changes3,
-    case Intent of
-        #'FinishIntent'{status = {success, _}} ->
-            make_proxy_result(Changes, Session, Action, Token);
-        _ ->
-            make_proxy_result(Changes, Session, Action)
-    end.
-
-make_proxy_result(Changes, Session, Action) ->
-    make_proxy_result(Changes, Session, Action, undefined).
-
-make_proxy_result(Changes, Session, Action, Token) ->
-    {hg_proxy_provider:wrap_session_events(Changes, Session), Action, Token}.
 
 %%
 
@@ -353,9 +277,6 @@ finish_processing({Changes, Action, Token}, St) ->
         #{} ->
             {next, {Changes, Action}}
     end.
-
-apply_changes(Changes) ->
-    apply_changes(Changes, undefined).
 
 apply_changes(Changes, St) ->
     lists:foldl(fun apply_change/2, St, Changes).

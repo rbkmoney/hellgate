@@ -95,7 +95,6 @@
 -type party()             :: dmsl_domain_thrift:'Party'().
 -type invoice()           :: dmsl_domain_thrift:'Invoice'().
 -type payment()           :: dmsl_domain_thrift:'InvoicePayment'().
--type payment_params()    :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id()        :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type refund()            :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type refund_id()         :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
@@ -105,7 +104,7 @@
 -type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 -type target()            :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
 -type risk_score()        :: dmsl_domain_thrift:'RiskScore'().
--type route()             :: dmsl_domain_thrift:'PaymentRoute'().
+-type route()             :: dmsl_domain_thrift:'InvoicePaymentRoute'().
 -type cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
 -type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
 -type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
@@ -174,11 +173,11 @@ get_activity(#st{activity = Activity}) ->
 %%
 
 -type opts() :: #{
-    party   => party(),
+    party => party(),
     invoice => invoice()
 }.
 
--spec init(payment_id(), payment_params(), opts()) ->
+-spec init(payment_id(), _, opts()) ->
     {payment(), hg_machine:result()}.
 
 init(PaymentID, PaymentParams, Opts) ->
@@ -190,7 +189,7 @@ init(PaymentID, PaymentParams, Opts) ->
         }
     ).
 
--spec init_(payment_id(), payment_params(), opts()) ->
+-spec init_(payment_id(), _, opts()) ->
     {st(), hg_machine:result()}.
 
 init_(PaymentID, Params, Opts) ->
@@ -301,27 +300,6 @@ validate_hold_lifetime(
 validate_hold_lifetime(undefined, _VS, _Revision) ->
     throw_invalid_request(<<"Holds are not available">>).
 
-validate_payment_params(
-    #payproc_InvoicePaymentParams{
-        payer = ?payment_resource_payer(
-            #domain_DisposablePaymentResource{payment_tool = PaymentTool},
-            _ContactInfo
-        )
-    },
-    Terms,
-    VS
-) ->
-    VS1 = validate_payment_tool(PaymentTool, Terms, VS),
-    VS1#{payment_tool => PaymentTool};
-validate_payment_params(
-    #payproc_InvoicePaymentParams{
-        payer = ?customer_payer(CustomerID)
-    },
-    _,
-    VS
-) ->
-    VS#{payment_tool => get_rec_token(CustomerID)}.
-
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
     _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
@@ -347,21 +325,14 @@ validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}};
 validate_risk_score(fatal, _VS) ->
     throw_invalid_request(<<"Fatal error">>).
-validate_route(_Payment, Route = #domain_PaymentRoute{}) ->
-    Route;
-validate_route(Payment, undefined) ->
-    error({misconfiguration, {'No route found for a payment', Payment}}).
 
-validate_route(Route = #domain_InvoicePaymentRoute{}, _Payment, VS) ->
+validate_route(Route = #domain_PaymentRoute{}, _Payment, VS) ->
     {Route, VS};
 validate_route(undefined, Payment, _VS) ->
     error({misconfiguration, {'No route found for a payment', Payment}}).
 
 collect_varset(St, Opts) ->
     collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
-
-get_rec_token(_CustomerID) ->
-    ok.
 
 collect_varset(Party, Shop = #domain_Shop{
     category = Category,
@@ -380,19 +351,6 @@ collect_varset(Party, Shop, Payment, VS) ->
         cost         => get_payment_cost(Payment),
         payment_tool => get_payment_tool(Payment)
     }.
-
-get_payment_tool({payment_resource, #domain_PaymentResourcePayer{resource = Resource}}) ->
-    Resource#domain_DisposablePaymentResource.payment_tool;
-get_payment_tool({payment_resource,#domain_CustomerPayer{customer_id = CustomerId}}) ->
-    % Или все таки тут надо докопаться до источника рек токена (disposablepaymentresource)?
-    % Customer = get_customer(CustomerId),
-    % ActiveBindingId = get_active_binding_id(Customer),
-    % ActiveBinding = get_active_binding(ActiveBindingId),
-    % RecPaymentToolId = get_rec_payment_tool_id(ActiveBinding),
-    % RecPaymentTool = get_rec_payment_tool(RecPaymentToolId),
-    % RecToken = get_rec_token(RecPaymentTool),
-    % RecToken.
-    CustomerId.
 
 %%
 
@@ -849,21 +807,17 @@ process_finished_session(St) ->
     {ok, Result} = start_session(Target),
     {done, Result}.
 
-process(Action0, St, Options) ->
-    Session = get_target_session(St),
-    ProxyContext = construct_proxy_context(Session, St, Options),
-    {ok, ProxyResult} = hg_proxy_provider:issue_process_call('ProcessPayment', ProxyContext, St, Options),
-    Result = handle_proxy_result(ProxyResult, Action0, Session),
-    finish_processing(Result, St, Options).
+handle_callback(Payload, Action, St) ->
+    ProxyContext = construct_proxy_context(St),
+    {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St),
+    {Response, Result} = handle_callback_result(CallbackResult, Action, get_active_session(St)),
+    {Response, finish_processing(Result, St)}.
 
-handle_callback(Payload, Action0, St, Options) ->
-    Session = get_target_session(St),
-    ProxyContext = construct_proxy_context(Session, St, Options),
-    {ok, CallbackResult} = hg_proxy_provider:issue_callback_call('HandlePaymentCallback', Payload, ProxyContext, St, Options),
-    {Response, Result} = handle_callback_result(CallbackResult, Action0, get_target_session(St)),
-    {Response, finish_processing(Result, St, Options)}.
+finish_processing(Result, St) ->
+    finish_processing(get_activity(St), Result, St).
 
-finish_processing({Events, Action}, St, Options) ->
+finish_processing(payment, {Events, Action}, St) ->
+    Target = get_target(St),
     St1 = collapse_changes(Events, St),
     case get_session(Target, St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
@@ -922,9 +876,9 @@ handle_proxy_result(
     Action0,
     Session
 ) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = hg_proxy_provider:update_proxy_state(ProxyState),
-    {Events3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
+    Events1 = bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
+    {Events3, Action} = handle_proxy_intent(Intent, Action0),
     {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
 handle_callback_result(
@@ -939,28 +893,78 @@ handle_proxy_callback_result(
     Action0,
     Session
 ) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = hg_proxy_provider:update_proxy_state(ProxyState),
-    {Events3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
+    Events1 = bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
+    {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
     {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
 handle_proxy_callback_result(
     #prxprv_PaymentCallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = hg_proxy_provider:update_proxy_state(ProxyState),
+    Events1 = bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
     {wrap_session_events(Events1 ++ Events2, Session), Action0}.
 
 handle_proxy_callback_timeout(Action, Session) ->
     Events = [?session_finished(?session_failed(?operation_timeout()))],
     {wrap_session_events(Events, Session), Action}.
 
-wrap_session_events(SessionEvents, Action) ->
-    hg_proxy_provider:wrap_session_events(SessionEvents, Action).
+wrap_session_events(SessionEvents, #{target := Target}) ->
+    [?session_ev(Target, Ev) || Ev <- SessionEvents].
 
-commit_plan(St, Options) ->
-    finalize_plan(fun hg_accounting:commit/2, St, Options).
+bind_transaction(undefined, _Session) ->
+    % no transaction yet
+    [];
+bind_transaction(Trx, #{trx := undefined}) ->
+    % got transaction, nothing bound so far
+    [?trx_bound(Trx)];
+bind_transaction(Trx, #{trx := Trx}) ->
+    % got the same transaction as one which has been bound previously
+    [];
+bind_transaction(Trx, #{trx := TrxWas}) ->
+    % got transaction which differs from the bound one
+    % verify against proxy contracts
+    case Trx#domain_TransactionInfo.id of
+        ID when ID =:= TrxWas#domain_TransactionInfo.id ->
+            [?trx_bound(Trx)];
+        _ ->
+            error(proxy_contract_violated)
+    end.
+
+update_proxy_state(undefined) ->
+    [];
+update_proxy_state(ProxyState) ->
+    [?proxy_st_changed(ProxyState)].
+
+handle_proxy_intent(#'FinishIntent'{status = {success, _}}, Action) ->
+    Events = [?session_finished(?session_succeeded())],
+    {Events, Action};
+
+handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, Action) ->
+    Events = [?session_finished(?session_failed(convert_failure(Failure)))],
+    {Events, Action};
+
+handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
+    Action = hg_machine_action:set_timer(Timer, Action0),
+    Events = [],
+    {Events, Action};
+
+handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
+    Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
+    Events = [?session_suspended() | try_request_interaction(UserInteraction)],
+    {Events, Action}.
+
+set_timer(Timer, Action) ->
+    hg_machine_action:set_timer(Timer, Action).
+
+try_request_interaction(undefined) ->
+    [];
+try_request_interaction(UserInteraction) ->
+    [?interaction_requested(UserInteraction)].
+
+commit_payment_cashflow(St) ->
+    hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
 
 rollback_payment_cashflow(St) ->
     hg_accounting:rollback(construct_payment_plan_id(St), get_cashflow_plan(St)).
@@ -972,9 +976,9 @@ get_cashflow_plan(St) ->
 
 construct_proxy_context(St) ->
     #prxprv_PaymentContext{
-        session = construct_session(Session),
-        payment_info = construct_payment_info(Payment, Trx, Options),
-        options = hg_proxy_provider:collect_proxy_options(St)
+        session      = construct_session(get_active_session(St)),
+        payment_info = construct_payment_info(St),
+        options      = collect_proxy_options(St)
     }.
 
 construct_session(Session = #{target := Target}) ->
@@ -1016,21 +1020,9 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         trx = Trx,
-        payment_resource = get_payment_resource(Payer),
-        cost = construct_proxy_cash(Cost),
-        contact_info = get_contact_info(Payer)
+        payer = Payer,
+        cost = construct_proxy_cash(Cost)
     }.
-
-get_payment_resource({payment_resource, #domain_PaymentResourcePayer{resource = Resource}}) ->
-    {disposable_payment_resource, Resource};
-get_payment_resource({customer, #domain_CustomerPayer{customer_id = CustomerID}}) ->
-    get_rec_payment_resource(CustomerID).
-
-get_contact_info({payment_resource, #domain_PaymentResourcePayer{contact_info = ContactInfo}}) ->
-    ContactInfo.
-
-get_rec_payment_resource(_CustomerID) ->
-    ok.
 
 construct_proxy_invoice(
     #domain_Invoice{
@@ -1078,7 +1070,6 @@ construct_proxy_cash(#domain_Cash{
         currency = hg_domain:get(Revision, {currency, CurrencyRef})
     }.
 
-<<<<<<< HEAD
 construct_proxy_refund(#refund_st{
     refund  = #domain_InvoicePaymentRefund{id = ID, created_at = CreatedAt},
     session = Session
@@ -1117,8 +1108,6 @@ collect_proxy_options(
 convert_failure(#'Failure'{code = Code, description = Description}) ->
     ?external_failure(Code, Description).
 
-=======
->>>>>>> HG-231: Add proxy interaction
 %%
 
 get_party(#{party := Party}) ->
@@ -1379,7 +1368,7 @@ get_call_options(St) ->
 get_route(#st{route = Route}) ->
     Route.
 
-get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
+get_route_provider_ref(#domain_InvoicePaymentRoute{provider = ProviderRef}) ->
     ProviderRef.
 
 get_route_provider(Route, Revision) ->
@@ -1655,24 +1644,12 @@ marshal(refund_status, ?refund_failed(Failure)) ->
 
 %%
 
-marshal(payer, ?payment_resource_payer(Resource, ContactInfo)) ->
+marshal(payer, #domain_Payer{} = Payer) ->
     #{
-        <<"type">>           => <<"payment_resource_payer">>,
-        <<"resource">>       => marshal(disposable_payment_resource, Resource),
-        <<"contact_info">>   => marshal(contact_info, ContactInfo)
-    };
-
-marshal(payer, ?customer_payer(CustomerID)) ->
-    #{
-        <<"type">>          => <<"customer_payer">>,
-        <<"customer_id">>   => marshal(str, CustomerID)
-    };
-
-marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
-    #{
-        <<"payment_tool">>       => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
-        <<"payment_session_id">> => marshal(str, PaymentResource#domain_DisposablePaymentResource.payment_session_id),
-        <<"client_info">>        => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
+        <<"payment_tool">>  => hg_payment_tool:marshal(Payer#domain_Payer.payment_tool),
+        <<"session_id">>    => marshal(str, Payer#domain_Payer.session_id),
+        <<"client_info">>   => marshal(client_info, Payer#domain_Payer.client_info),
+        <<"contact_info">>  => marshal(contact_info, Payer#domain_Payer.contact_info)
     };
 
 marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
@@ -1818,7 +1795,7 @@ unmarshal(payment, #{
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
         cost            = hg_cash:unmarshal(Cash),
-        payer           = unmarshal(payer, [2, Payer]),
+        payer           = unmarshal(payer, Payer),
         status          = ?pending(),
         flow            = unmarshal(flow, Flow),
         context         = hg_content:unmarshal(Context)
@@ -1833,7 +1810,7 @@ unmarshal(payment,
         domain_revision = unmarshal(int, Revision),
         status          = unmarshal(status, Status),
         cost            = hg_cash:unmarshal([1, Cash]),
-        payer           = unmarshal(payer, [1, Payer]),
+        payer           = unmarshal(payer, Payer),
         flow            = ?invoice_payment_flow_instant(),
         context         = hg_content:unmarshal(Context)
     };
@@ -2021,59 +1998,24 @@ unmarshal(refund_status, [<<"failed">>, Failure]) ->
 %% Payer
 
 unmarshal(payer, #{
-    <<"type">>           := <<"payment_resource_payer">>,
-    <<"resource">>       := Resource,
-    <<"contact_info">>   := ContactInfo
-}) ->
-    ?payment_resource_payer(
-        unmarshal(disposable_payment_resource, Resource),
-        unmarshal(contact_info, ContactInfo)
-    );
-
-unmarshal(payer, [2, #{
-    <<"type">>         := <<"customer_payer">>,
-    <<"customer_id">>  := CustomerID
-}]) ->
-    ?customer_payer(
-        unmarshal(str, CustomerID)
-    );
-
-unmarshal(payer, [1, #{
     <<"payment_tool">>  := PaymentTool,
     <<"session_id">>    := SessionId,
     <<"client_info">>   := ClientInfo,
-    <<"contact_info">>  := ContactInfo
-}]) ->
-    Resource = #{
-        <<"payment_tool">>         => PaymentTool,
-        <<"payment_session_id">>   => SessionId,
-        <<"client_info">>          => ClientInfo
-    },
-    ?payment_resource_payer(
-        unmarshal(disposable_payment_resource, Resource),
-        unmarshal(contact_info, ContactInfo)
-    );
-
-unmarshal(payer, [1, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo)]) ->
-    Resource = #{
-        <<"payment_tool">>         => PaymentTool,
-        <<"payment_session_id">>   => SessionId,
-        <<"client_info">>          => ClientInfo
-    },
-    ?payment_resource_payer(
-        unmarshal(disposable_payment_resource, Resource),
-        unmarshal(contact_info, ContactInfo)
-    );
-
-unmarshal(disposable_payment_resource, #{
-    <<"payment_tool">> := PaymentTool,
-    <<"payment_session_id">> := PaymentSessionId,
-    <<"client_info">> := ClientInfo
+    <<"contact_info">>  := ContractInfo
 }) ->
-    #domain_DisposablePaymentResource{
-        payment_tool = hg_payment_tool:unmarshal(PaymentTool),
-        payment_session_id = unmarshal(str, PaymentSessionId),
-        client_info = unmarshal(client_info, ClientInfo)
+    #domain_Payer{
+        payment_tool    = hg_payment_tool:unmarshal(PaymentTool),
+        session_id      = unmarshal(str, SessionId),
+        client_info     = unmarshal(client_info, ClientInfo),
+        contact_info    = unmarshal(contact_info, ContractInfo)
+    };
+
+unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContractInfo)) ->
+    #domain_Payer{
+        payment_tool    = hg_payment_tool:unmarshal([1, PaymentTool]),
+        session_id      = unmarshal(str, SessionId),
+        client_info     = unmarshal(client_info, ClientInfo),
+        contact_info    = unmarshal(contact_info, ContractInfo)
     };
 
 %% Client info
@@ -2100,9 +2042,9 @@ unmarshal(contact_info, ?legacy_contract_info(PhoneNumber, Email)) ->
         email           = unmarshal(str, Email)
     };
 
-unmarshal(contact_info, ContactInfo) ->
-    PhoneNumber = maps:get(<<"phone_number">>, ContactInfo, undefined),
-    Email = maps:get(<<"email">>, ContactInfo, undefined),
+unmarshal(contact_info, ContractInfo) ->
+    PhoneNumber = maps:get(<<"phone_number">>, ContractInfo, undefined),
+    Email = maps:get(<<"email">>, ContractInfo, undefined),
     #domain_ContactInfo{
         phone_number    = unmarshal(str, PhoneNumber),
         email           = unmarshal(str, Email)
