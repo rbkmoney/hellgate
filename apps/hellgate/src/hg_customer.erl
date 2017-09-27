@@ -5,6 +5,7 @@
 -module(hg_customer).
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include("customer_events.hrl").
 
 -define(NS, <<"customer">>).
 
@@ -29,7 +30,8 @@
 %% Types
 
 -record(st, {
-    customer :: undefined | customer()
+    customer       :: undefined | customer(),
+    active_binding :: undefined | binding_id()
 }).
 -type st() :: #st{}.
 
@@ -63,25 +65,38 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     ok = assert_party_shop_operable(Shop, Party),
     ok = start(CustomerID, CustomerParams),
     get_customer(get_state(CustomerID));
+
 handle_function_('Get', [CustomerID], _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
     ok = assert_customer_accessible(St),
     get_customer(St);
+
 handle_function_('Delete', [CustomerID], _Opts) ->
     ok = set_meta(CustomerID),
     call(CustomerID, delete);
+
 handle_function_('StartBinding', [CustomerID, CustomerBindingParams], _Opts) ->
     ok = set_meta(CustomerID),
     call(CustomerID, {start_binding, CustomerBindingParams});
+
+handle_function_('GetActiveBinding', [CustomerID], _Opts) ->
+    ok = set_meta(CustomerID),
+    St = get_state(CustomerID),
+    ok = assert_customer_accessible(St),
+    case try_get_active_binding(St) of
+        Binding = #payproc_CustomerBinding{} ->
+            Binding;
+        undefined ->
+            throw(?invalid_customer_status(get_customer_status(get_customer(St))))
+    end;
+
 handle_function_('GetEvents', [CustomerID, Range], _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_accessible(get_initial_state(CustomerID)),
     get_public_history(CustomerID, Range).
 
 %%
-
--include("customer_events.hrl").
 
 get_party(PartyID) ->
     hg_party_machine:get_party(PartyID).
@@ -225,21 +240,17 @@ handle_result(Params) ->
 
 start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
-    {Binding, {Changes, Action}} = init_binding(BindingID, BindingParams),
-    #{
-        response => Binding,
-        changes  => Changes,
-        action   => Action
-    }.
-
-init_binding(BindingID, BindingParams) ->
     % RecPaymentTool = hg_payment_processing:start_rec_payment_tool(),
     % RecPaymentToolID = get_rec_payment_tool_id(RecPaymentTool),
     RecPaymentToolID = <<"tsL9R7G7Iu">>,
     Binding = create_binding(BindingID, BindingParams, RecPaymentToolID),
     Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding))],
     Action = hg_machine_action:new(),
-    {Binding, {Changes, Action}}.
+    #{
+        response => Binding,
+        changes  => Changes,
+        action   => Action
+    }.
 
 create_binding(BindingID, BindingParams, RecPaymentToolID) ->
     #payproc_CustomerBinding{
@@ -289,8 +300,14 @@ merge_change(?customer_status_changed(Status), St) ->
     set_customer(Customer#payproc_Customer{status = Status}, St);
 merge_change(?customer_binding_changed(BindingID, Payload), St) ->
     Customer = get_customer(St),
-    Binding = try_get_customer_binding(BindingID, Customer),
-    set_customer(set_customer_binding(merge_binding_change(Payload, Binding), Customer), St).
+    Binding = try_get_binding(BindingID, Customer),
+    St1 = set_customer(set_binding(merge_binding_change(Payload, Binding), Customer), St),
+    case get_binding_status(Binding) of
+        ?customer_binding_succeeded() ->
+            set_active_binding_id(get_binding_id(Binding), St1);
+        _ ->
+            St1
+    end.
 
 merge_binding_change(?customer_binding_started(Binding), undefined) ->
     Binding;
@@ -309,7 +326,10 @@ get_customer(#st{customer = Customer}) ->
 set_customer(Customer, St = #st{}) ->
     St#st{customer = Customer}.
 
-try_get_customer_binding(BindingID, #payproc_Customer{bindings = Bindings}) ->
+get_customer_status(#payproc_Customer{status = Status}) ->
+    Status.
+
+try_get_binding(BindingID, #payproc_Customer{bindings = Bindings}) ->
     case lists:keyfind(BindingID, #payproc_CustomerBinding.id, Bindings) of
         Binding = #payproc_CustomerBinding{} ->
             Binding;
@@ -317,11 +337,31 @@ try_get_customer_binding(BindingID, #payproc_Customer{bindings = Bindings}) ->
             undefined
     end.
 
-set_customer_binding(Binding, Customer = #payproc_Customer{bindings = Bindings}) ->
+set_binding(Binding, Customer = #payproc_Customer{bindings = Bindings}) ->
     BindingID = Binding#payproc_CustomerBinding.id,
     Customer#payproc_Customer{
         bindings = lists:keystore(BindingID, #payproc_CustomerBinding.id, Bindings, Binding)
     }.
+
+get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->
+    BindingID.
+
+get_binding_status(#payproc_CustomerBinding{status = Status}) ->
+    Status.
+
+try_get_active_binding(St) ->
+    case get_active_binding_id(St) of
+        BindingID when BindingID /= undefined ->
+            try_get_binding(BindingID, get_customer(St));
+        undefined ->
+            undefined
+    end.
+
+get_active_binding_id(#st{active_binding = BindingID}) ->
+    BindingID.
+
+set_active_binding_id(BindingID, St = #st{}) ->
+    St#st{active_binding = BindingID}.
 
 %%
 %% Validators and stuff

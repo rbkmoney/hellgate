@@ -55,4 +55,9 @@
     {failed,
         #payproc_CustomerBindingFailed{failure = Failure}}).
 
+% Exceptions
+
+-define(invalid_customer_status(Status),
+    #payproc_InvalidCustomerStatus{status = Status}).
+
 -endif.
