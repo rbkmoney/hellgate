@@ -94,18 +94,18 @@ cfg(Key, C) ->
 
 all() ->
     [
-        % {group, party_access_control},
-        % {group, party_creation},
-        % {group, party_revisioning},
-        % {group, party_blocking_suspension},
-        % {group, party_meta},
-        % {group, contract_management},
-        % {group, shop_management},
-        % {group, shop_account_lazy_creation},
+        {group, party_access_control},
+        {group, party_creation},
+        {group, party_revisioning},
+        {group, party_blocking_suspension},
+        {group, party_meta},
+        {group, contract_management},
+        {group, shop_management},
+        {group, shop_account_lazy_creation},
 
-        % {group, claim_management},
+        {group, claim_management},
 
-        % {group, consistent_history}
+        {group, consistent_history}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -236,7 +236,8 @@ init_per_group(shop_blocking_suspension, C) ->
     C;
 init_per_group(Group, C) ->
     PartyID = list_to_binary(lists:concat([Group, ".", erlang:system_time()])),
-    Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(cfg(root_url, C))),
+    ApiClient = hg_ct_helper:create_client(cfg(root_url, C), PartyID),
+    Client = hg_client_party:start(PartyID, ApiClient),
     [{party_id, PartyID}, {client, Client} | C].
 
 -spec end_per_group(group_name(), config()) -> _.
@@ -1122,9 +1123,6 @@ next_event(Client) ->
     end.
 
 %%
-
-make_userinfo(PartyID) ->
-    hg_ct_helper:make_userinfo(PartyID).
 
 make_party_params() ->
     make_party_params(#domain_PartyContactInfo{email = <<?MODULE_STRING>>}).

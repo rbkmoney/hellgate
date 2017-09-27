@@ -3,7 +3,6 @@
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("hellgate/include/domain.hrl").
 
 -export([all/0]).
 -export([init_per_suite/1]).
@@ -24,14 +23,8 @@
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 
--export([create_customer/1]).
--export([delete_customer/1]).
--export([start_binding  /1]).
-
 -export([payment_success/1]).
 -export([payment_w_terminal_success/1]).
-% -export([payment_success_with_customer/1]).
-% -export([invalid_payment_customer/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
@@ -91,10 +84,6 @@ all() ->
         % payment_fail_after_silent_callback,
         % invoice_success_on_third_payment,
 
-        create_customer,
-        delete_customer,
-        start_binding
-
         % payment_risk_score_check,
 
         % invalid_payment_adjustment,
@@ -128,12 +117,13 @@ init_per_suite(C) ->
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(RootUrl)),
-    CustomerClient = hg_client_customer:start(create_client(RootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(Client),
+    ApiClient = hg_ct_helper:create_client(RootUrl, PartyID),
+    PartyClient = hg_client_party:start(PartyID, ApiClient),
+    CustomerClient = hg_client_customer:start(ApiClient),
+    ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
     [
         {party_id, PartyID},
-        {party_client, Client},
+        {party_client, PartyClient},
         {customer_client, CustomerClient},
         {shop_id, ShopID},
         {root_url, RootUrl},
@@ -191,11 +181,9 @@ init_per_testcase(_Name, C) ->
     init_per_testcase(C).
 
 init_per_testcase(C) ->
-    PartyID = cfg(party_id, C),
-    UserInfo = make_userinfo(PartyID),
-    ApiClient = hg_client_api:new(cfg(root_url, C)),
-    Client = hg_client_invoicing:start_link(UserInfo, ApiClient),
-    ClientTpl = hg_client_invoice_templating:start_link(UserInfo, ApiClient),
+    ApiClient = hg_ct_helper:create_client(cfg(root_url, C), cfg(party_id, C)),
+    Client = hg_client_invoicing:start_link(ApiClient),
+    ClientTpl = hg_client_invoice_templating:start_link(ApiClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [{client, Client}, {client_tpl, ClientTpl}, {test_sup, SupPid} | C].
 
@@ -467,38 +455,6 @@ invalid_payment_amount(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
-
--spec create_customer(config()) -> test_return().
-
-create_customer(C) ->
-    CustomerClient = cfg(customer_client, C),
-    CustomerParams = make_customer_params(C),
-    Customer = hg_client_customer:create(CustomerParams, CustomerClient),
-    {payproc_Customer, CustomerID, _, _, _, _, _, _, _, _} = Customer,
-    Customer = hg_client_customer:get(CustomerID, CustomerClient).
-
--spec delete_customer(config()) -> test_return().
-
-delete_customer(C) ->
-    CustomerClient = cfg(customer_client, C),
-    CustomerParams = make_customer_params(C),
-    Customer = hg_client_customer:create(CustomerParams, CustomerClient),
-    {payproc_Customer, CustomerID, _, _, _, _, _, _, _, _} = Customer,
-    ok = hg_client_customer:delete(CustomerID, CustomerClient),
-    {exception, #'payproc_CustomerNotFound'{}} = hg_client_customer:get(CustomerID, CustomerClient).
-
--spec start_binding(config()) -> test_return().
-
-start_binding(C) ->
-    CustomerClient = cfg(customer_client, C),
-    CustomerParams = make_customer_params(C),
-    Customer = hg_client_customer:create(CustomerParams, CustomerClient),
-    {payproc_Customer, CustomerID, _, _, _, _, _, _, _, _} = Customer,
-    CustomerBindingParams = make_customer_binding_params(),
-    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, CustomerClient),
-    Customer1 = hg_client_customer:get(CustomerID, CustomerClient),
-    {payproc_Customer, CustomerID, _, _, _, _, Bindings, _, _, _} = Customer1,
-    Bindings = [CustomerBinding].
 
 -spec payment_success(config()) -> test_return().
 
@@ -854,9 +810,8 @@ invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
     ShopID = <<"TESTSHOP">>,
     RootUrl = cfg(root_url, C),
-    UserInfo = make_userinfo(PartyID),
-    PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
-    InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
@@ -871,9 +826,8 @@ invalid_payment_w_deprived_party(C) ->
 external_account_posting(C) ->
     PartyID = <<"LGBT">>,
     RootUrl = cfg(root_url, C),
-    UserInfo = make_userinfo(PartyID),
-    PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
-    InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     _ = hg_ct_helper:create_party_and_shop(PartyClient),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
@@ -1138,15 +1092,6 @@ construct_proxy(ID, Url, Options) ->
 
 %%
 
-create_client(RootUrl, PartyID) ->
-    hg_client_api:new(RootUrl, woody_user_identity:put(make_user_identity(PartyID), woody_context:new())).
-
-make_userinfo(PartyID) ->
-    hg_ct_helper:make_userinfo(PartyID).
-
-make_user_identity(PartyID) ->
-    #{id => genlib:to_binary(PartyID), realm => <<"external">>}.
-
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).
 
@@ -1240,19 +1185,6 @@ make_payment_params(PaymentTool, Session, FlowType) ->
 make_refund_params() ->
     #payproc_InvoicePaymentRefundParams{
         reason = <<"ZANOZED">>
-    }.
-
-make_customer_params(C) ->
-    #payproc_CustomerParams{
-        party_id = cfg(party_id, C),
-        shop_id = cfg(shop_id, C),
-        contact_info = #domain_ContactInfo{},
-        metadata = {nl, #json_Null{}}
-    }.
-
-make_customer_binding_params() ->
-    #payproc_CustomerBindingParams{
-        payment_resource = hg_ct_helper:make_disposable_payment_resource()
     }.
 
 make_adjustment_params() ->
@@ -1510,7 +1442,6 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
-        hg_ct_fixture:construct_proxy(?prx(3), <<"Merchant proxy">>),
 
         hg_ct_fixture:construct_inspector(?insp(1), <<"Rejector">>, ?prx(2), #{<<"risk_score">> => <<"low">>}),
         hg_ct_fixture:construct_inspector(?insp(2), <<"Skipper">>, ?prx(2), #{<<"risk_score">> => <<"high">>}),
@@ -1546,7 +1477,6 @@ construct_domain_fixture() ->
                     }
                 ]},
                 default_contract_template = ?tmpl(2),
-                common_merchant_proxy = ?prx(3), % FIXME
                 inspector = {decisions, [
                     #domain_InspectorDecision{
                         if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},

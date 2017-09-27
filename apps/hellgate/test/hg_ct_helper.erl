@@ -6,6 +6,9 @@
 
 -export([cfg/2]).
 
+-export([create_client/2]).
+-export([create_client/3]).
+
 -export([create_party_and_shop/1]).
 -export([create_battle_ready_shop/3]).
 -export([get_account/1]).
@@ -174,11 +177,32 @@ cfg(Key, Config) ->
 
 %%
 
+
+-spec create_client(woody:url(), woody_user_identity:id()) ->
+    hg_client_api:t().
+
+create_client(RootUrl, UserID) ->
+    create_client_w_context(RootUrl, UserID, woody_context:new()).
+
+-spec create_client(woody:url(), woody_user_identity:id(), woody:trace_id()) ->
+    hg_client_api:t().
+
+create_client(RootUrl, UserID, TraceID) ->
+    create_client_w_context(RootUrl, UserID, woody_context:new(TraceID)).
+
+create_client_w_context(RootUrl, UserID, WoodyCtx) ->
+    hg_client_api:new(RootUrl, woody_user_identity:put(make_user_identity(UserID), WoodyCtx)).
+
+make_user_identity(UserID) ->
+    #{id => genlib:to_binary(UserID), realm => <<"external">>}.
+
+%%
+
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/party_events.hrl").
 
--type user_info()                 :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_id()                  :: dmsl_domain_thrift:'PartyID'().
+-type user_info()                 :: dmsl_payment_processing_thrift:'UserInfo'().
 -type account_id()                :: dmsl_domain_thrift:'AccountID'().
 -type account()                   :: map().
 -type contract_id()               :: dmsl_domain_thrift:'ContractID'().
