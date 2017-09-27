@@ -859,7 +859,7 @@ process(Action0, St, Options) ->
 handle_callback(Payload, Action0, St, Options) ->
     Session = get_target_session(St),
     ProxyContext = construct_proxy_context(Session, St, Options),
-    {ok, CallbackResult} = issue_callback_call('HandlePaymentCallback', Payload, ProxyContext, St, Options),
+    {ok, CallbackResult} = hg_proxy_provider:issue_callback_call('HandlePaymentCallback', Payload, ProxyContext, St, Options),
     {Response, Result} = handle_callback_result(CallbackResult, Action0, get_target_session(St)),
     {Response, finish_processing(Result, St, Options)}.
 
@@ -959,16 +959,8 @@ handle_proxy_callback_timeout(Action, Session) ->
 wrap_session_events(SessionEvents, Action) ->
     hg_proxy_provider:wrap_session_events(SessionEvents, Action).
 
-set_timer(Timer, Action) ->
-    hg_machine_action:set_timer(Timer, Action).
-
-try_request_interaction(undefined) ->
-    [];
-try_request_interaction(UserInteraction) ->
-    [?interaction_requested(UserInteraction)].
-
-commit_payment_cashflow(St) ->
-    hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
+commit_plan(St, Options) ->
+    finalize_plan(fun hg_accounting:commit/2, St, Options).
 
 rollback_payment_cashflow(St) ->
     hg_accounting:rollback(construct_payment_plan_id(St), get_cashflow_plan(St)).
@@ -1086,6 +1078,7 @@ construct_proxy_cash(#domain_Cash{
         currency = hg_domain:get(Revision, {currency, CurrencyRef})
     }.
 
+<<<<<<< HEAD
 construct_proxy_refund(#refund_st{
     refund  = #domain_InvoicePaymentRefund{id = ID, created_at = CreatedAt},
     session = Session
@@ -1124,6 +1117,8 @@ collect_proxy_options(
 convert_failure(#'Failure'{code = Code, description = Description}) ->
     ?external_failure(Code, Description).
 
+=======
+>>>>>>> HG-231: Add proxy interaction
 %%
 
 get_party(#{party := Party}) ->

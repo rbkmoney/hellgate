@@ -99,9 +99,6 @@ collapse_history(History) ->
         History
     ).
 
-merge_change(_, St) ->
-    St.
-
 %%
 
 map_history_error({ok, Result}) ->
@@ -189,7 +186,8 @@ process(Action, St) ->
     Session = get_session(St),
     ProxyContext = construct_proxy_context(Session, St),
     {ok, ProxyResult} = hg_proxy_provider:issue_process_call(ProxyContext, St),
-    Result = handle_proxy_result(ProxyResult, Action, Session).
+    Result = handle_proxy_result(ProxyResult, Action, Session),
+    finish_processing(Result, St).
 
 %%
 
@@ -215,6 +213,10 @@ construct_token_info(St) ->
 
 get_trx(#st{session = #{trx := Trx}}) ->
     Trx.
+
+set_trx(Trx, St = #st{}) ->
+    Session = get_session(St),
+    St#st{session = Session#{trx => Trx}}.
 
 get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
@@ -246,10 +248,22 @@ handle_proxy_result(
     Action0,
     Session
 ) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = hg_proxy_provider:update_proxy_state(ProxyState),
-    {Events3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
-    {hg_proxy_provider:wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
+    Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
+    {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
+    Changes = Changes1 ++ Changes2 ++ Changes3,
+    case Intent of
+        #'FinishIntent'{status = {success, _}} ->
+            make_proxy_result(Changes, Session, Action, Token);
+        _ ->
+            make_proxy_result(Changes, Session, Action)
+    end.
+
+make_proxy_result(Changes, Session, Action) ->
+    make_proxy_result(Changes, Session, Action, undefined).
+
+make_proxy_result(Changes, Session, Action, Token) ->
+    {hg_proxy_provider:wrap_session_events(Changes, Session), Action, Token}.
 
 %%
 

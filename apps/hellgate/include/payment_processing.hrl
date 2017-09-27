@@ -22,6 +22,10 @@
     {recurrent_payment_tool_has_abandoned,
         #payproc_RecurrentPaymentToolHasAbandoned{}}).
 
+-define(recurrent_payment_tool_has_failed(Failure),
+    {recurrent_payment_tool_has_failed,
+        #payproc_RecurrentPaymentToolHasFailed{failure = Failure}}).
+
 % Statuses
 
 -define(recurrent_payment_tool_created(),
