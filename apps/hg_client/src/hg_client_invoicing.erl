@@ -1,8 +1,9 @@
 -module(hg_client_invoicing).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
+-export([start/1]).
 -export([start/2]).
--export([start_link/2]).
+-export([start_link/1]).
 -export([stop/1]).
 
 -export([create/2]).
@@ -57,15 +58,20 @@
 -type refund_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type term_set()           :: dmsl_domain_thrift:'TermSet'().
 
+-spec start(hg_client_api:t()) -> pid().
+
+start(ApiClient) ->
+    start(start, undefined, ApiClient).
+
 -spec start(user_info(), hg_client_api:t()) -> pid().
 
 start(UserInfo, ApiClient) ->
     start(start, UserInfo, ApiClient).
 
--spec start_link(user_info(), hg_client_api:t()) -> pid().
+-spec start_link(hg_client_api:t()) -> pid().
 
-start_link(UserInfo, ApiClient) ->
-    start(start_link, UserInfo, ApiClient).
+start_link(ApiClient) ->
+    start(start_link, undefined, ApiClient).
 
 start(Mode, UserInfo, ApiClient) ->
     {ok, Pid} = gen_server:Mode(?MODULE, {UserInfo, ApiClient}, []),
