@@ -410,22 +410,18 @@ marshal(
         owner_id       = OwnerID,
         shop_id        = ShopID,
         created_at     = CreatedAt,
-        bindings       = Bindings,
         contact_info   = ContactInfo,
-        metadata       = Metadata,
-        active_binding = ActiveBinding
+        metadata       = Metadata
     }
 ) ->
-    genlib_map:compact(#{
+    #{
         <<"id">>         => marshal(str             , ID),
         <<"owner_id">>   => marshal(str             , OwnerID),
         <<"shop_id">>    => marshal(str             , ShopID),
         <<"created_at">> => marshal(str             , CreatedAt),
-        <<"bindings">>   => marshal({list, binding} , Bindings),
         <<"contact">>    => marshal(contact_info    , ContactInfo),
-        <<"metadata">>   => marshal(metadata        , Metadata),
-        <<"active">>     => marshal(str             , ActiveBinding)
-    });
+        <<"metadata">>   => marshal(metadata        , Metadata)
+    };
 
 marshal(customer_status, ?customer_unready()) ->
     <<"unready">>;
@@ -568,10 +564,9 @@ unmarshal(
         <<"owner_id">>   := OwnerID,
         <<"shop_id">>    := ShopID,
         <<"created_at">> := CreatedAt,
-        <<"bindings">>   := Bindings,
         <<"contact">>    := ContactInfo,
         <<"metadata">>   := Metadata
-    } = V
+    }
 ) ->
     #payproc_Customer{
         id             = unmarshal(str             , ID),
@@ -579,10 +574,9 @@ unmarshal(
         shop_id        = unmarshal(str             , ShopID),
         status         = ?customer_unready(),
         created_at     = unmarshal(str             , CreatedAt),
-        bindings       = unmarshal({list, binding} , Bindings),
+        bindings       = [],
         contact_info   = unmarshal(contact_info    , ContactInfo),
-        metadata       = unmarshal(metadata        , Metadata),
-        active_binding = unmarshal(str             , genlib_map:get(<<"active">>, V))
+        metadata       = unmarshal(metadata        , Metadata)
     };
 
 unmarshal(customer_status, <<"unready">>) ->
