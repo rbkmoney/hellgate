@@ -169,8 +169,6 @@ end_per_suite(C) ->
 -define(insufficient_account_balance(),
     {exception, #payproc_InsufficientAccountBalance{}}).
 
--define(ordset(Es), ordsets:from_list(Es)).
-
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(payment_adjustment_success, C) ->

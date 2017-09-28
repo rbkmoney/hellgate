@@ -187,8 +187,6 @@ process(Action, St) ->
     Result = handle_proxy_result(ProxyResult, Action, Session),
     finish_processing(Result, St).
 
-
-
 %%
 
 construct_proxy_context(Session, St) ->

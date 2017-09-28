@@ -57,6 +57,12 @@
 
 % Exceptions
 
+-define(invalid_party_status(Status),
+    #payproc_InvalidPartyStatus{status = Status}).
+
+-define(invalid_shop_status(Status),
+    #payproc_InvalidShopStatus{status = Status}).
+
 -define(invalid_customer_status(Status),
     #payproc_InvalidCustomerStatus{status = Status}).
 

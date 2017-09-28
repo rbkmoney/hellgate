@@ -13,6 +13,8 @@
 -export([invalid_user/1]).
 -export([invalid_party/1]).
 -export([invalid_shop/1]).
+-export([invalid_party_status/1]).
+-export([invalid_shop_status/1]).
 
 %%
 
@@ -74,7 +76,9 @@ groups() ->
         {invalid_customer_params, [sequence], [
             invalid_user,
             invalid_party,
-            invalid_shop
+            invalid_shop,
+            invalid_party_status,
+            invalid_shop_status
         ]}
     ].
 
@@ -83,6 +87,8 @@ groups() ->
 -spec invalid_user(config()) -> test_case_result().
 -spec invalid_party(config()) -> test_case_result().
 -spec invalid_shop(config()) -> test_case_result().
+-spec invalid_party_status(config()) -> test_case_result().
+-spec invalid_shop_status(config()) -> test_case_result().
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -111,6 +117,7 @@ end_per_testcase(_Name, _C) ->
 -include("hg_ct_domain.hrl").
 -include("hg_ct_json.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("hellgate/include/customer_events.hrl").
 
 invalid_user(C) ->
     Client = cfg(client, C),
@@ -134,6 +141,34 @@ invalid_shop(C) ->
     Params = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     {exception, #payproc_ShopNotFound{}} = hg_client_customer:create(Params, Client).
 
+invalid_party_status(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    ok = hg_client_party:block(<<>>, PartyClient),
+    {exception, ?invalid_party_status({blocking, _})} = hg_client_customer:create(Params, Client),
+    ok = hg_client_party:unblock(<<>>, PartyClient),
+    ok = hg_client_party:suspend(PartyClient),
+    {exception, ?invalid_party_status({suspension, _})} = hg_client_customer:create(Params, Client),
+    ok = hg_client_party:activate(PartyClient).
+
+invalid_shop_status(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    ok = hg_client_party:block_shop(ShopID, <<>>, PartyClient),
+    {exception, ?invalid_shop_status({blocking, _})} = hg_client_customer:create(Params, Client),
+    ok = hg_client_party:unblock_shop(ShopID, <<>>, PartyClient),
+    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    {exception, ?invalid_shop_status({suspension, _})} = hg_client_customer:create(Params, Client),
+    ok = hg_client_party:activate_shop(ShopID, PartyClient).
+
+%%
+
 make_customer_params(PartyID, ShopID, EMail) ->
     make_customer_params(PartyID, ShopID, ?contact_info(EMail), ?null()).
 
@@ -150,7 +185,6 @@ make_customer_params(PartyID, ShopID, ContactInfo, Metadata) ->
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
 construct_domain_fixture() ->
-    AccountRUB = hg_ct_fixture:construct_terminal_account(?cur(<<"RUB">>)),
     TermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             currencies = {value, ordsets:from_list([
@@ -167,8 +201,8 @@ construct_domain_fixture() ->
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(     1000, ?cur(<<"RUB">>))},
-                        upper = {exclusive, ?cash(420000000, ?cur(<<"RUB">>))}
+                        lower = {inclusive, ?cash(     1000, <<"RUB">>)},
+                        upper = {exclusive, ?cash(420000000, <<"RUB">>)}
                     }}
                 }
             ]},
@@ -260,12 +294,34 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
-                terminal = {value, [?trm(1), ?trm(2)]},
-                proxy = #domain_Proxy{
-                    ref = ?prx(1),
-                    additional = #{}
-                },
-                abs_account = <<"1234567890">>
+                terminal = {value, [?trm(1)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                abs_account = <<"1234567890">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                    categories = {value, ?ordset([?cat(1)])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(      1000, <<"RUB">>)},
+                        {exclusive, ?cash(1000000000, <<"RUB">>)}
+                    )},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, payment_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(18, 1000, payment_amount)
+                        )
+                    ]}
+                }
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -273,44 +329,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                payment_method = ?pmt(bank_card, visa),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(18, 1000, payment_amount)
-                    )
-                ],
-                account = AccountRUB,
-                risk_coverage = low
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(2),
-            data = #domain_Terminal{
-                name = <<"Brominal 2">>,
-                description = <<"Brominal 2">>,
-                payment_method = ?pmt(bank_card, mastercard),
-                category = ?cat(1),
-                cash_flow = [
-                    ?cfpost(
-                        {provider, settlement},
-                        {merchant, settlement},
-                        ?share(1, 1, payment_amount)
-                    ),
-                    ?cfpost(
-                        {system, settlement},
-                        {provider, settlement},
-                        ?share(18, 1000, payment_amount)
-                    )
-                ],
-                account = AccountRUB,
                 risk_coverage = low
             }
         }}
