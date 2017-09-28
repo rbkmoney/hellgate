@@ -127,13 +127,10 @@ handle_function(
 generate_token(undefined, _TokenInfo, _Opts) ->
     token_sleep(1, <<"sleeping">>);
 generate_token(<<"sleeping">>, TokenInfo, _Opts) ->
-    #prxprv_RecurrentTokenInfo{
-        payment_tool = PaymentTool
-    } = TokenInfo,
-    case is_tds_payment_tool(PaymentTool) of
-        true ->
+    case get_token_payment_tool_type(TokenInfo) of
+        {bank_card, with_tds} ->
             Tag = hg_utils:unique_id(),
-            Uri = genlib:to_binary("http://127.0.0.1:" ++ integer_to_list(?COWBOY_PORT)),
+            Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
                 {
@@ -142,12 +139,21 @@ generate_token(<<"sleeping">>, TokenInfo, _Opts) ->
                 }
             },
             token_suspend(Tag, 2, <<"suspended">>, UserInteraction);
-        false ->
+        {bank_card, without_tds} ->
             token_sleep(1, <<"finishing">>)
     end;
 generate_token(<<"finishing">>, TokenInfo, _Opts) ->
     Token = ?REC_TOKEN,
     token_finish(TokenInfo, Token).
+
+get_token_payment_tool_type(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}) ->
+    Token3DS = hg_ct_helper:bank_card_tds_token(),
+    case PaymentTool of
+        {'bank_card', #domain_BankCard{token = Token3DS}} ->
+            {bank_card, with_tds};
+        {'bank_card', _} ->
+            {bank_card, without_tds}
+    end.
 
 handle_token_callback(?DEFAULT_PAYLOAD, <<"suspended">>, _PaymentInfo, _Opts) ->
     token_respond(<<"sure">>, #prxprv_RecurrentTokenGenerationProxyResult{
@@ -240,7 +246,7 @@ process_refund(undefined, PaymentInfo, _) ->
     finish(hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
 
 finish(TrxID) ->
-    #prxprv_ProxyResult{
+    #prxprv_PaymentProxyResult{
         intent = ?finish(),
         trx    = #domain_TransactionInfo{id = TrxID, extra = #{}}
     }.
@@ -273,14 +279,6 @@ get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
 
 get_payment_tool_type(#prxprv_PaymentInfo{payment = Payment}) ->
     Token3DS = hg_ct_helper:bank_card_tds_token(),
-    case PaymentTool of
-        {'bank_card', #domain_BankCard{token = Token3DS}} ->
-            true;
-        _ ->
-            false
-    end.
-
-is_tds_payment(#prxprv_PaymentInfo{payment = Payment}) ->
     #prxprv_InvoicePayment{
         payment_resource = {
             disposable_payment_resource,

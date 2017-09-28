@@ -276,8 +276,7 @@ create_customer(CustomerID, Params = #payproc_CustomerParams{}) ->
         created_at     = hg_datetime:format_now(),
         bindings       = [],
         contact_info   = Params#payproc_CustomerParams.contact_info,
-        metadata       = Params#payproc_CustomerParams.metadata,
-        active_binding = undefined
+        metadata       = Params#payproc_CustomerParams.metadata
     }.
 
 %%

@@ -1020,9 +1020,21 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         trx = Trx,
-        payer = Payer,
-        cost = construct_proxy_cash(Cost)
+        payment_resource = get_payment_resource(Payer),
+        cost = construct_proxy_cash(Cost),
+        contact_info = get_contact_info(Payer)
     }.
+
+get_payment_resource({payment_resource, #domain_PaymentResourcePayer{resource = Resource}}) ->
+    {disposable_payment_resource, Resource};
+get_payment_resource({customer, #domain_CustomerPayer{customer_id = CustomerID}}) ->
+    get_rec_payment_resource(CustomerID).
+
+get_contact_info({payment_resource, #domain_PaymentResourcePayer{contact_info = ContactInfo}}) ->
+    ContactInfo.
+
+get_rec_payment_resource(_CustomerID) ->
+    ok.
 
 construct_proxy_invoice(
     #domain_Invoice{
@@ -1145,8 +1157,22 @@ get_payment_flow(#domain_InvoicePayment{flow = Flow}) ->
 get_payment_tool(#domain_InvoicePayment{payer = Payer}) ->
     get_payer_payment_tool(Payer).
 
-get_payer_payment_tool(#domain_Payer{payment_tool = PaymentTool}) ->
-    PaymentTool.
+get_payer_payment_tool(
+    ?payment_resource_payer(
+        #domain_DisposablePaymentResource{payment_tool = PaymentTool},
+        _ContactInfo
+    )
+) ->
+    PaymentTool;
+get_payer_payment_tool(
+    ?customer_payer(
+        CustomerID
+    )
+) ->
+    get_rec_token(CustomerID).
+
+get_rec_token(_CustomerID) ->
+    ok.
 
 get_currency(#domain_Cash{currency = Currency}) ->
     Currency.
@@ -1368,7 +1394,7 @@ get_call_options(St) ->
 get_route(#st{route = Route}) ->
     Route.
 
-get_route_provider_ref(#domain_InvoicePaymentRoute{provider = ProviderRef}) ->
+get_route_provider_ref(#domain_PaymentRoute{provider = ProviderRef}) ->
     ProviderRef.
 
 get_route_provider(Route, Revision) ->
@@ -1644,12 +1670,24 @@ marshal(refund_status, ?refund_failed(Failure)) ->
 
 %%
 
-marshal(payer, #domain_Payer{} = Payer) ->
+marshal(payer, ?payment_resource_payer(Resource, ContactInfo)) ->
     #{
-        <<"payment_tool">>  => hg_payment_tool:marshal(Payer#domain_Payer.payment_tool),
-        <<"session_id">>    => marshal(str, Payer#domain_Payer.session_id),
-        <<"client_info">>   => marshal(client_info, Payer#domain_Payer.client_info),
-        <<"contact_info">>  => marshal(contact_info, Payer#domain_Payer.contact_info)
+        <<"type">>           => <<"payment_resource_payer">>,
+        <<"resource">>       => marshal(disposable_payment_resource, Resource),
+        <<"contact_info">>   => marshal(contact_info, ContactInfo)
+    };
+
+marshal(payer, ?customer_payer(CustomerID)) ->
+    #{
+        <<"type">>          => <<"customer_payer">>,
+        <<"customer_id">>   => marshal(str, CustomerID)
+    };
+
+marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
+    #{
+        <<"payment_tool">>       => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
+        <<"payment_session_id">> => marshal(str, PaymentResource#domain_DisposablePaymentResource.payment_session_id),
+        <<"client_info">>        => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
     };
 
 marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
@@ -1998,25 +2036,61 @@ unmarshal(refund_status, [<<"failed">>, Failure]) ->
 %% Payer
 
 unmarshal(payer, #{
+    <<"type">>           := <<"payment_resource_payer">>,
+    <<"resource">>       := Resource,
+    <<"contact_info">>   := ContactInfo
+}) ->
+    ?payment_resource_payer(
+        unmarshal(disposable_payment_resource, Resource),
+        unmarshal(contact_info, ContactInfo)
+    );
+
+unmarshal(payer, [2, #{
+    <<"type">>         := <<"customer_payer">>,
+    <<"customer_id">>  := CustomerID
+}]) ->
+    ?customer_payer(
+        unmarshal(str, CustomerID)
+    );
+
+unmarshal(payer, [1, #{
     <<"payment_tool">>  := PaymentTool,
     <<"session_id">>    := SessionId,
     <<"client_info">>   := ClientInfo,
-    <<"contact_info">>  := ContractInfo
+    <<"contact_info">>  := ContactInfo
+}]) ->
+    Resource = #{
+        <<"payment_tool">>         => PaymentTool,
+        <<"payment_session_id">>   => SessionId,
+        <<"client_info">>          => ClientInfo
+    },
+    ?payment_resource_payer(
+        unmarshal(disposable_payment_resource, Resource),
+        unmarshal(contact_info, ContactInfo)
+    );
+
+unmarshal(payer, [1, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo)]) ->
+    Resource = #{
+        <<"payment_tool">>         => PaymentTool,
+        <<"payment_session_id">>   => SessionId,
+        <<"client_info">>          => ClientInfo
+    },
+    ?payment_resource_payer(
+        unmarshal(disposable_payment_resource, Resource),
+        unmarshal(contact_info, ContactInfo)
+    );
+
+unmarshal(disposable_payment_resource, #{
+    <<"payment_tool">> := PaymentTool,
+    <<"payment_session_id">> := PaymentSessionId,
+    <<"client_info">> := ClientInfo
 }) ->
-    #domain_Payer{
-        payment_tool    = hg_payment_tool:unmarshal(PaymentTool),
-        session_id      = unmarshal(str, SessionId),
-        client_info     = unmarshal(client_info, ClientInfo),
-        contact_info    = unmarshal(contact_info, ContractInfo)
+    #domain_DisposablePaymentResource{
+        payment_tool = hg_payment_tool:unmarshal(PaymentTool),
+        payment_session_id = unmarshal(str, PaymentSessionId),
+        client_info = unmarshal(client_info, ClientInfo)
     };
 
-unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContractInfo)) ->
-    #domain_Payer{
-        payment_tool    = hg_payment_tool:unmarshal([1, PaymentTool]),
-        session_id      = unmarshal(str, SessionId),
-        client_info     = unmarshal(client_info, ClientInfo),
-        contact_info    = unmarshal(contact_info, ContractInfo)
-    };
 
 %% Client info
 
