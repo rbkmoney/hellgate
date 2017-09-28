@@ -5,15 +5,14 @@
 
 -export([collect_proxy_options/1]).
 
--export([issue_process_call/3]).
--export([issue_callback_call/4]).
+-export([process_payment/2]).
+-export([generate_token/2]).
+-export([handle_payment_callback/3]).
+-export([handle_recurrent_token_generation_callback/3]).
 
 -export([bind_transaction/2]).
-
 -export([update_proxy_state/1]).
-
 -export([handle_proxy_intent/2]).
-
 -export([wrap_session_events/2]).
 
 -include("domain.hrl").
@@ -21,23 +20,14 @@
 
 %%
 
--record(st, {
-    route :: undefined | route()
-}).
--type st() :: #st{}.
-
 -type trx_info() :: dmsl_domain_thrift:'TransactionInfo'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
 
 %%
 
--spec collect_proxy_options(st()) ->
-    term().
-collect_proxy_options(
-    #st{
-        route = #domain_PaymentRoute{provider = ProviderRef, terminal = TerminalRef}
-    }
-) ->
+-spec collect_proxy_options(route()) ->
+    dmsl_domain_thrift:'ProxyOptions'().
+collect_proxy_options(#domain_PaymentRoute{provider = ProviderRef, terminal = TerminalRef}) ->
     Revision = hg_domain:head(),
     Provider = hg_domain:get(Revision, {provider, ProviderRef}),
     Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
@@ -60,29 +50,35 @@ collect_proxy_options(
 
 %%
 
--spec issue_process_call(atom(), _ProxyContext, st()) ->
+-spec process_payment(_ProxyContext, route()) ->
     term().
-issue_process_call(Call, ProxyContext, St) ->
-    issue_call(Call, [ProxyContext], St).
+process_payment(ProxyContext, Route) ->
+    issue_call('ProcessPayment', [ProxyContext], Route).
 
--spec issue_callback_call(atom(), _Payload, _ProxyContext, st()) ->
+-spec generate_token(_ProxyContext, route()) ->
     term().
-issue_callback_call(Callback, Payload, ProxyContext, St) ->
-    issue_call(Callback, [Payload, ProxyContext], St).
+generate_token(ProxyContext, Route) ->
+    issue_call('GenerateToken', [ProxyContext], Route).
 
--spec issue_call(woody:func(), list(), hg_woody_wrapper:client_opts()) ->
+-spec handle_payment_callback(_Payload, _ProxyContext, route()) ->
     term().
-issue_call(Func, Args, St) ->
-    CallOpts = get_call_options(St),
-    hg_woody_wrapper:call('ProviderProxy', Func, Args, CallOpts).
+handle_payment_callback(Payload, ProxyContext, St) ->
+    issue_call('HandlePaymentCallback', [Payload, ProxyContext], St).
 
-get_call_options(St) ->
+-spec handle_recurrent_token_generation_callback(_Payload, _ProxyContext, route()) ->
+    term().
+handle_recurrent_token_generation_callback(Payload, ProxyContext, St) ->
+    issue_call('HandleRecurrentTokenGenerationCallback', [Payload, ProxyContext], St).
+
+-spec issue_call(woody:func(), list(), route()) ->
+    term().
+issue_call(Func, Args, Route) ->
+    hg_woody_wrapper:call('ProviderProxy', Func, Args, get_call_options(Route)).
+
+get_call_options(Route) ->
     Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, get_route_provider(get_route(St))}),
+    Provider = hg_domain:get(Revision, {provider, get_route_provider(Route)}),
     hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
-
-get_route(#st{route = Route}) ->
-    Route.
 
 get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
     ProviderRef.

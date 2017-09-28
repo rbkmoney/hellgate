@@ -45,7 +45,7 @@
 
 -type session() :: #{
     status      := active | suspended | finished,
-    trx         := trx_info(),
+    trx         => trx_info(),
     proxy_state => proxy_state()
 }.
 
@@ -171,14 +171,62 @@ namespace() ->
 
 -spec init(rec_payment_tool_id(), rec_payment_tool_params()) ->
     hg_machine:result(rec_payment_tool_event()).
-init(RecPaymentToolID, [_PartyID, _ShopID, DisposablePaymentResource]) ->
-    Route = undefined,
-    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, Route, DisposablePaymentResource),
+init(RecPaymentToolID, Params) ->
+    Revision = hg_domain:head(),
+    CreatedAt = hg_datetime:format_now(),
+    {Party, Shop} = get_party_shop(Params),
+    MerchantTerms = get_merchant_payments_terms(Shop, Party, CreatedAt, Revision),
+    VS0 = collect_varset(Party, Shop, #{}),
+    {RecPaymentTool , VS1} = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, MerchantTerms, VS0, Revision),
+    {RiskScore      , VS2} = validate_risk_score(inspect(RecPaymentTool, VS1), VS1),
+    {Route          , VS3} = validate_route(hg_routing:choose(VS2, Revision), RecPaymentTool, VS2),
     {ok, {Changes, Action}} = start_session(),
     handle_result(#{
-        changes => [Changes ++ ?recurrent_payment_tool_has_created(RecPaymentTool)],
+        changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
         action => Action
     }).
+
+get_party_shop(Params) ->
+    PartyID = Params#payproc_RecurrentPaymentToolParams.party_id,
+    ShopID = Params#payproc_RecurrentPaymentToolParams.shop_id,
+    Party = hg_party_machine:get_party(PartyID),
+    Shop = hg_party:get_shop(ShopID, Party),
+    {Party, Shop}.
+
+get_merchant_payments_terms(Shop, Party, CreatedAt, Revision) ->
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    ok = assert_contract_active(Contract),
+    TermSet = hg_party:get_terms(Contract, CreatedAt, Revision),
+    TermSet#domain_TermSet.payments.
+
+assert_contract_active(#domain_Contract{status = {active, _}}) ->
+    ok;
+assert_contract_active(#domain_Contract{status = Status}) ->
+    % FIXME no such exception on the service interface
+    throw(#payproc_InvalidContractStatus{status = Status}).
+
+collect_varset(Party, Shop = #domain_Shop{
+    category = Category,
+    account = #domain_ShopAccount{currency = Currency}
+}, VS) ->
+    VS#{
+        party    => Party,
+        shop     => Shop,
+        category => Category,
+        currency => Currency
+    }.
+
+inspect(_RecPaymentTool, _VS) ->
+    % FIXME please senpai
+    high.
+
+validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
+    {RiskScore, VS#{risk_score => RiskScore}}.
+
+validate_route(Route = #domain_PaymentRoute{}, _RecPaymentTool, VS) ->
+    {Route, VS};
+validate_route(undefined, RecPaymentTool, _VS) ->
+    error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}).
 
 start_session() ->
     Events = [?session_ev(?session_started())],
@@ -194,63 +242,55 @@ handle_signal(timeout, St) ->
     process_timeout(St).
 
 process_timeout(St) ->
-    case get_session_status(St) of
+    Action = hg_machine_action:new(),
+    case get_session_status(get_session(St)) of
         active ->
-            Action = hg_machine_action:new(),
             process(Action, St);
         suspended ->
-            Action = hg_machine_action:new(),
             process_callback_timeout(Action, St)
     end.
-
-get_session_status(St) ->
-    get_status(get_session(St)).
 
 get_session(#st{session = Session}) ->
     Session.
 
-get_status(Session) ->
+get_session_status(Session) ->
     maps:get(status, Session).
 
 process(Action, St) ->
-    Session = get_session(St),
-    ProxyContext = construct_proxy_context(Session, St),
-    {ok, ProxyResult} = hg_proxy_provider:issue_process_call(ProxyContext, St),
-    Result = handle_proxy_result(ProxyResult, Action, Session),
+    ProxyContext = construct_proxy_context(St),
+    {ok, ProxyResult} = hg_proxy_provider:generate_token(ProxyContext, get_route(St)),
+    Result = handle_proxy_result(ProxyResult, Action, get_session(St)),
     finish_processing(Result, St).
 
 process_callback_timeout(Action, St) ->
     Result = handle_proxy_callback_timeout(Action),
     finish_processing(Result, St).
 
+get_route(#st{route = Route}) ->
+    Route.
+
 %%
 
-construct_proxy_context(Session, St) ->
+construct_proxy_context(St) ->
     #prxprv_RecurrentTokenGenerationContext{
-        session = construct_session(Session),
+        session    = construct_session(St),
         token_info = construct_token_info(St),
-        options = hg_proxy_provider:collect_proxy_options(St)
+        options    = hg_proxy_provider:collect_proxy_options(St)
     }.
 
-construct_session(Session) ->
+construct_session(St) ->
     #prxprv_RecurrentTokenGenerationSession{
-        state = maps:get(proxy_state, Session, undefined)
+        state = maps:get(proxy_state, get_session(St), undefined)
     }.
 
 construct_token_info(St) ->
-    Trx = get_trx(St),
-    PaymentTool = get_rec_payment_tool(St),
     #prxprv_RecurrentTokenInfo{
-        payment_tool = construct_proxy_payment_tool(PaymentTool),
-        trx = Trx
+        payment_tool = construct_proxy_payment_tool(get_rec_payment_tool(St)),
+        trx          = get_session_trx(get_session(St))
     }.
 
-get_trx(#st{session = #{trx := Trx}}) ->
+get_session_trx(#{trx := Trx}) ->
     Trx.
-
-set_trx(Trx, St = #st{}) ->
-    Session = get_session(St),
-    St#st{session = Session#{trx => Trx}}.
 
 get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
@@ -267,6 +307,7 @@ construct_proxy_payment_tool(
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
+        % FIXME will never be undefined
         rec_token = RecToken
     }.
 
@@ -356,30 +397,24 @@ apply_change(?recurrent_payment_tool_has_created(RecPaymentTool), St) ->
     St#st{rec_payment_tool = RecPaymentTool};
 apply_change(?recurrent_payment_tool_has_acquired(Token), St) ->
     RecPaymentTool = get_rec_payment_tool(St),
-    St#st{rec_payment_tool =
-            RecPaymentTool#payproc_RecurrentPaymentTool{
-                rec_token = Token,
-                status = ?recurrent_payment_tool_acquired()
-            }
+    St#st{
+        rec_payment_tool = RecPaymentTool#payproc_RecurrentPaymentTool{
+            rec_token = Token,
+            status = ?recurrent_payment_tool_acquired()
+        }
     };
 apply_change(?recurrent_payment_tool_has_abandoned(), St) ->
     RecPaymentTool = get_rec_payment_tool(St),
-    St#st{rec_payment_tool =
-            RecPaymentTool#payproc_RecurrentPaymentTool{
-                status = ?recurrent_payment_tool_abandoned()
-            }
+    St#st{
+        rec_payment_tool = RecPaymentTool#payproc_RecurrentPaymentTool{
+            status = ?recurrent_payment_tool_abandoned()
+        }
     };
 apply_change(?session_ev(?session_started()), St) ->
-    St#st{session = create_session(get_trx(St))};
+    St#st{session = create_session()};
 apply_change(?session_ev(Event), St) ->
     Session = merge_session_change(Event, get_session(St)),
-    St1 = St#st{session = Session},
-    case get_session_status(Session) of
-        finished ->
-            set_trx(get_trx(St), St1);
-        _ ->
-            St1
-    end.
+    St#st{session = Session}.
 
 merge_session_change(?session_finished(Result), Session) ->
     Session#{status := finished, result => Result};
@@ -396,10 +431,9 @@ merge_session_change(?interaction_requested(_), Session) ->
 
 %%
 
-create_session(Trx) ->
+create_session() ->
     #{
-        status => active,
-        trx    => Trx
+        status => active
     }.
 
 -type call() :: abandon.
@@ -413,7 +447,8 @@ process_call(Call, History) ->
             {{exception, Exception}, {[], hg_machine_action:new()}}
     end.
 
-handle_call(abandon, _St) ->
+handle_call(abandon, St) ->
+    ok = assert_rec_payment_tool_status(recurrent_payment_tool_acquired, St),
     #{
         response => ok,
         changes  => [?recurrent_payment_tool_has_abandoned()]
@@ -430,41 +465,79 @@ process_callback(Payload, St) ->
     Action = hg_machine_action:new(),
     case get_session_status(get_session(St)) of
         suspended ->
-            handle_callback(Payload, Action, St)
+            handle_callback(Payload, Action, St);
+        _ ->
+            throw(invalid_callback)
     end.
 
 handle_callback(Payload, Action, St) ->
-    ProxyContext = construct_proxy_context(get_session(St), St),
-    {ok, CallbackResult} = hg_proxy_provider:issue_callback_call(
-        'RecurrentTokenGenerationCallbackResult',
+    ProxyContext = construct_proxy_context(St),
+    {ok, CallbackResult} = hg_proxy_provider:handle_recurrent_token_generation_callback(
         Payload,
         ProxyContext,
-        St
+        get_route(St)
     ),
     {Response, Result} = handle_callback_result(CallbackResult, Action, get_session(St)),
     {Response, finish_processing(Result, St)}.
 
-handle_result(#{state := _St} = Params) ->
-    Changes = maps:get(changes, Params, []),
-    Action = maps:get(action, Params, hg_machine_action:new()),
-    case maps:get(response, Params, undefined) of
-        undefined ->
-            {[marshal(Changes)], Action};
-        Response ->
-            {{ok, Response}, {[marshal(Changes)], Action}}
+handle_result(Result) ->
+    Changes = maps:get(changes, Result, []),
+    Action = maps:get(action, Result, hg_machine_action:new()),
+    case maps:find(response, Result) of
+        {ok, Response} ->
+            {{ok, Response}, {[marshal(Changes)], Action}};
+        error ->
+            {[marshal(Changes)], Action}
     end.
 
 %%
 
-create_rec_payment_tool(RecPaymentToolID, Route, PaymentResource) ->
-    #payproc_RecurrentPaymentTool{
+create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Terms, VS0, Revision) ->
+    PaymentResource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
+    VS1 = validate_payment_tool(
+        get_payment_tool(PaymentResource),
+        Terms#domain_PaymentsServiceTerms.payment_methods,
+        VS0,
+        Revision
+    ),
+    VS2 = validate_cost(
+        Terms#domain_PaymentsServiceTerms.cash_limit,
+        VS1,
+        Revision
+    ),
+    {#payproc_RecurrentPaymentTool{
         id                 = RecPaymentToolID,
+        shop_id            = Params#payproc_RecurrentPaymentToolParams.shop_id,
+        party_id           = Params#payproc_RecurrentPaymentToolParams.party_id,
+        domain_revision    = Revision,
         status             = ?recurrent_payment_tool_created(),
-        created_at         = hg_datetime:format_now(),
+        created_at         = CreatedAt,
         payment_resource   = PaymentResource,
-        route              = Route,
         rec_token          = undefined
-    }.
+    }, VS2}.
+
+validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
+    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
+    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+        throw(#'InvalidRequest'{errors = [<<"Invalid payment method">>]}),
+    VS#{payment_tool => PaymentTool}.
+
+validate_cost(CashLimitSelector, VS, Revision) ->
+    CashLimit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
+    % FIXME
+    {_Exclusiveness, Cash} = CashLimit#domain_CashRange.lower,
+    VS#{cost => Cash}.
+
+reduce_selector(Name, Selector, VS, Revision) ->
+    case hg_selector:reduce(Selector, VS, Revision) of
+        {value, V} ->
+            V;
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
+
+get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
+    PaymentTool.
 
 %%
 %% Marshalling
@@ -484,7 +557,7 @@ unmarshal(Events) when is_list(Events) ->
     [unmarshal(Event) || Event <- Events];
 
 unmarshal({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal({list, changes}, Payload)}.
+    {ID, Dt, unmarshal({list, change}, Payload)}.
 
 unmarshal(_, Other) ->
     Other.
