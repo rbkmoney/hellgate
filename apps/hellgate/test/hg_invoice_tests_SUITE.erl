@@ -38,6 +38,7 @@
 -export([payment_hold_capturing/1]).
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
+-export([terms_retrieval/1]).
 -export([consistent_history/1]).
 
 %%
@@ -96,6 +97,8 @@ all() ->
         payment_hold_auto_capturing,
 
         payment_refund_success,
+
+        terms_retrieval,
 
         consistent_history
     ].
@@ -995,6 +998,24 @@ payment_hold_auto_capturing(C) ->
 
 %%
 
+-spec terms_retrieval(config()) -> _ | no_return().
+
+terms_retrieval(C) ->
+    Client = cfg(client, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 1500, C),
+    TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {value, [?pmt(bank_card, mastercard), ?pmt(bank_card, visa), ?pmt(payment_terminal, euroset)]}
+    }} = TermSet1,
+    ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
+    TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {value, [?pmt(bank_card, visa)]}
+    }} = TermSet2.
+
+%%
+
 next_event(InvoiceID, Client) ->
     next_event(InvoiceID, 5000, Client).
 
@@ -1783,4 +1804,33 @@ construct_domain_fixture() ->
             }
         }}
     ].
+
+construct_term_set_for_cost(LowerBound, UpperBound) ->
+    TermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods = {decisions, [
+                #domain_PaymentMethodDecision{
+                    if_   = {condition, {cost_in, ?cashrng(
+                        {inclusive, ?cash(LowerBound, <<"RUB">>)},
+                        {inclusive, ?cash(UpperBound, <<"RUB">>)}
+                    )}},
+                    then_ = {value, ordsets:from_list([?pmt(bank_card, visa)])}
+                },
+                #domain_PaymentMethodDecision{
+                    if_   = {constant, true},
+                    then_ = {value, ordsets:from_list([])}
+                }
+            ]}
+        }
+    },
+    {term_set_hierarchy, #domain_TermSetHierarchyObject{
+        ref = ?trms(1),
+        data = #domain_TermSetHierarchy{
+            parent_terms = undefined,
+            term_sets = [#domain_TimedTermSet{
+                action_time = #'TimestampInterval'{},
+                terms = TermSet
+            }]
+        }
+    }}.
 %

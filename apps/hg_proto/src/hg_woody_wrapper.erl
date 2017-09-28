@@ -93,5 +93,7 @@ get_service_module('InspectorProxy') ->
     dmsl_proxy_inspector_thrift;
 get_service_module('MerchantProxy') ->
     dmsl_proxy_merchant_thrift;
+get_service_module('PartyManagement') ->
+    dmsl_payment_processing_thrift;
 get_service_module(ServiceName) ->
     error({unknown_service, ServiceName}).

@@ -215,7 +215,7 @@ init_(PaymentID, Params, Opts) ->
     Cost = get_invoice_cost(Invoice),
     Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
-    MerchantTerms = get_merchant_payments_terms(Invoice, Party),
+    MerchantTerms = get_merchant_payments_terms(Invoice, Party, Revision),
     VS0 = collect_varset(Party, Shop, #{}),
     {Payment  , VS1} = construct_payment(PaymentID, CreatedAt, Cost, Params, MerchantTerms, VS0, Revision),
     {RiskScore, VS2} = validate_risk_score(inspect(Shop, Invoice, Payment, VS1), VS1),
@@ -231,18 +231,27 @@ init_(PaymentID, Params, Opts) ->
     Events = [?payment_started(Payment, RiskScore, Route, FinalCashflow)],
     {collapse_changes(Events), {Events, hg_machine_action:new()}}.
 
-get_merchant_payments_terms(Opts) ->
-    get_merchant_payments_terms(get_invoice(Opts), get_party(Opts)).
+get_merchant_payments_terms(Opts, Revision) ->
+    get_merchant_payments_terms(get_invoice(Opts), get_party(Opts), Revision).
 
-get_merchant_payments_terms(Invoice, Party) ->
-    hg_party:get_payments_service_terms(
-        get_invoice_shop_id(Invoice),
-        Party,
-        get_invoice_created_at(Invoice)
-    ).
+get_merchant_payments_terms(Invoice, Party, Revision) ->
+    Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    ok = assert_contract_active(Contract),
+    TermSet = hg_party:get_terms(
+        Contract,
+        get_invoice_created_at(Invoice),
+        Revision
+    ),
+    TermSet#domain_TermSet.payments.
 
 get_provider_payments_terms(Route, Revision) ->
     hg_routing:get_payments_terms(Route, Revision).
+
+assert_contract_active(#domain_Contract{status = {active, _}}) ->
+    ok;
+assert_contract_active(#domain_Contract{status = Status}) ->
+    throw(#payproc_InvalidContractStatus{status = Status}).
 
 construct_payment(PaymentID, CreatedAt, Cost, Params, Terms, VS0, Revision) ->
     FlowParams = Params#payproc_InvoicePaymentParams.flow,
@@ -528,7 +537,7 @@ refund(Params, St0, Opts) ->
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason
     },
-    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts)),
+    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision)),
     VS1 = validate_refund(Payment, MerchantTerms, VS0, Revision),
     ProviderTerms = get_provider_refunds_terms(get_provider_payments_terms(Route, Revision), Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
@@ -624,7 +633,7 @@ create_adjustment(Params, St, Opts) ->
     _ = assert_payment_status(captured, Payment),
     _ = assert_no_adjustment_pending(St),
     Shop = get_shop(Opts),
-    MerchantTerms = get_merchant_payments_terms(Opts),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
     Route = get_route(St),
     Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
