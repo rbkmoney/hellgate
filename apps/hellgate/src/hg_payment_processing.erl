@@ -39,8 +39,7 @@
 -type rec_payment_tool_id()     :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type rec_payment_tool_event()  :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
-
--type disposable_payment_resource() :: dmsl_domain_thrift:'DisposablePaymentResource'().
+-type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
 
@@ -62,14 +61,35 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
-handle_function_('CreateRecurrentPaymentTool', [PaymentResource], _Opts) ->
+handle_function_('CreateRecurrentPaymentTool', RecurrentPaymentToolParams, _Opts) ->
     RecPaymentToolID = hg_utils:unique_id(),
     ok = set_meta(RecPaymentToolID),
-    ok = start(RecPaymentToolID, PaymentResource),
-    get_rec_tool(get_state(RecPaymentToolID)).
+    ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
+    get_rec_tool(get_state(RecPaymentToolID));
+handle_function_('AbandonRecurrentPaymentTool', [RecPaymentToolID], _Opts) ->
+    ok = set_meta(RecPaymentToolID),
+    call(RecPaymentToolID, abandon);
+handle_function_('GetRecurrentPaymentTool', [RecPaymentToolID], _Opts) ->
+    ok = set_meta(RecPaymentToolID),
+    get_rec_tool(get_state(RecPaymentToolID));
+handle_function_('GetEvents', [RecPaymentToolID, Range], _Opts) ->
+    ok = set_meta(RecPaymentToolID),
+    get_public_history(RecPaymentToolID, Range).
 
 get_rec_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
+
+get_public_history(RecPaymentToolID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
+    [publish_rec_payment_tool_event(RecPaymentToolID, Ev) || Ev <- get_history(RecPaymentToolID, AfterID, Limit)].
+
+publish_rec_payment_tool_event(RecPaymentToolID, Event) ->
+    {ID, Dt, Payload} = unmarshal(Event),
+    #payproc_CustomerEvent{
+        id = ID,
+        created_at = Dt,
+        source = RecPaymentToolID,
+        payload = Payload
+    }.
 
 %%
 
@@ -79,11 +99,32 @@ set_meta(ID) ->
 start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
 
+call(ID, Args) ->
+    map_error(hg_machine:call(?NS, {id, ID}, Args)).
+
+-spec map_error({ok, _Result} | {error, _Error}) ->
+    _Result | no_return().
+map_error({ok, CallResult}) ->
+    case CallResult of
+        {ok, Result} ->
+            Result;
+        {exception, Reason} ->
+            throw(Reason)
+    end;
+map_error({error, notfound}) ->
+    throw(#payproc_RecurrentPaymentToolNotFound{});
+map_error({error, Reason}) ->
+    error(Reason).
+
 %%
 
 get_history(RecPaymentToolID) ->
     History = hg_machine:get_history(?NS, RecPaymentToolID),
-    unmarshal_history_result(map_history_error(History)).
+    unmarshal(map_history_error(History)).
+
+get_history(RecPaymentToolID, AfterID, Limit) ->
+    History = hg_machine:get_history(?NS, RecPaymentToolID, AfterID, Limit),
+    unmarshal(map_history_error(History)).
 
 get_state(RecPaymentToolID) ->
     collapse_history(get_history(RecPaymentToolID)).
@@ -111,11 +152,6 @@ map_start_error({ok, _}) ->
 map_start_error({error, Reason}) ->
     error(Reason).
 
-unmarshal_history_result({ok, Result}) ->
-    {ok, unmarshal(Result)};
-unmarshal_history_result(Error) ->
-    Error.
-
 -include("domain.hrl").
 -include("payment_processing.hrl").
 
@@ -133,11 +169,11 @@ publish_event(RecPaymentToolID, Changes) when is_list(Changes) ->
 namespace() ->
     ?NS.
 
--spec init(rec_payment_tool_id(), disposable_payment_resource()) ->
+-spec init(rec_payment_tool_id(), rec_payment_tool_params()) ->
     hg_machine:result(rec_payment_tool_event()).
-init(RecPaymentToolID, PaymentResource) ->
+init(RecPaymentToolID, [_PartyID, _ShopID, DisposablePaymentResource]) ->
     Route = undefined,
-    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, Route, PaymentResource),
+    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, Route, DisposablePaymentResource),
     {ok, {Changes, Action}} = start_session(),
     handle_result(#{
         changes => [Changes ++ ?recurrent_payment_tool_has_created(RecPaymentTool)],
@@ -162,13 +198,9 @@ process_timeout(St) ->
         active ->
             Action = hg_machine_action:new(),
             process(Action, St);
-        % suspended ->
-        %     Action = hg_machine_action:new(),
-        %     process_callback_timeout(Action, St, Options);
-        % finished ->
-        %     process_finished_session(St)
-        _ ->
-            not_implemented
+        suspended ->
+            Action = hg_machine_action:new(),
+            process_callback_timeout(Action, St)
     end.
 
 get_session_status(St) ->
@@ -185,6 +217,10 @@ process(Action, St) ->
     ProxyContext = construct_proxy_context(Session, St),
     {ok, ProxyResult} = hg_proxy_provider:issue_process_call(ProxyContext, St),
     Result = handle_proxy_result(ProxyResult, Action, Session),
+    finish_processing(Result, St).
+
+process_callback_timeout(Action, St) ->
+    Result = handle_proxy_callback_timeout(Action),
     finish_processing(Result, St).
 
 %%
@@ -252,16 +288,50 @@ handle_proxy_result(
     Changes = Changes1 ++ Changes2 ++ Changes3,
     case Intent of
         #'FinishIntent'{status = {success, _}} ->
-            make_proxy_result(Changes, Session, Action, Token);
+            make_proxy_result(Changes, Action, Token);
         _ ->
-            make_proxy_result(Changes, Session, Action)
+            make_proxy_result(Changes, Action)
     end.
 
-make_proxy_result(Changes, Session, Action) ->
-    make_proxy_result(Changes, Session, Action, undefined).
+handle_callback_result(
+    #prxprv_RecurrentTokenGenerationCallbackResult{result = ProxyResult, response = Response},
+    Action0,
+    Session
+) ->
+    {Response, handle_proxy_callback_result(ProxyResult, Action0, Session)}.
 
-make_proxy_result(Changes, Session, Action, Token) ->
-    {hg_proxy_provider:wrap_session_events(Changes, Session), Action, Token}.
+handle_proxy_callback_result(
+    #prxprv_RecurrentTokenGenerationProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
+    Action0,
+    Session
+) ->
+    Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
+    {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
+    {wrap_session_events([?session_activated()] ++ Changes1 ++ Changes2 ++ Changes3), Action};
+handle_proxy_callback_result(
+    #prxprv_PaymentCallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
+    Action0,
+    Session
+) ->
+    Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
+    {wrap_session_events(Changes1 ++ Changes2), Action0}.
+
+make_proxy_result(Changes, Action) ->
+    make_proxy_result(Changes, Action, undefined).
+
+make_proxy_result(Changes, Action, Token) ->
+    {wrap_session_events(Changes), Action, Token}.
+
+%%
+
+handle_proxy_callback_timeout(Action) ->
+    Changes = [?session_finished(?session_failed(?operation_timeout()))],
+    {wrap_session_events(Changes), Action}.
+
+wrap_session_events(SessionEvents) ->
+    [?session_ev(Ev) || Ev <- SessionEvents].
 
 %%
 
@@ -332,7 +402,7 @@ create_session(Trx) ->
         trx    => Trx
     }.
 
--type call() :: undefined.
+-type call() :: abandon.
 
 -spec process_call(call(), hg_machine:history(rec_payment_tool_event())) ->
     {hg_machine:response(), hg_machine:result(rec_payment_tool_event())}.
@@ -343,8 +413,36 @@ process_call(Call, History) ->
             {{exception, Exception}, {[], hg_machine_action:new()}}
     end.
 
-handle_call(_Call, _St) ->
-    not_implemented.
+handle_call(abandon, _St) ->
+    #{
+        response => ok,
+        changes  => [?recurrent_payment_tool_has_abandoned()]
+    };
+handle_call({callback, Callback}, St) ->
+    dispatch_callback(Callback, St).
+
+dispatch_callback({provider, Payload}, St) ->
+    process_callback(Payload, St);
+dispatch_callback(_Callback, _St) ->
+    throw(invalid_callback).
+
+process_callback(Payload, St) ->
+    Action = hg_machine_action:new(),
+    case get_session_status(get_session(St)) of
+        suspended ->
+            handle_callback(Payload, Action, St)
+    end.
+
+handle_callback(Payload, Action, St) ->
+    ProxyContext = construct_proxy_context(get_session(St), St),
+    {ok, CallbackResult} = hg_proxy_provider:issue_callback_call(
+        'RecurrentTokenGenerationCallbackResult',
+        Payload,
+        ProxyContext,
+        St
+    ),
+    {Response, Result} = handle_callback_result(CallbackResult, Action, get_session(St)),
+    {Response, finish_processing(Result, St)}.
 
 handle_result(#{state := _St} = Params) ->
     Changes = maps:get(changes, Params, []),

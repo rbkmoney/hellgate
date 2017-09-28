@@ -66,42 +66,42 @@ cfg(Key, C) ->
 
 all() ->
     [
-        % invalid_invoice_shop,
-        % invalid_invoice_amount,
-        % invalid_invoice_currency,
-        % invalid_party_status,
-        % invalid_shop_status,
-        % invalid_invoice_template_cost,
-        % invalid_invoice_template_id,
-        % invoice_w_template,
-        % invoice_cancellation,
-        % overdue_invoice_cancellation,
-        % invoice_cancellation_after_payment_timeout,
-        % invalid_payment_amount,
-        % payment_success,
-        % payment_w_terminal_success,
-        % payment_success_on_second_try,
-        % payment_fail_after_silent_callback,
-        % invoice_success_on_third_payment,
+        invalid_invoice_shop,
+        invalid_invoice_amount,
+        invalid_invoice_currency,
+        invalid_party_status,
+        invalid_shop_status,
+        invalid_invoice_template_cost,
+        invalid_invoice_template_id,
+        invoice_w_template,
+        invoice_cancellation,
+        overdue_invoice_cancellation,
+        invoice_cancellation_after_payment_timeout,
+        invalid_payment_amount,
+        payment_success,
+        payment_w_terminal_success,
+        payment_success_on_second_try,
+        payment_fail_after_silent_callback,
+        invoice_success_on_third_payment,
 
-        % payment_risk_score_check,
+        payment_risk_score_check,
 
-        % invalid_payment_adjustment,
-        % payment_adjustment_success,
+        invalid_payment_adjustment,
+        payment_adjustment_success,
 
-        % invalid_payment_w_deprived_party,
-        % external_account_posting,
+        invalid_payment_w_deprived_party,
+        external_account_posting,
 
-        % payment_hold_cancellation,
-        % payment_hold_auto_cancellation,
-        % payment_hold_capturing,
-        % payment_hold_auto_capturing,
+        payment_hold_cancellation,
+        payment_hold_auto_cancellation,
+        payment_hold_capturing,
+        payment_hold_auto_capturing,
 
-        % payment_refund_success,
+        payment_refund_success,
 
-        % terms_retrieval,
+        terms_retrieval,
 
-        % consistent_history
+        consistent_history
     ].
 
 %% starting/stopping
@@ -1169,7 +1169,7 @@ make_payment_params(PaymentTool, Session, FlowType) ->
             {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
     end,
     #payproc_InvoicePaymentParams{
-        payer = {payment_resource, #domain_PaymentResourcePayer{
+        payer = {payment_resource, #payproc_PaymentResourcePayerParams{
             resource = #domain_DisposablePaymentResource{
                 payment_tool = PaymentTool,
                 payment_session_id = Session,

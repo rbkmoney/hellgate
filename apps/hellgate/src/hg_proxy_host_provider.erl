@@ -14,15 +14,18 @@
 
 %%
 
--type tag()      :: dmsl_base_thrift:'Tag'().
--type callback() :: dmsl_proxy_thrift:'Callback'().
+-type tag()           :: dmsl_base_thrift:'Tag'().
+-type callback()      :: dmsl_proxy_thrift:'Callback'().
+-type callback_name() :: 'ProcessPaymentCallback' | 'ProcessRecurrentTokenGenerationCallback'.
 
--spec handle_function('ProcessCallback', [Args], hg_woody_wrapper:handler_opts()) ->
+-spec handle_function(callback_name(), [Args], hg_woody_wrapper:handler_opts()) ->
     term() | no_return()
     when Args :: tag() | callback().
 
-handle_function('ProcessCallback', [Tag, Callback], _) ->
-    map_error(hg_invoice:process_callback(Tag, {provider, Callback})).
+handle_function('ProcessPaymentCallback', [Tag, Callback], _) ->
+    map_error(hg_invoice:process_callback(Tag, {provider, Callback}));
+handle_function('ProcessRecurrentTokenGenerationCallback', [Tag, Callback], _) ->
+    map_error(hg_payment_processing:process_callback(Tag, {provider, Callback})).
 
 map_error({ok, Response}) ->
     Response;

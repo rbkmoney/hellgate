@@ -1671,17 +1671,17 @@ marshal(refund_status, ?refund_failed(Failure)) ->
 %%
 
 marshal(payer, ?payment_resource_payer(Resource, ContactInfo)) ->
-    #{
+    [2, #{
         <<"type">>           => <<"payment_resource_payer">>,
         <<"resource">>       => marshal(disposable_payment_resource, Resource),
         <<"contact_info">>   => marshal(contact_info, ContactInfo)
-    };
+    }];
 
 marshal(payer, ?customer_payer(CustomerID)) ->
-    #{
+    [2, #{
         <<"type">>          => <<"customer_payer">>,
         <<"customer_id">>   => marshal(str, CustomerID)
-    };
+    }];
 
 marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
     #{
@@ -2035,11 +2035,11 @@ unmarshal(refund_status, [<<"failed">>, Failure]) ->
 
 %% Payer
 
-unmarshal(payer, #{
+unmarshal(payer, [2, #{
     <<"type">>           := <<"payment_resource_payer">>,
     <<"resource">>       := Resource,
     <<"contact_info">>   := ContactInfo
-}) ->
+}]) ->
     ?payment_resource_payer(
         unmarshal(disposable_payment_resource, Resource),
         unmarshal(contact_info, ContactInfo)
