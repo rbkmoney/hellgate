@@ -63,15 +63,14 @@ end_per_suite(C) ->
 init_per_testcase(_Name, C) ->
     RootUrl = ?c(root_url, C),
     PartyID = hg_utils:unique_id(),
-    UserInfo = #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}},
     [
         {party_id, PartyID},
-        {eventsink_client, hg_client_eventsink:start_link(create_api(RootUrl))},
-        {partymgmt_client, hg_client_party:start_link(UserInfo, PartyID, create_api(RootUrl))} | C
+        {eventsink_client, hg_client_eventsink:start_link(create_api(RootUrl, PartyID))},
+        {partymgmt_client, hg_client_party:start_link(PartyID, create_api(RootUrl, PartyID))} | C
     ].
 
-create_api(RootUrl) ->
-    hg_client_api:new(RootUrl).
+create_api(RootUrl, PartyID) ->
+    hg_ct_helper:create_client(RootUrl, PartyID).
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
