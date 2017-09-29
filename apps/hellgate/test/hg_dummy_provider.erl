@@ -25,6 +25,8 @@
     {suspend, #'SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
 -define(finish(),
     {finish, #'FinishIntent'{status = {success, #'Success'{}}}}).
+-define(recurrent_token_finish(Token),
+    {recurrent_token_finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'Success'{}, Token}}}).
 
 -spec get_service_spec() ->
     hg_proto:service_spec().
@@ -67,8 +69,8 @@ construct_silent_callback(Form) ->
 
 handle_function(
     'GenerateToken',
-    [#prxprv_RecurrentTokenGenerationContext{
-        session = #prxprv_RecurrentTokenGenerationSession{state = State},
+    [#prxprv_RecurrentTokenContext{
+        session = #prxprv_RecurrentTokenSession{state = State},
         token_info = TokenInfo,
         options = _
     }],
@@ -77,9 +79,9 @@ handle_function(
     generate_token(State, TokenInfo, Opts);
 
 handle_function(
-    'HandleRecurrentTokenGenerationCallback',
-    [Payload, #prxprv_RecurrentTokenGenerationContext{
-        session = #prxprv_RecurrentTokenGenerationSession{state = State},
+    'HandleRecurrentTokenCallback',
+    [Payload, #prxprv_RecurrentTokenContext{
+        session = #prxprv_RecurrentTokenSession{state = State},
         token_info = TokenInfo,
         options = _
     }],
@@ -147,37 +149,37 @@ generate_token(<<"finishing">>, TokenInfo, _Opts) ->
     token_finish(TokenInfo, Token).
 
 handle_token_callback(?DEFAULT_PAYLOAD, <<"suspended">>, _PaymentInfo, _Opts) ->
-    token_respond(<<"sure">>, #prxprv_RecurrentTokenGenerationProxyResult{
+    token_respond(<<"sure">>, #prxprv_RecurrentTokenProxyResult{
         intent     = ?sleep(1),
         next_state = <<"sleeping">>
     });
 handle_token_callback(?LAY_LOW_BUDDY, <<"suspended">>, _PaymentInfo, _Opts) ->
-    token_respond(<<"sure">>, #prxprv_RecurrentTokenGenerationProxyResult{
+    token_respond(<<"sure">>, #prxprv_RecurrentTokenProxyResult{
         intent     = undefined,
         next_state = <<"suspended">>
     }).
 
 token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
-    #prxprv_RecurrentTokenGenerationProxyResult{
-        intent = ?finish(),
+    #prxprv_RecurrentTokenProxyResult{
+        intent = ?recurrent_token_finish(Token),
         token  = Token,
         trx    = #domain_TransactionInfo{id = PaymentTool#prxprv_RecurrentPaymentTool.id, extra = #{}}
     }.
 
 token_sleep(Timeout, State) ->
-    #prxprv_RecurrentTokenGenerationProxyResult{
+    #prxprv_RecurrentTokenProxyResult{
         intent     = ?sleep(Timeout),
         next_state = State
     }.
 
 token_suspend(Tag, Timeout, State, UserInteraction) ->
-    #prxprv_RecurrentTokenGenerationProxyResult{
+    #prxprv_RecurrentTokenProxyResult{
         intent     = ?suspend(Tag, Timeout, UserInteraction),
         next_state = State
     }.
 
 token_respond(Response, CallbackResult) ->
-    #prxprv_RecurrentTokenGenerationCallbackResult{
+    #prxprv_RecurrentTokenCallbackResult{
         response   = Response,
         result     = CallbackResult
     }.

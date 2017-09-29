@@ -1,52 +1,47 @@
 -module(hg_event_sink).
 
--export([get_events/2]).
--export([get_last_event_id/0]).
+-export([get_events/3]).
+-export([get_last_event_id/1]).
 
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
--type event_id() :: dmsl_base_thrift:'EventID'().
--type event()    :: dmsl_payment_processing_thrift:'Event'().
+-type event_sink_id() :: dmsl_base_thrift:'ID'().
+-type event_id()      :: dmsl_base_thrift:'EventID'().
 
--spec get_events(event_id(), integer()) ->
-    {ok, [event()]} | {error, event_not_found}.
-
-get_events(After, Limit) ->
+-spec get_events(event_sink_id(), event_id(), integer()) ->
+    {ok, list()} | {error, event_not_found}.
+get_events(EventSinkID, After, Limit) ->
     try
-        get_public_history(After, Limit)
+        {ok, get_history_range(EventSinkID, After, Limit)}
     catch
         {exception, #'EventNotFound'{}} ->
             {error, event_not_found}
     end.
 
--spec get_last_event_id() ->
+-spec get_last_event_id(event_sink_id()) ->
     {ok, event_id()} | {error, no_last_event}.
-
-get_last_event_id() ->
-    case get_history_range(undefined, 1, backward) of
-        [#'SinkEvent'{id = ID}] ->
+get_last_event_id(EventSinkID) ->
+    case get_history_range(EventSinkID, undefined, 1, backward) of
+        [{ID, _, _, _}] ->
             {ok, ID};
         [] ->
             {error, no_last_event}
     end.
 
-get_public_history(After, Limit) ->
-    History = [publish_event(Ev) || Ev <- get_history_range(After, Limit)],
-    {ok, History}.
+get_history_range(EventSinkID, After, Limit) ->
+    get_history_range(EventSinkID, After, Limit, forward).
 
-get_history_range(After, Limit) ->
-    get_history_range(After, Limit, forward).
-
-get_history_range(After, Limit, Direction) ->
+get_history_range(EventSinkID, After, Limit, Direction) ->
     HistoryRange = #'HistoryRange'{'after' = After, limit = Limit, direction = Direction},
-    {ok, History} = call_event_sink('GetHistory', [HistoryRange]),
-    History.
+    {ok, History} = call_event_sink('GetHistory', EventSinkID, [HistoryRange]),
+    map_sink_events(History).
 
-publish_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event = Event}) ->
+call_event_sink(Function, EventSinkID, Args) ->
+    hg_woody_wrapper:call('EventSink', Function, [EventSinkID | Args]).
+
+map_sink_events(History) ->
+    [map_sink_event(Ev) || Ev <- History].
+
+map_sink_event(#'SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event = Event}) ->
     #'Event'{id = EventID, created_at = Dt, event_payload = Payload} = Event,
-    hg_event_provider:publish_event(Ns, ID, SourceID,  {EventID, Dt, hg_msgpack_marshalling:unmarshal(Payload)}).
-
--define(EVENTSINK_ID, <<"payproc">>).
-
-call_event_sink(Function, Args) ->
-    hg_woody_wrapper:call('EventSink', Function, [?EVENTSINK_ID | Args]).
+    {ID, Ns, SourceID, {EventID, Dt, Payload}}.

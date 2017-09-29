@@ -47,7 +47,7 @@
 %% Woody handler
 %%
 
--spec handle_function(woody:func(), woody:args(), hg_woody_handler:handler_opts()) ->
+-spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 handle_function(Func, Args, Opts) ->
     hg_log_scope:scope(customer_management,

@@ -35,7 +35,6 @@
 -type rec_payment_tool_id()     :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type rec_payment_tool_event()  :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
-% -type rec_payment_tool_change() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolChange'().
 -type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 
 -type route()      :: dmsl_domain_thrift:'PaymentRoute'().
@@ -50,21 +49,19 @@
 -type proxy_state()   :: dmsl_proxy_thrift:'ProxyState'().
 -type trx_info()      :: dmsl_domain_thrift:'TransactionInfo'().
 
-% -type msgpack_ev() :: hg_msgpack_marshalling:value().
-
 %% Woody handler
 
--spec handle_function(woody:func(), woody:args(), hg_woody_handler:handler_opts()) ->
+-spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->
-    case hg_event_sink:get_events(After, Limit) of
+    case hg_event_sink:get_events(?NS, After, Limit) of
         {ok, Events} ->
-            Events;
+            publish_events(Events);
         {error, event_not_found} ->
             throw(#payproc_EventNotFound{})
     end;
 handle_function('GetLastEventID', [], _Opts) ->
-    case hg_event_sink:get_last_event_id() of
+    case hg_event_sink:get_last_event_id(?NS) of
         {ok, ID} ->
             ID;
         {error, no_last_event} ->
@@ -576,8 +573,12 @@ unmarshal({ID, Dt, Payload}) ->
 unmarshal(_, Other) ->
     Other.
 
-
 %%
 %% Event sink
 %%
 
+publish_events(Events) ->
+    [publish_event(Event) || Event <- Events].
+
+publish_event({ID, Ns, SourceID, {EventID, Dt, Payload}}) ->
+    hg_event_provider:publish_event(Ns, ID, SourceID, {EventID, Dt, hg_msgpack_marshalling:unmarshal(Payload)}).
