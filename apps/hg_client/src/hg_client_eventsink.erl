@@ -75,6 +75,8 @@ pull_events(N, Timeout, Client) when N > 0 ->
 -type st() :: #st{}.
 -type callref() :: {pid(), Tag :: reference()}.
 
+-define(SERVICE, payment_processing_eventsink).
+
 -spec init(hg_client_api:t()) ->
     {ok, st()}.
 
@@ -82,7 +84,7 @@ init(ApiClient) ->
     {ok, #st{
         client = ApiClient,
         poller = hg_client_event_poller:new(
-            {eventsink, 'GetEvents', []},
+            {?SERVICE, 'GetEvents', []},
             fun (Event) -> Event#payproc_Event.id end
         )
     }}.
@@ -91,7 +93,7 @@ init(ApiClient) ->
     {reply, term(), st()} | {noreply, st()}.
 
 handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
-    {Result, ClientNext} = hg_client_api:call(eventsink, Function, Args, Client),
+    {Result, ClientNext} = hg_client_api:call(?SERVICE, Function, Args, Client),
     {reply, Result, St#st{client = ClientNext}};
 
 handle_call({pull_events, N, Timeout}, _From, St = #st{client = Client, poller = Poller}) ->
