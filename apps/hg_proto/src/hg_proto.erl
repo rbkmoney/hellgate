@@ -27,9 +27,9 @@ get_service(customer_management) ->
     {dmsl_payment_processing_thrift, 'CustomerManagement'};
 get_service(payment_processing_eventsink) ->
     {dmsl_payment_processing_thrift, 'EventSink'};
-get_service(recurrent_paytools) ->
+get_service(recurrent_payment_tools) ->
     {dmsl_payment_processing_thrift, 'RecurrentPaymentTools'};
-get_service(recurrent_paytools_eventsink) ->
+get_service(recurrent_payment_tool_eventsink) ->
     {dmsl_payment_processing_thrift, 'RecurrentPaymentToolEventSink'};
 get_service(proxy_provider) ->
     {dmsl_proxy_provider_thrift, 'ProviderProxy'};
@@ -65,7 +65,7 @@ get_service_spec(Name = payment_processing_eventsink, #{}) ->
     {?VERSION_PREFIX ++ "/processing/eventsink", get_service(Name)};
 get_service_spec(Name = recurrent_payment_tools, #{}) ->
     {?VERSION_PREFIX ++ "/processing/recpaytools", get_service(Name)};
-get_service_spec(Name = recurrent_payment_tools_eventsink, #{}) ->
+get_service_spec(Name = recurrent_payment_tool_eventsink, #{}) ->
     {?VERSION_PREFIX ++ "/processing/recpaytools/eventsink", get_service(Name)};
 get_service_spec(Name = processor, #{namespace := Ns}) when is_binary(Ns) ->
     {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), get_service(Name)};
