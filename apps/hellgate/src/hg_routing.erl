@@ -14,7 +14,7 @@
 -include("domain.hrl").
 
 -type terms()    :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
--type route()    :: dmsl_domain_thrift:'InvoicePaymentRoute'().
+-type route()    :: dmsl_domain_thrift:'PaymentRoute'().
 
 -spec choose(hg_selector:varset(), hg_domain:revision()) ->
     route() | undefined.

@@ -2,12 +2,12 @@
 %%% Payment processing machine
 %%%
 
--module(hg_payment_processing).
+-module(hg_recurrent_payment_tools).
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 
--define(NS, <<"payment_processing">>).
+-define(NS, <<"recurrent_payment_tools">>).
 
 %% Woody handler called by hg_woody_wrapper
 
@@ -22,15 +22,11 @@
 -export([process_signal/2]).
 -export([process_call  /2]).
 
-%% Event provider callbacks
-
--behaviour(hg_event_provider).
--export([publish_event/2]).
-
 %% Types
 -record(st, {
     rec_payment_tool :: undefined | rec_payment_tool(),
     route            :: undefined | route(),
+    risk_score       :: undefined | risk_score(),
     session          :: undefined | session()
 }).
 -type st() :: #st{}.
@@ -39,9 +35,11 @@
 -type rec_payment_tool_id()     :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type rec_payment_tool_event()  :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
+% -type rec_payment_tool_change() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolChange'().
 -type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 
--type route() :: dmsl_domain_thrift:'PaymentRoute'().
+-type route()      :: dmsl_domain_thrift:'PaymentRoute'().
+-type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 
 -type session() :: #{
     status      := active | suspended | finished,
@@ -52,32 +50,45 @@
 -type proxy_state()   :: dmsl_proxy_thrift:'ProxyState'().
 -type trx_info()      :: dmsl_domain_thrift:'TransactionInfo'().
 
+% -type msgpack_ev() :: hg_msgpack_marshalling:value().
+
 %% Woody handler
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_handler:handler_opts()) ->
     term() | no_return().
+handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->
+    case hg_event_sink:get_events(After, Limit) of
+        {ok, Events} ->
+            Events;
+        {error, event_not_found} ->
+            throw(#payproc_EventNotFound{})
+    end;
+handle_function('GetLastEventID', [], _Opts) ->
+    case hg_event_sink:get_last_event_id() of
+        {ok, ID} ->
+            ID;
+        {error, no_last_event} ->
+            throw(#payproc_NoLastEvent{})
+    end;
 handle_function(Func, Args, Opts) ->
-    hg_log_scope:scope(payment_processing,
+    hg_log_scope:scope(recurrent_payment_tools,
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
-handle_function_('CreateRecurrentPaymentTool', RecurrentPaymentToolParams, _Opts) ->
+handle_function_('Create', RecurrentPaymentToolParams, _Opts) ->
     RecPaymentToolID = hg_utils:unique_id(),
     ok = set_meta(RecPaymentToolID),
     ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
-    get_rec_tool(get_state(RecPaymentToolID));
-handle_function_('AbandonRecurrentPaymentTool', [RecPaymentToolID], _Opts) ->
+    get_rec_payment_tool(get_state(RecPaymentToolID));
+handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
     call(RecPaymentToolID, abandon);
-handle_function_('GetRecurrentPaymentTool', [RecPaymentToolID], _Opts) ->
+handle_function_('Get', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
-    get_rec_tool(get_state(RecPaymentToolID));
+    get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('GetEvents', [RecPaymentToolID, Range], _Opts) ->
     ok = set_meta(RecPaymentToolID),
     get_public_history(RecPaymentToolID, Range).
-
-get_rec_tool(#st{rec_payment_tool = RecPaymentTool}) ->
-    RecPaymentTool.
 
 get_public_history(RecPaymentToolID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_rec_payment_tool_event(RecPaymentToolID, Ev) || Ev <- get_history(RecPaymentToolID, AfterID, Limit)].
@@ -153,14 +164,7 @@ map_start_error({error, Reason}) ->
     error(Reason).
 
 -include("domain.hrl").
--include("payment_processing.hrl").
-
-%% Event provider callbacks
-
--spec publish_event(rec_payment_tool_id(), rec_payment_tool_event()) ->
-    hg_event_provider:public_event().
-publish_event(RecPaymentToolID, Changes) when is_list(Changes) ->
-    {{rec_payment_tool_id, RecPaymentToolID}, ?recurrent_payment_tool_event(unmarshal({list, changes}, Changes))}.
+-include("recurrent_payment_tools.hrl").
 
 %% hg_machine callbacks
 
@@ -177,9 +181,9 @@ init(RecPaymentToolID, Params) ->
     {Party, Shop} = get_party_shop(Params),
     MerchantTerms = get_merchant_payments_terms(Shop, Party, CreatedAt, Revision),
     VS0 = collect_varset(Party, Shop, #{}),
-    {RecPaymentTool , VS1} = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, MerchantTerms, VS0, Revision),
-    {RiskScore      , VS2} = validate_risk_score(inspect(RecPaymentTool, VS1), VS1),
-    {Route          , VS3} = validate_route(hg_routing:choose(VS2, Revision), RecPaymentTool, VS2),
+    {RecPaymentTool ,  VS1} = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, MerchantTerms, VS0, Revision),
+    {RiskScore      ,  VS2} = validate_risk_score(inspect(RecPaymentTool, VS1), VS1),
+    {Route          , _VS3} = validate_route(hg_routing:choose(VS2, Revision), RecPaymentTool, VS2),
     {ok, {Changes, Action}} = start_session(),
     handle_result(#{
         changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
@@ -272,14 +276,14 @@ get_route(#st{route = Route}) ->
 %%
 
 construct_proxy_context(St) ->
-    #prxprv_RecurrentTokenGenerationContext{
+    #prxprv_RecurrentTokenContext{
         session    = construct_session(St),
         token_info = construct_token_info(St),
         options    = hg_proxy_provider:collect_proxy_options(St)
     }.
 
 construct_session(St) ->
-    #prxprv_RecurrentTokenGenerationSession{
+    #prxprv_RecurrentTokenSession{
         state = maps:get(proxy_state, get_session(St), undefined)
     }.
 
@@ -300,25 +304,23 @@ construct_proxy_payment_tool(
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
-        rec_token = RecToken
+        minimal_payment_cost = Cash
     }
 ) ->
     #prxprv_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
-        % FIXME will never be undefined
-        rec_token = RecToken
+        minimal_payment_cost = Cash
     }.
 
 %%
 
 handle_proxy_result(
-    #prxprv_RecurrentTokenGenerationProxyResult{
+    #prxprv_RecurrentTokenProxyResult{
         intent = {_Type, Intent},
         trx = Trx,
-        next_state = ProxyState,
-        token = Token
+        next_state = ProxyState
     },
     Action0,
     Session
@@ -328,21 +330,21 @@ handle_proxy_result(
     {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
     Changes = Changes1 ++ Changes2 ++ Changes3,
     case Intent of
-        #'FinishIntent'{status = {success, _}} ->
+        #prxprv_RecurrentTokenFinishIntent{status = {success, {token, Token}}} ->
             make_proxy_result(Changes, Action, Token);
         _ ->
             make_proxy_result(Changes, Action)
     end.
 
 handle_callback_result(
-    #prxprv_RecurrentTokenGenerationCallbackResult{result = ProxyResult, response = Response},
+    #prxprv_RecurrentTokenCallbackResult{result = ProxyResult, response = Response},
     Action0,
     Session
 ) ->
     {Response, handle_proxy_callback_result(ProxyResult, Action0, Session)}.
 
 handle_proxy_callback_result(
-    #prxprv_RecurrentTokenGenerationProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
+    #prxprv_RecurrentTokenProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
     Action0,
     Session
 ) ->
@@ -393,8 +395,12 @@ apply_changes(Changes, St) ->
 apply_change(Event, undefined) ->
     apply_change(Event, #st{});
 
-apply_change(?recurrent_payment_tool_has_created(RecPaymentTool), St) ->
-    St#st{rec_payment_tool = RecPaymentTool};
+apply_change(?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route), St) ->
+    St#st{
+        rec_payment_tool = RecPaymentTool,
+        risk_score = RiskScore,
+        route = Route
+    };
 apply_change(?recurrent_payment_tool_has_acquired(Token), St) ->
     RecPaymentTool = get_rec_payment_tool(St),
     St#st{
@@ -472,7 +478,7 @@ process_callback(Payload, St) ->
 
 handle_callback(Payload, Action, St) ->
     ProxyContext = construct_proxy_context(St),
-    {ok, CallbackResult} = hg_proxy_provider:handle_recurrent_token_generation_callback(
+    {ok, CallbackResult} = hg_proxy_provider:handle_recurrent_token_callback(
         Payload,
         ProxyContext,
         get_route(St)
@@ -492,8 +498,16 @@ handle_result(Result) ->
 
 %%
 
+assert_rec_payment_tool_status(recurrent_payment_tool_acquired, St) ->
+    ?recurrent_payment_tool_acquired() = get_rec_payment_tool_status(get_rec_payment_tool(St)).
+
+get_rec_payment_tool_status(RecPaymentTool) ->
+    RecPaymentTool#payproc_RecurrentPaymentTool.status.
+
+%%
+
 create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Terms, VS0, Revision) ->
-    PaymentResource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
+    PaymentResource = Params#payproc_RecurrentPaymentToolParams.disposable_payment_resource,
     VS1 = validate_payment_tool(
         get_payment_tool(PaymentResource),
         Terms#domain_PaymentsServiceTerms.payment_methods,
@@ -561,3 +575,9 @@ unmarshal({ID, Dt, Payload}) ->
 
 unmarshal(_, Other) ->
     Other.
+
+
+%%
+%% Event sink
+%%
+

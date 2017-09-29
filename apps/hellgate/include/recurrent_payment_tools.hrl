@@ -1,8 +1,8 @@
--ifndef(__hellgate_payment_processing__).
--define(__hellgate_payment_processing__, 42).
+-ifndef(__hellgate_recurrent_payment_tools__).
+-define(__hellgate_recurrent_payment_tools__, 42).
 
 %%
-%% Recurrent Payment Tool
+%% Recurrent Payment Tools
 %%
 
 % Events

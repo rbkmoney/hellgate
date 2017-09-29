@@ -8,7 +8,7 @@
 -export([process_payment/2]).
 -export([generate_token/2]).
 -export([handle_payment_callback/3]).
--export([handle_recurrent_token_generation_callback/3]).
+-export([handle_recurrent_token_callback/3]).
 
 -export([bind_transaction/2]).
 -export([update_proxy_state/1]).
@@ -65,10 +65,10 @@ generate_token(ProxyContext, Route) ->
 handle_payment_callback(Payload, ProxyContext, St) ->
     issue_call('HandlePaymentCallback', [Payload, ProxyContext], St).
 
--spec handle_recurrent_token_generation_callback(_Payload, _ProxyContext, route()) ->
+-spec handle_recurrent_token_callback(_Payload, _ProxyContext, route()) ->
     term().
-handle_recurrent_token_generation_callback(Payload, ProxyContext, St) ->
-    issue_call('HandleRecurrentTokenGenerationCallback', [Payload, ProxyContext], St).
+handle_recurrent_token_callback(Payload, ProxyContext, St) ->
+    issue_call('HandleRecurrentTokenCallback', [Payload, ProxyContext], St).
 
 -spec issue_call(woody:func(), list(), route()) ->
     term().
