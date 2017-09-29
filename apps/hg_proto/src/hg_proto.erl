@@ -63,9 +63,9 @@ get_service_spec(Name = customer_management, #{}) ->
     {?VERSION_PREFIX ++ "/processing/customer_management", get_service(Name)};
 get_service_spec(Name = payment_processing_eventsink, #{}) ->
     {?VERSION_PREFIX ++ "/processing/eventsink", get_service(Name)};
-get_service_spec(Name = recurrent_payment_tools, #{}) ->
+get_service_spec(Name = recurrent_paytools, #{}) ->
     {?VERSION_PREFIX ++ "/processing/recpaytools", get_service(Name)};
-get_service_spec(Name = recurrent_payment_tool_eventsink, #{}) ->
+get_service_spec(Name = recurrent_paytools_eventsink, #{}) ->
     {?VERSION_PREFIX ++ "/processing/recpaytools/eventsink", get_service(Name)};
 get_service_spec(Name = processor, #{namespace := Ns}) when is_binary(Ns) ->
     {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), get_service(Name)};

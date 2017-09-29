@@ -125,6 +125,9 @@ handle_proxy_intent(#'FinishIntent'{status = {success, _}}, Action) ->
 handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, Action) ->
     Events = [?session_finished(?session_failed(convert_failure(Failure)))],
     {Events, Action};
+handle_proxy_intent(#'prxprv_RecurrentTokenFinishIntent'{status = {success, _}}, Action) ->
+    Events = [?session_finished(?session_succeeded())],
+    {Events, Action};
 handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
     Events = [],

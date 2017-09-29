@@ -33,16 +33,16 @@
 % Statuses
 
 -define(recurrent_payment_tool_created(),
-    {recurrent_payment_tool_created, #payproc_RecurrentPaymentToolCreated{}}).
+    {created, #payproc_RecurrentPaymentToolCreated{}}).
 
 -define(recurrent_payment_tool_acquired(),
-    {recurrent_payment_tool_acquired, #payproc_RecurrentPaymentToolAcquired{}}).
+    {acquired, #payproc_RecurrentPaymentToolAcquired{}}).
 
 -define(recurrent_payment_tool_abandoned(),
-    {recurrent_payment_tool_abandoned, #payproc_RecurrentPaymentToolAbandoned{}}).
+    {abandoned, #payproc_RecurrentPaymentToolAbandoned{}}).
 
 -define(recurrent_payment_tool_failed(Failure),
-    {recurrent_payment_tool_failed, #payproc_RecurrentPaymentToolFailed{failure = Failure}}).
+    {failed, #payproc_RecurrentPaymentToolFailed{failure = Failure}}).
 
 %% Sessions
 

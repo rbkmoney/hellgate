@@ -2,7 +2,7 @@
 %%% Payment processing machine
 %%%
 
--module(hg_recurrent_payment_tools).
+-module(hg_recurrent_paytools).
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
@@ -42,12 +42,15 @@
 
 -type session() :: #{
     status      := active | suspended | finished,
+    result      => session_result(),
     trx         => trx_info(),
     proxy_state => proxy_state()
 }.
 
--type proxy_state()   :: dmsl_proxy_thrift:'ProxyState'().
--type trx_info()      :: dmsl_domain_thrift:'TransactionInfo'().
+-type proxy_state()    :: dmsl_proxy_thrift:'ProxyState'().
+-type trx_info()       :: dmsl_domain_thrift:'TransactionInfo'().
+-type session_result() :: dmsl_payment_processing_thrift:'SessionResult'().
+
 
 %% Woody handler
 
@@ -171,7 +174,7 @@ namespace() ->
     ?NS.
 
 -spec init(rec_payment_tool_id(), rec_payment_tool_params()) ->
-    hg_machine:result(rec_payment_tool_event()).
+    hg_machine:result().
 init(RecPaymentToolID, Params) ->
     Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
@@ -235,7 +238,7 @@ start_session() ->
     {ok, {Events, Action}}.
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(rec_payment_tool_event())) ->
-    hg_machine:result(rec_payment_tool_event()).
+    hg_machine:result().
 process_signal(Signal, History) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
@@ -276,7 +279,7 @@ construct_proxy_context(St) ->
     #prxprv_RecurrentTokenContext{
         session    = construct_session(St),
         token_info = construct_token_info(St),
-        options    = hg_proxy_provider:collect_proxy_options(St)
+        options    = hg_proxy_provider:collect_proxy_options(get_route(St))
     }.
 
 construct_session(St) ->
@@ -327,7 +330,7 @@ handle_proxy_result(
     {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
     Changes = Changes1 ++ Changes2 ++ Changes3,
     case Intent of
-        #prxprv_RecurrentTokenFinishIntent{status = {success, {token, Token}}} ->
+        #prxprv_RecurrentTokenFinishIntent{status = {'success', #prxprv_RecurrentTokenSuccess{token = Token}}} ->
             make_proxy_result(Changes, Action, Token);
         _ ->
             make_proxy_result(Changes, Action)
@@ -348,15 +351,15 @@ handle_proxy_callback_result(
     Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
     Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
     {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
-    {wrap_session_events([?session_activated()] ++ Changes1 ++ Changes2 ++ Changes3), Action};
-handle_proxy_callback_result(
-    #prxprv_PaymentCallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
-    Action0,
-    Session
-) ->
-    Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
-    {wrap_session_events(Changes1 ++ Changes2), Action0}.
+    make_proxy_result(wrap_session_events([?session_activated()] ++ Changes1 ++ Changes2 ++ Changes3), Action).
+% handle_proxy_callback_result(
+%     #prxprv_RecurrentTokenProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
+%     Action0,
+%     Session
+% ) ->
+%     Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
+%     Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
+%     make_proxy_result(wrap_session_events(Changes1 ++ Changes2), Action0).
 
 make_proxy_result(Changes, Action) ->
     make_proxy_result(Changes, Action, undefined).
@@ -368,7 +371,7 @@ make_proxy_result(Changes, Action, Token) ->
 
 handle_proxy_callback_timeout(Action) ->
     Changes = [?session_finished(?session_failed(?operation_timeout()))],
-    {wrap_session_events(Changes), Action}.
+    make_proxy_result(wrap_session_events(Changes), Action).
 
 wrap_session_events(SessionEvents) ->
     [?session_ev(Ev) || Ev <- SessionEvents].
@@ -379,11 +382,20 @@ finish_processing({Changes, Action, Token}, St) ->
     St1 = apply_changes(Changes, St),
     case get_session(St1) of
         #{status := finished, result := ?session_succeeded()} ->
-            {done, {Changes ++ [?recurrent_payment_tool_has_acquired(Token)], Action}};
+            #{
+                changes => Changes ++ [?recurrent_payment_tool_has_acquired(Token)],
+                action  => Action
+            };
         #{status := finished, result := ?session_failed(Failure)} ->
-            {done, {Changes ++ [?recurrent_payment_tool_has_failed(Failure)], Action}};
+            #{
+                changes => Changes ++ [?recurrent_payment_tool_has_failed(Failure)],
+                action  => Action
+            };
         #{} ->
-            {next, {Changes, Action}}
+            #{
+                changes => Changes,
+                action  => Action
+            }
     end.
 
 apply_changes(Changes, St) ->
@@ -496,7 +508,8 @@ handle_result(Result) ->
 %%
 
 assert_rec_payment_tool_status(recurrent_payment_tool_acquired, St) ->
-    ?recurrent_payment_tool_acquired() = get_rec_payment_tool_status(get_rec_payment_tool(St)).
+    ?recurrent_payment_tool_acquired() = get_rec_payment_tool_status(get_rec_payment_tool(St)),
+    ok.
 
 get_rec_payment_tool_status(RecPaymentTool) ->
     RecPaymentTool#payproc_RecurrentPaymentTool.status.
@@ -511,20 +524,21 @@ create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Terms, VS0, Revisio
         VS0,
         Revision
     ),
-    VS2 = validate_cost(
+    {VS2, Cash} = validate_cost(
         Terms#domain_PaymentsServiceTerms.cash_limit,
         VS1,
         Revision
     ),
     {#payproc_RecurrentPaymentTool{
-        id                 = RecPaymentToolID,
-        shop_id            = Params#payproc_RecurrentPaymentToolParams.shop_id,
-        party_id           = Params#payproc_RecurrentPaymentToolParams.party_id,
-        domain_revision    = Revision,
-        status             = ?recurrent_payment_tool_created(),
-        created_at         = CreatedAt,
-        payment_resource   = PaymentResource,
-        rec_token          = undefined
+        id                   = RecPaymentToolID,
+        shop_id              = Params#payproc_RecurrentPaymentToolParams.shop_id,
+        party_id             = Params#payproc_RecurrentPaymentToolParams.party_id,
+        domain_revision      = Revision,
+        status               = ?recurrent_payment_tool_created(),
+        created_at           = CreatedAt,
+        payment_resource     = PaymentResource,
+        minimal_payment_cost = Cash,
+        rec_token            = undefined
     }, VS2}.
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
@@ -537,7 +551,7 @@ validate_cost(CashLimitSelector, VS, Revision) ->
     CashLimit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
     % FIXME
     {_Exclusiveness, Cash} = CashLimit#domain_CashRange.lower,
-    VS#{cost => Cash}.
+    {VS#{cost => Cash}, Cash}.
 
 reduce_selector(Name, Selector, VS, Revision) ->
     case hg_selector:reduce(Selector, VS, Revision) of
