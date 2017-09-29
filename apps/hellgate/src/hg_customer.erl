@@ -476,9 +476,9 @@ marshal(
     }
 ) ->
     #{
-        <<"id">>            => marshal(str                         , ID),
-        <<"recpaytool_id">> => marshal(str                         , RecPaymentToolID),
-        <<"payresource">>   => marshal(disposable_payment_resource , PaymentResource)
+        <<"id">>            => marshal(str              , ID),
+        <<"recpaytool_id">> => marshal(str              , RecPaymentToolID),
+        <<"payresource">>   => marshal(payment_resource , PaymentResource)
     };
 
 marshal(
@@ -494,7 +494,7 @@ marshal(
     });
 
 marshal(
-    disposable_payment_resource,
+    payment_resource,
     #domain_DisposablePaymentResource{
         payment_tool       = PaymentTool,
         payment_session_id = PaymentSessionID,
@@ -632,14 +632,14 @@ unmarshal(
     }
 ) ->
     #payproc_CustomerBinding{
-        id                  = unmarshal(str                         , ID),
-        rec_payment_tool_id = unmarshal(str                         , RecPaymentToolID),
-        payment_resource    = unmarshal(disposable_payment_resource , PaymentResource),
+        id                  = unmarshal(str              , ID),
+        rec_payment_tool_id = unmarshal(str              , RecPaymentToolID),
+        payment_resource    = unmarshal(payment_resource , PaymentResource),
         status              = ?customer_binding_pending()
     };
 
 unmarshal(
-    disposable_payment_resource,
+    payment_resource,
     #{
         <<"paytool">>     := PaymentTool,
         <<"session">>     := PaymentSessionID,
