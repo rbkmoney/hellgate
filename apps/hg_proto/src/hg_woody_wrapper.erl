@@ -24,6 +24,7 @@
     term() | no_return()).
 
 %% API
+
 -export([call/3]).
 -export([call/4]).
 -export([raise/1]).
@@ -76,24 +77,7 @@ get_service_url(ServiceName) ->
     maps:get(ServiceName, genlib_app:env(hellgate, service_urls)).
 
 -spec get_service_modname(atom()) ->
-    {module(), atom()}.
+    hg_proto:service().
 
 get_service_modname(ServiceName) ->
-    {get_service_module(ServiceName), ServiceName}.
-
-get_service_module('Automaton') ->
-    mg_proto_state_processing_thrift;
-get_service_module('Accounter') ->
-    dmsl_accounter_thrift;
-get_service_module('EventSink') ->
-    mg_proto_state_processing_thrift;
-get_service_module('ProviderProxy') ->
-    dmsl_proxy_provider_thrift;
-get_service_module('InspectorProxy') ->
-    dmsl_proxy_inspector_thrift;
-get_service_module('MerchantProxy') ->
-    dmsl_proxy_merchant_thrift;
-get_service_module('PartyManagement') ->
-    dmsl_payment_processing_thrift;
-get_service_module(ServiceName) ->
-    error({unknown_service, ServiceName}).
+    hg_proto:get_service(ServiceName).

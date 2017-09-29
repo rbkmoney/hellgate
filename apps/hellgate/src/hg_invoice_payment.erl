@@ -1384,7 +1384,7 @@ issue_callback_call(Payload, ProxyContext, St) ->
 
 issue_call(Func, Args, St) ->
     CallOpts = get_call_options(St),
-    hg_woody_wrapper:call('ProviderProxy', Func, Args, CallOpts).
+    hg_woody_wrapper:call(proxy_provider, Func, Args, CallOpts).
 
 get_call_options(St) ->
     Revision = hg_domain:head(),
