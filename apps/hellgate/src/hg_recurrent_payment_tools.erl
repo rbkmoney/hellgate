@@ -504,7 +504,7 @@ get_rec_payment_tool_status(RecPaymentTool) ->
 %%
 
 create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Terms, VS0, Revision) ->
-    PaymentResource = Params#payproc_RecurrentPaymentToolParams.disposable_payment_resource,
+    PaymentResource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
     VS1 = validate_payment_tool(
         get_payment_tool(PaymentResource),
         Terms#domain_PaymentsServiceTerms.payment_methods,
