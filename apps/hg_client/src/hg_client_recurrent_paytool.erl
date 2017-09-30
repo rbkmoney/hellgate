@@ -93,6 +93,8 @@ map_result_error({error, Error}) ->
 
 %%
 
+-define(SERVICE, recurrent_payment_tools).
+
 -type event() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
 
 -record(st, {
@@ -113,7 +115,7 @@ init(ApiClient) ->
     {reply, term(), st()} | {noreply, st()}.
 
 handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
-    {Result, ClientNext} = hg_client_api:call(recurrent_paytools, Function, Args, Client),
+    {Result, ClientNext} = hg_client_api:call(?SERVICE, Function, Args, Client),
     {reply, Result, St#st{client = ClientNext}};
 
 handle_call({pull_event, RecurrentPaytoolID, Timeout}, _From, St = #st{client = Client}) ->
@@ -170,7 +172,7 @@ set_poller(ID, Poller, St = #st{pollers = Pollers}) ->
     St#st{pollers = maps:put(ID, Poller, Pollers)}.
 
 construct_poller(ID) ->
-    hg_client_event_poller:new({recurrent_paytools, 'GetEvents', [ID]}, fun get_event_id/1).
+    hg_client_event_poller:new({?SERVICE, 'GetEvents', [ID]}, fun get_event_id/1).
 
 get_event_id(#payproc_RecurrentPaymentToolEvent{id = ID}) ->
     ID.
