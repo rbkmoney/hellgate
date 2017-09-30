@@ -352,14 +352,6 @@ handle_proxy_callback_result(
     Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
     {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
     make_proxy_result(wrap_session_events([?session_activated()] ++ Changes1 ++ Changes2 ++ Changes3), Action).
-% handle_proxy_callback_result(
-%     #prxprv_RecurrentTokenProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
-%     Action0,
-%     Session
-% ) ->
-%     Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
-%     Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
-%     make_proxy_result(wrap_session_events(Changes1 ++ Changes2), Action0).
 
 make_proxy_result(Changes, Action) ->
     make_proxy_result(Changes, Action, undefined).
@@ -571,6 +563,91 @@ get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) 
 marshal(Changes) when is_list(Changes) ->
     [marshal(change, Change) || Change <- Changes].
 
+%%
+
+marshal(change, ?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route)) ->
+    [1, #{
+        <<"change">>           => <<"created">>,
+        <<"rec_payment_tool">> => marshal(rec_payment_tool, RecPaymentTool),
+        <<"risk_score">>       => marshal(risk_score, RiskScore),
+        <<"route">>            => hg_routing:marshal(Route)
+    }];
+marshal(change, ?recurrent_payment_tool_has_acquired(Token)) ->
+    [1, #{
+        <<"change">> => <<"acquired">>,
+        <<"token">>  => marshal(str, Token)
+    }];
+marshal(change, ?recurrent_payment_tool_has_abandoned()) ->
+    [1, #{
+        <<"change">> => <<"abandoned">>
+    }];
+marshal(change, ?recurrent_payment_tool_has_failed(Failure)) ->
+    [1, #{
+        <<"change">> => <<"failed">>,
+        <<"failure">> => marshal(failure, Failure)
+    }];
+
+%%
+
+marshal(rec_payment_tool, #payproc_RecurrentPaymentTool{} = RecPaymentTool) ->
+    #{
+        <<"id">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.id),
+        <<"shop_id">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.shop_id),
+        <<"party_id">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.party_id),
+        <<"domain_revision">> => marshal(int, RecPaymentTool#payproc_RecurrentPaymentTool.domain_revision),
+        <<"status">> => marshal(status, RecPaymentTool#payproc_RecurrentPaymentTool.status),
+        <<"created_at">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.created_at),
+        <<"payment_resource">> => marshal(disposable_payment_resource, RecPaymentTool#payproc_RecurrentPaymentTool.payment_resource),
+        <<"minimal_payment_cost">> => hg_cash:marshal(RecPaymentTool#payproc_RecurrentPaymentTool.minimal_payment_cost),
+        <<"rec_token">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.rec_token)
+    };
+
+marshal(risk_score, low) ->
+    <<"low">>;
+marshal(risk_score, high) ->
+    <<"high">>;
+marshal(risk_score, fatal) ->
+    <<"fatal">>;
+
+marshal(failure, {operation_timeout, _}) ->
+    [2, <<"operation_timeout">>];
+marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
+    [2, [<<"external_failure">>, genlib_map:compact(#{
+        <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
+        <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
+    })]];
+
+%%
+
+marshal(status, ?recurrent_payment_tool_created()) ->
+    <<"created">>;
+marshal(status, ?recurrent_payment_tool_acquired()) ->
+    <<"acquired">>;
+marshal(status, ?recurrent_payment_tool_abandoned()) ->
+    <<"abandoned">>;
+marshal(status, ?recurrent_payment_tool_failed(Failure)) ->
+    [
+        <<"failed">>,
+        marshal(failure, Failure)
+    ];
+
+marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
+    #{
+        <<"payment_tool">>       => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
+        <<"payment_session_id">> => marshal(str, PaymentResource#domain_DisposablePaymentResource.payment_session_id),
+        <<"client_info">>        => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
+    };
+
+%%
+
+marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
+    genlib_map:compact(#{
+        <<"ip_address">>    => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
+        <<"fingerprint">>   => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
+    });
+
+%%
+
 marshal(_, Other) ->
     Other.
 
@@ -582,7 +659,115 @@ unmarshal(Events) when is_list(Events) ->
     [unmarshal(Event) || Event <- Events];
 
 unmarshal({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal({list, change}, Payload)}.
+    {ID, Dt, unmarshal({list, changes}, Payload)}.
+
+%%
+
+unmarshal({list, changes}, Changes) when is_list(Changes) ->
+    [unmarshal(change, Change) || Change <- Changes];
+
+%%
+
+unmarshal(change, [1, #{
+    <<"change">>           := <<"created">>,
+    <<"rec_payment_tool">> := RecPaymentTool,
+    <<"risk_score">>       := RiskScore,
+    <<"route">>            := Route
+}]) ->
+    ?recurrent_payment_tool_has_created(
+        unmarshal(rec_payment_tool, RecPaymentTool),
+        unmarshal(risk_score, RiskScore),
+        hg_routing:unmarshal(Route)
+    );
+unmarshal(change, [1, #{
+    <<"change">> := <<"acquired">>,
+    <<"token">>  := Token
+}]) ->
+    ?recurrent_payment_tool_has_acquired(unmarshal(str, Token));
+unmarshal(change, [1, #{
+    <<"change">> := <<"abandoned">>
+}]) ->
+    ?recurrent_payment_tool_has_abandoned();
+unmarshal(change, [1, #{
+    <<"change">>  := <<"failed">>,
+    <<"failure">> := Failure
+}]) ->
+    ?recurrent_payment_tool_has_failed(unmarshal(failure, Failure));
+
+%%
+
+unmarshal(rec_payment_tool, #{
+    <<"id">>                   := ID,
+    <<"shop_id">>              := ShopID,
+    <<"party_id">>             := PartyID,
+    <<"domain_revision">>      := Revision,
+    <<"status">>               := Status,
+    <<"created_at">>           := CreatedAt,
+    <<"payment_resource">>     := PaymentResource,
+    <<"minimal_payment_cost">> := MinimalPaymentCost,
+    <<"rec_token">>            := RecToken
+}) ->
+    #payproc_RecurrentPaymentTool{
+        id                   = unmarshal(str, ID),
+        shop_id              = unmarshal(str, ShopID),
+        party_id             = unmarshal(str, PartyID),
+        domain_revision      = unmarshal(int, Revision),
+        status               = unmarshal(status, Status),
+        created_at           = unmarshal(str, CreatedAt),
+        payment_resource     = unmarshal(disposable_payment_resource, PaymentResource),
+        minimal_payment_cost = hg_cash:unmarshal(MinimalPaymentCost),
+        rec_token            = unmarshal(str, RecToken)
+    };
+
+unmarshal(risk_score, <<"low">>) ->
+    low;
+unmarshal(risk_score, <<"high">>) ->
+    high;
+unmarshal(risk_score, <<"fatal">>) ->
+    fatal;
+
+unmarshal(failure, [2, <<"operation_timeout">>]) ->
+    {operation_timeout, #domain_OperationTimeout{}};
+unmarshal(failure, [2, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]]) ->
+    Description = maps:get(<<"description">>, ExternalFailure, undefined),
+    {external_failure, #domain_ExternalFailure{
+        code        = unmarshal(str, Code),
+        description = unmarshal(str, Description)
+    }};
+
+%%
+
+unmarshal(status, <<"created">>) ->
+    ?recurrent_payment_tool_created();
+unmarshal(status, <<"acquired">>) ->
+    ?recurrent_payment_tool_acquired();
+unmarshal(status, <<"abandoned">>) ->
+    ?recurrent_payment_tool_abandoned();
+unmarshal(status, [<<"failed">>, Failure]) ->
+    ?recurrent_payment_tool_failed(unmarshal(failure, Failure));
+
+unmarshal(disposable_payment_resource, #{
+    <<"payment_tool">> := PaymentTool,
+    <<"payment_session_id">> := PaymentSessionId,
+    <<"client_info">> := ClientInfo
+}) ->
+    #domain_DisposablePaymentResource{
+        payment_tool = hg_payment_tool:unmarshal(PaymentTool),
+        payment_session_id = unmarshal(str, PaymentSessionId),
+        client_info = unmarshal(client_info, ClientInfo)
+    };
+
+%%
+
+unmarshal(client_info, ClientInfo) ->
+    IpAddress = maps:get(<<"ip_address">>, ClientInfo, undefined),
+    Fingerprint = maps:get(<<"fingerprint">>, ClientInfo, undefined),
+    #domain_ClientInfo{
+        ip_address      = unmarshal(str, IpAddress),
+        fingerprint     = unmarshal(str, Fingerprint)
+    };
+
+%%
 
 unmarshal(_, Other) ->
     Other.
