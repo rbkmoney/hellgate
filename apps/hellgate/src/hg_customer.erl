@@ -29,11 +29,12 @@
 
 %% Types
 
+-define(SYNC_INTERVAL, 1000).
+
 -record(st, {
     customer       :: undefined | customer(),
     active_binding :: undefined | binding_id()
 }).
--type st() :: #st{}.
 
 -type customer()         :: dmsl_payment_processing_thrift:'Customer'().
 -type customer_id()      :: dmsl_payment_processing_thrift:'CustomerID'().
@@ -201,11 +202,22 @@ init(CustomerID, CustomerParams) ->
 process_signal(Signal, History) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
-handle_signal(timeout, _St = #st{}) ->
-    #{}.
+handle_signal(timeout, St) ->
+    Changes = sync_pending_bindings(St),
+    Action = case get_pending_binding_set(merge_changes(Changes, St)) of
+        [_BindingID | _] ->
+            set_event_poll_timer();
+        [] ->
+            hg_machine_action:new()
+    end,
+    #{
+        changes => Changes,
+        action  => Action
+    }.
 
--type call() :: {start_binding, binding_params()}
-              | delete.
+-type call() ::
+    {start_binding, binding_params()} |
+    delete.
 
 -spec process_call(call(), hg_machine:history()) ->
     {hg_machine:response(), hg_machine:result()}.
@@ -238,32 +250,106 @@ handle_result(Params) ->
 
 %%
 
+-include_lib("hellgate/include/recurrent_payment_tools.hrl").
+
 start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
-    % RecPaymentTool = hg_payment_processing:start_rec_payment_tool(),
-    % RecPaymentToolID = get_rec_payment_tool_id(RecPaymentTool),
-    RecPaymentToolID = <<"tsL9R7G7Iu">>,
-    Binding = create_binding(BindingID, BindingParams, RecPaymentToolID),
+    PaymentResource = BindingParams#payproc_CustomerBindingParams.payment_resource,
+    RecurrentPaytoolID = create_recurrent_paytool(PaymentResource, St),
+    Binding = construct_binding(BindingID, RecurrentPaytoolID, PaymentResource),
     Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding))],
-    Action = hg_machine_action:new(),
     #{
         response => Binding,
         changes  => Changes,
-        action   => Action
+        action   => set_event_poll_timer()
     }.
 
-create_binding(BindingID, BindingParams, RecPaymentToolID) ->
+construct_binding(BindingID, RecPaymentToolID, PaymentResource) ->
     #payproc_CustomerBinding{
         id                  = BindingID,
         rec_payment_tool_id = RecPaymentToolID,
-        payment_resource    = BindingParams#payproc_CustomerBindingParams.payment_resource,
+        payment_resource    = PaymentResource,
         status              = ?customer_binding_pending()
     }.
 
--spec create_binding_id(st()) ->
-    binding_id().
-create_binding_id(#st{customer = #payproc_Customer{bindings = Bindings}}) ->
-    integer_to_binary(length(Bindings) + 1).
+create_binding_id(St) ->
+    integer_to_binary(length(get_bindings(get_customer(St))) + 1).
+
+sync_pending_bindings(St) ->
+    sync_pending_bindings(get_pending_binding_set(St), St).
+
+sync_pending_bindings([BindingID | Rest], St) ->
+    Binding = try_get_binding(BindingID, get_customer(St)),
+    Changes = sync_binding_state(Binding),
+    Changes ++ sync_pending_bindings(Rest, St);
+sync_pending_bindings([], _St) ->
+    [].
+
+sync_binding_state(Binding) ->
+    RecurrentPaytoolID = get_binding_recurrent_paytool_id(Binding),
+    RecurrentPaytoolChanges = get_recurrent_paytool_changes(RecurrentPaytoolID),
+    BindingChanges = produce_binding_changes(RecurrentPaytoolChanges, Binding),
+    wrap_binding_changes(get_binding_id(Binding), BindingChanges).
+
+produce_binding_changes([RecurrentPaytoolChange | Rest], Binding) ->
+    Changes = produce_binding_changes_(RecurrentPaytoolChange, Binding),
+    Changes ++ produce_binding_changes(Rest, merge_binding_changes(Changes, Binding));
+produce_binding_changes([], _Binding) ->
+    [].
+
+produce_binding_changes_(?recurrent_payment_tool_has_acquired(_), Binding) ->
+    ok = assert_binding_status(pending, Binding),
+    [?customer_binding_status_changed(?customer_binding_succeeded())];
+produce_binding_changes_(?recurrent_payment_tool_has_failed(Failure), Binding) ->
+    ok = assert_binding_status(pending, Binding),
+    [?customer_binding_status_changed(?customer_binding_failed(Failure))];
+produce_binding_changes_(?recurrent_payment_tool_has_abandoned() = Change, _Binding) ->
+    error({unexpected, {'Unexpected recurrent payment tool change received', Change}});
+produce_binding_changes_(?session_ev(_), _Binding) ->
+    [].
+
+create_recurrent_paytool(PaymentResource, St) ->
+    create_recurrent_paytool(#payproc_RecurrentPaymentToolParams{
+        party_id         = get_party_id(St),
+        shop_id          = get_shop_id(St),
+        payment_resource = PaymentResource
+    }).
+
+create_recurrent_paytool(Params) ->
+    case issue_recurrent_paytools_call('Create', [Params]) of
+        {ok, RecurrentPaytool} ->
+            RecurrentPaytool#payproc_RecurrentPaymentTool.id;
+        {exception, Exception = #payproc_InvalidUser{}} ->
+            throw(Exception);
+        {exception, Exception = #payproc_InvalidPartyStatus{}} ->
+            throw(Exception);
+        {exception, Exception = #payproc_InvalidShopStatus{}} ->
+            throw(Exception);
+        {exception, Exception = #payproc_InvalidContractStatus{}} ->
+            throw(Exception);
+        {exception, Exception = #payproc_OperationNotPermitted{}} ->
+            throw(Exception)
+    end.
+
+get_recurrent_paytool_changes(RecurrentPaytoolID) ->
+    EventRange = #payproc_EventRange{limit = 1337}, % FIXME
+    {ok, Events} = issue_recurrent_paytools_call('GetEvents', [RecurrentPaytoolID, EventRange]),
+    gather_recurrent_paytool_changes(Events).
+
+gather_recurrent_paytool_changes(Events) ->
+    lists:flatmap(
+        fun (#payproc_RecurrentPaymentToolEvent{payload = Changes}) ->
+            Changes
+        end,
+        Events
+    ).
+
+issue_recurrent_paytools_call(Function, Args) ->
+    hg_woody_wrapper:call(recurrent_payment_tools, Function, Args).
+
+set_event_poll_timer() ->
+    % TODO rather dumb
+    hg_machine_action:set_timeout(?SYNC_INTERVAL).
 
 %%
 
@@ -282,13 +368,13 @@ create_customer(CustomerID, Params = #payproc_CustomerParams{}) ->
 %%
 
 collapse_history(History) ->
-    lists:foldl(
-        fun ({_ID, _, Changes}, St0) ->
-            lists:foldl(fun merge_change/2, St0, Changes)
-        end,
-        #st{},
-        History
-    ).
+    lists:foldl(fun merge_event/2, #st{}, History).
+
+merge_event({_ID, _, Changes}, St) ->
+    merge_changes(Changes, St).
+
+merge_changes(Changes, St) ->
+    lists:foldl(fun merge_change/2, St, Changes).
 
 merge_change(?customer_created(Customer), St) ->
     set_customer(Customer, St);
@@ -300,13 +386,22 @@ merge_change(?customer_status_changed(Status), St) ->
 merge_change(?customer_binding_changed(BindingID, Payload), St) ->
     Customer = get_customer(St),
     Binding = try_get_binding(BindingID, Customer),
-    St1 = set_customer(set_binding(merge_binding_change(Payload, Binding), Customer), St),
-    case get_binding_status(Binding) of
-        ?customer_binding_succeeded() ->
-            set_active_binding_id(get_binding_id(Binding), St1);
-        _ ->
-            St1
-    end.
+    Binding1 = merge_binding_change(Payload, Binding),
+    BindingStatus = get_binding_status(Binding1),
+    St1 = set_customer(set_binding(Binding1, Customer), St),
+    St2 = update_active_binding(BindingID, BindingStatus, St1),
+    St2.
+
+update_active_binding(BindingID, ?customer_binding_succeeded(), St) ->
+    set_active_binding_id(BindingID, St);
+update_active_binding(_BindingID, _BindingStatus, St) ->
+    St.
+
+wrap_binding_changes(BindingID, Changes) ->
+    [?customer_binding_changed(BindingID, C) || C <- Changes].
+
+merge_binding_changes(Changes, Binding) ->
+    lists:foldl(fun merge_binding_change/2, Binding, Changes).
 
 merge_binding_change(?customer_binding_started(Binding), undefined) ->
     Binding;
@@ -328,8 +423,11 @@ set_customer(Customer, St = #st{}) ->
 get_customer_status(#payproc_Customer{status = Status}) ->
     Status.
 
-try_get_binding(BindingID, #payproc_Customer{bindings = Bindings}) ->
-    case lists:keyfind(BindingID, #payproc_CustomerBinding.id, Bindings) of
+get_bindings(#payproc_Customer{bindings = Bindings}) ->
+    Bindings.
+
+try_get_binding(BindingID, Customer) ->
+    case lists:keyfind(BindingID, #payproc_CustomerBinding.id, get_bindings(Customer)) of
         Binding = #payproc_CustomerBinding{} ->
             Binding;
         false ->
@@ -342,11 +440,25 @@ set_binding(Binding, Customer = #payproc_Customer{bindings = Bindings}) ->
         bindings = lists:keystore(BindingID, #payproc_CustomerBinding.id, Bindings, Binding)
     }.
 
+get_pending_binding_set(St) ->
+    Bindings = get_bindings(get_customer(St)),
+    [get_binding_id(Binding) ||
+        Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_pending()
+    ].
+
 get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->
     BindingID.
 
 get_binding_status(#payproc_CustomerBinding{status = Status}) ->
     Status.
+
+assert_binding_status(StatusName, #payproc_CustomerBinding{status = {StatusName, _}}) ->
+    ok;
+assert_binding_status(_StatusName, #payproc_CustomerBinding{status = Status}) ->
+    error({unexpected, {'Unexpected customer binding status', Status}}).
+
+get_binding_recurrent_paytool_id(#payproc_CustomerBinding{rec_payment_tool_id = ID}) ->
+    ID.
 
 try_get_active_binding(St) ->
     case get_active_binding_id(St) of
