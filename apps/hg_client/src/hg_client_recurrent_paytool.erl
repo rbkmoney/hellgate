@@ -93,7 +93,7 @@ map_result_error({error, Error}) ->
 
 %%
 
--define(SERVICE, recurrent_payment_tools).
+-define(SERVICE, recurrent_paytool).
 
 -type event() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
 

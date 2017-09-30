@@ -43,7 +43,7 @@ call(ServiceName, Function, Args, {RootUrl, Context}) ->
         )
     catch
         error:Error ->
-            {error, Error}
+            {error, {Error, erlang:get_stacktrace()}}
     end,
     {Result, {RootUrl, Context}}.
 

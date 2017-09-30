@@ -114,10 +114,10 @@ start_app(hellgate = AppName) ->
         {host, ?HELLGATE_HOST},
         {port, ?HELLGATE_PORT},
         {service_urls, #{
-            'Automaton' => <<"http://machinegun:8022/v1/automaton">>,
-            'EventSink' => <<"http://machinegun:8022/v1/event_sink">>,
-            'Accounter' => <<"http://shumway:8022/accounter">>,
-            'PartyManagement' => <<"http://hellgate:8022/v1/processing/partymgmt">>
+            automaton => <<"http://machinegun:8022/v1/automaton">>,
+            eventsink => <<"http://machinegun:8022/v1/event_sink">>,
+            accounter => <<"http://shumway:8022/accounter">>,
+            partymanagement => <<"http://hellgate:8022/v1/processing/partymgmt">>
         }},
         {proxy_opts, #{
             transport_opts => #{

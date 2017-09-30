@@ -2,12 +2,12 @@
 %%% Payment processing machine
 %%%
 
--module(hg_recurrent_paytools).
+-module(hg_recurrent_paytool).
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 
--define(NS, <<"recurrent_payment_tools">>).
+-define(NS, <<"recurrent_paytools">>).
 
 %% Woody handler called by hg_woody_wrapper
 
@@ -75,9 +75,11 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
-handle_function_('Create', RecurrentPaymentToolParams, _Opts) ->
+handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     RecPaymentToolID = hg_utils:unique_id(),
     ok = set_meta(RecPaymentToolID),
+    ok = assert_party_accessible(RecurrentPaymentToolParams),
+    ok = assert_shop_exists(RecurrentPaymentToolParams),
     ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
@@ -499,6 +501,21 @@ handle_result(Result) ->
 
 %%
 
+assert_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID}) ->
+    hg_invoice_utils:assert_party_accessible(PartyID),
+    _Party = hg_party_machine:get_party(PartyID),
+    ok.
+
+assert_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID, party_id = PartyID}) ->
+    Party = hg_party_machine:get_party(PartyID),
+    Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
+    hg_invoice_utils:assert_shop_exists(Shop),
+    ok.
+
+ensure_shop_exists(Shop) ->
+    Shop = hg_invoice_utils:assert_shop_exists(Shop),
+    Shop.
+
 assert_rec_payment_tool_status(recurrent_payment_tool_acquired, St) ->
     ?recurrent_payment_tool_acquired() = get_rec_payment_tool_status(get_rec_payment_tool(St)),
     ok.
@@ -586,6 +603,11 @@ marshal(change, ?recurrent_payment_tool_has_failed(Failure)) ->
         <<"change">> => <<"failed">>,
         <<"failure">> => marshal(failure, Failure)
     }];
+marshal(change, ?session_ev(Payload)) ->
+    [1, #{
+        <<"change">> => <<"session_change">>,
+        <<"payload">> => marshal(session_change, Payload)
+    }];
 
 %%
 
@@ -610,12 +632,49 @@ marshal(risk_score, fatal) ->
     <<"fatal">>;
 
 marshal(failure, {operation_timeout, _}) ->
-    [2, <<"operation_timeout">>];
+    <<"operation_timeout">>;
 marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
-    [2, [<<"external_failure">>, genlib_map:compact(#{
+    [<<"external_failure">>, genlib_map:compact(#{
         <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
         <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
-    })]];
+    })];
+
+%% Session change
+
+marshal(session_change, ?session_started()) ->
+    <<"started">>;
+marshal(session_change, ?session_finished(Result)) ->
+    [
+        <<"finished">>,
+        marshal(session_status, Result)
+    ];
+marshal(session_change, ?session_suspended()) ->
+    <<"suspended">>;
+marshal(session_change, ?session_activated()) ->
+    <<"activated">>;
+marshal(session_change, ?trx_bound(Trx)) ->
+    [
+        <<"transaction_bound">>,
+        marshal(trx, Trx)
+    ];
+marshal(session_change, ?proxy_st_changed(ProxySt)) ->
+    [
+        <<"proxy_state_changed">>,
+        marshal(bin, {bin, ProxySt})
+    ];
+marshal(session_change, ?interaction_requested(UserInteraction)) ->
+    [
+        <<"interaction_requested">>,
+        marshal(interaction, UserInteraction)
+    ];
+
+marshal(session_status, ?session_succeeded()) ->
+    <<"succeeded">>;
+marshal(session_status, ?session_failed(PayloadFailure)) ->
+    [
+        <<"failed">>,
+        marshal(failure, PayloadFailure)
+    ];
 
 %%
 
@@ -693,6 +752,11 @@ unmarshal(change, [1, #{
     <<"failure">> := Failure
 }]) ->
     ?recurrent_payment_tool_has_failed(unmarshal(failure, Failure));
+unmarshal(change, [1, #{
+    <<"change">>    := <<"session_change">>,
+    <<"payload">>   := Payload
+}]) ->
+    ?session_ev(unmarshal(session_change, Payload));
 
 %%
 
@@ -726,14 +790,36 @@ unmarshal(risk_score, <<"high">>) ->
 unmarshal(risk_score, <<"fatal">>) ->
     fatal;
 
-unmarshal(failure, [2, <<"operation_timeout">>]) ->
+unmarshal(failure, <<"operation_timeout">>) ->
     {operation_timeout, #domain_OperationTimeout{}};
-unmarshal(failure, [2, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]]) ->
+unmarshal(failure, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]) ->
     Description = maps:get(<<"description">>, ExternalFailure, undefined),
     {external_failure, #domain_ExternalFailure{
         code        = unmarshal(str, Code),
         description = unmarshal(str, Description)
     }};
+
+%% Session change
+
+unmarshal(session_change, <<"started">>) ->
+    ?session_started();
+unmarshal(session_change, [<<"finished">>, Result]) ->
+    ?session_finished(unmarshal(session_status, Result));
+unmarshal(session_change, <<"suspended">>) ->
+    ?session_suspended();
+unmarshal(session_change, <<"activated">>) ->
+    ?session_activated();
+unmarshal(session_change, [<<"transaction_bound">>, Trx]) ->
+    ?trx_bound(unmarshal(trx, Trx));
+unmarshal(session_change, [<<"proxy_state_changed">>, {bin, ProxySt}]) ->
+    ?proxy_st_changed(unmarshal(bin, ProxySt));
+unmarshal(session_change, [<<"interaction_requested">>, UserInteraction]) ->
+    ?interaction_requested(unmarshal(interaction, UserInteraction));
+
+unmarshal(session_status, <<"succeeded">>) ->
+    ?session_succeeded();
+unmarshal(session_status, [<<"failed">>, Failure]) ->
+    ?session_failed(unmarshal(failure, Failure));
 
 %%
 

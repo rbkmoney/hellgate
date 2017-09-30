@@ -148,11 +148,13 @@ acceptable_payment_terms(
     _ = try_accept_payment_term(category     , CategoriesSelector , VS, Revision),
     _ = try_accept_payment_term(payment_tool , PMsSelector        , VS, Revision),
     _ = try_accept_payment_term(cost         , CashLimitSelector  , VS, Revision),
-    _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS), VS, Revision),
+    _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
     throw(false).
 
+acceptable_holds_terms(_Terms, undefined, _VS, _Revision) ->
+    true;
 acceptable_holds_terms(_Terms, instant, _VS, _Revision) ->
     true;
 acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
@@ -228,6 +230,9 @@ reduce(Name, S, VS, Revision) ->
 
 getv(Name, VS) ->
     maps:get(Name, VS).
+
+getv(Name, VS, Default) ->
+    maps:get(Name, VS, Default).
 
 %% Marshalling
 
