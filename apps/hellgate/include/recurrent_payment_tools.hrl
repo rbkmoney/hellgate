@@ -11,7 +11,7 @@
     {recurrent_payment_tool_changes, RecurrentPaymentToolChanges}).
 
 -define(recurrent_payment_tool_has_created(RecurrentPaymentTool, RiskScore, Route),
-    {recurrent_payment_tool_has_created,
+    {rec_payment_tool_created,
         #payproc_RecurrentPaymentToolHasCreated{
             rec_payment_tool = RecurrentPaymentTool,
             risk_score = RiskScore,
@@ -19,15 +19,15 @@
         }}).
 
 -define(recurrent_payment_tool_has_acquired(Token),
-    {recurrent_payment_tool_has_acquired,
+    {rec_payment_tool_acquired,
         #payproc_RecurrentPaymentToolHasAcquired{token = Token}}).
 
 -define(recurrent_payment_tool_has_abandoned(),
-    {recurrent_payment_tool_has_abandoned,
+    {rec_payment_tool_abandoned,
         #payproc_RecurrentPaymentToolHasAbandoned{}}).
 
 -define(recurrent_payment_tool_has_failed(Failure),
-    {recurrent_payment_tool_has_failed,
+    {rec_payment_tool_failed,
         #payproc_RecurrentPaymentToolHasFailed{failure = Failure}}).
 
 % Statuses
@@ -47,7 +47,7 @@
 %% Sessions
 
 -define(session_ev(Payload),
-    {session_change, #payproc_RecurrentPaymentToolSessionChange{
+    {rec_payment_tool_session_changed, #payproc_RecurrentPaymentToolSessionChange{
         payload = Payload
     }}
 ).
