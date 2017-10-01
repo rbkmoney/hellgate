@@ -78,8 +78,9 @@ handle_function(Func, Args, Opts) ->
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     RecPaymentToolID = hg_utils:unique_id(),
     ok = set_meta(RecPaymentToolID),
-    ok = assert_party_accessible(RecurrentPaymentToolParams),
-    ok = assert_shop_exists(RecurrentPaymentToolParams),
+    Party = ensure_party_accessible(RecurrentPaymentToolParams),
+    Shop = ensure_shop_exists(RecurrentPaymentToolParams),
+    ok = assert_party_shop_operable(Shop, Party),
     ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
@@ -501,20 +502,28 @@ handle_result(Result) ->
 
 %%
 
-assert_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID}) ->
+ensure_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID}) ->
     hg_invoice_utils:assert_party_accessible(PartyID),
-    _Party = hg_party_machine:get_party(PartyID),
-    ok.
-
-assert_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID, party_id = PartyID}) ->
     Party = hg_party_machine:get_party(PartyID),
-    Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
-    hg_invoice_utils:assert_shop_exists(Shop),
+    Party.
+
+ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID, party_id = PartyID}) ->
+    Party = hg_party_machine:get_party(PartyID),
+    Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
+    Shop.
+
+assert_party_shop_operable(Shop, Party) ->
+    ok = assert_party_operable(Party),
+    ok = assert_shop_operable(Shop),
     ok.
 
-ensure_shop_exists(Shop) ->
-    Shop = hg_invoice_utils:assert_shop_exists(Shop),
-    Shop.
+assert_party_operable(Party) ->
+    Party = hg_invoice_utils:assert_party_operable(Party),
+    ok.
+
+assert_shop_operable(Shop) ->
+    Shop = hg_invoice_utils:assert_shop_operable(Shop),
+    ok.
 
 assert_rec_payment_tool_status(recurrent_payment_tool_acquired, St) ->
     ?recurrent_payment_tool_acquired() = get_rec_payment_tool_status(get_rec_payment_tool(St)),
