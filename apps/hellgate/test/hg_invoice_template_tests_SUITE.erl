@@ -28,6 +28,7 @@
 -export([delete_invalid_party_status/1]).
 -export([delete_invalid_shop_status/1]).
 -export([delete_invoice_template/1]).
+-export([terms_retrieval/1]).
 
 %% tests descriptions
 
@@ -63,7 +64,8 @@ all() ->
         update_invoice_template,
         delete_invalid_party_status,
         delete_invalid_shop_status,
-        delete_invoice_template
+        delete_invoice_template,
+        terms_retrieval
     ].
 
 %% starting/stopping
@@ -402,6 +404,24 @@ delete_invoice_template(C) ->
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoice_templating:update(TplID, Diff, Client),
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoice_templating:delete(TplID, Client).
 
+-spec terms_retrieval(config()) -> _ | no_return().
+
+terms_retrieval(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    Timestamp = hg_datetime:format_now(),
+    TermSet1 = hg_client_invoice_templating:compute_terms(TplID, Timestamp, Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = undefined
+    }} = TermSet1,
+    ok = hg_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
+    TermSet2 = hg_client_invoice_templating:compute_terms(TplID, Timestamp, Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {value, [?pmt(bank_card, mastercard), ?pmt(bank_card, visa), ?pmt(payment_terminal, euroset)]}
+    }} = TermSet2.
+
 %%
 
 create_invoice_tpl(Config, Product) ->
@@ -470,6 +490,10 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
@@ -526,3 +550,35 @@ construct_domain_fixture() ->
             }
         }}
     ].
+
+construct_term_set_for_party(PartyID, Def) ->
+    TermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods = {decisions, [
+                #domain_PaymentMethodDecision{
+                    if_   = ?partycond(PartyID, Def),
+                    then_ = {value, ordsets:from_list(
+                        [
+                            ?pmt(bank_card, mastercard),
+                            ?pmt(bank_card, visa),
+                            ?pmt(payment_terminal, euroset)
+                        ]
+                    )}
+                },
+                #domain_PaymentMethodDecision{
+                    if_   = {constant, true},
+                    then_ = {value, ordsets:from_list([])}
+                }
+            ]}
+        }
+    },
+    {term_set_hierarchy, #domain_TermSetHierarchyObject{
+        ref = ?trms(1),
+        data = #domain_TermSetHierarchy{
+            parent_terms = undefined,
+            term_sets = [#domain_TimedTermSet{
+                action_time = #'TimestampInterval'{},
+                terms = TermSet
+            }]
+        }
+    }}.
