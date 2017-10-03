@@ -98,7 +98,14 @@ handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp], _Opts) ->
     Tpl   = get_invoice_template(TplID),
     ShopID = Tpl#domain_InvoiceTemplate.shop_id,
     PartyID = Tpl#domain_InvoiceTemplate.owner_id,
-    hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp).
+    ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp),
+    case Tpl#domain_InvoiceTemplate.cost of
+        {fixed, Cash} ->
+            Revision = hg_domain:head(),
+            hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+        _ ->
+            ShopTerms
+    end.
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
