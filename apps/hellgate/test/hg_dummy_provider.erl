@@ -26,7 +26,7 @@
 -define(finish(),
     {finish, #'FinishIntent'{status = {success, #'Success'{}}}}).
 -define(recurrent_token_finish(Token),
-    {recurrent_token_finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'Success'{}, Token}}}).
+    {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
 
 -spec get_service_spec() ->
     hg_proto:service_spec().
@@ -129,7 +129,7 @@ handle_function(
 generate_token(undefined, _TokenInfo, _Opts) ->
     token_sleep(1, <<"sleeping">>);
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
-    case get_payment_tool_type(PaymentTool) of
+    case get_resource_type(PaymentTool) of
         {bank_card, with_tds} ->
             Tag = hg_utils:unique_id(),
             Uri = get_callback_url(),
@@ -151,12 +151,7 @@ generate_token(<<"finishing">>, TokenInfo, _Opts) ->
 handle_token_callback(?DEFAULT_PAYLOAD, <<"suspended">>, _PaymentInfo, _Opts) ->
     token_respond(<<"sure">>, #prxprv_RecurrentTokenProxyResult{
         intent     = ?sleep(1),
-        next_state = <<"sleeping">>
-    });
-handle_token_callback(?LAY_LOW_BUDDY, <<"suspended">>, _PaymentInfo, _Opts) ->
-    token_respond(<<"sure">>, #prxprv_RecurrentTokenProxyResult{
-        intent     = undefined,
-        next_state = <<"suspended">>
+        next_state = <<"finishing">>
     }).
 
 token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
@@ -286,6 +281,19 @@ get_payment_resource_type(
 ) ->
     recurrent.
 
+get_resource_type(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
+    Type = get_payment_tool(PaymentResource),
+    Token3DS = hg_ct_helper:bank_card_tds_token(),
+    case Type of
+        {'bank_card', #domain_BankCard{token = Token3DS}} ->
+            {bank_card, with_tds};
+        {'bank_card', _} ->
+            {bank_card, without_tds}
+    end.
+
+get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
+    PaymentTool.
+
 get_payment_tool_type(PaymentTool) ->
     Token3DS = hg_ct_helper:bank_card_tds_token(),
     case PaymentTool of
@@ -352,7 +360,7 @@ handle_user_interaction_response(_, Req) ->
 
 callback_to_hell(Tag, Payload) ->
     case hg_client_api:call(
-        proxy_host_provider, 'ProcessCallback', [Tag, Payload],
+        proxy_host_provider, 'ProcessRecurrentTokenCallback', [Tag, Payload],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ) of
         {{ok, _Response}, _} ->

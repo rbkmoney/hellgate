@@ -9,6 +9,8 @@
 
 -define(NS, <<"recurrent_paytools">>).
 
+-export([process_callback/2]).
+
 %% Woody handler called by hg_woody_wrapper
 
 -behaviour(hg_woody_wrapper).
@@ -98,7 +100,7 @@ get_public_history(RecPaymentToolID, #payproc_EventRange{'after' = AfterID, limi
 
 publish_rec_payment_tool_event(RecPaymentToolID, Event) ->
     {ID, Dt, Payload} = unmarshal(Event),
-    #payproc_CustomerEvent{
+    #payproc_RecurrentPaymentToolEvent{
         id = ID,
         created_at = Dt,
         source = RecPaymentToolID,
@@ -297,7 +299,9 @@ construct_token_info(St) ->
     }.
 
 get_session_trx(#{trx := Trx}) ->
-    Trx.
+    Trx;
+get_session_trx(_) ->
+    undefined.
 
 get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
@@ -354,7 +358,7 @@ handle_proxy_callback_result(
     Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
     Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
     {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
-    make_proxy_result(wrap_session_events([?session_activated()] ++ Changes1 ++ Changes2 ++ Changes3), Action).
+    make_proxy_result([?session_activated()] ++ Changes1 ++ Changes2 ++ Changes3, Action).
 
 make_proxy_result(Changes, Action) ->
     make_proxy_result(Changes, Action, undefined).
@@ -443,7 +447,8 @@ merge_session_change(?interaction_requested(_), Session) ->
 
 create_session() ->
     #{
-        status => active
+        status => active,
+        trx => undefined
     }.
 
 -type call() :: abandon.
@@ -467,28 +472,38 @@ handle_call({callback, Callback}, St) ->
     dispatch_callback(Callback, St).
 
 dispatch_callback({provider, Payload}, St) ->
-    process_callback(Payload, St);
-dispatch_callback(_Callback, _St) ->
-    throw(invalid_callback).
-
-process_callback(Payload, St) ->
     Action = hg_machine_action:new(),
     case get_session_status(get_session(St)) of
         suspended ->
-            handle_callback(Payload, Action, St);
+            ProxyContext = construct_proxy_context(St),
+            {ok, CallbackResult} = hg_proxy_provider:handle_recurrent_token_callback(
+                Payload,
+                ProxyContext,
+                get_route(St)
+            ),
+            {Response, Result} = handle_callback_result(CallbackResult, Action, get_session(St)),
+            maps:merge(#{response => Response}, finish_processing(Result, St));
         _ ->
             throw(invalid_callback)
     end.
 
-handle_callback(Payload, Action, St) ->
-    ProxyContext = construct_proxy_context(St),
-    {ok, CallbackResult} = hg_proxy_provider:handle_recurrent_token_callback(
-        Payload,
-        ProxyContext,
-        get_route(St)
-    ),
-    {Response, Result} = handle_callback_result(CallbackResult, Action, get_session(St)),
-    {Response, finish_processing(Result, St)}.
+
+-type tag()               :: dmsl_base_thrift:'Tag'().
+-type callback()          :: _. %% FIXME
+-type callback_response() :: _. %% FIXME
+
+-spec process_callback(tag(), callback()) ->
+    {ok, callback_response()} | {error, invalid_callback | notfound | failed} | no_return().
+
+process_callback(Tag, Callback) ->
+    case hg_machine:call(?NS, {tag, Tag}, {callback, Callback}) of
+        {ok, {ok, _} = Ok} ->
+            Ok;
+        {ok, {exception, invalid_callback}} ->
+            {error, invalid_callback};
+        {error, _} = Error ->
+            Error
+    end.
 
 handle_result(Result) ->
     Changes = maps:get(changes, Result, []),
@@ -687,6 +702,33 @@ marshal(session_status, ?session_failed(PayloadFailure)) ->
 
 %%
 
+marshal(trx, #domain_TransactionInfo{} = TransactionInfo) ->
+    genlib_map:compact(#{
+        <<"id">>            => marshal(str, TransactionInfo#domain_TransactionInfo.id),
+        <<"timestamp">>     => marshal(str, TransactionInfo#domain_TransactionInfo.timestamp),
+        <<"extra">>         => marshal(map_str, TransactionInfo#domain_TransactionInfo.extra)
+    });
+
+marshal(interaction, {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}}) ->
+    #{<<"redirect">> =>
+        [
+            <<"get_request">>,
+            marshal(str, URI)
+        ]
+    };
+marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}}) ->
+    #{<<"redirect">> =>
+        [
+            <<"post_request">>,
+            #{
+                <<"uri">>   => marshal(str, URI),
+                <<"form">>  => marshal(map_str, Form)
+            }
+        ]
+    };
+
+%%
+
 marshal(status, ?recurrent_payment_tool_created()) ->
     <<"created">>;
 marshal(status, ?recurrent_payment_tool_acquired()) ->
@@ -829,6 +871,32 @@ unmarshal(session_status, <<"succeeded">>) ->
     ?session_succeeded();
 unmarshal(session_status, [<<"failed">>, Failure]) ->
     ?session_failed(unmarshal(failure, Failure));
+
+%%
+
+unmarshal(trx, #{
+    <<"id">>    := ID,
+    <<"extra">> := Extra
+} = TRX) ->
+    Timestamp = maps:get(<<"timestamp">>, TRX, undefined),
+    #domain_TransactionInfo{
+        id          = unmarshal(str, ID),
+        timestamp   = unmarshal(str, Timestamp),
+        extra       = unmarshal(map_str, Extra)
+    };
+
+unmarshal(interaction, #{<<"redirect">> := [<<"get_request">>, URI]}) ->
+    {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
+unmarshal(interaction, #{<<"redirect">> := [<<"post_request">>, #{
+    <<"uri">>   := URI,
+    <<"form">>  := Form
+}]}) ->
+    {redirect, {post_request,
+        #'BrowserPostRequest'{
+            uri     = unmarshal(str, URI),
+            form    = unmarshal(map_str, Form)
+        }
+    }};
 
 %%
 

@@ -20,6 +20,7 @@
 -export([rec_paytool_not_found/1]).
 -export([abandon_rec_paytool/1]).
 -export([get_token_success/1]).
+-export([get_token_tds_success/1]).
 
 %%
 
@@ -93,7 +94,8 @@ groups() ->
             rec_paytool_not_found,
             get_recurrent_paytool,
             % abandon_rec_paytool
-            get_token_success
+            get_token_success,
+            get_token_tds_success
         ]}
     ].
 
@@ -131,6 +133,8 @@ end_per_testcase(_Name, _C) ->
 -include_lib("hellgate/include/customer_events.hrl").
 -include_lib("hellgate/include/recurrent_payment_tools.hrl").
 
+-define(trx_info(ID), #domain_TransactionInfo{id = ID}).
+
 %% invalid_recurrent_paytool_params group
 
 -spec invalid_user(config()) -> test_case_result().
@@ -138,6 +142,7 @@ end_per_testcase(_Name, _C) ->
 -spec invalid_shop(config()) -> test_case_result().
 -spec invalid_party_status(config()) -> test_case_result().
 -spec invalid_shop_status(config()) -> test_case_result().
+-spec get_token_tds_success(config()) -> test_case_result().
 
 invalid_user(C) ->
     Client = cfg(client, C),
@@ -196,47 +201,74 @@ invalid_shop_status(C) ->
 
 rec_paytool_not_found(C) ->
     Client = cfg(client, C),
-    _RecurrentPaytool = create_rec_payment_tool(C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    _RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     {exception, ?recurrent_paytool_not_found()} = hg_client_recurrent_paytool:get(hg_utils:unique_id(), Client).
 
 get_recurrent_paytool(C) ->
     Client = cfg(client, C),
-    RecurrentPaytool = create_rec_payment_tool(C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     RecurrentPaytool = hg_client_recurrent_paytool:get(RecurrentPaytoolID, Client).
 
 get_token_success(C) ->
-    Client = cfg(client, C),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
-    RecurrentPaytool = create_rec_payment_tool(C),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
-    process_token(RecurrentPaytoolID, RecurrentPaytool, Client).
+    ok = process_token(RecurrentPaytoolID, Client).
 
-    % InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    % PaymentParams = make_payment_params(),
-    % PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    % PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    % ?invoice_state(
-    %     ?invoice_w_status(?invoice_paid()),
-    %     [?payment_state(?payment_w_status(PaymentID, ?captured()))]
-    % ) = hg_client_invoicing:get(InvoiceID, Client).
+get_token_tds_success(C) ->
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_tds_recurrent_paytool_params(PartyID, ShopID),
+    RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
+    #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
+
+    [
+        ?recurrent_payment_tool_has_created(_, _, _),
+        ?session_ev(?session_started())
+    ] = next_event(RecurrentPaytoolID, Client),
+    [
+        ?session_ev(?interaction_requested(UserInteraction))
+    ] = next_event(RecurrentPaytoolID, Client),
+
+    {URL, GoodForm} = get_post_request(UserInteraction),
+    _ = assert_success_post_request({URL, GoodForm}),
+    ok = await_rec_token_finish(RecurrentPaytoolID, Client).
 
 abandon_rec_paytool(C) ->
     Client = cfg(client, C),
-    RecurrentPaytool = create_rec_payment_tool(C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     RecurrentPaytool = hg_client_recurrent_paytool:abandon(RecurrentPaytoolID, Client).
 
 %%
 
-create_rec_payment_tool(C) ->
-    PartyID = cfg(party_id, C),
-    ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
-    hg_client_recurrent_paytool:create(Params, cfg(client, C)).
-
 make_recurrent_paytool_params(PartyID, ShopID) ->
     {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
+    PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
+    #payproc_RecurrentPaymentToolParams{
+        party_id = PartyID,
+        shop_id = ShopID,
+        payment_resource = PaymentResource
+    }.
+
+make_tds_recurrent_paytool_params(PartyID, ShopID) ->
+    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
         party_id = PartyID,
@@ -253,17 +285,6 @@ make_disposable_payment_resource(PaymentTool, Session) ->
 
 %%
 
-start_service_handler(Module, C, HandlerOpts) ->
-    start_service_handler(Module, Module, C, HandlerOpts).
-
-start_service_handler(Name, Module, C, HandlerOpts) ->
-    IP = "127.0.0.1",
-    Port = get_random_port(),
-    Opts = maps:merge(HandlerOpts, #{hellgate_root_url => cfg(root_url, C)}),
-    ChildSpec = hg_test_proxy:get_child_spec(Name, Module, IP, Port, Opts),
-    {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
-    hg_test_proxy:get_url(Module, IP, Port).
-
 start_proxies(Proxies) ->
     setup_proxies(lists:map(
         fun
@@ -277,6 +298,17 @@ start_proxies(Proxies) ->
 
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
+
+start_service_handler(Module, C, HandlerOpts) ->
+    start_service_handler(Module, Module, C, HandlerOpts).
+
+start_service_handler(Name, Module, C, HandlerOpts) ->
+    IP = "127.0.0.1",
+    Port = get_random_port(),
+    Opts = maps:merge(HandlerOpts, #{hellgate_root_url => cfg(root_url, C)}),
+    ChildSpec = hg_test_proxy:get_child_spec(Name, Module, IP, Port, Opts),
+    {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
+    hg_test_proxy:get_url(Module, IP, Port).
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
@@ -294,35 +326,36 @@ construct_proxy(ID, Url, Options) ->
 
 %%
 
-process_token(RecurrentPaytoolID, _PaymentParams, Client) ->
-    ok = next_event(RecurrentPaytoolID, Client).
+process_token(RecurrentPaytoolID, Client) ->
+    [
+        ?recurrent_payment_tool_has_created(_, _, _),
+        ?session_ev(?session_started())
+    ] = next_event(RecurrentPaytoolID, Client),
+    [
+        ?session_ev(?trx_bound(?trx_info(_))),
+        ?session_ev(?session_finished(?session_succeeded())),
+        ?recurrent_payment_tool_has_acquired(_)
+    ] = next_event(RecurrentPaytoolID, Client),
+    ok.
 
-    % ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(RecurrentPaytoolID, PaymentParams, Client),
-    % [
-    %     ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()))),
-    %     ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
-    % ] = next_event(RecurrentPaytoolID, Client),
-    % [
-    %     ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(_)))),
-    %     ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-    %     ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
-    % ] = next_event(RecurrentPaytoolID, Client),
-    % PaymentID.
+await_rec_token_finish(RecurrentPaytoolID, Client) ->
+    [
+        ?session_ev(?trx_bound(?trx_info(_))),
+        ?session_ev(?session_finished(?session_succeeded())),
+        ?recurrent_payment_tool_has_acquired(_)
+    ] = next_event(RecurrentPaytoolID, Client),
+    ok.
 
 next_event(RecurrentPaytoolID, Client) ->
     next_event(RecurrentPaytoolID, 5000, Client).
 
 next_event(RecurrentPaytoolID, Timeout, Client) ->
-    case hg_client_recurrent_paytool:pull_event(RecurrentPaytoolID, Timeout, Client) of
-        {ok, ?recurrent_payment_tool_event(Changes)} ->
-            case filter_changes(Changes) of
-                L when length(L) > 0 ->
-                    L;
-                [] ->
-                    next_event(RecurrentPaytoolID, Timeout, Client)
-            end;
-        Result ->
-            Result
+    {ok, Changes} = hg_client_recurrent_paytool:pull_event(RecurrentPaytoolID, Timeout, Client),
+    case filter_changes(Changes) of
+        L when length(L) > 0 ->
+            L;
+        [] ->
+            next_event(RecurrentPaytoolID, Timeout, Client)
     end.
 
 filter_changes(Changes) ->
@@ -337,6 +370,22 @@ filter_change(?session_ev(?session_activated())) ->
 filter_change(_) ->
     true.
 
+%%
+
+assert_success_post_request(Req) ->
+    {ok, 200, _RespHeaders, _ClientRef} = post_request(Req).
+
+% assert_failed_post_request(Req) ->
+%     {ok, 500, _RespHeaders, _ClientRef} = post_request(Req).
+
+post_request({URL, Form}) ->
+    Method = post,
+    Headers = [],
+    Body = {form, maps:to_list(Form)},
+    hackney:request(Method, URL, Headers, Body).
+
+get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, form = Form}}}) ->
+    {URL, Form}.
 
 %%
 
