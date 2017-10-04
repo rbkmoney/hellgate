@@ -16,6 +16,10 @@
 -export([invalid_party_status/1]).
 -export([invalid_shop_status/1]).
 
+-export([create_customer/1]).
+-export([delete_customer/1]).
+-export([start_binding/1]).
+
 %%
 
 -behaviour(supervisor).
@@ -66,7 +70,8 @@ end_per_suite(C) ->
 
 all() ->
     [
-        {group, invalid_customer_params}
+        {group, invalid_customer_params},
+        {group, basic_customer_methods}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -79,16 +84,15 @@ groups() ->
             invalid_shop,
             invalid_party_status,
             invalid_shop_status
+        ]},
+        {basic_customer_methods, [sequence], [
+            create_customer,
+            delete_customer,
+            start_binding
         ]}
     ].
 
 %%
-
--spec invalid_user(config()) -> test_case_result().
--spec invalid_party(config()) -> test_case_result().
--spec invalid_shop(config()) -> test_case_result().
--spec invalid_party_status(config()) -> test_case_result().
--spec invalid_shop_status(config()) -> test_case_result().
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -97,10 +101,12 @@ init_per_testcase(Name, C) ->
     PartyID = cfg(party_id, C),
     TraceID = make_trace_id(Name),
     Client = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID, TraceID)),
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [
         {test_case_name, genlib:to_binary(Name)},
         {trace_id, TraceID},
-        {client, Client}
+        {client, Client},
+        {test_sup, SupPid}
         | C
     ].
 
@@ -118,6 +124,14 @@ end_per_testcase(_Name, _C) ->
 -include("hg_ct_json.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/customer_events.hrl").
+
+%%
+
+-spec invalid_user(config()) -> test_case_result().
+-spec invalid_party(config()) -> test_case_result().
+-spec invalid_shop(config()) -> test_case_result().
+-spec invalid_party_status(config()) -> test_case_result().
+-spec invalid_shop_status(config()) -> test_case_result().
 
 invalid_user(C) ->
     Client = cfg(client, C),
@@ -169,6 +183,51 @@ invalid_shop_status(C) ->
 
 %%
 
+-spec create_customer(config()) -> test_case_result().
+-spec delete_customer(config()) -> test_case_result().
+-spec start_binding(config()) -> test_case_result().
+
+create_customer(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    Customer = hg_client_customer:get(CustomerID, Client).
+
+delete_customer(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    ok = hg_client_customer:delete(CustomerID, Client),
+    {exception, #'payproc_CustomerNotFound'{}} = hg_client_customer:get(CustomerID, Client).
+
+start_binding(C) ->
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    CustomerBindingParams = make_customer_binding_params(),
+    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    Customer1 = hg_client_customer:get(CustomerID, Client),
+    #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
+    Bindings = [CustomerBinding],
+    lager:info("1 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
+    lager:info("2 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
+    lager:info("3 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
+    lager:info("4 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
+    lager:info("5 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
+    lager:info("6 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]).
+
+%%
+
 make_customer_params(PartyID, ShopID, EMail) ->
     make_customer_params(PartyID, ShopID, ?contact_info(EMail), ?null()).
 
@@ -180,8 +239,53 @@ make_customer_params(PartyID, ShopID, ContactInfo, Metadata) ->
         metadata     = Metadata
     }.
 
+make_customer_binding_params() ->
+    #payproc_CustomerBindingParams{
+        payment_resource = hg_ct_helper:make_disposable_payment_resource()
+    }.
+
 %%
 
+start_proxies(Proxies) ->
+    setup_proxies(lists:map(
+        fun
+            Mapper({Module, ProxyID, Context}) ->
+                Mapper({Module, ProxyID, #{}, Context});
+            Mapper({Module, ProxyID, ProxyOpts, Context}) ->
+                construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
+        end,
+        Proxies
+    )).
+
+setup_proxies(Proxies) ->
+    ok = hg_domain:upsert(Proxies).
+
+start_service_handler(Module, C, HandlerOpts) ->
+    start_service_handler(Module, Module, C, HandlerOpts).
+
+start_service_handler(Name, Module, C, HandlerOpts) ->
+    IP = "127.0.0.1",
+    Port = get_random_port(),
+    Opts = maps:merge(HandlerOpts, #{hellgate_root_url => cfg(root_url, C)}),
+    ChildSpec = hg_test_proxy:get_child_spec(Name, Module, IP, Port, Opts),
+    {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
+    hg_test_proxy:get_url(Module, IP, Port).
+
+get_random_port() ->
+    rand:uniform(32768) + 32767.
+
+construct_proxy(ID, Url, Options) ->
+    {proxy, #domain_ProxyObject{
+        ref = ?prx(ID),
+        data = #domain_ProxyDefinition{
+            name              = Url,
+            description       = Url,
+            url               = Url,
+            options           = Options
+        }
+    }}.
+
+%%
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
 construct_domain_fixture() ->
@@ -329,7 +433,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                risk_coverage = low
+                risk_coverage = high
             }
         }}
     ].

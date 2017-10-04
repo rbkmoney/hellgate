@@ -122,13 +122,12 @@ get_initial_state(CustomerID) ->
 get_public_history(CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_customer_event(CustomerID, Ev) || Ev <- get_history(CustomerID, AfterID, Limit)].
 
-publish_customer_event(CustomerID, Event) ->
-    {ID, Dt, Payload} = unmarshal(Event),
-    #payproc_CustomerEvent{
+publish_customer_event(CustomerID, {ID, Dt, Payload}) ->
+    #payproc_Event{
         id = ID,
         created_at = Dt,
-        source = CustomerID,
-        payload = Payload
+        source = {customer_id, CustomerID},
+        payload = ?customer_event(Payload)
     }.
 
 -spec start(customer_id(), customer_params()) ->
@@ -178,7 +177,7 @@ map_start_error({error, Reason}) ->
 -spec publish_event(customer_id(), [customer_change()]) ->
     hg_event_provider:public_event().
 publish_event(CustomerID, Changes) when is_list(Changes) ->
-    {CustomerID, ?customer_event(unmarshal({list, changes}, Changes))}.
+    {{customer_id, CustomerID}, ?customer_event(unmarshal({list, changes}, Changes))}.
 
 %%
 %% hg_machine callbacks
@@ -210,6 +209,7 @@ handle_signal(timeout, St) ->
         [] ->
             hg_machine_action:new()
     end,
+    lager:info("POLLED: ~p", [Changes]),
     #{
         changes => Changes,
         action  => Action
@@ -292,11 +292,16 @@ sync_binding_state(Binding) ->
     wrap_binding_changes(get_binding_id(Binding), BindingChanges).
 
 produce_binding_changes([RecurrentPaytoolChange | Rest], Binding) ->
+    lager:info("CHANGES 1: ~p", [RecurrentPaytoolChange]),
     Changes = produce_binding_changes_(RecurrentPaytoolChange, Binding),
     Changes ++ produce_binding_changes(Rest, merge_binding_changes(Changes, Binding));
 produce_binding_changes([], _Binding) ->
+    lager:info("CHANGES 2:"),
     [].
 
+produce_binding_changes_(?recurrent_payment_tool_has_created(_, _, _), Binding) ->
+    ok = assert_binding_status(pending, Binding),
+    [?customer_binding_started(Binding)];
 produce_binding_changes_(?recurrent_payment_tool_has_acquired(_), Binding) ->
     ok = assert_binding_status(pending, Binding),
     [?customer_binding_status_changed(?customer_binding_succeeded())];
@@ -345,7 +350,7 @@ gather_recurrent_paytool_changes(Events) ->
     ).
 
 issue_recurrent_paytools_call(Function, Args) ->
-    hg_woody_wrapper:call(recurrent_payment_tools, Function, Args).
+    hg_woody_wrapper:call(recurrent_paytool, Function, Args).
 
 set_event_poll_timer() ->
     % TODO rather dumb

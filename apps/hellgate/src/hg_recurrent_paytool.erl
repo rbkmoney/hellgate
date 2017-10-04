@@ -318,7 +318,17 @@ construct_proxy_payment_tool(
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
-        minimal_payment_cost = Cash
+        minimal_payment_cost = construct_proxy_cash(Cash)
+    }.
+
+construct_proxy_cash(#domain_Cash{
+    amount = Amount,
+    currency = CurrencyRef
+}) ->
+    Revision = hg_domain:head(),
+    #prxprv_Cash{
+        amount = Amount,
+        currency = hg_domain:get(Revision, {currency, CurrencyRef})
     }.
 
 %%
@@ -405,7 +415,9 @@ apply_change(Event, undefined) ->
 
 apply_change(?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route), St) ->
     St#st{
-        rec_payment_tool = RecPaymentTool,
+        rec_payment_tool = RecPaymentTool#payproc_RecurrentPaymentTool{
+            route = Route
+        },
         risk_score = RiskScore,
         route = Route
     };
@@ -571,7 +583,8 @@ create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Terms, VS0, Revisio
         created_at           = CreatedAt,
         payment_resource     = PaymentResource,
         minimal_payment_cost = Cash,
-        rec_token            = undefined
+        rec_token            = undefined,
+        route                = undefined
     }, VS2}.
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->

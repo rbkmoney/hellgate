@@ -117,7 +117,8 @@ start_app(hellgate = AppName) ->
             automaton => <<"http://machinegun:8022/v1/automaton">>,
             eventsink => <<"http://machinegun:8022/v1/event_sink">>,
             accounter => <<"http://shumway:8022/accounter">>,
-            partymanagement => <<"http://hellgate:8022/v1/processing/partymgmt">>
+            partymanagement => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+            recurrent_paytool => <<"http://hellgate:8022/v1/processing/recpaytool">>
         }},
         {proxy_opts, #{
             transport_opts => #{
