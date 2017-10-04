@@ -3,6 +3,7 @@
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("hellgate/include/domain.hrl").
 
 -export([all/0]).
 -export([init_per_suite/1]).
@@ -408,19 +409,24 @@ delete_invoice_template(C) ->
 
 terms_retrieval(C) ->
     Client = cfg(client, C),
-    PartyID = cfg(party_id, C),
-    ShopID = cfg(shop_id, C),
-    ?invoice_tpl(TplID) = create_invoice_tpl(C, <<"rubberduck">>),
+    ?invoice_tpl(TplID1) = create_invoice_tpl(C, <<"rubberduck">>),
     Timestamp = hg_datetime:format_now(),
-    TermSet1 = hg_client_invoice_templating:compute_terms(TplID, Timestamp, Client),
+    TermSet1 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = undefined
     }} = TermSet1,
-    ok = hg_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
-    TermSet2 = hg_client_invoice_templating:compute_terms(TplID, Timestamp, Client),
+    ok = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
+    TermSet2 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, mastercard), ?pmt(bank_card, visa), ?pmt(payment_terminal, euroset)]}
-    }} = TermSet2.
+    }} = TermSet2,
+    Lifetime = make_lifetime(0, 0, 2),
+    Cost = make_cost(unlim, sale, "1%"),
+    ?invoice_tpl(TplID2) = create_invoice_tpl(C, <<"rubberduck">>, Lifetime, Cost),
+    TermSet3 = hg_client_invoice_templating:compute_terms(TplID2, Timestamp, Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {decisions, _}
+    }} = TermSet3.
 
 %%
 
@@ -551,12 +557,15 @@ construct_domain_fixture() ->
         }}
     ].
 
-construct_term_set_for_party(PartyID, Def) ->
+construct_term_set_for_cost(LowerBound, UpperBound) ->
     TermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             payment_methods = {decisions, [
                 #domain_PaymentMethodDecision{
-                    if_   = ?partycond(PartyID, Def),
+                    if_   = {condition, {cost_in, ?cashrng(
+                        {inclusive, ?cash(LowerBound, <<"RUB">>)},
+                        {inclusive, ?cash(UpperBound, <<"RUB">>)}
+                    )}},
                     then_ = {value, ordsets:from_list(
                         [
                             ?pmt(bank_card, mastercard),
