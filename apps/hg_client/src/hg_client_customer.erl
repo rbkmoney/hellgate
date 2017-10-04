@@ -12,6 +12,9 @@
 -export([delete       /2]).
 -export([start_binding/3]).
 
+-export([pull_event/2]).
+-export([pull_event/3]).
+
 %% GenServer
 
 -behaviour(gen_server).
@@ -76,6 +79,21 @@ delete(ID, Client) ->
 start_binding(ID, CustomerBindingParams, Client) ->
     map_result_error(gen_server:call(Client, {call, 'StartBinding', [ID, CustomerBindingParams]})).
 
+-define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
+
+-spec pull_event(id(), pid()) ->
+    tuple() | timeout | woody_error:business_error().
+
+pull_event(CustomerID, Client) ->
+    pull_event(CustomerID, ?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
+
+-spec pull_event(id(), timeout(), pid()) ->
+    tuple() | timeout | woody_error:business_error().
+
+pull_event(CustomerID, Timeout, Client) ->
+    % FIXME: infinity sounds dangerous
+    gen_server:call(Client, {pull_event, CustomerID, Timeout}, infinity).
+
 map_result_error({ok, Result}) ->
     Result;
 map_result_error({exception, _} = Exception) ->
@@ -115,7 +133,7 @@ handle_call({pull_event, CustomerID, Timeout}, _From, St = #st{client = Client})
     case Result of
         [] ->
             {reply, timeout, StNext};
-        [#payproc_CustomerEvent{payload = Payload}] ->
+        [#payproc_Event{payload = Payload}] ->
             {reply, {ok, Payload}, StNext};
         Error ->
             {reply, Error, StNext}
@@ -164,5 +182,5 @@ set_poller(ID, Poller, St = #st{pollers = Pollers}) ->
 construct_poller(ID) ->
     hg_client_event_poller:new(
         {customer_management, 'GetEvents', [ID]},
-        fun (Event) -> Event#payproc_CustomerEvent.id end
+        fun (Event) -> Event#payproc_Event.id end
     ).
