@@ -658,7 +658,8 @@ marshal(rec_payment_tool, #payproc_RecurrentPaymentTool{} = RecPaymentTool) ->
         <<"created_at">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.created_at),
         <<"payment_resource">> => marshal(disposable_payment_resource, RecPaymentTool#payproc_RecurrentPaymentTool.payment_resource),
         <<"minimal_payment_cost">> => hg_cash:marshal(RecPaymentTool#payproc_RecurrentPaymentTool.minimal_payment_cost),
-        <<"rec_token">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.rec_token)
+        <<"rec_token">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.rec_token),
+        <<"route">> => hg_routing:marshal(RecPaymentTool#payproc_RecurrentPaymentTool.route)
     };
 
 marshal(risk_score, low) ->
@@ -833,7 +834,8 @@ unmarshal(rec_payment_tool, #{
     <<"created_at">>           := CreatedAt,
     <<"payment_resource">>     := PaymentResource,
     <<"minimal_payment_cost">> := MinimalPaymentCost,
-    <<"rec_token">>            := RecToken
+    <<"rec_token">>            := RecToken,
+    <<"route">>                := Route
 }) ->
     #payproc_RecurrentPaymentTool{
         id                   = unmarshal(str, ID),
@@ -844,7 +846,8 @@ unmarshal(rec_payment_tool, #{
         created_at           = unmarshal(str, CreatedAt),
         payment_resource     = unmarshal(disposable_payment_resource, PaymentResource),
         minimal_payment_cost = hg_cash:unmarshal(MinimalPaymentCost),
-        rec_token            = unmarshal(str, RecToken)
+        rec_token            = unmarshal(str, RecToken),
+        route                = hg_routing:unmarshal(Route)
     };
 
 unmarshal(risk_score, <<"low">>) ->
