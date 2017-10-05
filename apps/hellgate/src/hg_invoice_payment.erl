@@ -310,6 +310,7 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Rev
             domain_revision = Revision,
             status          = ?pending(),
             cost            = Cost,
+            payer_details   = construct_legacy_payer_details(Payer),
             payer           = Payer,
             flow            = Flow
         },
@@ -330,12 +331,29 @@ construct_payment_flow({hold, Params}, CreatedAt, Terms, VS, Revision) ->
         VS#{flow => {hold, Lifetime}}
     }.
 
+construct_legacy_payer_details(?customer_payer(_, _, _, PaymentTool)) ->
+    #domain_LegacyPayerDetails {
+        payment_tool = PaymentTool,
+        % TODO fill those propertires properly. Or not.
+        % It's legacy stuff anyway
+        session_id   = <<"">>,
+        client_info  = #domain_ClientInfo{},
+        contact_info = #domain_ContactInfo{}
+    };
+construct_legacy_payer_details(?payment_resource_payer(Resource, ContactInfo)) ->
+    #domain_LegacyPayerDetails {
+        payment_tool = Resource#domain_DisposablePaymentResource.payment_tool,
+        session_id   = Resource#domain_DisposablePaymentResource.payment_session_id,
+        client_info  = Resource#domain_DisposablePaymentResource.client_info,
+        contact_info = ContactInfo
+    }.
+
 get_predefined_route(?customer_payer(_, _, RecPaymentToolID, _) = Payer) ->
     case get_rec_payment_tool(RecPaymentToolID) of
         {ok, #payproc_RecurrentPaymentTool{
             route = Route
         }} when Route =/= undefined ->
-            Route;
+            {ok, Route};
         _ ->
             % TODO more elegant error
             error({'Can\'t get route for customer payer', Payer})
@@ -933,7 +951,7 @@ handle_proxy_result(
     Action0,
     Session
 ) ->
-    Events1 = bind_transaction(Trx, Session),
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
     Events2 = update_proxy_state(ProxyState),
     {Events3, Action} = handle_proxy_intent(Intent, Action0),
     {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
@@ -950,7 +968,7 @@ handle_proxy_callback_result(
     Action0,
     Session
 ) ->
-    Events1 = bind_transaction(Trx, Session),
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
     Events2 = update_proxy_state(ProxyState),
     {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
     {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
@@ -959,7 +977,7 @@ handle_proxy_callback_result(
     Action0,
     Session
 ) ->
-    Events1 = bind_transaction(Trx, Session),
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
     Events2 = update_proxy_state(ProxyState),
     {wrap_session_events(Events1 ++ Events2, Session), Action0}.
 
@@ -969,25 +987,6 @@ handle_proxy_callback_timeout(Action, Session) ->
 
 wrap_session_events(SessionEvents, #{target := Target}) ->
     [?session_ev(Target, Ev) || Ev <- SessionEvents].
-
-bind_transaction(undefined, _Session) ->
-    % no transaction yet
-    [];
-bind_transaction(Trx, #{trx := undefined}) ->
-    % got transaction, nothing bound so far
-    [?trx_bound(Trx)];
-bind_transaction(Trx, #{trx := Trx}) ->
-    % got the same transaction as one which has been bound previously
-    [];
-bind_transaction(Trx, #{trx := TrxWas}) ->
-    % got transaction which differs from the bound one
-    % verify against proxy contracts
-    case Trx#domain_TransactionInfo.id of
-        ID when ID =:= TrxWas#domain_TransactionInfo.id ->
-            [?trx_bound(Trx)];
-        _ ->
-            error(proxy_contract_violated)
-    end.
 
 update_proxy_state(undefined) ->
     [];
@@ -1077,6 +1076,7 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         trx = Trx,
+        payer_details = construct_legacy_payer_details(Payer),
         payment_resource = get_payment_resource(Payer),
         cost = construct_proxy_cash(Cost),
         contact_info = get_contact_info(Payer)
@@ -1891,31 +1891,35 @@ unmarshal(payment, #{
     <<"created_at">>        := CreatedAt,
     <<"domain_revision">>   := Revision,
     <<"cost">>              := Cash,
-    <<"payer">>             := Payer,
+    <<"payer">>             := MarshalledPayer,
     <<"flow">>              := Flow
 } = Payment) ->
     Context = maps:get(<<"context">>, Payment, undefined),
+    Payer = unmarshal(payer, MarshalledPayer),
     #domain_InvoicePayment{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
         cost            = hg_cash:unmarshal(Cash),
-        payer           = unmarshal(payer, Payer),
+        payer_details   = construct_legacy_payer_details(Payer),
+        payer           = Payer,
         status          = ?pending(),
         flow            = unmarshal(flow, Flow),
         context         = hg_content:unmarshal(Context)
     };
 
 unmarshal(payment,
-    ?legacy_payment(ID, CreatedAt, Revision, Status, Payer, Cash, Context)
+    ?legacy_payment(ID, CreatedAt, Revision, Status, MarshalledPayer, Cash, Context)
 ) ->
+    Payer = unmarshal(payer, MarshalledPayer),
     #domain_InvoicePayment{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
         status          = unmarshal(status, Status),
         cost            = hg_cash:unmarshal([1, Cash]),
-        payer           = unmarshal(payer, Payer),
+        payer_details   = construct_legacy_payer_details(Payer),
+        payer           = Payer,
         flow            = ?invoice_payment_flow_instant(),
         context         = hg_content:unmarshal(Context)
     };

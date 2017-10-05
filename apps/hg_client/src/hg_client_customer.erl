@@ -103,7 +103,7 @@ map_result_error({error, Error}) ->
 
 %%
 
--type event() :: dmsl_payment_processing_thrift:'CustomerEvent'().
+-type event() :: dmsl_payment_processing_thrift:'Event'().
 
 -record(st, {
     pollers   :: #{id() => hg_client_event_poller:st(event())},

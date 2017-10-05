@@ -45,7 +45,7 @@
 -type session() :: #{
     status      := active | suspended | finished,
     result      => session_result(),
-    trx         => trx_info(),
+    trx         => undefined | trx_info(),
     proxy_state => proxy_state()
 }.
 
