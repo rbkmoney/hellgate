@@ -1752,9 +1752,9 @@ marshal(payer, ?customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID
 
 marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
     #{
-        <<"payment_tool">>       => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
+        <<"payment_tool">> => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
         <<"payment_session_id">> => marshal(str, PaymentResource#domain_DisposablePaymentResource.payment_session_id),
-        <<"client_info">>        => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
+        <<"client_info">> => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
     };
 
 marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->

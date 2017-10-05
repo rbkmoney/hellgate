@@ -186,9 +186,9 @@ init(RecPaymentToolID, Params) ->
     {Party, Shop} = get_party_shop(Params),
     MerchantTerms = get_merchant_payments_terms(Shop, Party, CreatedAt, Revision),
     VS0 = collect_varset(Party, Shop, #{}),
-    {RecPaymentTool ,  VS1} = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, MerchantTerms, VS0, Revision),
-    {RiskScore      ,  VS2} = validate_risk_score(inspect(RecPaymentTool, VS1), VS1),
-    {Route          , _VS3} = validate_route(hg_routing:choose(VS2, Revision), RecPaymentTool, VS2),
+    {RecPaymentTool, VS1} = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, MerchantTerms, VS0, Revision),
+    {RiskScore     , VS2} = validate_risk_score(inspect(RecPaymentTool, VS1), VS1),
+    {Route         , _VS3} = validate_route(hg_routing:choose(VS2, Revision), RecPaymentTool, VS2),
     {ok, {Changes, Action}} = start_session(),
     handle_result(#{
         changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
@@ -662,7 +662,10 @@ marshal(rec_payment_tool, #payproc_RecurrentPaymentTool{} = RecPaymentTool) ->
         <<"domain_revision">> => marshal(int, RecPaymentTool#payproc_RecurrentPaymentTool.domain_revision),
         <<"status">> => marshal(status, RecPaymentTool#payproc_RecurrentPaymentTool.status),
         <<"created_at">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.created_at),
-        <<"payment_resource">> => marshal(disposable_payment_resource, RecPaymentTool#payproc_RecurrentPaymentTool.payment_resource),
+        <<"payment_resource">> => marshal(
+            disposable_payment_resource,
+            RecPaymentTool#payproc_RecurrentPaymentTool.payment_resource
+        ),
         <<"minimal_payment_cost">> => hg_cash:marshal(RecPaymentTool#payproc_RecurrentPaymentTool.minimal_payment_cost),
         <<"rec_token">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.rec_token),
         <<"route">> => hg_routing:marshal(RecPaymentTool#payproc_RecurrentPaymentTool.route)
@@ -763,9 +766,9 @@ marshal(status, ?recurrent_payment_tool_failed(Failure)) ->
 
 marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
     #{
-        <<"payment_tool">>       => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
+        <<"payment_tool">> => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
         <<"payment_session_id">> => marshal(str, PaymentResource#domain_DisposablePaymentResource.payment_session_id),
-        <<"client_info">>        => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
+        <<"client_info">> => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
     };
 
 %%
