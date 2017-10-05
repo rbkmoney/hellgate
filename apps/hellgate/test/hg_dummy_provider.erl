@@ -131,7 +131,7 @@ generate_token(undefined, _TokenInfo, _Opts) ->
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
     case get_resource_type(PaymentTool) of
         {bank_card, with_tds} ->
-            Tag = hg_utils:unique_id(),
+            Tag = generate_recurent_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
@@ -191,7 +191,7 @@ process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
     case get_payment_resource_type(PaymentInfo) of
         {bank_card, with_tds} ->
-            Tag = hg_utils:unique_id(),
+            Tag = generate_payment_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
@@ -347,8 +347,18 @@ handle_user_interaction_response(_, Req) ->
     cowboy_req:reply(405, Req).
 
 callback_to_hell(Tag, Payload) ->
+    % This case emulate precisely current proxy behaviour. HOLY MACKEREL!
+    Fun = case Tag of
+        <<"payment-", _Rest/binary>> ->
+            'ProcessPaymentCallback';
+        <<"recurrent-", _Rest/binary>> ->
+            'ProcessRecurrentTokenCallback';
+        % FIXME adhoc for old tests, probably can be safely removed
+        _ ->
+            'ProcessPaymentCallback'
+    end,
     case hg_client_api:call(
-        proxy_host_provider, 'ProcessRecurrentTokenCallback', [Tag, Payload],
+        proxy_host_provider, Fun, [Tag, Payload],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ) of
         {{ok, _Response}, _} ->
@@ -358,3 +368,11 @@ callback_to_hell(Tag, Payload) ->
         {{exception, _}, _} ->
             500
     end.
+
+generate_payment_tag() ->
+    Tag = hg_utils:unique_id(),
+    <<"payment-", Tag/binary>>.
+
+generate_recurent_tag() ->
+    Tag = hg_utils:unique_id(),
+    <<"recurrent-", Tag/binary>>.
