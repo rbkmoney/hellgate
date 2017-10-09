@@ -177,7 +177,7 @@ map_start_error({error, Reason}) ->
 -spec publish_event(customer_id(), [customer_change()]) ->
     hg_event_provider:public_event().
 publish_event(CustomerID, Changes) when is_list(Changes) ->
-    {{customer_id, CustomerID}, ?customer_event(unmarshal({list, changes}, Changes))}.
+    {{customer_id, CustomerID}, ?customer_event(unmarshal({list, change}, Changes))}.
 
 %%
 %% hg_machine callbacks
