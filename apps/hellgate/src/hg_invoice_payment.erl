@@ -1101,7 +1101,10 @@ get_payment_resource(?customer_payer(_, _, RecPaymentToolID, _) = Payer) ->
             error({'Can\'t get rec_token for customer payer', Payer})
     end.
 
-get_contact_info({payment_resource, #domain_PaymentResourcePayer{contact_info = ContactInfo}}) ->
+get_contact_info(?payment_resource_payer(_, ContactInfo)) ->
+    ContactInfo;
+get_contact_info(?customer_payer(CustomerID, _, _, _)) ->
+    #payproc_Customer{contact_info = ContactInfo} = get_customer(CustomerID),
     ContactInfo.
 
 construct_proxy_invoice(
@@ -1436,6 +1439,14 @@ collapse_changes(Changes, St) ->
 
 get_rec_payment_tool(RecPaymentToolID) ->
     hg_woody_wrapper:call(recurrent_paytool, 'Get', [RecPaymentToolID]).
+
+get_customer(CustomerID) ->
+    case issue_customer_call('Get', [CustomerID]) of
+        {ok, Customer} ->
+            Customer;
+        {exception, Error} ->
+            error({<<"Can't get customer">>, Error})
+    end.
 
 issue_process_call(ProxyContext, St) ->
     issue_proxy_call('ProcessPayment', [ProxyContext], St).

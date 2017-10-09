@@ -11,6 +11,7 @@
 
 -export([create_party_and_shop/1]).
 -export([create_battle_ready_shop/3]).
+-export([create_customer_w_binding/1]).
 -export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
@@ -49,6 +50,9 @@
 -export([make_invoice_details/1]).
 -export([make_invoice_details/2]).
 
+-export([make_customer_params/3]).
+-export([make_customer_binding_params/0]).
+
 -export([bank_card_tds_token/0]).
 -export([bank_card_simple_token/0]).
 -export([make_terminal_payment_tool/0]).
@@ -62,6 +66,7 @@
 
 
 -include("hg_ct_domain.hrl").
+-include("hg_ct_json.hrl").
 -include_lib("hellgate/include/domain.hrl").
 -include_lib("dmsl/include/dmsl_base_thrift.hrl").
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
@@ -118,6 +123,7 @@ start_app(hellgate = AppName) ->
             eventsink => <<"http://machinegun:8022/v1/event_sink">>,
             accounter => <<"http://shumway:8022/accounter">>,
             party_management => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+            customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
             recurrent_paytool => <<"http://hellgate:8022/v1/processing/recpaytool">>
         }},
         {proxy_opts, #{
@@ -278,6 +284,11 @@ create_battle_ready_shop(Category, TemplateRef, Client) ->
     ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client),
     _Shop = hg_client_party:get_shop(ShopID, Client),
     ShopID.
+
+-spec create_customer_w_binding(Client :: pid()) -> ok.
+
+create_customer_w_binding(_Client) ->
+    ok.
 
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().
@@ -656,6 +667,25 @@ make_meta_data(NS) ->
 
 get_hellgate_url() ->
     "http://" ++ ?HELLGATE_HOST ++ ":" ++ integer_to_list(?HELLGATE_PORT).
+
+-spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
+
+make_customer_params(PartyID, ShopID, EMail) ->
+    #payproc_CustomerParams{
+        party_id     = PartyID,
+        shop_id      = ShopID,
+        contact_info = ?contact_info(EMail),
+        metadata     = ?null()
+    }.
+
+-spec make_customer_binding_params() -> dmsl_payment_processing_thrift:'CustomerBindingParams'().
+
+make_customer_binding_params() ->
+    #payproc_CustomerBindingParams{
+        payment_resource = make_disposable_payment_resource()
+    }.
+
+%%
 
 make_due_date() ->
     make_due_date(24 * 60 * 60).

@@ -137,7 +137,7 @@ invalid_user(C) ->
     Client = cfg(client, C),
     PartyID = hg_utils:unique_id(),
     ShopID = hg_utils:unique_id(),
-    Params = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     {exception, #payproc_InvalidUser{}} = hg_client_customer:create(Params, Client).
 
 invalid_party(C) ->
@@ -145,14 +145,14 @@ invalid_party(C) ->
     PartyID = hg_utils:unique_id(),
     ShopID = hg_utils:unique_id(),
     Client = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID, cfg(trace_id, C))),
-    Params = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     {exception, #payproc_PartyNotFound{}} = hg_client_customer:create(Params, Client).
 
 invalid_shop(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = hg_utils:unique_id(),
-    Params = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     {exception, #payproc_ShopNotFound{}} = hg_client_customer:create(Params, Client).
 
 invalid_party_status(C) ->
@@ -160,7 +160,7 @@ invalid_party_status(C) ->
     PartyClient = cfg(party_client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     ok = hg_client_party:block(<<>>, PartyClient),
     {exception, ?invalid_party_status({blocking, _})} = hg_client_customer:create(Params, Client),
     ok = hg_client_party:unblock(<<>>, PartyClient),
@@ -173,7 +173,7 @@ invalid_shop_status(C) ->
     PartyClient = cfg(party_client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     ok = hg_client_party:block_shop(ShopID, <<>>, PartyClient),
     {exception, ?invalid_shop_status({blocking, _})} = hg_client_customer:create(Params, Client),
     ok = hg_client_party:unblock_shop(ShopID, <<>>, PartyClient),
@@ -191,7 +191,7 @@ create_customer(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     Customer = hg_client_customer:get(CustomerID, Client).
@@ -200,7 +200,7 @@ delete_customer(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     ok = hg_client_customer:delete(CustomerID, Client),
@@ -211,10 +211,10 @@ start_binding(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
-    CustomerBindingParams = make_customer_binding_params(),
+    CustomerBindingParams = hg_ct_helper:make_customer_binding_params(),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -225,24 +225,6 @@ start_binding(C) ->
     lager:info("4 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
     lager:info("5 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
     lager:info("6 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]).
-
-%%
-
-make_customer_params(PartyID, ShopID, EMail) ->
-    make_customer_params(PartyID, ShopID, ?contact_info(EMail), ?null()).
-
-make_customer_params(PartyID, ShopID, ContactInfo, Metadata) ->
-    #payproc_CustomerParams{
-        party_id     = PartyID,
-        shop_id      = ShopID,
-        contact_info = ContactInfo,
-        metadata     = Metadata
-    }.
-
-make_customer_binding_params() ->
-    #payproc_CustomerBindingParams{
-        payment_resource = hg_ct_helper:make_disposable_payment_resource()
-    }.
 
 %%
 

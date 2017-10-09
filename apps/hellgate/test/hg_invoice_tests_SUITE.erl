@@ -25,6 +25,7 @@
 
 -export([payment_success/1]).
 -export([payment_w_terminal_success/1]).
+-export([payment_w_customer_success/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
@@ -80,6 +81,7 @@ all() ->
         invalid_payment_amount,
         payment_success,
         payment_w_terminal_success,
+        payment_w_customer_success,
         payment_success_on_second_try,
         payment_fail_after_silent_callback,
         invoice_success_on_third_payment,
@@ -141,6 +143,7 @@ end_per_suite(C) ->
 
 -include("invoice_events.hrl").
 -include("payment_events.hrl").
+-include("customer_events.hrl").
 
 -define(invoice(ID), #domain_Invoice{id = ID}).
 -define(payment(ID), #domain_InvoicePayment{id = ID}).
@@ -491,6 +494,23 @@ payment_w_terminal_success(C) ->
     _ = assert_failed_post_request({URL, BadForm}),
     _ = assert_success_post_request({URL, GoodForm}),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_w_customer_success(config()) -> test_return().
+
+payment_w_customer_success(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
+    PaymentParams = make_customer_payment_params(CustomerID),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
@@ -1154,6 +1174,14 @@ make_tds_payment_params() ->
     {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
     make_payment_params(PaymentTool, Session, instant).
 
+make_customer_payment_params(CustomerID) ->
+    #payproc_InvoicePaymentParams{
+        payer = {customer, #payproc_CustomerPayerParams{
+            customer_id = CustomerID
+        }},
+        flow = {instant, #payproc_InvoicePaymentParamsFlowInstant{}}
+    }.
+
 make_payment_params() ->
     make_payment_params(instant).
 
@@ -1278,6 +1306,39 @@ get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, 
 get_post_request({payment_terminal_reciept, #'PaymentTerminalReceipt'{short_payment_id = SPID}}) ->
     URL = hg_dummy_provider:get_callback_url(),
     {URL, #{<<"tag">> => SPID}}.
+
+make_customer_w_rec_tool(PartyID, ShopID, Client) ->
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, <<"InvoicingTests">>),
+    #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
+    CustomerBindingParams = hg_ct_helper:make_customer_binding_params(),
+    #payproc_CustomerBinding{id = BindingID} = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    ok = wait_for_binding_success(CustomerID, BindingID, Client),
+    CustomerID.
+
+wait_for_binding_success(CustomerID, BindingID, Client) ->
+    wait_for_binding_success(CustomerID, BindingID, 5000, Client).
+
+wait_for_binding_success(CustomerID, BindingID, TimeLeft, Client) when TimeLeft > 0 ->
+    Target = ?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_succeeded())),
+    Started = genlib_time:ticks(),
+    Event = hg_client_customer:pull_event(CustomerID, Client),
+    R = case Event of
+        {ok, ?customer_event(Changes)} ->
+            lists:member(Target, Changes);
+        _ ->
+            false
+    end,
+    case R of
+        true ->
+            ok;
+        false ->
+            timer:sleep(200),
+            Now = genlib_time:ticks(),
+            TimeLeftNext = TimeLeft - (Now - Started) div 1000,
+            wait_for_binding_success(CustomerID, BindingID, TimeLeftNext, Client)
+    end;
+wait_for_binding_success(_, _, _, _) ->
+    timeout.
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
