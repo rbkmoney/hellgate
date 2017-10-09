@@ -29,7 +29,7 @@
 
 %% Types
 
--define(SYNC_INTERVAL, 1000).
+-define(SYNC_INTERVAL, 1).
 
 -record(st, {
     customer       :: undefined | customer(),
@@ -239,14 +239,18 @@ handle_call({start_binding, BindingParams}, St) ->
     start_binding(BindingParams, St).
 
 handle_result(Params) ->
-    Changes = maps:get(changes, Params, []),
     Action = maps:get(action, Params, hg_machine_action:new()),
     case maps:find(response, Params) of
         {ok, Response} ->
-            {{ok, Response}, {[marshal(Changes)], Action}};
+            {{ok, Response}, {handle_result_changes(Params), Action}};
         error ->
-            {[marshal(Changes)], Action}
+            {handle_result_changes(Params), Action}
     end.
+
+handle_result_changes(#{changes := Changes = [_ | _]}) ->
+    [marshal(Changes)];
+handle_result_changes(#{}) ->
+    [].
 
 %%
 
@@ -301,7 +305,7 @@ produce_binding_changes([], _Binding) ->
 
 produce_binding_changes_(?recurrent_payment_tool_has_created(_, _, _), Binding) ->
     ok = assert_binding_status(pending, Binding),
-    [?customer_binding_started(Binding)];
+    [];
 produce_binding_changes_(?recurrent_payment_tool_has_acquired(_), Binding) ->
     ok = assert_binding_status(pending, Binding),
     [?customer_binding_status_changed(?customer_binding_succeeded())];
