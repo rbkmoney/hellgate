@@ -74,7 +74,6 @@ raise(Exception) ->
 %% Internal functions
 
 get_service_url(ServiceName) ->
-    io:format("Services: ~p", [genlib_app:env(hellgate, service_urls)]),
     maps:get(ServiceName, genlib_app:env(hellgate, service_urls)).
 
 -spec get_service_modname(atom()) ->
