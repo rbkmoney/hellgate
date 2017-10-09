@@ -475,10 +475,12 @@ process_call(Call, History) ->
     end.
 
 handle_call(abandon, St) ->
-    ok = assert_rec_payment_tool_status(recurrent_payment_tool_acquired, St),
+    ok = assert_rec_payment_tool_status(acquired, St),
+    Changes = [?recurrent_payment_tool_has_abandoned()],
+    St1 = apply_changes(Changes, St),
     #{
-        response => ok,
-        changes  => [?recurrent_payment_tool_has_abandoned()]
+        response => get_rec_payment_tool(St1),
+        changes  => Changes
     };
 handle_call({callback, Callback}, St) ->
     dispatch_callback(Callback, St).
@@ -552,9 +554,13 @@ assert_shop_operable(Shop) ->
     Shop = hg_invoice_utils:assert_shop_operable(Shop),
     ok.
 
-assert_rec_payment_tool_status(recurrent_payment_tool_acquired, St) ->
-    ?recurrent_payment_tool_acquired() = get_rec_payment_tool_status(get_rec_payment_tool(St)),
-    ok.
+assert_rec_payment_tool_status(StatusName, St) ->
+    assert_rec_payment_tool_status_(StatusName, get_rec_payment_tool_status(get_rec_payment_tool(St))).
+
+assert_rec_payment_tool_status_(StatusName, {StatusName, _}) ->
+    ok;
+assert_rec_payment_tool_status_(_StatusName, Status) ->
+    throw(#payproc_InvalidRecurrentPaymentToolStatus{status = Status}).
 
 get_rec_payment_tool_status(RecPaymentTool) ->
     RecPaymentTool#payproc_RecurrentPaymentTool.status.
