@@ -311,18 +311,6 @@ get_short_payment_id(#prxprv_PaymentInfo{invoice = Invoice, payment = Payment}) 
 get_invoice_due_date(#prxprv_PaymentInfo{invoice = Invoice}) ->
     Invoice#prxprv_Invoice.due.
 
-% get_payment_token(#prxprv_PaymentInfo{payment = Payment}) ->
-%     #prxprv_InvoicePayment{
-%         payment_resource = {
-%             disposable_payment_resource,
-%             #domain_DisposablePaymentResource{
-%                 payment_tool = PaymentTool
-%             }
-%         }
-%     } = Payment,
-%     {'bank_card', #domain_BankCard{token = Token}} = PaymentTool,
-%     Token.
-
 %%
 
 -spec init(atom(), cowboy_req:req(), list()) -> {ok, cowboy_req:req(), state}.

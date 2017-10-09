@@ -17,10 +17,10 @@
 -export([invalid_shop_status/1]).
 
 -export([get_recurrent_paytool/1]).
--export([rec_paytool_not_found/1]).
--export([abandon_rec_paytool/1]).
--export([get_token_success/1]).
--export([get_token_tds_success/1]).
+-export([recurrent_paytool_not_found/1]).
+-export([recurrent_paytool_abandoned/1]).
+-export([recurrent_paytool_acquired/1]).
+-export([recurrent_paytool_w_tds_acquired/1]).
 
 %%
 
@@ -56,14 +56,19 @@ init_per_suite(C) ->
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
-    [
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    _ = unlink(SupPid),
+    C1 = [
         {apps, Apps},
         {root_url, RootUrl},
         {party_client, PartyClient},
         {party_id, PartyID},
-        {shop_id, ShopID}
+        {shop_id, ShopID},
+        {test_sup, SupPid}
         | C
-    ].
+    ],
+    ok = start_proxies([{hg_dummy_provider, 1, C1}, {hg_dummy_inspector, 2, C1}]),
+    C1.
 
 -spec end_per_suite(config()) -> _.
 
@@ -76,7 +81,11 @@ end_per_suite(C) ->
 all() ->
     [
         {group, invalid_recurrent_paytool_params},
-        {group, recurrent_paytool_flow}
+        recurrent_paytool_not_found,
+        get_recurrent_paytool,
+        recurrent_paytool_acquired,
+        recurrent_paytool_w_tds_acquired,
+        recurrent_paytool_abandoned
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -89,13 +98,6 @@ groups() ->
             invalid_shop,
             invalid_party_status,
             invalid_shop_status
-        ]},
-        {recurrent_paytool_flow, [sequence], [
-            rec_paytool_not_found,
-            get_recurrent_paytool,
-            % abandon_rec_paytool
-            get_token_success,
-            get_token_tds_success
         ]}
     ].
 
@@ -108,17 +110,16 @@ init_per_testcase(Name, C) ->
     PartyID = cfg(party_id, C),
     TraceID = make_trace_id(Name),
     Client = hg_client_recurrent_paytool:start(hg_ct_helper:create_client(RootUrl, PartyID, TraceID)),
-    {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [
         {test_case_name, genlib:to_binary(Name)},
         {trace_id, TraceID},
-        {client, Client},
-        {test_sup, SupPid}
+        {client, Client}
         | C
     ].
 
 make_trace_id(Prefix) ->
-    iolist_to_binary([genlib:to_binary(Prefix), $., hg_utils:unique_id()]).
+    B = genlib:to_binary(Prefix),
+    iolist_to_binary([binary:part(B, 0, min(byte_size(B), 20)), $., hg_utils:unique_id()]).
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
@@ -142,7 +143,7 @@ end_per_testcase(_Name, _C) ->
 -spec invalid_shop(config()) -> test_case_result().
 -spec invalid_party_status(config()) -> test_case_result().
 -spec invalid_shop_status(config()) -> test_case_result().
--spec get_token_tds_success(config()) -> test_case_result().
+-spec recurrent_paytool_w_tds_acquired(config()) -> test_case_result().
 
 invalid_user(C) ->
     Client = cfg(client, C),
@@ -194,12 +195,12 @@ invalid_shop_status(C) ->
 
 %% recurrent_paytool_flow group
 
--spec rec_paytool_not_found(config()) -> test_case_result().
+-spec recurrent_paytool_not_found(config()) -> test_case_result().
 -spec get_recurrent_paytool(config()) -> test_case_result().
--spec abandon_rec_paytool(config()) -> test_case_result().
--spec get_token_success(config()) -> test_case_result().
+-spec recurrent_paytool_abandoned(config()) -> test_case_result().
+-spec recurrent_paytool_acquired(config()) -> test_case_result().
 
-rec_paytool_not_found(C) ->
+recurrent_paytool_not_found(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
@@ -216,25 +217,22 @@ get_recurrent_paytool(C) ->
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     RecurrentPaytool = hg_client_recurrent_paytool:get(RecurrentPaytoolID, Client).
 
-get_token_success(C) ->
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+recurrent_paytool_acquired(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = make_recurrent_paytool_params(PartyID, ShopID),
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
-    ok = process_token(RecurrentPaytoolID, Client).
+    ok = await_acquirement(RecurrentPaytoolID, Client).
 
-get_token_tds_success(C) ->
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+recurrent_paytool_w_tds_acquired(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = make_tds_recurrent_paytool_params(PartyID, ShopID),
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
-
     [
         ?recurrent_payment_tool_has_created(_, _, _),
         ?session_ev(?session_started())
@@ -245,16 +243,23 @@ get_token_tds_success(C) ->
 
     {URL, GoodForm} = get_post_request(UserInteraction),
     _ = assert_success_post_request({URL, GoodForm}),
-    ok = await_rec_token_finish(RecurrentPaytoolID, Client).
+    ok = await_acquirement_finish(RecurrentPaytoolID, Client).
 
-abandon_rec_paytool(C) ->
+recurrent_paytool_abandoned(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = make_recurrent_paytool_params(PartyID, ShopID),
-    RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
-    #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
-    RecurrentPaytool = hg_client_recurrent_paytool:abandon(RecurrentPaytoolID, Client).
+    #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} =
+        hg_client_recurrent_paytool:create(Params, cfg(client, C)),
+    {exception, #payproc_InvalidRecurrentPaymentToolStatus{status = {created, _}}} =
+        hg_client_recurrent_paytool:abandon(RecurrentPaytoolID, Client),
+    ok = await_acquirement(RecurrentPaytoolID, Client),
+    #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID, status = {abandoned, _}} =
+        hg_client_recurrent_paytool:abandon(RecurrentPaytoolID, Client),
+    [
+        ?recurrent_payment_tool_has_abandoned()
+    ] = next_event(RecurrentPaytoolID, Client).
 
 %%
 
@@ -326,19 +331,14 @@ construct_proxy(ID, Url, Options) ->
 
 %%
 
-process_token(RecurrentPaytoolID, Client) ->
+await_acquirement(RecurrentPaytoolID, Client) ->
     [
         ?recurrent_payment_tool_has_created(_, _, _),
         ?session_ev(?session_started())
     ] = next_event(RecurrentPaytoolID, Client),
-    [
-        ?session_ev(?trx_bound(?trx_info(_))),
-        ?session_ev(?session_finished(?session_succeeded())),
-        ?recurrent_payment_tool_has_acquired(_)
-    ] = next_event(RecurrentPaytoolID, Client),
-    ok.
+    await_acquirement_finish(RecurrentPaytoolID, Client).
 
-await_rec_token_finish(RecurrentPaytoolID, Client) ->
+await_acquirement_finish(RecurrentPaytoolID, Client) ->
     [
         ?session_ev(?trx_bound(?trx_info(_))),
         ?session_ev(?session_finished(?session_succeeded())),
