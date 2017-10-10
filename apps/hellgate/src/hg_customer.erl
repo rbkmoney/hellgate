@@ -209,7 +209,6 @@ handle_signal(timeout, St) ->
         [] ->
             hg_machine_action:new()
     end,
-    _ = lager:info("POLLED: ~p", [Changes]),
     #{
         changes => Changes,
         action  => Action
@@ -296,11 +295,9 @@ sync_binding_state(Binding) ->
     wrap_binding_changes(get_binding_id(Binding), BindingChanges).
 
 produce_binding_changes([RecurrentPaytoolChange | Rest], Binding) ->
-    _ = lager:info("CHANGES 1: ~p", [RecurrentPaytoolChange]),
     Changes = produce_binding_changes_(RecurrentPaytoolChange, Binding),
     Changes ++ produce_binding_changes(Rest, merge_binding_changes(Changes, Binding));
 produce_binding_changes([], _Binding) ->
-    _ = lager:info("CHANGES 2:"),
     [].
 
 produce_binding_changes_(?recurrent_payment_tool_has_created(_, _, _), Binding) ->
