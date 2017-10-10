@@ -1309,9 +1309,10 @@ get_post_request({payment_terminal_reciept, #'PaymentTerminalReceipt'{short_paym
 
 make_customer_w_rec_tool(PartyID, ShopID, Client) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, <<"InvoicingTests">>),
-    #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
-    CustomerBindingParams = hg_ct_helper:make_customer_binding_params(),
-    #payproc_CustomerBinding{id = BindingID} = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    #payproc_Customer{id = CustomerID} =
+        hg_client_customer:create(CustomerParams, Client),
+    #payproc_CustomerBinding{id = BindingID} =
+        hg_client_customer:start_binding(CustomerID, hg_ct_helper:make_customer_binding_params(), Client),
     ok = wait_for_binding_success(CustomerID, BindingID, Client),
     CustomerID.
 
