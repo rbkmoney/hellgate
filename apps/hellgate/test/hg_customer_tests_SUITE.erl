@@ -219,12 +219,16 @@ start_binding(C) ->
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
     Bindings = [CustomerBinding],
-    lager:info("1 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
-    lager:info("2 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
-    lager:info("3 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
-    lager:info("4 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
-    lager:info("5 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]),
-    lager:info("6 - ~p", [hg_client_customer:pull_event(CustomerID, 5000, Client)]).
+    [
+        ?customer_created(_)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(_, ?customer_binding_started(_))
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded()))
+    ] = next_event(CustomerID, Client).
+
 
 %%
 
@@ -268,6 +272,17 @@ construct_proxy(ID, Url, Options) ->
     }}.
 
 %%
+
+next_event(CustomerID, Client) ->
+    case hg_client_customer:pull_event(CustomerID, 10000, Client) of
+        {ok, ?customer_event(Changes)} ->
+            Changes;
+        Result ->
+            Result
+    end.
+
+%%
+
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
 construct_domain_fixture() ->
