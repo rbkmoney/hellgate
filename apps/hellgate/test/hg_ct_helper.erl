@@ -119,12 +119,12 @@ start_app(hellgate = AppName) ->
         {host, ?HELLGATE_HOST},
         {port, ?HELLGATE_PORT},
         {service_urls, #{
-            automaton => <<"http://machinegun:8022/v1/automaton">>,
-            eventsink => <<"http://machinegun:8022/v1/event_sink">>,
-            accounter => <<"http://shumway:8022/accounter">>,
-            party_management => <<"http://hellgate:8022/v1/processing/partymgmt">>,
-            customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
-            recurrent_paytool => <<"http://hellgate:8022/v1/processing/recpaytool">>
+            'Automaton' => <<"http://machinegun:8022/v1/automaton">>,
+            'EventSink' => <<"http://machinegun:8022/v1/event_sink">>,
+            'Accounter' => <<"http://shumway:8022/accounter">>,
+            'PartyManagement' => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+            'CustomerManagement' => <<"http://hellgate:8022/v1/processing/customer_management">>,
+            'RecurrentPaymentTools' => <<"http://hellgate:8022/v1/processing/recpaytool">>
         }},
         {proxy_opts, #{
             transport_opts => #{

@@ -94,7 +94,7 @@ get_payment_info(
     }.
 
 issue_call(Func, Args, CallOpts) ->
-    hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts).
+    hg_woody_wrapper:call('InspectorProxy', Func, Args, CallOpts).
 
 get_proxy_def(Ref, Revision) ->
     hg_domain:get(Revision, {proxy, Ref}).

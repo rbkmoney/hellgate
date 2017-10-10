@@ -77,7 +77,26 @@ get_service_url(ServiceName) ->
     maps:get(ServiceName, genlib_app:env(hellgate, service_urls)).
 
 -spec get_service_modname(atom()) ->
-    hg_proto:service().
+    {module(), atom()}.
 
 get_service_modname(ServiceName) ->
-    hg_proto:get_service(ServiceName).
+    {get_service_module(ServiceName), ServiceName}.
+
+get_service_module('Automaton') ->
+    dmsl_state_processing_thrift;
+get_service_module('Accounter') ->
+    dmsl_accounter_thrift;
+get_service_module('EventSink') ->
+    dmsl_state_processing_thrift;
+get_service_module('ProviderProxy') ->
+    dmsl_proxy_provider_thrift;
+get_service_module('InspectorProxy') ->
+    dmsl_proxy_inspector_thrift;
+get_service_module('MerchantProxy') ->
+    dmsl_proxy_merchant_thrift;
+get_service_module('RecurrentPaymentTools') ->
+    dmsl_payment_processing_thrift;
+get_service_module('PartyManagement') ->
+    dmsl_payment_processing_thrift;
+get_service_module(ServiceName) ->
+    error({unknown_service, ServiceName}).

@@ -351,7 +351,7 @@ gather_recurrent_paytool_changes(Events) ->
     ).
 
 issue_recurrent_paytools_call(Function, Args) ->
-    hg_woody_wrapper:call(recurrent_paytool, Function, Args).
+    hg_woody_wrapper:call('RecurrentPaymentTools', Function, Args).
 
 set_event_poll_timer() ->
     % TODO rather dumb

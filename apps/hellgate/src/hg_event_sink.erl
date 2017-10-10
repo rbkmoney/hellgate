@@ -37,7 +37,7 @@ get_history_range(EventSinkID, After, Limit, Direction) ->
     map_sink_events(History).
 
 call_event_sink(Function, EventSinkID, Args) ->
-    hg_woody_wrapper:call(eventsink, Function, [EventSinkID | Args]).
+    hg_woody_wrapper:call('EventSink', Function, [EventSinkID | Args]).
 
 map_sink_events(History) ->
     [map_sink_event(Ev) || Ev <- History].
