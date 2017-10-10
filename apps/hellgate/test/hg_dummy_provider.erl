@@ -47,7 +47,6 @@ get_http_cowboy_spec() ->
 
 %%
 
--define(DEFAULT_PAYLOAD , <<"payload">>).
 -define(LAY_LOW_BUDDY   , <<"lay low buddy">>).
 
 -define(REC_TOKEN, <<"rec_token">>).
@@ -148,7 +147,7 @@ generate_token(<<"finishing">>, TokenInfo, _Opts) ->
     Token = ?REC_TOKEN,
     token_finish(TokenInfo, Token).
 
-handle_token_callback(?DEFAULT_PAYLOAD, <<"suspended">>, _PaymentInfo, _Opts) ->
+handle_token_callback(_Tag, <<"suspended">>, _PaymentInfo, _Opts) ->
     token_respond(<<"sure">>, #prxprv_RecurrentTokenProxyResult{
         intent     = ?sleep(1),
         next_state = <<"finishing">>
@@ -222,15 +221,16 @@ process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
 process_payment(?cancelled(), _, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo)).
 
-handle_payment_callback(?DEFAULT_PAYLOAD, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
-    respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
-        intent     = ?sleep(1),
-        next_state = <<"sleeping">>
-    });
 handle_payment_callback(?LAY_LOW_BUDDY, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
         intent     = undefined,
         next_state = <<"suspended">>
+    });
+handle_payment_callback(Tag, ?captured(), <<"suspended">>, PaymentInfo, _Opts) ->
+    {{ok, PaymentInfo}, _} = get_payment_info(Tag),
+    respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
+        intent     = ?sleep(1),
+        next_state = <<"sleeping">>
     }).
 
 process_refund(undefined, PaymentInfo, _) ->
@@ -339,7 +339,7 @@ handle_user_interaction_response(<<"POST">>, Req) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     Form = maps:from_list(cow_qs:parse_qs(Body)),
     Tag = maps:get(<<"tag">>, Form),
-    Payload = maps:get(<<"payload">>, Form, ?DEFAULT_PAYLOAD),
+    Payload = maps:get(<<"payload">>, Form, Tag),
     RespCode = callback_to_hell(Tag, Payload),
     cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<>>, Req2);
 handle_user_interaction_response(_, Req) ->
@@ -369,6 +369,7 @@ callback_to_hell(Tag, Payload) ->
             500
     end.
 
+
 generate_payment_tag() ->
     Tag = hg_utils:unique_id(),
     <<"payment-", Tag/binary>>.
@@ -376,3 +377,9 @@ generate_payment_tag() ->
 generate_recurent_tag() ->
     Tag = hg_utils:unique_id(),
     <<"recurrent-", Tag/binary>>.
+
+get_payment_info(Tag) ->
+    hg_client_api:call(
+        proxy_host_provider, 'GetPayment', [Tag],
+        hg_client_api:new(hg_ct_helper:get_hellgate_url())
+    ).

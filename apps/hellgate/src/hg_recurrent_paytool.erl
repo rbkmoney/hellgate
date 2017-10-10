@@ -116,7 +116,7 @@ start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
 
 call(ID, Args) ->
-    map_error(hg_machine:call(?NS, {id, ID}, Args)).
+    map_error(hg_machine:call(?NS, ID, Args)).
 
 -spec map_error({ok, _Result} | {error, _Error}) ->
     _Result | no_return().

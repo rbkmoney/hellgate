@@ -60,9 +60,9 @@
         #payproc_SessionFinished{result = Result}
     }
 ).
--define(session_suspended(),
+-define(session_suspended(Tag),
     {session_suspended,
-        #payproc_SessionSuspended{}
+        #payproc_SessionSuspended{tag = Tag}
     }
 ).
 -define(session_activated(),

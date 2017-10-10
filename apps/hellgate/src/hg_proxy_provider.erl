@@ -134,7 +134,7 @@ handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
     {Events, Action};
 handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
-    Events = [?session_suspended() | try_request_interaction(UserInteraction)],
+    Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
     {Events, Action}.
 
 convert_failure(#'Failure'{code = Code, description = Description}) ->

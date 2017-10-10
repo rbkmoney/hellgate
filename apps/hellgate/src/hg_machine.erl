@@ -1,7 +1,8 @@
 -module(hg_machine).
 
 -type id() :: mg_proto_base_thrift:'ID'().
--type ref() :: mg_proto_state_processing_thrift:'Reference'().
+-type tag() :: {tag, mg_proto_base_thrift:'Tag'()}.
+-type ref() :: id() | tag().
 -type ns() :: mg_proto_base_thrift:'Namespace'().
 -type args() :: _.
 
@@ -44,6 +45,8 @@
 }.
 
 -export_type([id/0]).
+-export_type([ref/0]).
+-export_type([tag/0]).
 -export_type([ns/0]).
 -export_type([event_id/0]).
 -export_type([event/0]).
@@ -102,20 +105,20 @@ call(Ns, Ref, Args) ->
             Error
     end.
 
--spec get_history(ns(), id()) ->
-    {ok, history()} | {error, notfound | failed} | no_return().
+-spec get_history(ns(), ref()) ->
+    {ok, history()} | {error, notfound} | no_return().
 
-get_history(Ns, ID) ->
-    get_history(Ns, ID, #'HistoryRange'{}).
+get_history(Ns, Ref) ->
+    get_history(Ns, Ref, #'HistoryRange'{}).
 
--spec get_history(ns(), id(), undefined | event_id(), undefined | non_neg_integer()) ->
-    {ok, history()} | {error, notfound | failed} | no_return().
+-spec get_history(ns(), ref(), undefined | event_id(), undefined | non_neg_integer()) ->
+    {ok, history()} | {error, notfound} | no_return().
 
-get_history(Ns, ID, AfterID, Limit) ->
-    get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}).
+get_history(Ns, Ref, AfterID, Limit) ->
+    get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit}).
 
-get_history(Ns, ID, Range) ->
-    Descriptor = prepare_descriptor(Ns, {id, ID}, Range),
+get_history(Ns, Ref, Range) ->
+    Descriptor = prepare_descriptor(Ns, Ref, Range),
     case call_automaton('GetMachine', [Descriptor]) of
         {ok, #'Machine'{history = History}} when is_list(History) ->
             {ok, unmarshal(History)};
@@ -314,6 +317,11 @@ unmarshal_term({bin, B}) ->
 prepare_descriptor(NS, Ref, Range) ->
     #'MachineDescriptor'{
         ns = NS,
-        ref = Ref,
+        ref = prepare_ref(Ref),
         range = Range
     }.
+
+prepare_ref(ID) when is_binary(ID) ->
+    {id, ID};
+prepare_ref({tag, Tag}) ->
+    {tag, Tag}.
