@@ -179,4 +179,4 @@ construct_account(
 %%
 
 call_accounter(Function, Args) ->
-    hg_woody_wrapper:call(accounter, Function, Args).
+    hg_woody_wrapper:call('Accounter', Function, Args).
