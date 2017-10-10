@@ -349,16 +349,17 @@ construct_payment_flow({hold, Params}, CreatedAt, Terms, VS, Revision) ->
         VS#{flow => {hold, Lifetime}}
     }.
 
-construct_legacy_payer_details(?customer_payer(_, _, _, PaymentTool)) ->
+construct_legacy_payer_details(Payer) ->
+    construct_legacy_payer_details(Payer, get_contact_info(Payer)).
+
+construct_legacy_payer_details(?customer_payer(_, _, _, PaymentTool), ContactInfo) ->
     #domain_LegacyPayerDetails {
         payment_tool = PaymentTool,
-        % TODO fill those propertires properly. Or not.
-        % It's legacy stuff anyway
         session_id   = <<"">>,
         client_info  = #domain_ClientInfo{},
-        contact_info = #domain_ContactInfo{}
+        contact_info = ContactInfo
     };
-construct_legacy_payer_details(?payment_resource_payer(Resource, ContactInfo)) ->
+construct_legacy_payer_details(?payment_resource_payer(Resource, _), ContactInfo) ->
     #domain_LegacyPayerDetails {
         payment_tool = Resource#domain_DisposablePaymentResource.payment_tool,
         session_id   = Resource#domain_DisposablePaymentResource.payment_session_id,
@@ -1094,14 +1095,15 @@ construct_proxy_payment(
     },
     Trx
 ) ->
+    ContactInfo = get_contact_info(Payer),
     #prxprv_InvoicePayment{
         id = ID,
         created_at = CreatedAt,
         trx = Trx,
-        payer_details = construct_legacy_payer_details(Payer),
+        payer_details = construct_legacy_payer_details(Payer, ContactInfo),
         payment_resource = get_payment_resource(Payer),
         cost = construct_proxy_cash(Cost),
-        contact_info = get_contact_info(Payer)
+        contact_info = ContactInfo
     }.
 
 get_payment_resource(?payment_resource_payer(Resource, _)) ->
@@ -1649,6 +1651,7 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         <<"domain_revision">>   => marshal(str, Payment#domain_InvoicePayment.domain_revision),
         <<"cost">>              => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
         <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
+        <<"payer_details">>     => marshal(payer_details, Payment#domain_InvoicePayment.payer_details),
         <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow),
         <<"context">>           => hg_content:marshal(Payment#domain_InvoicePayment.context)
     });
@@ -1790,6 +1793,19 @@ marshal(payer, ?customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID
         <<"customer_binding_id">>   => marshal(str, CustomerBindingID),
         <<"rec_payment_tool_id">>   => marshal(str, RecurrentPaytoolID),
         <<"payment_tool">>          => hg_payment_tool:marshal(PaymentTool)
+    }];
+
+marshal(payer_details, #domain_LegacyPayerDetails{
+    payment_tool = PaymentTool,
+    session_id   = SessionId,
+    client_info  = ClientInfo,
+    contact_info = ContactInfo
+}) ->
+    [1, #{
+        <<"payment_tool">>  => hg_payment_tool:marshal(PaymentTool),
+        <<"session_id">>    => marshal(str, SessionId),
+        <<"client_info">>   => marshal(client_info, ClientInfo),
+        <<"contact_info">>  => marshal(contact_info, ContactInfo)
     }];
 
 marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
@@ -1938,12 +1954,18 @@ unmarshal(payment, #{
 } = Payment) ->
     Context = maps:get(<<"context">>, Payment, undefined),
     Payer = unmarshal(payer, MarshalledPayer),
+    PayerDetails = case maps:get(<<"payer_details">>, Payment, undefined) of
+        [_, #{}] = P ->
+            unmarshal(payer_details, P);
+        undefined ->
+            construct_legacy_payer_details(Payer)
+    end,
     #domain_InvoicePayment{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
         cost            = hg_cash:unmarshal(Cash),
-        payer_details   = construct_legacy_payer_details(Payer),
+        payer_details   = PayerDetails,
         payer           = Payer,
         status          = ?pending(),
         flow            = unmarshal(flow, Flow),
@@ -2203,6 +2225,19 @@ unmarshal(payer, [1, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactIn
         unmarshal(disposable_payment_resource, Resource),
         unmarshal(contact_info, ContactInfo)
     );
+
+unmarshal(payer_details, [1, #{
+    <<"payment_tool">>  := PaymentTool,
+    <<"session_id">>    := SessionId,
+    <<"client_info">>   := ClientInfo,
+    <<"contact_info">>  := ContactInfo
+}]) ->
+    #domain_LegacyPayerDetails{
+        payment_tool = hg_payment_tool:unmarshal(PaymentTool),
+        session_id   = unmarshal(str, SessionId),
+        client_info  = unmarshal(client_info, ClientInfo),
+        contact_info = unmarshal(contact_info, ContactInfo)
+    };
 
 unmarshal(disposable_payment_resource, #{
     <<"payment_tool">> := PaymentTool,
