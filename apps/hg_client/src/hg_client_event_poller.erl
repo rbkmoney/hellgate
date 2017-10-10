@@ -37,7 +37,7 @@ new(RPC, GetEventID) ->
 poll(N, Timeout, Client, St) ->
     poll(N, Timeout, [], Client, St).
 
-poll(_, Timeout, Acc, Client, St) when Timeout =< 0 ->
+poll(_, Timeout, Acc, Client, St) when Timeout < 0 ->
     {Acc, Client, St};
 poll(N, Timeout, Acc, Client, St) ->
     StartTs = genlib_time:ticks(),

@@ -6,7 +6,9 @@
 -export([stop/1]).
 
 -export([get_last_event_id/1]).
+-export([pull_events/2]).
 -export([pull_events/3]).
+-export([pull_history/1]).
 
 %% GenServer
 
@@ -44,6 +46,8 @@ stop(Client) ->
 
 %%
 
+-define(DEFAULT_POLL_TIMEOUT, 1000).
+
 -spec get_last_event_id(pid()) ->
     event_id() | none | woody_error:business_error().
 
@@ -57,11 +61,23 @@ get_last_event_id(Client) ->
             Error
     end.
 
+-spec pull_events(pos_integer(), pid()) ->
+    [tuple()] | woody_error:business_error().
+
+pull_events(N, Client) when N > 0 ->
+    pull_events(N, ?DEFAULT_POLL_TIMEOUT, Client).
+
 -spec pull_events(pos_integer(), timeout(), pid()) ->
     [tuple()] | woody_error:business_error().
 
 pull_events(N, Timeout, Client) when N > 0 ->
     gen_server:call(Client, {pull_events, N, Timeout}, infinity).
+
+-spec pull_history(pid()) ->
+    [tuple()] | woody_error:business_error().
+
+pull_history(Client) ->
+    gen_server:call(Client, {pull_history, 1000}, infinity).
 
 %%
 
@@ -96,9 +112,13 @@ handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
     {Result, ClientNext} = hg_client_api:call(?SERVICE, Function, Args, Client),
     {reply, Result, St#st{client = ClientNext}};
 
-handle_call({pull_events, N, Timeout}, _From, St = #st{client = Client, poller = Poller}) ->
-    {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(N, Timeout, Client, Poller),
-    {reply, Result, St#st{client = ClientNext, poller = PollerNext}};
+handle_call({pull_events, N, Timeout}, _From, St) ->
+    {Result, StNext} = poll_events(N, Timeout, St),
+    {reply, Result, StNext};
+
+handle_call({pull_history, BatchSize}, _From, St) ->
+    {Result, StNext} = poll_history(BatchSize, St),
+    {reply, Result, StNext};
 
 handle_call(Call, _From, State) ->
     _ = lager:warning("unexpected call received: ~tp", [Call]),
@@ -131,3 +151,20 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, _State, _Extra) ->
     {error, noimpl}.
+
+%%
+
+poll_events(N, Timeout, St = #st{client = Client, poller = Poller}) ->
+    {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(N, Timeout, Client, Poller),
+    {Result, St#st{client = ClientNext, poller = PollerNext}}.
+
+poll_history(BatchSize, St) ->
+    poll_history(BatchSize, [], St).
+
+poll_history(BatchSize, Acc, St) ->
+    case poll_events(BatchSize, 0, St) of
+        {Events, StNext} when length(Events) == BatchSize ->
+            poll_history(BatchSize, Acc ++ Events, StNext);
+        {Events, StNext} ->
+            {Acc ++ Events, StNext}
+    end.
