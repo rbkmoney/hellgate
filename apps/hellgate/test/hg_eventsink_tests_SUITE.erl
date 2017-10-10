@@ -81,18 +81,29 @@ end_per_testcase(_Name, _C) ->
 
 -include("party_events.hrl").
 
--define(event(ID, InvoiceID, Seq, Payload),
+-define(event(ID, Source, Seq, Payload),
     #payproc_Event{
         id = ID,
-        source = {party_id, InvoiceID},
+        source = Source,
         payload = Payload
     }
+).
+
+-define(party_event(ID, PartyID, Seq, Payload),
+    ?event(ID, {party_id, PartyID}, Seq, Payload)
 ).
 
 -spec no_events(config()) -> _ | no_return().
 
 no_events(C) ->
-    none = hg_client_eventsink:get_last_event_id(?c(eventsink_client, C)).
+    Client = ?c(eventsink_client, C),
+    case hg_client_eventsink:pull_history(Client) of
+        [] ->
+            none = hg_client_eventsink:get_last_event_id(Client);
+        Events = [_ | _] ->
+            ?event(EventID, _, _, _) = lists:last(Events),
+            EventID = hg_client_eventsink:get_last_event_id(Client)
+    end.
 
 -spec events_observed(config()) -> _ | no_return().
 
@@ -100,16 +111,17 @@ events_observed(C) ->
     EventsinkClient = ?c(eventsink_client, C),
     PartyMgmtClient = ?c(partymgmt_client, C),
     PartyID = ?c(party_id, C),
+    _History = hg_client_eventsink:pull_history(EventsinkClient),
     _ShopID = hg_ct_helper:create_party_and_shop(PartyMgmtClient),
-    Events = hg_client_eventsink:pull_events(10, 3000, EventsinkClient),
-    [?event(_ID, PartyID, 1, ?party_ev([?party_created(_) | _])) | _] = Events,
+    Events = hg_client_eventsink:pull_events(10, EventsinkClient),
+    [?party_event(_ID, PartyID, 1, ?party_ev([?party_created(_) | _])) | _] = Events,
     IDs = [ID || ?event(ID, _, _, _) <- Events],
     IDs = lists:sort(IDs).
 
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
-    Events = hg_client_eventsink:pull_events(5000, 500, ?c(eventsink_client, C)),
+    Events = hg_client_eventsink:pull_history(?c(eventsink_client, C)),
     ok = hg_eventsink_history:assert_total_order(Events).
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
