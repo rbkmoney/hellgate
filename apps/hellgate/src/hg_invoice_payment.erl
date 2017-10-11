@@ -1464,7 +1464,7 @@ collapse_changes(Changes, St) ->
 %%
 
 get_rec_payment_tool(RecPaymentToolID) ->
-    hg_woody_wrapper:call('RecurrentPaymentTools', 'Get', [RecPaymentToolID]).
+    hg_woody_wrapper:call(recurrent_paytool, 'Get', [RecPaymentToolID]).
 
 get_customer(CustomerID) ->
     case issue_customer_call('Get', [CustomerID]) of
@@ -1482,7 +1482,7 @@ issue_callback_call(Payload, ProxyContext, St) ->
 
 issue_proxy_call(Func, Args, St) ->
     CallOpts = get_call_options(St),
-    hg_woody_wrapper:call('ProviderProxy', Func, Args, CallOpts).
+    hg_woody_wrapper:call(proxy_provider, Func, Args, CallOpts).
 
 get_call_options(St) ->
     Revision = hg_domain:head(),

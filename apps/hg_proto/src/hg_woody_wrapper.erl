@@ -80,23 +80,4 @@ get_service_url(ServiceName) ->
     {module(), atom()}.
 
 get_service_modname(ServiceName) ->
-    {get_service_module(ServiceName), ServiceName}.
-
-get_service_module('Automaton') ->
-    dmsl_state_processing_thrift;
-get_service_module('Accounter') ->
-    dmsl_accounter_thrift;
-get_service_module('EventSink') ->
-    dmsl_state_processing_thrift;
-get_service_module('ProviderProxy') ->
-    dmsl_proxy_provider_thrift;
-get_service_module('InspectorProxy') ->
-    dmsl_proxy_inspector_thrift;
-get_service_module('MerchantProxy') ->
-    dmsl_proxy_merchant_thrift;
-get_service_module('RecurrentPaymentTools') ->
-    dmsl_payment_processing_thrift;
-get_service_module('PartyManagement') ->
-    dmsl_payment_processing_thrift;
-get_service_module(ServiceName) ->
-    error({unknown_service, ServiceName}).
+    hg_proto:get_service(ServiceName).
