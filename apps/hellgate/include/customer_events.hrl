@@ -26,11 +26,11 @@
         #payproc_CustomerBindingChanged{id = CustomerBindingID, payload = Payload}}).
 
 -define(customer_binding_started(CustomerBinding),
-    {customer_binding_started,
+    {started,
         #payproc_CustomerBindingStarted{binding = CustomerBinding}}).
 
 -define(customer_binding_status_changed(CustomerBindingStatus),
-    {customer_binding_status_changed,
+    {status_changed,
         #payproc_CustomerBindingStatusChanged{status = CustomerBindingStatus}}).
 
 % Statuses
