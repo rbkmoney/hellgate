@@ -666,24 +666,25 @@ marshal(binding_change_payload, ?customer_binding_interaction_requested(UserInte
         marshal(interaction, UserInteraction)
     ];
 
-marshal(interaction, {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}}) ->
-    #{<<"redirect">> =>
-        [
-            <<"get_request">>,
-            marshal(str, URI)
-        ]
-    };
-marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}}) ->
-    #{<<"redirect">> =>
-        [
-            <<"post_request">>,
-            #{
-                <<"uri">>   => marshal(str, URI),
-                <<"form">>  => marshal(map_str, Form)
-            }
-        ]
-    };
+marshal(interaction, {redirect, Redirect}) ->
+    [
+        <<"redirect">>,
+        marshal(redirect, Redirect)
+    ];
 
+marshal(redirect, {get_request, #'BrowserGetRequest'{uri = URI}}) ->
+    [
+        <<"get">>,
+        marshal(str, URI)
+    ];
+marshal(redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}) ->
+    [
+        <<"post">>,
+        #{
+            <<"uri">>  => marshal(str, URI),
+            <<"form">> => marshal(map_str, Form)
+        }
+    ];
 
 marshal(failure, {operation_timeout, _}) ->
     <<"operation_timeout">>;
@@ -817,18 +818,21 @@ unmarshal(binding_change_payload, [<<"status">>, BindingStatus]) ->
 unmarshal(binding_change_payload, [<<"interaction">>, UserInteraction]) ->
     ?customer_binding_interaction_requested(unmarshal(interaction, UserInteraction));
 
-unmarshal(interaction, #{<<"redirect">> := [<<"get_request">>, URI]}) ->
-    {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
-unmarshal(interaction, #{<<"redirect">> := [<<"post_request">>, #{
-    <<"uri">>   := URI,
-    <<"form">>  := Form
-}]}) ->
-    {redirect, {post_request,
-        #'BrowserPostRequest'{
-            uri     = unmarshal(str, URI),
-            form    = unmarshal(map_str, Form)
-        }
-    }};
+unmarshal(interaction, [<<"redirect">>, Redirect]) ->
+    {
+        redirect,
+        unmarshal(redirect, Redirect)
+    };
+unmarshal(redirect, [<<"get">>, URI]) ->
+    {
+        get_request,
+        #'BrowserGetRequest'{uri = unmarshal(str, URI)}
+    };
+unmarshal(redirect, [<<"post">>, #{<<"uri">> := URI, <<"form">> := Form}]) ->
+    {
+        post_request,
+        #'BrowserPostRequest'{uri = unmarshal(str, URI), form = unmarshal(map_str, Form)}
+    };
 
 unmarshal(failure, <<"operation_timeout">>) ->
     {operation_timeout, #domain_OperationTimeout{}};
