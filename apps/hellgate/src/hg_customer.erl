@@ -159,9 +159,7 @@ map_error({error, Reason}) ->
 map_history_error({ok, Result}) ->
     Result;
 map_history_error({error, notfound}) ->
-    throw(#payproc_CustomerNotFound{});
-map_history_error({error, Reason}) ->
-    error(Reason).
+    throw(#payproc_CustomerNotFound{}).
 
 -spec map_start_error({ok, term()} | {error, _Error}) ->
     ok | no_return().

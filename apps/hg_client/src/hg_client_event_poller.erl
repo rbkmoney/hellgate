@@ -31,7 +31,7 @@ new(RPC, GetEventID) ->
         get_event_id => GetEventID
     }.
 
--spec poll(pos_integer(), pos_integer(), hg_client_api:t(), st(Event)) ->
+-spec poll(pos_integer(), non_neg_integer(), hg_client_api:t(), st(Event)) ->
     {[Event] | {exception | error, _}, hg_client_api:t(), st(Event)}.
 
 poll(N, Timeout, Client, St) ->

@@ -159,9 +159,7 @@ collapse_history(History) ->
 map_history_error({ok, Result}) ->
     Result;
 map_history_error({error, notfound}) ->
-    throw(#payproc_RecurrentPaymentToolNotFound{});
-map_history_error({error, Reason}) ->
-    error(Reason).
+    throw(#payproc_RecurrentPaymentToolNotFound{}).
 
 map_start_error({ok, _}) ->
     ok;
