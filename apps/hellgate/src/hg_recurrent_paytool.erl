@@ -378,7 +378,7 @@ make_proxy_result(Changes, Action, Token) ->
 
 handle_proxy_callback_timeout(Action) ->
     Changes = [?session_finished(?session_failed(?operation_timeout()))],
-    make_proxy_result(wrap_session_events(Changes), Action).
+    make_proxy_result(Changes, Action).
 
 wrap_session_events(SessionEvents) ->
     [?session_ev(Ev) || Ev <- SessionEvents].

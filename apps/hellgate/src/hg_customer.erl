@@ -307,6 +307,9 @@ produce_binding_changes_(?recurrent_payment_tool_has_acquired(_), Binding) ->
 produce_binding_changes_(?recurrent_payment_tool_has_failed(Failure), Binding) ->
     ok = assert_binding_status(pending, Binding),
     [?customer_binding_status_changed(?customer_binding_failed(Failure))];
+produce_binding_changes_(?session_ev(?interaction_requested(UserInteraction)), Binding) ->
+    ok = assert_binding_status(pending, Binding),
+    [?customer_binding_interaction_requested(UserInteraction)];
 produce_binding_changes_(?recurrent_payment_tool_has_abandoned() = Change, _Binding) ->
     error({unexpected, {'Unexpected recurrent payment tool change received', Change}});
 produce_binding_changes_(?session_ev(_), _Binding) ->
@@ -410,7 +413,9 @@ merge_binding_changes(Changes, Binding) ->
 merge_binding_change(?customer_binding_started(Binding), undefined) ->
     Binding;
 merge_binding_change(?customer_binding_status_changed(BindingStatus), Binding) ->
-    Binding#payproc_CustomerBinding{status = BindingStatus}.
+    Binding#payproc_CustomerBinding{status = BindingStatus};
+merge_binding_change(?customer_binding_interaction_requested(_), Binding) ->
+    Binding.
 
 get_party_id(#st{customer = #payproc_Customer{owner_id = PartyID}}) ->
     PartyID.
@@ -655,6 +660,30 @@ marshal(binding_change_payload, ?customer_binding_status_changed(CustomerBinding
         <<"status">>,
         marshal(binding_status, CustomerBindingStatus)
     ];
+marshal(binding_change_payload, ?customer_binding_interaction_requested(UserInteraction)) ->
+    [
+        <<"interaction">>,
+        marshal(interaction, UserInteraction)
+    ];
+
+marshal(interaction, {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}}) ->
+    #{<<"redirect">> =>
+        [
+            <<"get_request">>,
+            marshal(str, URI)
+        ]
+    };
+marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}}) ->
+    #{<<"redirect">> =>
+        [
+            <<"post_request">>,
+            #{
+                <<"uri">>   => marshal(str, URI),
+                <<"form">>  => marshal(map_str, Form)
+            }
+        ]
+    };
+
 
 marshal(failure, {operation_timeout, _}) ->
     <<"operation_timeout">>;
@@ -785,6 +814,21 @@ unmarshal(binding_change_payload, [<<"started">>, Binding]) ->
     ?customer_binding_started(unmarshal(binding, Binding));
 unmarshal(binding_change_payload, [<<"status">>, BindingStatus]) ->
     ?customer_binding_status_changed(unmarshal(binding_status, BindingStatus));
+unmarshal(binding_change_payload, [<<"interaction">>, UserInteraction]) ->
+    ?customer_binding_interaction_requested(unmarshal(interaction, UserInteraction));
+
+unmarshal(interaction, #{<<"redirect">> := [<<"get_request">>, URI]}) ->
+    {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
+unmarshal(interaction, #{<<"redirect">> := [<<"post_request">>, #{
+    <<"uri">>   := URI,
+    <<"form">>  := Form
+}]}) ->
+    {redirect, {post_request,
+        #'BrowserPostRequest'{
+            uri     = unmarshal(str, URI),
+            form    = unmarshal(map_str, Form)
+        }
+    }};
 
 unmarshal(failure, <<"operation_timeout">>) ->
     {operation_timeout, #domain_OperationTimeout{}};
