@@ -6,8 +6,12 @@
 
 -export([cfg/2]).
 
+-export([create_client/2]).
+-export([create_client/3]).
+
 -export([create_party_and_shop/1]).
 -export([create_battle_ready_shop/3]).
+-export([create_customer_w_binding/1]).
 -export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
@@ -46,11 +50,15 @@
 -export([make_invoice_details/1]).
 -export([make_invoice_details/2]).
 
+-export([make_customer_params/3]).
+-export([make_customer_binding_params/0]).
+
 -export([bank_card_tds_token/0]).
 -export([bank_card_simple_token/0]).
 -export([make_terminal_payment_tool/0]).
 -export([make_tds_payment_tool/0]).
 -export([make_simple_payment_tool/0]).
+-export([make_disposable_payment_resource/0]).
 -export([make_meta_ns/0]).
 -export([make_meta_data/0]).
 -export([make_meta_data/1]).
@@ -58,6 +66,7 @@
 
 
 -include("hg_ct_domain.hrl").
+-include("hg_ct_json.hrl").
 -include_lib("hellgate/include/domain.hrl").
 -include_lib("dmsl/include/dmsl_base_thrift.hrl").
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
@@ -110,10 +119,12 @@ start_app(hellgate = AppName) ->
         {host, ?HELLGATE_HOST},
         {port, ?HELLGATE_PORT},
         {service_urls, #{
-            'Automaton' => <<"http://machinegun:8022/v1/automaton">>,
-            'EventSink' => <<"http://machinegun:8022/v1/event_sink">>,
-            'Accounter' => <<"http://shumway:8022/accounter">>,
-            'PartyManagement' => <<"http://hellgate:8022/v1/processing/partymgmt">>
+            automaton           => <<"http://machinegun:8022/v1/automaton">>,
+            eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
+            accounter           => <<"http://shumway:8022/accounter">>,
+            party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+            customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
+            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>
         }},
         {proxy_opts, #{
             transport_opts => #{
@@ -173,11 +184,32 @@ cfg(Key, Config) ->
 
 %%
 
+
+-spec create_client(woody:url(), woody_user_identity:id()) ->
+    hg_client_api:t().
+
+create_client(RootUrl, UserID) ->
+    create_client_w_context(RootUrl, UserID, woody_context:new()).
+
+-spec create_client(woody:url(), woody_user_identity:id(), woody:trace_id()) ->
+    hg_client_api:t().
+
+create_client(RootUrl, UserID, TraceID) ->
+    create_client_w_context(RootUrl, UserID, woody_context:new(TraceID)).
+
+create_client_w_context(RootUrl, UserID, WoodyCtx) ->
+    hg_client_api:new(RootUrl, woody_user_identity:put(make_user_identity(UserID), WoodyCtx)).
+
+make_user_identity(UserID) ->
+    #{id => genlib:to_binary(UserID), realm => <<"external">>}.
+
+%%
+
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/party_events.hrl").
 
--type user_info()                 :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_id()                  :: dmsl_domain_thrift:'PartyID'().
+-type user_info()                 :: dmsl_payment_processing_thrift:'UserInfo'().
 -type account_id()                :: dmsl_domain_thrift:'AccountID'().
 -type account()                   :: map().
 -type contract_id()               :: dmsl_domain_thrift:'ContractID'().
@@ -252,6 +284,11 @@ create_battle_ready_shop(Category, TemplateRef, Client) ->
     ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client),
     _Shop = hg_client_party:get_shop(ShopID, Client),
     ShopID.
+
+-spec create_customer_w_binding(Client :: pid()) -> ok.
+
+create_customer_w_binding(_Client) ->
+    ok.
 
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().
@@ -588,6 +625,25 @@ make_simple_payment_tool() ->
         <<"SESSION42">>
     }.
 
+-spec make_disposable_payment_resource() ->
+    {
+        hg_domain_thrift:'PaymentTool'(),
+        hg_domain_thrift:'PaymentSessionID'(),
+        hg_domain_thrift:'ClientInfo'()
+    }.
+
+make_disposable_payment_resource() ->
+    #domain_DisposablePaymentResource{
+        payment_tool = {bank_card, #domain_BankCard{
+            token          = bank_card_simple_token(),
+            payment_system = visa,
+            bin            = <<"424242">>,
+            masked_pan     = <<"4242">>
+        }},
+        payment_session_id = <<"SESSION42">>,
+        client_info = #domain_ClientInfo{}
+    }.
+
 -spec make_meta_ns() -> dmsl_domain_thrift:'PartyMetaNamespace'().
 
 make_meta_ns() ->
@@ -611,6 +667,25 @@ make_meta_data(NS) ->
 
 get_hellgate_url() ->
     "http://" ++ ?HELLGATE_HOST ++ ":" ++ integer_to_list(?HELLGATE_PORT).
+
+-spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
+
+make_customer_params(PartyID, ShopID, EMail) ->
+    #payproc_CustomerParams{
+        party_id     = PartyID,
+        shop_id      = ShopID,
+        contact_info = ?contact_info(EMail),
+        metadata     = ?null()
+    }.
+
+-spec make_customer_binding_params() -> dmsl_payment_processing_thrift:'CustomerBindingParams'().
+
+make_customer_binding_params() ->
+    #payproc_CustomerBindingParams{
+        payment_resource = make_disposable_payment_resource()
+    }.
+
+%%
 
 make_due_date() ->
     make_due_date(24 * 60 * 60).

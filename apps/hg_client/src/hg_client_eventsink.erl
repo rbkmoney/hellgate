@@ -6,7 +6,9 @@
 -export([stop/1]).
 
 -export([get_last_event_id/1]).
+-export([pull_events/2]).
 -export([pull_events/3]).
+-export([pull_history/1]).
 
 %% GenServer
 
@@ -44,6 +46,8 @@ stop(Client) ->
 
 %%
 
+-define(DEFAULT_POLL_TIMEOUT, 1000).
+
 -spec get_last_event_id(pid()) ->
     event_id() | none | woody_error:business_error().
 
@@ -57,21 +61,37 @@ get_last_event_id(Client) ->
             Error
     end.
 
+-spec pull_events(pos_integer(), pid()) ->
+    [tuple()] | woody_error:business_error().
+
+pull_events(N, Client) when N > 0 ->
+    pull_events(N, ?DEFAULT_POLL_TIMEOUT, Client).
+
 -spec pull_events(pos_integer(), timeout(), pid()) ->
     [tuple()] | woody_error:business_error().
 
 pull_events(N, Timeout, Client) when N > 0 ->
     gen_server:call(Client, {pull_events, N, Timeout}, infinity).
 
+-spec pull_history(pid()) ->
+    [tuple()] | woody_error:business_error().
+
+pull_history(Client) ->
+    gen_server:call(Client, {pull_history, 1000}, infinity).
+
 %%
 
+-type event() :: dmsl_payment_processing_thrift:'Event'().
+
 -record(st, {
-    poller    :: hg_client_event_poller:t(),
+    poller    :: hg_client_event_poller:st(event()),
     client    :: hg_client_api:t()
 }).
 
 -type st() :: #st{}.
 -type callref() :: {pid(), Tag :: reference()}.
+
+-define(SERVICE, payment_processing_eventsink).
 
 -spec init(hg_client_api:t()) ->
     {ok, st()}.
@@ -79,19 +99,26 @@ pull_events(N, Timeout, Client) when N > 0 ->
 init(ApiClient) ->
     {ok, #st{
         client = ApiClient,
-        poller = hg_client_event_poller:new(eventsink, 'GetEvents', [])
+        poller = hg_client_event_poller:new(
+            {?SERVICE, 'GetEvents', []},
+            fun (Event) -> Event#payproc_Event.id end
+        )
     }}.
 
 -spec handle_call(term(), callref(), st()) ->
     {reply, term(), st()} | {noreply, st()}.
 
 handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
-    {Result, ClientNext} = hg_client_api:call(eventsink, Function, Args, Client),
+    {Result, ClientNext} = hg_client_api:call(?SERVICE, Function, Args, Client),
     {reply, Result, St#st{client = ClientNext}};
 
-handle_call({pull_events, N, Timeout}, _From, St = #st{client = Client, poller = Poller}) ->
-    {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(N, Timeout, Client, Poller),
-    {reply, Result, St#st{client = ClientNext, poller = PollerNext}};
+handle_call({pull_events, N, Timeout}, _From, St) ->
+    {Result, StNext} = poll_events(N, Timeout, St),
+    {reply, Result, StNext};
+
+handle_call({pull_history, BatchSize}, _From, St) ->
+    {Result, StNext} = poll_history(BatchSize, St),
+    {reply, Result, StNext};
 
 handle_call(Call, _From, State) ->
     _ = lager:warning("unexpected call received: ~tp", [Call]),
@@ -124,3 +151,20 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, _State, _Extra) ->
     {error, noimpl}.
+
+%%
+
+poll_events(N, Timeout, St = #st{client = Client, poller = Poller}) ->
+    {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(N, Timeout, Client, Poller),
+    {Result, St#st{client = ClientNext, poller = PollerNext}}.
+
+poll_history(BatchSize, St) ->
+    poll_history(BatchSize, [], St).
+
+poll_history(BatchSize, Acc, St) ->
+    case poll_events(BatchSize, 0, St) of
+        {Events, StNext} when length(Events) == BatchSize ->
+            poll_history(BatchSize, Acc ++ Events, StNext);
+        {Events, StNext} ->
+            {Acc ++ Events, StNext}
+    end.

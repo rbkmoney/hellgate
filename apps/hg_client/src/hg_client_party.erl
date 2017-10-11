@@ -1,8 +1,9 @@
 -module(hg_client_party).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
+-export([start/2]).
 -export([start/3]).
--export([start_link/3]).
+-export([start_link/2]).
 -export([stop/1]).
 
 -export([create/2]).
@@ -69,15 +70,20 @@
 -type timestamp()       :: dmsl_base_thrift:'Timestamp'().
 
 
+-spec start(party_id(), hg_client_api:t()) -> pid().
+
+start(PartyID, ApiClient) ->
+    start(start, undefined, PartyID, ApiClient).
+
 -spec start(user_info(), party_id(), hg_client_api:t()) -> pid().
 
 start(UserInfo, PartyID, ApiClient) ->
     start(start, UserInfo, PartyID, ApiClient).
 
--spec start_link(user_info(), party_id(), hg_client_api:t()) -> pid().
+-spec start_link(party_id(), hg_client_api:t()) -> pid().
 
-start_link(UserInfo, PartyID, ApiClient) ->
-    start(start_link, UserInfo, PartyID, ApiClient).
+start_link(PartyID, ApiClient) ->
+    start(start_link, undefined, PartyID, ApiClient).
 
 start(Mode, UserInfo, PartyID, ApiClient) ->
     {ok, Pid} = gen_server:Mode(?MODULE, {UserInfo, PartyID, ApiClient}, []),
@@ -282,10 +288,12 @@ map_result_error({error, Error}) ->
 
 %%
 
+-type event() :: dmsl_payment_processing_thrift:'Event'().
+
 -record(st, {
     user_info :: user_info(),
     party_id  :: party_id(),
-    poller    :: hg_client_event_poller:t(),
+    poller    :: hg_client_event_poller:st(event()),
     client    :: hg_client_api:t()
 }).
 
@@ -300,7 +308,10 @@ init({UserInfo, PartyID, ApiClient}) ->
         user_info = UserInfo,
         party_id = PartyID,
         client = ApiClient,
-        poller = hg_client_event_poller:new(party_management, 'GetEvents', [UserInfo, PartyID])
+        poller = hg_client_event_poller:new(
+            {party_management, 'GetEvents', [UserInfo, PartyID]},
+            fun (Event) -> Event#payproc_Event.id end
+        )
     }}.
 
 -spec handle_call(term(), callref(), st()) ->

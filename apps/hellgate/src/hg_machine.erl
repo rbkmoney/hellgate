@@ -129,7 +129,7 @@ get_history(Ns, Ref, Range) ->
 %%
 
 call_automaton(Function, Args) ->
-    case hg_woody_wrapper:call('Automaton', Function, Args) of
+    case hg_woody_wrapper:call(automaton, Function, Args) of
         {ok, _} = Result ->
             Result;
         {exception, #'MachineAlreadyExists'{}} ->

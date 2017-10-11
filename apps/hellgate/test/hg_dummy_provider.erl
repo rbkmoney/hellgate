@@ -25,6 +25,8 @@
     {suspend, #'SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
 -define(finish(),
     {finish, #'FinishIntent'{status = {success, #'Success'{}}}}).
+-define(recurrent_token_finish(Token),
+    {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
 
 -spec get_service_spec() ->
     hg_proto:service_spec().
@@ -47,6 +49,8 @@ get_http_cowboy_spec() ->
 
 -define(LAY_LOW_BUDDY   , <<"lay low buddy">>).
 
+-define(REC_TOKEN, <<"rec_token">>).
+
 -type form() :: #{binary() => binary() | true}.
 
 -spec construct_silent_callback(form()) -> form().
@@ -63,8 +67,30 @@ construct_silent_callback(Form) ->
     term() | no_return().
 
 handle_function(
+    'GenerateToken',
+    [#prxprv_RecurrentTokenContext{
+        session = #prxprv_RecurrentTokenSession{state = State},
+        token_info = TokenInfo,
+        options = _
+    }],
+    Opts
+) ->
+    generate_token(State, TokenInfo, Opts);
+
+handle_function(
+    'HandleRecurrentTokenCallback',
+    [Payload, #prxprv_RecurrentTokenContext{
+        session = #prxprv_RecurrentTokenSession{state = State},
+        token_info = TokenInfo,
+        options = _
+    }],
+    Opts
+) ->
+    handle_token_callback(Payload, State, TokenInfo, Opts);
+
+handle_function(
     'ProcessPayment',
-    [#prxprv_Context{
+    [#prxprv_PaymentContext{
         session = #prxprv_Session{target = ?refunded(), state = State},
         payment_info = PaymentInfo,
         options = _
@@ -75,7 +101,7 @@ handle_function(
 
 handle_function(
     'ProcessPayment',
-    [#prxprv_Context{
+    [#prxprv_PaymentContext{
         session = #prxprv_Session{target = Target, state = State},
         payment_info = PaymentInfo,
         options = _
@@ -86,7 +112,7 @@ handle_function(
 
 handle_function(
     'HandlePaymentCallback',
-    [Payload, #prxprv_Context{
+    [Payload, #prxprv_PaymentContext{
         session = #prxprv_Session{target = Target, state = State},
         payment_info = PaymentInfo,
         options = _
@@ -95,15 +121,76 @@ handle_function(
 ) ->
     handle_payment_callback(Payload, Target, State, PaymentInfo, Opts).
 
+%
+% Recurrent tokens
+%
+
+generate_token(undefined, _TokenInfo, _Opts) ->
+    token_sleep(1, <<"sleeping">>);
+generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
+    case get_resource_type(PaymentTool) of
+        {bank_card, with_tds} ->
+            Tag = generate_recurent_tag(),
+            Uri = get_callback_url(),
+            UserInteraction = {
+                'redirect',
+                {
+                    'post_request',
+                    #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
+                }
+            },
+            token_suspend(Tag, 2, <<"suspended">>, UserInteraction);
+        {bank_card, without_tds} ->
+            token_sleep(1, <<"finishing">>)
+    end;
+generate_token(<<"finishing">>, TokenInfo, _Opts) ->
+    Token = ?REC_TOKEN,
+    token_finish(TokenInfo, Token).
+
+handle_token_callback(_Tag, <<"suspended">>, _PaymentInfo, _Opts) ->
+    token_respond(<<"sure">>, #prxprv_RecurrentTokenProxyResult{
+        intent     = ?sleep(1),
+        next_state = <<"finishing">>
+    }).
+
+token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
+    #prxprv_RecurrentTokenProxyResult{
+        intent = ?recurrent_token_finish(Token),
+        token  = Token,
+        trx    = #domain_TransactionInfo{id = PaymentTool#prxprv_RecurrentPaymentTool.id, extra = #{}}
+    }.
+
+token_sleep(Timeout, State) ->
+    #prxprv_RecurrentTokenProxyResult{
+        intent     = ?sleep(Timeout),
+        next_state = State
+    }.
+
+token_suspend(Tag, Timeout, State, UserInteraction) ->
+    #prxprv_RecurrentTokenProxyResult{
+        intent     = ?suspend(Tag, Timeout, UserInteraction),
+        next_state = State
+    }.
+
+token_respond(Response, CallbackResult) ->
+    #prxprv_RecurrentTokenCallbackResult{
+        response   = Response,
+        result     = CallbackResult
+    }.
+
+%
+% Payments
+%
+
 process_payment(?processed(), undefined, _, _) ->
     sleep(1, <<"sleeping">>);
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo));
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
-    case get_payment_tool_type(PaymentInfo) of
+    case get_payment_resource_type(PaymentInfo) of
         {bank_card, with_tds} ->
-            Tag = hg_utils:unique_id(),
+            Tag = generate_payment_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
@@ -123,7 +210,10 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
                short_payment_id = SPID,
                due = get_invoice_due_date(PaymentInfo)
             }},
-            suspend(SPID, 2, <<"suspended">>, UserInteraction)
+            suspend(SPID, 2, <<"suspended">>, UserInteraction);
+        recurrent ->
+            %% simple workflow without 3DS
+            sleep(1, <<"sleeping">>)
     end;
 process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo));
@@ -132,13 +222,13 @@ process_payment(?cancelled(), _, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo)).
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
-    respond(<<"sure">>, #prxprv_CallbackProxyResult{
+    respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
         intent     = undefined,
         next_state = <<"suspended">>
     });
 handle_payment_callback(Tag, ?captured(), <<"suspended">>, PaymentInfo, _Opts) ->
     {{ok, PaymentInfo}, _} = get_payment_info(Tag),
-    respond(<<"sure">>, #prxprv_CallbackProxyResult{
+    respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
         intent     = ?sleep(1),
         next_state = <<"sleeping">>
     }).
@@ -147,25 +237,25 @@ process_refund(undefined, PaymentInfo, _) ->
     finish(hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
 
 finish(TrxID) ->
-    #prxprv_ProxyResult{
+    #prxprv_PaymentProxyResult{
         intent = ?finish(),
         trx    = #domain_TransactionInfo{id = TrxID, extra = #{}}
     }.
 
 sleep(Timeout, State) ->
-    #prxprv_ProxyResult{
+    #prxprv_PaymentProxyResult{
         intent     = ?sleep(Timeout),
         next_state = State
     }.
 
 suspend(Tag, Timeout, State, UserInteraction) ->
-    #prxprv_ProxyResult{
+    #prxprv_PaymentProxyResult{
         intent     = ?suspend(Tag, Timeout, UserInteraction),
         next_state = State
     }.
 
 respond(Response, CallbackResult) ->
-    #prxprv_CallbackResult{
+    #prxprv_PaymentCallbackResult{
         response   = Response,
         result     = CallbackResult
     }.
@@ -178,9 +268,34 @@ get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
     #prxprv_InvoicePaymentRefund{id = RefundID} = Refund,
     RefundID.
 
-get_payment_tool_type(#prxprv_PaymentInfo{payment = Payment}) ->
+get_payment_resource_type(
+    #prxprv_PaymentInfo{payment = #prxprv_InvoicePayment{payment_resource = Resource}}
+) ->
+    get_payment_resource_type(Resource);
+get_payment_resource_type(
+    {disposable_payment_resource, #domain_DisposablePaymentResource{payment_tool = PaymentTool}}
+) ->
+    get_payment_tool_type(PaymentTool);
+get_payment_resource_type(
+    {recurrent_payment_resource, _}
+) ->
+    recurrent.
+
+get_resource_type(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
+    Type = get_payment_tool(PaymentResource),
     Token3DS = hg_ct_helper:bank_card_tds_token(),
-    #prxprv_InvoicePayment{payer = #domain_Payer{payment_tool = PaymentTool}} = Payment,
+    case Type of
+        {'bank_card', #domain_BankCard{token = Token3DS}} ->
+            {bank_card, with_tds};
+        {'bank_card', _} ->
+            {bank_card, without_tds}
+    end.
+
+get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
+    PaymentTool.
+
+get_payment_tool_type(PaymentTool) ->
+    Token3DS = hg_ct_helper:bank_card_tds_token(),
     case PaymentTool of
         {'bank_card', #domain_BankCard{token = Token3DS}} ->
             {bank_card, with_tds};
@@ -232,8 +347,18 @@ handle_user_interaction_response(_, Req) ->
     cowboy_req:reply(405, Req).
 
 callback_to_hell(Tag, Payload) ->
+    % This case emulate precisely current proxy behaviour. HOLY MACKEREL!
+    Fun = case Tag of
+        <<"payment-", _Rest/binary>> ->
+            'ProcessPaymentCallback';
+        <<"recurrent-", _Rest/binary>> ->
+            'ProcessRecurrentTokenCallback';
+        % FIXME adhoc for old tests, probably can be safely removed
+        _ ->
+            'ProcessPaymentCallback'
+    end,
     case hg_client_api:call(
-        proxy_host_provider, 'ProcessCallback', [Tag, Payload],
+        proxy_host_provider, Fun, [Tag, Payload],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ) of
         {{ok, _Response}, _} ->
@@ -243,6 +368,15 @@ callback_to_hell(Tag, Payload) ->
         {{exception, _}, _} ->
             500
     end.
+
+
+generate_payment_tag() ->
+    Tag = hg_utils:unique_id(),
+    <<"payment-", Tag/binary>>.
+
+generate_recurent_tag() ->
+    Tag = hg_utils:unique_id(),
+    <<"recurrent-", Tag/binary>>.
 
 get_payment_info(Tag) ->
     hg_client_api:call(

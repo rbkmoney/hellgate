@@ -1,93 +1,98 @@
--module(hg_client_invoice_templating).
+-module(hg_client_customer).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
--export([start/1]).
--export([start/2]).
+%% API
+
+-export([start     /1]).
 -export([start_link/1]).
--export([stop/1]).
+-export([stop      /1]).
 
--export([create/2]).
--export([get/2]).
--export([update/3]).
--export([delete/2]).
+-export([create       /2]).
+-export([get          /2]).
+-export([delete       /2]).
+-export([start_binding/3]).
 
--export([compute_terms/3]).
+-export([pull_event/2]).
+-export([pull_event/3]).
 
 %% GenServer
 
 -behaviour(gen_server).
--export([init/1]).
+-export([init       /1]).
 -export([handle_call/3]).
 -export([handle_cast/2]).
 -export([handle_info/2]).
--export([terminate/2]).
+-export([terminate  /2]).
 -export([code_change/3]).
 
-%%
+%% Types
 
--type user_info()     :: dmsl_payment_processing_thrift:'UserInfo'().
--type id()            :: dmsl_domain_thrift:'InvoiceTemplateID'().
--type create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
--type update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
--type invoice_tpl()   :: dmsl_domain_thrift:'InvoiceTemplate'().
--type timestamp()     :: dmsl_base_thrift:'Timestamp'().
--type term_set()      :: dmsl_domain_thrift:'TermSet'().
+-type id()              :: dmsl_payment_processing_thrift:'CustomerID'().
 
--spec start(hg_client_api:t()) -> pid().
+-type customer()        :: dmsl_payment_processing_thrift:'Customer'().
+-type customer_params() :: dmsl_payment_processing_thrift:'CustomerParams'().
 
+-type customer_binding()        :: dmsl_payment_processing_thrift:'CustomerBinding'().
+-type customer_binding_params() :: dmsl_payment_processing_thrift:'CustomerBindingParams'().
+
+%% API
+
+-spec start(hg_client_api:t()) ->
+    pid().
 start(ApiClient) ->
-    start(start, undefined, ApiClient).
+    start(start, ApiClient).
 
--spec start(user_info(), hg_client_api:t()) -> pid().
-
-start(UserInfo, ApiClient) ->
-    start(start, UserInfo, ApiClient).
-
--spec start_link(hg_client_api:t()) -> pid().
-
+-spec start_link(hg_client_api:t()) ->
+    pid().
 start_link(ApiClient) ->
-    start(start_link, undefined, ApiClient).
+    start(start_link, ApiClient).
 
-start(Mode, UserInfo, ApiClient) ->
-    {ok, Pid} = gen_server:Mode(?MODULE, {UserInfo, ApiClient}, []),
+start(Mode, ApiClient) ->
+    {ok, Pid} = gen_server:Mode(?MODULE, ApiClient, []),
     Pid.
 
--spec stop(pid()) -> ok.
-
+-spec stop(pid()) ->
+    ok.
 stop(Client) ->
     _ = exit(Client, shutdown),
     ok.
 
 %%
 
--spec create(create_params(), pid()) ->
-    id() | woody_error:business_error().
-
+-spec create(customer_params(), pid()) ->
+    customer() | woody_error:business_error().
 create(Params, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Create', [Params]})).
 
 -spec get(id(), pid()) ->
-    invoice_tpl() | woody_error:business_error().
-
+    customer() | woody_error:business_error().
 get(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', [ID]})).
 
--spec update(id(), update_params(), pid()) ->
-    invoice_tpl() | woody_error:business_error().
-
-update(ID, Params, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'Update', [ID, Params]})).
-
 -spec delete(id(), pid()) ->
     ok | woody_error:business_error().
-
 delete(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Delete', [ID]})).
 
--spec compute_terms(id(), timestamp(), pid()) -> term_set().
+-spec start_binding(pid(), customer_binding_params(), pid()) ->
+    customer_binding().
+start_binding(ID, CustomerBindingParams, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'StartBinding', [ID, CustomerBindingParams]})).
 
-compute_terms(ID, Timestamp, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ComputeTerms', [ID, Timestamp]})).
+-define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
+
+-spec pull_event(id(), pid()) ->
+    tuple() | timeout | woody_error:business_error().
+
+pull_event(CustomerID, Client) ->
+    pull_event(CustomerID, ?DEFAULT_NEXT_EVENT_TIMEOUT, Client).
+
+-spec pull_event(id(), timeout(), pid()) ->
+    tuple() | timeout | woody_error:business_error().
+
+pull_event(CustomerID, Timeout, Client) ->
+    % FIXME: infinity sounds dangerous
+    gen_server:call(Client, {pull_event, CustomerID, Timeout}, infinity).
 
 map_result_error({ok, Result}) ->
     Result;
@@ -101,31 +106,30 @@ map_result_error({error, Error}) ->
 -type event() :: dmsl_payment_processing_thrift:'Event'().
 
 -record(st, {
-    user_info :: user_info(),
     pollers   :: #{id() => hg_client_event_poller:st(event())},
     client    :: hg_client_api:t()
 }).
-
 -type st() :: #st{}.
+
 -type callref() :: {pid(), Tag :: reference()}.
 
--spec init({user_info(), hg_client_api:t()}) ->
+-spec init(hg_client_api:t()) ->
     {ok, st()}.
 
-init({UserInfo, ApiClient}) ->
-    {ok, #st{user_info = UserInfo, pollers = #{}, client = ApiClient}}.
+init(ApiClient) ->
+    {ok, #st{pollers = #{}, client = ApiClient}}.
 
 -spec handle_call(term(), callref(), st()) ->
     {reply, term(), st()} | {noreply, st()}.
 
-handle_call({call, Function, Args}, _From, St = #st{user_info = UserInfo, client = Client}) ->
-    {Result, ClientNext} = hg_client_api:call(invoice_templating, Function, [UserInfo | Args], Client),
+handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
+    {Result, ClientNext} = hg_client_api:call(customer_management, Function, Args, Client),
     {reply, Result, St#st{client = ClientNext}};
 
-handle_call({pull_event, InvoiceID, Timeout}, _From, St = #st{client = Client}) ->
-    Poller = get_poller(InvoiceID, St),
+handle_call({pull_event, CustomerID, Timeout}, _From, St = #st{client = Client}) ->
+    Poller = get_poller(CustomerID, St),
     {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(1, Timeout, Client, Poller),
-    StNext = set_poller(InvoiceID, PollerNext, St#st{client = ClientNext}),
+    StNext = set_poller(CustomerID, PollerNext, St#st{client = ClientNext}),
     case Result of
         [] ->
             {reply, timeout, StNext};
@@ -169,14 +173,14 @@ code_change(_OldVsn, _State, _Extra) ->
 
 %%
 
-get_poller(ID, #st{user_info = UserInfo, pollers = Pollers}) ->
-    maps:get(ID, Pollers, construct_poller(UserInfo, ID)).
+get_poller(ID, #st{pollers = Pollers}) ->
+    maps:get(ID, Pollers, construct_poller(ID)).
 
 set_poller(ID, Poller, St = #st{pollers = Pollers}) ->
     St#st{pollers = maps:put(ID, Poller, Pollers)}.
 
-construct_poller(UserInfo, ID) ->
+construct_poller(ID) ->
     hg_client_event_poller:new(
-        {invoice_templating, 'GetEvents', [UserInfo, ID]},
+        {customer_management, 'GetEvents', [ID]},
         fun (Event) -> Event#payproc_Event.id end
     ).
