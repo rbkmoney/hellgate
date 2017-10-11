@@ -73,7 +73,7 @@ handle_recurrent_token_callback(Payload, ProxyContext, St) ->
 -spec issue_call(woody:func(), list(), route()) ->
     term().
 issue_call(Func, Args, Route) ->
-    hg_woody_wrapper:call('ProviderProxy', Func, Args, get_call_options(Route)).
+    hg_woody_wrapper:call(proxy_provider, Func, Args, get_call_options(Route)).
 
 get_call_options(Route) ->
     Revision = hg_domain:head(),
