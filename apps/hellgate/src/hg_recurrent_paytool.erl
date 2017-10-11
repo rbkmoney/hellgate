@@ -434,6 +434,13 @@ apply_change(?recurrent_payment_tool_has_abandoned(), St) ->
             status = ?recurrent_payment_tool_abandoned()
         }
     };
+apply_change(?recurrent_payment_tool_has_failed(Failure), St) ->
+    RecPaymentTool = get_rec_payment_tool(St),
+    St#st{
+        rec_payment_tool = RecPaymentTool#payproc_RecurrentPaymentTool{
+            status = ?recurrent_payment_tool_failed(Failure)
+        }
+    };
 apply_change(?session_ev(?session_started()), St) ->
     St#st{session = create_session()};
 apply_change(?session_ev(Event), St) ->
