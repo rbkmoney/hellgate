@@ -193,8 +193,10 @@ get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
 
 %%
 
+-type result() :: {[_], hg_machine_action:t()}. % FIXME
+
 -spec init(payment_id(), _, opts()) ->
-    {payment(), hg_machine:result()}.
+    {payment(), result()}.
 
 init(PaymentID, PaymentParams, Opts) ->
     hg_log_scope:scope(
@@ -206,7 +208,7 @@ init(PaymentID, PaymentParams, Opts) ->
     ).
 
 -spec init_(payment_id(), _, opts()) ->
-    {st(), hg_machine:result()}.
+    {st(), result()}.
 
 init_(PaymentID, Params, Opts) ->
     Party = get_party(Opts),
@@ -568,19 +570,19 @@ reduce_selector(Name, Selector, VS, Revision) ->
 %%
 
 -spec start_session(target()) ->
-    {ok, hg_machine:result()}.
+    {ok, result()}.
 
 start_session(Target) ->
     Events = [?session_ev(Target, ?session_started())],
     Action = hg_machine_action:instant(),
     {ok, {Events, Action}}.
 
--spec capture(st(), atom()) -> {ok, hg_machine:result()}.
+-spec capture(st(), atom()) -> {ok, result()}.
 
 capture(St, Reason) ->
     do_payment(St, ?captured_with_reason(hg_utils:format_reason(Reason))).
 
--spec cancel(st(), atom()) -> {ok, hg_machine:result()}.
+-spec cancel(st(), atom()) -> {ok, result()}.
 
 cancel(St, Reason) ->
     do_payment(St, ?cancelled_with_reason(hg_utils:format_reason(Reason))).
@@ -592,7 +594,7 @@ do_payment(St, Target) ->
     start_session(Target).
 
 -spec refund(refund_params(), st(), opts()) ->
-    {refund(), hg_machine:result()}.
+    {refund(), result()}.
 
 refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
@@ -700,7 +702,7 @@ get_refund_cashflow_plan(RefundSt) ->
 %%
 
 -spec create_adjustment(adjustment_params(), st(), opts()) ->
-    {adjustment(), hg_machine:result()}.
+    {adjustment(), result()}.
 
 create_adjustment(Params, St, Opts) ->
     Payment = get_payment(St),
@@ -757,13 +759,13 @@ assert_payment_flow(_, _) ->
     throw(#payproc_OperationNotPermitted{}).
 
 -spec capture_adjustment(adjustment_id(), st(), opts()) ->
-    {ok, hg_machine:result()}.
+    {ok, result()}.
 
 capture_adjustment(ID, St, Options) ->
     finalize_adjustment(ID, capture, St, Options).
 
 -spec cancel_adjustment(adjustment_id(), st(), opts()) ->
-    {ok, hg_machine:result()}.
+    {ok, result()}.
 
 cancel_adjustment(ID, St, Options) ->
     finalize_adjustment(ID, cancel, St, Options).
@@ -829,7 +831,7 @@ get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{new_cash_flow = Cashflo
 %%
 
 -spec process_signal(timeout, st(), opts()) ->
-    {next | done, hg_machine:result()}.
+    {next | done, result()}.
 
 process_signal(timeout, St, Options) ->
     hg_log_scope:scope(
@@ -853,7 +855,7 @@ process_timeout(St) ->
     end.
 
 -spec process_call({callback, tag(), _}, st(), opts()) ->
-    {_, {next | done, hg_machine:result()}}. % FIXME
+    {_, {next | done, result()}}. % FIXME
 
 process_call({callback, Tag, Payload}, St, Options) ->
     hg_log_scope:scope(

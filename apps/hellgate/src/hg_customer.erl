@@ -19,8 +19,8 @@
 -behaviour(hg_machine).
 -export([namespace     /0]).
 -export([init          /2]).
--export([process_signal/2]).
--export([process_call  /2]).
+-export([process_signal/3]).
+-export([process_call  /3]).
 
 %% Event provider callbacks
 
@@ -194,9 +194,9 @@ init(CustomerID, CustomerParams) ->
         changes => [?customer_created(Customer)]
     }).
 
--spec process_signal(hg_machine:signal(), hg_machine:history()) ->
+-spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
-process_signal(Signal, History) ->
+process_signal(Signal, History, _AuxSt) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
 handle_signal(timeout, St) ->
@@ -216,13 +216,13 @@ handle_signal(timeout, St) ->
     {start_binding, binding_params()} |
     delete.
 
--spec process_call(call(), hg_machine:history()) ->
+-spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
     {hg_machine:response(), hg_machine:result()}.
-process_call(Call, History) ->
+process_call(Call, History, _AuxSt) ->
     St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
-            {{exception, Exception}, {[], hg_machine_action:new()}}
+            {{exception, Exception}, #{}}
     end.
 
 handle_call(delete, St) ->
@@ -236,18 +236,23 @@ handle_call({start_binding, BindingParams}, St) ->
     start_binding(BindingParams, St).
 
 handle_result(Params) ->
-    Action = maps:get(action, Params, hg_machine_action:new()),
+    Result = handle_result_changes(Params, handle_result_action(Params, #{})),
     case maps:find(response, Params) of
         {ok, Response} ->
-            {{ok, Response}, {handle_result_changes(Params), Action}};
+            {{ok, Response}, Result};
         error ->
-            {handle_result_changes(Params), Action}
+            Result
     end.
 
-handle_result_changes(#{changes := Changes = [_ | _]}) ->
-    [marshal(Changes)];
-handle_result_changes(#{}) ->
-    [].
+handle_result_changes(#{changes := Changes = [_ | _]}, Acc) ->
+    Acc#{events => [marshal(Changes)]};
+handle_result_changes(#{}, Acc) ->
+    Acc.
+
+handle_result_action(#{action := Action}, Acc) ->
+    Acc#{action => Action};
+handle_result_action(#{}, Acc) ->
+    Acc.
 
 %%
 
