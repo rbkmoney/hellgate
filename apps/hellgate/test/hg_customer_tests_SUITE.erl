@@ -19,6 +19,7 @@
 -export([create_customer/1]).
 -export([delete_customer/1]).
 -export([start_binding/1]).
+-export([start_binding_w_tds/1]).
 
 %%
 
@@ -88,7 +89,8 @@ groups() ->
         {basic_customer_methods, [sequence], [
             create_customer,
             delete_customer,
-            start_binding
+            start_binding,
+            start_binding_w_tds
         ]}
     ].
 
@@ -186,6 +188,7 @@ invalid_shop_status(C) ->
 -spec create_customer(config()) -> test_case_result().
 -spec delete_customer(config()) -> test_case_result().
 -spec start_binding(config()) -> test_case_result().
+-spec start_binding_w_tds(config()) -> test_case_result().
 
 create_customer(C) ->
     Client = cfg(client, C),
@@ -225,6 +228,37 @@ start_binding(C) ->
     [
         ?customer_binding_changed(_, ?customer_binding_started(_))
     ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded()))
+    ] = next_event(CustomerID, Client).
+
+start_binding_w_tds(C) ->
+    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    CustomerBindingParams = #payproc_CustomerBindingParams{
+        payment_resource = make_disposable_payment_resource(PaymentTool, Session)
+    },
+    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    Customer1 = hg_client_customer:get(CustomerID, Client),
+    #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
+    Bindings = [CustomerBinding],
+    [
+        ?customer_created(_)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(_, ?customer_binding_started(_))
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(_, ?customer_binding_interaction_requested(UserInteraction))
+    ] = next_event(CustomerID, Client),
+    {URL, GoodForm} = get_post_request(UserInteraction),
+    _ = assert_success_post_request({URL, GoodForm}),
     [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded()))
     ] = next_event(CustomerID, Client).
@@ -280,6 +314,27 @@ next_event(CustomerID, Client) ->
         Result ->
             Result
     end.
+
+%%
+
+make_disposable_payment_resource(PaymentTool, Session) ->
+    #domain_DisposablePaymentResource{
+        payment_tool = PaymentTool,
+        payment_session_id = Session,
+        client_info = #domain_ClientInfo{}
+    }.
+
+post_request({URL, Form}) ->
+    Method = post,
+    Headers = [],
+    Body = {form, maps:to_list(Form)},
+    hackney:request(Method, URL, Headers, Body).
+
+get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, form = Form}}}) ->
+    {URL, Form}.
+
+assert_success_post_request(Req) ->
+    {ok, 200, _RespHeaders, _ClientRef} = post_request(Req).
 
 %%
 
