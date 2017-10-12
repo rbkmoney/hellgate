@@ -52,14 +52,19 @@ init_per_suite(C) ->
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
-    [
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    _ = unlink(SupPid),
+    C1 = [
         {apps, Apps},
         {root_url, RootUrl},
         {party_client, PartyClient},
         {party_id, PartyID},
-        {shop_id, ShopID}
+        {shop_id, ShopID},
+        {test_sup, SupPid}
         | C
-    ].
+    ],
+    ok = start_proxies([{hg_dummy_provider, 1, C1}, {hg_dummy_inspector, 2, C1}]),
+    C1.
 
 -spec end_per_suite(config()) -> _.
 
@@ -89,8 +94,8 @@ groups() ->
         {basic_customer_methods, [sequence], [
             create_customer,
             delete_customer,
-            start_binding
-            % start_binding_w_tds
+            start_binding,
+            start_binding_w_tds
         ]}
     ].
 
@@ -103,12 +108,10 @@ init_per_testcase(Name, C) ->
     PartyID = cfg(party_id, C),
     TraceID = make_trace_id(Name),
     Client = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID, TraceID)),
-    {ok, SupPid} = supervisor:start_link(?MODULE, []),
     [
         {test_case_name, genlib:to_binary(Name)},
         {trace_id, TraceID},
-        {client, Client},
-        {test_sup, SupPid}
+        {client, Client}
         | C
     ].
 
@@ -210,7 +213,6 @@ delete_customer(C) ->
     {exception, #'payproc_CustomerNotFound'{}} = hg_client_customer:get(CustomerID, Client).
 
 start_binding(C) ->
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
@@ -233,7 +235,6 @@ start_binding(C) ->
     ] = next_event(CustomerID, Client).
 
 start_binding_w_tds(C) ->
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),

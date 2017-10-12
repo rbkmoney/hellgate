@@ -139,7 +139,7 @@ generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = Payment
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
                 }
             },
-            token_suspend(Tag, 2, <<"suspended">>, UserInteraction);
+            token_suspend(Tag, 3, <<"suspended">>, UserInteraction);
         {bank_card, without_tds} ->
             token_sleep(1, <<"finishing">>)
     end;

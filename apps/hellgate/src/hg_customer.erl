@@ -30,6 +30,7 @@
 %% Types
 
 -define(SYNC_INTERVAL, 1).
+-define(REC_PAYTOOL_EVENTS_LIMIT, 10).
 
 -record(st, {
     customer       :: undefined | customer(),
@@ -191,16 +192,17 @@ namespace() ->
 init(CustomerID, CustomerParams) ->
     Customer = create_customer(CustomerID, CustomerParams),
     handle_result(#{
-        changes => [?customer_created(Customer)]
+        changes => [?customer_created(Customer)],
+        auxst   => #{}
     }).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
-process_signal(Signal, History, _AuxSt) ->
-    handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
+process_signal(Signal, History, AuxSt) ->
+    handle_result(handle_signal(Signal, collapse_history(unmarshal(History)), unmarshal(auxst, AuxSt))).
 
-handle_signal(timeout, St) ->
-    Changes = sync_pending_bindings(St),
+handle_signal(timeout, St, AuxSt0) ->
+    {Changes, AuxSt1} = sync_pending_bindings(St, AuxSt0),
     Action = case get_pending_binding_set(merge_changes(Changes, St)) of
         [_BindingID | _] ->
             set_event_poll_timer();
@@ -209,7 +211,8 @@ handle_signal(timeout, St) ->
     end,
     #{
         changes => Changes,
-        action  => Action
+        action  => Action,
+        auxst   => AuxSt1
     }.
 
 -type call() ::
@@ -236,13 +239,18 @@ handle_call({start_binding, BindingParams}, St) ->
     start_binding(BindingParams, St).
 
 handle_result(Params) ->
-    Result = handle_result_changes(Params, handle_result_action(Params, #{})),
+    Result = handle_aux_state(Params, handle_result_changes(Params, handle_result_action(Params, #{}))),
     case maps:find(response, Params) of
         {ok, Response} ->
             {{ok, Response}, Result};
         error ->
             Result
     end.
+
+handle_aux_state(#{auxst := AuxSt}, Acc) ->
+    Acc#{auxst => marshal(auxst, AuxSt)};
+handle_aux_state(#{}, Acc) ->
+    Acc.
 
 handle_result_changes(#{changes := Changes = [_ | _]}, Acc) ->
     Acc#{events => [marshal(Changes)]};
@@ -281,21 +289,30 @@ construct_binding(BindingID, RecPaymentToolID, PaymentResource) ->
 create_binding_id(St) ->
     integer_to_binary(length(get_bindings(get_customer(St))) + 1).
 
-sync_pending_bindings(St) ->
-    sync_pending_bindings(get_pending_binding_set(St), St).
+sync_pending_bindings(St, AuxSt) ->
+    sync_pending_bindings(get_pending_binding_set(St), St, AuxSt).
 
-sync_pending_bindings([BindingID | Rest], St) ->
+sync_pending_bindings([BindingID | Rest], St, AuxSt0) ->
     Binding = try_get_binding(BindingID, get_customer(St)),
-    Changes = sync_binding_state(Binding),
-    Changes ++ sync_pending_bindings(Rest, St);
-sync_pending_bindings([], _St) ->
+    {Changes, AuxSt1} = sync_binding_state(Binding, AuxSt0),
+    {Changes ++ sync_pending_bindings(Rest, St, AuxSt1), AuxSt1};
+sync_pending_bindings([], _St, _AuxSt) ->
     [].
 
-sync_binding_state(Binding) ->
+sync_binding_state(Binding, AuxSt) ->
     RecurrentPaytoolID = get_binding_recurrent_paytool_id(Binding),
-    RecurrentPaytoolChanges = get_recurrent_paytool_changes(RecurrentPaytoolID),
+    LastEventID0 = get_binding_last_event_id(Binding, AuxSt),
+    {RecurrentPaytoolChanges, LastEventID1} = get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID0),
     BindingChanges = produce_binding_changes(RecurrentPaytoolChanges, Binding),
-    wrap_binding_changes(get_binding_id(Binding), BindingChanges).
+    {wrap_binding_changes(get_binding_id(Binding), BindingChanges), update_aux_state(LastEventID1, Binding, AuxSt)}.
+
+update_aux_state(undefined, _Binding, AuxSt) ->
+    AuxSt;
+update_aux_state(LastEventID, #payproc_CustomerBinding{id = BindingID}, AuxSt) ->
+    maps:put(BindingID, LastEventID, AuxSt).
+
+get_binding_last_event_id(#payproc_CustomerBinding{id = BindingID}, AuxSt) ->
+    maps:get(BindingID, AuxSt, undefined).
 
 produce_binding_changes([RecurrentPaytoolChange | Rest], Binding) ->
     Changes = produce_binding_changes_(RecurrentPaytoolChange, Binding),
@@ -343,10 +360,21 @@ create_recurrent_paytool(Params) ->
             throw(Exception)
     end.
 
-get_recurrent_paytool_changes(RecurrentPaytoolID) ->
-    EventRange = #payproc_EventRange{limit = 1337}, % FIXME
+get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
+    EventRange = construct_event_range(LastEventID),
     {ok, Events} = issue_recurrent_paytools_call('GetEvents', [RecurrentPaytoolID, EventRange]),
-    gather_recurrent_paytool_changes(Events).
+    {gather_recurrent_paytool_changes(Events), get_last_event_id(Events)}.
+
+construct_event_range(undefined) ->
+    #payproc_EventRange{limit = ?REC_PAYTOOL_EVENTS_LIMIT};
+construct_event_range(LastEventID) ->
+    #payproc_EventRange{'after' = LastEventID, limit = ?REC_PAYTOOL_EVENTS_LIMIT}.
+
+get_last_event_id([_ | _] = Events) ->
+    #payproc_RecurrentPaymentToolEvent{id = LastEventID} = lists:last(Events),
+    LastEventID;
+get_last_event_id([]) ->
+    undefined.
 
 gather_recurrent_paytool_changes(Events) ->
     lists:flatmap(
@@ -540,6 +568,23 @@ marshal(Changes) ->
 marshal({list, T}, Vs) when is_list(Vs) ->
     [marshal(T, V) || V <- Vs];
 
+%% AuxState
+
+marshal(auxst, AuxState) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(marshal(binding_id, K), marshal(event_id, V), Acc)
+        end,
+        #{},
+        AuxState
+    );
+
+marshal(binding_id, BindingID) ->
+    marshal(str, BindingID);
+
+marshal(event_id, EventID) ->
+    marshal(int, EventID);
+
 %% Changes
 
 marshal({change, Version}, Change) ->
@@ -717,6 +762,23 @@ unmarshal({ID, Dt, Payload}) ->
 
 unmarshal({list, T}, Vs) when is_list(Vs) ->
     [unmarshal(T, V) || V <- Vs];
+
+%% AuxState
+
+unmarshal(auxst, AuxState) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(unmarshal(binding_id, K), unmarshal(event_id, V), Acc)
+        end,
+        #{},
+        AuxState
+    );
+
+unmarshal(binding_id, BindingID) ->
+    unmarshal(str, BindingID);
+
+unmarshal(event_id, EventID) ->
+    unmarshal(int, EventID);
 
 %% Changes
 
