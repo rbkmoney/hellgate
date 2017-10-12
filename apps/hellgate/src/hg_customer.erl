@@ -573,11 +573,17 @@ marshal({list, T}, Vs) when is_list(Vs) ->
 marshal(auxst, AuxState) ->
     maps:fold(
         fun(K, V, Acc) ->
-            maps:put(marshal(str, K), marshal(str, V), Acc)
+            maps:put(marshal(binding_id, K), marshal(event_id, V), Acc)
         end,
         #{},
         AuxState
     );
+
+marshal(binding_id, BindingID) ->
+    marshal(str, BindingID);
+
+marshal(event_id, EventID) ->
+    marshal(int, EventID);
 
 %% Changes
 
@@ -762,11 +768,17 @@ unmarshal({list, T}, Vs) when is_list(Vs) ->
 unmarshal(auxst, AuxState) ->
     maps:fold(
         fun(K, V, Acc) ->
-            maps:put(unmarshal(str, K), unmarshal(str, V), Acc)
+            maps:put(unmarshal(binding_id, K), unmarshal(event_id, V), Acc)
         end,
         #{},
         AuxState
     );
+
+unmarshal(binding_id, BindingID) ->
+    unmarshal(str, BindingID);
+
+unmarshal(event_id, EventID) ->
+    unmarshal(int, EventID);
 
 %% Changes
 
