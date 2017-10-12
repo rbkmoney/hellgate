@@ -89,8 +89,8 @@ groups() ->
         {basic_customer_methods, [sequence], [
             create_customer,
             delete_customer,
-            start_binding
-            % start_binding_w_tds
+            start_binding,
+            start_binding_w_tds
         ]}
     ].
 
