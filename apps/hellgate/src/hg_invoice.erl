@@ -39,8 +39,8 @@
 -export([namespace/0]).
 
 -export([init/2]).
--export([process_signal/2]).
--export([process_call/2]).
+-export([process_signal/3]).
+-export([process_call/3]).
 
 %% Event provider callbacks
 
@@ -339,9 +339,6 @@ map_start_error({error, Reason}) ->
 -type refund_params() :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type payment_st() :: hg_invoice_payment:st().
 
--type ev() ::
-    [dmsl_payment_processing_thrift:'InvoiceChange'()].
-
 -type msgpack_ev() :: hg_msgpack_marshalling:value().
 
 -define(invalid_invoice_status(Status),
@@ -377,10 +374,10 @@ init(ID, [InvoiceTplID, InvoiceParams]) ->
 
 %%
 
--spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
+-spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
 
-process_signal(Signal, History) ->
+process_signal(Signal, History, _AuxSt) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
 handle_signal(timeout, St = #st{activity = {payment, PaymentID}}) ->
@@ -416,14 +413,14 @@ handle_expiration(St) ->
     {rescind, binary()} |
     {callback, callback()}.
 
--spec process_call(call(), hg_machine:history(ev())) ->
-    {hg_machine:response(), hg_machine:result(ev())}.
+-spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
+    {hg_machine:response(), hg_machine:result()}.
 
-process_call(Call, History) ->
+process_call(Call, History, _AuxSt) ->
     St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
-            {{exception, Exception}, {[], hg_machine_action:new()}}
+            {{exception, Exception}, #{}}
     end.
 
 handle_call({start_payment, PaymentParams}, St) ->
@@ -629,15 +626,24 @@ checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp
     hg_party_machine:checkout(PartyID, CreationTimestamp).
 
 handle_result(#{state := St} = Params) ->
-    Changes = maps:get(changes, Params, []),
-    Action = maps:get(action, Params, hg_machine_action:new()),
-    _ = log_changes(Changes, St),
+    _ = log_changes(maps:get(changes, Params, []), St),
+    Result = handle_result_changes(Params, handle_result_action(Params, #{})),
     case maps:get(response, Params, undefined) of
         undefined ->
-            {[marshal(Changes)], Action};
+            Result;
         Response ->
-            {{ok, Response}, {[marshal(Changes)], Action}}
+            {{ok, Response}, Result}
     end.
+
+handle_result_changes(#{changes := Changes = [_ | _]}, Acc) ->
+    Acc#{events => [marshal(Changes)]};
+handle_result_changes(#{}, Acc) ->
+    Acc.
+
+handle_result_action(#{action := Action}, Acc) ->
+    Acc#{action => Action};
+handle_result_action(#{}, Acc) ->
+    Acc.
 
 %%
 
@@ -663,7 +669,7 @@ get_payment_status(#domain_InvoicePayment{status = Status}) ->
 
 %%
 
--spec collapse_history([hg_machine:event(ev())]) -> st().
+-spec collapse_history([hg_machine:event()]) -> st().
 
 collapse_history(History) ->
     lists:foldl(

@@ -9,8 +9,8 @@
 
 -export([namespace/0]).
 -export([init/2]).
--export([process_signal/2]).
--export([process_call/2]).
+-export([process_signal/3]).
+-export([process_call/3]).
 
 %% Event provider callbacks
 
@@ -62,8 +62,6 @@
     {deny_claim, claim_id(), claim_revision(), binary()}        |
     {revoke_claim, claim_id(), claim_revision(), binary()}.
 
--type ev() :: {party_changes, [dmsl_payment_processing_thrift:'PartyChange'()]}.
-
 -type party()           :: dmsl_domain_thrift:'Party'().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
@@ -83,7 +81,7 @@ namespace() ->
     ?NS.
 
 -spec init(party_id(), dmsl_payment_processing_thrift:'PartyParams'()) ->
-    hg_machine:result(ev()).
+    hg_machine:result().
 
 init(ID, PartyParams) ->
     hg_log_scope:scope(
@@ -107,19 +105,19 @@ process_init(PartyID, PartyParams) ->
     ] ++ finalize_claim(hg_claim:accept(Timestamp, Revision, Party, Claim), Timestamp),
     ok(Changes).
 
--spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
-    hg_machine:result(ev()).
+-spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
+    hg_machine:result().
 
-process_signal(timeout, _History) ->
-    ok();
+process_signal(timeout, _History, _AuxSt) ->
+    #{};
 
-process_signal({repair, _}, _History) ->
-    ok().
+process_signal({repair, _}, _History, _AuxSt) ->
+    #{}.
 
--spec process_call(call(), hg_machine:history(ev())) ->
-    {hg_machine:response(), hg_machine:result(ev())}.
+-spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
+    {hg_machine:response(), hg_machine:result()}.
 
-process_call(Call, History) ->
+process_call(Call, History, _AuxSt) ->
     St = collapse_history(unwrap_events(History)),
     try
         Party = get_st_party(St),
@@ -459,32 +457,24 @@ apply_accepted_claim(Claim, St) ->
             St
     end.
 
-ok() ->
-    {wrap_events([?party_ev([])]), hg_machine_action:new()}.
 ok(Changes) ->
-    ok(Changes, hg_machine_action:new()).
-ok(Changes, Action) when is_list(Changes) ->
-    {wrap_events([?party_ev(Changes)]), Action}.
+    #{events => wrap_events([?party_ev(Changes)])}.
 
 respond(Response, Changes) ->
-    respond(Response, Changes, hg_machine_action:new()).
-respond(Response, Changes, Action) when is_list(Changes) ->
-        {{ok, Response}, {wrap_events([?party_ev(Changes)]), Action}}.
+    {{ok, Response}, #{events => wrap_events([?party_ev(Changes)])}}.
 
 respond_w_exception(Exception) ->
-    respond_w_exception(Exception, hg_machine_action:new()).
-respond_w_exception(Exception, Action) ->
-    {{exception, Exception}, {wrap_events([]), Action}}.
+    {{exception, Exception}, #{}}.
 
 %%
 
--spec collapse_history(hg_machine:history(ev())) -> st().
+-spec collapse_history(hg_machine:history()) -> st().
 
 collapse_history(History) ->
     {ok, St} = checkout_history(History, hg_datetime:format_now()),
     St.
 
--spec checkout_history(hg_machine:history(ev()), timestamp()) -> {ok, st()} | {error, revision_not_found}.
+-spec checkout_history(hg_machine:history(), timestamp()) -> {ok, st()} | {error, revision_not_found}.
 
 checkout_history(History, Timestamp) ->
     % FIXME hg_domain:head() looks strange here

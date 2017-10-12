@@ -21,8 +21,8 @@
 -behaviour(hg_machine).
 -export([namespace     /0]).
 -export([init          /2]).
--export([process_signal/2]).
--export([process_call  /2]).
+-export([process_signal/3]).
+-export([process_call  /3]).
 
 %% Types
 -record(st, {
@@ -36,7 +36,6 @@
 
 -type rec_payment_tool_id()     :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
--type rec_payment_tool_event()  :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
 -type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 
 -type route()      :: dmsl_domain_thrift:'PaymentRoute'().
@@ -240,9 +239,9 @@ start_session() ->
     Action = hg_machine_action:instant(),
     {ok, {Events, Action}}.
 
--spec process_signal(hg_machine:signal(), hg_machine:history(rec_payment_tool_event())) ->
+-spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
-process_signal(Signal, History) ->
+process_signal(Signal, History, _AuxSt) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
 handle_signal(timeout, St) ->
@@ -470,13 +469,13 @@ create_session() ->
 
 -type call() :: abandon.
 
--spec process_call(call(), hg_machine:history(rec_payment_tool_event())) ->
-    {hg_machine:response(), hg_machine:result(rec_payment_tool_event())}.
-process_call(Call, History) ->
+-spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
+    {hg_machine:response(), hg_machine:result()}.
+process_call(Call, History, _AuxSt) ->
     St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
-            {{exception, Exception}, {[], hg_machine_action:new()}}
+            {{exception, Exception}, #{}}
     end.
 
 handle_call(abandon, St) ->
@@ -524,15 +523,24 @@ process_callback(Tag, Callback) ->
             Error
     end.
 
-handle_result(Result) ->
-    Changes = maps:get(changes, Result, []),
-    Action = maps:get(action, Result, hg_machine_action:new()),
-    case maps:find(response, Result) of
+handle_result(Params) ->
+    Result = handle_result_changes(Params, handle_result_action(Params, #{})),
+    case maps:find(response, Params) of
         {ok, Response} ->
-            {{ok, Response}, {[marshal(Changes)], Action}};
+            {{ok, Response}, Result};
         error ->
-            {[marshal(Changes)], Action}
+            Result
     end.
+
+handle_result_changes(#{changes := Changes = [_ | _]}, Acc) ->
+    Acc#{events => [marshal(Changes)]};
+handle_result_changes(#{}, Acc) ->
+    Acc.
+
+handle_result_action(#{action := Action}, Acc) ->
+    Acc#{action => Action};
+handle_result_action(#{}, Acc) ->
+    Acc.
 
 %%
 
