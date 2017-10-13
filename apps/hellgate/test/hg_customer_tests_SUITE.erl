@@ -231,7 +231,8 @@ start_binding(C) ->
         ?customer_binding_changed(_, ?customer_binding_started(_))
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded()))
+        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded())),
+        ?customer_status_changed(?customer_ready())
     ] = next_event(CustomerID, Client).
 
 start_binding_w_tds(C) ->
@@ -261,7 +262,8 @@ start_binding_w_tds(C) ->
     {URL, GoodForm} = get_post_request(UserInteraction),
     _ = assert_success_post_request({URL, GoodForm}),
     [
-        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded()))
+        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded())),
+        ?customer_status_changed(?customer_ready())
     ] = next_event(CustomerID, Client).
 
 
