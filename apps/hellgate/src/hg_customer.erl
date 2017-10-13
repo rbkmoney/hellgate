@@ -201,19 +201,38 @@ init(CustomerID, CustomerParams) ->
 process_signal(Signal, History, AuxSt) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)), unmarshal(auxst, AuxSt))).
 
-handle_signal(timeout, St, AuxSt0) ->
-    {Changes, AuxSt1} = sync_pending_bindings(St, AuxSt0),
-    Action = case get_pending_binding_set(merge_changes(Changes, St)) of
+handle_signal(timeout, St0, AuxSt0) ->
+    {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
+    St1 = merge_changes(Changes, St0),
+    Action = case get_pending_binding_set(St1) of
         [_BindingID | _] ->
             set_event_poll_timer();
         [] ->
             hg_machine_action:new()
     end,
     #{
-        changes => Changes,
+        changes => Changes ++ get_ready_changes(St1),
         action  => Action,
         auxst   => AuxSt1
     }.
+
+get_ready_changes(#st{customer = #payproc_Customer{status = ?customer_unready()}} = St) ->
+    case find_active_bindings(get_bindings(get_customer(St))) of
+        [_ | _] ->
+            [?customer_status_changed(?customer_ready())];
+        [] ->
+            []
+    end;
+get_ready_changes(_) ->
+    [].
+
+find_active_bindings(Bindings) ->
+    lists:filtermap(fun(Binding) -> is_binding_succeeded(Binding) end, Bindings).
+
+is_binding_succeeded(#payproc_CustomerBinding{status = ?customer_binding_succeeded()}) ->
+    true;
+is_binding_succeeded(_) ->
+    false.
 
 -type call() ::
     {start_binding, binding_params()} |
