@@ -870,7 +870,7 @@ payment_refund_success(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(5), 42000, C),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     RefundParams = make_refund_params(),
@@ -882,7 +882,7 @@ payment_refund_success(C) ->
     ?insufficient_account_balance() =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     % top up merchant account
-    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(5), 42000, C),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
     % create a refund finally
@@ -898,13 +898,17 @@ payment_refund_success(C) ->
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded())))),
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
+        ?payment_ev(PaymentID, ?payment_status_changed(?refunded())),
+        ?invoice_status_changed(?invoice_unpaid())
     ] = next_event(InvoiceID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     % no more refunds for you
     ?invalid_payment_status(?refunded()) =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    [
+        ?invoice_status_changed(?invoice_cancelled(<<"overdue">>))
+    ] = next_event(InvoiceID, Client).
 
 %%
 

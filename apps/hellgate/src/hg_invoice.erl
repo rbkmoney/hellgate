@@ -594,8 +594,10 @@ handle_payment_result(Result, PaymentID, PaymentSession, St) ->
                         state   => St
                     };
                 ?refunded() ->
+                    Changes2 = [?invoice_status_changed(?invoice_unpaid())],
                     #{
-                        changes => wrap_payment_changes(PaymentID, Changes1),
+                        changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
+                        action  => set_invoice_timer(St),
                         state   => St
                     };
                 ?failed(_) ->
