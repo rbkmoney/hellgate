@@ -355,17 +355,7 @@ handle_callback_result(
     Action0,
     Session
 ) ->
-    {Response, handle_proxy_callback_result(ProxyResult, Action0, Session)}.
-
-handle_proxy_callback_result(
-    #prxprv_RecurrentTokenProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
-    Action0,
-    Session
-) ->
-    Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
-    {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
-    make_proxy_result([?session_activated()] ++ Changes1 ++ Changes2 ++ Changes3, Action).
+    {Response, handle_proxy_result(ProxyResult, hg_machine_action:unset_timer(Action0), Session)}.
 
 make_proxy_result(Changes, Action) ->
     make_proxy_result(Changes, Action, undefined).

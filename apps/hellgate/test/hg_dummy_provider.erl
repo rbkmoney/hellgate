@@ -147,11 +147,9 @@ generate_token(<<"finishing">>, TokenInfo, _Opts) ->
     Token = ?REC_TOKEN,
     token_finish(TokenInfo, Token).
 
-handle_token_callback(_Tag, <<"suspended">>, _PaymentInfo, _Opts) ->
-    token_respond(<<"sure">>, #prxprv_RecurrentTokenProxyResult{
-        intent     = ?sleep(1),
-        next_state = <<"finishing">>
-    }).
+handle_token_callback(_Tag, <<"suspended">>, TokenInfo, _Opts) ->
+    Token = ?REC_TOKEN,
+    token_respond(<<"sure">>, token_finish(TokenInfo, Token)).
 
 token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
     #prxprv_RecurrentTokenProxyResult{
