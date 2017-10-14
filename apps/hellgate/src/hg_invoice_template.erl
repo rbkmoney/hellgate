@@ -51,7 +51,7 @@ get_invoice_template(ID) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
-    hg_log_scope:scope(invoice_templating,
+    scoper:scope(invoice_templating,
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
@@ -122,7 +122,7 @@ get_shop(ShopID, Party) ->
     Shop.
 
 set_meta(ID) ->
-    hg_log_scope:set_meta(#{invoice_template_id => ID}).
+    scoper:add_meta(#{invoice_template_id => ID}).
 
 validate_create_params(#payproc_InvoiceTemplateCreateParams{details = Details}, Shop) ->
     ok = validate_details(Details, Shop).

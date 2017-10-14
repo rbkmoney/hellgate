@@ -98,7 +98,7 @@ get_payment_opts(St = #st{invoice = Invoice}) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
-    hg_log_scope:scope(invoicing,
+    scoper:scope(invoicing,
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
@@ -245,10 +245,10 @@ get_payment_state(PaymentSession) ->
     }.
 
 set_invoicing_meta(InvoiceID) ->
-    hg_log_scope:set_meta(#{invoice_id => InvoiceID}).
+    scoper:add_meta(#{invoice_id => InvoiceID}).
 
 set_invoicing_meta(InvoiceID, PaymentID) ->
-    hg_log_scope:set_meta(#{invoice_id => InvoiceID, payment_id => PaymentID}).
+    scoper:add_meta(#{invoice_id => InvoiceID, payment_id => PaymentID}).
 
 %%
 
