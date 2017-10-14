@@ -8,11 +8,6 @@
 
 %%
 
--behaviour(woody_event_handler).
--export([handle_event/4]).
-
-%%
-
 -type t() :: {woody:url(), woody_context:ctx()}.
 
 -spec new(woody:url()) -> t().
@@ -49,21 +44,3 @@ call(ServiceName, Function, Args, {RootUrl, Context}) ->
             {error, {Error, erlang:get_stacktrace()}}
     end,
     {Result, {RootUrl, Context}}.
-
-%%
-
--spec handle_event(Event, RpcId, Meta, Opts) -> ok when
-    Event :: woody_event_handler:event(),
-    RpcId :: woody:rpc_id() | undefined,
-    Meta  :: woody_event_handler:event_meta(),
-    Opts  :: woody:options().
-
-handle_event(EventType, RpcID, #{status := error, class := Class, reason := Reason, stack := Stack}, _Opts) ->
-    lager:error(
-        maps:to_list(RpcID),
-        "[client] ~s with ~s:~p at ~s",
-        [EventType, Class, Reason, genlib_format:format_stacktrace(Stack, [newlines])]
-    );
-
-handle_event(EventType, RpcID, EventMeta, _Opts) ->
-    lager:debug(maps:to_list(RpcID), "[client] ~s: ~p", [EventType, EventMeta]).
