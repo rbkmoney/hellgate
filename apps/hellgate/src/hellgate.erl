@@ -58,10 +58,7 @@ get_api_child_spec(MachineHandlers) ->
             ip            => Ip,
             port          => genlib_app:env(?MODULE, port, 8022),
             net_opts      => genlib_app:env(?MODULE, net_opts, []),
-            event_handler => {scoper_woody_event_handler, #{
-                client_scope => 'rpc.client',
-                server_scope => 'rpc.server'
-            }},
+            event_handler => {scoper_woody_event_handler, #{log_scope => 'rpc.server'}},
             handlers      => hg_machine:get_service_handlers(MachineHandlers) ++ [
                 construct_service_handler(party_management             , hg_party_woody_handler),
                 construct_service_handler(invoicing                    , hg_invoice            ),

@@ -65,10 +65,7 @@ call(ServiceName, Function, Args, Opts) ->
     Context = hg_context:get(),
     woody_client:call(
         {Service, Function, Args},
-        Opts#{event_handler => {scoper_woody_event_handler, #{
-            client_scope => 'rpc.client',
-            server_scope => 'rpc.server'
-        }}},
+        Opts#{event_handler => {scoper_woody_event_handler, #{log_scope => 'rpc.client'}}},
         Context
     ).
 

@@ -33,10 +33,10 @@ call(ServiceName, Function, Args, {RootUrl, Context}) ->
     Result = try
         woody_client:call(
             Request,
-            #{url => Url, event_handler => {scoper_woody_event_handler, #{
-                client_scope => 'rpc.client',
-                server_scope => 'rpc.server'
-            }}},
+            #{
+                url           => Url,
+                event_handler => {scoper_woody_event_handler, #{log_scope => 'rpc.client'}}
+            },
             Context
         )
     catch
