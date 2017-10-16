@@ -21,6 +21,7 @@
 -export([start_binding/1]).
 -export([start_binding_w_tds/1]).
 -export([start_two_bindings/1]).
+-export([start_two_bindings_w_tds/1]).
 
 %%
 
@@ -97,7 +98,8 @@ groups() ->
             delete_customer,
             start_binding,
             start_binding_w_tds,
-            start_two_bindings
+            start_two_bindings,
+            start_two_bindings_w_tds
         ]}
     ].
 
@@ -192,6 +194,7 @@ invalid_shop_status(C) ->
 -spec start_binding(config()) -> test_case_result().
 -spec start_binding_w_tds(config()) -> test_case_result().
 -spec start_two_bindings(config()) -> test_case_result().
+-spec start_two_bindings_w_tds(config()) -> test_case_result().
 
 create_customer(C) ->
     Client = cfg(client, C),
@@ -288,13 +291,66 @@ start_two_bindings(C) ->
     [
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2))
     ] = next_event(CustomerID, Client),
+    SuccessEvents = [
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
+        ?customer_status_changed(?customer_ready())
+    ],
+    ok = await_for_events(SuccessEvents, CustomerID, Client, 10000).
+
+start_two_bindings_w_tds(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
+    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    CustomerBindingParams = #payproc_CustomerBindingParams{
+        payment_resource = make_disposable_payment_resource(PaymentTool, Session)
+    },
+    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1} =
+        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
+        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    #payproc_Customer{id = CustomerID, bindings = Bindings} = hg_client_customer:get(CustomerID, Client),
+    Bindings = [CustomerBinding1, CustomerBinding2],
     [
+        ?customer_created(_Customer)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1))
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2))
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested(UserInteraction2))
+    ] = next_event(CustomerID, Client),
+    _ = assert_success_post_request(get_post_request(UserInteraction2)),
+    [
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested(UserInteraction1)),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_status_changed(?customer_ready())
     ] = next_event(CustomerID, Client),
+    _ = assert_success_post_request(get_post_request(UserInteraction1)),
     [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded()))
     ] = next_event(CustomerID, Client).
+
+%%
+
+-define(INTERVAL, 100).
+
+await_for_events(Events, CustomerID, Client, TimeLeft) ->
+    Started = genlib_time:ticks(),
+    case Events -- next_event(CustomerID, Client) of
+        [] ->
+            ok;
+        EventsLeft ->
+            timer:sleep(?INTERVAL),
+            Now = genlib_time:ticks(),
+            await_for_events(EventsLeft, CustomerID, Client, TimeLeft - (Now - Started) div 1000)
+    end.
 
 %%
 
