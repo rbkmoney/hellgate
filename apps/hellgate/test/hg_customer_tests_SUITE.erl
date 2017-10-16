@@ -383,7 +383,11 @@ find_interaction(CustomerBindingIDs, [Change | Rest], UIs) ->
     ?customer_binding_changed(CustomerBindingID, ?customer_binding_interaction_requested(UserInteraction)) = Change,
     case lists:member(CustomerBindingID, CustomerBindingIDs) of
         true ->
-            find_interaction(CustomerBindingIDs -- [CustomerBindingID], Rest, UIs ++ [{CustomerBindingID, UserInteraction}]);
+            find_interaction(
+                CustomerBindingIDs -- [CustomerBindingID],
+                Rest,
+                UIs ++ [{CustomerBindingID, UserInteraction}]
+            );
         false ->
             error({unexpected_change, Change})
     end;
