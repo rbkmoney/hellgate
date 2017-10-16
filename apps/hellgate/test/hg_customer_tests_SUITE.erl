@@ -285,12 +285,11 @@ start_two_bindings(C) ->
     [
         ?customer_created(_Customer)
     ] = next_event(CustomerID, Client),
-    [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1))
-    ] = next_event(CustomerID, Client),
-    [
+    StartChanges = [
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1)),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2))
-    ] = next_event(CustomerID, Client),
+    ],
+    ok = await_for_changes(StartChanges, CustomerID, Client),
     SuccessChanges = [
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
@@ -317,31 +316,33 @@ start_two_bindings_w_tds(C) ->
     [
         ?customer_created(_Customer)
     ] = next_event(CustomerID, Client),
-    [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1))
-    ] = next_event(CustomerID, Client),
-    [
+    StartChanges = [
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1)),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2))
-    ] = next_event(CustomerID, Client),
+    ],
+    ok = await_for_changes(StartChanges, CustomerID, Client),
+
+    UserInteractions = get_user_interactions([CustomerBindingID1, CustomerBindingID2], CustomerID, Client),
+
+    _ = assert_success_post_request(get_post_request(proplists:get_value(CustomerBindingID1, UserInteractions))),
     [
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested(UserInteraction2))
-    ] = next_event(CustomerID, Client),
-    _ = assert_success_post_request(get_post_request(UserInteraction2)),
-    [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested(UserInteraction1)),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_status_changed(?customer_ready())
     ] = next_event(CustomerID, Client),
-    _ = assert_success_post_request(get_post_request(UserInteraction1)),
+    _ = assert_success_post_request(get_post_request(proplists:get_value(CustomerBindingID2, UserInteractions))),
     [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded()))
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded()))
     ] = next_event(CustomerID, Client).
 
 %%
 
 -define(INTERVAL, 100).
+-define(DEFAULT_TIMEOUT, 5000).
 
-await_for_changes(Changes, CustomerID, Client, TimeLeft) ->
+await_for_changes(Changes, CustomerID, Client) ->
+    await_for_changes(Changes, CustomerID, Client, ?DEFAULT_TIMEOUT).
+
+await_for_changes(Changes, CustomerID, Client, TimeLeft) when TimeLeft > 0 ->
     Started = genlib_time:ticks(),
     case Changes -- next_event(CustomerID, Client) of
         [] ->
@@ -350,7 +351,44 @@ await_for_changes(Changes, CustomerID, Client, TimeLeft) ->
             timer:sleep(?INTERVAL),
             Now = genlib_time:ticks(),
             await_for_changes(ChangesLeft, CustomerID, Client, TimeLeft - (Now - Started) div 1000)
-    end.
+    end;
+await_for_changes(Changes, CustomerID, _Client, _TimeLeft) ->
+    error({event_limit_exceeded, {CustomerID, Changes}}).
+
+get_user_interactions(CustomerBindingIDs, CustomerID, Client) ->
+    get_user_interactions_(CustomerBindingIDs, [], CustomerID, Client, ?DEFAULT_TIMEOUT).
+
+get_user_interactions_([], UIs, _CustomerID, _Client, _TimeLeft) ->
+    UIs;
+get_user_interactions_(CustomerBindingIDs0, UIs0, CustomerID, Client, TimeLeft) when TimeLeft > 0 ->
+    Started = genlib_time:ticks(),
+    case find_interaction(CustomerBindingIDs0, next_event(CustomerID, Client), UIs0) of
+        {[], UIs1} ->
+            UIs1;
+        {CustomerBindingIDs1, UIs1} ->
+            timer:sleep(?INTERVAL),
+            Now = genlib_time:ticks(),
+            get_user_interactions_(
+                CustomerBindingIDs1,
+                UIs1,
+                CustomerID,
+                Client,
+                TimeLeft - (Now - Started) div 1000
+            )
+    end;
+get_user_interactions_(CustomerBindingIDs, _UIs, CustomerID, _Client, _TimeLeft) ->
+    error({event_limit_exceeded, {CustomerID, CustomerBindingIDs}}).
+
+find_interaction(CustomerBindingIDs, [Change | Rest], UIs) ->
+    ?customer_binding_changed(CustomerBindingID, ?customer_binding_interaction_requested(UserInteraction)) = Change,
+    case lists:member(CustomerBindingID, CustomerBindingIDs) of
+        true ->
+            find_interaction(CustomerBindingIDs -- [CustomerBindingID], Rest, UIs ++ [{CustomerBindingID, UserInteraction}]);
+        false ->
+            error({unexpected_change, Change})
+    end;
+find_interaction(CustomerBindingIDs, [], UIs) ->
+    {CustomerBindingIDs, UIs}.
 
 %%
 
