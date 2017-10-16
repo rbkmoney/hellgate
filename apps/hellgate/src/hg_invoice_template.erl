@@ -99,8 +99,8 @@ handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp], _Opts) ->
     ShopID = Tpl#domain_InvoiceTemplate.shop_id,
     PartyID = Tpl#domain_InvoiceTemplate.owner_id,
     ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp),
-    case Tpl#domain_InvoiceTemplate.cost of
-        {fixed, Cash} ->
+    case Tpl#domain_InvoiceTemplate.details of
+        {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
             Revision = hg_domain:head(),
             hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
         _ ->

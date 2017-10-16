@@ -413,7 +413,7 @@ delete_invoice_template(C) ->
 
 terms_retrieval(C) ->
     Client = cfg(client, C),
-    ?invoice_tpl(TplID1) = create_invoice_tpl(C, <<"rubberduck">>),
+    ?invoice_tpl(TplID1) = create_invoice_tpl(C),
     Timestamp = hg_datetime:format_now(),
     TermSet1 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
@@ -474,7 +474,7 @@ create_invalid_cost(Cost, Error, Config) ->
 make_invoice_tpl_create_params(PartyID, ShopID) ->
     Lifetime = make_lifetime(0, 0, 2),
     Product = <<"rubberduck">>,
-    Details = hg_ct_helper:make_invoice_tpl_details(<<"rubberduck">>, make_cost(fixed, 100, <<"RUB">>)),
+    Details = hg_ct_helper:make_invoice_tpl_details(<<"rubberduck">>, make_cost(fixed, 5000, <<"RUB">>)),
     make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details).
 
 make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
