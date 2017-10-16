@@ -315,7 +315,7 @@ sync_pending_bindings([BindingID | Rest], St, AuxSt0) ->
     Binding = try_get_binding(BindingID, get_customer(St)),
     {Changes1, AuxSt1} = sync_binding_state(Binding, AuxSt0),
     {Changes2, AuxSt2} = sync_pending_bindings(Rest, St, AuxSt1),
-    {Changes1 ++ Changes2, maps:merge(AuxSt1, AuxSt2)};
+    {Changes1 ++ Changes2, AuxSt2};
 sync_pending_bindings([], _St, AuxSt) ->
     {[], AuxSt}.
 
