@@ -291,12 +291,12 @@ start_two_bindings(C) ->
     [
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2))
     ] = next_event(CustomerID, Client),
-    SuccessEvents = [
+    SuccessChanges = [
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_status_changed(?customer_ready())
     ],
-    ok = await_for_events(SuccessEvents, CustomerID, Client, 10000).
+    ok = await_for_changes(SuccessChanges, CustomerID, Client, 10000).
 
 start_two_bindings_w_tds(C) ->
     Client = cfg(client, C),
@@ -341,15 +341,15 @@ start_two_bindings_w_tds(C) ->
 
 -define(INTERVAL, 100).
 
-await_for_events(Events, CustomerID, Client, TimeLeft) ->
+await_for_changes(Changes, CustomerID, Client, TimeLeft) ->
     Started = genlib_time:ticks(),
-    case Events -- next_event(CustomerID, Client) of
+    case Changes -- next_event(CustomerID, Client) of
         [] ->
             ok;
-        EventsLeft ->
+        ChangesLeft ->
             timer:sleep(?INTERVAL),
             Now = genlib_time:ticks(),
-            await_for_events(EventsLeft, CustomerID, Client, TimeLeft - (Now - Started) div 1000)
+            await_for_changes(ChangesLeft, CustomerID, Client, TimeLeft - (Now - Started) div 1000)
     end.
 
 %%
