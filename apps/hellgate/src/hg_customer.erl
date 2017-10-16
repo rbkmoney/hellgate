@@ -313,10 +313,11 @@ sync_pending_bindings(St, AuxSt) ->
 
 sync_pending_bindings([BindingID | Rest], St, AuxSt0) ->
     Binding = try_get_binding(BindingID, get_customer(St)),
-    {Changes, AuxSt1} = sync_binding_state(Binding, AuxSt0),
-    {Changes ++ sync_pending_bindings(Rest, St, AuxSt1), AuxSt1};
-sync_pending_bindings([], _St, _AuxSt) ->
-    [].
+    {Changes1, AuxSt1} = sync_binding_state(Binding, AuxSt0),
+    {Changes2, AuxSt2} = sync_pending_bindings(Rest, St, AuxSt1),
+    {Changes1 ++ Changes2, maps:merge(AuxSt1, AuxSt2)};
+sync_pending_bindings([], _St, AuxSt) ->
+    {[], AuxSt}.
 
 sync_binding_state(Binding, AuxSt) ->
     RecurrentPaytoolID = get_binding_recurrent_paytool_id(Binding),
