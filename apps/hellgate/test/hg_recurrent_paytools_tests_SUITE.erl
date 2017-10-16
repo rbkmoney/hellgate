@@ -108,7 +108,7 @@ groups() ->
 init_per_testcase(Name, C) ->
     RootUrl = cfg(root_url, C),
     PartyID = cfg(party_id, C),
-    TraceID = make_trace_id(Name),
+    TraceID = hg_ct_helper:make_trace_id(Name),
     Client = hg_client_recurrent_paytool:start(hg_ct_helper:create_client(RootUrl, PartyID, TraceID)),
     [
         {test_case_name, genlib:to_binary(Name)},
@@ -116,10 +116,6 @@ init_per_testcase(Name, C) ->
         {client, Client}
         | C
     ].
-
-make_trace_id(Prefix) ->
-    B = genlib:to_binary(Prefix),
-    iolist_to_binary([binary:part(B, 0, min(byte_size(B), 20)), $., hg_utils:unique_id()]).
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
