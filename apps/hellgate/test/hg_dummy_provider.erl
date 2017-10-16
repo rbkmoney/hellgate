@@ -45,7 +45,6 @@ get_http_cowboy_spec() ->
 
 %%
 
--define(DEFAULT_PAYLOAD , <<"payload">>).
 -define(LAY_LOW_BUDDY   , <<"lay low buddy">>).
 
 -type form() :: #{binary() => binary() | true}.
@@ -132,15 +131,16 @@ process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
 process_payment(?cancelled(), _, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo)).
 
-handle_payment_callback(?DEFAULT_PAYLOAD, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
-    respond(<<"sure">>, #prxprv_CallbackProxyResult{
-        intent     = ?sleep(1),
-        next_state = <<"sleeping">>
-    });
 handle_payment_callback(?LAY_LOW_BUDDY, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_CallbackProxyResult{
         intent     = undefined,
         next_state = <<"suspended">>
+    });
+handle_payment_callback(Tag, ?captured(), <<"suspended">>, PaymentInfo, _Opts) ->
+    {{ok, PaymentInfo}, _} = get_payment_info(Tag),
+    respond(<<"sure">>, #prxprv_CallbackProxyResult{
+        intent     = ?sleep(1),
+        next_state = <<"sleeping">>
     }).
 
 process_refund(undefined, PaymentInfo, _) ->
@@ -224,7 +224,7 @@ handle_user_interaction_response(<<"POST">>, Req) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     Form = maps:from_list(cow_qs:parse_qs(Body)),
     Tag = maps:get(<<"tag">>, Form),
-    Payload = maps:get(<<"payload">>, Form, ?DEFAULT_PAYLOAD),
+    Payload = maps:get(<<"payload">>, Form, Tag),
     RespCode = callback_to_hell(Tag, Payload),
     cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<>>, Req2);
 handle_user_interaction_response(_, Req) ->
@@ -243,3 +243,9 @@ callback_to_hell(Tag, Payload) ->
         {{exception, _}, _} ->
             500
     end.
+
+get_payment_info(Tag) ->
+    hg_client_api:call(
+        proxy_host_provider, 'GetPayment', [Tag],
+        hg_client_api:new(hg_ct_helper:get_hellgate_url())
+    ).

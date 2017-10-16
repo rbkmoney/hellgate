@@ -47,6 +47,7 @@
 
 -export([shop_not_found_on_retrieval/1]).
 -export([shop_creation/1]).
+-export([shop_terms_retrieval/1]).
 -export([shop_already_exists/1]).
 -export([shop_update/1]).
 -export([shop_update_before_confirm/1]).
@@ -70,6 +71,7 @@
 
 -export([contract_not_found/1]).
 -export([contract_creation/1]).
+-export([contract_terms_retrieval/1]).
 -export([contract_already_exists/1]).
 -export([contract_termination/1]).
 -export([contract_already_terminated/1]).
@@ -149,6 +151,7 @@ groups() ->
             party_creation,
             contract_not_found,
             contract_creation,
+            contract_terms_retrieval,
             contract_already_exists,
             contract_termination,
             contract_already_terminated,
@@ -165,6 +168,7 @@ groups() ->
             shop_update_before_confirm,
             shop_update_with_bad_params,
             shop_creation,
+            shop_terms_retrieval,
             shop_already_exists,
             % shop_activation,
             shop_update,
@@ -315,6 +319,8 @@ end_per_testcase(_Name, _C) ->
 
 -define(REAL_SHOP_ID, <<"SHOP1">>).
 -define(REAL_CONTRACT_ID, <<"CONTRACT1">>).
+-define(REAL_PARTY_PAYMENT_METHODS,
+    [?pmt(bank_card, maestro), ?pmt(bank_card, mastercard), ?pmt(bank_card, visa)]).
 
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
@@ -323,6 +329,7 @@ end_per_testcase(_Name, _C) ->
 
 -spec shop_not_found_on_retrieval(config()) -> _ | no_return().
 -spec shop_creation(config()) -> _ | no_return().
+-spec shop_terms_retrieval(config()) -> _ | no_return().
 -spec shop_already_exists(config()) -> _ | no_return().
 -spec shop_update(config()) -> _ | no_return().
 -spec shop_update_before_confirm(config()) -> _ | no_return().
@@ -371,6 +378,7 @@ end_per_testcase(_Name, _C) ->
 
 -spec contract_not_found(config()) -> _ | no_return().
 -spec contract_creation(config()) -> _ | no_return().
+-spec contract_terms_retrieval(config()) -> _ | no_return().
 -spec contract_already_exists(config()) -> _ | no_return().
 -spec contract_termination(config()) -> _ | no_return().
 -spec contract_already_terminated(config()) -> _ | no_return().
@@ -439,6 +447,20 @@ contract_creation(C) ->
     ok = accept_claim(Claim, Client),
     #domain_Contract{id = ContractID, payout_tools = PayoutTools} = hg_client_party:get_contract(ContractID, Client),
     true = lists:keymember(PayoutToolID, #domain_PayoutTool.id, PayoutTools).
+
+contract_terms_retrieval(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ContractID = ?REAL_CONTRACT_ID,
+    TermSet1 = hg_client_party:compute_contract_terms(ContractID, hg_datetime:format_now(), Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {value, [?pmt(bank_card, visa)]}
+    }} = TermSet1,
+    ok = hg_domain:update(construct_term_set_for_party(PartyID, undefined)),
+    TermSet2 = hg_client_party:compute_contract_terms(ContractID, hg_datetime:format_now(), Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
+    }} = TermSet2.
 
 contract_already_exists(C) ->
     Client = cfg(client, C),
@@ -541,9 +563,11 @@ contract_adjustment_expiration(C) ->
     hg_context:set(woody_context:new()),
     ContractID = ?REAL_CONTRACT_ID,
     ID = <<"ADJ2">>,
-    Terms = hg_party:get_payments_service_terms(
+    Revision = hg_domain:head(),
+    Terms = hg_party:get_terms(
         hg_client_party:get_contract(ContractID, Client),
-        hg_datetime:format_now()
+        hg_datetime:format_now(),
+        Revision
     ),
     AdjustmentParams = #payproc_ContractAdjustmentParams{
         template = #domain_ContractTemplateRef{id = 4}
@@ -556,12 +580,13 @@ contract_adjustment_expiration(C) ->
         adjustments = Adjustments
     } = hg_client_party:get_contract(ContractID, Client),
     true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments),
-    true = Terms /= hg_party:get_payments_service_terms(
+    true = Terms /= hg_party:get_terms(
         hg_client_party:get_contract(ContractID, Client),
-        hg_datetime:format_now()
+        hg_datetime:format_now(),
+        Revision
     ),
     AfterExpiration = hg_datetime:add_interval(hg_datetime:format_now(), {0, 1, 1}),
-    Terms = hg_party:get_payments_service_terms(hg_client_party:get_contract(ContractID, Client), AfterExpiration),
+    Terms = hg_party:get_terms(hg_client_party:get_contract(ContractID, Client), AfterExpiration, Revision),
     hg_context:cleanup().
 
 shop_not_found_on_retrieval(C) ->
@@ -597,6 +622,20 @@ shop_creation(C) ->
         % suspension = ?suspended(),
         details = Details
     } = hg_client_party:get_shop(ShopID, Client).
+
+shop_terms_retrieval(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = ?REAL_SHOP_ID,
+    TermSet1 = hg_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {value, [?pmt(bank_card, visa)]}
+    }} = TermSet1,
+    ok = hg_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
+    TermSet2 = hg_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), Client),
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
+    }} = TermSet2.
 
 shop_already_exists(C) ->
     Client = cfg(client, C),
@@ -1092,6 +1131,42 @@ make_party_params() ->
 make_party_params(ContactInfo) ->
     #payproc_PartyParams{contact_info = ContactInfo}.
 
+construct_term_set_for_party(PartyID, Def) ->
+    TermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            currencies = {value, ordsets:from_list([
+                ?cur(<<"RUB">>),
+                ?cur(<<"USD">>)
+            ])},
+            categories = {value, ordsets:from_list([
+                ?cat(2),
+                ?cat(3)
+            ])},
+            payment_methods = {decisions, [
+                #domain_PaymentMethodDecision{
+                    if_   = ?partycond(PartyID, Def),
+                    then_ = {value, ordsets:from_list(?REAL_PARTY_PAYMENT_METHODS)}
+                },
+                #domain_PaymentMethodDecision{
+                    if_   = {constant, true},
+                    then_ = {value, ordsets:from_list([
+                        ?pmt(bank_card, visa)
+                    ])}
+                }
+            ]}
+        }
+    },
+    {term_set_hierarchy, #domain_TermSetHierarchyObject{
+        ref = ?trms(2),
+        data = #domain_TermSetHierarchy{
+            parent_terms = undefined,
+            term_sets = [#domain_TimedTermSet{
+                action_time = #'TimestampInterval'{},
+                terms = TermSet
+            }]
+        }
+    }}.
+
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
 construct_domain_fixture() ->
@@ -1112,8 +1187,7 @@ construct_domain_fixture() ->
                 ?cat(3)
             ])},
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card, visa)
             ])}
         }
     },
@@ -1142,6 +1216,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),

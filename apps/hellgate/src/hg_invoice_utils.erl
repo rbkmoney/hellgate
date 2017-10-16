@@ -12,6 +12,7 @@
 -export([assert_party_operable/1]).
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
+-export([compute_shop_terms/4]).
 
 -type amount()     :: dmsl_domain_thrift:'Amount'().
 -type currency()   :: dmsl_domain_thrift:'CurrencyRef'().
@@ -20,7 +21,10 @@
 -type party()      :: dmsl_domain_thrift:'Party'().
 -type shop()       :: dmsl_domain_thrift:'Shop'().
 -type party_id()   :: dmsl_domain_thrift:'PartyID'().
-
+-type shop_id()    :: dmsl_domain_thrift:'ShopID'().
+-type term_set()   :: dmsl_domain_thrift:'TermSet'().
+-type timestamp()  :: dmsl_base_thrift:'Timestamp'().
+-type user_info()  :: dmsl_payment_processing_thrift:'UserInfo'().
 
 -spec validate_cost(cash(), shop()) -> ok.
 
@@ -82,6 +86,11 @@ assert_shop_exists(#domain_Shop{} = V) ->
 assert_shop_exists(undefined) ->
     throw(#payproc_ShopNotFound{}).
 
+-spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp()) -> term_set().
+compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp) ->
+    Args = [UserInfo, PartyID, ShopID, Timestamp],
+    {ok, TermSet} = hg_woody_wrapper:call('PartyManagement', 'ComputeShopTerms', Args),
+    TermSet.
 
 validate_currency_(Currency, Currency) ->
     ok;

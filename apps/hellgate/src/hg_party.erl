@@ -38,8 +38,8 @@
 -export([get_contract_adjustment/2]).
 -export([get_contract_payout_tool/2]).
 
--export([get_payments_service_terms/2]).
--export([get_payments_service_terms/3]).
+-export([get_terms/3]).
+-export([reduce_terms/3]).
 
 -export([create_shop/3]).
 -export([shop_blocking/3]).
@@ -261,7 +261,11 @@ create_contract_adjustment(ID, Params, Timestamp, Revision) ->
     ordsets:ordset(currency()) | no_return().
 
 get_contract_currencies(Contract, Timestamp, Revision) ->
-    #domain_PaymentsServiceTerms{currencies = CurrencySelector} = get_payments_service_terms(Contract, Timestamp),
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            currencies = CurrencySelector
+        }
+    } = get_terms(Contract, Timestamp, Revision),
     Value = reduce_selector_to_value(CurrencySelector, #{}, Revision),
     case ordsets:size(Value) > 0 of
         true ->
@@ -274,7 +278,11 @@ get_contract_currencies(Contract, Timestamp, Revision) ->
     ordsets:ordset(category()) | no_return().
 
 get_contract_categories(Contract, Timestamp, Revision) ->
-    #domain_PaymentsServiceTerms{categories = CategorySelector} = get_payments_service_terms(Contract, Timestamp),
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            categories = CategorySelector
+        }
+    } = get_terms(Contract, Timestamp, Revision),
     Value = reduce_selector_to_value(CategorySelector, #{}, Revision),
     case ordsets:size(Value) > 0 of
         true ->
@@ -305,27 +313,13 @@ update_contract_status(
 update_contract_status(Contract, _) ->
     Contract.
 
--spec get_payments_service_terms(shop_id(), party(), timestamp()) ->
-    dmsl_domain_thrift:'PaymentsServiceTerms'() | no_return().
+-spec get_terms(contract(), timestamp(), revision()) ->
+    dmsl_domain_thrift:'TermSet'() | no_return().
 
-get_payments_service_terms(ShopID, Party, Timestamp) ->
-    Shop = ensure_shop(get_shop(ShopID, Party)),
-    Contract = maps:get(Shop#domain_Shop.contract_id, Party#domain_Party.contracts),
-    ok = assert_contract_active(Contract),
-    get_payments_service_terms(Contract, Timestamp).
-
-assert_contract_active(#domain_Contract{status = {active, _}}) ->
-    ok;
-assert_contract_active(#domain_Contract{status = Status}) ->
-    throw(#payproc_InvalidContractStatus{status = Status}).
-
--spec get_payments_service_terms(contract(), timestamp()) ->
-    dmsl_domain_thrift:'PaymentsServiceTerms'() | no_return().
-
-get_payments_service_terms(Contract, Timestamp) ->
-    case compute_terms(Contract, Timestamp) of
-        #domain_TermSet{payments = PaymentTerms} ->
-            PaymentTerms;
+get_terms(Contract, Timestamp, Revision) ->
+    case compute_terms(Contract, Timestamp, Revision) of
+        #domain_TermSet{} = Terms ->
+            Terms;
         undefined ->
             error({misconfiguration, {'No active TermSet found', Contract#domain_Contract.terms, Timestamp}})
     end.
@@ -483,7 +477,7 @@ ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, Revision) 
 ensure_contract_template(undefined, Revision) ->
     get_default_template_ref(Revision).
 
--spec reduce_selector_to_value(Selector, #{}, revision())
+-spec reduce_selector_to_value(Selector, hg_selector:varset(), revision())
     -> ordsets:ordset(currency()) | ordsets:ordset(category()) | no_return()
     when Selector :: dmsl_domain_thrift:'CurrencySelector'() | dmsl_domain_thrift:'CategorySelector'().
 
@@ -494,6 +488,46 @@ reduce_selector_to_value(Selector, VS, Revision) ->
         _ ->
             error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}})
     end.
+
+-spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
+    dmsl_domain_thrift:'TermSet'().
+
+reduce_terms(#domain_TermSet{payments = PaymentsTerms}, VS, Revision) ->
+    #domain_TermSet{payments = reduce_payments_terms(PaymentsTerms, VS, Revision)}.
+
+reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
+    #domain_PaymentsServiceTerms{
+        currencies      = reduce_if_defined(Terms#domain_PaymentsServiceTerms.currencies, VS, Rev),
+        categories      = reduce_if_defined(Terms#domain_PaymentsServiceTerms.categories, VS, Rev),
+        payment_methods = reduce_if_defined(Terms#domain_PaymentsServiceTerms.payment_methods, VS, Rev),
+        cash_limit      = reduce_if_defined(Terms#domain_PaymentsServiceTerms.cash_limit, VS, Rev),
+        fees            = reduce_if_defined(Terms#domain_PaymentsServiceTerms.fees, VS, Rev),
+        holds           = reduce_holds_terms(Terms#domain_PaymentsServiceTerms.holds, VS, Rev),
+        refunds         = reduce_refunds_terms(Terms#domain_PaymentsServiceTerms.refunds, VS, Rev)
+    };
+reduce_payments_terms(undefined, _, _) ->
+    undefined.
+
+reduce_holds_terms(#domain_PaymentHoldsServiceTerms{} = Terms, VS, Rev) ->
+    #domain_PaymentHoldsServiceTerms{
+        payment_methods = reduce_if_defined(Terms#domain_PaymentHoldsServiceTerms.payment_methods, VS, Rev),
+        lifetime        = reduce_if_defined(Terms#domain_PaymentHoldsServiceTerms.lifetime, VS, Rev)
+    };
+reduce_holds_terms(undefined, _, _) ->
+    undefined.
+
+reduce_refunds_terms(#domain_PaymentRefundsServiceTerms{} = Terms, VS, Rev) ->
+    #domain_PaymentRefundsServiceTerms{
+        payment_methods = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.payment_methods, VS, Rev),
+        fees            = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.fees, VS, Rev)
+    };
+reduce_refunds_terms(undefined, _, _) ->
+    undefined.
+
+reduce_if_defined(Selector, VS, Rev) when Selector =/= undefined ->
+    hg_selector:reduce(Selector, VS, Rev);
+reduce_if_defined(undefined, _, _) ->
+    undefined.
 
 get_template(TemplateRef, Revision) ->
     hg_domain:get(Revision, {contract_template, TemplateRef}).
@@ -517,13 +551,13 @@ add_interval(Timestamp, Interval) ->
     } = Interval,
     hg_datetime:add_interval(Timestamp, {YY, MM, DD}).
 
-compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp) ->
+compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp, Revision) ->
     ActiveAdjustments = lists:filter(fun(A) -> is_adjustment_active(A, Timestamp) end, Adjustments),
     % Adjustments are ordered from oldest to newest
     ActiveTermRefs = [TermsRef | [TRef || #domain_ContractAdjustment{terms = TRef} <- ActiveAdjustments]],
     ActiveTermSets = lists:map(
         fun(TRef) ->
-            get_term_set(TRef, Timestamp)
+            get_term_set(TRef, Timestamp, Revision)
         end,
         ActiveTermRefs
     ),
@@ -536,9 +570,7 @@ is_adjustment_active(
     hg_datetime:between(Timestamp, hg_utils:select_defined(ValidSince, CreatedAt), ValidUntil).
 
 
-get_term_set(TermsRef, Timestamp) ->
-    % FIXME revision as param?
-    Revision = hg_domain:head(),
+get_term_set(TermsRef, Timestamp, Revision) ->
     #domain_TermSetHierarchy{
         parent_terms = ParentRef,
         term_sets = TimedTermSets
@@ -548,7 +580,7 @@ get_term_set(TermsRef, Timestamp) ->
         undefined ->
             TermSet;
         #domain_TermSetHierarchyRef{} ->
-            ParentTermSet = get_term_set(ParentRef, Timestamp),
+            ParentTermSet = get_term_set(ParentRef, Timestamp, Revision),
             merge_term_sets([ParentTermSet, TermSet])
     end.
 
@@ -723,10 +755,12 @@ assert_shop_contract_valid(
     Timestamp,
     Revision
 ) ->
-    #domain_PaymentsServiceTerms{
-        currencies = CurrencySelector,
-        categories = CategorySelector
-    } = get_payments_service_terms(Contract, Timestamp),
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            currencies = CurrencySelector,
+            categories = CategorySelector
+        }
+    } = get_terms(Contract, Timestamp, Revision),
     case ShopAccount of
         #domain_ShopAccount{currency = CurrencyRef} ->
             Currencies = reduce_selector_to_value(CurrencySelector, #{}, Revision),

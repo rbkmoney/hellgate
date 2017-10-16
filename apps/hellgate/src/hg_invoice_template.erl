@@ -90,7 +90,22 @@ handle_function_('Delete', [UserInfo, TplID], _Opts) ->
     Party = get_party(Tpl#domain_InvoiceTemplate.owner_id),
     _     = get_shop(Tpl#domain_InvoiceTemplate.shop_id, Party),
     _     = set_meta(TplID),
-    call(TplID, delete).
+    call(TplID, delete);
+
+handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp], _Opts) ->
+    ok    = assume_user_identity(UserInfo),
+    _     = set_meta(TplID),
+    Tpl   = get_invoice_template(TplID),
+    ShopID = Tpl#domain_InvoiceTemplate.shop_id,
+    PartyID = Tpl#domain_InvoiceTemplate.owner_id,
+    ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp),
+    case Tpl#domain_InvoiceTemplate.cost of
+        {fixed, Cash} ->
+            Revision = hg_domain:head(),
+            hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+        _ ->
+            ShopTerms
+    end.
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
@@ -138,7 +153,7 @@ start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
 
 call(ID, Args) ->
-    map_error(hg_machine:call(?NS, {id, ID}, Args)).
+    map_error(hg_machine:call(?NS, ID, Args)).
 
 get_history(TplID) ->
     unmarshal(map_history_error(hg_machine:get_history(?NS, TplID))).
@@ -163,9 +178,7 @@ map_start_error({error, Reason}) ->
 map_history_error({ok, Result}) ->
     Result;
 map_history_error({error, notfound}) ->
-    throw(#payproc_InvoiceTemplateNotFound{});
-map_history_error({error, Reason}) ->
-    error(Reason).
+    throw(#payproc_InvoiceTemplateNotFound{}).
 
 %% Machine
 

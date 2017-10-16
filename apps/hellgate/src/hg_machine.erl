@@ -1,22 +1,23 @@
 -module(hg_machine).
 
--type id() :: dmsl_base_thrift:'ID'().
--type ref() :: dmsl_state_processing_thrift:'Reference'().
--type ns() :: dmsl_base_thrift:'Namespace'().
+-type id() :: mg_proto_base_thrift:'ID'().
+-type tag() :: {tag, mg_proto_base_thrift:'Tag'()}.
+-type ref() :: id() | tag().
+-type ns() :: mg_proto_base_thrift:'Namespace'().
 -type args() :: _.
 
--type machine() :: dmsl_state_processing_thrift:'Machine'().
+-type machine() :: mg_proto_state_processing_thrift:'Machine'().
 
 -type event() :: event(_).
 -type event(T) :: {event_id(), timestamp(), T}.
--type event_id() :: dmsl_base_thrift:'EventID'().
--type timestamp() :: dmsl_base_thrift:'Timestamp'().
+-type event_id() :: mg_proto_base_thrift:'EventID'().
+-type timestamp() :: mg_proto_base_thrift:'Timestamp'().
 
 -type history() :: history(_).
 -type history(T) :: [event(T)].
 
--type history_range() :: dmsl_state_processing_thrift:'HistoryRange'().
--type descriptor()    :: dmsl_state_processing_thrift:'MachineDescriptor'().
+-type history_range() :: mg_proto_state_processing_thrift:'HistoryRange'().
+-type descriptor()    :: mg_proto_state_processing_thrift:'MachineDescriptor'().
 
 -type result(T) :: {[T], hg_machine_action:t()}.
 -type result() :: result(_).
@@ -44,6 +45,8 @@
 }.
 
 -export_type([id/0]).
+-export_type([ref/0]).
+-export_type([tag/0]).
 -export_type([ns/0]).
 -export_type([event_id/0]).
 -export_type([event/0]).
@@ -78,7 +81,7 @@
 
 %%
 
--include_lib("dmsl/include/dmsl_state_processing_thrift.hrl").
+-include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 
 %%
@@ -102,20 +105,20 @@ call(Ns, Ref, Args) ->
             Error
     end.
 
--spec get_history(ns(), id()) ->
-    {ok, history()} | {error, notfound | failed} | no_return().
+-spec get_history(ns(), ref()) ->
+    {ok, history()} | {error, notfound} | no_return().
 
-get_history(Ns, ID) ->
-    get_history(Ns, ID, #'HistoryRange'{}).
+get_history(Ns, Ref) ->
+    get_history(Ns, Ref, #'HistoryRange'{}).
 
--spec get_history(ns(), id(), undefined | event_id(), undefined | non_neg_integer()) ->
-    {ok, history()} | {error, notfound | failed} | no_return().
+-spec get_history(ns(), ref(), undefined | event_id(), undefined | non_neg_integer()) ->
+    {ok, history()} | {error, notfound} | no_return().
 
-get_history(Ns, ID, AfterID, Limit) ->
-    get_history(Ns, ID, #'HistoryRange'{'after' = AfterID, limit = Limit}).
+get_history(Ns, Ref, AfterID, Limit) ->
+    get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit}).
 
-get_history(Ns, ID, Range) ->
-    Descriptor = prepare_descriptor(Ns, {id, ID}, Range),
+get_history(Ns, Ref, Range) ->
+    Descriptor = prepare_descriptor(Ns, Ref, Range),
     case call_automaton('GetMachine', [Descriptor]) of
         {ok, #'Machine'{history = History}} when is_list(History) ->
             {ok, unmarshal(History)};
@@ -175,11 +178,11 @@ handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
 -spec dispatch_signal(ns(), Signal, machine()) ->
     Result when
         Signal ::
-            dmsl_state_processing_thrift:'InitSignal'() |
-            dmsl_state_processing_thrift:'TimeoutSignal'() |
-            dmsl_state_processing_thrift:'RepairSignal'(),
+            mg_proto_state_processing_thrift:'InitSignal'() |
+            mg_proto_state_processing_thrift:'TimeoutSignal'() |
+            mg_proto_state_processing_thrift:'RepairSignal'(),
         Result ::
-            dmsl_state_processing_thrift:'SignalResult'().
+            mg_proto_state_processing_thrift:'SignalResult'().
 
 dispatch_signal(Ns, #'InitSignal'{arg = Payload}, #'Machine'{id = ID}) ->
     Args = unwrap_args(Payload),
@@ -214,8 +217,8 @@ marshal_signal_result({Events, Action}) ->
 
 -spec dispatch_call(ns(), Call, machine()) ->
     Result when
-        Call :: dmsl_state_processing_thrift:'Args'(),
-        Result :: dmsl_state_processing_thrift:'CallResult'().
+        Call :: mg_proto_state_processing_thrift:'Args'(),
+        Result :: mg_proto_state_processing_thrift:'CallResult'().
 
 dispatch_call(Ns, Payload, #'Machine'{history = History}) ->
     Args = unwrap_args(Payload),
@@ -314,6 +317,11 @@ unmarshal_term({bin, B}) ->
 prepare_descriptor(NS, Ref, Range) ->
     #'MachineDescriptor'{
         ns = NS,
-        ref = Ref,
+        ref = prepare_ref(Ref),
         range = Range
     }.
+
+prepare_ref(ID) when is_binary(ID) ->
+    {id, ID};
+prepare_ref({tag, Tag}) ->
+    {tag, Tag}.

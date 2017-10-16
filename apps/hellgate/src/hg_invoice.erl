@@ -20,6 +20,12 @@
 
 -export([process_callback/2]).
 
+%% Public interface
+
+-export([get/1]).
+-export([get_payment/2]).
+-export([get_payment_opts/1]).
+
 %% Woody handler called by hg_woody_wrapper
 
 -behaviour(hg_woody_wrapper).
@@ -51,6 +57,42 @@
 }).
 
 -type st() :: #st{}.
+
+-spec get(hg_machine:ref()) ->
+    {ok, st()} | {error, notfound}.
+
+get(Ref) ->
+    case hg_machine:get_history(?NS, Ref) of
+        {ok, History} ->
+            {ok, collapse_history(unmarshal(History))};
+        Error ->
+            Error
+    end.
+
+-spec get_payment(hg_machine:tag(), st()) ->
+    {ok, payment_st()} | {error, notfound}.
+
+get_payment({tag, Tag}, #st{payments = Ps}) ->
+    case lists:dropwhile(fun ({_, PS}) -> not lists:member(Tag, get_payment_tags(PS)) end, Ps) of
+        [{_ID, PaymentSession} | _] ->
+            {ok, PaymentSession};
+        [] ->
+            {error, notfound}
+    end.
+
+get_payment_tags(PaymentSession) ->
+    hg_invoice_payment:get_tags(PaymentSession).
+
+-spec get_payment_opts(st()) ->
+    hg_invoice_payment:opts().
+
+get_payment_opts(St = #st{invoice = Invoice}) ->
+    #{
+        party => checkout_party(St),
+        invoice => Invoice
+    }.
+
+%%
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
@@ -159,7 +201,19 @@ handle_function_('Fulfill', [UserInfo, InvoiceID, Reason], _Opts) ->
 handle_function_('Rescind', [UserInfo, InvoiceID, Reason], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
-    call(InvoiceID, {rescind, Reason}).
+    call(InvoiceID, {rescind, Reason});
+
+handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID),
+    St = assert_invoice_accessible(get_state(InvoiceID)),
+    ShopID = get_shop_id(St),
+    PartyID = get_party_id(St),
+    Timestamp = get_created_at(St),
+    ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp),
+    Revision = hg_domain:head(),
+    Cash = get_cost(St),
+    hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision).
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
@@ -206,7 +260,7 @@ set_invoicing_meta(InvoiceID, PaymentID) ->
     {ok, callback_response()} | {error, invalid_callback | notfound | failed} | no_return().
 
 process_callback(Tag, Callback) ->
-    case hg_machine:call(?NS, {tag, Tag}, {callback, Callback}) of
+    case hg_machine:call(?NS, {tag, Tag}, {callback, Tag, Callback}) of
         {ok, {ok, _} = Ok} ->
             Ok;
         {ok, {exception, invalid_callback}} ->
@@ -216,21 +270,22 @@ process_callback(Tag, Callback) ->
     end.
 
 %%
+
 -include("invoice_events.hrl").
 
-get_history(InvoiceID) ->
-    History = hg_machine:get_history(?NS, InvoiceID),
-    map_history_error(unmarshal_history_result(History)).
+get_history(Ref) ->
+    History = hg_machine:get_history(?NS, Ref),
+    unmarshal(map_history_error(History)).
 
-get_history(InvoiceID, AfterID, Limit) ->
-    History = hg_machine:get_history(?NS, InvoiceID, AfterID, Limit),
-    map_history_error(unmarshal_history_result(History)).
+get_history(Ref, AfterID, Limit) ->
+    History = hg_machine:get_history(?NS, Ref, AfterID, Limit),
+    unmarshal(map_history_error(History)).
 
-get_state(InvoiceID) ->
-    collapse_history(get_history(InvoiceID)).
+get_state(Ref) ->
+    collapse_history(get_history(Ref)).
 
-get_initial_state(InvoiceID) ->
-    collapse_history(get_history(InvoiceID, undefined, 1)).
+get_initial_state(Ref) ->
+    collapse_history(get_history(Ref, undefined, 1)).
 
 get_public_history(InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_invoice_event(InvoiceID, Ev) || Ev <- get_history(InvoiceID, AfterID, Limit)].
@@ -247,7 +302,7 @@ start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
 
 call(ID, Args) ->
-    map_error(hg_machine:call(?NS, {id, ID}, Args)).
+    map_error(hg_machine:call(?NS, ID, Args)).
 
 map_error({ok, CallResult}) ->
     case CallResult of
@@ -264,19 +319,12 @@ map_error({error, Reason}) ->
 map_history_error({ok, Result}) ->
     Result;
 map_history_error({error, notfound}) ->
-    throw(#payproc_InvoiceNotFound{});
-map_history_error({error, Reason}) ->
-    error(Reason).
+    throw(#payproc_InvoiceNotFound{}).
 
 map_start_error({ok, _}) ->
     ok;
 map_start_error({error, Reason}) ->
     error(Reason).
-
-unmarshal_history_result({ok, Result}) ->
-    {ok, unmarshal(Result)};
-unmarshal_history_result(Error) ->
-    Error.
 
 %%
 
@@ -469,13 +517,13 @@ handle_call({cancel_payment_adjustment, PaymentID, ID}, St) ->
         St
     );
 
-handle_call({callback, Callback}, St) ->
-    dispatch_callback(Callback, St).
+handle_call({callback, Tag, Callback}, St) ->
+    dispatch_callback(Tag, Callback, St).
 
-dispatch_callback({provider, Payload}, St = #st{activity = {payment, PaymentID}}) ->
+dispatch_callback(Tag, {provider, Payload}, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
-    process_payment_call({callback, Payload}, PaymentID, PaymentSession, St);
-dispatch_callback(_Callback, _St) ->
+    process_payment_call({callback, Tag, Payload}, PaymentID, PaymentSession, St);
+dispatch_callback(_Tag, _Callback, _St) ->
     throw(invalid_callback).
 
 assert_invoice_status(Status, #st{invoice = Invoice}) ->
@@ -576,12 +624,6 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St) ->
         state    => St
     }.
 
-get_payment_opts(St = #st{invoice = Invoice}) ->
-    #{
-        party => checkout_party(St),
-        invoice => Invoice
-    }.
-
 checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp}}) ->
     PartyID = get_party_id(St),
     hg_party_machine:checkout(PartyID, CreationTimestamp).
@@ -653,6 +695,12 @@ get_party_id(#st{invoice = #domain_Invoice{owner_id = PartyID}}) ->
 
 get_shop_id(#st{invoice = #domain_Invoice{shop_id = ShopID}}) ->
     ShopID.
+
+get_created_at(#st{invoice = #domain_Invoice{created_at = CreatedAt}}) ->
+    CreatedAt.
+
+get_cost(#st{invoice = #domain_Invoice{cost = Cash}}) ->
+    Cash.
 
 get_payment_session(PaymentID, St) ->
     case try_get_payment_session(PaymentID, St) of

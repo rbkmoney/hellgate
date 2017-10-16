@@ -35,7 +35,7 @@ get_service_spec(invoice_templating, #{}) ->
     {?VERSION_PREFIX ++ "/processing/invoice_templating", Service};
 
 get_service_spec(processor, #{namespace := Ns}) when is_binary(Ns) ->
-    Service = {dmsl_state_processing_thrift, 'Processor'},
+    Service = {mg_proto_state_processing_thrift, 'Processor'},
     {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), Service};
 
 get_service_spec(proxy_host_provider, #{}) ->
