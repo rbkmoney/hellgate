@@ -59,6 +59,7 @@
 -export([make_tds_payment_tool/0]).
 -export([make_simple_payment_tool/0]).
 -export([make_bad_payment_tool/0]).
+-export([is_bad_payment_tool/1]).
 -export([make_disposable_payment_resource/0]).
 -export([make_meta_ns/0]).
 -export([make_meta_data/0]).
@@ -640,6 +641,12 @@ make_bad_payment_tool() ->
         }},
         <<"SESSION00">>
     }.
+
+-spec is_bad_payment_tool(hg_domain_thrift:'PaymentTool'()) -> boolean().
+
+is_bad_payment_tool(PaymentTool) ->
+    {BadPaymentTool, _} = make_bad_payment_tool(),
+    BadPaymentTool =:= PaymentTool.
 
 -spec make_disposable_payment_resource() ->
     {
