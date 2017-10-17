@@ -64,6 +64,8 @@
 -export([make_meta_data/1]).
 -export([get_hellgate_url/0]).
 
+-export([make_trace_id/1]).
+
 
 -include("hg_ct_domain.hrl").
 -include("hg_ct_json.hrl").
@@ -692,3 +694,11 @@ make_due_date() ->
 
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
+
+%%
+
+-spec make_trace_id(term()) -> woody:trace_id().
+
+make_trace_id(Prefix) ->
+    B = genlib:to_binary(Prefix),
+    iolist_to_binary([binary:part(B, 0, min(byte_size(B), 20)), $., hg_utils:unique_id()]).
