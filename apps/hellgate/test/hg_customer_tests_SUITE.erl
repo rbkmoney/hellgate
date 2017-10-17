@@ -281,7 +281,7 @@ start_two_bindings(C) ->
     CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = hg_client_customer:get(CustomerID, Client),
-    Bindings = [CustomerBinding1, CustomerBinding2],
+    true = sets:from_list(Bindings) =:= sets:from_list([CustomerBinding1, CustomerBinding2]),
     [
         ?customer_created(_Customer)
     ] = next_event(CustomerID, Client),
@@ -312,7 +312,7 @@ start_two_bindings_w_tds(C) ->
     CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = hg_client_customer:get(CustomerID, Client),
-    Bindings = [CustomerBinding1, CustomerBinding2],
+    true = sets:from_list(Bindings) =:= sets:from_list([CustomerBinding1, CustomerBinding2]),
     [
         ?customer_created(_Customer)
     ] = next_event(CustomerID, Client),
