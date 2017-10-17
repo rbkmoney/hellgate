@@ -937,8 +937,7 @@ payment_hold_cancellation(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_unpaid()),
         [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client),
-    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_hold_auto_cancellation(config()) -> _ | no_return().
 
@@ -954,12 +953,11 @@ payment_hold_auto_cancellation(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_finished(?session_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?cancelled()))
-    ] = next_event(InvoiceID, 3000, Client),
+    ] = next_event(InvoiceID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_unpaid()),
         [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client),
-    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_hold_capturing(config()) -> _ | no_return().
 
@@ -994,7 +992,7 @@ payment_hold_auto_capturing(C) ->
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?captured())),
         ?invoice_status_changed(?invoice_paid())
-    ] = next_event(InvoiceID, 3000, Client).
+    ] = next_event(InvoiceID, Client).
 
 %%
 
