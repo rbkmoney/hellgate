@@ -276,8 +276,8 @@ recurrent_paytool_abandoned(C) ->
 %%
 
 make_bad_recurrent_paytool_params(PartyID, ShopID) ->
-    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
-    PaymentResource = make_bad_disposable_payment_resource(PaymentTool, Session),
+    {PaymentTool, Session} = hg_ct_helper:make_bad_payment_tool(),
+    PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
         party_id = PartyID,
         shop_id = ShopID,
@@ -307,15 +307,6 @@ make_disposable_payment_resource(PaymentTool, Session) ->
         payment_tool = PaymentTool,
         payment_session_id = Session,
         client_info = #domain_ClientInfo{}
-    }.
-
-make_bad_disposable_payment_resource(PaymentTool, Session) ->
-    #domain_DisposablePaymentResource{
-        payment_tool = PaymentTool,
-        payment_session_id = Session,
-        client_info = #domain_ClientInfo{
-            fingerprint = <<"badparams">>
-        }
     }.
 
 %%

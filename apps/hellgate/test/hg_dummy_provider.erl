@@ -127,9 +127,9 @@ handle_function(
 % Recurrent tokens
 %
 
-generate_token(undefined, TokenInfo, _Opts) ->
-    case get_client_info(get_disposable_payment_resource(get_rec_payment_tool(TokenInfo))) of
-        #domain_ClientInfo{fingerprint = <<"badparams">>} ->
+generate_token(undefined, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
+    case get_resource_type(PaymentTool) of
+        {bank_card, bad_card} ->
             #prxprv_RecurrentTokenProxyResult{
                 intent = ?recurrent_token_finish_w_failure(#'Failure'{code = <<"badparams">>})
             };
@@ -288,21 +288,15 @@ get_payment_resource_type(
 ) ->
     recurrent.
 
-get_rec_payment_tool(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}) ->
-    PaymentTool.
-
-get_disposable_payment_resource(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
-    PaymentResource.
-
-get_client_info(#domain_DisposablePaymentResource{client_info = ClientInfo}) ->
-    ClientInfo.
-
 get_resource_type(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
     Type = get_payment_tool(PaymentResource),
     Token3DS = hg_ct_helper:bank_card_tds_token(),
+    {{bank_card, #domain_BankCard{bin = Bin}}, _} = hg_ct_helper:make_bad_payment_tool(),
     case Type of
         {'bank_card', #domain_BankCard{token = Token3DS}} ->
             {bank_card, with_tds};
+        {'bank_card', #domain_BankCard{bin = Bin}} ->
+            {bank_card, bad_card};
         {'bank_card', _} ->
             {bank_card, without_tds}
     end.

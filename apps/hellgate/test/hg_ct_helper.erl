@@ -58,6 +58,7 @@
 -export([make_terminal_payment_tool/0]).
 -export([make_tds_payment_tool/0]).
 -export([make_simple_payment_tool/0]).
+-export([make_bad_payment_tool/0]).
 -export([make_disposable_payment_resource/0]).
 -export([make_meta_ns/0]).
 -export([make_meta_data/0]).
@@ -625,6 +626,19 @@ make_simple_payment_tool() ->
             masked_pan     = <<"4242">>
         }},
         <<"SESSION42">>
+    }.
+
+-spec make_bad_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+
+make_bad_payment_tool() ->
+    {
+        {bank_card, #domain_BankCard{
+            token          = bank_card_simple_token(),
+            payment_system = visa,
+            bin            = <<"000000">>,
+            masked_pan     = <<"0000">>
+        }},
+        <<"SESSION00">>
     }.
 
 -spec make_disposable_payment_resource() ->

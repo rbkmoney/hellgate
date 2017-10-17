@@ -225,9 +225,9 @@ start_binding_w_failure(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
-    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    {PaymentTool, Session} = hg_ct_helper:make_bad_payment_tool(),
     CustomerBindingParams = #payproc_CustomerBindingParams{
-        payment_resource = make_bad_disposable_payment_resource(PaymentTool, Session)
+        payment_resource = make_disposable_payment_resource(PaymentTool, Session)
     },
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
@@ -469,15 +469,6 @@ next_event(CustomerID, Client) ->
     end.
 
 %%
-
-make_bad_disposable_payment_resource(PaymentTool, Session) ->
-    #domain_DisposablePaymentResource{
-        payment_tool = PaymentTool,
-        payment_session_id = Session,
-        client_info = #domain_ClientInfo{
-            fingerprint = <<"badparams">>
-        }
-    }.
 
 make_disposable_payment_resource(PaymentTool, Session) ->
     #domain_DisposablePaymentResource{
