@@ -27,6 +27,8 @@
     {finish, #'FinishIntent'{status = {success, #'Success'{}}}}).
 -define(recurrent_token_finish(Token),
     {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
+-define(recurrent_token_finish_w_failure(Failure),
+    {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {failure, Failure}}}).
 
 -spec get_service_spec() ->
     hg_proto:service_spec().
@@ -125,8 +127,15 @@ handle_function(
 % Recurrent tokens
 %
 
-generate_token(undefined, _TokenInfo, _Opts) ->
-    token_sleep(1, <<"sleeping">>);
+generate_token(undefined, TokenInfo, _Opts) ->
+    case get_client_info(get_disposable_payment_resource(get_rec_payment_tool(TokenInfo))) of
+        #domain_ClientInfo{fingerprint = <<"badparams">>} ->
+            #prxprv_RecurrentTokenProxyResult{
+                intent = ?recurrent_token_finish_w_failure(#'Failure'{code = <<"badparams">>})
+            };
+        _ ->
+            token_sleep(1, <<"sleeping">>)
+    end;
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
     case get_resource_type(PaymentTool) of
         {bank_card, with_tds} ->
@@ -278,6 +287,15 @@ get_payment_resource_type(
     {recurrent_payment_resource, _}
 ) ->
     recurrent.
+
+get_rec_payment_tool(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}) ->
+    PaymentTool.
+
+get_disposable_payment_resource(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
+    PaymentResource.
+
+get_client_info(#domain_DisposablePaymentResource{client_info = ClientInfo}) ->
+    ClientInfo.
 
 get_resource_type(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
     Type = get_payment_tool(PaymentResource),

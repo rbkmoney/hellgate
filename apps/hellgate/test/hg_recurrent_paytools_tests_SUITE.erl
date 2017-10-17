@@ -19,6 +19,7 @@
 -export([get_recurrent_paytool/1]).
 -export([recurrent_paytool_not_found/1]).
 -export([recurrent_paytool_abandoned/1]).
+-export([recurrent_paytool_acquirement_failed/1]).
 -export([recurrent_paytool_acquired/1]).
 -export([recurrent_paytool_w_tds_acquired/1]).
 
@@ -83,6 +84,7 @@ all() ->
         {group, invalid_recurrent_paytool_params},
         recurrent_paytool_not_found,
         get_recurrent_paytool,
+        recurrent_paytool_acquirement_failed,
         recurrent_paytool_acquired,
         recurrent_paytool_w_tds_acquired,
         recurrent_paytool_abandoned
@@ -193,6 +195,7 @@ invalid_shop_status(C) ->
 
 -spec recurrent_paytool_not_found(config()) -> test_case_result().
 -spec get_recurrent_paytool(config()) -> test_case_result().
+-spec recurrent_paytool_acquirement_failed(config()) -> test_case_result().
 -spec recurrent_paytool_abandoned(config()) -> test_case_result().
 -spec recurrent_paytool_acquired(config()) -> test_case_result().
 
@@ -212,6 +215,19 @@ get_recurrent_paytool(C) ->
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     RecurrentPaytool = hg_client_recurrent_paytool:get(RecurrentPaytoolID, Client).
+
+recurrent_paytool_acquirement_failed(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_bad_recurrent_paytool_params(PartyID, ShopID),
+    RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
+    #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
+    [
+        ?recurrent_payment_tool_has_created(_, _, _),
+        ?session_ev(?session_started())
+    ] = next_event(RecurrentPaytoolID, Client),
+    ok = await_failure(RecurrentPaytoolID, Client).
 
 recurrent_paytool_acquired(C) ->
     Client = cfg(client, C),
@@ -259,6 +275,15 @@ recurrent_paytool_abandoned(C) ->
 
 %%
 
+make_bad_recurrent_paytool_params(PartyID, ShopID) ->
+    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
+    PaymentResource = make_bad_disposable_payment_resource(PaymentTool, Session),
+    #payproc_RecurrentPaymentToolParams{
+        party_id = PartyID,
+        shop_id = ShopID,
+        payment_resource = PaymentResource
+    }.
+
 make_recurrent_paytool_params(PartyID, ShopID) ->
     {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
@@ -282,6 +307,15 @@ make_disposable_payment_resource(PaymentTool, Session) ->
         payment_tool = PaymentTool,
         payment_session_id = Session,
         client_info = #domain_ClientInfo{}
+    }.
+
+make_bad_disposable_payment_resource(PaymentTool, Session) ->
+    #domain_DisposablePaymentResource{
+        payment_tool = PaymentTool,
+        payment_session_id = Session,
+        client_info = #domain_ClientInfo{
+            fingerprint = <<"badparams">>
+        }
     }.
 
 %%
@@ -339,6 +373,13 @@ await_acquirement_finish(RecurrentPaytoolID, Client) ->
         ?session_ev(?trx_bound(?trx_info(_))),
         ?session_ev(?session_finished(?session_succeeded())),
         ?recurrent_payment_tool_has_acquired(_)
+    ] = next_event(RecurrentPaytoolID, Client),
+    ok.
+
+await_failure(RecurrentPaytoolID, Client) ->
+    [
+        ?session_ev(?session_finished(?session_failed(_))),
+        ?recurrent_payment_tool_has_failed(_)
     ] = next_event(RecurrentPaytoolID, Client),
     ok.
 
