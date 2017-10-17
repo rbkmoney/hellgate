@@ -920,7 +920,7 @@ consistent_history(C) ->
 payment_hold_cancellation(C) ->
     Client = cfg(client, C),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(5), 10000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(6), 10000, C),
     PaymentParams = make_payment_params({hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
@@ -937,14 +937,15 @@ payment_hold_cancellation(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_unpaid()),
         [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
 -spec payment_hold_auto_cancellation(config()) -> _ | no_return().
 
 payment_hold_auto_cancellation(C) ->
     Client = cfg(client, C),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(5), 10000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(6), 10000, C),
     PaymentParams = make_payment_params({hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     [
@@ -957,7 +958,8 @@ payment_hold_auto_cancellation(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_unpaid()),
         [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
 -spec payment_hold_capturing(config()) -> _ | no_return().
 
