@@ -27,6 +27,8 @@
     {finish, #'FinishIntent'{status = {success, #'Success'{}}}}).
 -define(recurrent_token_finish(Token),
     {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
+-define(recurrent_token_finish_w_failure(Failure),
+    {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {failure, Failure}}}).
 
 -spec get_service_spec() ->
     hg_proto:service_spec().
@@ -125,8 +127,25 @@ handle_function(
 % Recurrent tokens
 %
 
-generate_token(undefined, _TokenInfo, _Opts) ->
-    token_sleep(1, <<"sleeping">>);
+generate_token(
+    undefined,
+    #prxprv_RecurrentTokenInfo{
+        payment_tool = #prxprv_RecurrentPaymentTool{
+            payment_resource = #domain_DisposablePaymentResource{
+                payment_tool = PaymentTool
+            }
+        }
+    },
+    _Opts
+) ->
+    case hg_ct_helper:is_bad_payment_tool(PaymentTool) of
+        true ->
+            #prxprv_RecurrentTokenProxyResult{
+                intent = ?recurrent_token_finish_w_failure(#'Failure'{code = <<"badparams">>})
+            };
+        false ->
+            token_sleep(1, <<"sleeping">>)
+    end;
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
     case get_resource_type(PaymentTool) of
         {bank_card, with_tds} ->

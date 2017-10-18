@@ -18,6 +18,7 @@
 
 -export([create_customer/1]).
 -export([delete_customer/1]).
+-export([start_binding_w_failure/1]).
 -export([start_binding/1]).
 -export([start_binding_w_tds/1]).
 -export([start_two_bindings/1]).
@@ -96,6 +97,7 @@ groups() ->
         {basic_customer_methods, [sequence], [
             create_customer,
             delete_customer,
+            start_binding_w_failure,
             start_binding,
             start_binding_w_tds,
             start_two_bindings,
@@ -191,6 +193,7 @@ invalid_shop_status(C) ->
 
 -spec create_customer(config()) -> test_case_result().
 -spec delete_customer(config()) -> test_case_result().
+-spec start_binding_w_failure(config()) -> test_case_result().
 -spec start_binding(config()) -> test_case_result().
 -spec start_binding_w_tds(config()) -> test_case_result().
 -spec start_two_bindings(config()) -> test_case_result().
@@ -214,6 +217,31 @@ delete_customer(C) ->
     #payproc_Customer{id = CustomerID} = Customer,
     ok = hg_client_customer:delete(CustomerID, Client),
     {exception, #'payproc_CustomerNotFound'{}} = hg_client_customer:get(CustomerID, Client).
+
+start_binding_w_failure(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    {PaymentTool, Session} = hg_ct_helper:make_bad_payment_tool(),
+    CustomerBindingParams = #payproc_CustomerBindingParams{
+        payment_resource = make_disposable_payment_resource(PaymentTool, Session)
+    },
+    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    Customer1 = hg_client_customer:get(CustomerID, Client),
+    #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
+    Bindings = [CustomerBinding],
+    [
+        ?customer_created(_)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(_, ?customer_binding_started(_))
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_failed(_)))
+    ] = next_event(CustomerID, Client).
 
 start_binding(C) ->
     Client = cfg(client, C),
