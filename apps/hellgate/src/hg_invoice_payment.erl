@@ -790,13 +790,18 @@ process_call({callback, Tag, Payload}, St, Options) ->
 process_callback(Tag, Payload, St) ->
     Action = hg_machine_action:new(),
     Session = get_active_session(St),
+    process_callback(Tag, Payload, Action, Session, St).
+
+process_callback(Tag, Payload, Action, Session, St) when Session /= undefined ->
     case {get_session_status(Session), get_session_tags(Session)} of
         {suspended, [Tag | _]} ->
-            % FIXME This may cause some missed callbacks during some time after update
             handle_callback(Payload, Action, St);
         _ ->
             throw(invalid_callback)
-    end.
+    end;
+
+process_callback(_Tag, _Payload, _Action, undefined, _St) ->
+    throw(invalid_callback).
 
 process_callback_timeout(Action, St) ->
     Session = get_active_session(St),
