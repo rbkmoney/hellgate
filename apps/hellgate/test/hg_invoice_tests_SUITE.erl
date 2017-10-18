@@ -595,6 +595,7 @@ invalid_payment_adjustment(C) ->
     %% no way to create adjustment for a payment not yet finished
     ?invalid_payment_status(?pending()) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_process_failure(InvoiceID, PaymentID, Client),
     %% no way to create adjustment for a failed payment
     ?invalid_payment_status(?failed(_)) =
@@ -918,8 +919,12 @@ payment_hold_auto_capturing(C) ->
     Client = cfg(client, C),
     ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params({hold, capture}),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentParams = make_tds_payment_params({hold, capture}),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
+    _ = assert_success_post_request(get_post_request(UserInteraction)),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    _ = assert_invalid_post_request(get_post_request(UserInteraction)),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, undefined, Client).
 
 %%
