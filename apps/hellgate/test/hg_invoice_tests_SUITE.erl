@@ -6,6 +6,7 @@
 -include_lib("hellgate/include/domain.hrl").
 
 -export([all/0]).
+-export([groups/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
 -export([init_per_testcase/2]).
@@ -57,11 +58,12 @@ init([]) ->
 
 -type config() :: hg_ct_helper:config().
 -type test_case_name() :: hg_ct_helper:test_case_name().
+-type group_name() :: hg_ct_helper:group_name().
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
 
--spec all() -> [test_case_name()].
+-spec all() -> [test_case_name() | {group, group_name()}].
 
 all() ->
     [
@@ -91,16 +93,25 @@ all() ->
         invalid_payment_w_deprived_party,
         external_account_posting,
 
-        payment_hold_cancellation,
-        payment_hold_auto_cancellation,
-        payment_hold_capturing,
-        payment_hold_auto_capturing,
+        {group, holds_management},
 
         payment_refund_success,
 
         terms_retrieval,
 
         consistent_history
+    ].
+
+-spec groups() -> [{group_name(), list(), [test_case_name()]}].
+
+groups() ->
+    [
+        {holds_management, [parallel], [
+            payment_hold_cancellation,
+            payment_hold_auto_cancellation,
+            payment_hold_capturing,
+            payment_hold_auto_capturing
+        ]}
     ].
 
 %% starting/stopping
@@ -118,20 +129,26 @@ init_per_suite(C) ->
     PartyID = hg_utils:unique_id(),
     Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(RootUrl)),
     ShopID = hg_ct_helper:create_party_and_shop(Client),
-    [
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    _ = unlink(SupPid),
+    NewC = [
         {party_id, PartyID},
         {party_client, Client},
         {shop_id, ShopID},
         {root_url, RootUrl},
-        {apps, Apps}
+        {apps, Apps},
+        {test_sup, SupPid}
         | C
-    ].
+    ],
+    ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
+    NewC.
 
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
-    [application:stop(App) || App <- cfg(apps, C)].
+    [application:stop(App) || App <- cfg(apps, C)],
+    exit(cfg(test_sup, C), shutdown).
 
 %% tests
 
@@ -176,13 +193,11 @@ init_per_testcase(_Name, C) ->
     init_per_testcase(C).
 
 init_per_testcase(C) ->
-    PartyID = cfg(party_id, C),
-    UserInfo = make_userinfo(PartyID),
+    UserInfo = make_userinfo(cfg(party_id, C)),
     ApiClient = hg_client_api:new(cfg(root_url, C)),
     Client = hg_client_invoicing:start_link(UserInfo, ApiClient),
     ClientTpl = hg_client_invoice_templating:start_link(UserInfo, ApiClient),
-    {ok, SupPid} = supervisor:start_link(?MODULE, []),
-    [{client, Client}, {client_tpl, ClientTpl}, {test_sup, SupPid} | C].
+    [{client, Client}, {client_tpl, ClientTpl} | C].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
@@ -192,9 +207,7 @@ end_per_testcase(_Name, C) ->
             ok = hg_domain:reset(Revision);
         undefined ->
             ok
-    end,
-    _ = unlink(cfg(test_sup, C)),
-    exit(cfg(test_sup, C), shutdown).
+    end.
 
 -spec invalid_invoice_shop(config()) -> _ | no_return().
 
@@ -419,7 +432,6 @@ overdue_invoice_cancellation(C) ->
 
 invoice_cancellation_after_payment_timeout(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(3), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -457,7 +469,6 @@ invalid_payment_amount(C) ->
 
 payment_success(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -471,7 +482,6 @@ payment_success(C) ->
 
 payment_w_terminal_success(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberruble">>, make_due_date(10), 42000, C),
     PaymentParams = make_terminal_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -499,7 +509,6 @@ payment_w_terminal_success(C) ->
 
 payment_success_on_second_try(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -526,7 +535,6 @@ payment_success_on_second_try(C) ->
 
 payment_fail_after_silent_callback(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
     PaymentID = process_payment(InvoiceID, make_tds_payment_params(), Client),
     [
@@ -552,7 +560,6 @@ payment_fail_after_silent_callback(C) ->
 
 invoice_success_on_third_payment(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID1 = process_payment(InvoiceID, PaymentParams, Client),
@@ -581,7 +588,6 @@ invoice_success_on_third_payment(C) ->
 
 payment_risk_score_check(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     % Invoice w/ cost < 500000
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
@@ -629,7 +635,6 @@ payment_risk_score_check(C) ->
 
 invalid_payment_adjustment(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a smoker's payment
     PaymentParams = make_tds_payment_params(),
@@ -649,7 +654,6 @@ invalid_payment_adjustment(C) ->
 
 payment_adjustment_success(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a healthy man's payment
     PaymentParams = make_payment_params(),
@@ -811,7 +815,6 @@ invalid_payment_w_deprived_party(C) ->
     PartyClient = hg_client_party:start(UserInfo, PartyID, hg_client_api:new(RootUrl)),
     InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
     ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
@@ -829,7 +832,6 @@ external_account_posting(C) ->
     InvoicingClient = hg_client_invoicing:start_link(UserInfo, hg_client_api:new(RootUrl)),
     _ = hg_ct_helper:create_party_and_shop(PartyClient),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
@@ -871,7 +873,6 @@ payment_refund_success(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     RefundParams = make_refund_params(),
     % not finished yet
@@ -919,7 +920,6 @@ consistent_history(C) ->
 
 payment_hold_cancellation(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(6), 10000, C),
     PaymentParams = make_payment_params({hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -944,7 +944,6 @@ payment_hold_cancellation(C) ->
 
 payment_hold_auto_cancellation(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(6), 10000, C),
     PaymentParams = make_payment_params({hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -965,7 +964,6 @@ payment_hold_auto_cancellation(C) ->
 
 payment_hold_capturing(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params({hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -983,7 +981,6 @@ payment_hold_capturing(C) ->
 
 payment_hold_auto_capturing(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params({hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -1002,7 +999,6 @@ payment_hold_auto_capturing(C) ->
 
 terms_retrieval(C) ->
     Client = cfg(client, C),
-    ok = start_proxies([{hg_dummy_provider, 1, C}, {hg_dummy_inspector, 2, C}]),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 1500, C),
     TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
