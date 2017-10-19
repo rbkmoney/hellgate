@@ -559,11 +559,7 @@ payment_risk_score_check(C) ->
         )),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
-    [
-        ?payment_ev(PaymentID1, ?session_ev(?processed(), ?trx_bound(_))),
-        ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID1, ?payment_status_changed(?processed()))
-    ] = next_event(InvoiceID1, Client),
+    PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client),
     % Invoice w/ 500000 < cost < 100000000
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
@@ -577,11 +573,7 @@ payment_risk_score_check(C) ->
         )),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
-    [
-        ?payment_ev(PaymentID2, ?session_ev(?processed(), ?trx_bound(_))),
-        ?payment_ev(PaymentID2, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID2, ?payment_status_changed(?processed()))
-    ] = next_event(InvoiceID2, Client),
+    PaymentID2 = await_payment_process_finish(InvoiceID2, PaymentID2, Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
     % Invoice w/ 100000000 =< cost
     InvoiceID3 = start_invoice(<<"rubbersocks">>, make_due_date(10), 100000000, C),
@@ -618,11 +610,7 @@ payment_adjustment_success(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), _, _, CF1)),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(_))),
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
-    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
     SysAccount1 = get_cashflow_account({system, settlement}, CF1),
@@ -798,11 +786,7 @@ external_account_posting(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), low, _, CF)),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, InvoicingClient),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(_))),
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
-    ] = next_event(InvoiceID, InvoicingClient),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
         AccountID ||
