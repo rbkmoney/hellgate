@@ -28,7 +28,6 @@
 
 -export([make_invoice_tpl_create_params/5]).
 -export([make_invoice_tpl_create_params/6]).
--export([make_invoice_tpl_details/1]).
 -export([make_invoice_tpl_details/2]).
 
 -export([make_invoice_tpl_update_params/1]).
@@ -429,12 +428,6 @@ make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, Cont
         details          = Details,
         context          = Context
     }.
-
--spec make_invoice_tpl_details(dmsl_domain_thrift:'InvoiceCart'()) ->
-    invoice_tpl_details().
-
-make_invoice_tpl_details(#domain_InvoiceCart{} = Cart) ->
-    {cart, Cart}.
 
 -spec make_invoice_tpl_details(binary(), cost()) ->
     invoice_tpl_details().

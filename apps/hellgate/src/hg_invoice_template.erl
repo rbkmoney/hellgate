@@ -570,7 +570,7 @@ unmarshal(details, [<<"template_product">>, Product]) ->
         metadata = unmarshal(metadata, genlib_map:get(<<"metadata">>, Product))
     }};
 
-unmarshal(cart, Lines) when is_list(Lines) ->
+unmarshal(cart, #{<<"lines">> := Lines}) when is_list(Lines) ->
     #domain_InvoiceCart{lines = [unmarshal(line, Line) || Line <- Lines]};
 
 unmarshal(line, #{

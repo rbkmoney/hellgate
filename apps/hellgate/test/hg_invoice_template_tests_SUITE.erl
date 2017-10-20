@@ -26,6 +26,7 @@
 -export([update_invalid_cost_fixed_currency/1]).
 -export([update_invalid_cost_range/1]).
 -export([update_invoice_template/1]).
+-export([update_with_cart/1]).
 -export([delete_invalid_party_status/1]).
 -export([delete_invalid_shop_status/1]).
 -export([delete_invoice_template/1]).
@@ -63,6 +64,7 @@ all() ->
         update_invalid_cost_fixed_currency,
         update_invalid_cost_range,
         update_invoice_template,
+        update_with_cart,
         delete_invalid_party_status,
         delete_invalid_shop_status,
         delete_invoice_template,
@@ -358,6 +360,38 @@ update_cost(Cost, Tpl, Client) ->
         make_invoice_tpl_update_params(#{details => NewDetails}),
         Client
     ).
+
+-spec update_with_cart(config()) -> _ | no_return().
+
+update_with_cart(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    ?invoice_tpl(TplID) = create_invoice_tpl(C),
+    NewDetails = {cart, #domain_InvoiceCart{lines = [
+        #domain_InvoiceLine{
+            product = <<"Awesome staff #1">>,
+            quantity = 2,
+            price = ?cash(1000, <<"RUB">>),
+            metadata = #{}
+        },
+        #domain_InvoiceLine{
+            product = <<"Awesome staff #2">>,
+            quantity = 1,
+            price = ?cash(10000, <<"RUB">>),
+            metadata = #{<<"SomeKey">> => {b, true}}
+        }
+    ]}},
+    Diff = make_invoice_tpl_update_params(#{
+        details => NewDetails
+    }),
+    #domain_InvoiceTemplate{
+        id = TplID,
+        owner_id = PartyID,
+        shop_id = ShopID,
+        details = NewDetails
+    } = hg_client_invoice_templating:update(TplID, Diff, Client),
+    #domain_InvoiceTemplate{} = hg_client_invoice_templating:get(TplID, Client).
 
 -spec delete_invalid_party_status(config()) -> _ | no_return().
 
