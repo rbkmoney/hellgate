@@ -2220,7 +2220,7 @@ unmarshal(payer, #{
         unmarshal(contact_info, ContactInfo)
     );
 
-unmarshal(payer, [1, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo)]) ->
+unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo)) ->
     Resource = #{
         <<"payment_tool">>         => PaymentTool,
         <<"payment_session_id">>   => SessionId,
