@@ -2204,12 +2204,12 @@ unmarshal(payer, [2, #{
         hg_payment_tool:unmarshal(PaymentTool)
     );
 
-unmarshal(payer, [1, #{
+unmarshal(payer, #{
     <<"payment_tool">>  := PaymentTool,
     <<"session_id">>    := SessionId,
     <<"client_info">>   := ClientInfo,
     <<"contact_info">>  := ContactInfo
-}]) ->
+}) ->
     Resource = #{
         <<"payment_tool">>         => PaymentTool,
         <<"payment_session_id">>   => SessionId,
