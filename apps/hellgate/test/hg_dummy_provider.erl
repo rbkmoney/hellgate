@@ -199,12 +199,7 @@ token_respond(Response, CallbackResult) ->
 % Payments
 %
 
-process_payment(?processed(), undefined, _, _) ->
-    sleep(1, <<"sleeping">>);
-process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
-    finish(get_payment_id(PaymentInfo));
-
-process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
+process_payment(?processed(), undefined, PaymentInfo, _) ->
     case get_payment_resource_type(PaymentInfo) of
         {bank_card, with_tds} ->
             Tag = generate_payment_tag(),
@@ -232,18 +227,21 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>)
     end;
-process_payment(?captured(), <<"sleeping">>, PaymentInfo, _) ->
+process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
+    finish(get_payment_id(PaymentInfo));
+
+process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
     finish(get_payment_id(PaymentInfo));
 
 process_payment(?cancelled(), _, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo)).
 
-handle_payment_callback(?LAY_LOW_BUDDY, ?captured(), <<"suspended">>, _PaymentInfo, _Opts) ->
+handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
         intent     = undefined,
         next_state = <<"suspended">>
     });
-handle_payment_callback(Tag, ?captured(), <<"suspended">>, PaymentInfo, _Opts) ->
+handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) ->
     {{ok, PaymentInfo}, _} = get_payment_info(Tag),
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
         intent     = ?sleep(1),
@@ -382,8 +380,8 @@ callback_to_hell(Tag, Payload) ->
             200;
         {{error, _}, _} ->
             500;
-        {{exception, _}, _} ->
-            500
+        {{exception, #'InvalidRequest'{}}, _} ->
+            400
     end.
 
 
