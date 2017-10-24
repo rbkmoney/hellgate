@@ -71,3 +71,6 @@ distclean:
 # CALL_W_CONTAINER
 test: submodules
 	$(REBAR) ct
+
+test.%: apps/hellgate/test/hg_%_tests_SUITE.erl
+	$(REBAR) ct --suite=$^

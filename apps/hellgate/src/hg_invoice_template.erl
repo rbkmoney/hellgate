@@ -17,8 +17,8 @@
 -export([namespace/0]).
 
 -export([init/2]).
--export([process_signal/2]).
--export([process_call/2]).
+-export([process_signal/3]).
+-export([process_call/3]).
 
 %% Event provider callbacks
 
@@ -182,8 +182,6 @@ map_history_error({error, notfound}) ->
 
 %% Machine
 
--type ev()            :: dmsl_payment_processing_thrift:'EventPayload'().
-
 -type create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
 -type update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
 -type call()          :: {update, update_params()} | delete.
@@ -223,7 +221,7 @@ namespace() ->
 
 init(ID, Params) ->
     Tpl = create_invoice_template(ID, Params),
-    {[marshal([?tpl_created(Tpl)])], hg_machine_action:new()}.
+    #{events => [marshal([?tpl_created(Tpl)])]}.
 
 create_invoice_template(ID, P) ->
     #domain_InvoiceTemplate{
@@ -237,25 +235,22 @@ create_invoice_template(ID, P) ->
         context          = P#payproc_InvoiceTemplateCreateParams.context
     }.
 
--spec process_signal(hg_machine:signal(), hg_machine:history(ev())) ->
+-spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
 
-process_signal(timeout, _History) ->
-    signal_no_changes();
+process_signal(timeout, _History, _AuxSt) ->
+    #{};
 
-process_signal({repair, _}, _History) ->
-    signal_no_changes().
+process_signal({repair, _}, _History, _AuxSt) ->
+    #{}.
 
-signal_no_changes() ->
-    {[], hg_machine_action:new()}.
-
--spec process_call(call(), hg_machine:history(ev())) ->
+-spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
     {hg_machine:response(), hg_machine:result()}.
 
-process_call(Call, History) ->
+process_call(Call, History, _AuxSt) ->
     Tpl = collapse_history(unmarshal(History)),
     {Response, Changes} = handle_call(Call, Tpl),
-    {{ok, Response}, {[marshal(Changes)], hg_machine_action:new()}}.
+    {{ok, Response}, #{events => [marshal(Changes)]}}.
 
 handle_call({update, Params}, Tpl) ->
     Changes = [?tpl_updated(Params)],

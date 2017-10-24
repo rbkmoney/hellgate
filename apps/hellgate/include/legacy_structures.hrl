@@ -10,6 +10,8 @@
 -define(legacy_payment_ev(PaymentID, Payload),
     {invoice_payment_change, {payproc_InvoicePaymentChange, PaymentID, Payload}}).
 
+-define(legacy_invoice(ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cost, Context),
+    {domain_Invoice, ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cost, Context}).
 -define(legacy_invoice(ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cost, Context, TemplateID),
     {domain_Invoice, ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cost, Context, TemplateID}).
 

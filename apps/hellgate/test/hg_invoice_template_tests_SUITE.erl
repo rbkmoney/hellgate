@@ -83,7 +83,7 @@ init_per_suite(C) ->
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    Client = hg_client_party:start(make_userinfo(PartyID), PartyID, hg_client_api:new(RootUrl)),
+    Client = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(Client),
     [
         {party_id, PartyID},
@@ -105,8 +105,9 @@ end_per_suite(C) ->
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(_Name, C) ->
+    RootUrl = cfg(root_url, C),
     PartyID = cfg(party_id, C),
-    Client = hg_client_invoice_templating:start_link(make_userinfo(PartyID), hg_client_api:new(cfg(root_url, C))),
+    Client = hg_client_invoice_templating:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     [{client, Client} | C].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
@@ -516,9 +517,6 @@ make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
 
 make_invoice_tpl_update_params(Diff) ->
     hg_ct_helper:make_invoice_tpl_update_params(Diff).
-
-make_userinfo(PartyID) ->
-    hg_ct_helper:make_userinfo(PartyID).
 
 make_lifetime(Y, M, D) ->
     hg_ct_helper:make_lifetime(Y, M, D).
