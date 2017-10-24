@@ -35,7 +35,7 @@ call(ServiceName, Function, Args, {RootUrl, Context}) ->
             Request,
             #{
                 url           => Url,
-                event_handler => {scoper_woody_event_handler, #{log_scope => 'rpc.client'}}
+                event_handler => scoper_woody_event_handler
             },
             Context
         )
