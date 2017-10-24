@@ -52,7 +52,7 @@
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 handle_function(Func, Args, Opts) ->
-    hg_log_scope:scope(customer_management,
+    scoper:scope(customer_management,
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
@@ -104,7 +104,7 @@ get_party(PartyID) ->
     hg_party_machine:get_party(PartyID).
 
 set_meta(ID) ->
-    hg_log_scope:set_meta(#{customer_id => ID}).
+    scoper:add_meta(#{customer_id => ID}).
 
 get_history(Ref) ->
     History = hg_machine:get_history(?NS, Ref),

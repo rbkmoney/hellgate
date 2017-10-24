@@ -72,7 +72,7 @@ handle_function('GetLastEventID', [], _Opts) ->
             throw(#payproc_NoLastEvent{})
     end;
 handle_function(Func, Args, Opts) ->
-    hg_log_scope:scope(recurrent_payment_tools,
+    scoper:scope(recurrent_payment_tools,
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
@@ -109,7 +109,7 @@ publish_rec_payment_tool_event(RecPaymentToolID, Event) ->
 %%
 
 set_meta(ID) ->
-    hg_log_scope:set_meta(#{rec_payment_tool_id => ID}).
+    scoper:add_meta(#{rec_payment_tool_id => ID}).
 
 start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
