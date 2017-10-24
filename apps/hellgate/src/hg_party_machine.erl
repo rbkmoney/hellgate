@@ -86,11 +86,11 @@ namespace() ->
 init(ID, PartyParams) ->
     scoper:scope(
         party,
-        fun() -> process_init(ID, PartyParams) end,
         #{
             id => ID,
             activity => init
-        }
+        },
+        fun() -> process_init(ID, PartyParams) end
     ).
 
 process_init(PartyID, PartyParams) ->
@@ -123,11 +123,11 @@ process_call(Call, History, _AuxSt) ->
         Party = get_st_party(St),
         scoper:scope(
             party,
-            fun() -> handle_call(Call, {St, []}) end,
             #{
                 id => Party#domain_Party.id,
                 activity => get_call_name(Call)
-            }
+            },
+            fun() -> handle_call(Call, {St, []}) end
         )
     catch
         throw:Exception ->

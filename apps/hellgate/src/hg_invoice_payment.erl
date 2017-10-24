@@ -201,10 +201,10 @@ get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
 init(PaymentID, PaymentParams, Opts) ->
     scoper:scope(
         payment,
-        fun() -> init_(PaymentID, PaymentParams, Opts) end,
         #{
             id => PaymentID
-        }
+        },
+        fun() -> init_(PaymentID, PaymentParams, Opts) end
     ).
 
 -spec init_(payment_id(), _, opts()) ->
@@ -837,8 +837,8 @@ get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{new_cash_flow = Cashflo
 process_signal(timeout, St, Options) ->
     scoper:scope(
         payment,
-        fun() -> process_timeout(St#st{opts = Options}) end,
-        get_st_meta(St)
+        get_st_meta(St),
+        fun() -> process_timeout(St#st{opts = Options}) end
     ).
 
 process_timeout(St) ->
@@ -861,8 +861,8 @@ process_timeout(St) ->
 process_call({callback, Tag, Payload}, St, Options) ->
     scoper:scope(
         payment,
-        fun() -> process_callback(Tag, Payload, St#st{opts = Options}) end,
-        get_st_meta(St)
+        get_st_meta(St),
+        fun() -> process_callback(Tag, Payload, St#st{opts = Options}) end
     ).
 
 process_callback(Tag, Payload, St) ->
