@@ -1062,6 +1062,13 @@ unmarshal(invoice,
         template_id     = unmarshal(str, TemplateID)
     };
 
+unmarshal(invoice,
+    ?legacy_invoice(ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cash, Context)
+) ->
+    unmarshal(invoice,
+        ?legacy_invoice(ID, PartyID, ShopID, CreatedAt, Status, Details, Due, Cash, Context, undefined)
+    );
+
 unmarshal(status, <<"paid">>) ->
     ?invoice_paid();
 unmarshal(status, <<"unpaid">>) ->
