@@ -3,8 +3,9 @@
 -module(hg_routing).
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 
--export([choose/2]).
+-export([choose/3]).
 -export([get_payments_terms/2]).
+-export([get_rec_paytools_terms/2]).
 
 -export([marshal/1]).
 -export([unmarshal/1]).
@@ -13,23 +14,24 @@
 
 -include("domain.hrl").
 
--type terms()    :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
--type route()    :: dmsl_domain_thrift:'PaymentRoute'().
+-type terms()                :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
+-type route()                :: dmsl_domain_thrift:'PaymentRoute'().
+-type route_predestination() :: payment | recurrent_paytool.
 
--spec choose(hg_selector:varset(), hg_domain:revision()) ->
+-spec choose(route_predestination(), hg_selector:varset(), hg_domain:revision()) ->
     route() | undefined.
 
-choose(VS, Revision) ->
+choose(Predestination, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     % TODO not the optimal strategy
-    Providers = collect_providers(Globals, VS, Revision),
-    Choices = collect_routes(Providers, VS, Revision),
+    Providers = collect_providers(Predestination, Globals, VS, Revision),
+    Choices = collect_routes(Predestination, Providers, VS, Revision),
     choose_route(Choices).
 
-collect_routes(Providers, VS, Revision) ->
+collect_routes(Predestination, Providers, VS, Revision) ->
     lists:flatmap(
         fun (Provider) ->
-            Terminals = collect_terminals(Provider, VS, Revision),
+            Terminals = collect_terminals(Predestination, Provider, VS, Revision),
             lists:map(
                 fun (Terminal) ->
                     Route = {Provider, Terminal},
@@ -58,9 +60,15 @@ export_route({{ProviderRef, _Provider}, {TerminalRef, _Terminal}}) ->
 -spec get_payments_terms(route(), hg_domain:revision()) -> terms().
 
 get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
-    #domain_Provider{terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
+    #domain_Provider{payment_terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
     #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
     merge_payment_terms(Terms0, Terms1).
+
+-spec get_rec_paytools_terms(route(), hg_domain:revision()) -> terms().
+
+get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
+    #domain_Provider{recurrent_paytool_terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
+    Terms.
 
 %%
 
@@ -78,12 +86,12 @@ score_risk_coverage({_Provider, {_TerminalRef, Terminal}}, VS) ->
 
 %%
 
-collect_providers(Globals, VS, Revision) ->
+collect_providers(Predestination, Globals, VS, Revision) ->
     ProviderSelector = Globals#domain_Globals.providers,
     ProviderRefs = reduce(provider, ProviderSelector, VS, Revision),
     lists:filtermap(
         fun (ProviderRef) ->
-            try acceptable_provider(ProviderRef, VS, Revision) catch
+            try acceptable_provider(Predestination, ProviderRef, VS, Revision) catch
                 false ->
                     false
             end
@@ -91,21 +99,27 @@ collect_providers(Globals, VS, Revision) ->
         ordsets:to_list(ProviderRefs)
     ).
 
-acceptable_provider(ProviderRef, VS, Revision) ->
+acceptable_provider(payment, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
-        terms = Terms
+        payment_terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
     _ = acceptable_payment_terms(Terms, VS, Revision),
+    {true, {ProviderRef, Provider}};
+acceptable_provider(recurrent_paytool, ProviderRef, VS, Revision) ->
+    Provider = #domain_Provider{
+        recurrent_paytool_terms = Terms
+    } = hg_domain:get(Revision, {provider, ProviderRef}),
+    _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
     {true, {ProviderRef, Provider}}.
 
 %%
 
-collect_terminals({_ProviderRef, Provider}, VS, Revision) ->
+collect_terminals(Predestination, {_ProviderRef, Provider}, VS, Revision) ->
     TerminalSelector = Provider#domain_Provider.terminal,
     TerminalRefs = reduce(terminal, TerminalSelector, VS, Revision),
     lists:filtermap(
         fun (TerminalRef) ->
-            try acceptable_terminal(TerminalRef, Provider, VS, Revision) catch
+            try acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision) catch
                 false ->
                     false
             end
@@ -113,7 +127,7 @@ collect_terminals({_ProviderRef, Provider}, VS, Revision) ->
         ordsets:to_list(TerminalRefs)
     ).
 
-acceptable_terminal(TerminalRef, #domain_Provider{terms = Terms0}, VS, Revision) ->
+acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms0}, VS, Revision) ->
     Terminal = #domain_Terminal{
         terms         = Terms1,
         risk_coverage = RiskCoverage
@@ -122,6 +136,13 @@ acceptable_terminal(TerminalRef, #domain_Provider{terms = Terms0}, VS, Revision)
     %      is it better to allow to override only cash flow / refunds terms?
     Terms = merge_payment_terms(Terms0, Terms1),
     _ = acceptable_payment_terms(Terms, VS, Revision),
+    _ = acceptable_risk(RiskCoverage, VS),
+    {true, {TerminalRef, Terminal}};
+acceptable_terminal(recurrent_paytool, TerminalRef, #domain_Provider{recurrent_paytool_terms = Terms}, VS, Revision) ->
+    Terminal = #domain_Terminal{
+        risk_coverage = RiskCoverage
+    } = hg_domain:get(Revision, {terminal, TerminalRef}),
+    _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
     _ = acceptable_risk(RiskCoverage, VS),
     {true, {TerminalRef, Terminal}}.
 
@@ -217,6 +238,34 @@ merge_holds_terms(Terms0, Terms1) ->
 
 merge_refunds_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
+
+%%
+
+acceptable_recurrent_paytool_terms(
+    #domain_RecurrentPaytoolsProvisionTerms{
+        categories      = CategoriesSelector,
+        payment_methods = PMsSelector
+    },
+    VS,
+    Revision
+) ->
+    _ = try_accept_term(category     , CategoriesSelector , VS, Revision),
+    _ = try_accept_term(payment_tool , PMsSelector        , VS, Revision),
+    true;
+acceptable_recurrent_paytool_terms(undefined, _VS, _Revision) ->
+    throw(false).
+
+try_accept_term(Name, Selector, VS, Revision) ->
+    try_accept_term(Name, getv(Name, VS), Selector, VS, Revision).
+
+try_accept_term(Name, Value, Selector, VS, Revision) when Selector /= undefined ->
+    Values = reduce(Name, Selector, VS, Revision),
+    test_term(Name, Value, Values) orelse throw(false).
+
+test_term(category, V, Vs) ->
+    ordsets:is_element(V, Vs);
+test_term(payment_tool, PT, PMs) ->
+    ordsets:is_element(hg_payment_tool:get_method(PT), PMs).
 
 %%
 

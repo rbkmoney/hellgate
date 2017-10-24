@@ -227,7 +227,7 @@ init_(PaymentID, Params, Opts) ->
         {ok, R} ->
             R;
         undefined ->
-            validate_route(hg_routing:choose(VS2, Revision), Payment)
+            validate_route(hg_routing:choose(payment, VS2, Revision), Payment)
     end,
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     Provider = get_route_provider(Route, Revision),

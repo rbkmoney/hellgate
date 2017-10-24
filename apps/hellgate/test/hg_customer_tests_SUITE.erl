@@ -522,6 +522,12 @@ construct_domain_fixture() ->
                     ?share(45, 1000, payment_amount)
                 )
             ]}
+        },
+        recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card, visa),
+                ?pmt(bank_card, mastercard)
+            ])}
         }
     },
     [
@@ -607,7 +613,7 @@ construct_domain_fixture() ->
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_PaymentsProvisionTerms{
+                payment_terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
@@ -630,6 +636,14 @@ construct_domain_fixture() ->
                             ?share(18, 1000, payment_amount)
                         )
                     ]}
+                },
+                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
+                    categories = {value, ?ordset([?cat(1)])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
             }
         }},

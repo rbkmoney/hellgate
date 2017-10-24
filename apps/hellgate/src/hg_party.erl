@@ -492,8 +492,11 @@ reduce_selector_to_value(Selector, VS, Revision) ->
 -spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
     dmsl_domain_thrift:'TermSet'().
 
-reduce_terms(#domain_TermSet{payments = PaymentsTerms}, VS, Revision) ->
-    #domain_TermSet{payments = reduce_payments_terms(PaymentsTerms, VS, Revision)}.
+reduce_terms(#domain_TermSet{payments = PaymentsTerms, recurrent_paytools = RecurrentPaytoolTerms}, VS, Revision) ->
+    #domain_TermSet{
+        payments = reduce_payments_terms(PaymentsTerms, VS, Revision),
+        recurrent_paytools = reduce_recurrent_paytools_terms(RecurrentPaytoolTerms, VS, Revision)
+    }.
 
 reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
     #domain_PaymentsServiceTerms{
@@ -506,6 +509,13 @@ reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
         refunds         = reduce_refunds_terms(Terms#domain_PaymentsServiceTerms.refunds, VS, Rev)
     };
 reduce_payments_terms(undefined, _, _) ->
+    undefined.
+
+reduce_recurrent_paytools_terms(#domain_RecurrentPaytoolsServiceTerms{} = Terms, VS, Rev) ->
+    #domain_RecurrentPaytoolsServiceTerms{
+        payment_methods = reduce_if_defined(Terms#domain_RecurrentPaytoolsServiceTerms.payment_methods, VS, Rev)
+    };
+reduce_recurrent_paytools_terms(undefined, _, _) ->
     undefined.
 
 reduce_holds_terms(#domain_PaymentHoldsServiceTerms{} = Terms, VS, Rev) ->
@@ -601,8 +611,14 @@ get_active_term_set(TimedTermSets, Timestamp) ->
 merge_term_sets(TermSets) when is_list(TermSets)->
     lists:foldl(fun merge_term_sets/2, undefined, TermSets).
 
-merge_term_sets(#domain_TermSet{payments = PaymentTerms1}, #domain_TermSet{payments = PaymentTerms0}) ->
-    #domain_TermSet{payments = merge_payments_terms(PaymentTerms0, PaymentTerms1)};
+merge_term_sets(
+    #domain_TermSet{payments = PaymentTerms1, recurrent_paytools = RecurrentPaytoolTerms1},
+    #domain_TermSet{payments = PaymentTerms0, recurrent_paytools = RecurrentPaytoolTerms0}
+) ->
+    #domain_TermSet{
+        payments = merge_payments_terms(PaymentTerms0, PaymentTerms1),
+        recurrent_paytools = merge_recurrent_paytools_terms(RecurrentPaytoolTerms0, RecurrentPaytoolTerms1)
+    };
 merge_term_sets(undefined, TermSet) ->
     TermSet;
 merge_term_sets(TermSet, undefined) ->
@@ -638,6 +654,14 @@ merge_payments_terms(
         refunds         = merge_refunds_terms(Rf0, Rf1)
     };
 merge_payments_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_recurrent_paytools_terms(
+    #domain_RecurrentPaytoolsServiceTerms{payment_methods = Pm0},
+    #domain_RecurrentPaytoolsServiceTerms{payment_methods = Pm1}
+) ->
+    #domain_RecurrentPaytoolsServiceTerms{payment_methods = hg_utils:select_defined(Pm1, Pm0)};
+merge_recurrent_paytools_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 merge_holds_terms(

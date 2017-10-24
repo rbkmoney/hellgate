@@ -23,6 +23,8 @@
 -export([recurrent_paytool_acquired/1]).
 -export([recurrent_paytool_w_tds_acquired/1]).
 
+-export([recurrent_paytool_creation_not_permitted/1]).
+
 %%
 
 -behaviour(supervisor).
@@ -87,7 +89,8 @@ all() ->
         recurrent_paytool_acquirement_failed,
         recurrent_paytool_acquired,
         recurrent_paytool_w_tds_acquired,
-        recurrent_paytool_abandoned
+        recurrent_paytool_abandoned,
+        % recurrent_paytool_creation_not_permitted
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -141,7 +144,6 @@ end_per_testcase(_Name, _C) ->
 -spec invalid_shop(config()) -> test_case_result().
 -spec invalid_party_status(config()) -> test_case_result().
 -spec invalid_shop_status(config()) -> test_case_result().
--spec recurrent_paytool_w_tds_acquired(config()) -> test_case_result().
 
 invalid_user(C) ->
     Client = cfg(client, C),
@@ -196,8 +198,9 @@ invalid_shop_status(C) ->
 -spec recurrent_paytool_not_found(config()) -> test_case_result().
 -spec get_recurrent_paytool(config()) -> test_case_result().
 -spec recurrent_paytool_acquirement_failed(config()) -> test_case_result().
--spec recurrent_paytool_abandoned(config()) -> test_case_result().
 -spec recurrent_paytool_acquired(config()) -> test_case_result().
+-spec recurrent_paytool_w_tds_acquired(config()) -> test_case_result().
+-spec recurrent_paytool_abandoned(config()) -> test_case_result().
 
 recurrent_paytool_not_found(C) ->
     Client = cfg(client, C),
@@ -272,6 +275,31 @@ recurrent_paytool_abandoned(C) ->
     [
         ?recurrent_payment_tool_has_abandoned()
     ] = next_event(RecurrentPaytoolID, Client).
+
+%%
+
+-spec recurrent_paytool_creation_not_permitted(config()) -> test_case_result().
+
+recurrent_paytool_creation_not_permitted(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_recurrent_paytool_params(PartyID, ShopID),
+
+    ok = hg_domain:upsert(
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(1),
+            data = #domain_TermSetHierarchy{
+                parent_terms = undefined,
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = undefined
+                }]
+            }
+        }}
+    ),
+
+    {exception, ?operation_not_permitted()} = hg_client_recurrent_paytool:create(Params, Client).
 
 %%
 
@@ -448,6 +476,12 @@ construct_domain_fixture() ->
                     ?share(45, 1000, payment_amount)
                 )
             ]}
+        },
+        recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card, visa),
+                ?pmt(bank_card, mastercard)
+            ])}
         }
     },
     [
@@ -533,7 +567,7 @@ construct_domain_fixture() ->
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_PaymentsProvisionTerms{
+                payment_terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
@@ -556,6 +590,14 @@ construct_domain_fixture() ->
                             ?share(18, 1000, payment_amount)
                         )
                     ]}
+                },
+                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
+                    categories = {value, ?ordset([?cat(1)])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
             }
         }},
