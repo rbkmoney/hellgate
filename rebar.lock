@@ -38,7 +38,7 @@
  {<<"rfc3339">>,{pkg,<<"rfc3339">>,<<"0.9.0">>},0},
  {<<"scoper">>,
   {git,"git@github.com:rbkmoney/scoper.git",
-       {ref,"30d206bf791def4a0c3b50834606baabfbd1ed71"}},
+       {ref,"802057089bac258f45e35263eb2223961618468d"}},
   0},
  {<<"snowflake">>,
   {git,"https://github.com/rbkmoney/snowflake.git",
