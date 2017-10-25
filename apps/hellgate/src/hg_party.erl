@@ -619,10 +619,8 @@ merge_term_sets(
         payments = merge_payments_terms(PaymentTerms0, PaymentTerms1),
         recurrent_paytools = merge_recurrent_paytools_terms(RecurrentPaytoolTerms0, RecurrentPaytoolTerms1)
     };
-merge_term_sets(undefined, TermSet) ->
-    TermSet;
-merge_term_sets(TermSet, undefined) ->
-    TermSet.
+merge_term_sets(TermSet1, TermSet0) ->
+    hg_utils:select_defined(TermSet1, TermSet0).
 
 merge_payments_terms(
     #domain_PaymentsServiceTerms{

@@ -334,10 +334,10 @@ construct_proxy_payment_tool(St) ->
 construct_proxy_cash(Route) ->
     Revision = hg_domain:head(),
     ProviderTerms = hg_routing:get_rec_paytools_terms(Route, Revision),
-    {#domain_Cash{
+    #domain_Cash{
         amount = Amount,
         currency = CurrencyRef
-    }, _VS} = get_minimal_payment_cost(ProviderTerms, #{}, Revision),
+    } = get_minimal_payment_cost(ProviderTerms, #{}, Revision),
     #prxprv_Cash{
         amount = Amount,
         currency = hg_domain:get(Revision, {currency, CurrencyRef})
@@ -619,11 +619,12 @@ validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     VS#{payment_tool => PaymentTool}.
 
 get_minimal_payment_cost(ProviderTerms, VS, Revision) ->
-    validate_cost(
+    {Cash, _VS} = validate_cost(
         ProviderTerms#domain_RecurrentPaytoolsProvisionTerms.cash_value,
         VS,
         Revision
-    ).
+    ),
+    Cash.
 
 validate_cost(CashValueSelector, VS, Revision) ->
     Cash = reduce_selector(cash_value, CashValueSelector, VS, Revision),

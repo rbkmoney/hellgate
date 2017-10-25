@@ -168,10 +168,10 @@ acceptable_payment_terms(
 ) ->
     % TODO varsets getting mixed up
     %      it seems better to pass down here hierarchy of contexts w/ appropriate module accessors
-    _ = try_accept_payment_term(currency     , CurrenciesSelector , VS, Revision),
-    _ = try_accept_payment_term(category     , CategoriesSelector , VS, Revision),
-    _ = try_accept_payment_term(payment_tool , PMsSelector        , VS, Revision),
-    _ = try_accept_payment_term(cost         , CashLimitSelector  , VS, Revision),
+    _ = try_accept_term(currency     , CurrenciesSelector , VS, Revision),
+    _ = try_accept_term(category     , CategoriesSelector , VS, Revision),
+    _ = try_accept_term(payment_tool , PMsSelector        , VS, Revision),
+    _ = try_accept_term(cost         , CashLimitSelector  , VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
@@ -184,30 +184,11 @@ acceptable_holds_terms(_Terms, instant, _VS, _Revision) ->
 acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
     case Terms of
         #domain_PaymentHoldsProvisionTerms{lifetime = LifetimeSelector} ->
-            _ = try_accept_payment_term(lifetime, Lifetime, LifetimeSelector, VS, Revision),
+            _ = try_accept_term(lifetime, Lifetime, LifetimeSelector, VS, Revision),
             true;
         undefined ->
             throw(false)
     end.
-
-try_accept_payment_term(Name, Selector, VS, Revision) ->
-    try_accept_payment_term(Name, getv(Name, VS), Selector, VS, Revision).
-
-try_accept_payment_term(Name, Value, Selector, VS, Revision) when Selector /= undefined ->
-    Values = reduce(Name, Selector, VS, Revision),
-    test_payment_term(Name, Value, Values) orelse throw(false).
-
-test_payment_term(currency, V, Vs) ->
-    ordsets:is_element(V, Vs);
-test_payment_term(category, V, Vs) ->
-    ordsets:is_element(V, Vs);
-test_payment_term(payment_tool, PT, PMs) ->
-    ordsets:is_element(hg_payment_tool:get_method(PT), PMs);
-test_payment_term(cost, Cost, CashRange) ->
-    hg_condition:test_cash_range(Cost, CashRange) == within;
-
-test_payment_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
-    Lifetime =< Allowed.
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
@@ -265,10 +246,16 @@ try_accept_term(Name, Value, Selector, VS, Revision) when Selector /= undefined 
     Values = reduce(Name, Selector, VS, Revision),
     test_term(Name, Value, Values) orelse throw(false).
 
+test_term(currency, V, Vs) ->
+    ordsets:is_element(V, Vs);
 test_term(category, V, Vs) ->
     ordsets:is_element(V, Vs);
 test_term(payment_tool, PT, PMs) ->
-    ordsets:is_element(hg_payment_tool:get_method(PT), PMs).
+    ordsets:is_element(hg_payment_tool:get_method(PT), PMs);
+test_term(cost, Cost, CashRange) ->
+    hg_condition:test_cash_range(Cost, CashRange) == within;
+test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
+    Lifetime =< Allowed.
 
 %%
 
