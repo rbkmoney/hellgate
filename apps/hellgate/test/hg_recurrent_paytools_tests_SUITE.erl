@@ -54,7 +54,7 @@ init_per_suite(C) ->
     % _ = dbg:tpl({woody_client, '_', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, dmt_client, hellgate, {cowboy, CowboySpec}]),
-    ok = hg_domain:insert(construct_domain_fixture()),
+    ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -90,7 +90,7 @@ all() ->
         recurrent_paytool_acquired,
         recurrent_paytool_w_tds_acquired,
         recurrent_paytool_abandoned,
-        % recurrent_paytool_creation_not_permitted
+        recurrent_paytool_creation_not_permitted
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -208,7 +208,8 @@ recurrent_paytool_not_found(C) ->
     ShopID = cfg(shop_id, C),
     Params = make_recurrent_paytool_params(PartyID, ShopID),
     _RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
-    {exception, ?recurrent_paytool_not_found()} = hg_client_recurrent_paytool:get(hg_utils:unique_id(), Client).
+    {exception, #payproc_RecurrentPaymentToolNotFound{}} =
+        hg_client_recurrent_paytool:get(hg_utils:unique_id(), Client).
 
 get_recurrent_paytool(C) ->
     Client = cfg(client, C),
@@ -281,25 +282,12 @@ recurrent_paytool_abandoned(C) ->
 -spec recurrent_paytool_creation_not_permitted(config()) -> test_case_result().
 
 recurrent_paytool_creation_not_permitted(C) ->
+    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = make_recurrent_paytool_params(PartyID, ShopID),
-
-    ok = hg_domain:upsert(
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(1),
-            data = #domain_TermSetHierarchy{
-                parent_terms = undefined,
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = undefined
-                }]
-            }
-        }}
-    ),
-
-    {exception, ?operation_not_permitted()} = hg_client_recurrent_paytool:create(Params, Client).
+    {exception, #payproc_OperationNotPermitted{}} = hg_client_recurrent_paytool:create(Params, Client).
 
 %%
 
@@ -445,10 +433,22 @@ get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, 
 
 %%
 
--spec construct_domain_fixture() -> [hg_domain:object()].
+-spec construct_term_set_w_recurrent_paytools() -> term().
 
-construct_domain_fixture() ->
-    TermSet = #domain_TermSet{
+construct_term_set_w_recurrent_paytools() ->
+    TermSet = construct_simple_term_set(),
+    TermSet#domain_TermSet{recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card, visa),
+                ?pmt(bank_card, mastercard)
+            ])}
+        }
+    }.
+
+-spec construct_simple_term_set() -> term().
+
+construct_simple_term_set() ->
+    #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             currencies = {value, ordsets:from_list([
                 ?cur(<<"RUB">>)
@@ -476,14 +476,12 @@ construct_domain_fixture() ->
                     ?share(45, 1000, payment_amount)
                 )
             ]}
-        },
-        recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
-            ])}
         }
-    },
+    }.
+
+-spec construct_domain_fixture(term()) -> [hg_domain:object()].
+
+construct_domain_fixture(TermSet) ->
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
 

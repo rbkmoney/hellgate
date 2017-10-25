@@ -30,14 +30,6 @@
     {rec_payment_tool_failed,
         #payproc_RecurrentPaymentToolHasFailed{failure = Failure}}).
 
-% Exceptions
-
--define(recurrent_paytool_not_found(),
-    #payproc_RecurrentPaymentToolNotFound{}).
-
--define(operation_not_permitted(),
-    #payproc_OperationNotPermitted{}).
-
 % Statuses
 
 -define(recurrent_payment_tool_created(),

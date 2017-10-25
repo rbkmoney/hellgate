@@ -14,7 +14,10 @@
 
 -include("domain.hrl").
 
--type terms()                :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
+-type terms() :: dmsl_domain_thrift:'PaymentsProvisionTerms'()
+               | dmsl_domain_thrift:'RecurrentPaytoolsProvisionTerms'()
+               | undefined.
+
 -type route()                :: dmsl_domain_thrift:'PaymentRoute'().
 -type route_predestination() :: payment | recurrent_paytool.
 

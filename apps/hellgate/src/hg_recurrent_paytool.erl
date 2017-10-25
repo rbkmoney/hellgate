@@ -43,6 +43,8 @@
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 -type cash()       :: dmsl_domain_thrift:'Cash'().
 
+-type merchant_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
+
 -type session() :: #{
     status      := active | suspended | finished,
     result      => session_result(),
@@ -84,7 +86,8 @@ handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     Party = ensure_party_accessible(RecurrentPaymentToolParams),
     Shop = ensure_shop_exists(RecurrentPaymentToolParams),
     ok = assert_party_shop_operable(Shop, Party),
-    ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
+    MerchantTerms = assert_operation_permitted(Shop, Party),
+    ok = start(RecPaymentToolID, [MerchantTerms, RecurrentPaymentToolParams]),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
@@ -177,13 +180,12 @@ map_start_error({error, Reason}) ->
 namespace() ->
     ?NS.
 
--spec init(rec_payment_tool_id(), rec_payment_tool_params()) ->
+-spec init(rec_payment_tool_id(), [merchant_terms() | rec_payment_tool_params()]) ->
     hg_machine:result().
-init(RecPaymentToolID, Params) ->
+init(RecPaymentToolID, [MerchantTerms, Params]) ->
     Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
     {Party, Shop} = get_party_shop(Params),
-    MerchantTerms = get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision),
     VS0 = collect_varset(Party, Shop, #{}),
     {RecPaymentTool,  VS1} = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, MerchantTerms, VS0, Revision),
     {RiskScore     ,  VS2} = validate_risk_score(inspect(RecPaymentTool, VS1), VS1),
@@ -204,8 +206,13 @@ get_party_shop(Params) ->
 get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    TermSet = hg_party:get_terms(Contract, CreatedAt, Revision),
-    TermSet#domain_TermSet.recurrent_paytools.
+    #domain_TermSet{recurrent_paytools = Terms} = hg_party:get_terms(Contract, CreatedAt, Revision),
+    case Terms of
+        undefined ->
+            throw(#payproc_OperationNotPermitted{});
+        Terms ->
+            Terms
+    end.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;
@@ -567,6 +574,11 @@ assert_rec_payment_tool_status_(StatusName, {StatusName, _}) ->
 assert_rec_payment_tool_status_(_StatusName, Status) ->
     throw(#payproc_InvalidRecurrentPaymentToolStatus{status = Status}).
 
+assert_operation_permitted(Shop, Party) ->
+    Revision = hg_domain:head(),
+    CreatedAt = hg_datetime:format_now(),
+    get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision).
+
 get_rec_payment_tool_status(RecPaymentTool) ->
     RecPaymentTool#payproc_RecurrentPaymentTool.status.
 
@@ -594,9 +606,8 @@ create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Terms, VS0, Revisio
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
-    lager:info("PaymentTool: ~p\nPMs: ~p", [PaymentTool, PMs]),
     _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
-        throw(?operation_not_permitted()),
+        throw(#payproc_OperationNotPermitted{}),
     VS#{payment_tool => PaymentTool}.
 
 get_minimal_payment_cost(ProviderTerms, VS, Revision) ->
