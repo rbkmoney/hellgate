@@ -109,7 +109,7 @@ publish_rec_payment_tool_event(RecPaymentToolID, Event) ->
 %%
 
 set_meta(ID) ->
-    scoper:add_meta(#{rec_payment_tool_id => ID}).
+    scoper:add_meta(#{id => ID}).
 
 start(ID, Args) ->
     map_start_error(hg_machine:start(?NS, ID, Args)).
