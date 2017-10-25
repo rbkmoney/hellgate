@@ -9,6 +9,10 @@
 
 -define(NS, <<"recurrent_paytools">>).
 
+%% Public interface
+
+-export([assert_operation_permitted/2]).
+
 -export([process_callback/2]).
 
 %% Woody handler called by hg_woody_wrapper
@@ -43,6 +47,8 @@
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 -type cash()       :: dmsl_domain_thrift:'Cash'().
 
+-type shop()           :: dmsl_domain_thrift:'Shop'().
+-type party()          :: dmsl_domain_thrift:'Party'().
 -type merchant_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
 
 -type session() :: #{
@@ -573,6 +579,8 @@ assert_rec_payment_tool_status_(StatusName, {StatusName, _}) ->
     ok;
 assert_rec_payment_tool_status_(_StatusName, Status) ->
     throw(#payproc_InvalidRecurrentPaymentToolStatus{status = Status}).
+
+-spec assert_operation_permitted(shop(), party()) -> merchant_terms().
 
 assert_operation_permitted(Shop, Party) ->
     Revision = hg_domain:head(),
