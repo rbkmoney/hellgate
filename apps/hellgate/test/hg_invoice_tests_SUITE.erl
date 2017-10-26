@@ -637,12 +637,12 @@ payment_adjustment_success(C) ->
     %% update terminal cashflow
     ProviderRef = ?prv(100),
     Provider = hg_domain:get(hg_domain:head(), {provider, ProviderRef}),
-    ProviderTerms = Provider#domain_Provider.terms,
+    ProviderTerms = Provider#domain_Provider.payment_terms,
     ok = hg_domain:upsert(
         {provider, #domain_ProviderObject{
             ref = ProviderRef,
             data = Provider#domain_Provider{
-                terms = ProviderTerms#domain_PaymentsProvisionTerms{
+                payment_terms = ProviderTerms#domain_PaymentsProvisionTerms{
                     cash_flow = {value,
                         get_adjustment_provider_cashflow(actual)
                     }
@@ -707,7 +707,7 @@ get_adjustment_fixture(Revision) ->
                 terminal = {value, [?trm(100)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_PaymentsProvisionTerms{
+                payment_terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},
@@ -1342,6 +1342,12 @@ construct_domain_fixture() ->
                     )
                 ]}
             }
+        },
+        recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card, visa),
+                ?pmt(bank_card, mastercard)
+            ])}
         }
     },
     DefaultTermSet = #domain_TermSet{
@@ -1563,7 +1569,7 @@ construct_domain_fixture() ->
                 },
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_PaymentsProvisionTerms{
+                payment_terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},
@@ -1627,6 +1633,14 @@ construct_domain_fixture() ->
                             )
                         ]}
                     }
+                },
+                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
+                    categories = {value, ?ordset([?cat(1)])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
             }
         }},
@@ -1652,7 +1666,7 @@ construct_domain_fixture() ->
                 },
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_PaymentsProvisionTerms{
+                payment_terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},
@@ -1754,7 +1768,7 @@ construct_domain_fixture() ->
                 },
                 abs_account = <<"0987654321">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_PaymentsProvisionTerms{
+                payment_terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},

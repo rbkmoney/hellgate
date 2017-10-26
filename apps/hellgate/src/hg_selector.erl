@@ -21,7 +21,8 @@
     dmsl_domain_thrift:'TerminalSelector'() |
     dmsl_domain_thrift:'SystemAccountSetSelector'() |
     dmsl_domain_thrift:'ExternalAccountSetSelector'() |
-    dmsl_domain_thrift:'HoldLifetimeSelector'().
+    dmsl_domain_thrift:'HoldLifetimeSelector'() |
+    dmsl_domain_thrift:'CashValueSelector'().
 
 -type value() ::
     _. %% FIXME

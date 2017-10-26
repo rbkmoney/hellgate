@@ -65,6 +65,7 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     Party = get_party(PartyID),
     Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
     ok = assert_party_shop_operable(Shop, Party),
+    _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party),
     ok = start(CustomerID, CustomerParams),
     get_customer(get_state(CustomerID));
 

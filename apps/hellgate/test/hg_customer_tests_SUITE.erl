@@ -24,6 +24,9 @@
 -export([start_two_bindings/1]).
 -export([start_two_bindings_w_tds/1]).
 
+-export([create_customer_not_permitted/1]).
+-export([start_binding_not_permitted/1]).
+
 %%
 
 -behaviour(supervisor).
@@ -50,7 +53,7 @@ cfg(Key, C) ->
 init_per_suite(C) ->
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, dmt_client, hellgate, {cowboy, CowboySpec}]),
-    ok = hg_domain:insert(construct_domain_fixture()),
+    ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -80,7 +83,8 @@ end_per_suite(C) ->
 all() ->
     [
         {group, invalid_customer_params},
-        {group, basic_customer_methods}
+        {group, basic_customer_methods},
+        {group, not_permitted_methods}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -102,6 +106,10 @@ groups() ->
             start_binding_w_tds,
             start_two_bindings,
             start_two_bindings_w_tds
+        ]},
+        {not_permitted_methods, [sequence], [
+            create_customer_not_permitted,
+            start_binding_not_permitted
         ]}
     ].
 
@@ -368,6 +376,31 @@ start_two_bindings_w_tds(C) ->
 
 %%
 
+-spec create_customer_not_permitted(config()) -> test_case_result().
+-spec start_binding_not_permitted(config()) -> test_case_result().
+
+create_customer_not_permitted(C) ->
+    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    {exception, #payproc_OperationNotPermitted{}} = hg_client_customer:create(CustomerParams, Client).
+
+start_binding_not_permitted(C) ->
+    ok = hg_domain:upsert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
+    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
+    CustomerBindingParams = hg_ct_helper:make_customer_binding_params(),
+    {exception, #payproc_OperationNotPermitted{}} =
+        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client).
+
+%%
+
 -define(INTERVAL, 100).
 -define(DEFAULT_TIMEOUT, 5000).
 
@@ -491,10 +524,22 @@ assert_success_post_request(Req) ->
 
 %%
 
--spec construct_domain_fixture() -> [hg_domain:object()].
+-spec construct_term_set_w_recurrent_paytools() -> term().
 
-construct_domain_fixture() ->
-    TermSet = #domain_TermSet{
+construct_term_set_w_recurrent_paytools() ->
+    TermSet = construct_simple_term_set(),
+    TermSet#domain_TermSet{recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card, visa),
+                ?pmt(bank_card, mastercard)
+            ])}
+        }
+    }.
+
+-spec construct_simple_term_set() -> term().
+
+construct_simple_term_set() ->
+    #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             currencies = {value, ordsets:from_list([
                 ?cur(<<"RUB">>)
@@ -523,7 +568,11 @@ construct_domain_fixture() ->
                 )
             ]}
         }
-    },
+    }.
+
+-spec construct_domain_fixture(term()) -> [hg_domain:object()].
+
+construct_domain_fixture(TermSet) ->
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
 
@@ -607,7 +656,7 @@ construct_domain_fixture() ->
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_PaymentsProvisionTerms{
+                payment_terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
@@ -630,6 +679,14 @@ construct_domain_fixture() ->
                             ?share(18, 1000, payment_amount)
                         )
                     ]}
+                },
+                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
+                    categories = {value, ?ordset([?cat(1)])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
             }
         }},
