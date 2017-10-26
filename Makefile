@@ -13,7 +13,7 @@ SERVICE_IMAGE_TAG ?= $(shell git rev-parse HEAD)
 SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
 # Base image for the service
-BASE_IMAGE_NAME := service_erlang
+BASE_IMAGE_NAME := embedded
 BASE_IMAGE_TAG := 13454a94990acb72f753623ec13599a9f6f4f852
 
 # Build image tag to be used
