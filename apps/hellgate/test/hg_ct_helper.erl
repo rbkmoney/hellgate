@@ -58,6 +58,7 @@
 -export([make_terminal_payment_tool/0]).
 -export([make_tds_payment_tool/0]).
 -export([make_simple_payment_tool/0]).
+-export([make_simple_payment_tool/1]).
 -export([make_bad_payment_tool/0]).
 -export([is_bad_payment_tool/1]).
 -export([make_disposable_payment_resource/0]).
@@ -619,10 +620,16 @@ make_tds_payment_tool() ->
 -spec make_simple_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_simple_payment_tool() ->
+    make_simple_payment_tool(visa).
+
+-spec make_simple_payment_tool(visa | mastercard) ->
+    {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+
+make_simple_payment_tool(PaymentSystem) ->
     {
         {bank_card, #domain_BankCard{
             token          = bank_card_simple_token(),
-            payment_system = visa,
+            payment_system = PaymentSystem,
             bin            = <<"424242">>,
             masked_pan     = <<"4242">>
         }},

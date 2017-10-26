@@ -15,6 +15,7 @@
 -export([invalid_shop/1]).
 -export([invalid_party_status/1]).
 -export([invalid_shop_status/1]).
+-export([invalid_payment_method/1]).
 
 -export([get_recurrent_paytool/1]).
 -export([recurrent_paytool_not_found/1]).
@@ -102,7 +103,8 @@ groups() ->
             invalid_party,
             invalid_shop,
             invalid_party_status,
-            invalid_shop_status
+            invalid_shop_status,
+            invalid_payment_method
         ]}
     ].
 
@@ -144,6 +146,7 @@ end_per_testcase(_Name, _C) ->
 -spec invalid_shop(config()) -> test_case_result().
 -spec invalid_party_status(config()) -> test_case_result().
 -spec invalid_shop_status(config()) -> test_case_result().
+-spec invalid_payment_method(config()) -> test_case_result().
 
 invalid_user(C) ->
     Client = cfg(client, C),
@@ -192,6 +195,13 @@ invalid_shop_status(C) ->
     ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, ?invalid_shop_status({suspension, _})} = hg_client_recurrent_paytool:create(Params, Client),
     ok = hg_client_party:activate_shop(ShopID, PartyClient).
+
+invalid_payment_method(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_recurrent_paytool_params(mastercard, PartyID, ShopID),
+    {exception, #payproc_InvalidPaymentMethod{}} = hg_client_recurrent_paytool:create(Params, Client).
 
 %% recurrent_paytool_flow group
 
@@ -301,7 +311,10 @@ make_bad_recurrent_paytool_params(PartyID, ShopID) ->
     }.
 
 make_recurrent_paytool_params(PartyID, ShopID) ->
-    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
+    make_recurrent_paytool_params(visa, PartyID, ShopID).
+
+make_recurrent_paytool_params(PaymentSystem, PartyID, ShopID) ->
+    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(PaymentSystem),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
         party_id = PartyID,
@@ -439,8 +452,7 @@ construct_term_set_w_recurrent_paytools() ->
     TermSet = construct_simple_term_set(),
     TermSet#domain_TermSet{recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card, visa)
             ])}
         }
     }.
@@ -592,8 +604,7 @@ construct_domain_fixture(TermSet) ->
                 recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, visa)
                     ])},
                     cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
