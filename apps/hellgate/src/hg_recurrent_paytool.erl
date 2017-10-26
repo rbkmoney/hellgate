@@ -50,6 +50,7 @@
 -type shop()           :: dmsl_domain_thrift:'Shop'().
 -type party()          :: dmsl_domain_thrift:'Party'().
 -type merchant_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
+-type payment_tool()   :: dmsl_domain_thrift:'PaymentTool'().
 
 -type session() :: #{
     status      := active | suspended | finished,
@@ -93,7 +94,12 @@ handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     Shop = ensure_shop_exists(RecurrentPaymentToolParams),
     ok = assert_party_shop_operable(Shop, Party),
     MerchantTerms = assert_operation_permitted(Shop, Party),
-    ok = start(RecPaymentToolID, [MerchantTerms, RecurrentPaymentToolParams]),
+    PaymentTool = validate_payment_tool(
+        get_payment_tool(RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.payment_resource),
+        MerchantTerms#domain_RecurrentPaytoolsServiceTerms.payment_methods,
+        collect_varset(Party, Shop, #{})
+    ),
+    ok = start(RecPaymentToolID, [PaymentTool, RecurrentPaymentToolParams]),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
@@ -186,16 +192,16 @@ map_start_error({error, Reason}) ->
 namespace() ->
     ?NS.
 
--spec init(rec_payment_tool_id(), [merchant_terms() | rec_payment_tool_params()]) ->
+-spec init(rec_payment_tool_id(), [payment_tool() | rec_payment_tool_params()]) ->
     hg_machine:result().
-init(RecPaymentToolID, [MerchantTerms, Params]) ->
+init(RecPaymentToolID, [PaymentTool, Params]) ->
     Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
     {Party, Shop} = get_party_shop(Params),
-    VS0 = collect_varset(Party, Shop, #{}),
-    {RecPaymentTool,  VS1} = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, MerchantTerms, VS0, Revision),
-    {RiskScore     ,  VS2} = validate_risk_score(inspect(RecPaymentTool, VS1), VS1),
-    {Route         , _VS3} = validate_route(hg_routing:choose(recurrent_paytool, VS2, Revision), RecPaymentTool, VS2),
+    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Revision),
+    VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
+    {RiskScore     ,  VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
+    {Route         , _VS2} = validate_route(hg_routing:choose(recurrent_paytool, VS1, Revision), RecPaymentTool, VS1),
     {ok, {Changes, Action}} = start_session(),
     handle_result(#{
         changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
@@ -213,12 +219,7 @@ get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
     #domain_TermSet{recurrent_paytools = Terms} = hg_party:get_terms(Contract, CreatedAt, Revision),
-    case Terms of
-        undefined ->
-            throw(#payproc_OperationNotPermitted{});
-        Terms ->
-            Terms
-    end.
+    Terms.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;
@@ -231,10 +232,10 @@ collect_varset(Party, Shop = #domain_Shop{
     account = #domain_ShopAccount{currency = Currency}
 }, VS) ->
     VS#{
-        party    => Party,
-        shop     => Shop,
-        category => Category,
-        currency => Currency
+        party        => Party,
+        shop         => Shop,
+        category     => Category,
+        currency     => Currency
     }.
 
 inspect(_RecPaymentTool, _VS) ->
@@ -559,6 +560,13 @@ ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID, party_i
     Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     Shop.
 
+validate_payment_tool(PaymentTool, PaymentMethodSelector, VS) ->
+    Revision = hg_domain:head(),
+    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
+    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+        throw(#payproc_InvalidPaymentMethod{}),
+    PaymentTool.
+
 assert_party_shop_operable(Shop, Party) ->
     ok = assert_party_operable(Party),
     ok = assert_shop_operable(Shop),
@@ -585,22 +593,22 @@ assert_rec_payment_tool_status_(_StatusName, Status) ->
 assert_operation_permitted(Shop, Party) ->
     Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
-    get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision).
+    Terms = get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision),
+    case Terms of
+        undefined ->
+            throw(#payproc_OperationNotPermitted{});
+        Terms ->
+            Terms
+    end.
 
 get_rec_payment_tool_status(RecPaymentTool) ->
     RecPaymentTool#payproc_RecurrentPaymentTool.status.
 
 %%
 
-create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Terms, VS0, Revision) ->
+create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Revision) ->
     PaymentResource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
-    VS1 = validate_payment_tool(
-        get_payment_tool(PaymentResource),
-        Terms#domain_RecurrentPaytoolsServiceTerms.payment_methods,
-        VS0,
-        Revision
-    ),
-    {#payproc_RecurrentPaymentTool{
+    #payproc_RecurrentPaymentTool{
         id                   = RecPaymentToolID,
         shop_id              = Params#payproc_RecurrentPaymentToolParams.shop_id,
         party_id             = Params#payproc_RecurrentPaymentToolParams.party_id,
@@ -610,13 +618,7 @@ create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Terms, VS0, Revisio
         payment_resource     = PaymentResource,
         rec_token            = undefined,
         route                = undefined
-    }, VS1}.
-
-validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
-    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
-        throw(#payproc_OperationNotPermitted{}),
-    VS#{payment_tool => PaymentTool}.
+    }.
 
 get_minimal_payment_cost(ProviderTerms, VS, Revision) ->
     {Cash, _VS} = validate_cost(
