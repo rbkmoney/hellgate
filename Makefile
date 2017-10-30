@@ -14,7 +14,7 @@ SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
 # Base image for the service
 BASE_IMAGE_NAME := service_erlang
-BASE_IMAGE_TAG := 16f10be0265a469c1a16055a7a9dab8ffc2c7ebd
+BASE_IMAGE_TAG := 1dbeb94c6c52eec1d3bcb20c72f939638939b1c4
 
 # Build image tag to be used
 BUILD_IMAGE_TAG := 4fa802d2f534208b9dc2ae203e2a5f07affbf385
