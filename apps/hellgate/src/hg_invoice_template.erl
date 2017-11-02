@@ -490,12 +490,12 @@ unmarshal(invoice_template, [1, {domain_InvoiceTemplate,
     ID,
     OwnerID,
     ShopID,
-    {domain_InvoiceDetails, MarshalledProduct, MarshalledDescription, _},
+    Details,
     Lifetime,
     MarshalledCost,
     Context
 }]) ->
-    Product = unmarshal(str, MarshalledProduct),
+    {Product, Description} = unmarshal(details_legacy, Details),
     Cost = unmarshal(cost_legacy, MarshalledCost),
     #domain_InvoiceTemplate{
         id                   = unmarshal(str, ID),
@@ -503,7 +503,7 @@ unmarshal(invoice_template, [1, {domain_InvoiceTemplate,
         owner_id             = unmarshal(str, OwnerID),
         invoice_lifetime     = unmarshal(lifetime_legacy, Lifetime),
         product              = Product,
-        description          = unmarshal(str, MarshalledDescription),
+        description          = Description,
         details              = construct_invoice_template_details(Product, Cost),
         context              = hg_content:unmarshal(Context)
     };
@@ -554,6 +554,11 @@ unmarshal(invoice_template_diff, [1, {payproc_InvoiceTemplateUpdateParams,
         details              = construct_invoice_template_details(Product, Cost),
         context              = hg_content:unmarshal(Context)
     };
+
+unmarshal(details_legacy, {domain_InvoiceDetails, MarshalledProduct, MarshalledDescription}) ->
+    {unmarshal(str, MarshalledProduct), unmarshal(str, MarshalledDescription)};
+unmarshal(details_legacy, {domain_InvoiceDetails, MarshalledProduct, MarshalledDescription, _}) ->
+    {unmarshal(str, MarshalledProduct), unmarshal(str, MarshalledDescription)};
 
 unmarshal(details, [<<"cart">>, Cart]) ->
     {cart, unmarshal(cart, Cart)};
