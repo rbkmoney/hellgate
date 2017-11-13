@@ -14,7 +14,7 @@
     term()| no_return().
 
 handle_function(Func, Args, Opts) ->
-    hg_log_scope:scope(partymgmt,
+    scoper:scope(partymgmt,
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
@@ -248,7 +248,7 @@ assert_party_accessible(PartyID) ->
     end.
 
 set_party_mgmt_meta(PartyID) ->
-    hg_log_scope:set_meta(#{party_id => PartyID}).
+    scoper:add_meta(#{party_id => PartyID}).
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).

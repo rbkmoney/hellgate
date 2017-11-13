@@ -84,13 +84,13 @@ namespace() ->
     hg_machine:result().
 
 init(ID, PartyParams) ->
-    hg_log_scope:scope(
+    scoper:scope(
         party,
-        fun() -> process_init(ID, PartyParams) end,
         #{
             id => ID,
             activity => init
-        }
+        },
+        fun() -> process_init(ID, PartyParams) end
     ).
 
 process_init(PartyID, PartyParams) ->
@@ -121,13 +121,13 @@ process_call(Call, History, _AuxSt) ->
     St = collapse_history(unwrap_events(History)),
     try
         Party = get_st_party(St),
-        hg_log_scope:scope(
+        scoper:scope(
             party,
-            fun() -> handle_call(Call, {St, []}) end,
             #{
                 id => Party#domain_Party.id,
                 activity => get_call_name(Call)
-            }
+            },
+            fun() -> handle_call(Call, {St, []}) end
         )
     catch
         throw:Exception ->
