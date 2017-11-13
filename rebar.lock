@@ -39,7 +39,7 @@
  {<<"scoper">>,
   {git,"git@github.com:rbkmoney/scoper.git",
        {ref,"802057089bac258f45e35263eb2223961618468d"}},
-  0},
+  1},
  {<<"snowflake">>,
   {git,"https://github.com/rbkmoney/snowflake.git",
        {ref,"0a598108f6582affe3b4ae550fc5b9f2062e318a"}},
