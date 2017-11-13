@@ -199,12 +199,12 @@ get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
     {payment(), result()}.
 
 init(PaymentID, PaymentParams, Opts) ->
-    hg_log_scope:scope(
+    scoper:scope(
         payment,
-        fun() -> init_(PaymentID, PaymentParams, Opts) end,
         #{
             id => PaymentID
-        }
+        },
+        fun() -> init_(PaymentID, PaymentParams, Opts) end
     ).
 
 -spec init_(payment_id(), _, opts()) ->
@@ -835,10 +835,10 @@ get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{new_cash_flow = Cashflo
     {next | done, result()}.
 
 process_signal(timeout, St, Options) ->
-    hg_log_scope:scope(
+    scoper:scope(
         payment,
-        fun() -> process_timeout(St#st{opts = Options}) end,
-        get_st_meta(St)
+        get_st_meta(St),
+        fun() -> process_timeout(St#st{opts = Options}) end
     ).
 
 process_timeout(St) ->
@@ -859,10 +859,10 @@ process_timeout(St) ->
     {_, {next | done, result()}}. % FIXME
 
 process_call({callback, Tag, Payload}, St, Options) ->
-    hg_log_scope:scope(
+    scoper:scope(
         payment,
-        fun() -> process_callback(Tag, Payload, St#st{opts = Options}) end,
-        get_st_meta(St)
+        get_st_meta(St),
+        fun() -> process_callback(Tag, Payload, St#st{opts = Options}) end
     ).
 
 process_callback(Tag, Payload, St) ->

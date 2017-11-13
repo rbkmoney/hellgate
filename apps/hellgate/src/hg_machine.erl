@@ -151,7 +151,7 @@ call_automaton(Function, Args) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
-    hg_log_scope:scope(machine,
+    scoper:scope(machine,
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
@@ -159,7 +159,7 @@ handle_function(Func, Args, Opts) ->
 
 handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
     #'SignalArgs'{signal = {Type, Signal}, machine = #'Machine'{id = ID} = Machine} = Args,
-    hg_log_scope:set_meta(#{
+    scoper:add_meta(#{
         namespace => Ns,
         id => ID,
         activity => signal,
@@ -169,7 +169,7 @@ handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
 
 handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
     #'CallArgs'{arg = Payload, machine = #'Machine'{id = ID} = Machine} = Args,
-    hg_log_scope:set_meta(#{
+    scoper:add_meta(#{
         namespace => Ns,
         id => ID,
         activity => call

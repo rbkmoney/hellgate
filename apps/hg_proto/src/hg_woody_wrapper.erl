@@ -63,7 +63,11 @@ call(ServiceName, Function, Args) ->
 call(ServiceName, Function, Args, Opts) ->
     Service = get_service_modname(ServiceName),
     Context = hg_context:get(),
-    woody_client:call({Service, Function, Args}, Opts#{event_handler => {hg_woody_event_handler, undefined}}, Context).
+    woody_client:call(
+        {Service, Function, Args},
+        Opts#{event_handler => scoper_woody_event_handler},
+        Context
+    ).
 
 -spec raise(term()) ->
     no_return().
