@@ -274,7 +274,8 @@ construct_payer({payment_resource, #payproc_PaymentResourcePayerParams{
 }}) ->
     ?payment_resource_payer(Resource, ContactInfo);
 construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID}}) ->
-    CustomerBinding = get_active_customer_binding(CustomerID),
+    Customer = get_customer(CustomerID),
+    ActiveBinding = get_active_binding(Customer),
     % by keynfawkes
     % TODO Should we bake recurrent token right in too?
     %      Expect to have some issues related to access control while trying
@@ -283,27 +284,22 @@ construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID
     % we dont need it for refund, so I think - no
     ?customer_payer(
         CustomerID,
-        CustomerBinding#payproc_CustomerBinding.id,
-        CustomerBinding#payproc_CustomerBinding.rec_payment_tool_id,
-        get_resource_payment_tool(CustomerBinding#payproc_CustomerBinding.payment_resource),
-        get_customer_contact_info(get_customer(CustomerID))
+        ActiveBinding#payproc_CustomerBinding.id,
+        ActiveBinding#payproc_CustomerBinding.rec_payment_tool_id,
+        get_resource_payment_tool(ActiveBinding#payproc_CustomerBinding.payment_resource),
+        get_customer_contact_info(Customer)
     ).
+
+get_active_binding(#payproc_Customer{bindings = Bindings, active_binding_id = BindingID}) ->
+    case lists:keytake(BindingID, #payproc_CustomerBinding.id, Bindings) of
+        {value, ActiveBinding, _} ->
+            ActiveBinding;
+        false ->
+            throw_invalid_request(<<"Specified customer is not ready">>)
+    end.
 
 get_customer_contact_info(#payproc_Customer{contact_info = ContactInfo}) ->
     ContactInfo.
-
-get_active_customer_binding(CustomerID) ->
-    case issue_customer_call('GetActiveBinding', [CustomerID]) of
-        {ok, CustomerBinding} ->
-            CustomerBinding;
-        % TODO ease this exception hell
-        {exception, #payproc_InvalidUser{}} ->
-            throw_invalid_request(<<"Specified customer not found">>);
-        {exception, #payproc_CustomerNotFound{}} ->
-            throw_invalid_request(<<"Specified customer not found">>);
-        {exception, #payproc_InvalidCustomerStatus{}} ->
-            throw_invalid_request(<<"Specified customer is not ready">>)
-    end.
 
 construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Revision) ->
     VS1 = validate_payment_tool(

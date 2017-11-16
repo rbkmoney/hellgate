@@ -541,11 +541,11 @@ try_get_active_binding(St) ->
             undefined
     end.
 
-get_active_binding_id(#st{active_binding = BindingID}) ->
+get_active_binding_id(#st{customer = #payproc_Customer{active_binding_id = BindingID}}) ->
     BindingID.
 
-set_active_binding_id(BindingID, St = #st{}) ->
-    St#st{active_binding = BindingID}.
+set_active_binding_id(BindingID, St = #st{customer = Customer}) ->
+    St#st{customer = Customer#payproc_Customer{active_binding_id = BindingID}}.
 
 %%
 %% Validators and stuff
