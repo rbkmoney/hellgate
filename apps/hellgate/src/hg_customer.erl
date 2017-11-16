@@ -191,18 +191,9 @@ namespace() ->
 -spec init(customer_id(), customer_params()) ->
     hg_machine:result().
 init(CustomerID, CustomerParams) ->
-    {OwnerID, ShopID, ContactInfo, Metadata, CreatedAt} =
-        get_customer_created_event_params(CustomerParams),
     handle_result(#{
         changes => [
-            ?customer_created(
-                CustomerID,
-                OwnerID,
-                ShopID,
-                Metadata,
-                ContactInfo,
-                CreatedAt
-            )
+            get_customer_created_event(CustomerID, CustomerParams)
         ],
         auxst => #{}
     }).
@@ -424,13 +415,13 @@ set_event_poll_timer() ->
 
 %%
 
-get_customer_created_event_params(Params = #payproc_CustomerParams{}) ->
+get_customer_created_event(CustomerID, Params = #payproc_CustomerParams{}) ->
     OwnerID = Params#payproc_CustomerParams.party_id,
     ShopID = Params#payproc_CustomerParams.shop_id,
     ContactInfo = Params#payproc_CustomerParams.contact_info,
     Metadata = Params#payproc_CustomerParams.metadata,
     CreatedAt = hg_datetime:format_now(),
-    {OwnerID, ShopID, ContactInfo, Metadata, CreatedAt}.
+    ?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt).
 
 %%
 
@@ -443,8 +434,8 @@ merge_event({_ID, _, Changes}, St) ->
 merge_changes(Changes, St) ->
     lists:foldl(fun merge_change/2, St, Changes).
 
-merge_change(?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt), St) ->
-    Customer = create_customer(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt),
+merge_change(?customer_created(_, _, _, _, _, _) = CustomerCreatedChange, St) ->
+    Customer = create_customer(CustomerCreatedChange),
     set_customer(Customer, St);
 merge_change(?customer_deleted(), St) ->
     set_customer(undefined, St);
@@ -487,7 +478,7 @@ get_shop_id(#st{customer = #payproc_Customer{shop_id = ShopID}}) ->
 get_customer(#st{customer = Customer}) ->
     Customer.
 
-create_customer(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt) ->
+create_customer(?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt)) ->
     #payproc_Customer{
         id = CustomerID,
         owner_id = OwnerID,
