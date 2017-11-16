@@ -191,10 +191,11 @@ namespace() ->
 -spec init(customer_id(), customer_params()) ->
     hg_machine:result().
 init(CustomerID, CustomerParams) ->
-    Customer = create_customer(CustomerID, CustomerParams),
     handle_result(#{
-        changes => [?customer_created(Customer)],
-        auxst   => #{}
+        changes => [
+            get_customer_created_event(CustomerID, CustomerParams)
+        ],
+        auxst => #{}
     }).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
@@ -414,17 +415,13 @@ set_event_poll_timer() ->
 
 %%
 
-create_customer(CustomerID, Params = #payproc_CustomerParams{}) ->
-    #payproc_Customer{
-        id             = CustomerID,
-        owner_id       = Params#payproc_CustomerParams.party_id,
-        shop_id        = Params#payproc_CustomerParams.shop_id,
-        status         = ?customer_unready(),
-        created_at     = hg_datetime:format_now(),
-        bindings       = [],
-        contact_info   = Params#payproc_CustomerParams.contact_info,
-        metadata       = Params#payproc_CustomerParams.metadata
-    }.
+get_customer_created_event(CustomerID, Params = #payproc_CustomerParams{}) ->
+    OwnerID = Params#payproc_CustomerParams.party_id,
+    ShopID = Params#payproc_CustomerParams.shop_id,
+    ContactInfo = Params#payproc_CustomerParams.contact_info,
+    Metadata = Params#payproc_CustomerParams.metadata,
+    CreatedAt = hg_datetime:format_now(),
+    ?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt).
 
 %%
 
@@ -437,7 +434,8 @@ merge_event({_ID, _, Changes}, St) ->
 merge_changes(Changes, St) ->
     lists:foldl(fun merge_change/2, St, Changes).
 
-merge_change(?customer_created(Customer), St) ->
+merge_change(?customer_created(_, _, _, _, _, _) = CustomerCreatedChange, St) ->
+    Customer = create_customer(CustomerCreatedChange),
     set_customer(Customer, St);
 merge_change(?customer_deleted(), St) ->
     set_customer(undefined, St);
@@ -479,6 +477,18 @@ get_shop_id(#st{customer = #payproc_Customer{shop_id = ShopID}}) ->
 
 get_customer(#st{customer = Customer}) ->
     Customer.
+
+create_customer(?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt)) ->
+    #payproc_Customer{
+        id = CustomerID,
+        owner_id = OwnerID,
+        shop_id = ShopID,
+        status = ?customer_unready(),
+        created_at = CreatedAt,
+        bindings = [],
+        contact_info = ContactInfo,
+        metadata = Metadata
+    }.
 
 set_customer(Customer, St = #st{}) ->
     St#st{customer = Customer}.
@@ -583,8 +593,7 @@ assert_shop_operable(Shop) ->
 %%
 
 marshal(Changes) ->
-    Version = 1,
-    marshal({list, {change, Version}}, Changes).
+    marshal({list, change}, Changes).
 
 marshal({list, T}, Vs) when is_list(Vs) ->
     [marshal(T, V) || V <- Vs];
@@ -608,50 +617,55 @@ marshal(event_id, EventID) ->
 
 %% Changes
 
-marshal({change, Version}, Change) ->
-    [Version, marshal(change_payload, Change)];
+marshal(change, Change) ->
+    marshal(change_payload, Change);
 
-marshal(change_payload, ?customer_created(Customer)) ->
-    #{
-        <<"change">>    => <<"created">>,
-        <<"customer">>  => marshal(customer, Customer)
-    };
+marshal(change_payload, ?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt)) ->
+    [2, #{
+        <<"change">>       => <<"created">>,
+        <<"customer_id">>  => marshal(str         , CustomerID),
+        <<"owner_id">>     => marshal(str         , OwnerID),
+        <<"shop_id">>      => marshal(str         , ShopID),
+        <<"metadata">>     => marshal(metadata    , Metadata),
+        <<"contact_info">> => marshal(contact_info, ContactInfo),
+        <<"created_at">>   => marshal(str         , CreatedAt)
+    }];
 marshal(change_payload, ?customer_deleted()) ->
-    #{
+    [1, #{
         <<"change">> => <<"deleted">>
-    };
+    }];
 marshal(change_payload, ?customer_status_changed(CustomerStatus)) ->
-    #{
+    [1, #{
         <<"change">> => <<"status">>,
         <<"status">> => marshal(customer_status, CustomerStatus)
-    };
+    }];
 marshal(change_payload, ?customer_binding_changed(CustomerBindingID, Payload)) ->
-    #{
+    [1, #{
         <<"change">>     => <<"binding">>,
         <<"binding_id">> => marshal(str, CustomerBindingID),
         <<"payload">>    => marshal(binding_change_payload, Payload)
-    };
+    }];
 
 %% Change components
 
 marshal(
     customer,
     #payproc_Customer{
-        id             = ID,
-        owner_id       = OwnerID,
-        shop_id        = ShopID,
-        created_at     = CreatedAt,
-        contact_info   = ContactInfo,
-        metadata       = Metadata
+        id           = ID,
+        owner_id     = OwnerID,
+        shop_id      = ShopID,
+        created_at   = CreatedAt,
+        contact_info = ContactInfo,
+        metadata     = Metadata
     }
 ) ->
     #{
-        <<"id">>         => marshal(str             , ID),
-        <<"owner_id">>   => marshal(str             , OwnerID),
-        <<"shop_id">>    => marshal(str             , ShopID),
-        <<"created_at">> => marshal(str             , CreatedAt),
-        <<"contact">>    => marshal(contact_info    , ContactInfo),
-        <<"metadata">>   => marshal(metadata        , Metadata)
+        <<"id">>           => marshal(str         , ID),
+        <<"owner_id">>     => marshal(str         , OwnerID),
+        <<"shop_id">>      => marshal(str         , ShopID),
+        <<"created_at">>   => marshal(str         , CreatedAt),
+        <<"contact_info">> => marshal(contact_info, ContactInfo),
+        <<"metadata">>     => marshal(metadata    , Metadata)
     };
 
 marshal(customer_status, ?customer_unready()) ->
@@ -806,11 +820,36 @@ unmarshal(event_id, EventID) ->
 unmarshal(change, [Version, V]) ->
     unmarshal({change, Version}, V);
 
+unmarshal({change, 2}, #{
+    <<"change">>       := <<"created">>,
+    <<"customer_id">>  := CustomerID,
+    <<"owner_id">>     := OwnerID,
+    <<"shop_id">>      := ShopID,
+    <<"created_at">>   := CreatedAt,
+    <<"contact_info">> := ContactInfo,
+    <<"metadata">>     := Metadata
+}) ->
+    ?customer_created(
+        unmarshal(str             , CustomerID),
+        unmarshal(str             , OwnerID),
+        unmarshal(str             , ShopID),
+        unmarshal(metadata        , Metadata),
+        unmarshal(contact_info    , ContactInfo),
+        unmarshal(str             , CreatedAt)
+    );
 unmarshal({change, 1}, #{
     <<"change">>    := <<"created">>,
     <<"customer">>  := Customer
 }) ->
-    ?customer_created(unmarshal(customer, Customer));
+    #payproc_Customer{
+        id = CustomerID,
+        owner_id = OwnerID,
+        shop_id = ShopID,
+        created_at = CreatedAt,
+        contact_info = ContactInfo,
+        metadata = Metadata
+    } = unmarshal(customer, Customer),
+    ?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt);
 unmarshal({change, 1}, #{
     <<"change">> := <<"deleted">>
 }) ->

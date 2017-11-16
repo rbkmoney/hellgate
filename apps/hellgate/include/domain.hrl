@@ -33,12 +33,13 @@
 -define(payment_resource_payer(Resource, ContactInfo),
     {payment_resource, #domain_PaymentResourcePayer{resource = Resource, contact_info = ContactInfo}}).
 
--define(customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool),
+-define(customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool, ContactInfo),
     {customer, #domain_CustomerPayer{
         customer_id = CustomerID,
         customer_binding_id = CustomerBindingID,
         rec_payment_tool_id = RecurrentPaytoolID,
-        payment_tool = PaymentTool
+        payment_tool = PaymentTool,
+        contact_info = ContactInfo
     }}
 ).
 
