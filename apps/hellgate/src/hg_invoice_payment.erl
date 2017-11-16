@@ -291,8 +291,8 @@ construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID
     ).
 
 get_active_binding(#payproc_Customer{bindings = Bindings, active_binding_id = BindingID}) ->
-    case lists:keytake(BindingID, #payproc_CustomerBinding.id, Bindings) of
-        {value, ActiveBinding, _} ->
+    case lists:keysearch(BindingID, #payproc_CustomerBinding.id, Bindings) of
+        {value, ActiveBinding} ->
             ActiveBinding;
         false ->
             throw_invalid_request(<<"Specified customer is not ready">>)
