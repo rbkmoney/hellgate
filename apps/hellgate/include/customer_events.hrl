@@ -9,9 +9,16 @@
 
 -define(customer_event(CustomerChanges), {customer_changes, CustomerChanges}).
 
--define(customer_created(Customer),
+-define(customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt),
     {customer_created,
-        #payproc_CustomerCreated{customer = Customer}}).
+        #payproc_CustomerCreated{
+            customer_id  = CustomerID,
+            owner_id     = OwnerID,
+            shop_id      = ShopID,
+            metadata     = Metadata,
+            contact_info = ContactInfo,
+            created_at   = CreatedAt
+        }}).
 
 -define(customer_deleted(),
     {customer_deleted,
