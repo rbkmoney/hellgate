@@ -274,7 +274,8 @@ construct_payer({payment_resource, #payproc_PaymentResourcePayerParams{
 }}) ->
     ?payment_resource_payer(Resource, ContactInfo);
 construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID}}) ->
-    CustomerBinding = get_active_customer_binding(CustomerID),
+    Customer = get_customer(CustomerID),
+    ActiveBinding = get_active_binding(Customer),
     % by keynfawkes
     % TODO Should we bake recurrent token right in too?
     %      Expect to have some issues related to access control while trying
@@ -283,23 +284,22 @@ construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID
     % we dont need it for refund, so I think - no
     ?customer_payer(
         CustomerID,
-        CustomerBinding#payproc_CustomerBinding.id,
-        CustomerBinding#payproc_CustomerBinding.rec_payment_tool_id,
-        get_resource_payment_tool(CustomerBinding#payproc_CustomerBinding.payment_resource)
+        ActiveBinding#payproc_CustomerBinding.id,
+        ActiveBinding#payproc_CustomerBinding.rec_payment_tool_id,
+        get_resource_payment_tool(ActiveBinding#payproc_CustomerBinding.payment_resource),
+        get_customer_contact_info(Customer)
     ).
 
-get_active_customer_binding(CustomerID) ->
-    case issue_customer_call('GetActiveBinding', [CustomerID]) of
-        {ok, CustomerBinding} ->
-            CustomerBinding;
-        % TODO ease this exception hell
-        {exception, #payproc_InvalidUser{}} ->
-            throw_invalid_request(<<"Specified customer not found">>);
-        {exception, #payproc_CustomerNotFound{}} ->
-            throw_invalid_request(<<"Specified customer not found">>);
-        {exception, #payproc_InvalidCustomerStatus{}} ->
+get_active_binding(#payproc_Customer{bindings = Bindings, active_binding_id = BindingID}) ->
+    case lists:keysearch(BindingID, #payproc_CustomerBinding.id, Bindings) of
+        {value, ActiveBinding} ->
+            ActiveBinding;
+        false ->
             throw_invalid_request(<<"Specified customer is not ready">>)
     end.
+
+get_customer_contact_info(#payproc_Customer{contact_info = ContactInfo}) ->
+    ContactInfo.
 
 construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Revision) ->
     VS1 = validate_payment_tool(
@@ -328,7 +328,6 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Rev
             domain_revision = Revision,
             status          = ?pending(),
             cost            = Cost,
-            payer_details   = construct_legacy_payer_details(Payer),
             payer           = Payer,
             flow            = Flow
         },
@@ -349,25 +348,7 @@ construct_payment_flow({hold, Params}, CreatedAt, Terms, VS, Revision) ->
         VS#{flow => {hold, Lifetime}}
     }.
 
-construct_legacy_payer_details(Payer) ->
-    construct_legacy_payer_details(Payer, get_contact_info(Payer)).
-
-construct_legacy_payer_details(?customer_payer(_, _, _, PaymentTool), ContactInfo) ->
-    #domain_LegacyPayerDetails {
-        payment_tool = PaymentTool,
-        session_id   = <<"">>,
-        client_info  = #domain_ClientInfo{},
-        contact_info = ContactInfo
-    };
-construct_legacy_payer_details(?payment_resource_payer(Resource, _), ContactInfo) ->
-    #domain_LegacyPayerDetails {
-        payment_tool = Resource#domain_DisposablePaymentResource.payment_tool,
-        session_id   = Resource#domain_DisposablePaymentResource.payment_session_id,
-        client_info  = Resource#domain_DisposablePaymentResource.client_info,
-        contact_info = ContactInfo
-    }.
-
-get_predefined_route(?customer_payer(_, _, RecPaymentToolID, _) = Payer) ->
+get_predefined_route(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
     case get_rec_payment_tool(RecPaymentToolID) of
         {ok, #payproc_RecurrentPaymentTool{
             route = Route
@@ -1105,7 +1086,6 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         trx = Trx,
-        payer_details = construct_legacy_payer_details(Payer, ContactInfo),
         payment_resource = get_payment_resource(Payer),
         cost = construct_proxy_cash(Cost),
         contact_info = ContactInfo
@@ -1113,7 +1093,7 @@ construct_proxy_payment(
 
 get_payment_resource(?payment_resource_payer(Resource, _)) ->
     {disposable_payment_resource, Resource};
-get_payment_resource(?customer_payer(_, _, RecPaymentToolID, _) = Payer) ->
+get_payment_resource(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
     case get_rec_payment_tool(RecPaymentToolID) of
         {ok, #payproc_RecurrentPaymentTool{
             payment_resource = #domain_DisposablePaymentResource{
@@ -1132,8 +1112,7 @@ get_payment_resource(?customer_payer(_, _, RecPaymentToolID, _) = Payer) ->
 
 get_contact_info(?payment_resource_payer(_, ContactInfo)) ->
     ContactInfo;
-get_contact_info(?customer_payer(CustomerID, _, _, _)) ->
-    #payproc_Customer{contact_info = ContactInfo} = get_customer(CustomerID),
+get_contact_info(?customer_payer(_, _, _, _, ContactInfo)) ->
     ContactInfo.
 
 construct_proxy_invoice(
@@ -1259,7 +1238,7 @@ get_payment_tool(#domain_InvoicePayment{payer = Payer}) ->
 
 get_payer_payment_tool(?payment_resource_payer(PaymentResource, _ContactInfo)) ->
     get_resource_payment_tool(PaymentResource);
-get_payer_payment_tool(?customer_payer(_CustomerID, _, _, PaymentTool)) ->
+get_payer_payment_tool(?customer_payer(_CustomerID, _, _, PaymentTool, _)) ->
     PaymentTool.
 
 get_currency(#domain_Cash{currency = Currency}) ->
@@ -1656,7 +1635,6 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         <<"domain_revision">>   => marshal(str, Payment#domain_InvoicePayment.domain_revision),
         <<"cost">>              => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
         <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
-        <<"payer_details">>     => marshal(payer_details, Payment#domain_InvoicePayment.payer_details),
         <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow),
         <<"context">>           => hg_content:marshal(Payment#domain_InvoicePayment.context)
     });
@@ -1791,26 +1769,14 @@ marshal(payer, ?payment_resource_payer(Resource, ContactInfo)) ->
         <<"contact_info">>   => marshal(contact_info, ContactInfo)
     }];
 
-marshal(payer, ?customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool)) ->
-    [2, #{
+marshal(payer, ?customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool, ContactInfo)) ->
+    [3, #{
         <<"type">>                  => <<"customer_payer">>,
         <<"customer_id">>           => marshal(str, CustomerID),
         <<"customer_binding_id">>   => marshal(str, CustomerBindingID),
         <<"rec_payment_tool_id">>   => marshal(str, RecurrentPaytoolID),
-        <<"payment_tool">>          => hg_payment_tool:marshal(PaymentTool)
-    }];
-
-marshal(payer_details, #domain_LegacyPayerDetails{
-    payment_tool = PaymentTool,
-    session_id   = SessionId,
-    client_info  = ClientInfo,
-    contact_info = ContactInfo
-}) ->
-    [1, #{
-        <<"payment_tool">>  => hg_payment_tool:marshal(PaymentTool),
-        <<"session_id">>    => marshal(str, SessionId),
-        <<"client_info">>   => marshal(client_info, ClientInfo),
-        <<"contact_info">>  => marshal(contact_info, ContactInfo)
+        <<"payment_tool">>          => hg_payment_tool:marshal(PaymentTool),
+        <<"contact_info">>          => marshal(contact_info, ContactInfo)
     }];
 
 marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
@@ -1958,20 +1924,12 @@ unmarshal(payment, #{
     <<"flow">>              := Flow
 } = Payment) ->
     Context = maps:get(<<"context">>, Payment, undefined),
-    Payer = unmarshal(payer, MarshalledPayer),
-    PayerDetails = case maps:get(<<"payer_details">>, Payment, undefined) of
-        [_, #{}] = P ->
-            unmarshal(payer_details, P);
-        undefined ->
-            construct_legacy_payer_details(Payer)
-    end,
     #domain_InvoicePayment{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
         cost            = hg_cash:unmarshal(Cash),
-        payer_details   = PayerDetails,
-        payer           = Payer,
+        payer           = unmarshal(payer, MarshalledPayer),
         status          = ?pending(),
         flow            = unmarshal(flow, Flow),
         context         = hg_content:unmarshal(Context)
@@ -1987,7 +1945,6 @@ unmarshal(payment,
         domain_revision = unmarshal(int, Revision),
         status          = unmarshal(status, Status),
         cost            = hg_cash:unmarshal([1, Cash]),
-        payer_details   = construct_legacy_payer_details(Payer),
         payer           = Payer,
         flow            = ?invoice_payment_flow_instant(),
         context         = hg_content:unmarshal(Context)
@@ -2180,6 +2137,22 @@ unmarshal(refund_status, [<<"failed">>, Failure]) ->
 
 %% Payer
 
+unmarshal(payer, [3, #{
+    <<"type">>                := <<"customer_payer">>,
+    <<"customer_id">>         := CustomerID,
+    <<"customer_binding_id">> := CustomerBindingID,
+    <<"rec_payment_tool_id">> := RecurrentPaytoolID,
+    <<"payment_tool">>        := PaymentTool,
+    <<"contact_info">>        := ContactInfo
+}]) ->
+    ?customer_payer(
+        unmarshal(str, CustomerID),
+        unmarshal(str, CustomerBindingID),
+        unmarshal(str, RecurrentPaytoolID),
+        hg_payment_tool:unmarshal(PaymentTool),
+        unmarshal(contact_info, ContactInfo)
+    );
+
 unmarshal(payer, [2, #{
     <<"type">>           := <<"payment_resource_payer">>,
     <<"resource">>       := Resource,
@@ -2201,7 +2174,8 @@ unmarshal(payer, [2, #{
         unmarshal(str, CustomerID),
         unmarshal(str, CustomerBindingID),
         unmarshal(str, RecurrentPaytoolID),
-        hg_payment_tool:unmarshal(PaymentTool)
+        hg_payment_tool:unmarshal(PaymentTool),
+        get_customer_contact_info(get_customer(unmarshal(str, CustomerID)))
     );
 
 unmarshal(payer, #{
@@ -2230,19 +2204,6 @@ unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo))
         unmarshal(disposable_payment_resource, Resource),
         unmarshal(contact_info, ContactInfo)
     );
-
-unmarshal(payer_details, [1, #{
-    <<"payment_tool">>  := PaymentTool,
-    <<"session_id">>    := SessionId,
-    <<"client_info">>   := ClientInfo,
-    <<"contact_info">>  := ContactInfo
-}]) ->
-    #domain_LegacyPayerDetails{
-        payment_tool = hg_payment_tool:unmarshal(PaymentTool),
-        session_id   = unmarshal(str, SessionId),
-        client_info  = unmarshal(client_info, ClientInfo),
-        contact_info = unmarshal(contact_info, ContactInfo)
-    };
 
 unmarshal(disposable_payment_resource, #{
     <<"payment_tool">> := PaymentTool,

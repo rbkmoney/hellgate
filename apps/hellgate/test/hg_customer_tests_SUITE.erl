@@ -242,7 +242,7 @@ start_binding_w_failure(C) ->
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
     Bindings = [CustomerBinding],
     [
-        ?customer_created(_)
+        ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_started(_))
@@ -264,7 +264,7 @@ start_binding(C) ->
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
     Bindings = [CustomerBinding],
     [
-        ?customer_created(_)
+        ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_started(_))
@@ -290,7 +290,7 @@ start_binding_w_tds(C) ->
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
     Bindings = [CustomerBinding],
     [
-        ?customer_created(_)
+        ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_started(_))
@@ -319,7 +319,7 @@ start_two_bindings(C) ->
     #payproc_Customer{id = CustomerID, bindings = Bindings} = hg_client_customer:get(CustomerID, Client),
     true = sets:from_list(Bindings) =:= sets:from_list([CustomerBinding1, CustomerBinding2]),
     [
-        ?customer_created(_Customer)
+        ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     StartChanges = [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1)),
@@ -350,7 +350,7 @@ start_two_bindings_w_tds(C) ->
     #payproc_Customer{id = CustomerID, bindings = Bindings} = hg_client_customer:get(CustomerID, Client),
     true = sets:from_list(Bindings) =:= sets:from_list([CustomerBinding1, CustomerBinding2]),
     [
-        ?customer_created(_Customer)
+        ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     StartChanges = [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1)),
