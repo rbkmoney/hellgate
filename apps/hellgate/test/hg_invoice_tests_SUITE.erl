@@ -28,7 +28,7 @@
 -export([payment_w_terminal_success/1]).
 -export([payment_w_customer_success/1]).
 -export([payment_w_incorrect_customer/1]).
-% -export([payment_w_deleted_customer/1]).
+-export([payment_w_deleted_customer/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
@@ -87,7 +87,7 @@ all() ->
         payment_w_terminal_success,
         payment_w_customer_success,
         payment_w_incorrect_customer,
-        % payment_w_deleted_customer,
+        payment_w_deleted_customer,
         payment_success_on_second_try,
         payment_fail_after_silent_callback,
         invoice_success_on_third_payment,
@@ -515,6 +515,19 @@ payment_w_incorrect_customer(C) ->
     AnotherShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
     InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
+    PaymentParams = make_customer_payment_params(CustomerID),
+    {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
+
+-spec payment_w_deleted_customer(config()) -> test_return().
+
+payment_w_deleted_customer(C) ->
+    Client = cfg(client, C),
+    CustomerClient = cfg(customer_client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, CustomerClient),
+    ok = hg_client_customer:delete(CustomerID, CustomerClient),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
 

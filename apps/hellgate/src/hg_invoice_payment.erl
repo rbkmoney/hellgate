@@ -1464,6 +1464,8 @@ get_customer(CustomerID) ->
     case issue_customer_call('Get', [CustomerID]) of
         {ok, Customer} ->
             Customer;
+        {exception, #payproc_CustomerNotFound{}} ->
+            throw_invalid_request(<<"Customer not found">>);
         {exception, Error} ->
             error({<<"Can't get customer">>, Error})
     end.
