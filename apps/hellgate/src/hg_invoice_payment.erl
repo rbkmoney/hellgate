@@ -215,7 +215,7 @@ init_(PaymentID, Params, Opts) ->
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Cost = get_invoice_cost(Invoice),
-    Payer = construct_payer(get_payer_params(Params)),
+    Payer = construct_payer(get_payer_params(Params), Shop),
     Flow = get_flow_params(Params),
     Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
@@ -271,10 +271,11 @@ get_flow_params(#payproc_InvoicePaymentParams{flow = FlowParams}) ->
 construct_payer({payment_resource, #payproc_PaymentResourcePayerParams{
     resource = Resource,
     contact_info = ContactInfo
-}}) ->
+}}, _) ->
     ?payment_resource_payer(Resource, ContactInfo);
-construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID}}) ->
+construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID}}, Shop) ->
     Customer = get_customer(CustomerID),
+    ok = validate_customer_shop(Customer, Shop),
     ActiveBinding = get_active_binding(Customer),
     % by keynfawkes
     % TODO Should we bake recurrent token right in too?
@@ -289,6 +290,11 @@ construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID
         get_resource_payment_tool(ActiveBinding#payproc_CustomerBinding.payment_resource),
         get_customer_contact_info(Customer)
     ).
+
+validate_customer_shop(#payproc_Customer{shop_id = ShopID}, #domain_Shop{id = ShopID}) ->
+    ok;
+validate_customer_shop(_, _) ->
+    throw_invalid_request(<<"Invalid customer">>).
 
 get_active_binding(#payproc_Customer{bindings = Bindings, active_binding_id = BindingID}) ->
     case lists:keysearch(BindingID, #payproc_CustomerBinding.id, Bindings) of
