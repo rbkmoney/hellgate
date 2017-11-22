@@ -11,11 +11,13 @@
 %%
 
 -type condition() :: dmsl_domain_thrift:'Condition'().
--type varset()    :: #{}. %% TODO
+-type varset()    :: hg_selector:varset().
 
 -spec test(condition(), varset(), hg_domain:revision()) ->
     true | false | undefined.
 
+test({residence_is, V1}, #{residence := V2}, _) ->
+    V1 =:= V2;
 test({category_is, V1}, #{category := V2}, _) ->
     V1 =:= V2;
 test({currency_is, V1}, #{currency := V2}, _) ->

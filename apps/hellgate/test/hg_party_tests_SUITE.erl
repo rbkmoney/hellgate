@@ -170,7 +170,6 @@ groups() ->
             shop_creation,
             shop_terms_retrieval,
             shop_already_exists,
-            % shop_activation,
             shop_update,
             {group, shop_blocking_suspension}
         ]},
@@ -200,7 +199,6 @@ groups() ->
             claim_already_accepted_on_accept,
             claim_already_accepted_on_deny,
             shop_creation,
-            % shop_activation,
             claim_acceptance,
             claim_denial,
             claim_revocation,
@@ -395,12 +393,11 @@ party_creation(C) ->
     ContactInfo = #domain_PartyContactInfo{email = <<?MODULE_STRING>>},
     ok = hg_client_party:create(make_party_params(ContactInfo), Client),
     [
-        ?party_created(?party_w_status(PartyID, ?unblocked(_, _), ?active(_))),
-        ?claim_created(?claim(_, ?pending(), [_ | _])),
-        ?claim_status_changed(_, ?accepted(_), _, _)
+        ?party_created(?party_w_status(PartyID, ?unblocked(_, _), ?active(_)))
     ] = next_event(Client),
-    #domain_Party{contact_info = ContactInfo, shops = Shops} = hg_client_party:get(Client),
-    [{_ShopID, #domain_Shop{suspension = ?active(_)}}] = maps:to_list(Shops).
+    #domain_Party{contact_info = ContactInfo, shops = Shops, contracts = Contracts} = hg_client_party:get(Client),
+    0 = maps:size(Shops),
+    0 = maps:size(Contracts).
 
 party_already_exists(C) ->
     Client = cfg(client, C),
@@ -436,7 +433,7 @@ contract_not_found(C) ->
 
 contract_creation(C) ->
     Client = cfg(client, C),
-    ContractParams = hg_ct_helper:make_battle_ready_contract_params(),
+    ContractParams = make_contract_params(),
     PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
     ContractID = ?REAL_CONTRACT_ID,
     PayoutToolID = <<"1">>,
@@ -465,14 +462,14 @@ contract_terms_retrieval(C) ->
 
 contract_already_exists(C) ->
     Client = cfg(client, C),
-    ContractParams = hg_ct_helper:make_battle_ready_contract_params(),
+    ContractParams = make_contract_params(),
     ContractID = ?REAL_CONTRACT_ID,
     Changeset = [?contract_modification(ContractID, {creation, ContractParams})],
     ?invalid_changeset({contract_already_exists, ContractID}) = hg_client_party:create_claim(Changeset, Client).
 
 contract_termination(C) ->
     Client = cfg(client, C),
-    ContractID = <<"TESTCONTRACT">>,
+    ContractID = ?REAL_CONTRACT_ID,
     Changeset = [?contract_modification(ContractID, ?contract_termination(<<"WHY NOT?!">>))],
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
@@ -483,7 +480,7 @@ contract_termination(C) ->
 
 contract_already_terminated(C) ->
     Client = cfg(client, C),
-    ContractID = <<"TESTCONTRACT">>,
+    ContractID = ?REAL_CONTRACT_ID,
     Changeset = [
         ?contract_modification(ContractID, ?contract_termination(<<"JUST TO BE SURE.">>))
     ],
@@ -491,7 +488,7 @@ contract_already_terminated(C) ->
 
 contract_expiration(C) ->
     Client = cfg(client, C),
-    ContractParams = hg_ct_helper:make_battle_ready_contract_params(?tmpl(3)),
+    ContractParams = make_contract_params(?tmpl(3)),
     PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
     ContractID = <<"CONTRACT_EXPIRED">>,
     Changeset = [
@@ -606,22 +603,18 @@ shop_creation(C) ->
         contract_id = ContractID,
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
-    Changeset = [?shop_modification(ShopID, {creation, Params})],
+    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(<<"RUB">>)},
+    Changeset = [
+        ?shop_modification(ShopID, {creation, Params}),
+        ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
+    ],
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
-    ?claim(
-        _,
-        _,
-        [
-            ?shop_modification(ShopID, {creation, Params}),
-            ?shop_modification(ShopID, {shop_account_creation, _})
-        ]
-    ) = Claim,
+    ?claim(_, _, Changeset) = Claim,
     ok = accept_claim(Claim, Client),
     #domain_Shop{
         id = ShopID,
-        % FIXME is this a bug?
-        % suspension = ?suspended(),
-        details = Details
+        details = Details,
+        account = #domain_ShopAccount{currency = ?cur(<<"RUB">>)}
     } = hg_client_party:get_shop(ShopID, Client).
 
 shop_terms_retrieval(C) ->
@@ -658,7 +651,8 @@ shop_update(C) ->
     ShopID = ?REAL_SHOP_ID,
     Details = hg_ct_helper:make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
     Changeset1 = [?shop_modification(ShopID, {details_modification, Details})],
-    _Claim1 = assert_claim_accepted(hg_client_party:create_claim(Changeset1, Client), Client),
+    Claim1 = assert_claim_pending(hg_client_party:create_claim(Changeset1, Client), Client),
+    ok = accept_claim(Claim1, Client),
     #domain_Shop{details = Details} = hg_client_party:get_shop(ShopID, Client),
 
     Location = {url, <<"suspicious_url">>},
@@ -682,10 +676,11 @@ shop_update_before_confirm(C) ->
     ?shop_not_found() = hg_client_party:get_shop(ShopID, Client),
     NewCategory = ?cat(3),
     NewDetails = hg_ct_helper:make_shop_details(<<"BARBIES SHOP">>, <<"Hot. Short. Clean.">>),
-
+    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(<<"RUB">>)},
     Changeset2 = [
         ?shop_modification(ShopID, {category_modification, NewCategory}),
-        ?shop_modification(ShopID, {details_modification, NewDetails})
+        ?shop_modification(ShopID, {details_modification, NewDetails}),
+        ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
     ],
     ok = update_claim(Claim0, Changeset2, Client),
     Claim1 = hg_client_party:get_claim(hg_claim:get_id(Claim0), Client),
@@ -697,7 +692,7 @@ shop_update_with_bad_params(C) ->
     Client = cfg(client, C),
     ShopID = <<"SHOP2">>,
     ContractID = <<"CONTRACT3">>,
-    ContractParams = hg_ct_helper:make_battle_ready_contract_params(#domain_ContractTemplateRef{id = 5}),
+    ContractParams = make_contract_params(#domain_ContractTemplateRef{id = 5}),
     PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
     Changeset = [
         ?contract_modification(ContractID, {creation, ContractParams}),
@@ -775,8 +770,14 @@ complex_claim_acceptance(C) ->
         contract_id = ContractID,
         payout_tool_id = <<"1">>
     },
+    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(<<"RUB">>)},
     Claim1 = assert_claim_pending(
-        hg_client_party:create_claim([?shop_modification(ShopID1, {creation, Params1})], Client),
+        hg_client_party:create_claim(
+            [
+                ?shop_modification(ShopID1, {creation, Params1}),
+                ?shop_modification(ShopID1, {shop_account_creation, ShopAccountParams})
+            ],
+            Client),
         Client
     ),
     ok = hg_client_party:suspend(Client),
@@ -786,7 +787,13 @@ complex_claim_acceptance(C) ->
     Claim1 = hg_client_party:get_claim(hg_claim:get_id(Claim1), Client),
 
     Claim2 = assert_claim_pending(
-        hg_client_party:create_claim([?shop_modification(ShopID2, {creation, Params2})], Client),
+        hg_client_party:create_claim(
+            [
+                ?shop_modification(ShopID2, {creation, Params2}),
+                ?shop_modification(ShopID2, {shop_account_creation, ShopAccountParams})
+            ],
+            Client
+        ),
         Client
     ),
     ok = update_claim(Claim1, [?shop_modification(ShopID1, {category_modification, ?cat(3)})], Client),
@@ -1096,13 +1103,6 @@ assert_claim_pending(?claim(ClaimID, ?pending()) = Claim, Client) ->
     [?claim_created(?claim(ClaimID))] = next_event(Client),
     Claim.
 
-assert_claim_accepted(?claim(ClaimID, ?accepted(_)) = Claim, Client) ->
-    [
-        ?claim_created(?claim(ClaimID, ?pending())),
-        ?claim_status_changed(ClaimID, ?accepted(_), _, _)
-    ] = next_event(Client),
-    Claim.
-
 %%
 
 -spec consistent_history(config()) -> _ | no_return().
@@ -1128,6 +1128,12 @@ make_party_params() ->
     make_party_params(#domain_PartyContactInfo{email = <<?MODULE_STRING>>}).
 make_party_params(ContactInfo) ->
     #payproc_PartyParams{contact_info = ContactInfo}.
+
+make_contract_params() ->
+    make_contract_params(undefined).
+
+make_contract_params(TemplateRef) ->
+    hg_ct_helper:make_battle_ready_contract_params(TemplateRef, ?pinst(2)).
 
 construct_term_set_for_party(PartyID, Def) ->
     TermSet = #domain_TermSet{
@@ -1219,46 +1225,41 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
         hg_ct_fixture:construct_system_account_set(?sas(1)),
+        hg_ct_fixture:construct_system_account_set(?sas(2)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
+
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = #domain_PaymentInstitution{
+                name = <<"Test Inc.">>,
+                system_account_set = {value, ?sas(1)},
+                default_contract_template = {value, ?tmpl(1)},
+                providers = {value, ?ordset([])},
+                inspector = {value, ?insp(1)},
+                realm = test
+            }
+        }},
+
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(2),
+            data = #domain_PaymentInstitution{
+                name = <<"Chetky Payments Inc.">>,
+                system_account_set = {value, ?sas(2)},
+                default_contract_template = {value, ?tmpl(2)},
+                providers = {value, ?ordset([])},
+                inspector = {value, ?insp(1)},
+                realm = live
+            }
+        }},
 
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
-                party_prototype = #domain_PartyPrototypeRef{id = 42},
-                providers = {value, ordsets:new()},
-                system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
-                default_contract_template = ?tmpl(2),
-                common_merchant_proxy = ?prx(1), % FIXME
-                inspector = {value, ?insp(1)}
-            }
-        }},
-        {party_prototype, #domain_PartyPrototypeObject{
-            ref = #domain_PartyPrototypeRef{id = 42},
-            data = #domain_PartyPrototype{
-                shop = #domain_ShopPrototype{
-                    shop_id = <<"TESTSHOP">>,
-                    category = ?cat(1),
-                    currency = ?cur(<<"RUB">>),
-                    details  = #domain_ShopDetails{
-                        name = <<"SUPER DEFAULT SHOP">>
-                    },
-                    location = {url, <<"">>}
-                },
-                contract = #domain_ContractPrototype{
-                    contract_id = <<"TESTCONTRACT">>,
-                    test_contract_template = ?tmpl(1),
-                    payout_tool = #domain_PayoutToolPrototype{
-                        payout_tool_id = <<"TESTPAYOUTTOOL">>,
-                        payout_tool_info = {bank_account, #domain_BankAccount{
-                            account = <<"">>,
-                            bank_name = <<"">>,
-                            bank_post_account = <<"">>,
-                            bank_bik = <<"">>
-                        }},
-                        payout_tool_currency = ?cur(<<"RUB">>)
-                    }
-                }
+                payment_institution = {value, ?ordset([
+                    ?pinst(1),
+                    ?pinst(2)
+                ])}
             }
         }},
         hg_ct_fixture:construct_contract_template(

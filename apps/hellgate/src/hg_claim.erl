@@ -16,10 +16,9 @@
 -export([set_status/4]).
 -export([is_pending/1]).
 -export([is_accepted/1]).
--export([is_need_acceptance/1]).
+-export([is_need_acceptance/3]).
 -export([is_conflicting/5]).
 -export([update_changeset/4]).
--export([create_party_initial_claim/4]).
 
 -export([assert_revision/2]).
 -export([assert_pending/1]).
@@ -52,22 +51,6 @@ get_id(#payproc_Claim{id = ID}) ->
 get_revision(#payproc_Claim{revision = Revision}) ->
     Revision.
 
--spec create_party_initial_claim(claim_id(), party(), timestamp(), revision()) ->
-    claim().
-
-create_party_initial_claim(ID, Party, Timestamp, Revision) ->
-    % FIXME
-    Email = (Party#domain_Party.contact_info)#domain_PartyContactInfo.email,
-    {ContractID, ContractParams} = hg_party:get_test_contract_params(Email, Revision),
-    {PayoutToolID, PayoutToolParams} = hg_party:get_test_payout_tool_params(Revision),
-    {ShopID, ShopParams} = hg_party:get_test_shop_params(ContractID, PayoutToolID, Revision),
-    Changeset = [
-        ?contract_modification(ContractID, {creation, ContractParams}),
-        ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID, PayoutToolParams)),
-        ?shop_modification(ShopID, {creation, ShopParams})
-    ],
-    create(ID, Changeset, Party, Timestamp, Revision).
-
 -spec create(claim_id(), changeset(), party(), timestamp(), revision()) ->
     claim() | no_return().
 
@@ -76,7 +59,7 @@ create(ID, Changeset, Party, Timestamp, Revision) ->
     #payproc_Claim{
         id        = ID,
         status    = ?pending(),
-        changeset = merge_changesets(Changeset, ensure_shop_accounts_creation(Changeset, Party, Timestamp, Revision)),
+        changeset = Changeset,
         revision = 1,
         created_at = Timestamp
     }.
@@ -87,8 +70,7 @@ create(ID, Changeset, Party, Timestamp, Revision) ->
 update(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim, Party, Timestamp, Revision) ->
     TmpChangeset = merge_changesets(OldChangeset, NewChangeset),
     ok = assert_changeset_applicable(TmpChangeset, Timestamp, Revision, Party),
-    Changeset = merge_changesets(NewChangeset, ensure_shop_accounts_creation(TmpChangeset, Party, Timestamp, Revision)),
-    update_changeset(Changeset, get_next_revision(Claim), Timestamp, Claim).
+    update_changeset(NewChangeset, get_next_revision(Claim), Timestamp, Claim).
 
 -spec update_changeset(changeset(), claim_revision(), timestamp(), claim()) ->
     claim().
@@ -152,11 +134,11 @@ is_accepted(#payproc_Claim{status = ?accepted(_)}) ->
 is_accepted(_) ->
     false.
 
--spec is_need_acceptance(claim()) ->
+-spec is_need_acceptance(claim(), party(), revision()) ->
     boolean().
 
-is_need_acceptance(Claim) ->
-    is_changeset_need_acceptance(get_changeset(Claim)).
+is_need_acceptance(Claim, Party, Revision) ->
+    is_changeset_need_acceptance(get_changeset(Claim), Party, Revision).
 
 -spec is_conflicting(claim(), claim(), timestamp(), revision(), party()) ->
     boolean().
@@ -178,51 +160,51 @@ get_changeset(#payproc_Claim{changeset = Changeset}) ->
 get_next_revision(#payproc_Claim{revision = ClaimRevision}) ->
     ClaimRevision + 1.
 
-is_changeset_need_acceptance(Changeset) ->
-    lists:any(fun is_change_need_acceptance/1, Changeset).
+is_changeset_need_acceptance(Changeset, Party, Revision) ->
+    lists:any(fun(Change) -> is_change_need_acceptance(Change, Party, Revision) end, Changeset).
 
-is_change_need_acceptance(?shop_modification(_, Modification)) ->
-    is_shop_modification_need_acceptance(Modification);
-is_change_need_acceptance(_) ->
+is_change_need_acceptance(?shop_modification(ID, Modification), Party, Revision) ->
+    Shop = hg_party:get_shop(ID, Party),
+    is_shop_modification_need_acceptance(Shop, Modification, Party, Revision);
+is_change_need_acceptance(?contract_modification(ID, Modification), Party, Revision) ->
+    Contract = hg_party:get_contract(ID, Party),
+    is_contract_modification_need_acceptance(Contract, Modification, Revision);
+is_change_need_acceptance(_, _, _) ->
     true.
 
-is_shop_modification_need_acceptance({details_modification, _}) ->
+is_shop_modification_need_acceptance(undefined, {creation, ShopParams}, Party, Revision) ->
+    Contract = hg_party:get_contract(ShopParams#payproc_ShopParams.contract_id, Party),
+    case Contract of
+        undefined ->
+            % contract not exists, so it should be created in same claim
+            % we can check contract creation and forget about this shop change
+            false;
+        #domain_Contract{} ->
+            hg_party:is_live_contract(Contract, Revision)
+    end;
+is_shop_modification_need_acceptance(undefined, _AnyModification, _, _) ->
+    % shop does not exist, so it should be created in same claim
+    % we can check shop creation and forget about this shop change
     false;
-is_shop_modification_need_acceptance({proxy_modification, _}) ->
-    false;
-is_shop_modification_need_acceptance({shop_account_creation, _}) ->
-    false;
-is_shop_modification_need_acceptance(_) ->
-    true.
+is_shop_modification_need_acceptance(Shop, _AnyModification, Party, Revision) ->
+    % shop exist, so contract should be
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    hg_party:is_live_contract(Contract, Revision).
 
-ensure_shop_accounts_creation(Changeset, Party, Timestamp, Revision) ->
-    {CreatedShops, Party1} = lists:foldl(
-        fun (?shop_modification(ID, {creation, ShopParams}), {Shops, P}) ->
-                {[hg_party:create_shop(ID, ShopParams, Timestamp) | Shops], P};
-            (?shop_modification(ID, {shop_account_creation, _}), {Shops, P}) ->
-                {lists:keydelete(ID, #domain_Shop.id, Shops), P};
-            (?contract_modification(ID, {creation, Params}), {Shops, P}) ->
-                Contract = hg_party:create_contract(ID, Params, Timestamp, Revision),
-                {Shops, hg_party:set_new_contract(Contract, Timestamp, P)};
-            (_, Acc) ->
-                Acc
-        end,
-        {[], Party},
-        Changeset
+is_contract_modification_need_acceptance(undefined, {creation, ContractParams}, Revision) ->
+    PaymentInstitution = hg_domain:get(
+        Revision,
+        {payment_institution, ContractParams#payproc_ContractParams.payment_institution}
     ),
-    [create_shop_account_change(Shop, Party1, Timestamp, Revision) || Shop <- CreatedShops].
-
-create_shop_account_change(Shop, Party, Timestamp, Revision) ->
-    Currency = try
-        hg_party:get_new_shop_currency(Shop, Party, Timestamp, Revision)
-    catch
-        throw:{contract_not_exists, ContractID} ->
-            raise_invalid_changeset({contract_not_exists, ContractID})
-    end,
-    ?shop_modification(
-        Shop#domain_Shop.id,
-        {shop_account_creation, #payproc_ShopAccountParams{currency = Currency}}
-    ).
+    % TODO abstraction leek
+    PaymentInstitution#domain_PaymentInstitution.realm =:= live;
+is_contract_modification_need_acceptance(undefined, _AnyModification, _) ->
+    % contract does not exist, so it should be created in same claim
+    % we can check contract creation and forget about this contract change
+    false;
+is_contract_modification_need_acceptance(Contract, _AnyModification, Revision) ->
+    % contract exist
+    hg_party:is_live_contract(Contract, Revision).
 
 has_changeset_conflict(Changeset, ChangesetPending, Timestamp, Revision, Party) ->
     % NOTE We can safely assume that conflict is essentially the fact that two changesets are
@@ -489,7 +471,7 @@ assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
             ok = assert_contract_change_applicable(ID, Modification, Contract);
         ?shop_modification(ID, Modification) ->
             Shop = hg_party:get_shop(ID, Party),
-            ok = assert_shop_change_applicable(ID, Modification, Shop)
+            ok = assert_shop_change_applicable(ID, Modification, Shop, Party)
     end,
     Effect = make_change_safe_effect(Change, Timestamp, Revision),
     assert_changeset_applicable(Others, Timestamp, Revision, apply_claim_effect(Effect, Timestamp, Party));
@@ -529,14 +511,33 @@ assert_contract_change_applicable(_, ?payout_tool_creation(PayoutToolID, _), Con
 assert_contract_change_applicable(_, _, _) ->
     ok.
 
-assert_shop_change_applicable(_, {creation, _}, undefined) ->
+assert_shop_change_applicable(_, {creation, _}, undefined, _) ->
     ok;
-assert_shop_change_applicable(ID, {creation, _}, #domain_Shop{}) ->
-    raise_invalid_changeset({shop_already_exists, ID});
-assert_shop_change_applicable(ID, _AnyModification, undefined) ->
+assert_shop_change_applicable(ID, _AnyModification, undefined, _) ->
     raise_invalid_changeset({shop_not_exists, ID});
-assert_shop_change_applicable(_, _, _) ->
+assert_shop_change_applicable(ID, {creation, _}, #domain_Shop{}, _) ->
+    raise_invalid_changeset({shop_already_exists, ID});
+assert_shop_change_applicable(
+    _ID,
+    {contract_modification, #payproc_ShopContractModification{contract_id = NewContractID}},
+    #domain_Shop{contract_id = OldContractID},
+    Party
+) ->
+    assert_payment_institutions_equals(OldContractID, NewContractID, Party);
+assert_shop_change_applicable(_, _, _, _) ->
     ok.
+
+assert_payment_institutions_equals(OldContractID, NewContractID, Party) ->
+    #domain_Contract{payment_institution = OldRef} = hg_party:get_contract(OldContractID, Party),
+    case hg_party:get_contract(NewContractID, Party) of
+        #domain_Contract{payment_institution = OldRef} ->
+            ok;
+        #domain_Contract{} ->
+            % TODO change to special invalid_changeset error
+            throw(#'InvalidRequest'{errors = [<<"Can't change shop's payment institution">>]});
+        undefined ->
+            raise_invalid_changeset({contract_not_exists, NewContractID})
+    end.
 
 assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),

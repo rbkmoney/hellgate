@@ -9,15 +9,14 @@
 -export([create_client/2]).
 -export([create_client/3]).
 
--export([create_party_and_shop/1]).
--export([create_battle_ready_shop/3]).
+-export([create_party_and_shop/4]).
+-export([create_battle_ready_shop/4]).
 -export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
 -export([get_first_payout_tool_id/2]).
 
--export([make_battle_ready_contract_params/0]).
--export([make_battle_ready_contract_params/1]).
+-export([make_battle_ready_contract_params/2]).
 -export([make_battle_ready_payout_tool_params/0]).
 
 -export([make_userinfo/1]).
@@ -240,14 +239,18 @@ make_user_identity(UserID) ->
 -type invoice_tpl_create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
 -type invoice_tpl_update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
 
--spec create_party_and_shop(Client :: pid()) ->
+-spec create_party_and_shop(
+    category(),
+    contract_tpl(),
+    dmsl_domain_thrift:'PaymentInstitutionRef'(),
+    Client :: pid()
+) ->
     shop_id().
 
-create_party_and_shop(Client) ->
+create_party_and_shop(Category, TemplateRef, PaymentInstitutionRef, Client) ->
     _ = hg_client_party:create(make_party_params(), Client),
-    #domain_Party{shops = Shops} = hg_client_party:get(Client),
-    [{ShopID, _Shop} | _] = maps:to_list(Shops),
-    ShopID.
+    #domain_Party{} = hg_client_party:get(Client),
+    create_battle_ready_shop(Category, TemplateRef, PaymentInstitutionRef, Client).
 
 make_party_params() ->
     #payproc_PartyParams{
@@ -256,12 +259,17 @@ make_party_params() ->
         }
     }.
 
--spec create_battle_ready_shop(category(), contract_tpl(), Client :: pid()) ->
+-spec create_battle_ready_shop(
+    category(),
+    contract_tpl(),
+    dmsl_domain_thrift:'PaymentInstitutionRef'(),
+    Client :: pid()
+) ->
     shop_id().
 
-create_battle_ready_shop(Category, TemplateRef, Client) ->
+create_battle_ready_shop(Category, TemplateRef, PaymentInstitutionRef, Client) ->
     ContractID = hg_utils:unique_id(),
-    ContractParams = make_battle_ready_contract_params(TemplateRef),
+    ContractParams = make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef),
     PayoutToolID = hg_utils:unique_id(),
     PayoutToolParams = make_battle_ready_payout_tool_params(),
     ShopID = hg_utils:unique_id(),
@@ -272,6 +280,7 @@ create_battle_ready_shop(Category, TemplateRef, Client) ->
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
     },
+    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(<<"RUB">>)},
     Changeset = [
         {contract_modification, #payproc_ContractModificationUnit{
             id           = ContractID,
@@ -284,14 +293,17 @@ create_battle_ready_shop(Category, TemplateRef, Client) ->
                 modification   = {creation, PayoutToolParams}
             }}
         }},
-        {shop_modification, #payproc_ShopModificationUnit{
-            id           = ShopID,
-            modification = {creation, ShopParams}
-        }}
+        ?shop_modification(ShopID, {creation, ShopParams}),
+        ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
     ],
-    #payproc_Claim{id = ClaimID, revision = ClaimRevision} =
+    #payproc_Claim{id = ClaimID, revision = ClaimRevision, status = Status} =
         hg_client_party:create_claim(Changeset, Client),
-    ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client),
+    case Status of
+        {accepted, _} ->
+            ok;
+        _ ->
+            ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client)
+    end,
     _Shop = hg_client_party:get_shop(ShopID, Client),
     ShopID.
 
@@ -349,16 +361,13 @@ get_first_payout_tool_id(ContractID, Client) ->
             error(not_found)
     end.
 
--spec make_battle_ready_contract_params() ->
+-spec make_battle_ready_contract_params(
+    dmsl_domain_thrift:'ContractTemplateRef'() | undefined,
+    dmsl_domain_thrift:'PaymentInstitutionRef'()
+) ->
     dmsl_payment_processing_thrift:'ContractParams'().
 
-make_battle_ready_contract_params() ->
-    make_battle_ready_contract_params(undefined).
-
--spec make_battle_ready_contract_params(dmsl_domain_thrift:'ContractTemplateRef'()) ->
-    dmsl_payment_processing_thrift:'ContractParams'().
-
-make_battle_ready_contract_params(TemplateRef) ->
+make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
     BankAccount = #domain_BankAccount{
         account = <<"4276300010908312893">>,
         bank_name = <<"SomeBank">>,
@@ -380,7 +389,8 @@ make_battle_ready_contract_params(TemplateRef) ->
     },
     #payproc_ContractParams{
         contractor = Contractor,
-        template = TemplateRef
+        template = TemplateRef,
+        payment_institution = PaymentInstitutionRef
     }.
 
 -spec make_battle_ready_payout_tool_params() ->

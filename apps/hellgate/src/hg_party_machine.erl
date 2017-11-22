@@ -95,15 +95,8 @@ init(ID, PartyParams) ->
 
 process_init(PartyID, PartyParams) ->
     Timestamp = hg_datetime:format_now(),
-    Revision = hg_domain:head(),
     Party = hg_party:create_party(PartyID, PartyParams, Timestamp),
-    St = merge_party_change(?party_created(Party), #st{timestamp = Timestamp, revision = Revision}),
-    Claim = hg_claim:create_party_initial_claim(get_next_claim_id(St), Party, Timestamp, Revision),
-    Changes = [
-        ?party_created(Party),
-        ?claim_created(Claim)
-    ] ++ finalize_claim(hg_claim:accept(Timestamp, Revision, Party, Claim), Timestamp),
-    ok(Changes).
+    ok([?party_created(Party)]).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
@@ -412,12 +405,16 @@ create_claim(Changeset, St) ->
     % Check for conflicts with other pending claims
     ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
     % Test if we can safely accept proposed changes.
-    case hg_claim:is_need_acceptance(Claim) of
+    case hg_claim:is_need_acceptance(Claim, Party, Revision) of
         false ->
-            % Submit new accepted claim
-            AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, Claim),
-            %% FIXME looks ugly
-            {AcceptedClaim, [?claim_created(Claim)] ++ finalize_claim(AcceptedClaim, Timestamp)};
+            % Try to submit new accepted claim
+            try
+                AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, Claim),
+                {AcceptedClaim, [?claim_created(Claim)] ++ finalize_claim(AcceptedClaim, Timestamp)}
+            catch
+                throw:_AnyException ->
+                    {Claim, [?claim_created(Claim)]}
+            end;
         true ->
             % Submit new pending claim
             {Claim, [?claim_created(Claim)]}

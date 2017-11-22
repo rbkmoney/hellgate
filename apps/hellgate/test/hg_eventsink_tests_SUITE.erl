@@ -112,7 +112,7 @@ events_observed(C) ->
     PartyMgmtClient = ?c(partymgmt_client, C),
     PartyID = ?c(party_id, C),
     _History = hg_client_eventsink:pull_history(EventsinkClient),
-    _ShopID = hg_ct_helper:create_party_and_shop(PartyMgmtClient),
+    _ShopID = hg_ct_helper:create_party_and_shop(?cat(1), ?tmpl(1), ?pinst(1), PartyMgmtClient),
     Events = hg_client_eventsink:pull_events(10, EventsinkClient),
     [?party_event(_ID, PartyID, 1, ?party_ev([?party_created(_) | _])) | _] = Events,
     IDs = [ID || ?event(ID, _, _, _) <- Events],
@@ -136,46 +136,28 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = #domain_PaymentInstitution{
+                name = <<"Test Inc.">>,
+                system_account_set = {value, ?sas(1)},
+                default_contract_template = {value, ?tmpl(1)},
+                providers = {value, ?ordset([])},
+                inspector = {value, ?insp(1)},
+                realm = test
+            }
+        }},
+
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
-                party_prototype = #domain_PartyPrototypeRef{id = 42},
-                providers = {value, ordsets:from_list([])},
-                system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
-                default_contract_template = ?tmpl(1),
-                common_merchant_proxy = ?prx(1),
-                inspector = {value, ?insp(1)}
+                payment_institution = {value, ?ordset([
+                    ?pinst(1)
+                ])}
             }
         }},
-        {party_prototype, #domain_PartyPrototypeObject{
-            ref = #domain_PartyPrototypeRef{id = 42},
-            data = #domain_PartyPrototype{
-                shop = #domain_ShopPrototype{
-                    shop_id = <<"TESTSHOP">>,
-                    category = ?cat(1),
-                    currency = ?cur(<<"RUB">>),
-                    details  = #domain_ShopDetails{
-                        name = <<"SUPER DEFAULT SHOP">>
-                    },
-                    location = {url, <<"">>}
-                },
-                contract = #domain_ContractPrototype{
-                    contract_id = <<"TESTCONTRACT">>,
-                    test_contract_template = ?tmpl(1),
-                    payout_tool = #domain_PayoutToolPrototype{
-                        payout_tool_id = <<"TESTPAYOUTTOOL">>,
-                        payout_tool_info = {bank_account, #domain_BankAccount{
-                            account = <<"">>,
-                            bank_name = <<"">>,
-                            bank_post_account = <<"">>,
-                            bank_bik = <<"">>
-                        }},
-                        payout_tool_currency = ?cur(<<"RUB">>)
-                    }
-                }
-            }
-        }},
+
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
