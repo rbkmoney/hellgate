@@ -9,8 +9,8 @@
 -export([create_client/2]).
 -export([create_client/3]).
 
--export([create_party_and_shop/4]).
--export([create_battle_ready_shop/4]).
+-export([create_party_and_shop/5]).
+-export([create_battle_ready_shop/5]).
 -export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
@@ -241,16 +241,17 @@ make_user_identity(UserID) ->
 
 -spec create_party_and_shop(
     category(),
+    currency(),
     contract_tpl(),
     dmsl_domain_thrift:'PaymentInstitutionRef'(),
     Client :: pid()
 ) ->
     shop_id().
 
-create_party_and_shop(Category, TemplateRef, PaymentInstitutionRef, Client) ->
+create_party_and_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client) ->
     _ = hg_client_party:create(make_party_params(), Client),
     #domain_Party{} = hg_client_party:get(Client),
-    create_battle_ready_shop(Category, TemplateRef, PaymentInstitutionRef, Client).
+    create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client).
 
 make_party_params() ->
     #payproc_PartyParams{
@@ -261,13 +262,14 @@ make_party_params() ->
 
 -spec create_battle_ready_shop(
     category(),
+    currency(),
     contract_tpl(),
     dmsl_domain_thrift:'PaymentInstitutionRef'(),
     Client :: pid()
 ) ->
     shop_id().
 
-create_battle_ready_shop(Category, TemplateRef, PaymentInstitutionRef, Client) ->
+create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client) ->
     ContractID = hg_utils:unique_id(),
     ContractParams = make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef),
     PayoutToolID = hg_utils:unique_id(),
@@ -280,7 +282,7 @@ create_battle_ready_shop(Category, TemplateRef, PaymentInstitutionRef, Client) -
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
     },
-    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(<<"RUB">>)},
+    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(Currency)},
     Changeset = [
         {contract_modification, #payproc_ContractModificationUnit{
             id           = ContractID,

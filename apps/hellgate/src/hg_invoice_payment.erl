@@ -211,32 +211,32 @@ init(PaymentID, PaymentParams, Opts) ->
     {st(), result()}.
 
 init_(PaymentID, Params, Opts) ->
+    Revision = hg_domain:head(),
     Party = get_party(Opts),
     Shop = get_shop(Opts),
-    Contract = get_contract(Opts),
     Invoice = get_invoice(Opts),
+    PaymentInstitution = get_payment_institution(Opts, Revision),
     Cost = get_invoice_cost(Invoice),
     Payer = construct_payer(get_payer_params(Params), Shop),
     Flow = get_flow_params(Params),
-    Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
     MerchantTerms = get_merchant_payments_terms(Invoice, Party, Revision),
     VS0 = collect_varset(Party, Shop, #{}),
     {Payment, VS1} = construct_payment(PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, VS0, Revision),
-    {RiskScore, VS2} = validate_risk_score(inspect(Payment, Contract, VS1, Opts), VS1),
+    {RiskScore, VS2} = validate_risk_score(inspect(Payment, PaymentInstitution, VS1, Opts), VS1),
     Route = case get_predefined_route(Payer) of
         {ok, R} ->
             R;
         undefined ->
             validate_route(
-                hg_routing:choose(payment, Contract#domain_Contract.payment_institution, VS2, Revision),
+                hg_routing:choose(payment, PaymentInstitution, VS2, Revision),
                 Payment
             )
     end,
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     Provider = get_route_provider(Route, Revision),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS2, Revision),
-    FinalCashflow = construct_final_cashflow(Payment, Shop, Contract, Provider, Cashflow, VS2, Revision),
+    FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS2, Revision),
     _AffectedAccounts = hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
@@ -449,11 +449,11 @@ collect_cashflow(
     ProviderCashflow = reduce_selector(provider_payment_cash_flow, ProviderCashflowSelector, VS, Revision),
     MerchantCashflow ++ ProviderCashflow.
 
-construct_final_cashflow(Payment, Shop, Contract, Provider, Cashflow, VS, Revision) ->
+construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
     hg_cashflow:finalize(
         Cashflow,
         collect_cash_flow_context(Payment),
-        collect_account_map(Payment, Shop, Contract, Provider, VS, Revision)
+        collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision)
     ).
 
 construct_final_cashflow(Cashflow, Context, AccountMap) ->
@@ -469,14 +469,14 @@ collect_cash_flow_context(
 collect_account_map(
     Payment,
     #domain_Shop{account = MerchantAccount},
-    #domain_Contract{payment_institution = PaymentInstitutionRef},
+    #domain_PaymentInstitution{system_account_set = SystemAccountSetSelector},
     #domain_Provider{accounts = ProviderAccounts},
     VS,
     Revision
 ) ->
     Currency = get_currency(get_payment_cost(Payment)),
     ProviderAccount = choose_provider_account(Currency, ProviderAccounts),
-    SystemAccount = choose_payment_institution_account(PaymentInstitutionRef, Currency, VS, Revision),
+    SystemAccount = choose_system_account(SystemAccountSetSelector, Currency, VS, Revision),
     M = #{
         {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
         {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
@@ -497,9 +497,7 @@ collect_account_map(
 choose_provider_account(Currency, Accounts) ->
     choose_account(provider, Currency, Accounts).
 
-choose_payment_institution_account(PaymentInstitutionRef, Currency, VS, Revision) ->
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}),
-    SystemAccountSetSelector = PaymentInstitution#domain_PaymentInstitution.system_account_set,
+choose_system_account(SystemAccountSetSelector, Currency, VS, Revision) ->
     SystemAccountSetRef = reduce_selector(system_account_set, SystemAccountSetSelector, VS, Revision),
     SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
     choose_account(
@@ -595,7 +593,7 @@ refund(Params, St0, Opts) ->
     Payment = get_payment(St),
     Route = get_route(St),
     Shop = get_shop(Opts),
-    Contract = get_contract(Opts),
+    PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     _ = assert_payment_status(captured, Payment),
     _ = assert_no_refund_pending(St),
@@ -613,7 +611,7 @@ refund(Params, St0, Opts) ->
     ProviderTerms = get_provider_refunds_terms(get_provider_payments_terms(Route, Revision), Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
     % TODO specific cashflow context needed, with defined `refund_amount` for instance
-    AccountMap = collect_account_map(Payment, Shop, Contract, Provider, VS1, Revision),
+    AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
     FinalCashflow = construct_final_cashflow(Cashflow, collect_cash_flow_context(Payment), AccountMap),
     Changes = [
         ?refund_created(Refund, FinalCashflow),
@@ -704,14 +702,14 @@ create_adjustment(Params, St, Opts) ->
     _ = assert_payment_status(captured, Payment),
     _ = assert_no_adjustment_pending(St),
     Shop = get_shop(Opts),
-    Contract = get_contract(Opts),
+    PaymentInstitution = get_payment_institution(Opts, Revision),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision),
     Route = get_route(St),
     Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     VS = collect_varset(St, Opts),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
-    FinalCashflow = construct_final_cashflow(Payment, Shop, Contract, Provider, Cashflow, VS, Revision),
+    FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
     ID = construct_adjustment_id(St),
     Adjustment = #domain_InvoicePaymentAdjustment{
         id                    = ID,
@@ -1224,6 +1222,11 @@ get_contract(#{party := Party, invoice := Invoice}) ->
     Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
     hg_party:get_contract(Shop#domain_Shop.contract_id, Party).
 
+get_payment_institution(Opts, Revision) ->
+    Contract = get_contract(Opts),
+    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
+    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+
 get_invoice(#{invoice := Invoice}) ->
     Invoice.
 
@@ -1503,9 +1506,7 @@ get_route_provider_ref(#domain_PaymentRoute{provider = ProviderRef}) ->
 get_route_provider(Route, Revision) ->
     hg_domain:get(Revision, {provider, get_route_provider_ref(Route)}).
 
-inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, Contract, VS, Opts) ->
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}),
+inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentInstitution, VS, Opts) ->
     InspectorSelector = PaymentInstitution#domain_PaymentInstitution.inspector,
     InspectorRef = reduce_selector(inspector, InspectorSelector, VS, Revision),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),

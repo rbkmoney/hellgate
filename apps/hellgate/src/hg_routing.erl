@@ -21,17 +21,15 @@
 -type route()                :: dmsl_domain_thrift:'PaymentRoute'().
 -type route_predestination() :: payment | recurrent_paytool.
 
-%% TODO fix spec
 -spec choose(
     route_predestination(),
-    dmsl_domain_thrift:'PaymentInstitutionRef'(),
+    dmsl_domain_thrift:'PaymentInstitution'(),
     hg_selector:varset(),
     hg_domain:revision()
 ) ->
     route() | undefined.
 
-choose(Predestination, PaymentInstitutionRef, VS, Revision) ->
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}),
+choose(Predestination, PaymentInstitution, VS, Revision) ->
     % TODO not the optimal strategy
     Providers = collect_providers(Predestination, PaymentInstitution, VS, Revision),
     Choices = collect_routes(Predestination, Providers, VS, Revision),
