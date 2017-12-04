@@ -3,7 +3,7 @@
 -module(hg_routing).
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 
--export([choose/3]).
+-export([choose/4]).
 -export([get_payments_terms/2]).
 -export([get_rec_paytools_terms/2]).
 
@@ -21,13 +21,17 @@
 -type route()                :: dmsl_domain_thrift:'PaymentRoute'().
 -type route_predestination() :: payment | recurrent_paytool.
 
--spec choose(route_predestination(), hg_selector:varset(), hg_domain:revision()) ->
+-spec choose(
+    route_predestination(),
+    dmsl_domain_thrift:'PaymentInstitution'(),
+    hg_selector:varset(),
+    hg_domain:revision()
+) ->
     route() | undefined.
 
-choose(Predestination, VS, Revision) ->
-    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+choose(Predestination, PaymentInstitution, VS, Revision) ->
     % TODO not the optimal strategy
-    Providers = collect_providers(Predestination, Globals, VS, Revision),
+    Providers = collect_providers(Predestination, PaymentInstitution, VS, Revision),
     Choices = collect_routes(Predestination, Providers, VS, Revision),
     choose_route(Choices).
 
@@ -89,8 +93,8 @@ score_risk_coverage({_Provider, {_TerminalRef, Terminal}}, VS) ->
 
 %%
 
-collect_providers(Predestination, Globals, VS, Revision) ->
-    ProviderSelector = Globals#domain_Globals.providers,
+collect_providers(Predestination, PaymentInstitution, VS, Revision) ->
+    ProviderSelector = PaymentInstitution#domain_PaymentInstitution.providers,
     ProviderRefs = reduce(provider, ProviderSelector, VS, Revision),
     lists:filtermap(
         fun (ProviderRef) ->

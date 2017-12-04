@@ -1,5 +1,10 @@
 -module(hg_recurrent_paytools_tests_SUITE).
 -include_lib("common_test/include/ct.hrl").
+-include("hg_ct_domain.hrl").
+-include("hg_ct_json.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("hellgate/include/customer_events.hrl").
+-include_lib("hellgate/include/recurrent_payment_tools.hrl").
 
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
@@ -59,7 +64,7 @@ init_per_suite(C) ->
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     C1 = [
@@ -130,12 +135,6 @@ end_per_testcase(_Name, _C) ->
     ok.
 
 %%
-
--include("hg_ct_domain.hrl").
--include("hg_ct_json.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("hellgate/include/customer_events.hrl").
--include_lib("hellgate/include/recurrent_payment_tools.hrl").
 
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 
@@ -512,50 +511,32 @@ construct_domain_fixture(TermSet) ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
-        {globals, #domain_GlobalsObject{
-            ref = #domain_GlobalsRef{},
-            data = #domain_Globals{
-                party_prototype = ?partyproto(1),
-                providers = {value, ordsets:from_list([
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = #domain_PaymentInstitution{
+                name = <<"Test Inc.">>,
+                system_account_set = {value, ?sas(1)},
+                default_contract_template = {value, ?tmpl(1)},
+                providers = {value, ?ordset([
                     ?prv(1)
                 ])},
-                system_account_set = {value, ?sas(1)},
-                external_account_set = {value, ?eas(1)},
-                default_contract_template = ?tmpl(1),
                 inspector = {decisions, [
                     #domain_InspectorDecision{
                         if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
                         then_ = {value, ?insp(1)}
                     }
-                ]}
+                ]},
+                realm = test
             }
         }},
-        {party_prototype, #domain_PartyPrototypeObject{
-            ref = ?partyproto(1),
-            data = #domain_PartyPrototype{
-                shop = #domain_ShopPrototype{
-                    shop_id = <<"TESTSHOP">>,
-                    category = ?cat(1),
-                    currency = ?cur(<<"RUB">>),
-                    details  = #domain_ShopDetails{
-                        name = <<"SUPER DEFAULT SHOP">>
-                    },
-                    location = {url, <<"">>}
-                },
-                contract = #domain_ContractPrototype{
-                    contract_id = <<"TESTCONTRACT">>,
-                    test_contract_template = ?tmpl(1),
-                    payout_tool = #domain_PayoutToolPrototype{
-                        payout_tool_id = <<"TESTPAYOUTTOOL">>,
-                        payout_tool_info = {bank_account, #domain_BankAccount{
-                            account = <<"">>,
-                            bank_name = <<"">>,
-                            bank_post_account = <<"">>,
-                            bank_bik = <<"">>
-                        }},
-                        payout_tool_currency = ?cur(<<"RUB">>)
-                    }
-                }
+
+        {globals, #domain_GlobalsObject{
+            ref = #domain_GlobalsRef{},
+            data = #domain_Globals{
+                external_account_set = {value, ?eas(1)},
+                payment_institution = {value, ?ordset([
+                    ?pinst(1)
+                ])}
             }
         }},
         {term_set_hierarchy, #domain_TermSetHierarchyObject{

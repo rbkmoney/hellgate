@@ -28,6 +28,7 @@
     _. %% FIXME
 
 -type varset() :: #{
+    residence   => dmsl_domain_thrift:'Residence'(),
     category    => dmsl_domain_thrift:'CategoryRef'(),
     currency    => dmsl_domain_thrift:'CurrencyRef'(),
     cost        => dmsl_domain_thrift:'Cash'(),

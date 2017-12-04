@@ -214,4 +214,3 @@ construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
             }}
         }
     }}.
-
