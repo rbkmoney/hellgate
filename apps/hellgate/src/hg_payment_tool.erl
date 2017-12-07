@@ -32,6 +32,10 @@ get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
 
 test_condition({bank_card, C}, {bank_card, V = #domain_BankCard{}}, Rev) ->
     test_bank_card_condition(C, V, Rev);
+test_condition({payment_terminal, C}, {payment_terminal, V = #domain_PaymentTerminal{}}, Rev) ->
+    test_payment_terminal_condition(C, V, Rev);
+test_condition({digital_wallet, C}, {digital_wallet, V = #domain_DigitalWallet{}}, Rev) ->
+    test_digital_wallet_condition(C, V, Rev);
 test_condition(_PaymentTool, _Condition, _Rev) ->
     false.
 
@@ -52,6 +56,18 @@ test_bank_card_condition_def({payment_system_is, Ps}, #domain_BankCard{payment_s
 test_bank_card_condition_def({bin_in, RangeRef}, #domain_BankCard{bin = BIN}, Rev) ->
     #domain_BankCardBINRange{bins = BINs} = hg_domain:get(Rev, {bank_card_bin_range, RangeRef}),
     ordsets:is_element(BIN, BINs).
+
+test_payment_terminal_condition(#domain_PaymentTerminalCondition{definition = Def}, V, Rev) ->
+    Def =:= undefined orelse test_payment_terminal_condition_def(Def, V, Rev).
+
+test_payment_terminal_condition_def({provider_is, V1}, #domain_PaymentTerminal{terminal_type = V2}, _Rev) ->
+    V1 =:= V2.
+
+test_digital_wallet_condition(#domain_DigitalWalletCondition{definition = Def}, V, Rev) ->
+    Def =:= undefined orelse test_digital_wallet_condition_def(Def, V, Rev).
+
+test_digital_wallet_condition_def({provider_is, V1}, #domain_DigitalWallet{provider = V2}, _Rev) ->
+    V1 =:= V2.
 
 %% Marshalling
 
