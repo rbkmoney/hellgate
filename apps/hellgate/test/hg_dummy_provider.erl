@@ -223,6 +223,9 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
                due = get_invoice_due_date(PaymentInfo)
             }},
             suspend(SPID, 2, <<"suspended">>, UserInteraction);
+        {digital_wallet, qiwi} ->
+            %% simple workflow
+            sleep(1, <<"sleeping">>);
         recurrent ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>)
@@ -316,8 +319,10 @@ get_payment_tool_type(PaymentTool) ->
             {bank_card, with_tds};
         {'bank_card', _} ->
             {bank_card, without_tds};
-        {'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}} ->
-            {payment_terminal, euroset}
+        {'payment_terminal', #domain_PaymentTerminal{terminal_type = Type}} ->
+            {payment_terminal, Type};
+        {'digital_wallet', #domain_DigitalWallet{provider = Provider}} ->
+            {digital_wallet, Provider}
     end.
 
 get_short_payment_id(#prxprv_PaymentInfo{invoice = Invoice, payment = Payment}) ->
