@@ -32,7 +32,7 @@ services:
       test: "curl http://localhost:8022/"
       interval: 5s
       timeout: 1s
-      retries: 12
+      retries: 20
 
   shumway:
     image: dr.rbkmoney.com/rbkmoney/shumway:7a5f95ee1e8baa42fdee9c08cc0ae96cd7187d55
@@ -51,7 +51,7 @@ services:
       test: "curl http://localhost:8022/"
       interval: 5s
       timeout: 1s
-      retries: 12
+      retries: 20
 
   shumway-db:
     image: dr.rbkmoney.com/rbkmoney/postgres:9.6
