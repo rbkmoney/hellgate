@@ -229,7 +229,31 @@ handle_function_('RemoveMetaData', [UserInfo, PartyID, NS], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {remove_metadata, NS}).
+    hg_party_machine:call(PartyID, {remove_metadata, NS});
+
+%% Payment Institutions
+
+handle_function_(
+    'ComputePaymentInstitutionTerms',
+    [UserInfo, PartyID, PaymentInstitutionRef, ContractorParams],
+    _Opts
+) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    Revision = hg_domain:head(),
+    case hg_domain:find(Revision, {payment_institution, PaymentInstitutionRef}) of
+        #domain_PaymentInstitution{} = P ->
+            VS = genlib_map:compact(#{
+                party => hg_party_machine:get_party(PartyID),
+                residence => ContractorParams#payproc_ContractorParams.residence
+            }),
+            ContractTemplate = get_default_contract_template(P, VS, Revision),
+            Terms = hg_party:get_terms(ContractTemplate, hg_datetime:format_now(), Revision),
+            hg_party:reduce_terms(Terms, VS, Revision);
+        notfound ->
+            throw(#payproc_PaymentInstitutionNotFound{})
+    end.
 
 %%
 
@@ -270,3 +294,7 @@ ensure_shop(#domain_Shop{} = Shop) ->
     Shop;
 ensure_shop(undefined) ->
     throw(#payproc_ShopNotFound{}).
+
+get_default_contract_template(#domain_PaymentInstitution{default_contract_template = ContractSelector}, VS, Revision) ->
+    ContractTemplateRef = hg_selector:reduce_to_value(ContractSelector, VS, Revision),
+    hg_domain:get(Revision, {contract_template, ContractTemplateRef}).

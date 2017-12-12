@@ -81,6 +81,8 @@
 -export([contract_adjustment_creation/1]).
 -export([contract_adjustment_expiration/1]).
 
+-export([compute_payment_institution_terms/1]).
+
 %% tests descriptions
 
 -type config() :: hg_ct_helper:config().
@@ -159,7 +161,8 @@ groups() ->
             contract_legal_agreement_binding,
             contract_payout_tool_creation,
             contract_adjustment_creation,
-            contract_adjustment_expiration
+            contract_adjustment_expiration,
+            compute_payment_institution_terms
         ]},
         {shop_management, [sequence], [
             party_creation,
@@ -386,6 +389,7 @@ end_per_testcase(_Name, _C) ->
 -spec contract_payout_tool_creation(config()) -> _ | no_return().
 -spec contract_adjustment_creation(config()) -> _ | no_return().
 -spec contract_adjustment_expiration(config()) -> _ | no_return().
+-spec compute_payment_institution_terms(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -595,6 +599,14 @@ contract_adjustment_expiration(C) ->
     AfterExpiration = hg_datetime:add_interval(hg_datetime:format_now(), {0, 1, 1}),
     Terms = hg_party:get_terms(hg_client_party:get_contract(ContractID, Client), AfterExpiration, Revision),
     hg_context:cleanup().
+
+compute_payment_institution_terms(C) ->
+    Client = cfg(client, C),
+    #domain_TermSet{} = hg_client_party:compute_payment_institution_terms(
+        ?pinst(1),
+        #payproc_ContractorParams{},
+        Client
+    ).
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
