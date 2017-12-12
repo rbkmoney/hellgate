@@ -1520,6 +1520,7 @@ construct_domain_fixture() ->
                         ]}
                     }
                 ]},
+                residences = [],
                 realm = test
             }
         }},
@@ -1567,6 +1568,7 @@ construct_domain_fixture() ->
                         ]}
                     }
                 ]},
+                residences = [],
                 realm = live
             }
         }},
@@ -1586,10 +1588,7 @@ construct_domain_fixture() ->
                         then_ = {value, ?eas(1)}
                     }
                 ]},
-                payment_institution = {value, ?ordset([
-                    ?pinst(1),
-                    ?pinst(2)
-                ])}
+                payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
         {term_set_hierarchy, #domain_TermSetHierarchyObject{

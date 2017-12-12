@@ -623,7 +623,8 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St) ->
 
 checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp}}) ->
     PartyID = get_party_id(St),
-    hg_party_machine:checkout(PartyID, CreationTimestamp).
+    % TODO repalce with checkout by revision
+    hg_party_machine:checkout(PartyID, {timestamp, CreationTimestamp}).
 
 handle_result(#{state := St} = Params) ->
     _ = log_changes(maps:get(changes, Params, []), St),

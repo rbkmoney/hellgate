@@ -603,6 +603,7 @@ construct_domain_fixture(TermSet) ->
                         then_ = {value, ?insp(1)}
                     }
                 ]},
+                residences = [],
                 realm = test
             }
         }},
@@ -611,9 +612,7 @@ construct_domain_fixture(TermSet) ->
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
                 external_account_set = {value, ?eas(1)},
-                payment_institution = {value, ?ordset([
-                    ?pinst(1)
-                ])}
+                payment_institutions = ?ordset([?pinst(1)])
             }
         }},
 

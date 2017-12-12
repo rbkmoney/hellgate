@@ -270,8 +270,8 @@ end_per_testcase(_Name, _C) ->
     {exception, #payproc_PartyNotFound{}}).
 -define(party_exists(),
     {exception, #payproc_PartyExists{}}).
--define(party_not_exists_yet(),
-    {exception, #payproc_PartyNotExistsYet{}}).
+-define(invalid_party_revision(),
+    {exception, #payproc_InvalidPartyRevision{}}).
 -define(party_blocked(Reason),
     {exception, #payproc_InvalidPartyStatus{status = {blocking, ?blocked(Reason, _)}}}).
 -define(party_unblocked(Reason),
@@ -393,9 +393,11 @@ party_creation(C) ->
     ContactInfo = #domain_PartyContactInfo{email = <<?MODULE_STRING>>},
     ok = hg_client_party:create(make_party_params(ContactInfo), Client),
     [
-        ?party_created(?party_w_status(PartyID, ?unblocked(_, _), ?active(_)))
+        ?party_created(PartyID, ContactInfo, _)
     ] = next_event(Client),
-    #domain_Party{contact_info = ContactInfo, shops = Shops, contracts = Contracts} = hg_client_party:get(Client),
+    Party = hg_client_party:get(Client),
+    ?party_w_status(PartyID, ?unblocked(_, _), ?active(_)) = Party,
+    #domain_Party{contact_info = ContactInfo, shops = Shops, contracts = Contracts} = Party,
     0 = maps:size(Shops),
     0 = maps:size(Contracts).
 
@@ -415,17 +417,24 @@ party_retrieval(C) ->
 party_revisioning(C) ->
     Client = cfg(client, C),
     T0 = hg_datetime:add_interval(hg_datetime:format_now(), {undefined, undefined, -1}), % yesterday
-    ?party_not_exists_yet() = hg_client_party:checkout(T0, Client),
+    ?invalid_party_revision() = hg_client_party:checkout({timestamp, T0}, Client),
     Party1 = hg_client_party:get(Client),
+    R1 = Party1#domain_Party.revision,
     T1 = hg_datetime:format_now(),
     Party2 = party_suspension(C),
-    Party1 = hg_client_party:checkout(T1, Client),
+    R2 = Party2#domain_Party.revision,
+    Party1 = hg_client_party:checkout({timestamp, T1}, Client),
+    Party1 = hg_client_party:checkout({revision, R1}, Client),
     T2 = hg_datetime:format_now(),
     _ = party_activation(C),
-    Party2 = hg_client_party:checkout(T2, Client),
+    Party2 = hg_client_party:checkout({timestamp, T2}, Client),
+    Party2 = hg_client_party:checkout({revision, R2}, Client),
     Party3 = hg_client_party:get(Client),
+    R3 = Party3#domain_Party.revision,
     T3 = hg_datetime:add_interval(T2, {undefined, undefined, 1}), % tomorrow
-    Party3 = hg_client_party:checkout(T3, Client).
+    Party3 = hg_client_party:checkout({timestamp, T3}, Client),
+    Party3 = hg_client_party:checkout({revision, R3}, Client),
+    ?invalid_party_revision() = hg_client_party:checkout({revision, R3 + 1}, Client).
 
 contract_not_found(C) ->
     Client = cfg(client, C),
@@ -781,9 +790,9 @@ complex_claim_acceptance(C) ->
         Client
     ),
     ok = hg_client_party:suspend(Client),
-    [?party_suspension(?suspended(_))] = next_event(Client),
+    [?revision_changed(_, _), ?party_suspension(?suspended(_))] = next_event(Client),
     ok = hg_client_party:activate(Client),
-    [?party_suspension(?active(_))] = next_event(Client),
+    [?revision_changed(_, _), ?party_suspension(?active(_))] = next_event(Client),
     Claim1 = hg_client_party:get_claim(hg_claim:get_id(Claim1), Client),
 
     Claim2 = assert_claim_pending(
@@ -877,7 +886,7 @@ party_blocking(C) ->
     PartyID = cfg(party_id, C),
     Reason = <<"i said so">>,
     ok = hg_client_party:block(Reason, Client),
-    [?party_blocking(?blocked(Reason, _))] = next_event(Client),
+    [?revision_changed(_, _), ?party_blocking(?blocked(Reason, _))] = next_event(Client),
     ?party_w_status(PartyID, ?blocked(Reason, _), _) = hg_client_party:get(Client).
 
 party_unblocking(C) ->
@@ -885,7 +894,7 @@ party_unblocking(C) ->
     PartyID = cfg(party_id, C),
     Reason = <<"enough">>,
     ok = hg_client_party:unblock(Reason, Client),
-    [?party_blocking(?unblocked(Reason, _))] = next_event(Client),
+    [?revision_changed(_, _), ?party_blocking(?unblocked(Reason, _))] = next_event(Client),
     ?party_w_status(PartyID, ?unblocked(Reason, _), _) = hg_client_party:get(Client).
 
 party_already_blocked(C) ->
@@ -904,14 +913,14 @@ party_suspension(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ok = hg_client_party:suspend(Client),
-    [?party_suspension(?suspended(_))] = next_event(Client),
+    [?revision_changed(_, _), ?party_suspension(?suspended(_))] = next_event(Client),
     ?party_w_status(PartyID, _, ?suspended(_)) = hg_client_party:get(Client).
 
 party_activation(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ok = hg_client_party:activate(Client),
-    [?party_suspension(?active(_))] = next_event(Client),
+    [?revision_changed(_, _), ?party_suspension(?active(_))] = next_event(Client),
     ?party_w_status(PartyID, _, ?active(_)) = hg_client_party:get(Client).
 
 party_already_suspended(C) ->
@@ -963,7 +972,7 @@ shop_blocking(C) ->
     ShopID = ?REAL_SHOP_ID,
     Reason = <<"i said so">>,
     ok = hg_client_party:block_shop(ShopID, Reason, Client),
-    [?shop_blocking(ShopID, ?blocked(Reason, _))] = next_event(Client),
+    [?revision_changed(_, _), ?shop_blocking(ShopID, ?blocked(Reason, _))] = next_event(Client),
     ?shop_w_status(ShopID, ?blocked(Reason, _), _) = hg_client_party:get_shop(ShopID, Client).
 
 shop_unblocking(C) ->
@@ -971,7 +980,7 @@ shop_unblocking(C) ->
     ShopID = ?REAL_SHOP_ID,
     Reason = <<"enough">>,
     ok = hg_client_party:unblock_shop(ShopID, Reason, Client),
-    [?shop_blocking(ShopID, ?unblocked(Reason, _))] = next_event(Client),
+    [?revision_changed(_, _), ?shop_blocking(ShopID, ?unblocked(Reason, _))] = next_event(Client),
     ?shop_w_status(ShopID, ?unblocked(Reason, _), _) = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_blocked(C) ->
@@ -993,14 +1002,14 @@ shop_suspension(C) ->
     Client = cfg(client, C),
     ShopID = ?REAL_SHOP_ID,
     ok = hg_client_party:suspend_shop(ShopID, Client),
-    [?shop_suspension(ShopID, ?suspended(_))] = next_event(Client),
+    [?revision_changed(_, _), ?shop_suspension(ShopID, ?suspended(_))] = next_event(Client),
     ?shop_w_status(ShopID, _, ?suspended(_)) = hg_client_party:get_shop(ShopID, Client).
 
 shop_activation(C) ->
     Client = cfg(client, C),
     ShopID = ?REAL_SHOP_ID,
     ok = hg_client_party:activate_shop(ShopID, Client),
-    [?shop_suspension(ShopID, ?active(_))] = next_event(Client),
+    [?revision_changed(_, _), ?shop_suspension(ShopID, ?active(_))] = next_event(Client),
     ?shop_w_status(ShopID, _, ?active(_)) = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_suspended(C) ->
@@ -1083,7 +1092,7 @@ update_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Changeset, Clien
 accept_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
     ok = hg_client_party:accept_claim(ClaimID, Revision, Client),
     NextRevision = Revision + 1,
-    [?claim_status_changed(ClaimID, ?accepted(_), NextRevision, _)] = next_event(Client),
+    [?revision_changed(_, _), ?claim_status_changed(ClaimID, ?accepted(_), NextRevision, _)] = next_event(Client),
     ok.
 
 deny_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
@@ -1236,6 +1245,7 @@ construct_domain_fixture() ->
                 default_contract_template = {value, ?tmpl(1)},
                 providers = {value, ?ordset([])},
                 inspector = {value, ?insp(1)},
+                residences = [],
                 realm = test
             }
         }},
@@ -1248,6 +1258,7 @@ construct_domain_fixture() ->
                 default_contract_template = {value, ?tmpl(2)},
                 providers = {value, ?ordset([])},
                 inspector = {value, ?insp(1)},
+                residences = [],
                 realm = live
             }
         }},
@@ -1256,10 +1267,7 @@ construct_domain_fixture() ->
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
                 external_account_set = {value, ?eas(1)},
-                payment_institution = {value, ?ordset([
-                    ?pinst(1),
-                    ?pinst(2)
-                ])}
+                payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
         hg_ct_fixture:construct_contract_template(

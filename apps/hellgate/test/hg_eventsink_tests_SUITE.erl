@@ -114,7 +114,7 @@ events_observed(C) ->
     _History = hg_client_eventsink:pull_history(EventsinkClient),
     _ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyMgmtClient),
     Events = hg_client_eventsink:pull_events(10, EventsinkClient),
-    [?party_event(_ID, PartyID, 1, ?party_ev([?party_created(_) | _])) | _] = Events,
+    [?party_event(_ID, PartyID, 1, ?party_ev([?party_created(_, _, _) | _])) | _] = Events,
     IDs = [ID || ?event(ID, _, _, _) <- Events],
     IDs = lists:sort(IDs).
 
@@ -144,6 +144,7 @@ construct_domain_fixture() ->
                 default_contract_template = {value, ?tmpl(1)},
                 providers = {value, ?ordset([])},
                 inspector = {value, ?insp(1)},
+                residences = [],
                 realm = test
             }
         }},
@@ -152,9 +153,7 @@ construct_domain_fixture() ->
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
                 external_account_set = {value, ?eas(1)},
-                payment_institution = {value, ?ordset([
-                    ?pinst(1)
-                ])}
+                payment_institutions = ?ordset([?pinst(1)])
             }
         }},
 

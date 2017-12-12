@@ -59,6 +59,7 @@
 -type contract()              :: dmsl_domain_thrift:'Contract'().
 -type contract_id()           :: dmsl_domain_thrift:'ContractID'().
 -type contract_params()       :: dmsl_payment_processing_thrift:'ContractParams'().
+-type contract_template()     :: dmsl_domain_thrift:'ContractTemplate'().
 -type adjustment()            :: dmsl_domain_thrift:'ContractAdjustment'().
 -type adjustment_id()         :: dmsl_domain_thrift:'ContractAdjustmentID'().
 -type adjustment_params()     :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
@@ -81,13 +82,14 @@
 
 %% Interface
 
--spec create_party(party_id(), dmsl_payment_processing_thrift:'PartyParams'(), timestamp()) ->
+-spec create_party(party_id(), dmsl_domain_thrift:'PartyContactInfo'(), timestamp()) ->
     party().
 
-create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}, Timestamp) ->
+create_party(PartyID, ContactInfo, Timestamp) ->
     #domain_Party{
         id              = PartyID,
         created_at      = Timestamp,
+        revision        = 0,
         contact_info    = ContactInfo,
         blocking        = ?unblocked(Timestamp),
         suspension      = ?active(Timestamp),
@@ -229,7 +231,7 @@ get_contract_currencies(Contract, Timestamp, Revision) ->
             currencies = CurrencySelector
         }
     } = get_terms(Contract, Timestamp, Revision),
-    Value = reduce_selector_to_value(CurrencySelector, #{}, Revision),
+    Value = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
     case ordsets:size(Value) > 0 of
         true ->
             Value;
@@ -246,7 +248,7 @@ get_contract_categories(Contract, Timestamp, Revision) ->
             categories = CategorySelector
         }
     } = get_terms(Contract, Timestamp, Revision),
-    Value = reduce_selector_to_value(CategorySelector, #{}, Revision),
+    Value = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
     case ordsets:size(Value) > 0 of
         true ->
             Value;
@@ -276,16 +278,18 @@ update_contract_status(
 update_contract_status(Contract, _) ->
     Contract.
 
--spec get_terms(contract(), timestamp(), revision()) ->
+-spec get_terms(contract() | contract_template(), timestamp(), revision()) ->
     dmsl_domain_thrift:'TermSet'() | no_return().
 
-get_terms(Contract, Timestamp, Revision) ->
+get_terms(#domain_Contract{} = Contract, Timestamp, Revision) ->
     case compute_terms(Contract, Timestamp, Revision) of
         #domain_TermSet{} = Terms ->
             Terms;
         undefined ->
             error({misconfiguration, {'No active TermSet found', Contract#domain_Contract.terms, Timestamp}})
-    end.
+    end;
+get_terms(#domain_ContractTemplate{terms = TermSetHierarchyRef}, Timestamp, Revision) ->
+    get_term_set(TermSetHierarchyRef, Timestamp, Revision).
 
 -spec create_shop(shop_id(), shop_params(), timestamp()) ->
     shop().
@@ -425,18 +429,6 @@ ensure_payment_institution(#domain_PaymentInstitutionRef{} = PaymentInstitutionR
 ensure_payment_institution(_, _) ->
     raise_invalid_request(<<"invalid payment institution">>).
 
--spec reduce_selector_to_value(Selector, hg_selector:varset(), revision())
-    -> ordsets:ordset(currency()) | ordsets:ordset(category()) | no_return()
-    when Selector :: dmsl_domain_thrift:'CurrencySelector'() | dmsl_domain_thrift:'CategorySelector'().
-
-reduce_selector_to_value(Selector, VS, Revision) ->
-    case hg_selector:reduce(Selector, VS, Revision) of
-        {value, Value} ->
-            Value;
-        _ ->
-            error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}})
-    end.
-
 -spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
     dmsl_domain_thrift:'TermSet'().
 
@@ -497,7 +489,7 @@ get_default_template_ref(PaymentInstitutionRef, Revision) ->
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
     ContractTemplateSelector = PaymentInstitution#domain_PaymentInstitution.default_contract_template,
     % TODO fill varset properly
-    reduce_selector_to_value(ContractTemplateSelector, #{}, Revision).
+    hg_selector:reduce_to_value(ContractTemplateSelector, #{}, Revision).
 
 instantiate_contract_lifetime_bound(undefined, _) ->
     undefined;
@@ -719,7 +711,7 @@ assert_shop_contract_valid(
     } = get_terms(Contract, Timestamp, Revision),
     case ShopAccount of
         #domain_ShopAccount{currency = CurrencyRef} ->
-            Currencies = reduce_selector_to_value(CurrencySelector, #{}, Revision),
+            Currencies = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
             _ = ordsets:is_element(CurrencyRef, Currencies) orelse
                 raise_contract_terms_violated(
                     ID,
@@ -730,7 +722,7 @@ assert_shop_contract_valid(
             % TODO change to special invalid_changeset error
             throw(#'InvalidRequest'{errors = [<<"Can't create shop without account">>]})
     end,
-    Categories = reduce_selector_to_value(CategorySelector, #{}, Revision),
+    Categories = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse
         raise_contract_terms_violated(
             ID,

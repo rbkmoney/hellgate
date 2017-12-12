@@ -546,6 +546,7 @@ construct_domain_fixture() ->
                 default_contract_template = {value, ?tmpl(1)},
                 providers = {value, ?ordset([])},
                 inspector = {value, ?insp(1)},
+                residences = [],
                 realm = test
             }
         }},
@@ -554,9 +555,7 @@ construct_domain_fixture() ->
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
                 external_account_set = {value, ?eas(1)},
-                payment_institution = {value, ?ordset([
-                    ?pinst(1)
-                ])}
+                payment_institutions = ?ordset([?pinst(1)])
             }
         }},
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
