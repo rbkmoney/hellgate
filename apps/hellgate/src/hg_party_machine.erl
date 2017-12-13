@@ -73,6 +73,7 @@
 -type meta()            :: dmsl_domain_thrift:'PartyMeta'().
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
 -spec namespace() ->
     hg_machine:ns().
@@ -280,11 +281,11 @@ start(PartyID, Args) ->
 get_party(PartyID) ->
     get_st_party(get_state(PartyID)).
 
--spec checkout(party_id(), dmsl_payment_processing_thrift:'PartyRevisionParam'()) ->
+-spec checkout(party_id(), party_revision_param()) ->
     dmsl_domain_thrift:'Party'() | no_return().
 
-checkout(PartyID, Revision) ->
-    case checkout_history(get_history(PartyID), Revision) of
+checkout(PartyID, RevisionParam) ->
+    case checkout_history(get_history(PartyID), RevisionParam) of
         {ok, St} ->
             get_st_party(St);
         {error, Reason} ->
@@ -515,7 +516,7 @@ collapse_history(History) ->
     {ok, St} = checkout_history(History, {timestamp, hg_datetime:format_now()}),
     St.
 
--spec checkout_history(hg_machine:history(), {timestamp, timestamp()}) -> {ok, st()} | {error, revision_not_found}.
+-spec checkout_history(hg_machine:history(), party_revision_param()) -> {ok, st()} | {error, revision_not_found}.
 
 checkout_history(History, {timestamp, Timestamp}) ->
     % FIXME hg_domain:head() looks strange here
