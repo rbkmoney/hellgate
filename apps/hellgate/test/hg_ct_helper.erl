@@ -370,7 +370,7 @@ get_first_payout_tool_id(ContractID, Client) ->
     dmsl_payment_processing_thrift:'ContractParams'().
 
 make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
-    BankAccount = #domain_BankAccount{
+    BankAccount = #domain_RussianBankAccount{
         account = <<"4276300010908312893">>,
         bank_name = <<"SomeBank">>,
         bank_post_account = <<"123129876">>,
@@ -386,7 +386,7 @@ make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
             representative_position = <<"Director">>,
             representative_full_name = <<"Someone">>,
             representative_document = <<"100$ banknote">>,
-            bank_account = BankAccount
+            russian_bank_account = BankAccount
         }}
     },
     #payproc_ContractParams{
@@ -401,7 +401,7 @@ make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
 make_battle_ready_payout_tool_params() ->
     #payproc_PayoutToolParams{
         currency = ?cur(<<"RUB">>),
-        tool_info = {bank_account, #domain_BankAccount{
+        tool_info = {russian_bank_account, #domain_RussianBankAccount{
             account = <<"4276300010908312893">>,
             bank_name = <<"SomeBank">>,
             bank_post_account = <<"123129876">>,

@@ -23,7 +23,7 @@
 -export([compute_contract_terms/3]).
 -export([get_shop/2]).
 -export([compute_shop_terms/3]).
--export([compute_payment_institution_terms/3]).
+-export([compute_payment_institution_terms/2]).
 
 -export([block_shop/3]).
 -export([unblock_shop/3]).
@@ -70,7 +70,6 @@
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
 -type timestamp()       :: dmsl_base_thrift:'Timestamp'().
 
--type contractor_params() :: dmsl_payment_processing_thrift:'ContractorParams'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 -type payment_intitution_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 
@@ -179,11 +178,11 @@ get_contract(ID, Client) ->
 compute_contract_terms(ID, Timestamp, Client) ->
     map_result_error(gen_server:call(Client, {call, 'ComputeContractTerms', [ID, Timestamp]})).
 
--spec compute_payment_institution_terms(payment_intitution_ref(), contractor_params(), pid()) ->
+-spec compute_payment_institution_terms(payment_intitution_ref(), pid()) ->
     dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
 
-compute_payment_institution_terms(Ref, ContractorParams, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ComputePaymentInstitutionTerms', [Ref, ContractorParams]})).
+compute_payment_institution_terms(Ref, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputePaymentInstitutionTerms', [Ref]})).
 
 -spec get_shop(shop_id(), pid()) ->
     dmsl_domain_thrift:'Shop'() | woody_error:business_error().
