@@ -3,14 +3,21 @@
 
 -define(party_ev(PartyChanges), {party_changes, PartyChanges}).
 
--define(party_created(Party), {party_created, Party}).
+-define(party_created(PartyID, ContactInfo, Timestamp),
+    {party_created, #payproc_PartyCreated{
+        id = PartyID,
+        contact_info = ContactInfo,
+        created_at = Timestamp
+    }}).
+
 -define(party_blocking(Blocking), {party_blocking, Blocking}).
 -define(party_suspension(Suspension), {party_suspension, Suspension}).
 
--define(party_meta_set(NS, Data), {party_meta_set, #payproc_PartyMetaSet{
-    ns = NS,
-    data = Data
-}}).
+-define(party_meta_set(NS, Data),
+    {party_meta_set, #payproc_PartyMetaSet{
+        ns = NS,
+        data = Data
+    }}).
 
 -define(party_meta_removed(NS), {party_meta_removed, NS}).
 
@@ -79,5 +86,11 @@
 
 -define(account_created(ShopAccount),
     {account_created, #payproc_ShopAccountCreated{account = ShopAccount}}).
+
+-define(revision_changed(Timestamp, Revision),
+    {revision_changed, #payproc_PartyRevisionChanged{
+        timestamp = Timestamp,
+        revision = Revision
+    }}).
 
 -endif.

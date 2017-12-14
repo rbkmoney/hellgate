@@ -36,7 +36,7 @@
 
 -record(st, {
     party                :: undefined | party(),
-    timestamp            :: timestamp(),
+    timestamp            :: undefined | timestamp(),
     revision             :: hg_domain:revision(),
     claims   = #{}       :: #{claim_id() => claim()},
     meta = #{}           :: meta(),
@@ -73,6 +73,7 @@
 -type meta()            :: dmsl_domain_thrift:'PartyMeta'().
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
 -spec namespace() ->
     hg_machine:ns().
@@ -93,10 +94,9 @@ init(ID, PartyParams) ->
         fun() -> process_init(ID, PartyParams) end
     ).
 
-process_init(PartyID, PartyParams) ->
+process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = hg_datetime:format_now(),
-    Party = hg_party:create_party(PartyID, PartyParams, Timestamp),
-    ok([?party_created(Party)]).
+    ok([?party_created(PartyID, ContactInfo, Timestamp)]).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
@@ -134,21 +134,41 @@ get_call_name(Call) when is_atom(Call) ->
 
 handle_call({block, Reason}, {St, _}) ->
     ok = assert_unblocked(St),
-    respond(ok, [?party_blocking(?blocked(Reason, hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?revision_changed(Timestamp, Revision),
+        ?party_blocking(?blocked(Reason, Timestamp))
+    ]);
 
 handle_call({unblock, Reason}, {St, _}) ->
     ok = assert_blocked(St),
-    respond(ok, [?party_blocking(?unblocked(Reason, hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?revision_changed(Timestamp, Revision),
+        ?party_blocking(?unblocked(Reason, Timestamp))
+    ]);
 
 handle_call(suspend, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_active(St),
-    respond(ok, [?party_suspension(?suspended(hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?revision_changed(Timestamp, Revision),
+        ?party_suspension(?suspended(Timestamp))
+    ]);
 
 handle_call(activate, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_suspended(St),
-    respond(ok, [?party_suspension(?active(hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?revision_changed(Timestamp, Revision),
+        ?party_suspension(?active(Timestamp))
+    ]);
 
 handle_call({set_metadata, NS, Data}, _) ->
     respond(ok, [?party_meta_set(NS, Data)]);
@@ -160,24 +180,44 @@ handle_call({remove_metadata, NS}, {St, _}) ->
 handle_call({block_shop, ID, Reason}, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_shop_unblocked(ID, St),
-    respond(ok, [?shop_blocking(ID, ?blocked(Reason, hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?revision_changed(Timestamp, Revision),
+        ?shop_blocking(ID, ?blocked(Reason, Timestamp))
+    ]);
 
 handle_call({unblock_shop, ID, Reason}, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_shop_blocked(ID, St),
-    respond(ok, [?shop_blocking(ID, ?unblocked(Reason, hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?revision_changed(Timestamp, Revision),
+        ?shop_blocking(ID, ?unblocked(Reason, Timestamp))
+    ]);
 
 handle_call({suspend_shop, ID}, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_shop_unblocked(ID, St),
     ok = assert_shop_active(ID, St),
-    respond(ok, [?shop_suspension(ID, ?suspended(hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?revision_changed(Timestamp, Revision),
+        ?shop_suspension(ID, ?suspended(Timestamp))
+    ]);
 
 handle_call({activate_shop, ID}, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_shop_unblocked(ID, St),
     ok = assert_shop_suspended(ID, St),
-    respond(ok, [?shop_suspension(ID, ?active(hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?revision_changed(Timestamp, Revision),
+        ?shop_suspension(ID, ?active(Timestamp))
+    ]);
 
 handle_call({create_claim, Changeset}, {St, _}) ->
     ok = assert_operable(St),
@@ -191,13 +231,15 @@ handle_call({update_claim, ID, ClaimRevision, Changeset}, {St, _}) ->
 
 handle_call({accept_claim, ID, ClaimRevision}, {St, _}) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
     Claim = hg_claim:accept(
-        get_st_timestamp(St),
+        Timestamp,
         get_st_revision(St),
         get_st_party(St),
         get_st_claim(ID, St)
     ),
-    respond(ok, finalize_claim(Claim, get_st_timestamp(St)));
+    respond(ok, [?revision_changed(Timestamp, Revision) | finalize_claim(Claim, Timestamp)]);
 
 handle_call({deny_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
@@ -239,11 +281,11 @@ start(PartyID, Args) ->
 get_party(PartyID) ->
     get_st_party(get_state(PartyID)).
 
--spec checkout(party_id(), timestamp()) ->
+-spec checkout(party_id(), party_revision_param()) ->
     dmsl_domain_thrift:'Party'() | no_return().
 
-checkout(PartyID, Timestamp) ->
-    case checkout_history(get_history(PartyID), Timestamp) of
+checkout(PartyID, RevisionParam) ->
+    case checkout_history(get_history(PartyID), RevisionParam) of
         {ok, St} ->
             get_st_party(St);
         {error, Reason} ->
@@ -318,6 +360,9 @@ map_history_error({error, notfound}) ->
 
 get_st_party(#st{party = Party}) ->
     Party.
+
+get_next_party_revision(#st{party = Party}) ->
+    Party#domain_Party.revision + 1.
 
 get_st_claim(ID, #st{claims = Claims}) ->
     assert_claim_exists(maps:get(ID, Claims, undefined)).
@@ -468,35 +513,59 @@ respond_w_exception(Exception) ->
 -spec collapse_history(hg_machine:history()) -> st().
 
 collapse_history(History) ->
-    {ok, St} = checkout_history(History, hg_datetime:format_now()),
+    {ok, St} = checkout_history(History, {timestamp, hg_datetime:format_now()}),
     St.
 
--spec checkout_history(hg_machine:history(), timestamp()) -> {ok, st()} | {error, revision_not_found}.
+-spec checkout_history(hg_machine:history(), party_revision_param()) -> {ok, st()} | {error, revision_not_found}.
 
-checkout_history(History, Timestamp) ->
+checkout_history(History, {timestamp, Timestamp}) ->
     % FIXME hg_domain:head() looks strange here
-    checkout_history(History, undefined, #st{timestamp = Timestamp, revision = hg_domain:head()}).
+    checkout_history_by_timestamp(History, Timestamp, #st{revision = hg_domain:head()});
+checkout_history(History, {revision, Revision}) ->
+    checkout_history_by_revision(History, Revision, #st{revision = hg_domain:head()}).
 
-checkout_history([{_ID, EventTimestamp, Ev} | Rest], PrevTimestamp, #st{timestamp = Timestamp} = St) ->
+checkout_history_by_timestamp([{_, _, Ev} | Rest], Timestamp, #st{timestamp = PrevTimestamp} = St) ->
+    St1 = merge_event(Ev, St),
+    EventTimestamp = St1#st.timestamp,
     case hg_datetime:compare(EventTimestamp, Timestamp) of
         later when PrevTimestamp =/= undefined ->
             {ok, St};
         later when PrevTimestamp == undefined ->
             {error, revision_not_found};
         _ ->
-            checkout_history(Rest, EventTimestamp, merge_event(Ev, St))
+            checkout_history_by_timestamp(Rest, Timestamp, St1)
     end;
-checkout_history([], _, St) ->
+checkout_history_by_timestamp([], _, St) ->
     {ok, St}.
+
+checkout_history_by_revision([{_, _, Ev} | Rest], Revision, St) ->
+    St1 = merge_event(Ev, St),
+    case get_st_party(St1) of
+        #domain_Party{revision = Revision} ->
+            {ok, St1};
+        _ ->
+            checkout_history_by_revision(Rest, Revision, St1)
+    end;
+checkout_history_by_revision([], _, _) ->
+    {error, revision_not_found}.
 
 merge_event(?party_ev(PartyChanges), St) when is_list(PartyChanges) ->
      lists:foldl(fun merge_party_change/2, St, PartyChanges).
 
-merge_party_change(?party_created(Party), St) ->
-    St#st{party = Party};
+merge_party_change(?party_created(PartyID, ContactInfo, Timestamp), St) ->
+    St#st{
+        timestamp = Timestamp,
+        party = hg_party:create_party(PartyID, ContactInfo, Timestamp)
+    };
 merge_party_change(?party_blocking(Blocking), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:blocking(Blocking, Party)};
+merge_party_change(?revision_changed(Timestamp, Revision), St) ->
+    Party = get_st_party(St),
+    St#st{
+        timestamp = Timestamp,
+        party = Party#domain_Party{revision = Revision}
+    };
 merge_party_change(?party_suspension(Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:suspension(Suspension, Party)};
