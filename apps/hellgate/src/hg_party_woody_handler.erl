@@ -29,11 +29,11 @@ handle_function_('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
     ok = assert_party_accessible(PartyID),
     hg_party_machine:start(PartyID, PartyParams);
 
-handle_function_('Checkout', [UserInfo, PartyID, Revision], _Opts) ->
+handle_function_('Checkout', [UserInfo, PartyID, RevisionParam], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    checkout_party(PartyID, Revision);
+    checkout_party(PartyID, RevisionParam);
 
 handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -277,9 +277,9 @@ set_party_mgmt_meta(PartyID) ->
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
-checkout_party(PartyID, Revision) ->
+checkout_party(PartyID, RevisionParam) ->
     try
-        hg_party_machine:checkout(PartyID, Revision)
+        hg_party_machine:checkout(PartyID, RevisionParam)
     catch
         error:revision_not_found ->
             throw(#payproc_InvalidPartyRevision{})
