@@ -534,24 +534,39 @@ contract_legal_agreement_binding(C) ->
 contract_payout_tool_creation(C) ->
     Client = cfg(client, C),
     ContractID = ?REAL_CONTRACT_ID,
-    PayoutToolID = <<"2">>,
-    PayoutToolParams = #payproc_PayoutToolParams{
+    PayoutToolID1 = <<"2">>,
+    PayoutToolParams1 = #payproc_PayoutToolParams{
         currency = ?cur(<<"RUB">>),
-        tool_info  = {bank_account, #domain_BankAccount{
+        tool_info  = {russian_bank_account, #domain_RussianBankAccount{
             account = <<"4276300010908312893">>,
             bank_name = <<"SomeBank">>,
             bank_post_account = <<"123129876">>,
             bank_bik = <<"66642666">>
         }}
     },
-    Changeset = [?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID, PayoutToolParams))],
+    PayoutToolID2 = <<"3">>,
+    PayoutToolParams2 = #payproc_PayoutToolParams{
+        currency = ?cur(<<"USD">>),
+        tool_info  = {international_bank_account, #domain_InternationalBankAccount{
+            account_holder = <<"Jhon Doe">>,
+            bank_name = <<"SomeBank">>,
+            bank_address = <<"Bahamas">>,
+            iban = <<"DC6664266612312312">>,
+            bic = <<"66642666">>
+        }}
+    },
+    Changeset = [
+        ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID1, PayoutToolParams1)),
+        ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID2, PayoutToolParams2))
+    ],
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
     #domain_Contract{
         id = ContractID,
         payout_tools = PayoutTools
     } = hg_client_party:get_contract(ContractID, Client),
-    true = lists:keymember(PayoutToolID, #domain_PayoutTool.id, PayoutTools).
+    true = lists:keymember(PayoutToolID1, #domain_PayoutTool.id, PayoutTools),
+    true = lists:keymember(PayoutToolID2, #domain_PayoutTool.id, PayoutTools).
 
 contract_adjustment_creation(C) ->
     Client = cfg(client, C),
@@ -604,7 +619,6 @@ compute_payment_institution_terms(C) ->
     Client = cfg(client, C),
     #domain_TermSet{} = hg_client_party:compute_payment_institution_terms(
         ?pinst(1),
-        #payproc_ContractorParams{},
         Client
     ).
 

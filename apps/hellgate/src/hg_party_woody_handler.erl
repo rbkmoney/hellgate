@@ -235,7 +235,7 @@ handle_function_('RemoveMetaData', [UserInfo, PartyID, NS], _Opts) ->
 
 handle_function_(
     'ComputePaymentInstitutionTerms',
-    [UserInfo, PartyID, PaymentInstitutionRef, ContractorParams],
+    [UserInfo, PartyID, PaymentInstitutionRef],
     _Opts
 ) ->
     ok = assume_user_identity(UserInfo),
@@ -244,10 +244,7 @@ handle_function_(
     Revision = hg_domain:head(),
     case hg_domain:find(Revision, {payment_institution, PaymentInstitutionRef}) of
         #domain_PaymentInstitution{} = P ->
-            VS = genlib_map:compact(#{
-                party => hg_party_machine:get_party(PartyID),
-                residence => ContractorParams#payproc_ContractorParams.residence
-            }),
+            VS = #{party => hg_party_machine:get_party(PartyID)},
             ContractTemplate = get_default_contract_template(P, VS, Revision),
             Terms = hg_party:get_terms(ContractTemplate, hg_datetime:format_now(), Revision),
             hg_party:reduce_terms(Terms, VS, Revision);
