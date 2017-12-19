@@ -54,6 +54,7 @@
 -export([bank_card_tds_token/0]).
 -export([bank_card_simple_token/0]).
 -export([make_terminal_payment_tool/0]).
+-export([make_wallet_payment_tool/0]).
 -export([make_tds_payment_tool/0]).
 -export([make_simple_payment_tool/0]).
 -export([make_simple_payment_tool/1]).
@@ -594,6 +595,17 @@ make_terminal_payment_tool() ->
             terminal_type = euroset
         }},
         <<"">>
+    }.
+
+-spec make_wallet_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+
+make_wallet_payment_tool() ->
+    {
+        {digital_wallet, #domain_DigitalWallet{
+            provider = qiwi,
+            id       = <<"+79876543210">>
+        }},
+        <<>>
     }.
 
 -spec make_tds_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
