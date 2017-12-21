@@ -1130,8 +1130,7 @@ deny_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
 revoke_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
     ok = hg_client_party:revoke_claim(ClaimID, Revision, undefined, Client),
     NextRevision = Revision + 1,
-    % FIXME Remove as soon as offline services switch to rbkmoney/damsel@2223cc6
-    [?claim_status_changed(ClaimID, ?revoked(<<>>), NextRevision, _)] = next_event(Client),
+    [?claim_status_changed(ClaimID, ?revoked(undefined), NextRevision, _)] = next_event(Client),
     ok.
 
 assert_claim_pending(?claim(ClaimID, ?pending()) = Claim, Client) ->

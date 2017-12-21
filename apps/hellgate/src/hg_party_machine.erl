@@ -261,7 +261,7 @@ publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     hg_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
-    {{party_id, PartyID}, unmarshal(Ev)}.
+    {{party_id, PartyID}, hg_party_marshalling:unmarshal(Ev)}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -650,35 +650,16 @@ assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
 %%
-
-unwrap_event({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal(Payload)}.
+% wrap_events([?party_ev(Changes)])
+wrap_events(Events) ->
+    [hg_party_marshalling:marshal(E) || E <- Events].
 
 unwrap_events(History) ->
-    [unwrap_event(E) || E <- History].
+    [{ID, Dt, unwrap_event(Payload)} || {ID, Dt, Payload} <- History].
 
-wrap_events(Events) ->
-    [marshal(E) || E <- Events].
-
-marshal(V) ->
-    {bin, term_to_binary(V)}.
-
-unmarshal({bin, B}) ->
-    ensure_event(binary_to_term(B)).
-
-% FIXME Remove as soon as offline services switch to rbkmoney/damsel@2223cc6
-
-ensure_event(?party_ev(Changes)) ->
-    ?party_ev([ensure_change(C) || C <- Changes]).
-
-ensure_change(?claim_status_changed(ID, Status, Revision, UpdatedAt)) ->
-    ?claim_status_changed(ID, ensure_claim_status_reason(Status), Revision, UpdatedAt);
-ensure_change(Change) ->
-    Change.
-
-ensure_claim_status_reason(?denied(undefined)) ->
-    ?denied(<<>>);
-ensure_claim_status_reason(?revoked(undefined)) ->
-    ?revoked(<<>>);
-ensure_claim_status_reason(Status) ->
-    Status.
+% unwrap_event({bin, Bin})
+unwrap_event(Payload) when is_list(Payload) ->
+    hg_party_marshalling:unmarshal(Payload);
+unwrap_event({bin, Bin}) when is_binary(Bin) ->
+    % FIXME here should be lots of trans-magic
+    binary_to_term(Bin).
