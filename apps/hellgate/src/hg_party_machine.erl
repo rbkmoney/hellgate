@@ -1,6 +1,7 @@
 -module(hg_party_machine).
 
 -include("party_events.hrl").
+-include("legacy_party_structures.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 %% Machine callbacks
@@ -650,16 +651,117 @@ assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
 %%
-% wrap_events([?party_ev(Changes)])
+
+-define(TOP_VERSION, 2).
+
 wrap_events(Events) ->
-    [hg_party_marshalling:marshal(E) || E <- Events].
+    [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
 
 unwrap_events(History) ->
-    [{ID, Dt, unwrap_event(Payload)} || {ID, Dt, Payload} <- History].
+    lists:foldl(
+        fun({ID, Dt, Event}, {Events, Opts0}) ->
+            E0 = unwrap_event(Event),
+            {E, Opts} = transmute(E0, Opts0),
+            {Events ++ [{ID, Dt, E}], Opts}
+        end,
+        {[], #{revision => 0}},
+        History
+    ).
 
-% unwrap_event({bin, Bin})
-unwrap_event(Payload) when is_list(Payload) ->
-    hg_party_marshalling:unmarshal(Payload);
+unwrap_event(Event) when is_list(Event) ->
+    hg_party_marshalling:unmarshal(Event);
 unwrap_event({bin, Bin}) when is_binary(Bin) ->
-    % FIXME here should be lots of trans-magic
-    binary_to_term(Bin).
+    [1, binary_to_term(Bin)].
+
+transmute([Version, Event], Opts) ->
+    transmute_event(Version, ?TOP_VERSION, Event, Opts).
+
+% FIXME here should be lots of trans-magic
+transmute_event(V, V, Event, Opts) ->
+    {Event, Opts};
+transmute_event(V1, V2, ?party_ev(Changes), Opts) ->
+    lists:foldl(
+        fun(C0, {Acc0, Opts0}) ->
+            {Acc1, Opts1} = transmute_change(V1, V2, C0, Opts0),
+            {Acc0 ++ Acc1, Opts1}
+        end,
+        {[], Opts},
+        Changes
+    ).
+
+transmute_change(1, 2,
+    ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _)),
+    Opts
+) ->
+    {[?party_created(ID, ContactInfo, CreatedAt)], Opts};
+transmute_change(1, 2,
+    ?party_blocking(Blocking),
+    #{revision := Revision} = Opts
+) ->
+    NextRevision = Revision + 1,
+    Timestamp = get_blocking_timestamp(Blocking),
+    {
+        [
+            ?revision_changed(Timestamp, NextRevision),
+            ?party_blocking(Blocking)
+        ],
+        Opts#{revision => NextRevision}
+    };
+transmute_change(1, 2,
+    ?party_suspension(Suspension),
+    #{revision := Revision} = Opts
+) ->
+    NextRevision = Revision + 1,
+    Timestamp = get_suspension_timestamp(Suspension),
+    {
+        [
+            ?revision_changed(Timestamp, NextRevision),
+            ?party_suspension(Suspension)
+        ],
+        Opts#{revision => NextRevision}
+    };
+transmute_change(1, 2,
+    ?shop_blocking(ID, Blocking),
+    #{revision := Revision} = Opts
+) ->
+    NextRevision = Revision + 1,
+    Timestamp = get_blocking_timestamp(Blocking),
+    {
+        [
+            ?revision_changed(Timestamp, NextRevision),
+            ?shop_blocking(ID, Blocking)
+        ],
+        Opts#{revision => NextRevision}
+    };
+transmute_change(1, 2,
+    ?shop_suspension(ID, Suspension),
+    #{revision := Revision} = Opts
+) ->
+    NextRevision = Revision + 1,
+    Timestamp = get_suspension_timestamp(Suspension),
+    {
+        [
+            ?revision_changed(Timestamp, NextRevision),
+            ?shop_suspension(ID, Suspension)
+        ],
+        Opts#{revision => NextRevision}
+    };
+
+
+% transmute_change(1, 2, Change) ->
+% transmute_change(1, 2, Change) ->
+% transmute_change(1, 2, Change) ->
+% transmute_change(1, 2, Change) ->
+
+transmute_change(1, 2, C, Opts) ->
+    {[C], Opts}.
+
+get_blocking_timestamp(?blocked(_, Timestamp)) ->
+    Timestamp;
+get_blocking_timestamp(?unblocked(_, Timestamp)) ->
+    Timestamp.
+
+get_suspension_timestamp(?suspended(Timestamp)) ->
+    Timestamp;
+get_suspension_timestamp(?active(Timestamp)) ->
+    Timestamp;
