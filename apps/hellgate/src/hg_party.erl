@@ -29,9 +29,9 @@
 -export([create_payout_tool/3]).
 -export([create_contract_adjustment/4]).
 
+-export([get_categories/3]).
 -export([get_contract/2]).
 -export([get_contract_currencies/3]).
--export([get_contract_categories/3]).
 -export([get_contract_adjustment/2]).
 -export([get_contract_payout_tool/2]).
 
@@ -239,10 +239,10 @@ get_contract_currencies(Contract, Timestamp, Revision) ->
             error({misconfiguration, {'Empty set in currency selector\'s value', CurrencySelector, Revision}})
     end.
 
--spec get_contract_categories(contract(), timestamp(), revision()) ->
+-spec get_categories(contract() | contract_template(), timestamp(), revision()) ->
     ordsets:ordset(category()) | no_return().
 
-get_contract_categories(Contract, Timestamp, Revision) ->
+get_categories(Contract, Timestamp, Revision) ->
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             categories = CategorySelector
@@ -424,10 +424,7 @@ ensure_payment_institution(#domain_PaymentInstitutionRef{} = PaymentInstitutionR
     catch
         error:{object_not_found, _} ->
             raise_invalid_request(<<"payment institution not found">>)
-    end;
-
-ensure_payment_institution(_, _) ->
-    raise_invalid_request(<<"invalid payment institution">>).
+    end.
 
 -spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
     dmsl_domain_thrift:'TermSet'().

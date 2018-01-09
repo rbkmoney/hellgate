@@ -456,7 +456,15 @@ create_claim(Changeset, St) ->
             % Try to submit new accepted claim
             try
                 AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, Claim),
-                {AcceptedClaim, [?claim_created(Claim)] ++ finalize_claim(AcceptedClaim, Timestamp)}
+                PartyRevision = get_next_party_revision(St),
+                {
+                    AcceptedClaim,
+                    [
+                        ?claim_created(Claim),
+                        ?revision_changed(Timestamp, PartyRevision) |
+                        finalize_claim(AcceptedClaim, Timestamp)
+                    ]
+                }
             catch
                 throw:_AnyException ->
                     {Claim, [?claim_created(Claim)]}
@@ -658,7 +666,7 @@ wrap_events(Events) ->
     [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
 
 unwrap_events(History) ->
-    lists:foldl(
+    {Result, _} = lists:foldl(
         fun({ID, Dt, Event}, {Events, Opts0}) ->
             E0 = unwrap_event(Event),
             {E, Opts} = transmute(E0, Opts0),
@@ -666,7 +674,8 @@ unwrap_events(History) ->
         end,
         {[], #{revision => 0}},
         History
-    ).
+    ),
+    Result.
 
 unwrap_event(Event) when is_list(Event) ->
     hg_party_marshalling:unmarshal(Event);
@@ -676,85 +685,199 @@ unwrap_event({bin, Bin}) when is_binary(Bin) ->
 transmute([Version, Event], Opts) ->
     transmute_event(Version, ?TOP_VERSION, Event, Opts).
 
-% FIXME here should be lots of trans-magic
-transmute_event(V, V, Event, Opts) ->
-    {Event, Opts};
-transmute_event(V1, V2, ?party_ev(Changes), Opts) ->
-    lists:foldl(
+transmute_event(V1, V2, ?party_ev(Changes), Opts) when V2 > V1->
+    {NewChanges, NewOpts} = lists:foldl(
         fun(C0, {Acc0, Opts0}) ->
-            {Acc1, Opts1} = transmute_change(V1, V2, C0, Opts0),
+            {Acc1, Opts1} = transmute_change(V1, V1 + 1, C0, Opts0),
             {Acc0 ++ Acc1, Opts1}
         end,
         {[], Opts},
         Changes
-    ).
+    ),
+    transmute_event(V1 + 1, V2, ?party_ev(NewChanges), NewOpts);
+transmute_event(V, V, Event, Opts) ->
+    {Event, Opts}.
 
 transmute_change(1, 2,
     ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _)),
     Opts
 ) ->
     {[?party_created(ID, ContactInfo, CreatedAt)], Opts};
-transmute_change(1, 2,
-    ?party_blocking(Blocking),
-    #{revision := Revision} = Opts
-) ->
-    NextRevision = Revision + 1,
+transmute_change(1, 2, ?party_blocking(Blocking) = C, Opts) ->
     Timestamp = get_blocking_timestamp(Blocking),
-    {
-        [
-            ?revision_changed(Timestamp, NextRevision),
-            ?party_blocking(Blocking)
-        ],
-        Opts#{revision => NextRevision}
-    };
-transmute_change(1, 2,
-    ?party_suspension(Suspension),
-    #{revision := Revision} = Opts
-) ->
-    NextRevision = Revision + 1,
+    bump_party_revision(C, Timestamp, Opts);
+transmute_change(1, 2, ?party_suspension(Suspension) = C, Opts) ->
     Timestamp = get_suspension_timestamp(Suspension),
-    {
-        [
-            ?revision_changed(Timestamp, NextRevision),
-            ?party_suspension(Suspension)
-        ],
-        Opts#{revision => NextRevision}
-    };
-transmute_change(1, 2,
-    ?shop_blocking(ID, Blocking),
-    #{revision := Revision} = Opts
-) ->
-    NextRevision = Revision + 1,
+    bump_party_revision(C, Timestamp, Opts);
+transmute_change(1, 2, ?shop_blocking(_, Blocking) = C, Opts) ->
     Timestamp = get_blocking_timestamp(Blocking),
-    {
-        [
-            ?revision_changed(Timestamp, NextRevision),
-            ?shop_blocking(ID, Blocking)
-        ],
-        Opts#{revision => NextRevision}
-    };
-transmute_change(1, 2,
-    ?shop_suspension(ID, Suspension),
-    #{revision := Revision} = Opts
-) ->
-    NextRevision = Revision + 1,
+    bump_party_revision(C, Timestamp, Opts);
+transmute_change(1, 2, ?shop_suspension(_, Suspension) = C, Opts) ->
     Timestamp = get_suspension_timestamp(Suspension),
+    bump_party_revision(C, Timestamp, Opts);
+transmute_change(1, 2,
+    ?claim_created(?legacy_claim(
+        ID,
+        Status,
+        Changeset,
+        Revision,
+        CreatedAt,
+        UpdatedAt
+    )),
+    Opts
+) ->
+    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
     {
         [
-            ?revision_changed(Timestamp, NextRevision),
-            ?shop_suspension(ID, Suspension)
+            ?claim_created(#payproc_Claim{
+                id = ID,
+                status = Status,
+                changeset = NewChangeset,
+                revision = Revision,
+                created_at = CreatedAt,
+                updated_at = UpdatedAt
+            })
         ],
-        Opts#{revision => NextRevision}
+        Opts
     };
-
-
-% transmute_change(1, 2, Change) ->
-% transmute_change(1, 2, Change) ->
-% transmute_change(1, 2, Change) ->
-% transmute_change(1, 2, Change) ->
-
+transmute_change(1, 2, ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp), Opts) ->
+    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
+    {[?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp)], Opts};
+transmute_change(1, 2,
+    ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp),
+    Opts
+) ->
+    NewEffects = [transmute_claim_effect(1, 2, E) || E <- Effects],
+    C = ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp),
+    bump_party_revision(C, Timestamp, Opts);
 transmute_change(1, 2, C, Opts) ->
     {[C], Opts}.
+
+transmute_party_modification(1, 2,
+    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params(Contractor, TemplateRef)})
+) ->
+    PaymentInstitutionRef = get_default_payment_inst(TemplateRef),
+    ?contract_modification(ID, {creation, #payproc_ContractParams{
+        contractor = transmute_contractor(1, 2, Contractor),
+        template = TemplateRef,
+        payment_institution = PaymentInstitutionRef
+    }});
+transmute_party_modification(1, 2,
+    ?legacy_contract_modification(ContractID, ?legacy_payout_tool_creation(
+        ID,
+        {
+            payproc_PayoutToolParams,
+            Currency,
+            {bank_account, BankAccount}
+        }
+    ))
+) ->
+    PayoutToolParams = #payproc_PayoutToolParams{
+        currency = Currency,
+        tool_info = {russian_bank_account, transmute_bank_account(1, 2, BankAccount)}
+    },
+    ?contract_modification(ContractID, ?payout_tool_creation(ID, PayoutToolParams));
+transmute_party_modification(1, 2, C) ->
+    C.
+
+transmute_claim_effect(1, 2, ?legacy_contract_effect(
+    ID,
+    {created, ?legacy_contract(
+        ID,
+        Contractor,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    )}
+)) ->
+    Contract = #domain_Contract{
+        id = ID,
+        contractor = transmute_contractor(1, 2, Contractor),
+        created_at = CreatedAt,
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        status = Status,
+        terms = Terms,
+        adjustments = Adjustments,
+        payout_tools = [transmute_payout_tool(1, 2, P) || P <- PayoutTools],
+        legal_agreement = LegalAgreement
+    },
+    PaymentInstitutionRef = get_default_payment_inst(Contract),
+    ?contract_effect(ID, {created, Contract#domain_Contract{payment_institution = PaymentInstitutionRef}});
+transmute_claim_effect(1, 2, ?legacy_contract_effect(
+    ContractID,
+    {payout_tool_created, PayoutTool}
+)) ->
+    ?contract_effect(
+        ContractID,
+        {payout_tool_created, transmute_payout_tool(1, 2, PayoutTool)}
+    );
+transmute_claim_effect(1, 2, C) ->
+    C.
+
+transmute_contractor(1, 2,
+    {legal_entity, ?legacy_russian_legal_entity(
+        RegisteredName,
+        RegisteredNumber,
+        Inn,
+        ActualAddress,
+        PostAddress,
+        RepresentativePosition,
+        RepresentativeFullName,
+        RepresentativeDocument,
+        BankAccount
+    )}
+) ->
+    {legal_entity, #domain_RussianLegalEntity{
+        registered_name = RegisteredName,
+        registered_number = RegisteredNumber,
+        inn = Inn,
+        actual_address = ActualAddress,
+        post_address = PostAddress,
+        representative_position = RepresentativePosition,
+        representative_full_name = RepresentativeFullName,
+        representative_document = RepresentativeDocument,
+        russian_bank_account = transmute_bank_account(1, 2, BankAccount)
+    }};
+transmute_contractor(1, 2, Contractor) ->
+    Contractor.
+
+transmute_payout_tool(1, 2, ?legacy_payout_tool(
+    ID,
+    CreatedAt,
+    Currency,
+    {bank_account, BankAccount}
+)) ->
+    #domain_PayoutTool{
+        id = ID,
+        created_at = CreatedAt,
+        currency = Currency,
+        payout_tool_info = {russian_bank_account, transmute_bank_account(1, 2, BankAccount)}
+    };
+transmute_payout_tool(1, 2, PayoutTool) ->
+    PayoutTool.
+
+transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAccount, BankBik)) ->
+    #domain_RussianBankAccount{
+        account = Account,
+        bank_name = BankName,
+        bank_post_account = BankPostAccount,
+        bank_bik = BankBik
+    }.
+
+bump_party_revision(C, Timestamp, Opts) when is_tuple(C) ->
+    bump_party_revision([C], Timestamp, Opts);
+bump_party_revision(C, Timestamp, #{revision := Revision} = Opts) when is_list(C) ->
+    NextRevision = Revision + 1,
+    {
+        [?revision_changed(Timestamp, NextRevision) | C],
+        Opts#{revision => NextRevision}
+    }.
 
 get_blocking_timestamp(?blocked(_, Timestamp)) ->
     Timestamp;
@@ -764,4 +887,43 @@ get_blocking_timestamp(?unblocked(_, Timestamp)) ->
 get_suspension_timestamp(?suspended(Timestamp)) ->
     Timestamp;
 get_suspension_timestamp(?active(Timestamp)) ->
-    Timestamp;
+    Timestamp.
+
+get_default_payment_inst(C) ->
+    Timestamp = hg_datetime:format_now(),
+    Revision = hg_domain:head(),
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    Defaults = Globals#domain_Globals.contract_payment_institution_defaults,
+    case is_test_contract_or_template(C, Timestamp, Revision) of
+        true ->
+            Defaults#domain_ContractPaymentInstitutionDefaults.test;
+        false ->
+            Defaults#domain_ContractPaymentInstitutionDefaults.live
+    end.
+
+is_test_contract_or_template(C, Timestamp, Revision) when C /= undefined ->
+    Categories = hg_party:get_categories(C, Timestamp, Revision),
+    {Test, Live} = lists:foldl(
+        fun(CategoryRef, {TestFound, LiveFound}) ->
+            case hg_domain:get(Revision, {category, CategoryRef}) of
+                #domain_Category{type = test} ->
+                    {true, LiveFound};
+                #domain_Category{type = live} ->
+                    {TestFound, true}
+            end
+        end,
+        {false, false},
+        ordsets:to_list(Categories)
+    ),
+    case Test /= Live of
+        true ->
+            Test;
+        false ->
+            error({
+                misconfiguration,
+                {'Test and live category in same term set', C, Timestamp, Revision}
+            })
+    end;
+is_test_contract_or_template(undefined, _, _) ->
+    % in case of undefined contract template ref
+    false.
