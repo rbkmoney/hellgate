@@ -798,6 +798,8 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
     Contract = #domain_Contract{
         id = ID,
         contractor = transmute_contractor(1, 2, Contractor),
+        % TODO absolutly ugly adhoc for dialyzer. Remove asap.
+        payment_institution = #domain_PaymentInstitutionRef{id = 0},
         created_at = CreatedAt,
         valid_since = ValidSince,
         valid_until = ValidUntil,
