@@ -498,7 +498,8 @@ payment_w_customer_success(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
@@ -603,6 +604,7 @@ payment_risk_score_check(C) ->
         )),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
+    _UserInteraction1 = await_payment_process_interaction(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client),
     % Invoice w/ 500000 < cost < 100000000
@@ -617,6 +619,7 @@ payment_risk_score_check(C) ->
         )),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
+    _UserInteraction2 = await_payment_process_interaction(InvoiceID2, PaymentID2, Client),
     PaymentID2 = await_payment_process_finish(InvoiceID2, PaymentID2, Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
     % Invoice w/ 100000000 =< cost
@@ -654,6 +657,7 @@ payment_adjustment_success(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), _, _, CF1)),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
+    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
@@ -828,6 +832,7 @@ external_account_posting(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), low, _, CF)),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, InvoicingClient),
+    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, InvoicingClient),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
@@ -1192,6 +1197,7 @@ start_payment(InvoiceID, PaymentParams, Client) ->
 
 process_payment(InvoiceID, PaymentParams, Client) ->
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client).
 
 await_payment_process_interaction(InvoiceID, PaymentID, Client) ->

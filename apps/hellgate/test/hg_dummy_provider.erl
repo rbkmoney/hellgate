@@ -19,8 +19,8 @@
 
 -define(COWBOY_PORT, 9988).
 
--define(sleep(To),
-    {sleep, #'SleepIntent'{timer = {timeout, To}}}).
+-define(sleep(To, UI),
+    {sleep, #'SleepIntent'{timer = {timeout, To}, user_interaction = UI}}).
 -define(suspend(Tag, To, UI),
     {suspend, #'SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
 -define(finish(),
@@ -179,7 +179,7 @@ token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
 
 token_sleep(Timeout, State) ->
     #prxprv_RecurrentTokenProxyResult{
-        intent     = ?sleep(Timeout),
+        intent     = ?sleep(Timeout, undefined),
         next_state = State
     }.
 
@@ -214,7 +214,15 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             suspend(Tag, 2, <<"suspended">>, UserInteraction);
         {bank_card, without_tds} ->
             %% simple workflow without 3DS
-            sleep(1, <<"sleeping">>);
+            Uri = get_callback_url(),
+            UserInteraction = {
+                'redirect',
+                {
+                    'post_request',
+                    #'BrowserPostRequest'{uri = Uri, form = #{}}
+                }
+            },
+            sleep(1, <<"sleeping">>, UserInteraction);
         {payment_terminal, euroset} ->
             %% workflow for euroset terminal, similar to 3DS workflow
             SPID = get_short_payment_id(PaymentInfo),
@@ -244,7 +252,7 @@ handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentI
 handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) ->
     {{ok, PaymentInfo}, _} = get_payment_info(Tag),
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
-        intent     = ?sleep(1),
+        intent     = ?sleep(1, undefined),
         next_state = <<"sleeping">>
     }).
 
@@ -258,8 +266,11 @@ finish(TrxID) ->
     }.
 
 sleep(Timeout, State) ->
+    sleep(Timeout, State, undefined).
+
+sleep(Timeout, State, UserInteraction) ->
     #prxprv_PaymentProxyResult{
-        intent     = ?sleep(Timeout),
+        intent     = ?sleep(Timeout, UserInteraction),
         next_state = State
     }.
 
