@@ -262,7 +262,9 @@ publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     hg_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
-    {{party_id, PartyID}, hg_party_marshalling:unmarshal(Ev)}.
+    % looks like adhoc, will break old events
+    {E, _} = unwrap_event(Ev, #{}),
+    {{party_id, PartyID}, E}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -667,20 +669,19 @@ wrap_events(Events) ->
 
 unwrap_events(History) ->
     {Result, _} = lists:foldl(
-        fun({ID, Dt, Event}, {Events, Opts0}) ->
-            E0 = unwrap_event(Event),
-            {E, Opts} = transmute(E0, Opts0),
-            {Events ++ [{ID, Dt, E}], Opts}
+        fun({ID, Dt, Event}, {Events, Opts}) ->
+            {E0, Opts0} = unwrap_event(Event, Opts),
+            {Events ++ [{ID, Dt, E0}], Opts0}
         end,
         {[], #{revision => 0}},
         History
     ),
     Result.
 
-unwrap_event(Event) when is_list(Event) ->
-    hg_party_marshalling:unmarshal(Event);
-unwrap_event({bin, Bin}) when is_binary(Bin) ->
-    [1, binary_to_term(Bin)].
+unwrap_event(Event, Opts) when is_list(Event) ->
+    transmute(hg_party_marshalling:unmarshal(Event), Opts);
+unwrap_event({bin, Bin}, Opts) when is_binary(Bin) ->
+    transmute([1, binary_to_term(Bin)], Opts).
 
 transmute([Version, Event], Opts) ->
     transmute_event(Version, ?TOP_VERSION, Event, Opts).
