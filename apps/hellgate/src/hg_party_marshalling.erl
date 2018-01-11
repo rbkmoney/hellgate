@@ -7,8 +7,14 @@
 
 -spec marshal(term()) -> hg_msgpack_marshalling:msgpack_value().
 
+marshal(undefined) ->
+    undefined;
+marshal(Boolean) when is_boolean(Boolean) ->
+    Boolean;
 marshal(Atom) when is_atom(Atom) ->
     [<<":atom:">>, atom_to_binary(Atom, utf8)];
+marshal({bin, Binary}) when is_binary(Binary) ->
+    {bin, Binary};
 marshal(Tuple) when is_tuple(Tuple) ->
     [<<":tuple:">>, lists:map(fun marshal/1, tuple_to_list(Tuple))];
 marshal(List) when is_list(List) ->
@@ -21,7 +27,7 @@ marshal(Map) when is_map(Map) ->
         #{},
         Map
     );
-marshal(V) ->
+marshal(V) when is_integer(V); is_float(V); is_binary(V) ->
     V.
 
 -spec unmarshal(hg_msgpack_marshalling:msgpack_value()) -> term().
@@ -34,5 +40,9 @@ unmarshal([<<":list:">>, List])->
     lists:map(fun unmarshal/1, List);
 unmarshal(Map) when is_map(Map) ->
     maps:fold(fun(K, V, Acc) -> maps:put(unmarshal(K), unmarshal(V), Acc) end, #{}, Map);
-unmarshal(V) ->
+unmarshal(undefined) ->
+    undefined;
+unmarshal({bin, Binary}) when is_binary(Binary) ->
+    {bin, Binary};
+unmarshal(V) when is_boolean(V); is_integer(V); is_float(V); is_binary(V)->
     V.
