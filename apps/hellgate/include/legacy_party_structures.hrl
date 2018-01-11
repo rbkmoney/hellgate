@@ -46,6 +46,9 @@
 -define(legacy_payout_tool_creation(ID, Params),
     {payout_tool_modification, {payproc_PayoutToolModificationUnit, ID, {creation, Params}}}).
 
+-define(legacy_payout_tool_params(Currency, PayoutToolInfo),
+    {payproc_PayoutToolParams, Currency, PayoutToolInfo}).
+
 -define(legacy_russian_legal_entity(
         RegisteredName,
         RegisteredNumber,

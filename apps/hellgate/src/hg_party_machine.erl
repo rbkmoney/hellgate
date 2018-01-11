@@ -766,11 +766,7 @@ transmute_party_modification(1, 2,
 transmute_party_modification(1, 2,
     ?legacy_contract_modification(ContractID, ?legacy_payout_tool_creation(
         ID,
-        {
-            payproc_PayoutToolParams,
-            Currency,
-            {bank_account, BankAccount}
-        }
+        ?legacy_payout_tool_params(Currency, {bank_account, BankAccount})
     ))
 ) ->
     PayoutToolParams = #payproc_PayoutToolParams{
