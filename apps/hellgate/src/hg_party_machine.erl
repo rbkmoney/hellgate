@@ -262,9 +262,7 @@ publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     hg_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
-    % looks like adhoc, will break old events
-    {E, _} = unwrap_event(Ev, #{}),
-    {{party_id, PartyID}, E}.
+    {{party_id, PartyID}, unwrap_event(Ev)}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -668,54 +666,31 @@ wrap_events(Events) ->
     [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
 
 unwrap_events(History) ->
-    {Result, _} = lists:foldl(
-        fun({ID, Dt, Event}, {Events, Opts}) ->
-            {E0, Opts0} = unwrap_event(Event, Opts),
-            {Events ++ [{ID, Dt, E0}], Opts0}
+    lists:map(
+        fun({ID, Dt, Event}) ->
+            {ID, Dt, unwrap_event(Event)}
         end,
-        {[], #{revision => 0}},
         History
-    ),
-    Result.
+    ).
 
-unwrap_event(Event, Opts) when is_list(Event) ->
-    transmute(hg_party_marshalling:unmarshal(Event), Opts);
-unwrap_event({bin, Bin}, Opts) when is_binary(Bin) ->
-    transmute([1, binary_to_term(Bin)], Opts).
+unwrap_event(Event) when is_list(Event) ->
+    transmute(hg_party_marshalling:unmarshal(Event));
+unwrap_event({bin, Bin}) when is_binary(Bin) ->
+    transmute([1, binary_to_term(Bin)]).
 
-transmute([Version, Event], Opts) ->
-    transmute_event(Version, ?TOP_VERSION, Event, Opts).
+transmute([Version, Event]) ->
+    transmute_event(Version, ?TOP_VERSION, Event).
 
-transmute_event(V1, V2, ?party_ev(Changes), Opts) when V2 > V1->
-    {NewChanges, NewOpts} = lists:foldl(
-        fun(C0, {Acc0, Opts0}) ->
-            {Acc1, Opts1} = transmute_change(V1, V1 + 1, C0, Opts0),
-            {Acc0 ++ Acc1, Opts1}
-        end,
-        {[], Opts},
-        Changes
-    ),
-    transmute_event(V1 + 1, V2, ?party_ev(NewChanges), NewOpts);
-transmute_event(V, V, Event, Opts) ->
-    {Event, Opts}.
+transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1->
+    NewChanges = [transmute_change(V1, V1 + 1, C) || C <- Changes],
+    transmute_event(V1 + 1, V2, ?party_ev(NewChanges));
+transmute_event(V, V, Event) ->
+    Event.
 
 transmute_change(1, 2,
-    ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _)),
-    Opts
+    ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _))
 ) ->
-    {[?party_created(ID, ContactInfo, CreatedAt)], Opts};
-transmute_change(1, 2, ?party_blocking(Blocking) = C, Opts) ->
-    Timestamp = get_blocking_timestamp(Blocking),
-    bump_party_revision(C, Timestamp, Opts);
-transmute_change(1, 2, ?party_suspension(Suspension) = C, Opts) ->
-    Timestamp = get_suspension_timestamp(Suspension),
-    bump_party_revision(C, Timestamp, Opts);
-transmute_change(1, 2, ?shop_blocking(_, Blocking) = C, Opts) ->
-    Timestamp = get_blocking_timestamp(Blocking),
-    bump_party_revision(C, Timestamp, Opts);
-transmute_change(1, 2, ?shop_suspension(_, Suspension) = C, Opts) ->
-    Timestamp = get_suspension_timestamp(Suspension),
-    bump_party_revision(C, Timestamp, Opts);
+    ?party_created(ID, ContactInfo, CreatedAt);
 transmute_change(1, 2,
     ?claim_created(?legacy_claim(
         ID,
@@ -724,35 +699,29 @@ transmute_change(1, 2,
         Revision,
         CreatedAt,
         UpdatedAt
-    )),
-    Opts
+    ))
 ) ->
     NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
-    {
-        [
-            ?claim_created(#payproc_Claim{
-                id = ID,
-                status = Status,
-                changeset = NewChangeset,
-                revision = Revision,
-                created_at = CreatedAt,
-                updated_at = UpdatedAt
-            })
-        ],
-        Opts
-    };
-transmute_change(1, 2, ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp), Opts) ->
-    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
-    {[?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp)], Opts};
+    ?claim_created(#payproc_Claim{
+        id = ID,
+        status = Status,
+        changeset = NewChangeset,
+        revision = Revision,
+        created_at = CreatedAt,
+        updated_at = UpdatedAt
+    });
 transmute_change(1, 2,
-    ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp),
-    Opts
+    ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
+) ->
+    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
+    ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
+transmute_change(1, 2,
+    ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
 ) ->
     NewEffects = [transmute_claim_effect(1, 2, E) || E <- Effects],
-    C = ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp),
-    bump_party_revision(C, Timestamp, Opts);
-transmute_change(1, 2, C, Opts) ->
-    {[C], Opts}.
+    ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
+transmute_change(1, 2, C) ->
+    C.
 
 transmute_party_modification(1, 2,
     ?legacy_contract_modification(ID, {creation, ?legacy_contract_params(Contractor, TemplateRef)})
@@ -795,8 +764,6 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
     Contract = #domain_Contract{
         id = ID,
         contractor = transmute_contractor(1, 2, Contractor),
-        % TODO absolutly ugly adhoc for dialyzer. Remove asap.
-        payment_institution = #domain_PaymentInstitutionRef{id = 0},
         created_at = CreatedAt,
         valid_since = ValidSince,
         valid_until = ValidUntil,
@@ -868,25 +835,6 @@ transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAcc
         bank_post_account = BankPostAccount,
         bank_bik = BankBik
     }.
-
-bump_party_revision(C, Timestamp, Opts) when is_tuple(C) ->
-    bump_party_revision([C], Timestamp, Opts);
-bump_party_revision(C, Timestamp, #{revision := Revision} = Opts) when is_list(C) ->
-    NextRevision = Revision + 1,
-    {
-        [?revision_changed(Timestamp, NextRevision) | C],
-        Opts#{revision => NextRevision}
-    }.
-
-get_blocking_timestamp(?blocked(_, Timestamp)) ->
-    Timestamp;
-get_blocking_timestamp(?unblocked(_, Timestamp)) ->
-    Timestamp.
-
-get_suspension_timestamp(?suspended(Timestamp)) ->
-    Timestamp;
-get_suspension_timestamp(?active(Timestamp)) ->
-    Timestamp.
 
 get_default_payment_inst(C) ->
     Timestamp = hg_datetime:format_now(),
