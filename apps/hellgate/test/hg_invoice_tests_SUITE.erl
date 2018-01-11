@@ -983,7 +983,10 @@ payment_with_user_interaction_success(C) ->
     {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(jcb),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
-    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
+    UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
+    timer:sleep(2000),
+    {URL, Form} = get_post_request(UserInteraction),
+    _ = assert_success_post_request({URL, Form}),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(

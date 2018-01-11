@@ -17,6 +17,19 @@
 -export([terminate/3]).
 %%
 
+%% dummy bank backend
+-behaviour(gen_server).
+
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
+%%
+
 -define(COWBOY_PORT, 9988).
 
 -define(sleep(To, UI),
@@ -217,6 +230,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             sleep(1, <<"sleeping">>);
         {bank_card, user_interaction} ->
             %% user interaction in sleep intent
+            start_link(),
             Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
@@ -225,7 +239,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"param">> => <<"value">>}}
                 }
             },
-            sleep(1, <<"sleeping">>, UserInteraction);
+            sleep(1, <<"sleeping_with_user_interaction">>, UserInteraction);
         {payment_terminal, euroset} ->
             %% workflow for euroset terminal, similar to 3DS workflow
             SPID = get_short_payment_id(PaymentInfo),
@@ -240,6 +254,13 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
     end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
     finish(get_payment_id(PaymentInfo));
+process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo, _) ->
+    case get_bank_trans_state() of
+        processed ->
+            finish(get_payment_id(PaymentInfo));
+        pending ->
+            sleep(1, <<"sleeping_with_user_interaction">>)
+    end;
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
     finish(get_payment_id(PaymentInfo));
@@ -371,9 +392,16 @@ get_callback_url() ->
 handle_user_interaction_response(<<"POST">>, Req) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     Form = maps:from_list(cow_qs:parse_qs(Body)),
-    Tag = maps:get(<<"tag">>, Form),
-    Payload = maps:get(<<"payload">>, Form, Tag),
-    RespCode = callback_to_hell(Tag, Payload),
+    RespCode = case maps:get(<<"tag">>, Form, undefined) of
+        %% sleep intent
+        undefined ->
+            set_bank_trans_state(processed),
+            200;
+        %% suspend intent
+        Tag ->
+            Payload = maps:get(<<"payload">>, Form, Tag),
+            callback_to_hell(Tag, Payload)
+    end,
     cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<>>, Req2);
 handle_user_interaction_response(_, Req) ->
     %% Method not allowed.
@@ -402,7 +430,6 @@ callback_to_hell(Tag, Payload) ->
             400
     end.
 
-
 generate_payment_tag() ->
     Tag = hg_utils:unique_id(),
     <<"payment-", Tag/binary>>.
@@ -416,3 +443,46 @@ get_payment_info(Tag) ->
         proxy_host_provider, 'GetPayment', [Tag],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ).
+
+%%
+
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+set_bank_trans_state(State) ->
+    gen_server:call(?MODULE, {set, State}, 5000).
+
+get_bank_trans_state() ->
+    gen_server:call(?MODULE, get, 5000).
+
+-spec init(term()) -> {ok, atom()}.
+
+init(_) ->
+    {ok, pending}.
+
+-spec handle_call(term(), pid(), atom()) -> {reply, atom(), atom()}.
+
+handle_call({set, NewState}, _From, _State) ->
+    {reply, ok, NewState};
+handle_call(get, _From, State) ->
+    {reply, State, State}.
+
+-spec handle_cast(term(), atom()) ->  {noreply, atom()}.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+-spec handle_info(term(), atom()) -> {noreply, atom()}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+-spec terminate(term(), atom()) -> atom().
+
+terminate(_Reason, _State) ->
+    ok.
+
+-spec code_change(term(), term(), term()) -> {ok, atom()}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
