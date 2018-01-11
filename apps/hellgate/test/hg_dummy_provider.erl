@@ -36,8 +36,10 @@
     {sleep, #'SleepIntent'{timer = {timeout, To}, user_interaction = UI}}).
 -define(suspend(Tag, To, UI),
     {suspend, #'SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
--define(finish(),
+-define(finish_success(),
     {finish, #'FinishIntent'{status = {success, #'Success'{}}}}).
+-define(finish_failure(),
+    {finish, #'FinishIntent'{status = {failure, #'Failure'{code = <<"smth wrong">>}}}}).
 -define(recurrent_token_finish(Token),
     {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
 -define(recurrent_token_finish_w_failure(Failure),
@@ -253,20 +255,25 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             sleep(1, <<"sleeping">>)
     end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
-    finish(get_payment_id(PaymentInfo));
+    finish(?finish_success(), get_payment_id(PaymentInfo));
 process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo, _) ->
     case get_bank_trans_state() of
         processed ->
-            finish(get_payment_id(PaymentInfo));
-        pending ->
+            set_bank_trans_state({pending, 0}),
+            finish(?finish_success(), get_payment_id(PaymentInfo));
+        {pending, Count} when Count > 3 ->
+            set_bank_trans_state({pending, 0}),
+            finish(?finish_failure());
+        {pending, Count} ->
+            set_bank_trans_state({pending, Count + 1}),
             sleep(1, <<"sleeping_with_user_interaction">>)
     end;
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
-    finish(get_payment_id(PaymentInfo));
+    finish(?finish_success(), get_payment_id(PaymentInfo));
 
 process_payment(?cancelled(), _, PaymentInfo, _) ->
-    finish(get_payment_id(PaymentInfo)).
+    finish(?finish_success(), get_payment_id(PaymentInfo)).
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
@@ -281,12 +288,17 @@ handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) 
     }).
 
 process_refund(undefined, PaymentInfo, _) ->
-    finish(hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
+    finish(?finish_success(), hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
 
-finish(TrxID) ->
+finish(Intent, TrxID) ->
     #prxprv_PaymentProxyResult{
-        intent = ?finish(),
+        intent = Intent,
         trx    = #domain_TransactionInfo{id = TrxID, extra = #{}}
+    }.
+
+finish(Intent) ->
+    #prxprv_PaymentProxyResult{
+        intent = Intent
     }.
 
 sleep(Timeout, State) ->
@@ -458,7 +470,7 @@ get_bank_trans_state() ->
 -spec init(term()) -> {ok, atom()}.
 
 init(_) ->
-    {ok, pending}.
+    {ok, {pending, 0}}.
 
 -spec handle_call(term(), pid(), atom()) -> {reply, atom(), atom()}.
 

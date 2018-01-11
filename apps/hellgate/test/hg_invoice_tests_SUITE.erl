@@ -43,6 +43,7 @@
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
 -export([payment_with_user_interaction_success/1]).
+-export([payment_with_user_interaction_failed/1]).
 -export([terms_retrieval/1]).
 -export([consistent_history/1]).
 
@@ -106,6 +107,7 @@ all() ->
         payment_refund_success,
 
         payment_with_user_interaction_success,
+        payment_with_user_interaction_failed,
 
         terms_retrieval,
 
@@ -994,6 +996,23 @@ payment_with_user_interaction_success(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
+-spec payment_with_user_interaction_failed(config()) -> test_return().
+
+payment_with_user_interaction_failed(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 42000, C),
+    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(jcb),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?processed(), ?session_finished(?session_failed(_)))
+        ),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed(_)))
+    ] = next_event(InvoiceID, Client),
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 %%
 
 next_event(InvoiceID, Client) ->
