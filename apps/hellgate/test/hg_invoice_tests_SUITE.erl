@@ -42,6 +42,7 @@
 -export([payment_hold_capturing/1]).
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
+-export([payment_with_user_interaction_success/1]).
 -export([terms_retrieval/1]).
 -export([consistent_history/1]).
 
@@ -103,6 +104,8 @@ all() ->
         {group, holds_management},
 
         payment_refund_success,
+
+        payment_with_user_interaction_success,
 
         terms_retrieval,
 
@@ -498,8 +501,7 @@ payment_w_customer_success(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
-    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
@@ -604,7 +606,6 @@ payment_risk_score_check(C) ->
         )),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
-    _UserInteraction1 = await_payment_process_interaction(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client),
     % Invoice w/ 500000 < cost < 100000000
@@ -619,7 +620,6 @@ payment_risk_score_check(C) ->
         )),
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
-    _UserInteraction2 = await_payment_process_interaction(InvoiceID2, PaymentID2, Client),
     PaymentID2 = await_payment_process_finish(InvoiceID2, PaymentID2, Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
     % Invoice w/ 100000000 =< cost
@@ -657,7 +657,6 @@ payment_adjustment_success(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), _, _, CF1)),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
@@ -832,7 +831,6 @@ external_account_posting(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), low, _, CF)),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, InvoicingClient),
-    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, InvoicingClient),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
@@ -964,13 +962,34 @@ terms_retrieval(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 1500, C),
     TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, mastercard), ?pmt(bank_card, visa), ?pmt(payment_terminal, euroset)]}
+        payment_methods = {value, [
+            ?pmt(bank_card, jcb),
+            ?pmt(bank_card, mastercard),
+            ?pmt(bank_card, visa),
+            ?pmt(payment_terminal, euroset)
+        ]}
     }} = TermSet1,
     ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet2.
+
+-spec payment_with_user_interaction_success(config()) -> test_return().
+
+payment_with_user_interaction_success(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(jcb),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 %%
 
@@ -1197,7 +1216,6 @@ start_payment(InvoiceID, PaymentParams, Client) ->
 
 process_payment(InvoiceID, PaymentParams, Client) ->
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
-    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client).
 
 await_payment_process_interaction(InvoiceID, PaymentID, Client) ->
@@ -1324,6 +1342,7 @@ construct_domain_fixture() ->
                     then_ = {value, ?ordset([
                         ?pmt(bank_card, visa),
                         ?pmt(bank_card, mastercard),
+                        ?pmt(bank_card, jcb),
                         ?pmt(payment_terminal, euroset)
                     ])}
                 }
@@ -1466,6 +1485,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, jcb)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
@@ -1610,7 +1630,8 @@ construct_domain_fixture() ->
                     ])},
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, mastercard),
+                        ?pmt(bank_card, jcb)
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -1644,6 +1665,21 @@ construct_domain_fixture() ->
                                     {system, settlement},
                                     {provider, settlement},
                                     ?share(19, 1000, payment_amount)
+                                )
+                            ]}
+                        },
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {payment_tool, {bank_card, {payment_system_is, jcb}}}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, payment_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(20, 1000, payment_amount)
                                 )
                             ]}
                         }

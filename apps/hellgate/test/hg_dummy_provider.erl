@@ -214,12 +214,15 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             suspend(Tag, 2, <<"suspended">>, UserInteraction);
         {bank_card, without_tds} ->
             %% simple workflow without 3DS
+            sleep(1, <<"sleeping">>);
+        {bank_card, user_interaction} ->
+            %% user interaction in sleep intent
             Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
                 {
                     'post_request',
-                    #'BrowserPostRequest'{uri = Uri, form = #{}}
+                    #'BrowserPostRequest'{uri = Uri, form = #{<<"param">> => <<"value">>}}
                 }
             },
             sleep(1, <<"sleeping">>, UserInteraction);
@@ -313,6 +316,8 @@ get_resource_type(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResourc
     case Type of
         {'bank_card', #domain_BankCard{token = Token3DS}} ->
             {bank_card, with_tds};
+        {'bank_card', #domain_BankCard{payment_system = jcb}} ->
+            {bank_card, user_interaction};
         {'bank_card', _} ->
             {bank_card, without_tds}
     end.
@@ -325,6 +330,8 @@ get_payment_tool_type(PaymentTool) ->
     case PaymentTool of
         {'bank_card', #domain_BankCard{token = Token3DS}} ->
             {bank_card, with_tds};
+        {'bank_card', #domain_BankCard{payment_system = jcb}} ->
+            {bank_card, user_interaction};
         {'bank_card', _} ->
             {bank_card, without_tds};
         {'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}} ->
