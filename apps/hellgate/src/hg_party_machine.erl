@@ -1,6 +1,7 @@
 -module(hg_party_machine).
 
 -include("party_events.hrl").
+-include("legacy_party_structures.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 %% Machine callbacks
@@ -261,7 +262,7 @@ publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     hg_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
-    {{party_id, PartyID}, unmarshal(Ev)}.
+    {{party_id, PartyID}, unwrap_event(Ev)}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -455,7 +456,15 @@ create_claim(Changeset, St) ->
             % Try to submit new accepted claim
             try
                 AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, Claim),
-                {AcceptedClaim, [?claim_created(Claim)] ++ finalize_claim(AcceptedClaim, Timestamp)}
+                PartyRevision = get_next_party_revision(St),
+                {
+                    AcceptedClaim,
+                    [
+                        ?claim_created(Claim),
+                        ?revision_changed(Timestamp, PartyRevision) |
+                        finalize_claim(AcceptedClaim, Timestamp)
+                    ]
+                }
             catch
                 throw:_AnyException ->
                     {Claim, [?claim_created(Claim)]}
@@ -651,34 +660,175 @@ assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
 
 %%
 
-unwrap_event({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal(Payload)}.
-
-unwrap_events(History) ->
-    [unwrap_event(E) || E <- History].
+-define(TOP_VERSION, 2).
 
 wrap_events(Events) ->
-    [marshal(E) || E <- Events].
+    [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
 
-marshal(V) ->
-    {bin, term_to_binary(V)}.
+unwrap_events(History) ->
+    lists:map(
+        fun({ID, Dt, Event}) ->
+            {ID, Dt, unwrap_event(Event)}
+        end,
+        History
+    ).
 
-unmarshal({bin, B}) ->
-    ensure_event(binary_to_term(B)).
+unwrap_event(Event) when is_list(Event) ->
+    transmute(hg_party_marshalling:unmarshal(Event));
+unwrap_event({bin, Bin}) when is_binary(Bin) ->
+    transmute([1, binary_to_term(Bin)]).
 
-% FIXME Remove as soon as offline services switch to rbkmoney/damsel@2223cc6
+transmute([Version, Event]) ->
+    transmute_event(Version, ?TOP_VERSION, Event).
 
-ensure_event(?party_ev(Changes)) ->
-    ?party_ev([ensure_change(C) || C <- Changes]).
+transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1->
+    NewChanges = [transmute_change(V1, V1 + 1, C) || C <- Changes],
+    transmute_event(V1 + 1, V2, ?party_ev(NewChanges));
+transmute_event(V, V, Event) ->
+    Event.
 
-ensure_change(?claim_status_changed(ID, Status, Revision, UpdatedAt)) ->
-    ?claim_status_changed(ID, ensure_claim_status_reason(Status), Revision, UpdatedAt);
-ensure_change(Change) ->
-    Change.
+transmute_change(1, 2,
+    ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _))
+) ->
+    ?party_created(ID, ContactInfo, CreatedAt);
+transmute_change(1, 2,
+    ?claim_created(?legacy_claim(
+        ID,
+        Status,
+        Changeset,
+        Revision,
+        CreatedAt,
+        UpdatedAt
+    ))
+) ->
+    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
+    ?claim_created(#payproc_Claim{
+        id = ID,
+        status = Status,
+        changeset = NewChangeset,
+        revision = Revision,
+        created_at = CreatedAt,
+        updated_at = UpdatedAt
+    });
+transmute_change(1, 2,
+    ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
+) ->
+    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
+    ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
+transmute_change(1, 2,
+    ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
+) ->
+    NewEffects = [transmute_claim_effect(1, 2, E) || E <- Effects],
+    ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
+transmute_change(1, 2, C) ->
+    C.
 
-ensure_claim_status_reason(?denied(undefined)) ->
-    ?denied(<<>>);
-ensure_claim_status_reason(?revoked(undefined)) ->
-    ?revoked(<<>>);
-ensure_claim_status_reason(Status) ->
-    Status.
+transmute_party_modification(1, 2,
+    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params(Contractor, TemplateRef)})
+) ->
+    ?contract_modification(ID, {creation, #payproc_ContractParams{
+        contractor = transmute_contractor(1, 2, Contractor),
+        template = TemplateRef
+    }});
+transmute_party_modification(1, 2,
+    ?legacy_contract_modification(ContractID, ?legacy_payout_tool_creation(
+        ID,
+        ?legacy_payout_tool_params(Currency, {bank_account, BankAccount})
+    ))
+) ->
+    PayoutToolParams = #payproc_PayoutToolParams{
+        currency = Currency,
+        tool_info = {russian_bank_account, transmute_bank_account(1, 2, BankAccount)}
+    },
+    ?contract_modification(ContractID, ?payout_tool_creation(ID, PayoutToolParams));
+transmute_party_modification(1, 2, C) ->
+    C.
+
+transmute_claim_effect(1, 2, ?legacy_contract_effect(
+    ID,
+    {created, ?legacy_contract(
+        ID,
+        Contractor,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    )}
+)) ->
+    Contract = #domain_Contract{
+        id = ID,
+        contractor = transmute_contractor(1, 2, Contractor),
+        created_at = CreatedAt,
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        status = Status,
+        terms = Terms,
+        adjustments = Adjustments,
+        payout_tools = [transmute_payout_tool(1, 2, P) || P <- PayoutTools],
+        legal_agreement = LegalAgreement
+    },
+    ?contract_effect(ID, {created, Contract});
+transmute_claim_effect(1, 2, ?legacy_contract_effect(
+    ContractID,
+    {payout_tool_created, PayoutTool}
+)) ->
+    ?contract_effect(
+        ContractID,
+        {payout_tool_created, transmute_payout_tool(1, 2, PayoutTool)}
+    );
+transmute_claim_effect(1, 2, C) ->
+    C.
+
+transmute_contractor(1, 2,
+    {legal_entity, ?legacy_russian_legal_entity(
+        RegisteredName,
+        RegisteredNumber,
+        Inn,
+        ActualAddress,
+        PostAddress,
+        RepresentativePosition,
+        RepresentativeFullName,
+        RepresentativeDocument,
+        BankAccount
+    )}
+) ->
+    {legal_entity, #domain_RussianLegalEntity{
+        registered_name = RegisteredName,
+        registered_number = RegisteredNumber,
+        inn = Inn,
+        actual_address = ActualAddress,
+        post_address = PostAddress,
+        representative_position = RepresentativePosition,
+        representative_full_name = RepresentativeFullName,
+        representative_document = RepresentativeDocument,
+        russian_bank_account = transmute_bank_account(1, 2, BankAccount)
+    }};
+transmute_contractor(1, 2, Contractor) ->
+    Contractor.
+
+transmute_payout_tool(1, 2, ?legacy_payout_tool(
+    ID,
+    CreatedAt,
+    Currency,
+    {bank_account, BankAccount}
+)) ->
+    #domain_PayoutTool{
+        id = ID,
+        created_at = CreatedAt,
+        currency = Currency,
+        payout_tool_info = {russian_bank_account, transmute_bank_account(1, 2, BankAccount)}
+    };
+transmute_payout_tool(1, 2, PayoutTool) ->
+    PayoutTool.
+
+transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAccount, BankBik)) ->
+    #domain_RussianBankAccount{
+        account = Account,
+        bank_name = BankName,
+        bank_post_account = BankPostAccount,
+        bank_bik = BankBik
+    }.

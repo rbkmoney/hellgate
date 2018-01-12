@@ -9,12 +9,23 @@
 -export([unmarshal/2]).
 
 -export_type([value/0]).
+-export_type([msgpack_value/0]).
 
 -type value() :: term().
 
+-type msgpack_value() ::
+    undefined |
+    boolean() |
+    list() |
+    map() |
+    binary() |
+    {bin, binary()} |
+    integer() |
+    float().
+
 %%
 
--spec marshal(value()) ->
+-spec marshal(msgpack_value()) ->
     dmsl_msgpack_thrift:'Value'().
 marshal(undefined) ->
     {nl, #msgpack_Nil{}};
@@ -40,7 +51,7 @@ marshal(Array) when is_list(Array) ->
     {arr, lists:map(fun marshal/1, Array)}.
 
 -spec unmarshal(dmsl_msgpack_thrift:'Value'()) ->
-    value().
+    msgpack_value().
 unmarshal({nl, #msgpack_Nil{}}) ->
     undefined;
 unmarshal({b, Boolean}) ->
