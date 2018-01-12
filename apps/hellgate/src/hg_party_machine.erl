@@ -726,11 +726,9 @@ transmute_change(1, 2, C) ->
 transmute_party_modification(1, 2,
     ?legacy_contract_modification(ID, {creation, ?legacy_contract_params(Contractor, TemplateRef)})
 ) ->
-    PaymentInstitutionRef = get_default_payment_inst(TemplateRef),
     ?contract_modification(ID, {creation, #payproc_ContractParams{
         contractor = transmute_contractor(1, 2, Contractor),
-        template = TemplateRef,
-        payment_institution = PaymentInstitutionRef
+        template = TemplateRef
     }});
 transmute_party_modification(1, 2,
     ?legacy_contract_modification(ContractID, ?legacy_payout_tool_creation(
@@ -773,8 +771,7 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
         payout_tools = [transmute_payout_tool(1, 2, P) || P <- PayoutTools],
         legal_agreement = LegalAgreement
     },
-    PaymentInstitutionRef = get_default_payment_inst(Contract),
-    ?contract_effect(ID, {created, Contract#domain_Contract{payment_institution = PaymentInstitutionRef}});
+    ?contract_effect(ID, {created, Contract});
 transmute_claim_effect(1, 2, ?legacy_contract_effect(
     ContractID,
     {payout_tool_created, PayoutTool}
@@ -835,42 +832,3 @@ transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAcc
         bank_post_account = BankPostAccount,
         bank_bik = BankBik
     }.
-
-get_default_payment_inst(C) ->
-    Timestamp = hg_datetime:format_now(),
-    Revision = hg_domain:head(),
-    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
-    Defaults = Globals#domain_Globals.contract_payment_institution_defaults,
-    case is_test_contract_or_template(C, Timestamp, Revision) of
-        true ->
-            Defaults#domain_ContractPaymentInstitutionDefaults.test;
-        false ->
-            Defaults#domain_ContractPaymentInstitutionDefaults.live
-    end.
-
-is_test_contract_or_template(C, Timestamp, Revision) when C /= undefined ->
-    Categories = hg_party:get_categories(C, Timestamp, Revision),
-    {Test, Live} = lists:foldl(
-        fun(CategoryRef, {TestFound, LiveFound}) ->
-            case hg_domain:get(Revision, {category, CategoryRef}) of
-                #domain_Category{type = test} ->
-                    {true, LiveFound};
-                #domain_Category{type = live} ->
-                    {TestFound, true}
-            end
-        end,
-        {false, false},
-        ordsets:to_list(Categories)
-    ),
-    case Test /= Live of
-        true ->
-            Test;
-        false ->
-            error({
-                misconfiguration,
-                {'Test and live category in same term set', C, Timestamp, Revision}
-            })
-    end;
-is_test_contract_or_template(undefined, _, _) ->
-    % in case of undefined contract template ref
-    false.

@@ -401,7 +401,8 @@ apply_claim_effect(?contract_effect(ID, Effect), Timestamp, Party) ->
 apply_claim_effect(?shop_effect(ID, Effect), _, Party) ->
     apply_shop_effect(ID, Effect, Party).
 
-apply_contract_effect(_, {created, Contract}, Timestamp, Party) ->
+apply_contract_effect(_, {created, Contract0}, Timestamp, Party) ->
+    Contract = ensure_payment_institution(Contract0, Timestamp),
     hg_party:set_new_contract(Contract, Timestamp, Party);
 apply_contract_effect(ID, Effect, _, Party) ->
     Contract = hg_party:get_contract(ID, Party),
@@ -447,6 +448,44 @@ update_shop({account_created, Account}, Shop) ->
 
 raise_invalid_changeset(Reason) ->
     throw(#payproc_InvalidChangeset{reason = Reason}).
+
+ensure_payment_institution(#domain_Contract{payment_institution = undefined} = Contract, Timestamp) ->
+    Revision = hg_domain:head(),
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    Defaults = Globals#domain_Globals.contract_payment_institution_defaults,
+    PaymentInstitutionRef = case is_test_contract(Contract, Timestamp, Revision) of
+        true ->
+            Defaults#domain_ContractPaymentInstitutionDefaults.test;
+        false ->
+            Defaults#domain_ContractPaymentInstitutionDefaults.live
+    end,
+    Contract#domain_Contract{payment_institution = PaymentInstitutionRef};
+ensure_payment_institution(Contract, _) ->
+    Contract.
+
+is_test_contract(Contract, Timestamp, Revision) ->
+    Categories = hg_party:get_categories(Contract, Timestamp, Revision),
+    {Test, Live} = lists:foldl(
+        fun(CategoryRef, {TestFound, LiveFound}) ->
+            case hg_domain:get(Revision, {category, CategoryRef}) of
+                #domain_Category{type = test} ->
+                    {true, LiveFound};
+                #domain_Category{type = live} ->
+                    {TestFound, true}
+            end
+        end,
+        {false, false},
+        ordsets:to_list(Categories)
+    ),
+    case Test /= Live of
+        true ->
+            Test;
+        false ->
+            error({
+                misconfiguration,
+                {'Test and live category in same term set', Contract#domain_Contract.terms, Timestamp, Revision}
+            })
+    end.
 
 %% Asserts
 
