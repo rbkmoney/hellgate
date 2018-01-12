@@ -281,7 +281,7 @@ start_binding_w_tds(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
-    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
     CustomerBindingParams = #payproc_CustomerBindingParams{
         payment_resource = make_disposable_payment_resource(PaymentTool, Session)
     },
@@ -339,7 +339,7 @@ start_two_bindings_w_tds(C) ->
     ShopID = cfg(shop_id, C),
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
-    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
     CustomerBindingParams = #payproc_CustomerBindingParams{
         payment_resource = make_disposable_payment_resource(PaymentTool, Session)
     },

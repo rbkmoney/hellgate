@@ -153,7 +153,7 @@ generate_token(
             token_sleep(1, <<"sleeping">>)
     end;
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
-    case get_rec_payment_tool_scenario(PaymentTool) of
+    case get_recurrent_paytool_scenario(PaymentTool) of
         preauth_3ds ->
             Tag = generate_recurent_tag(),
             Uri = get_callback_url(),
@@ -340,7 +340,7 @@ get_payment_resource_scenario({disposable_payment_resource, PaymentResource}) ->
 get_payment_resource_scenario({recurrent_payment_resource, _}) ->
     recurrent.
 
-get_rec_payment_tool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
+get_recurrent_paytool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
     PaymentTool = get_payment_tool(PaymentResource),
     get_payment_tool_scenario(PaymentTool).
 
@@ -356,13 +356,37 @@ get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_
 -spec make_payment_tool(atom()) -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_payment_tool(preauth_3ds) ->
-    hg_ct_helper:make_tds_payment_tool();
+    make_tds_payment_tool();
 make_payment_tool(preauth_3ds_offsite) ->
-    hg_ct_helper:make_simple_payment_tool(jcb);
+    make_simple_payment_tool(jcb);
 make_payment_tool(no_preauth) ->
-    hg_ct_helper:make_simple_payment_tool();
+    make_simple_payment_tool(visa);
 make_payment_tool(terminal) ->
-    hg_ct_helper:make_terminal_payment_tool().
+    {
+        {payment_terminal, #domain_PaymentTerminal{
+            terminal_type = euroset
+        }},
+        <<"">>
+    }.
+
+make_tds_payment_tool() ->
+    Token = hg_ct_helper:bank_card_tds_token(),
+    construct_payment_tool_and_session(Token, visa, <<"666666">>, <<"666">>, <<"SESSION666">>).
+
+make_simple_payment_tool(PaymentSystem) ->
+    Token = hg_ct_helper:bank_card_simple_token(),
+    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>, <<"SESSION42">>).
+
+construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, Session) ->
+    {
+        {bank_card, #domain_BankCard{
+            token          = Token,
+            payment_system = PaymentSystem,
+            bin            = Bin,
+            masked_pan     = Pan
+        }},
+        Session
+    }.
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.
