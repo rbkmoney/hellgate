@@ -42,8 +42,8 @@
 -export([payment_hold_capturing/1]).
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
--export([payment_with_user_interaction_success/1]).
--export([payment_with_user_interaction_failed/1]).
+-export([payment_with_offsite_preauth_success/1]).
+-export([payment_with_offsite_preauth_failed/1]).
 -export([terms_retrieval/1]).
 -export([consistent_history/1]).
 
@@ -106,8 +106,8 @@ all() ->
 
         payment_refund_success,
 
-        payment_with_user_interaction_success,
-        payment_with_user_interaction_failed,
+        payment_with_offsite_preauth_success,
+        payment_with_offsite_preauth_failed,
 
         terms_retrieval,
 
@@ -155,6 +155,7 @@ init_per_suite(C) ->
         | C
     ],
     ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
+    ok = start_kv_store(NewC),
     NewC.
 
 -spec end_per_suite(config()) -> _.
@@ -977,9 +978,9 @@ terms_retrieval(C) ->
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet2.
 
--spec payment_with_user_interaction_success(config()) -> test_return().
+-spec payment_with_offsite_preauth_success(config()) -> test_return().
 
-payment_with_user_interaction_success(C) ->
+payment_with_offsite_preauth_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(jcb),
@@ -996,9 +997,9 @@ payment_with_user_interaction_success(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
--spec payment_with_user_interaction_failed(config()) -> test_return().
+-spec payment_with_offsite_preauth_failed(config()) -> test_return().
 
-payment_with_user_interaction_failed(C) ->
+payment_with_offsite_preauth_failed(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 42000, C),
     {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(jcb),
@@ -1008,9 +1009,9 @@ payment_with_user_interaction_failed(C) ->
     [
         ?payment_ev(
             PaymentID,
-            ?session_ev(?processed(), ?session_finished(?session_failed(_)))
+            ?session_ev(?processed(), ?session_finished(?session_failed(Failure = ?external_failure(<<"smth wrong">>))))
         ),
-        ?payment_ev(PaymentID, ?payment_status_changed(?failed(_)))
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
     ] = next_event(InvoiceID, Client),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 %%
@@ -1073,6 +1074,18 @@ start_proxies(Proxies) ->
 
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
+
+start_kv_store(C) ->
+    ChildSpec = #{
+        id => hg_kv_store,
+        start => {hg_kv_store, start_link, [[]]},
+        restart => permanent,
+        shutdown => 2000,
+        type => worker,
+        modules => [hg_kv_store]
+    },
+    {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
+    ok.
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
