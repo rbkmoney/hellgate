@@ -11,6 +11,8 @@
 -export([get_callback_url/0]).
 -export([construct_silent_callback/1]).
 
+-export([make_payment_tool/1]).
+
 %% cowboy http callbacks
 -export([init/3]).
 -export([handle/2]).
@@ -151,7 +153,7 @@ generate_token(
             token_sleep(1, <<"sleeping">>)
     end;
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
-    case get_payment_tool_scenario(PaymentTool) of
+    case get_rec_payment_tool_scenario(PaymentTool) of
         preauth_3ds ->
             Tag = generate_recurent_tag(),
             Uri = get_callback_url(),
@@ -204,7 +206,7 @@ token_respond(Response, CallbackResult) ->
 %
 
 process_payment(?processed(), undefined, PaymentInfo, _) ->
-    case get_payment_tool_scenario(PaymentInfo) of
+    case get_payment_info_scenario(PaymentInfo) of
         preauth_3ds ->
             Tag = generate_payment_tag(),
             Uri = get_callback_url(),
@@ -327,18 +329,21 @@ get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
 get_invoice_id(#prxprv_PaymentInfo{invoice = Invoice}) ->
     Invoice#prxprv_Invoice.id.
 
-get_payment_tool_scenario(
+get_payment_info_scenario(
     #prxprv_PaymentInfo{payment = #prxprv_InvoicePayment{payment_resource = Resource}}
 ) ->
-    get_payment_tool_scenario(Resource);
-get_payment_tool_scenario({disposable_payment_resource, PaymentResource}) ->
+    get_payment_resource_scenario(Resource).
+
+get_payment_resource_scenario({disposable_payment_resource, PaymentResource}) ->
     PaymentTool = get_payment_tool(PaymentResource),
     get_payment_tool_scenario(PaymentTool);
-get_payment_tool_scenario({recurrent_payment_resource, _}) ->
-    recurrent;
-get_payment_tool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
+get_payment_resource_scenario({recurrent_payment_resource, _}) ->
+    recurrent.
+
+get_rec_payment_tool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
     PaymentTool = get_payment_tool(PaymentResource),
-    get_payment_tool_scenario(PaymentTool);
+    get_payment_tool_scenario(PaymentTool).
+
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"TOKEN666">>}}) ->
     preauth_3ds;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{payment_system = jcb}}) ->
@@ -347,6 +352,17 @@ get_payment_tool_scenario({'bank_card', _}) ->
     no_preauth;
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
     euroset.
+
+-spec make_payment_tool(atom()) -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+
+make_payment_tool(preauth_3ds) ->
+    hg_ct_helper:make_tds_payment_tool();
+make_payment_tool(preauth_3ds_offsite) ->
+    hg_ct_helper:make_simple_payment_tool(jcb);
+make_payment_tool(no_preauth) ->
+    hg_ct_helper:make_simple_payment_tool();
+make_payment_tool(euroset) ->
+    hg_ct_helper:make_terminal_payment_tool().
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.

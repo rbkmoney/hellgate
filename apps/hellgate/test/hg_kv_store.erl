@@ -36,8 +36,7 @@ init(_) ->
 -spec handle_call(term(), pid(), atom()) -> {reply, atom(), atom()}.
 
 handle_call({put, Key, Value}, _From, State) ->
-    NewState = maps:update_with(Key, fun(_) -> Value end, undefined, State),
-    {reply, ok, NewState};
+    {reply, ok, State#{Key => Value}};
 handle_call({get, Key}, _From, State) ->
     Value = maps:get(Key, State, undefined),
     {reply, Value, State}.

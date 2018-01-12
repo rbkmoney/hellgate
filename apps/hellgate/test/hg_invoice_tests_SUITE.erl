@@ -8,6 +8,8 @@
 -export([groups/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
+-export([init_per_group/2]).
+-export([end_per_group/2]).
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
@@ -106,8 +108,7 @@ all() ->
 
         payment_refund_success,
 
-        payment_with_offsite_preauth_success,
-        payment_with_offsite_preauth_failed,
+        {group, offsite_preauth_payment},
 
         terms_retrieval,
 
@@ -123,6 +124,10 @@ groups() ->
             payment_hold_auto_cancellation,
             payment_hold_capturing,
             payment_hold_auto_capturing
+        ]},
+        {offsite_preauth_payment, [parallel], [
+            payment_with_offsite_preauth_success,
+            payment_with_offsite_preauth_failed
         ]}
     ].
 
@@ -155,7 +160,6 @@ init_per_suite(C) ->
         | C
     ],
     ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
-    ok = start_kv_store(NewC),
     NewC.
 
 -spec end_per_suite(config()) -> _.
@@ -197,6 +201,23 @@ end_per_suite(C) ->
     {exception, #payproc_OperationNotPermitted{}}).
 -define(insufficient_account_balance(),
     {exception, #payproc_InsufficientAccountBalance{}}).
+
+-spec init_per_group(group_name(), config()) -> config().
+
+init_per_group(offsite_preauth_payment, C) ->
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    _ = unlink(SupPid),
+    ok = start_kv_store(SupPid),
+    [{kv_store_sup, SupPid} | C];
+init_per_group(_, C) ->
+    C.
+
+-spec end_per_group(group_name(), config()) -> _.
+
+end_per_group(offsite_preauth_payment, C) ->
+    exit(cfg(kv_store_sup, C), shutdown);
+end_per_group(_Group, _C) ->
+    ok.
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -983,7 +1004,7 @@ terms_retrieval(C) ->
 payment_with_offsite_preauth_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(jcb),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
@@ -1002,7 +1023,7 @@ payment_with_offsite_preauth_success(C) ->
 payment_with_offsite_preauth_failed(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 42000, C),
-    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(jcb),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
@@ -1075,7 +1096,7 @@ start_proxies(Proxies) ->
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
 
-start_kv_store(C) ->
+start_kv_store(SupPid) ->
     ChildSpec = #{
         id => hg_kv_store,
         start => {hg_kv_store, start_link, [[]]},
@@ -1084,7 +1105,7 @@ start_kv_store(C) ->
         type => worker,
         modules => [hg_kv_store]
     },
-    {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
+    {ok, _} = supervisor:start_child(SupPid, ChildSpec),
     ok.
 
 get_random_port() ->
@@ -1162,14 +1183,14 @@ delete_invoice_tpl(TplID, Config) ->
     hg_client_invoice_templating:delete(TplID, Client).
 
 make_terminal_payment_params() ->
-    {PaymentTool, Session} = hg_ct_helper:make_terminal_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(euroset),
     make_payment_params(PaymentTool, Session, instant).
 
 make_tds_payment_params() ->
     make_tds_payment_params(instant).
 
 make_tds_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_customer_payment_params(CustomerID) ->
@@ -1184,7 +1205,7 @@ make_payment_params() ->
     make_payment_params(instant).
 
 make_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_payment_params(PaymentTool, Session, FlowType) ->
