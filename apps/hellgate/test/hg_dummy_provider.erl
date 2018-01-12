@@ -238,7 +238,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
                 }
             },
             sleep(1, <<"sleeping_with_user_interaction">>, UserInteraction);
-        euroset ->
+        terminal ->
             %% workflow for euroset terminal, similar to 3DS workflow
             SPID = get_short_payment_id(PaymentInfo),
             UserInteraction = {payment_terminal_reciept, #'PaymentTerminalReceipt'{
@@ -351,7 +351,7 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{payment_system = jcb}})
 get_payment_tool_scenario({'bank_card', _}) ->
     no_preauth;
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
-    euroset.
+    terminal.
 
 -spec make_payment_tool(atom()) -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
@@ -361,7 +361,7 @@ make_payment_tool(preauth_3ds_offsite) ->
     hg_ct_helper:make_simple_payment_tool(jcb);
 make_payment_tool(no_preauth) ->
     hg_ct_helper:make_simple_payment_tool();
-make_payment_tool(euroset) ->
+make_payment_tool(terminal) ->
     hg_ct_helper:make_terminal_payment_tool().
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->

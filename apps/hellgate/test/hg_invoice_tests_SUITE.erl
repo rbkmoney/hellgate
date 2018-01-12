@@ -1183,7 +1183,7 @@ delete_invoice_tpl(TplID, Config) ->
     hg_client_invoice_templating:delete(TplID, Client).
 
 make_terminal_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(euroset),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(terminal),
     make_payment_params(PaymentTool, Session, instant).
 
 make_tds_payment_params() ->
