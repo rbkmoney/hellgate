@@ -201,7 +201,7 @@ invalid_payment_method(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     PaymentTool = {bank_card, #domain_BankCard{
-        token          = hg_ct_helper:bank_card_simple_token(),
+        token          = <<"TOKEN">>,
         payment_system = mastercard,
         bin            = <<"666666">>,
         masked_pan     = <<"666">>

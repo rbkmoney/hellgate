@@ -344,9 +344,9 @@ get_recurrent_paytool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = P
     PaymentTool = get_payment_tool(PaymentResource),
     get_payment_tool_scenario(PaymentTool).
 
-get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"TOKEN666">>}}) ->
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds">>}}) ->
     preauth_3ds;
-get_payment_tool_scenario({'bank_card', #domain_BankCard{payment_system = jcb}}) ->
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_offsite">>}}) ->
     preauth_3ds_offsite;
 get_payment_tool_scenario({'bank_card', _}) ->
     no_preauth;
@@ -356,11 +356,12 @@ get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_
 -spec make_payment_tool(atom()) -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_payment_tool(preauth_3ds) ->
-    make_tds_payment_tool();
+    construct_payment_tool_and_session(<<"preauth_3ds">>, visa, <<"666666">>, <<"666">>, <<"SESSION666">>);
 make_payment_tool(preauth_3ds_offsite) ->
-    make_simple_payment_tool(jcb);
+    make_simple_payment_tool(<<"preauth_3ds_offsite">>, jcb);
 make_payment_tool(no_preauth) ->
-    make_simple_payment_tool(visa);
+    Token = <<"no_preauth">>,
+    make_simple_payment_tool(Token, visa);
 make_payment_tool(terminal) ->
     {
         {payment_terminal, #domain_PaymentTerminal{
@@ -369,12 +370,7 @@ make_payment_tool(terminal) ->
         <<"">>
     }.
 
-make_tds_payment_tool() ->
-    Token = hg_ct_helper:bank_card_tds_token(),
-    construct_payment_tool_and_session(Token, visa, <<"666666">>, <<"666">>, <<"SESSION666">>).
-
-make_simple_payment_tool(PaymentSystem) ->
-    Token = hg_ct_helper:bank_card_simple_token(),
+make_simple_payment_tool(Token, PaymentSystem) ->
     construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>, <<"SESSION42">>).
 
 construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, Session) ->

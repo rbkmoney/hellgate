@@ -51,7 +51,6 @@
 -export([make_customer_params/3]).
 -export([make_customer_binding_params/0]).
 
--export([bank_card_tds_token/0]).
 -export([bank_card_simple_token/0]).
 -export([make_bad_payment_tool/0]).
 -export([is_bad_payment_tool/1]).
@@ -571,11 +570,6 @@ make_shop_details(Name, Description) ->
         name        = Name,
         description = Description
     }.
-
--spec bank_card_tds_token() -> string().
-
-bank_card_tds_token() ->
-    <<"TOKEN666">>.
 
 -spec bank_card_simple_token() -> string().
 
