@@ -1,3 +1,7 @@
+%%% TODO
+%%%  - Do not share state between test cases
+%%%  - Run cases in parallel
+
 -module(hg_invoice_tests_SUITE).
 
 -include("hg_ct_domain.hrl").
