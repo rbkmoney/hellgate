@@ -8,8 +8,6 @@
 -export([groups/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
--export([init_per_group/2]).
--export([end_per_group/2]).
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
@@ -108,7 +106,8 @@ all() ->
 
         payment_refund_success,
 
-        {group, offsite_preauth_payment},
+        payment_with_offsite_preauth_success,
+        payment_with_offsite_preauth_failed,
 
         terms_retrieval,
 
@@ -124,10 +123,6 @@ groups() ->
             payment_hold_auto_cancellation,
             payment_hold_capturing,
             payment_hold_auto_capturing
-        ]},
-        {offsite_preauth_payment, [parallel], [
-            payment_with_offsite_preauth_success,
-            payment_with_offsite_preauth_failed
         ]}
     ].
 
@@ -202,29 +197,18 @@ end_per_suite(C) ->
 -define(insufficient_account_balance(),
     {exception, #payproc_InsufficientAccountBalance{}}).
 
--spec init_per_group(group_name(), config()) -> config().
-
-init_per_group(offsite_preauth_payment, C) ->
-    {ok, SupPid} = supervisor:start_link(?MODULE, []),
-    _ = unlink(SupPid),
-    ok = start_kv_store(SupPid),
-    [{kv_store_sup, SupPid} | C];
-init_per_group(_, C) ->
-    C.
-
--spec end_per_group(group_name(), config()) -> _.
-
-end_per_group(offsite_preauth_payment, C) ->
-    exit(cfg(kv_store_sup, C), shutdown);
-end_per_group(_Group, _C) ->
-    ok.
-
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
 init_per_testcase(payment_adjustment_success, C) ->
     Revision = hg_domain:head(),
     ok = hg_domain:upsert(get_adjustment_fixture(Revision)),
     [{original_domain_revision, Revision} | init_per_testcase(C)];
+init_per_testcase(Name, C) when Name == payment_with_offsite_preauth_success;
+Name == payment_with_offsite_preauth_failed ->
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    _ = unlink(SupPid),
+    ok = start_kv_store(SupPid),
+    [{kv_store_sup, SupPid} | init_per_testcase(C)];
 init_per_testcase(_Name, C) ->
     init_per_testcase(C).
 
@@ -236,6 +220,11 @@ init_per_testcase(C) ->
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
+end_per_testcase(Name, C) when Name == payment_with_offsite_preauth_success;
+Name == payment_with_offsite_preauth_failed ->
+    exit(cfg(kv_store_sup, C), shutdown),
+    NewC = proplists:delete(kv_store_sup, C),
+    {save_config, NewC};
 end_per_testcase(_Name, C) ->
     _ = case cfg(original_domain_revision, C) of
         Revision when is_integer(Revision) ->
