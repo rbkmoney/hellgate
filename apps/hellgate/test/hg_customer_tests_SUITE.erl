@@ -233,10 +233,8 @@ start_binding_w_failure(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
-    {PaymentTool, Session} = hg_ct_helper:make_bad_payment_tool(),
-    CustomerBindingParams = #payproc_CustomerBindingParams{
-        payment_resource = make_disposable_payment_resource(PaymentTool, Session)
-    },
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(forbidden)),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -258,7 +256,8 @@ start_binding(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
-    CustomerBindingParams = hg_ct_helper:make_customer_binding_params(),
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -281,10 +280,8 @@ start_binding_w_tds(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
-    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
-    CustomerBindingParams = #payproc_CustomerBindingParams{
-        payment_resource = make_disposable_payment_resource(PaymentTool, Session)
-    },
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(preauth_3ds)),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -311,7 +308,8 @@ start_two_bindings(C) ->
     ShopID = cfg(shop_id, C),
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
-    CustomerBindingParams = hg_ct_helper:make_customer_binding_params(),
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
     CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
@@ -339,7 +337,7 @@ start_two_bindings_w_tds(C) ->
     ShopID = cfg(shop_id, C),
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
-    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
     CustomerBindingParams = #payproc_CustomerBindingParams{
         payment_resource = make_disposable_payment_resource(PaymentTool, Session)
     },
@@ -395,7 +393,8 @@ start_binding_not_permitted(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
-    CustomerBindingParams = hg_ct_helper:make_customer_binding_params(),
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
     {exception, #payproc_OperationNotPermitted{}} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client).
 

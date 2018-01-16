@@ -1,3 +1,7 @@
+%%% TODO
+%%%  - Do not share state between test cases
+%%%  - Run cases in parallel
+
 -module(hg_invoice_tests_SUITE).
 
 -include("hg_ct_domain.hrl").
@@ -8,6 +12,8 @@
 -export([groups/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
+-export([init_per_group/2]).
+-export([end_per_group/2]).
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
@@ -44,6 +50,8 @@
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
 -export([rounding_cashflow_volume/1]).
+-export([payment_with_offsite_preauth_success/1]).
+-export([payment_with_offsite_preauth_failed/1]).
 -export([terms_retrieval/1]).
 -export([consistent_history/1]).
 
@@ -108,6 +116,7 @@ all() ->
         payment_refund_success,
 
         rounding_cashflow_volume,
+        {group, offsite_preauth_payment},
 
         terms_retrieval,
 
@@ -123,6 +132,10 @@ groups() ->
             payment_hold_auto_cancellation,
             payment_hold_capturing,
             payment_hold_auto_capturing
+        ]},
+        {offsite_preauth_payment, [parallel], [
+            payment_with_offsite_preauth_success,
+            payment_with_offsite_preauth_failed
         ]}
     ].
 
@@ -196,6 +209,23 @@ end_per_suite(C) ->
     {exception, #payproc_OperationNotPermitted{}}).
 -define(insufficient_account_balance(),
     {exception, #payproc_InsufficientAccountBalance{}}).
+
+-spec init_per_group(group_name(), config()) -> config().
+
+init_per_group(offsite_preauth_payment, C) ->
+    {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    _ = unlink(SupPid),
+    ok = start_kv_store(SupPid),
+    [{kv_store_sup, SupPid} | C];
+init_per_group(_, C) ->
+    C.
+
+-spec end_per_group(group_name(), config()) -> _.
+
+end_per_group(offsite_preauth_payment, C) ->
+    exit(cfg(kv_store_sup, C), shutdown);
+end_per_group(_Group, _C) ->
+    ok.
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
@@ -1071,6 +1101,7 @@ terms_retrieval(C) ->
     TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [
+            ?pmt(bank_card, jcb),
             ?pmt(bank_card, mastercard),
             ?pmt(bank_card, visa),
             ?pmt(digital_wallet, qiwi),
@@ -1083,6 +1114,42 @@ terms_retrieval(C) ->
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet2.
 
+-spec payment_with_offsite_preauth_success(config()) -> test_return().
+
+payment_with_offsite_preauth_success(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
+    timer:sleep(2000),
+    {URL, Form} = get_post_request(UserInteraction),
+    _ = assert_success_post_request({URL, Form}),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_with_offsite_preauth_failed(config()) -> test_return().
+
+payment_with_offsite_preauth_failed(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?session_ev(?processed(), ?session_finished(?session_failed(Failure = ?external_failure(<<"smth wrong">>))))
+        ),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
+    ] = next_event(InvoiceID, Client),
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 %%
 
 next_event(InvoiceID, Client) ->
@@ -1143,6 +1210,18 @@ start_proxies(Proxies) ->
 
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
+
+start_kv_store(SupPid) ->
+    ChildSpec = #{
+        id => hg_kv_store,
+        start => {hg_kv_store, start_link, [[]]},
+        restart => permanent,
+        shutdown => 2000,
+        type => worker,
+        modules => [hg_kv_store]
+    },
+    {ok, _} = supervisor:start_child(SupPid, ChildSpec),
+    ok.
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
@@ -1219,18 +1298,18 @@ delete_invoice_tpl(TplID, Config) ->
     hg_client_invoice_templating:delete(TplID, Client).
 
 make_terminal_payment_params() ->
-    {PaymentTool, Session} = hg_ct_helper:make_terminal_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(terminal),
     make_payment_params(PaymentTool, Session, instant).
 
 make_wallet_payment_params() ->
-    {PaymentTool, Session} = hg_ct_helper:make_wallet_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet),
     make_payment_params(PaymentTool, Session, instant).
 
 make_tds_payment_params() ->
     make_tds_payment_params(instant).
 
 make_tds_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_customer_payment_params(CustomerID) ->
@@ -1245,7 +1324,7 @@ make_payment_params() ->
     make_payment_params(instant).
 
 make_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_payment_params(PaymentTool, Session, FlowType) ->
@@ -1388,7 +1467,11 @@ make_customer_w_rec_tool(PartyID, ShopID, Client) ->
     #payproc_Customer{id = CustomerID} =
         hg_client_customer:create(CustomerParams, Client),
     #payproc_CustomerBinding{id = BindingID} =
-        hg_client_customer:start_binding(CustomerID, hg_ct_helper:make_customer_binding_params(), Client),
+        hg_client_customer:start_binding(
+            CustomerID,
+            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
+            Client
+        ),
     ok = wait_for_binding_success(CustomerID, BindingID, Client),
     CustomerID.
 
@@ -1438,6 +1521,7 @@ construct_domain_fixture() ->
                     then_ = {value, ?ordset([
                         ?pmt(bank_card, visa),
                         ?pmt(bank_card, mastercard),
+                        ?pmt(bank_card, jcb),
                         ?pmt(payment_terminal, euroset),
                         ?pmt(digital_wallet, qiwi)
                     ])}
@@ -1581,6 +1665,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, jcb)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
 
@@ -1727,7 +1812,8 @@ construct_domain_fixture() ->
                     ])},
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, mastercard),
+                        ?pmt(bank_card, jcb)
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -1765,6 +1851,23 @@ construct_domain_fixture() ->
                                     {system, settlement},
                                     {provider, settlement},
                                     ?share(19, 1000, payment_amount)
+                                )
+                            ]}
+                        },
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                definition = {payment_system_is, jcb}
+                            }}}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, payment_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(20, 1000, payment_amount)
                                 )
                             ]}
                         }

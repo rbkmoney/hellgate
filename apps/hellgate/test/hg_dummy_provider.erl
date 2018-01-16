@@ -11,6 +11,8 @@
 -export([get_callback_url/0]).
 -export([construct_silent_callback/1]).
 
+-export([make_payment_tool/1]).
+
 %% cowboy http callbacks
 -export([init/3]).
 -export([handle/2]).
@@ -19,12 +21,16 @@
 
 -define(COWBOY_PORT, 9988).
 
--define(sleep(To),
-    {sleep, #'SleepIntent'{timer = {timeout, To}}}).
+-define(sleep(To, UI),
+    {sleep, #'SleepIntent'{timer = {timeout, To}, user_interaction = UI}}).
 -define(suspend(Tag, To, UI),
     {suspend, #'SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
--define(finish(),
-    {finish, #'FinishIntent'{status = {success, #'Success'{}}}}).
+-define(finish(Status),
+    {finish, #'FinishIntent'{status = Status}}).
+-define(success(),
+    {success, #'Success'{}}).
+-define(failure(),
+    {failure, #'Failure'{code = <<"smth wrong">>}}).
 -define(recurrent_token_finish(Token),
     {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
 -define(recurrent_token_finish_w_failure(Failure),
@@ -127,28 +133,18 @@ handle_function(
 % Recurrent tokens
 %
 
-generate_token(
-    undefined,
-    #prxprv_RecurrentTokenInfo{
-        payment_tool = #prxprv_RecurrentPaymentTool{
-            payment_resource = #domain_DisposablePaymentResource{
-                payment_tool = PaymentTool
-            }
-        }
-    },
-    _Opts
-) ->
-    case hg_ct_helper:is_bad_payment_tool(PaymentTool) of
-        true ->
+generate_token(undefined, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPaytool}, _Opts) ->
+    case get_recurrent_paytool_scenario(RecurrentPaytool) of
+        forbidden ->
             #prxprv_RecurrentTokenProxyResult{
-                intent = ?recurrent_token_finish_w_failure(#'Failure'{code = <<"badparams">>})
+                intent = ?recurrent_token_finish_w_failure(#'Failure'{code = <<"forbidden">>})
             };
-        false ->
+        _ ->
             token_sleep(1, <<"sleeping">>)
     end;
-generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, _Opts) ->
-    case get_resource_type(PaymentTool) of
-        {bank_card, with_tds} ->
+generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPaytool}, _Opts) ->
+    case get_recurrent_paytool_scenario(RecurrentPaytool) of
+        preauth_3ds ->
             Tag = generate_recurent_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
@@ -159,7 +155,7 @@ generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = Payment
                 }
             },
             token_suspend(Tag, 3, <<"suspended">>, UserInteraction);
-        {bank_card, without_tds} ->
+        no_preauth ->
             token_sleep(1, <<"finishing">>)
     end;
 generate_token(<<"finishing">>, TokenInfo, _Opts) ->
@@ -179,7 +175,7 @@ token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
 
 token_sleep(Timeout, State) ->
     #prxprv_RecurrentTokenProxyResult{
-        intent     = ?sleep(Timeout),
+        intent     = ?sleep(Timeout, undefined),
         next_state = State
     }.
 
@@ -200,8 +196,8 @@ token_respond(Response, CallbackResult) ->
 %
 
 process_payment(?processed(), undefined, PaymentInfo, _) ->
-    case get_payment_resource_type(PaymentInfo) of
-        {bank_card, with_tds} ->
+    case get_payment_info_scenario(PaymentInfo) of
+        preauth_3ds ->
             Tag = generate_payment_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
@@ -212,10 +208,27 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
                 }
             },
             suspend(Tag, 2, <<"suspended">>, UserInteraction);
-        {bank_card, without_tds} ->
+        no_preauth ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>);
-        {payment_terminal, euroset} ->
+        preauth_3ds_offsite ->
+            %% user interaction in sleep intent
+            Uri = get_callback_url(),
+            UserInteraction = {
+                'redirect',
+                {
+                    'post_request',
+                    #'BrowserPostRequest'{
+                        uri = Uri,
+                        form = #{
+                            <<"invoice_id">> => get_invoice_id(PaymentInfo),
+                            <<"payment_id">> => get_payment_id(PaymentInfo)
+                        }
+                    }
+                }
+            },
+            sleep(1, <<"sleeping_with_user_interaction">>, UserInteraction);
+        terminal ->
             %% workflow for euroset terminal, similar to 3DS workflow
             SPID = get_short_payment_id(PaymentInfo),
             UserInteraction = {payment_terminal_reciept, #'PaymentTerminalReceipt'{
@@ -223,7 +236,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
                due = get_invoice_due_date(PaymentInfo)
             }},
             suspend(SPID, 2, <<"suspended">>, UserInteraction);
-        {digital_wallet, qiwi} ->
+        digital_wallet ->
             %% simple workflow
             sleep(1, <<"sleeping">>);
         recurrent ->
@@ -231,13 +244,27 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             sleep(1, <<"sleeping">>)
     end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
-    finish(get_payment_id(PaymentInfo));
+    finish(?success(), get_payment_id(PaymentInfo));
+process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo, _) ->
+    Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
+    case get_transaction_state(Key) of
+        processed ->
+            finish(?success(), get_payment_id(PaymentInfo));
+        {pending, Count} when Count > 3 ->
+            finish(?failure());
+        {pending, Count} ->
+            set_transaction_state(Key, {pending, Count + 1}),
+            sleep(1, <<"sleeping_with_user_interaction">>);
+        undefined ->
+            set_transaction_state(Key, {pending, 0}),
+            sleep(1, <<"sleeping_with_user_interaction">>)
+    end;
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
-    finish(get_payment_id(PaymentInfo));
+    finish(?success(), get_payment_id(PaymentInfo));
 
 process_payment(?cancelled(), _, PaymentInfo, _) ->
-    finish(get_payment_id(PaymentInfo)).
+    finish(?success(), get_payment_id(PaymentInfo)).
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
@@ -247,22 +274,30 @@ handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentI
 handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) ->
     {{ok, PaymentInfo}, _} = get_payment_info(Tag),
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
-        intent     = ?sleep(1),
+        intent     = ?sleep(1, undefined),
         next_state = <<"sleeping">>
     }).
 
 process_refund(undefined, PaymentInfo, _) ->
-    finish(hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
+    finish(?success(), hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
 
-finish(TrxID) ->
+finish(Status, TrxID) ->
     #prxprv_PaymentProxyResult{
-        intent = ?finish(),
+        intent = ?finish(Status),
         trx    = #domain_TransactionInfo{id = TrxID, extra = #{}}
     }.
 
-sleep(Timeout, State) ->
+finish(Status) ->
     #prxprv_PaymentProxyResult{
-        intent     = ?sleep(Timeout),
+        intent = ?finish(Status)
+    }.
+
+sleep(Timeout, State) ->
+    sleep(Timeout, State, undefined).
+
+sleep(Timeout, State, UserInteraction) ->
+    #prxprv_PaymentProxyResult{
+        intent     = ?sleep(Timeout, UserInteraction),
         next_state = State
     }.
 
@@ -279,51 +314,84 @@ respond(Response, CallbackResult) ->
     }.
 
 get_payment_id(#prxprv_PaymentInfo{payment = Payment}) ->
-    #prxprv_InvoicePayment{id = PaymentID} = Payment,
-    PaymentID.
+    Payment#prxprv_InvoicePayment.id.
 
 get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
-    #prxprv_InvoicePaymentRefund{id = RefundID} = Refund,
-    RefundID.
+    Refund#prxprv_InvoicePaymentRefund.id.
 
-get_payment_resource_type(
+get_invoice_id(#prxprv_PaymentInfo{invoice = Invoice}) ->
+    Invoice#prxprv_Invoice.id.
+
+get_payment_info_scenario(
     #prxprv_PaymentInfo{payment = #prxprv_InvoicePayment{payment_resource = Resource}}
 ) ->
-    get_payment_resource_type(Resource);
-get_payment_resource_type(
-    {disposable_payment_resource, #domain_DisposablePaymentResource{payment_tool = PaymentTool}}
-) ->
-    get_payment_tool_type(PaymentTool);
-get_payment_resource_type(
-    {recurrent_payment_resource, _}
-) ->
+    get_payment_resource_scenario(Resource).
+
+get_payment_resource_scenario({disposable_payment_resource, PaymentResource}) ->
+    PaymentTool = get_payment_tool(PaymentResource),
+    get_payment_tool_scenario(PaymentTool);
+get_payment_resource_scenario({recurrent_payment_resource, _}) ->
     recurrent.
 
-get_resource_type(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
-    Type = get_payment_tool(PaymentResource),
-    Token3DS = hg_ct_helper:bank_card_tds_token(),
-    case Type of
-        {'bank_card', #domain_BankCard{token = Token3DS}} ->
-            {bank_card, with_tds};
-        {'bank_card', _} ->
-            {bank_card, without_tds}
-    end.
+get_recurrent_paytool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = PaymentResource}) ->
+    PaymentTool = get_payment_tool(PaymentResource),
+    get_payment_tool_scenario(PaymentTool).
+
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"no_preauth">>}}) ->
+    no_preauth;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds">>}}) ->
+    preauth_3ds;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_offsite">>}}) ->
+    preauth_3ds_offsite;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>}}) ->
+    forbidden;
+get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
+    terminal;
+get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
+    digital_wallet.
+
+-spec make_payment_tool(atom()) -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+
+make_payment_tool(no_preauth) ->
+    make_simple_payment_tool(<<"no_preauth">>, visa);
+make_payment_tool(preauth_3ds) ->
+    make_simple_payment_tool(<<"preauth_3ds">>, visa);
+make_payment_tool(preauth_3ds_offsite) ->
+    make_simple_payment_tool(<<"preauth_3ds_offsite">>, jcb);
+make_payment_tool(forbidden) ->
+    make_simple_payment_tool(<<"forbidden">>, visa);
+make_payment_tool(terminal) ->
+    {
+        {payment_terminal, #domain_PaymentTerminal{
+            terminal_type = euroset
+        }},
+        <<>>
+    };
+make_payment_tool(digital_wallet) ->
+    {
+        {digital_wallet, #domain_DigitalWallet{
+            provider = qiwi,
+            id       = <<"+79876543210">>
+        }},
+        <<>>
+    }.
+
+make_simple_payment_tool(Token, PaymentSystem) ->
+    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>, <<"SESSION42">>).
+
+construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, Session) ->
+    {
+        {bank_card, #domain_BankCard{
+            token          = Token,
+            payment_system = PaymentSystem,
+            bin            = Bin,
+            masked_pan     = Pan
+        }},
+        Session
+    }.
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.
-
-get_payment_tool_type(PaymentTool) ->
-    Token3DS = hg_ct_helper:bank_card_tds_token(),
-    case PaymentTool of
-        {'bank_card', #domain_BankCard{token = Token3DS}} ->
-            {bank_card, with_tds};
-        {'bank_card', _} ->
-            {bank_card, without_tds};
-        {'payment_terminal', #domain_PaymentTerminal{terminal_type = Type}} ->
-            {payment_terminal, Type};
-        {'digital_wallet', #domain_DigitalWallet{provider = Provider}} ->
-            {digital_wallet, Provider}
-    end.
 
 get_short_payment_id(#prxprv_PaymentInfo{invoice = Invoice, payment = Payment}) ->
     <<(Invoice#prxprv_Invoice.id)/binary, ".", (Payment#prxprv_InvoicePayment.id)/binary>>.
@@ -358,9 +426,18 @@ get_callback_url() ->
 handle_user_interaction_response(<<"POST">>, Req) ->
     {ok, Body, Req2} = cowboy_req:body(Req),
     Form = maps:from_list(cow_qs:parse_qs(Body)),
-    Tag = maps:get(<<"tag">>, Form),
-    Payload = maps:get(<<"payload">>, Form, Tag),
-    RespCode = callback_to_hell(Tag, Payload),
+    RespCode = case maps:get(<<"tag">>, Form, undefined) of
+        %% sleep intent
+        undefined ->
+            InvoiceID = maps:get(<<"invoice_id">>, Form),
+            PaymentID = maps:get(<<"payment_id">>, Form),
+            set_transaction_state({InvoiceID, PaymentID}, processed),
+            200;
+        %% suspend intent
+        Tag ->
+            Payload = maps:get(<<"payload">>, Form, Tag),
+            callback_to_hell(Tag, Payload)
+    end,
     cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<>>, Req2);
 handle_user_interaction_response(_, Req) ->
     %% Method not allowed.
@@ -389,7 +466,6 @@ callback_to_hell(Tag, Payload) ->
             400
     end.
 
-
 generate_payment_tag() ->
     Tag = hg_utils:unique_id(),
     <<"payment-", Tag/binary>>.
@@ -403,3 +479,9 @@ get_payment_info(Tag) ->
         proxy_host_provider, 'GetPayment', [Tag],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ).
+
+set_transaction_state(Key, Value) ->
+    hg_kv_store:put(Key, Value).
+
+get_transaction_state(Key) ->
+    hg_kv_store:get(Key).
