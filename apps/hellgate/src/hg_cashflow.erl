@@ -113,15 +113,13 @@ compute_volume(?product(Fun, CVs) = CV0, Context) ->
             error({misconfiguration, {'Cash volume product over empty set', CV0}})
     end.
 
-compute_parts_of(P, Q, Cash, undefined) ->
-    compute_parts_of(P, Q, Cash, round_half_away_from_zero);
 compute_parts_of(P, Q, Cash = #domain_Cash{amount = Amount}, RoundingMethod) ->
     Cash#domain_Cash{amount = genlib_rational:round(
         genlib_rational:mul(
             genlib_rational:new(Amount),
             genlib_rational:new(P, Q)
         ),
-        RoundingMethod
+        get_rounding_method(RoundingMethod)
     )}.
 
 compute_product(Fun, [CV | CVRest], CV0, Context) ->
@@ -151,6 +149,13 @@ resolve_constant(Constant, Context) ->
         #{} ->
             error({misconfiguration, {'Cash flow constant not found', {Constant, Context}}})
     end.
+
+get_rounding_method(undefined) ->
+    round_half_away_from_zero;
+get_rounding_method(round_half_towards_zero) ->
+    round_half_towards_zero;
+get_rounding_method(round_half_away_from_zero) ->
+    round_half_away_from_zero.
 
 %%
 
