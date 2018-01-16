@@ -1023,25 +1023,23 @@ get_cashflow_rounding_fixture(Revision) ->
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa)
                     ])},
-                    cash_flow = {value,
-                        [
-                            ?cfpost(
-                                {provider, settlement},
-                                {merchant, settlement},
-                                ?share_with_rounding_method(1, 200000, payment_amount, round_half_towards_zero)
-                            ),
-                            ?cfpost(
-                                {system, settlement},
-                                {provider, settlement},
-                                ?share_with_rounding_method(1, 200000, payment_amount, round_half_away_from_zero)
-                            ),
-                            ?cfpost(
-                                {system, settlement},
-                                {external, outcome},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share_with_rounding_method(1, 200000, payment_amount, round_half_towards_zero)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share_with_rounding_method(1, 200000, payment_amount, round_half_away_from_zero)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {external, outcome},
                             ?share(1, 200000, payment_amount)
-                            )
-                        ]
-                    }
+                        )
+                    ]}
                 }
             }
         }},
