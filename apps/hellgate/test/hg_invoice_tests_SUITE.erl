@@ -43,6 +43,7 @@
 -export([payment_hold_capturing/1]).
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
+-export([rounding_cashflow_volume/1]).
 -export([terms_retrieval/1]).
 -export([consistent_history/1]).
 
@@ -105,6 +106,8 @@ all() ->
         {group, holds_management},
 
         payment_refund_success,
+
+        rounding_cashflow_volume,
 
         terms_retrieval,
 
@@ -196,9 +199,15 @@ end_per_suite(C) ->
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
-init_per_testcase(payment_adjustment_success, C) ->
+init_per_testcase(Name, C) when Name == payment_adjustment_success; Name == rounding_cashflow_volume ->
     Revision = hg_domain:head(),
-    ok = hg_domain:upsert(get_adjustment_fixture(Revision)),
+    Fixture = case Name of
+        payment_adjustment_success ->
+            get_adjustment_fixture(Revision);
+        rounding_cashflow_volume ->
+            get_cashflow_rounding_fixture(Revision)
+    end,
+    ok = hg_domain:upsert(Fixture),
     [{original_domain_revision, Revision} | init_per_testcase(C)];
 init_per_testcase(_Name, C) ->
     init_per_testcase(C).
@@ -964,6 +973,95 @@ payment_hold_auto_capturing(C) ->
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     _ = assert_invalid_post_request(get_post_request(UserInteraction)),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, undefined, Client).
+
+-spec rounding_cashflow_volume(config()) -> _ | no_return().
+
+rounding_cashflow_volume(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
+    PaymentParams = make_payment_params(),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), _, _, CF)),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    ?cash(0, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
+    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
+    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {external, outcome}, CF).
+
+get_cashflow_rounding_fixture(Revision) ->
+    Globals = hg_domain:get(Revision, {globals, ?glob()}),
+    [
+        {globals, #domain_GlobalsObject{
+            ref = ?glob(),
+            data = Globals#domain_Globals{
+                providers = {value, ?ordset([
+                    ?prv(100)
+                ])}
+            }}
+        },
+        {provider, #domain_ProviderObject{
+            ref = ?prv(100),
+            data = #domain_Provider{
+                name = <<"Rounding">>,
+                description = <<>>,
+                abs_account = <<>>,
+                terminal = {value, [?trm(100)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                payment_terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(1)
+                    ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(     1000, <<"RUB">>)},
+                        {exclusive, ?cash(100000000, <<"RUB">>)}
+                    )},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa)
+                    ])},
+                    cash_flow = {value,
+                        [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share_with_rounding_method(1, 200000, payment_amount, round_half_towards_zero)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share_with_rounding_method(1, 200000, payment_amount, round_half_away_from_zero)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {external, outcome},
+                            ?share(1, 200000, payment_amount)
+                            )
+                        ]
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(100),
+                data = #domain_Terminal{
+                    name = <<"Rounding Terminal">>,
+                description = <<>>,
+                risk_coverage = low
+            }
+        }}
+    ].
+
+get_cashflow_volume(Source, Destination, CF) ->
+    [Volume] = [V || #domain_FinalCashFlowPosting{
+        source = #domain_FinalCashFlowAccount{account_type = S},
+        destination = #domain_FinalCashFlowAccount{account_type = D},
+        volume = V
+    } <- CF, S == Source, D == Destination],
+    Volume.
 
 %%
 
