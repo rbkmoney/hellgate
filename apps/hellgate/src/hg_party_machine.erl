@@ -409,7 +409,21 @@ assert_nonempty_history([_ | _] = Result) ->
 assert_nonempty_history([]) ->
     throw(#payproc_PartyNotFound{}).
 
-set_claim(Claim = #payproc_Claim{id = ID}, St = #st{claims = Claims}) ->
+set_claim(
+    #payproc_Claim{
+        id = ID,
+        created_at = Timestamp,
+        changeset = Changeset0,
+        status = Status0
+    } = Claim0,
+    #st{claims = Claims} = St
+) ->
+    Changeset = ensure_claim_changeset(Changeset0, Timestamp),
+    Status = ensure_claim_status(Status0, Timestamp),
+    Claim = Claim0#payproc_Claim{
+        changeset = Changeset,
+        status = Status
+    },
     St#st{claims = Claims#{ID => Claim}}.
 
 assert_claim_exists(Claim = #payproc_Claim{}) ->
@@ -657,6 +671,102 @@ assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
     ok;
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
+
+%% backward compatibility stuff
+%% TODO remove after migration
+
+ensure_claim_changeset(Changeset, Timestamp) ->
+    [ensure_contract_change(C, Timestamp) || C <- Changeset].
+
+ensure_contract_change(?contract_modification(ID, {creation, ContractParams}), Timestamp) ->
+    ?contract_modification(
+        ID,
+        {creation, ensure_payment_institution(ContractParams, Timestamp)}
+    );
+ensure_contract_change(C, _) ->
+    C.
+
+ensure_claim_status({accepted, #payproc_ClaimAccepted{effects = Effects} = S}, Timestamp) ->
+    {accepted, S#payproc_ClaimAccepted{
+        effects = [ensure_contract_effect(E, Timestamp) || E <- Effects]
+    }};
+ensure_claim_status(S, _) ->
+    S.
+
+ensure_contract_effect(?contract_effect(ID, {created, Contract}), Timestamp) ->
+    ?contract_effect(ID, {created, ensure_payment_institution(Contract, Timestamp)});
+ensure_contract_effect(E, _) ->
+    E.
+
+ensure_payment_institution(#domain_Contract{payment_institution = undefined} = Contract, Timestamp) ->
+    Revision = hg_domain:head(),
+    PaymentInstitutionRef = get_default_payment_institution(
+        get_realm(Contract, Timestamp, Revision),
+        Revision
+    ),
+    Contract#domain_Contract{payment_institution = PaymentInstitutionRef};
+ensure_payment_institution(#domain_Contract{} = Contract, _) ->
+    Contract;
+ensure_payment_institution(
+    #payproc_ContractParams{
+        template = TemplateRef,
+        payment_institution = undefined
+    } = ContractParams,
+    Timestamp
+) ->
+    Revision = hg_domain:head(),
+    Realm = case TemplateRef of
+        undefined ->
+            % use default live payment institution
+            live;
+        _ ->
+            Template = get_template(TemplateRef, Revision),
+            get_realm(Template, Timestamp, Revision)
+    end,
+    ContractParams#payproc_ContractParams{
+        payment_institution = get_default_payment_institution(Realm, Revision)
+    };
+ensure_payment_institution(#payproc_ContractParams{} = ContractParams, _) ->
+    ContractParams.
+
+get_realm(C, Timestamp, Revision) ->
+    Categories = hg_party:get_categories(C, Timestamp, Revision),
+    {Test, Live} = lists:foldl(
+        fun(CategoryRef, {TestFound, LiveFound}) ->
+            case hg_domain:get(Revision, {category, CategoryRef}) of
+                #domain_Category{type = test} ->
+                    {true, LiveFound};
+                #domain_Category{type = live} ->
+                    {TestFound, true}
+            end
+        end,
+        {false, false},
+        ordsets:to_list(Categories)
+    ),
+    case Test /= Live of
+        true when Test =:= true ->
+            test;
+        true when Live =:= true ->
+            live;
+        false ->
+            error({
+                misconfiguration,
+                {'Test and live category in same term set', C, Timestamp, Revision}
+            })
+    end.
+
+get_default_payment_institution(Realm, Revision) ->
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    Defaults = Globals#domain_Globals.contract_payment_institution_defaults,
+    case Realm of
+        test ->
+            Defaults#domain_ContractPaymentInstitutionDefaults.test;
+        live ->
+            Defaults#domain_ContractPaymentInstitutionDefaults.live
+    end.
+
+get_template(TemplateRef, Revision) ->
+    hg_domain:get(Revision, {contract_template, TemplateRef}).
 
 %%
 
