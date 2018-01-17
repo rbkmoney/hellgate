@@ -116,7 +116,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(InvoiceID, [undefined, InvoiceParams]),
+    ok = start(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
@@ -125,7 +125,7 @@ handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
     _ = set_invoicing_meta(InvoiceID),
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
     InvoiceParams = make_invoice_params(Params),
-    ok = start(InvoiceID, [TplID, InvoiceParams]),
+    ok = start(InvoiceID, [TplID | InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
@@ -363,8 +363,8 @@ namespace() ->
 -spec init(invoice_id(), [invoice_tpl_id() | invoice_params()]) ->
     hg_machine:result().
 
-init(ID, [InvoiceTplID, InvoiceParams]) ->
-    Invoice = create_invoice(ID, InvoiceTplID, InvoiceParams),
+init(ID, [InvoiceTplID, PartyRevision, InvoiceParams]) ->
+    Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
         changes => [?invoice_created(Invoice)],
@@ -648,11 +648,12 @@ handle_result_action(#{}, Acc) ->
 
 %%
 
-create_invoice(ID, InvoiceTplID, V = #payproc_InvoiceParams{}) ->
+create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
         owner_id        = V#payproc_InvoiceParams.party_id,
+        party_revision  = PartyRevision,
         created_at      = hg_datetime:format_now(),
         status          = ?invoice_unpaid(),
         cost            = V#payproc_InvoiceParams.cost,
@@ -781,14 +782,17 @@ make_invoice_params(#payproc_InvoiceWithTemplateParams{
     InvoiceCost = get_cart_amount(Cart),
     InvoiceDue = make_invoice_due_date(Lifetime),
     InvoiceContext = make_invoice_context(Context, TplContext),
-    #payproc_InvoiceParams{
-        party_id = PartyID,
-        shop_id = ShopID,
-        details = InvoiceDetails,
-        due = InvoiceDue,
-        cost = InvoiceCost,
-        context = InvoiceContext
-    }.
+    [
+        Party#domain_Party.revision,
+        #payproc_InvoiceParams{
+            party_id = PartyID,
+            shop_id = ShopID,
+            details = InvoiceDetails,
+            due = InvoiceDue,
+            cost = InvoiceCost,
+            context = InvoiceContext
+        }
+    ].
 
 make_invoice_cart(_, {cart, Cart}, _) ->
     Cart;
