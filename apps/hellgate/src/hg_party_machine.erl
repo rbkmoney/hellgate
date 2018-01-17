@@ -97,7 +97,7 @@ init(ID, PartyParams) ->
 
 process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = hg_datetime:format_now(),
-    ok([?party_created(PartyID, ContactInfo, Timestamp)]).
+    ok([?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)]).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
@@ -138,8 +138,8 @@ handle_call({block, Reason}, {St, _}) ->
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?revision_changed(Timestamp, Revision),
-        ?party_blocking(?blocked(Reason, Timestamp))
+        ?party_blocking(?blocked(Reason, Timestamp)),
+        ?revision_changed(Timestamp, Revision)
     ]);
 
 handle_call({unblock, Reason}, {St, _}) ->
@@ -147,8 +147,8 @@ handle_call({unblock, Reason}, {St, _}) ->
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?revision_changed(Timestamp, Revision),
-        ?party_blocking(?unblocked(Reason, Timestamp))
+        ?party_blocking(?unblocked(Reason, Timestamp)),
+        ?revision_changed(Timestamp, Revision)
     ]);
 
 handle_call(suspend, {St, _}) ->
@@ -157,8 +157,8 @@ handle_call(suspend, {St, _}) ->
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?revision_changed(Timestamp, Revision),
-        ?party_suspension(?suspended(Timestamp))
+        ?party_suspension(?suspended(Timestamp)),
+        ?revision_changed(Timestamp, Revision)
     ]);
 
 handle_call(activate, {St, _}) ->
@@ -167,8 +167,8 @@ handle_call(activate, {St, _}) ->
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?revision_changed(Timestamp, Revision),
-        ?party_suspension(?active(Timestamp))
+        ?party_suspension(?active(Timestamp)),
+        ?revision_changed(Timestamp, Revision)
     ]);
 
 handle_call({set_metadata, NS, Data}, _) ->
@@ -184,8 +184,8 @@ handle_call({block_shop, ID, Reason}, {St, _}) ->
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?revision_changed(Timestamp, Revision),
-        ?shop_blocking(ID, ?blocked(Reason, Timestamp))
+        ?shop_blocking(ID, ?blocked(Reason, Timestamp)),
+        ?revision_changed(Timestamp, Revision)
     ]);
 
 handle_call({unblock_shop, ID, Reason}, {St, _}) ->
@@ -194,8 +194,8 @@ handle_call({unblock_shop, ID, Reason}, {St, _}) ->
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?revision_changed(Timestamp, Revision),
-        ?shop_blocking(ID, ?unblocked(Reason, Timestamp))
+        ?shop_blocking(ID, ?unblocked(Reason, Timestamp)),
+        ?revision_changed(Timestamp, Revision)
     ]);
 
 handle_call({suspend_shop, ID}, {St, _}) ->
@@ -205,8 +205,8 @@ handle_call({suspend_shop, ID}, {St, _}) ->
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?revision_changed(Timestamp, Revision),
-        ?shop_suspension(ID, ?suspended(Timestamp))
+        ?shop_suspension(ID, ?suspended(Timestamp)),
+        ?revision_changed(Timestamp, Revision)
     ]);
 
 handle_call({activate_shop, ID}, {St, _}) ->
@@ -216,8 +216,8 @@ handle_call({activate_shop, ID}, {St, _}) ->
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?revision_changed(Timestamp, Revision),
-        ?shop_suspension(ID, ?active(Timestamp))
+        ?shop_suspension(ID, ?active(Timestamp)),
+        ?revision_changed(Timestamp, Revision)
     ]);
 
 handle_call({create_claim, Changeset}, {St, _}) ->
@@ -240,18 +240,18 @@ handle_call({accept_claim, ID, ClaimRevision}, {St, _}) ->
         get_st_party(St),
         get_st_claim(ID, St)
     ),
-    respond(ok, [?revision_changed(Timestamp, Revision) | finalize_claim(Claim, Timestamp)]);
+    respond(ok, [finalize_claim(Claim, Timestamp), ?revision_changed(Timestamp, Revision)]);
 
 handle_call({deny_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:deny(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
-    respond(ok, finalize_claim(Claim, get_st_timestamp(St)));
+    respond(ok, [finalize_claim(Claim, get_st_timestamp(St))]);
 
 handle_call({revoke_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     ok = assert_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:revoke(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
-    respond(ok, finalize_claim(Claim, get_st_timestamp(St))).
+    respond(ok, [finalize_claim(Claim, get_st_timestamp(St))]).
 
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
@@ -475,8 +475,8 @@ create_claim(Changeset, St) ->
                     AcceptedClaim,
                     [
                         ?claim_created(Claim),
-                        ?revision_changed(Timestamp, PartyRevision) |
-                        finalize_claim(AcceptedClaim, Timestamp)
+                        finalize_claim(AcceptedClaim, Timestamp),
+                        ?revision_changed(Timestamp, PartyRevision)
                     ]
                 }
             catch
@@ -502,12 +502,12 @@ update_claim(ID, Changeset, St) ->
     [?claim_updated(ID, Changeset, hg_claim:get_revision(Claim), Timestamp)].
 
 finalize_claim(Claim, Timestamp) ->
-    [?claim_status_changed(
+    ?claim_status_changed(
         hg_claim:get_id(Claim),
         hg_claim:get_status(Claim),
         hg_claim:get_revision(Claim),
         Timestamp
-    )].
+    ).
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse

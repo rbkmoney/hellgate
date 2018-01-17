@@ -397,7 +397,8 @@ party_creation(C) ->
     ContactInfo = #domain_PartyContactInfo{email = <<?MODULE_STRING>>},
     ok = hg_client_party:create(make_party_params(ContactInfo), Client),
     [
-        ?party_created(PartyID, ContactInfo, _)
+        ?party_created(PartyID, ContactInfo, _),
+        ?revision_changed(_, 0)
     ] = next_event(Client),
     Party = hg_client_party:get(Client),
     ?party_w_status(PartyID, ?unblocked(_, _), ?active(_)) = Party,
@@ -816,9 +817,9 @@ complex_claim_acceptance(C) ->
         Client
     ),
     ok = hg_client_party:suspend(Client),
-    [?revision_changed(_, _), ?party_suspension(?suspended(_))] = next_event(Client),
+    [?party_suspension(?suspended(_)), ?revision_changed(_, _)] = next_event(Client),
     ok = hg_client_party:activate(Client),
-    [?revision_changed(_, _), ?party_suspension(?active(_))] = next_event(Client),
+    [?party_suspension(?active(_)), ?revision_changed(_, _)] = next_event(Client),
     Claim1 = hg_client_party:get_claim(hg_claim:get_id(Claim1), Client),
 
     Claim2 = assert_claim_pending(
@@ -912,7 +913,7 @@ party_blocking(C) ->
     PartyID = cfg(party_id, C),
     Reason = <<"i said so">>,
     ok = hg_client_party:block(Reason, Client),
-    [?revision_changed(_, _), ?party_blocking(?blocked(Reason, _))] = next_event(Client),
+    [?party_blocking(?blocked(Reason, _)), ?revision_changed(_, _)] = next_event(Client),
     ?party_w_status(PartyID, ?blocked(Reason, _), _) = hg_client_party:get(Client).
 
 party_unblocking(C) ->
@@ -920,7 +921,7 @@ party_unblocking(C) ->
     PartyID = cfg(party_id, C),
     Reason = <<"enough">>,
     ok = hg_client_party:unblock(Reason, Client),
-    [?revision_changed(_, _), ?party_blocking(?unblocked(Reason, _))] = next_event(Client),
+    [?party_blocking(?unblocked(Reason, _)), ?revision_changed(_, _)] = next_event(Client),
     ?party_w_status(PartyID, ?unblocked(Reason, _), _) = hg_client_party:get(Client).
 
 party_already_blocked(C) ->
@@ -939,14 +940,14 @@ party_suspension(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ok = hg_client_party:suspend(Client),
-    [?revision_changed(_, _), ?party_suspension(?suspended(_))] = next_event(Client),
+    [?party_suspension(?suspended(_)), ?revision_changed(_, _)] = next_event(Client),
     ?party_w_status(PartyID, _, ?suspended(_)) = hg_client_party:get(Client).
 
 party_activation(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ok = hg_client_party:activate(Client),
-    [?revision_changed(_, _), ?party_suspension(?active(_))] = next_event(Client),
+    [?party_suspension(?active(_)), ?revision_changed(_, _)] = next_event(Client),
     ?party_w_status(PartyID, _, ?active(_)) = hg_client_party:get(Client).
 
 party_already_suspended(C) ->
@@ -998,7 +999,7 @@ shop_blocking(C) ->
     ShopID = ?REAL_SHOP_ID,
     Reason = <<"i said so">>,
     ok = hg_client_party:block_shop(ShopID, Reason, Client),
-    [?revision_changed(_, _), ?shop_blocking(ShopID, ?blocked(Reason, _))] = next_event(Client),
+    [?shop_blocking(ShopID, ?blocked(Reason, _)), ?revision_changed(_, _)] = next_event(Client),
     ?shop_w_status(ShopID, ?blocked(Reason, _), _) = hg_client_party:get_shop(ShopID, Client).
 
 shop_unblocking(C) ->
@@ -1006,7 +1007,7 @@ shop_unblocking(C) ->
     ShopID = ?REAL_SHOP_ID,
     Reason = <<"enough">>,
     ok = hg_client_party:unblock_shop(ShopID, Reason, Client),
-    [?revision_changed(_, _), ?shop_blocking(ShopID, ?unblocked(Reason, _))] = next_event(Client),
+    [?shop_blocking(ShopID, ?unblocked(Reason, _)), ?revision_changed(_, _)] = next_event(Client),
     ?shop_w_status(ShopID, ?unblocked(Reason, _), _) = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_blocked(C) ->
@@ -1028,14 +1029,14 @@ shop_suspension(C) ->
     Client = cfg(client, C),
     ShopID = ?REAL_SHOP_ID,
     ok = hg_client_party:suspend_shop(ShopID, Client),
-    [?revision_changed(_, _), ?shop_suspension(ShopID, ?suspended(_))] = next_event(Client),
+    [?shop_suspension(ShopID, ?suspended(_)), ?revision_changed(_, _)] = next_event(Client),
     ?shop_w_status(ShopID, _, ?suspended(_)) = hg_client_party:get_shop(ShopID, Client).
 
 shop_activation(C) ->
     Client = cfg(client, C),
     ShopID = ?REAL_SHOP_ID,
     ok = hg_client_party:activate_shop(ShopID, Client),
-    [?revision_changed(_, _), ?shop_suspension(ShopID, ?active(_))] = next_event(Client),
+    [?shop_suspension(ShopID, ?active(_)), ?revision_changed(_, _)] = next_event(Client),
     ?shop_w_status(ShopID, _, ?active(_)) = hg_client_party:get_shop(ShopID, Client).
 
 shop_already_suspended(C) ->
@@ -1118,7 +1119,7 @@ update_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Changeset, Clien
 accept_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
     ok = hg_client_party:accept_claim(ClaimID, Revision, Client),
     NextRevision = Revision + 1,
-    [?revision_changed(_, _), ?claim_status_changed(ClaimID, ?accepted(_), NextRevision, _)] = next_event(Client),
+    [?claim_status_changed(ClaimID, ?accepted(_), NextRevision, _), ?revision_changed(_, _)] = next_event(Client),
     ok.
 
 deny_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Client) ->
