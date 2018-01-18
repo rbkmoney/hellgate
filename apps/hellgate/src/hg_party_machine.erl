@@ -410,20 +410,9 @@ assert_nonempty_history([]) ->
     throw(#payproc_PartyNotFound{}).
 
 set_claim(
-    #payproc_Claim{
-        id = ID,
-        created_at = Timestamp,
-        changeset = Changeset0,
-        status = Status0
-    } = Claim0,
+    #payproc_Claim{id = ID} = Claim,
     #st{claims = Claims} = St
 ) ->
-    Changeset = ensure_claim_changeset(Changeset0, Timestamp),
-    Status = ensure_claim_status(Status0, Timestamp),
-    Claim = Claim0#payproc_Claim{
-        changeset = Changeset,
-        status = Status
-    },
     St#st{claims = Claims#{ID => Claim}}.
 
 assert_claim_exists(Claim = #payproc_Claim{}) ->
@@ -604,14 +593,17 @@ merge_party_change(?shop_blocking(ID, Blocking), St) ->
 merge_party_change(?shop_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:shop_suspension(ID, Suspension, Party)};
-merge_party_change(?claim_created(Claim), St) ->
+merge_party_change(?claim_created(Claim0), St) ->
+    Claim = ensure_claim(Claim0),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1);
 merge_party_change(?claim_updated(ID, Changeset, Revision, UpdatedAt), St) ->
-    Claim = hg_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim0 = hg_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim = ensure_claim(Claim0),
     set_claim(Claim, St);
 merge_party_change(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) ->
-    Claim = hg_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim0 = hg_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim = ensure_claim(Claim0),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1).
 
@@ -674,6 +666,20 @@ assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
 
 %% backward compatibility stuff
 %% TODO remove after migration
+
+ensure_claim(
+    #payproc_Claim{
+        created_at = Timestamp,
+        changeset = Changeset0,
+        status = Status0
+    } = Claim
+) ->
+    Changeset = ensure_claim_changeset(Changeset0, Timestamp),
+    Status = ensure_claim_status(Status0, Timestamp),
+    Claim#payproc_Claim{
+        changeset = Changeset,
+        status = Status
+    }.
 
 ensure_claim_changeset(Changeset, Timestamp) ->
     [ensure_contract_change(C, Timestamp) || C <- Changeset].
