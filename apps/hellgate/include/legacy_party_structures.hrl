@@ -60,7 +60,7 @@
         RepresentativeDocument,
         BankAccount
     ),
-    {russian_legal_entity, {domain_RussianLegalEntity,
+    {domain_RussianLegalEntity,
         RegisteredName,
         RegisteredNumber,
         Inn,
@@ -70,7 +70,7 @@
         RepresentativeFullName,
         RepresentativeDocument,
         BankAccount
-    }}).
+    }).
 
 -define(legacy_bank_account(Account, BankName, BankPostAccount, BankBik),
     {domain_BankAccount,

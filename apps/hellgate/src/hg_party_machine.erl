@@ -894,7 +894,7 @@ transmute_claim_effect(1, 2, C) ->
     C.
 
 transmute_contractor(1, 2,
-    {legal_entity, ?legacy_russian_legal_entity(
+    {legal_entity, {russian_legal_entity, ?legacy_russian_legal_entity(
         RegisteredName,
         RegisteredNumber,
         Inn,
@@ -904,9 +904,9 @@ transmute_contractor(1, 2,
         RepresentativeFullName,
         RepresentativeDocument,
         BankAccount
-    )}
+    )}}
 ) ->
-    {legal_entity, #domain_RussianLegalEntity{
+    {legal_entity, {russian_legal_entity, #domain_RussianLegalEntity{
         registered_name = RegisteredName,
         registered_number = RegisteredNumber,
         inn = Inn,
@@ -916,7 +916,7 @@ transmute_contractor(1, 2,
         representative_full_name = RepresentativeFullName,
         representative_document = RepresentativeDocument,
         russian_bank_account = transmute_bank_account(1, 2, BankAccount)
-    }};
+    }}};
 transmute_contractor(1, 2, Contractor) ->
     Contractor.
 
