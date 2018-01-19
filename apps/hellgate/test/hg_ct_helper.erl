@@ -50,12 +50,7 @@
 -export([make_customer_params/3]).
 -export([make_customer_binding_params/0]).
 
--export([bank_card_tds_token/0]).
 -export([bank_card_simple_token/0]).
--export([make_terminal_payment_tool/0]).
--export([make_tds_payment_tool/0]).
--export([make_simple_payment_tool/0]).
--export([make_simple_payment_tool/1]).
 -export([make_bad_payment_tool/0]).
 -export([is_bad_payment_tool/1]).
 -export([make_disposable_payment_resource/0]).
@@ -588,57 +583,10 @@ make_shop_details(Name, Description) ->
         description = Description
     }.
 
--spec bank_card_tds_token() -> string().
-
-bank_card_tds_token() ->
-    <<"TOKEN666">>.
-
 -spec bank_card_simple_token() -> string().
 
 bank_card_simple_token() ->
     <<"TOKEN42">>.
-
--spec make_terminal_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
-
-make_terminal_payment_tool() ->
-    {
-        {payment_terminal, #domain_PaymentTerminal{
-            terminal_type = euroset
-        }},
-        <<"">>
-    }.
-
--spec make_tds_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
-
-make_tds_payment_tool() ->
-    {
-        {bank_card, #domain_BankCard{
-            token          = bank_card_tds_token(),
-            payment_system = visa,
-            bin            = <<"666666">>,
-            masked_pan     = <<"666">>
-        }},
-        <<"SESSION666">>
-    }.
-
--spec make_simple_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
-
-make_simple_payment_tool() ->
-    make_simple_payment_tool(visa).
-
--spec make_simple_payment_tool(visa | mastercard) ->
-    {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
-
-make_simple_payment_tool(PaymentSystem) ->
-    {
-        {bank_card, #domain_BankCard{
-            token          = bank_card_simple_token(),
-            payment_system = PaymentSystem,
-            bin            = <<"424242">>,
-            masked_pan     = <<"4242">>
-        }},
-        <<"SESSION42">>
-    }.
 
 -spec make_bad_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 

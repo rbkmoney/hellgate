@@ -131,9 +131,9 @@ handle_proxy_intent(#'prxprv_RecurrentTokenFinishIntent'{status = {success, _}},
 handle_proxy_intent(#'prxprv_RecurrentTokenFinishIntent'{status = {failure, Failure}}, Action) ->
     Events = [?session_finished(?session_failed(convert_failure(Failure)))],
     {Events, Action};
-handle_proxy_intent(#'SleepIntent'{timer = Timer}, Action0) ->
+handle_proxy_intent(#'SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
-    Events = [],
+    Events = try_request_interaction(UserInteraction),
     {Events, Action};
 handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),

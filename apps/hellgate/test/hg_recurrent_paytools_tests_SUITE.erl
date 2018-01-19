@@ -199,7 +199,18 @@ invalid_payment_method(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(mastercard, PartyID, ShopID),
+    PaymentTool = {bank_card, #domain_BankCard{
+        token          = <<"TOKEN">>,
+        payment_system = mastercard,
+        bin            = <<"666666">>,
+        masked_pan     = <<"666">>
+    }},
+    PaymentResource = make_disposable_payment_resource(PaymentTool, <<"SESSION0">>),
+    Params = #payproc_RecurrentPaymentToolParams{
+        party_id = PartyID,
+        shop_id = ShopID,
+        payment_resource = PaymentResource
+    },
     {exception, #payproc_InvalidPaymentMethod{}} = hg_client_recurrent_paytool:create(Params, Client).
 
 %% recurrent_paytool_flow group
@@ -310,10 +321,7 @@ make_bad_recurrent_paytool_params(PartyID, ShopID) ->
     }.
 
 make_recurrent_paytool_params(PartyID, ShopID) ->
-    make_recurrent_paytool_params(visa, PartyID, ShopID).
-
-make_recurrent_paytool_params(PaymentSystem, PartyID, ShopID) ->
-    {PaymentTool, Session} = hg_ct_helper:make_simple_payment_tool(PaymentSystem),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
         party_id = PartyID,
@@ -322,7 +330,7 @@ make_recurrent_paytool_params(PaymentSystem, PartyID, ShopID) ->
     }.
 
 make_tds_recurrent_paytool_params(PartyID, ShopID) ->
-    {PaymentTool, Session} = hg_ct_helper:make_tds_payment_tool(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
         party_id = PartyID,
