@@ -424,7 +424,9 @@ ensure_payment_institution(#domain_PaymentInstitutionRef{} = PaymentInstitutionR
     catch
         error:{object_not_found, _} ->
             raise_invalid_request(<<"payment institution not found">>)
-    end.
+    end;
+ensure_payment_institution(undefined, _) ->
+    raise_invalid_request(<<"undefined payment institution">>).
 
 -spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
     dmsl_domain_thrift:'TermSet'().
