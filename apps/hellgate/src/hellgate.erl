@@ -40,7 +40,8 @@ init([]) ->
         hg_invoice,
         hg_invoice_template,
         hg_customer,
-        hg_recurrent_paytool
+        hg_recurrent_paytool,
+        hg_cashreg_controller
     ],
     {ok, {
         #{strategy => one_for_all, intensity => 6, period => 30},
@@ -67,7 +68,10 @@ get_api_child_spec(MachineHandlers) ->
                 construct_service_handler(recurrent_paytool            , hg_recurrent_paytool  ),
                 construct_service_handler(recurrent_paytool_eventsink  , hg_recurrent_paytool  ),
                 construct_service_handler(proxy_host_provider          , hg_proxy_host_provider),
-                construct_service_handler(payment_processing_eventsink , hg_event_sink_handler )
+                construct_service_handler(payment_processing_eventsink , hg_event_sink_handler ),
+                construct_service_handler(cashreg                      , hg_cashreg_controller ),
+                construct_service_handler(cashreg_host_provider        , hg_cashreg_controller ),
+                construct_service_handler(cashreg_eventsink            , hg_cashreg_controller )
             ]
         }
     ).

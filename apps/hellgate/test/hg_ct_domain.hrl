@@ -18,6 +18,7 @@
 -define(eas(ID),        #domain_ExternalAccountSetRef{id = ID}).
 -define(insp(ID),       #domain_InspectorRef{id = ID}).
 -define(partyproto(ID), #domain_PartyPrototypeRef{id = ID}).
+-define(cashreg(ID),    #domain_CashRegisterRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).

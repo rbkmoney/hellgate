@@ -15,6 +15,10 @@ namespaces:
         event_sink: recurrent_paytools
         processor:
             url: http://hellgate:8022/v1/stateproc/recurrent_paytools
+    cashreg:
+        event_sink: cashreg
+        processor:
+            url: http://hellgate:8022/v1/stateproc/cashreg
     party:
         event_sink: payproc
         processor:

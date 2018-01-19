@@ -192,6 +192,8 @@ is_shop_modification_need_acceptance({proxy_modification, _}) ->
     false;
 is_shop_modification_need_acceptance({shop_account_creation, _}) ->
     false;
+is_shop_modification_need_acceptance(?cashreg_modification(_)) ->
+    false;
 is_shop_modification_need_acceptance(_) ->
     true.
 
@@ -301,7 +303,9 @@ make_shop_modification_effect(_, ?proxy_modification(Proxy), _) ->
 make_shop_modification_effect(_, {location_modification, Location}, _) ->
     {location_changed, Location};
 make_shop_modification_effect(_, {shop_account_creation, Params}, _) ->
-    {account_created, create_shop_account(Params)}.
+    {account_created, create_shop_account(Params)};
+make_shop_modification_effect(_, ?cashreg_modification(CashRegister), _) ->
+    {cash_register_changed, #payproc_ShopCashRegisterChanged{cash_register = CashRegister}}.
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);
@@ -458,7 +462,9 @@ update_shop({location_changed, Location}, Shop) ->
 update_shop({proxy_changed, #payproc_ShopProxyChanged{proxy = Proxy}}, Shop) ->
     Shop#domain_Shop{proxy = Proxy};
 update_shop({account_created, Account}, Shop) ->
-    Shop#domain_Shop{account = Account}.
+    Shop#domain_Shop{account = Account};
+update_shop({cash_register_changed, #payproc_ShopCashRegisterChanged{cash_register = CashRegister}}, Shop) ->
+    Shop#domain_Shop{cash_register = CashRegister}.
 
 -spec raise_invalid_changeset(dmsl_payment_processing_thrift:'InvalidChangesetReason'()) ->
     no_return().

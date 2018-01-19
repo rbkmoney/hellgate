@@ -44,7 +44,15 @@ get_service(automaton) ->
 get_service(processor) ->
     {mg_proto_state_processing_thrift, 'Processor'};
 get_service(eventsink) ->
-    {mg_proto_state_processing_thrift, 'EventSink'}.
+    {mg_proto_state_processing_thrift, 'EventSink'};
+get_service(cashreg) ->
+    {cashreg_proto_processing_thrift, 'CashRegister'};
+get_service(cashreg_eventsink) ->
+    {cashreg_proto_processing_thrift, 'EventSink'};
+get_service(cashreg_provider) ->
+    {cashreg_proto_adapter_provider_thrift, 'ProviderAdapter'};
+get_service(cashreg_host_provider) ->
+    {cashreg_proto_adapter_provider_thrift, 'ProviderAdapterHost'}.
 
 -spec get_service_spec(Name :: atom()) -> service_spec().
 
@@ -67,7 +75,13 @@ get_service_spec(Name = recurrent_paytool, #{}) ->
     {?VERSION_PREFIX ++ "/processing/recpaytool", get_service(Name)};
 get_service_spec(Name = recurrent_paytool_eventsink, #{}) ->
     {?VERSION_PREFIX ++ "/processing/recpaytool/eventsink", get_service(Name)};
+get_service_spec(Name = cashreg, #{}) ->
+    {?VERSION_PREFIX ++ "/processing/cashreg", get_service(Name)};
+get_service_spec(Name = cashreg_eventsink, #{}) ->
+    {?VERSION_PREFIX ++ "/processing/cashreg/eventsink", get_service(Name)};
 get_service_spec(Name = processor, #{namespace := Ns}) when is_binary(Ns) ->
     {?VERSION_PREFIX ++ "/stateproc/" ++ binary_to_list(Ns), get_service(Name)};
 get_service_spec(Name = proxy_host_provider, #{}) ->
-    {?VERSION_PREFIX ++ "/proxyhost/provider", get_service(Name)}.
+    {?VERSION_PREFIX ++ "/proxyhost/provider", get_service(Name)};
+get_service_spec(Name = cashreg_host_provider, #{}) ->
+    {?VERSION_PREFIX ++ "/cashreghost/provider", get_service(Name)}.

@@ -149,4 +149,23 @@
 -define(refund_failed(Failure),
     {failed, #domain_InvoicePaymentRefundFailed{failure = Failure}}).
 
+%% Receipt
+
+-define(receipt_ev(ReceiptID, Payload, EventID),
+    {invoice_payment_receipt_change, #payproc_InvoicePaymentReceiptChange{
+        id = ReceiptID,
+        payload = Payload,
+        event_id = EventID
+    }}
+).
+
+-define(receipt_created(),
+    {invoice_payment_receipt_created, #payproc_InvoicePaymentReceiptCreated{}}).
+
+-define(receipt_registered(),
+    {invoice_payment_receipt_registered, #payproc_InvoicePaymentReceiptRegistered{}}).
+
+-define(receipt_failed(Failure),
+    {invoice_payment_receipt_failed, #payproc_InvoicePaymentReceiptFailed{failure = Failure}}).
+
 -endif.

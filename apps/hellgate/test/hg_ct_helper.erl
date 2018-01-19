@@ -11,6 +11,8 @@
 
 -export([create_party_and_shop/1]).
 -export([create_battle_ready_shop/3]).
+-export([create_battle_ready_shop_with_cashreg/4]).
+-export([create_customer_w_binding/1]).
 -export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
@@ -133,7 +135,8 @@ start_app(hellgate = AppName) ->
             accounter           => <<"http://shumway:8022/accounter">>,
             party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
             customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
-            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>
+            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>,
+            cashreg             => <<"http://hellgate:8022/v1/processing/cashreg">>
         }},
         {proxy_opts, #{
             transport_opts => #{
@@ -239,6 +242,7 @@ make_user_identity(UserID) ->
 -type currency()                  :: dmsl_domain_thrift:'CurrencySymbolicCode'().
 -type invoice_tpl_create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
 -type invoice_tpl_update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
+-type shop_cash_register()        :: dmsl_domain_thrift:'ShopCashRegister'().
 
 -spec create_party_and_shop(Client :: pid()) ->
     shop_id().
@@ -294,6 +298,27 @@ create_battle_ready_shop(Category, TemplateRef, Client) ->
     ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client),
     _Shop = hg_client_party:get_shop(ShopID, Client),
     ShopID.
+
+-spec create_battle_ready_shop_with_cashreg(category(), contract_tpl(), Client :: pid(), shop_cash_register()) ->
+    shop_id().
+
+create_battle_ready_shop_with_cashreg(Category, TemplateRef, Client, ShopCashRegister) ->
+    ShopID = create_battle_ready_shop(Category, TemplateRef, Client),
+    Changeset = [
+        {shop_modification, #payproc_ShopModificationUnit{
+            id           = ShopID,
+            modification = {cash_register_modification, #payproc_CashRegModification{
+                cash_register = ShopCashRegister
+            }}
+        }}
+    ],
+    #payproc_Claim{} = hg_client_party:create_claim(Changeset, Client),
+    ShopID.
+
+-spec create_customer_w_binding(Client :: pid()) -> ok.
+
+create_customer_w_binding(_Client) ->
+    ok.
 
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().

@@ -53,6 +53,9 @@
 -define(proxy_modification(Proxy),
     {proxy_modification, #payproc_ProxyModification{proxy = Proxy}}).
 
+-define(cashreg_modification(CashRegister),
+    {cash_register_modification, #payproc_CashRegModification{cash_register = CashRegister}}).
+
 -define(contract_effect(ID, Effect),
     {contract_effect, #payproc_ContractEffectUnit{contract_id = ID, effect = Effect}}).
 

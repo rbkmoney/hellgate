@@ -21,13 +21,15 @@
 -export([construct_system_account_set/3]).
 -export([construct_external_account_set/1]).
 -export([construct_external_account_set/3]).
+-export([construct_cashreg/3]).
 
 %%
 
 -type name()        :: binary().
 -type category()    :: dmsl_domain_thrift:'CategoryRef'().
 -type currency()    :: dmsl_domain_thrift:'CurrencyRef'().
--type proxy()       :: dmsl_domain_thrift:'ProxyRef'().
+-type proxy_ref()   :: dmsl_domain_thrift:'ProxyRef'().
+-type proxy()       :: dmsl_domain_thrift:'Proxy'().
 -type inspector()   :: dmsl_domain_thrift:'InspectorRef'().
 -type template()    :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms()       :: dmsl_domain_thrift:'TermSetHierarchyRef'().
@@ -90,13 +92,13 @@ construct_payment_method(?pmt(_Type, Name) = Ref) ->
         }
     }}.
 
--spec construct_proxy(proxy(), name()) ->
+-spec construct_proxy(proxy_ref(), name()) ->
     {proxy, dmsl_domain_thrift:'ProxyObject'()}.
 
 construct_proxy(Ref, Name) ->
     construct_proxy(Ref, Name, #{}).
 
--spec construct_proxy(proxy(), name(), Opts :: map()) ->
+-spec construct_proxy(proxy_ref(), name(), Opts :: map()) ->
     {proxy, dmsl_domain_thrift:'ProxyObject'()}.
 
 construct_proxy(Ref, Name, Opts) ->
@@ -110,13 +112,13 @@ construct_proxy(Ref, Name, Opts) ->
         }
     }}.
 
--spec construct_inspector(inspector(), name(), proxy()) ->
+-spec construct_inspector(inspector(), name(), proxy_ref()) ->
     {inspector, dmsl_domain_thrift:'InspectorObject'()}.
 
 construct_inspector(Ref, Name, ProxyRef) ->
     construct_inspector(Ref, Name, ProxyRef, #{}).
 
--spec construct_inspector(inspector(), name(), proxy(), Additional :: map()) ->
+-spec construct_inspector(inspector(), name(), proxy_ref(), Additional :: map()) ->
     {inspector, dmsl_domain_thrift:'InspectorObject'()}.
 
 construct_inspector(Ref, Name, ProxyRef, Additional) ->
@@ -215,3 +217,15 @@ construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
         }
     }}.
 
+-spec construct_cashreg(proxy_ref(), name(), proxy()) ->
+    {cash_register, dmsl_domain_thrift:'CashRegisterObject'()}.
+
+construct_cashreg(Ref, Name, Proxy) ->
+    {cash_register, #domain_CashRegisterObject{
+        ref = Ref,
+        data = #domain_CashRegister{
+            name        = Name,
+            description = Name,
+            proxy       = Proxy
+        }
+    }}.
