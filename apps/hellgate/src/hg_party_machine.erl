@@ -553,13 +553,18 @@ checkout_history_by_timestamp([], _, St) ->
 checkout_history_by_revision([{_, _, Ev} | Rest], Revision, St) ->
     St1 = merge_event(Ev, St),
     case get_st_party(St1) of
-        #domain_Party{revision = Revision} ->
-            {ok, St1};
+        #domain_Party{revision = Revision1} when Revision1 > Revision ->
+            {ok, St};
         _ ->
             checkout_history_by_revision(Rest, Revision, St1)
     end;
-checkout_history_by_revision([], _, _) ->
-    {error, revision_not_found}.
+checkout_history_by_revision([], Revision, St) ->
+    case get_st_party(St) of
+        #domain_Party{revision = Revision} ->
+            {ok, St};
+        _ ->
+            {error, revision_not_found}
+    end.
 
 merge_event(?party_ev(PartyChanges), St) when is_list(PartyChanges) ->
      lists:foldl(fun merge_party_change/2, St, PartyChanges).
