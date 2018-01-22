@@ -11,7 +11,7 @@
 %%
 
 -type condition() :: dmsl_domain_thrift:'Condition'().
--type varset()    :: #{}. %% TODO
+-type varset()    :: hg_selector:varset().
 
 -spec test(condition(), varset(), hg_domain:revision()) ->
     true | false | undefined.

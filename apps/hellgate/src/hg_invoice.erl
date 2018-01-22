@@ -116,7 +116,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(InvoiceID, [undefined, InvoiceParams]),
+    ok = start(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
@@ -125,7 +125,7 @@ handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
     _ = set_invoicing_meta(InvoiceID),
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
     InvoiceParams = make_invoice_params(Params),
-    ok = start(InvoiceID, [TplID, InvoiceParams]),
+    ok = start(InvoiceID, [TplID | InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
@@ -363,8 +363,8 @@ namespace() ->
 -spec init(invoice_id(), [invoice_tpl_id() | invoice_params()]) ->
     hg_machine:result().
 
-init(ID, [InvoiceTplID, InvoiceParams]) ->
-    Invoice = create_invoice(ID, InvoiceTplID, InvoiceParams),
+init(ID, [InvoiceTplID, PartyRevision, InvoiceParams]) ->
+    Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
         changes => [?invoice_created(Invoice)],
@@ -623,7 +623,8 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St) ->
 
 checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp}}) ->
     PartyID = get_party_id(St),
-    hg_party_machine:checkout(PartyID, CreationTimestamp).
+    % TODO repalce with checkout by revision
+    hg_party_machine:checkout(PartyID, {timestamp, CreationTimestamp}).
 
 handle_result(#{state := St} = Params) ->
     _ = log_changes(maps:get(changes, Params, []), St),
@@ -647,11 +648,12 @@ handle_result_action(#{}, Acc) ->
 
 %%
 
-create_invoice(ID, InvoiceTplID, V = #payproc_InvoiceParams{}) ->
+create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
     #domain_Invoice{
         id              = ID,
         shop_id         = V#payproc_InvoiceParams.shop_id,
         owner_id        = V#payproc_InvoiceParams.party_id,
+        party_revision  = PartyRevision,
         created_at      = hg_datetime:format_now(),
         status          = ?invoice_unpaid(),
         cost            = V#payproc_InvoiceParams.cost,
@@ -780,14 +782,17 @@ make_invoice_params(#payproc_InvoiceWithTemplateParams{
     InvoiceCost = get_cart_amount(Cart),
     InvoiceDue = make_invoice_due_date(Lifetime),
     InvoiceContext = make_invoice_context(Context, TplContext),
-    #payproc_InvoiceParams{
-        party_id = PartyID,
-        shop_id = ShopID,
-        details = InvoiceDetails,
-        due = InvoiceDue,
-        cost = InvoiceCost,
-        context = InvoiceContext
-    }.
+    [
+        Party#domain_Party.revision,
+        #payproc_InvoiceParams{
+            party_id = PartyID,
+            shop_id = ShopID,
+            details = InvoiceDetails,
+            due = InvoiceDue,
+            cost = InvoiceCost,
+            context = InvoiceContext
+        }
+    ].
 
 make_invoice_cart(_, {cart, Cart}, _) ->
     Cart;
@@ -955,6 +960,7 @@ marshal(invoice, #domain_Invoice{} = Invoice) ->
         <<"id">>            => marshal(str, Invoice#domain_Invoice.id),
         <<"shop_id">>       => marshal(str, Invoice#domain_Invoice.shop_id),
         <<"owner_id">>      => marshal(str, Invoice#domain_Invoice.owner_id),
+        <<"party_revision">>=> Invoice#domain_Invoice.party_revision,
         <<"created_at">>    => marshal(str, Invoice#domain_Invoice.created_at),
         <<"cost">>          => hg_cash:marshal(Invoice#domain_Invoice.cost),
         <<"due">>           => marshal(str, Invoice#domain_Invoice.due),
@@ -1076,6 +1082,7 @@ unmarshal(invoice, #{
         id              = unmarshal(str, ID),
         shop_id         = unmarshal(str, ShopID),
         owner_id        = unmarshal(str, PartyID),
+        party_revision  = maps:get(<<"party_revision">>, Invoice, undefined),
         created_at      = unmarshal(str, CreatedAt),
         cost            = hg_cash:unmarshal(Cash),
         due             = unmarshal(str, Due),

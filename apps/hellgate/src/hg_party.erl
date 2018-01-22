@@ -7,7 +7,6 @@
 %% @TODO
 %% * Deal with default shop services (will need to change thrift-protocol as well)
 %% * Access check before shop creation is weird (think about adding context)
-%% * Create accounts after shop claim confirmation
 
 -module(hg_party).
 
@@ -25,16 +24,14 @@
 -export([set_new_contract/3]).
 -export([set_contract/2]).
 -export([is_contract_active/1]).
--export([is_test_contract/3]).
+-export([is_live_contract/2]).
 -export([update_contract_status/2]).
--export([get_test_contract_params/2]).
--export([get_test_payout_tool_params/1]).
 -export([create_payout_tool/3]).
 -export([create_contract_adjustment/4]).
 
+-export([get_categories/3]).
 -export([get_contract/2]).
 -export([get_contract_currencies/3]).
--export([get_contract_categories/3]).
 -export([get_contract_adjustment/2]).
 -export([get_contract_payout_tool/2]).
 
@@ -46,7 +43,6 @@
 -export([shop_suspension/3]).
 -export([set_shop/2]).
 
--export([get_test_shop_params/3]).
 -export([get_new_shop_currency/4]).
 -export([get_shop/2]).
 -export([get_shop_account/2]).
@@ -63,6 +59,7 @@
 -type contract()              :: dmsl_domain_thrift:'Contract'().
 -type contract_id()           :: dmsl_domain_thrift:'ContractID'().
 -type contract_params()       :: dmsl_payment_processing_thrift:'ContractParams'().
+-type contract_template()     :: dmsl_domain_thrift:'ContractTemplate'().
 -type adjustment()            :: dmsl_domain_thrift:'ContractAdjustment'().
 -type adjustment_id()         :: dmsl_domain_thrift:'ContractAdjustmentID'().
 -type adjustment_params()     :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
@@ -85,13 +82,14 @@
 
 %% Interface
 
--spec create_party(party_id(), dmsl_payment_processing_thrift:'PartyParams'(), timestamp()) ->
+-spec create_party(party_id(), dmsl_domain_thrift:'PartyContactInfo'(), timestamp()) ->
     party().
 
-create_party(PartyID, #payproc_PartyParams{contact_info = ContactInfo}, Timestamp) ->
+create_party(PartyID, ContactInfo, Timestamp) ->
     #domain_Party{
         id              = PartyID,
         created_at      = Timestamp,
+        revision        = 0,
         contact_info    = ContactInfo,
         blocking        = ?unblocked(Timestamp),
         suspension      = ?active(Timestamp),
@@ -125,7 +123,8 @@ is_contract_active(_) ->
 create_contract(ID, Params, Timestamp, Revision) ->
     #payproc_ContractParams{
         contractor = Contractor,
-        template = TemplateRef
+        template = TemplateRef,
+        payment_institution = PaymentInstitutionRef
     } = ensure_contract_creation_params(Params, Revision),
     #domain_ContractTemplate{
         valid_since = ValidSince,
@@ -135,6 +134,7 @@ create_contract(ID, Params, Timestamp, Revision) ->
     #domain_Contract{
         id = ID,
         contractor = Contractor,
+        payment_institution = PaymentInstitutionRef,
         created_at = Timestamp,
         valid_since = instantiate_contract_lifetime_bound(ValidSince, Timestamp),
         valid_until = instantiate_contract_lifetime_bound(ValidUntil, Timestamp),
@@ -184,41 +184,6 @@ get_contract_payout_tool(PayoutToolID, #domain_Contract{payout_tools = PayoutToo
             undefined
     end.
 
--spec get_test_contract_params(binary(), revision()) ->
-    {contract_id(), contract_params()}.
-
-get_test_contract_params(Email, Revision) ->
-    #domain_ContractPrototype{
-        contract_id = ContractID,
-        test_contract_template = TemplateRef
-    } = get_contract_prototype(Revision),
-    {
-        ContractID,
-        #payproc_ContractParams{
-            contractor = {registered_user, #domain_RegisteredUser{email = Email}},
-            template = TemplateRef
-        }
-    }.
-
--spec get_test_payout_tool_params(revision()) ->
-    {payout_tool_id(), payout_tool_params()}.
-
-get_test_payout_tool_params(Revision) ->
-    #domain_ContractPrototype{
-        payout_tool = #domain_PayoutToolPrototype{
-            payout_tool_id = ID,
-            payout_tool_info = ToolInfo,
-            payout_tool_currency = Currency
-        }
-    } = get_contract_prototype(Revision),
-    {
-        ID,
-        #payproc_PayoutToolParams{
-            currency = Currency,
-            tool_info = ToolInfo
-        }
-    }.
-
 -spec create_payout_tool(payout_tool_id(), payout_tool_params(), timestamp()) ->
     payout_tool().
 
@@ -243,7 +208,7 @@ create_payout_tool(
 create_contract_adjustment(ID, Params, Timestamp, Revision) ->
     #payproc_ContractAdjustmentParams{
         template = TemplateRef
-    } = ensure_adjustment_creation_params(Params, Revision),
+    } = Params,
     #domain_ContractTemplate{
         valid_since = ValidSince,
         valid_until = ValidUntil,
@@ -266,7 +231,7 @@ get_contract_currencies(Contract, Timestamp, Revision) ->
             currencies = CurrencySelector
         }
     } = get_terms(Contract, Timestamp, Revision),
-    Value = reduce_selector_to_value(CurrencySelector, #{}, Revision),
+    Value = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
     case ordsets:size(Value) > 0 of
         true ->
             Value;
@@ -274,16 +239,16 @@ get_contract_currencies(Contract, Timestamp, Revision) ->
             error({misconfiguration, {'Empty set in currency selector\'s value', CurrencySelector, Revision}})
     end.
 
--spec get_contract_categories(contract(), timestamp(), revision()) ->
+-spec get_categories(contract() | contract_template(), timestamp(), revision()) ->
     ordsets:ordset(category()) | no_return().
 
-get_contract_categories(Contract, Timestamp, Revision) ->
+get_categories(Contract, Timestamp, Revision) ->
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             categories = CategorySelector
         }
     } = get_terms(Contract, Timestamp, Revision),
-    Value = reduce_selector_to_value(CategorySelector, #{}, Revision),
+    Value = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
     case ordsets:size(Value) > 0 of
         true ->
             Value;
@@ -313,16 +278,18 @@ update_contract_status(
 update_contract_status(Contract, _) ->
     Contract.
 
--spec get_terms(contract(), timestamp(), revision()) ->
+-spec get_terms(contract() | contract_template(), timestamp(), revision()) ->
     dmsl_domain_thrift:'TermSet'() | no_return().
 
-get_terms(Contract, Timestamp, Revision) ->
+get_terms(#domain_Contract{} = Contract, Timestamp, Revision) ->
     case compute_terms(Contract, Timestamp, Revision) of
         #domain_TermSet{} = Terms ->
             Terms;
         undefined ->
             error({misconfiguration, {'No active TermSet found', Contract#domain_Contract.terms, Timestamp}})
-    end.
+    end;
+get_terms(#domain_ContractTemplate{terms = TermSetHierarchyRef}, Timestamp, Revision) ->
+    get_term_set(TermSetHierarchyRef, Timestamp, Revision).
 
 -spec create_shop(shop_id(), shop_params(), timestamp()) ->
     shop().
@@ -338,22 +305,6 @@ create_shop(ID, ShopParams, Timestamp) ->
         location        = ShopParams#payproc_ShopParams.location,
         contract_id     = ShopParams#payproc_ShopParams.contract_id,
         payout_tool_id  = ShopParams#payproc_ShopParams.payout_tool_id
-    }.
-
--spec get_test_shop_params(contract_id(), payout_tool_id(), revision()) ->
-    {shop_id(), shop_params()}.
-
-get_test_shop_params(ContractID, PayoutToolID, Revision) ->
-    ShopPrototype = get_shop_prototype(Revision),
-    {
-        ShopPrototype#domain_ShopPrototype.shop_id,
-        #payproc_ShopParams{
-            location = ShopPrototype#domain_ShopPrototype.location,
-            category = ShopPrototype#domain_ShopPrototype.category,
-            details = ShopPrototype#domain_ShopPrototype.details,
-            contract_id = ContractID,
-            payout_tool_id = PayoutToolID
-        }
     }.
 
 -spec get_shop(shop_id(), party()) ->
@@ -438,34 +389,23 @@ ensure_shop(#domain_Shop{} = Shop) ->
 ensure_shop(undefined) ->
     throw(#payproc_ShopNotFound{}).
 
-get_globals(Revision) ->
-    hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}).
-
-get_party_prototype(Revision) ->
-    Globals = get_globals(Revision),
-    hg_domain:get(Revision, {party_prototype, Globals#domain_Globals.party_prototype}).
-
-get_shop_prototype(Revision) ->
-    PartyPrototype = get_party_prototype(Revision),
-    PartyPrototype#domain_PartyPrototype.shop.
-
-get_contract_prototype(Revision) ->
-    PartyPrototype = get_party_prototype(Revision),
-    PartyPrototype#domain_PartyPrototype.contract.
-
-ensure_contract_creation_params(#payproc_ContractParams{template = TemplateRef} = Params, Revision) ->
+ensure_contract_creation_params(
+    #payproc_ContractParams{
+        template = TemplateRef,
+        payment_institution = PaymentInstitutionRef
+    } = Params,
+    Revision
+) ->
+    ValidRef = ensure_payment_institution(PaymentInstitutionRef, Revision),
     Params#payproc_ContractParams{
-        template = ensure_contract_template(TemplateRef, Revision)
+        template = ensure_contract_template(TemplateRef, PaymentInstitutionRef, Revision),
+        payment_institution = ValidRef
     }.
 
-ensure_adjustment_creation_params(#payproc_ContractAdjustmentParams{template = TemplateRef} = Params, Revision) ->
-    Params#payproc_ContractAdjustmentParams{
-        template = ensure_contract_template(TemplateRef, Revision)
-    }.
+-spec ensure_contract_template(contract_template_ref(), dmsl_domain_thrift:'PaymentInstitutionRef'(), revision()) ->
+    contract_template_ref() | no_return().
 
--spec ensure_contract_template(contract_template_ref(), revision()) -> contract_template_ref() | no_return().
-
-ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, Revision) ->
+ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, _PaymentInstitutionRef, Revision) ->
     try
         _GoodTemplate = get_template(TemplateRef, Revision),
         TemplateRef
@@ -474,20 +414,19 @@ ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, Revision) 
             raise_invalid_request(<<"contract template not found">>)
     end;
 
-ensure_contract_template(undefined, Revision) ->
-    get_default_template_ref(Revision).
+ensure_contract_template(undefined, PaymentInstitutionRef, Revision) ->
+    get_default_template_ref(PaymentInstitutionRef, Revision).
 
--spec reduce_selector_to_value(Selector, hg_selector:varset(), revision())
-    -> ordsets:ordset(currency()) | ordsets:ordset(category()) | no_return()
-    when Selector :: dmsl_domain_thrift:'CurrencySelector'() | dmsl_domain_thrift:'CategorySelector'().
-
-reduce_selector_to_value(Selector, VS, Revision) ->
-    case hg_selector:reduce(Selector, VS, Revision) of
-        {value, Value} ->
-            Value;
-        _ ->
-            error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}})
-    end.
+ensure_payment_institution(#domain_PaymentInstitutionRef{} = PaymentInstitutionRef, Revision) ->
+    try
+        _PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
+        PaymentInstitutionRef
+    catch
+        error:{object_not_found, _} ->
+            raise_invalid_request(<<"payment institution not found">>)
+    end;
+ensure_payment_institution(undefined, _) ->
+    raise_invalid_request(<<"undefined payment institution">>).
 
 -spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
     dmsl_domain_thrift:'TermSet'().
@@ -542,9 +481,14 @@ reduce_if_defined(undefined, _, _) ->
 get_template(TemplateRef, Revision) ->
     hg_domain:get(Revision, {contract_template, TemplateRef}).
 
-get_default_template_ref(Revision) ->
-    Globals = get_globals(Revision),
-    Globals#domain_Globals.default_contract_template.
+get_payment_institution(PaymentInstitutionRef, Revision) ->
+    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+
+get_default_template_ref(PaymentInstitutionRef, Revision) ->
+    PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
+    ContractTemplateSelector = PaymentInstitution#domain_PaymentInstitution.default_contract_template,
+    % TODO fill varset properly
+    hg_selector:reduce_to_value(ContractTemplateSelector, #{}, Revision).
 
 instantiate_contract_lifetime_bound(undefined, _) ->
     undefined;
@@ -724,32 +668,13 @@ find_shop_account(ID, [{_, #domain_Shop{account = Account}} | Rest]) ->
 raise_invalid_request(Error) ->
     throw(#'InvalidRequest'{errors = [Error]}).
 
--spec is_test_contract(contract(), timestamp(), revision()) ->
+-spec is_live_contract(contract(), revision()) ->
     boolean().
 
-is_test_contract(Contract, Timestamp, Revision) ->
-    Categories = get_contract_categories(Contract, Timestamp, Revision),
-    {Test, Live} = lists:foldl(
-        fun(CategoryRef, {TestFound, LiveFound}) ->
-            case hg_domain:get(Revision, {category, CategoryRef}) of
-                #domain_Category{type = test} ->
-                    {true, LiveFound};
-                #domain_Category{type = live} ->
-                    {TestFound, true}
-            end
-        end,
-        {false, false},
-        ordsets:to_list(Categories)
-    ),
-    case Test /= Live of
-        true ->
-            Test;
-        false ->
-            error({
-                misconfiguration,
-                {'Test and live category in same term set', Contract#domain_Contract.terms, Timestamp, Revision}
-            })
-    end.
+is_live_contract(Contract, Revision) ->
+    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
+    PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
+    PaymentInstitution#domain_PaymentInstitution.realm =:= live.
 
 %% Asserts
 %% TODO there should be more concise way to express this assertions in terms of preconditions
@@ -785,7 +710,7 @@ assert_shop_contract_valid(
     } = get_terms(Contract, Timestamp, Revision),
     case ShopAccount of
         #domain_ShopAccount{currency = CurrencyRef} ->
-            Currencies = reduce_selector_to_value(CurrencySelector, #{}, Revision),
+            Currencies = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
             _ = ordsets:is_element(CurrencyRef, Currencies) orelse
                 raise_contract_terms_violated(
                     ID,
@@ -793,9 +718,10 @@ assert_shop_contract_valid(
                     #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}}
                 );
         undefined ->
-            ok
+            % TODO change to special invalid_changeset error
+            throw(#'InvalidRequest'{errors = [<<"Can't create shop without account">>]})
     end,
-    Categories = reduce_selector_to_value(CategorySelector, #{}, Revision),
+    Categories = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse
         raise_contract_terms_violated(
             ID,

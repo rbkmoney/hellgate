@@ -1,6 +1,7 @@
 -module(hg_party_machine).
 
 -include("party_events.hrl").
+-include("legacy_party_structures.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 %% Machine callbacks
@@ -36,7 +37,7 @@
 
 -record(st, {
     party                :: undefined | party(),
-    timestamp            :: timestamp(),
+    timestamp            :: undefined | timestamp(),
     revision             :: hg_domain:revision(),
     claims   = #{}       :: #{claim_id() => claim()},
     meta = #{}           :: meta(),
@@ -73,6 +74,7 @@
 -type meta()            :: dmsl_domain_thrift:'PartyMeta'().
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
 -spec namespace() ->
     hg_machine:ns().
@@ -93,17 +95,9 @@ init(ID, PartyParams) ->
         fun() -> process_init(ID, PartyParams) end
     ).
 
-process_init(PartyID, PartyParams) ->
+process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = hg_datetime:format_now(),
-    Revision = hg_domain:head(),
-    Party = hg_party:create_party(PartyID, PartyParams, Timestamp),
-    St = merge_party_change(?party_created(Party), #st{timestamp = Timestamp, revision = Revision}),
-    Claim = hg_claim:create_party_initial_claim(get_next_claim_id(St), Party, Timestamp, Revision),
-    Changes = [
-        ?party_created(Party),
-        ?claim_created(Claim)
-    ] ++ finalize_claim(hg_claim:accept(Timestamp, Revision, Party, Claim), Timestamp),
-    ok(Changes).
+    ok([?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)]).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
@@ -141,21 +135,41 @@ get_call_name(Call) when is_atom(Call) ->
 
 handle_call({block, Reason}, {St, _}) ->
     ok = assert_unblocked(St),
-    respond(ok, [?party_blocking(?blocked(Reason, hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?party_blocking(?blocked(Reason, Timestamp)),
+        ?revision_changed(Timestamp, Revision)
+    ]);
 
 handle_call({unblock, Reason}, {St, _}) ->
     ok = assert_blocked(St),
-    respond(ok, [?party_blocking(?unblocked(Reason, hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?party_blocking(?unblocked(Reason, Timestamp)),
+        ?revision_changed(Timestamp, Revision)
+    ]);
 
 handle_call(suspend, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_active(St),
-    respond(ok, [?party_suspension(?suspended(hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?party_suspension(?suspended(Timestamp)),
+        ?revision_changed(Timestamp, Revision)
+    ]);
 
 handle_call(activate, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_suspended(St),
-    respond(ok, [?party_suspension(?active(hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?party_suspension(?active(Timestamp)),
+        ?revision_changed(Timestamp, Revision)
+    ]);
 
 handle_call({set_metadata, NS, Data}, _) ->
     respond(ok, [?party_meta_set(NS, Data)]);
@@ -167,24 +181,44 @@ handle_call({remove_metadata, NS}, {St, _}) ->
 handle_call({block_shop, ID, Reason}, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_shop_unblocked(ID, St),
-    respond(ok, [?shop_blocking(ID, ?blocked(Reason, hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?shop_blocking(ID, ?blocked(Reason, Timestamp)),
+        ?revision_changed(Timestamp, Revision)
+    ]);
 
 handle_call({unblock_shop, ID, Reason}, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_shop_blocked(ID, St),
-    respond(ok, [?shop_blocking(ID, ?unblocked(Reason, hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?shop_blocking(ID, ?unblocked(Reason, Timestamp)),
+        ?revision_changed(Timestamp, Revision)
+    ]);
 
 handle_call({suspend_shop, ID}, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_shop_unblocked(ID, St),
     ok = assert_shop_active(ID, St),
-    respond(ok, [?shop_suspension(ID, ?suspended(hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?shop_suspension(ID, ?suspended(Timestamp)),
+        ?revision_changed(Timestamp, Revision)
+    ]);
 
 handle_call({activate_shop, ID}, {St, _}) ->
     ok = assert_unblocked(St),
     ok = assert_shop_unblocked(ID, St),
     ok = assert_shop_suspended(ID, St),
-    respond(ok, [?shop_suspension(ID, ?active(hg_datetime:format_now()))]);
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(ok, [
+        ?shop_suspension(ID, ?active(Timestamp)),
+        ?revision_changed(Timestamp, Revision)
+    ]);
 
 handle_call({create_claim, Changeset}, {St, _}) ->
     ok = assert_operable(St),
@@ -198,24 +232,26 @@ handle_call({update_claim, ID, ClaimRevision, Changeset}, {St, _}) ->
 
 handle_call({accept_claim, ID, ClaimRevision}, {St, _}) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
     Claim = hg_claim:accept(
-        get_st_timestamp(St),
+        Timestamp,
         get_st_revision(St),
         get_st_party(St),
         get_st_claim(ID, St)
     ),
-    respond(ok, finalize_claim(Claim, get_st_timestamp(St)));
+    respond(ok, [finalize_claim(Claim, Timestamp), ?revision_changed(Timestamp, Revision)]);
 
 handle_call({deny_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:deny(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
-    respond(ok, finalize_claim(Claim, get_st_timestamp(St)));
+    respond(ok, [finalize_claim(Claim, get_st_timestamp(St))]);
 
 handle_call({revoke_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     ok = assert_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:revoke(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
-    respond(ok, finalize_claim(Claim, get_st_timestamp(St))).
+    respond(ok, [finalize_claim(Claim, get_st_timestamp(St))]).
 
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
@@ -226,7 +262,7 @@ publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     hg_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
-    {{party_id, PartyID}, unmarshal(Ev)}.
+    {{party_id, PartyID}, unwrap_event(Ev)}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -246,11 +282,11 @@ start(PartyID, Args) ->
 get_party(PartyID) ->
     get_st_party(get_state(PartyID)).
 
--spec checkout(party_id(), timestamp()) ->
+-spec checkout(party_id(), party_revision_param()) ->
     dmsl_domain_thrift:'Party'() | no_return().
 
-checkout(PartyID, Timestamp) ->
-    case checkout_history(get_history(PartyID), Timestamp) of
+checkout(PartyID, RevisionParam) ->
+    case checkout_history(get_history(PartyID), RevisionParam) of
         {ok, St} ->
             get_st_party(St);
         {error, Reason} ->
@@ -326,6 +362,9 @@ map_history_error({error, notfound}) ->
 get_st_party(#st{party = Party}) ->
     Party.
 
+get_next_party_revision(#st{party = Party}) ->
+    Party#domain_Party.revision + 1.
+
 get_st_claim(ID, #st{claims = Claims}) ->
     assert_claim_exists(maps:get(ID, Claims, undefined)).
 
@@ -370,7 +409,10 @@ assert_nonempty_history([_ | _] = Result) ->
 assert_nonempty_history([]) ->
     throw(#payproc_PartyNotFound{}).
 
-set_claim(Claim = #payproc_Claim{id = ID}, St = #st{claims = Claims}) ->
+set_claim(
+    #payproc_Claim{id = ID} = Claim,
+    #st{claims = Claims} = St
+) ->
     St#st{claims = Claims#{ID => Claim}}.
 
 assert_claim_exists(Claim = #payproc_Claim{}) ->
@@ -412,12 +454,24 @@ create_claim(Changeset, St) ->
     % Check for conflicts with other pending claims
     ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
     % Test if we can safely accept proposed changes.
-    case hg_claim:is_need_acceptance(Claim) of
+    case hg_claim:is_need_acceptance(Claim, Party, Revision) of
         false ->
-            % Submit new accepted claim
-            AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, Claim),
-            %% FIXME looks ugly
-            {AcceptedClaim, [?claim_created(Claim)] ++ finalize_claim(AcceptedClaim, Timestamp)};
+            % Try to submit new accepted claim
+            try
+                AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, Claim),
+                PartyRevision = get_next_party_revision(St),
+                {
+                    AcceptedClaim,
+                    [
+                        ?claim_created(Claim),
+                        finalize_claim(AcceptedClaim, Timestamp),
+                        ?revision_changed(Timestamp, PartyRevision)
+                    ]
+                }
+            catch
+                throw:_AnyException ->
+                    {Claim, [?claim_created(Claim)]}
+            end;
         true ->
             % Submit new pending claim
             {Claim, [?claim_created(Claim)]}
@@ -437,12 +491,12 @@ update_claim(ID, Changeset, St) ->
     [?claim_updated(ID, Changeset, hg_claim:get_revision(Claim), Timestamp)].
 
 finalize_claim(Claim, Timestamp) ->
-    [?claim_status_changed(
+    ?claim_status_changed(
         hg_claim:get_id(Claim),
         hg_claim:get_status(Claim),
         hg_claim:get_revision(Claim),
         Timestamp
-    )].
+    ).
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
@@ -471,35 +525,64 @@ respond_w_exception(Exception) ->
 -spec collapse_history(hg_machine:history()) -> st().
 
 collapse_history(History) ->
-    {ok, St} = checkout_history(History, hg_datetime:format_now()),
+    {ok, St} = checkout_history(History, {timestamp, hg_datetime:format_now()}),
     St.
 
--spec checkout_history(hg_machine:history(), timestamp()) -> {ok, st()} | {error, revision_not_found}.
+-spec checkout_history(hg_machine:history(), party_revision_param()) -> {ok, st()} | {error, revision_not_found}.
 
-checkout_history(History, Timestamp) ->
+checkout_history(History, {timestamp, Timestamp}) ->
     % FIXME hg_domain:head() looks strange here
-    checkout_history(History, undefined, #st{timestamp = Timestamp, revision = hg_domain:head()}).
+    checkout_history_by_timestamp(History, Timestamp, #st{revision = hg_domain:head()});
+checkout_history(History, {revision, Revision}) ->
+    checkout_history_by_revision(History, Revision, #st{revision = hg_domain:head()}).
 
-checkout_history([{_ID, EventTimestamp, Ev} | Rest], PrevTimestamp, #st{timestamp = Timestamp} = St) ->
+checkout_history_by_timestamp([{_, _, Ev} | Rest], Timestamp, #st{timestamp = PrevTimestamp} = St) ->
+    St1 = merge_event(Ev, St),
+    EventTimestamp = St1#st.timestamp,
     case hg_datetime:compare(EventTimestamp, Timestamp) of
         later when PrevTimestamp =/= undefined ->
             {ok, St};
         later when PrevTimestamp == undefined ->
             {error, revision_not_found};
         _ ->
-            checkout_history(Rest, EventTimestamp, merge_event(Ev, St))
+            checkout_history_by_timestamp(Rest, Timestamp, St1)
     end;
-checkout_history([], _, St) ->
+checkout_history_by_timestamp([], _, St) ->
     {ok, St}.
+
+checkout_history_by_revision([{_, _, Ev} | Rest], Revision, St) ->
+    St1 = merge_event(Ev, St),
+    case get_st_party(St1) of
+        #domain_Party{revision = Revision1} when Revision1 > Revision ->
+            {ok, St};
+        _ ->
+            checkout_history_by_revision(Rest, Revision, St1)
+    end;
+checkout_history_by_revision([], Revision, St) ->
+    case get_st_party(St) of
+        #domain_Party{revision = Revision} ->
+            {ok, St};
+        _ ->
+            {error, revision_not_found}
+    end.
 
 merge_event(?party_ev(PartyChanges), St) when is_list(PartyChanges) ->
      lists:foldl(fun merge_party_change/2, St, PartyChanges).
 
-merge_party_change(?party_created(Party), St) ->
-    St#st{party = Party};
+merge_party_change(?party_created(PartyID, ContactInfo, Timestamp), St) ->
+    St#st{
+        timestamp = Timestamp,
+        party = hg_party:create_party(PartyID, ContactInfo, Timestamp)
+    };
 merge_party_change(?party_blocking(Blocking), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:blocking(Blocking, Party)};
+merge_party_change(?revision_changed(Timestamp, Revision), St) ->
+    Party = get_st_party(St),
+    St#st{
+        timestamp = Timestamp,
+        party = Party#domain_Party{revision = Revision}
+    };
 merge_party_change(?party_suspension(Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:suspension(Suspension, Party)};
@@ -515,14 +598,17 @@ merge_party_change(?shop_blocking(ID, Blocking), St) ->
 merge_party_change(?shop_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:shop_suspension(ID, Suspension, Party)};
-merge_party_change(?claim_created(Claim), St) ->
+merge_party_change(?claim_created(Claim0), St) ->
+    Claim = ensure_claim(Claim0),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1);
 merge_party_change(?claim_updated(ID, Changeset, Revision, UpdatedAt), St) ->
-    Claim = hg_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim0 = hg_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim = ensure_claim(Claim0),
     set_claim(Claim, St);
 merge_party_change(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) ->
-    Claim = hg_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim0 = hg_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim = ensure_claim(Claim0),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1).
 
@@ -583,36 +669,287 @@ assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
 
+%% backward compatibility stuff
+%% TODO remove after migration
+
+ensure_claim(
+    #payproc_Claim{
+        created_at = Timestamp,
+        changeset = Changeset0,
+        status = Status0
+    } = Claim
+) ->
+    Changeset = ensure_claim_changeset(Changeset0, Timestamp),
+    Status = ensure_claim_status(Status0, Timestamp),
+    Claim#payproc_Claim{
+        changeset = Changeset,
+        status = Status
+    }.
+
+ensure_claim_changeset(Changeset, Timestamp) ->
+    [ensure_contract_change(C, Timestamp) || C <- Changeset].
+
+ensure_contract_change(?contract_modification(ID, {creation, ContractParams}), Timestamp) ->
+    ?contract_modification(
+        ID,
+        {creation, ensure_payment_institution(ContractParams, Timestamp)}
+    );
+ensure_contract_change(C, _) ->
+    C.
+
+ensure_claim_status({accepted, #payproc_ClaimAccepted{effects = Effects} = S}, Timestamp) ->
+    {accepted, S#payproc_ClaimAccepted{
+        effects = [ensure_contract_effect(E, Timestamp) || E <- Effects]
+    }};
+ensure_claim_status(S, _) ->
+    S.
+
+ensure_contract_effect(?contract_effect(ID, {created, Contract}), Timestamp) ->
+    ?contract_effect(ID, {created, ensure_payment_institution(Contract, Timestamp)});
+ensure_contract_effect(E, _) ->
+    E.
+
+ensure_payment_institution(#domain_Contract{payment_institution = undefined} = Contract, Timestamp) ->
+    Revision = hg_domain:head(),
+    PaymentInstitutionRef = get_default_payment_institution(
+        get_realm(Contract, Timestamp, Revision),
+        Revision
+    ),
+    Contract#domain_Contract{payment_institution = PaymentInstitutionRef};
+ensure_payment_institution(#domain_Contract{} = Contract, _) ->
+    Contract;
+ensure_payment_institution(
+    #payproc_ContractParams{
+        template = TemplateRef,
+        payment_institution = undefined
+    } = ContractParams,
+    Timestamp
+) ->
+    Revision = hg_domain:head(),
+    Realm = case TemplateRef of
+        undefined ->
+            % use default live payment institution
+            live;
+        _ ->
+            Template = get_template(TemplateRef, Revision),
+            get_realm(Template, Timestamp, Revision)
+    end,
+    ContractParams#payproc_ContractParams{
+        payment_institution = get_default_payment_institution(Realm, Revision)
+    };
+ensure_payment_institution(#payproc_ContractParams{} = ContractParams, _) ->
+    ContractParams.
+
+get_realm(C, Timestamp, Revision) ->
+    Categories = hg_party:get_categories(C, Timestamp, Revision),
+    {Test, Live} = lists:foldl(
+        fun(CategoryRef, {TestFound, LiveFound}) ->
+            case hg_domain:get(Revision, {category, CategoryRef}) of
+                #domain_Category{type = test} ->
+                    {true, LiveFound};
+                #domain_Category{type = live} ->
+                    {TestFound, true}
+            end
+        end,
+        {false, false},
+        ordsets:to_list(Categories)
+    ),
+    case Test /= Live of
+        true when Test =:= true ->
+            test;
+        true when Live =:= true ->
+            live;
+        false ->
+            error({
+                misconfiguration,
+                {'Test and live category in same term set', C, Timestamp, Revision}
+            })
+    end.
+
+get_default_payment_institution(Realm, Revision) ->
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    Defaults = Globals#domain_Globals.contract_payment_institution_defaults,
+    case Realm of
+        test ->
+            Defaults#domain_ContractPaymentInstitutionDefaults.test;
+        live ->
+            Defaults#domain_ContractPaymentInstitutionDefaults.live
+    end.
+
+get_template(TemplateRef, Revision) ->
+    hg_domain:get(Revision, {contract_template, TemplateRef}).
+
 %%
 
-unwrap_event({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal(Payload)}.
-
-unwrap_events(History) ->
-    [unwrap_event(E) || E <- History].
+-define(TOP_VERSION, 2).
 
 wrap_events(Events) ->
-    [marshal(E) || E <- Events].
+    [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
 
-marshal(V) ->
-    {bin, term_to_binary(V)}.
+unwrap_events(History) ->
+    lists:map(
+        fun({ID, Dt, Event}) ->
+            {ID, Dt, unwrap_event(Event)}
+        end,
+        History
+    ).
 
-unmarshal({bin, B}) ->
-    ensure_event(binary_to_term(B)).
+unwrap_event(Event) when is_list(Event) ->
+    transmute(hg_party_marshalling:unmarshal(Event));
+unwrap_event({bin, Bin}) when is_binary(Bin) ->
+    transmute([1, binary_to_term(Bin)]).
 
-% FIXME Remove as soon as offline services switch to rbkmoney/damsel@2223cc6
+transmute([Version, Event]) ->
+    transmute_event(Version, ?TOP_VERSION, Event).
 
-ensure_event(?party_ev(Changes)) ->
-    ?party_ev([ensure_change(C) || C <- Changes]).
+transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1->
+    NewChanges = [transmute_change(V1, V1 + 1, C) || C <- Changes],
+    transmute_event(V1 + 1, V2, ?party_ev(NewChanges));
+transmute_event(V, V, Event) ->
+    Event.
 
-ensure_change(?claim_status_changed(ID, Status, Revision, UpdatedAt)) ->
-    ?claim_status_changed(ID, ensure_claim_status_reason(Status), Revision, UpdatedAt);
-ensure_change(Change) ->
-    Change.
+transmute_change(1, 2,
+    ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _))
+) ->
+    ?party_created(ID, ContactInfo, CreatedAt);
+transmute_change(1, 2,
+    ?claim_created(?legacy_claim(
+        ID,
+        Status,
+        Changeset,
+        Revision,
+        CreatedAt,
+        UpdatedAt
+    ))
+) ->
+    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
+    ?claim_created(#payproc_Claim{
+        id = ID,
+        status = Status,
+        changeset = NewChangeset,
+        revision = Revision,
+        created_at = CreatedAt,
+        updated_at = UpdatedAt
+    });
+transmute_change(1, 2,
+    ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
+) ->
+    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
+    ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
+transmute_change(1, 2,
+    ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
+) ->
+    NewEffects = [transmute_claim_effect(1, 2, E) || E <- Effects],
+    ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
+transmute_change(1, 2, C) ->
+    C.
 
-ensure_claim_status_reason(?denied(undefined)) ->
-    ?denied(<<>>);
-ensure_claim_status_reason(?revoked(undefined)) ->
-    ?revoked(<<>>);
-ensure_claim_status_reason(Status) ->
-    Status.
+transmute_party_modification(1, 2,
+    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params(Contractor, TemplateRef)})
+) ->
+    ?contract_modification(ID, {creation, #payproc_ContractParams{
+        contractor = transmute_contractor(1, 2, Contractor),
+        template = TemplateRef
+    }});
+transmute_party_modification(1, 2,
+    ?legacy_contract_modification(ContractID, ?legacy_payout_tool_creation(
+        ID,
+        ?legacy_payout_tool_params(Currency, {bank_account, BankAccount})
+    ))
+) ->
+    PayoutToolParams = #payproc_PayoutToolParams{
+        currency = Currency,
+        tool_info = {russian_bank_account, transmute_bank_account(1, 2, BankAccount)}
+    },
+    ?contract_modification(ContractID, ?payout_tool_creation(ID, PayoutToolParams));
+transmute_party_modification(1, 2, C) ->
+    C.
+
+transmute_claim_effect(1, 2, ?legacy_contract_effect(
+    ID,
+    {created, ?legacy_contract(
+        ID,
+        Contractor,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    )}
+)) ->
+    Contract = #domain_Contract{
+        id = ID,
+        contractor = transmute_contractor(1, 2, Contractor),
+        created_at = CreatedAt,
+        valid_since = ValidSince,
+        valid_until = ValidUntil,
+        status = Status,
+        terms = Terms,
+        adjustments = Adjustments,
+        payout_tools = [transmute_payout_tool(1, 2, P) || P <- PayoutTools],
+        legal_agreement = LegalAgreement
+    },
+    ?contract_effect(ID, {created, Contract});
+transmute_claim_effect(1, 2, ?legacy_contract_effect(
+    ContractID,
+    {payout_tool_created, PayoutTool}
+)) ->
+    ?contract_effect(
+        ContractID,
+        {payout_tool_created, transmute_payout_tool(1, 2, PayoutTool)}
+    );
+transmute_claim_effect(1, 2, C) ->
+    C.
+
+transmute_contractor(1, 2,
+    {legal_entity, {russian_legal_entity, ?legacy_russian_legal_entity(
+        RegisteredName,
+        RegisteredNumber,
+        Inn,
+        ActualAddress,
+        PostAddress,
+        RepresentativePosition,
+        RepresentativeFullName,
+        RepresentativeDocument,
+        BankAccount
+    )}}
+) ->
+    {legal_entity, {russian_legal_entity, #domain_RussianLegalEntity{
+        registered_name = RegisteredName,
+        registered_number = RegisteredNumber,
+        inn = Inn,
+        actual_address = ActualAddress,
+        post_address = PostAddress,
+        representative_position = RepresentativePosition,
+        representative_full_name = RepresentativeFullName,
+        representative_document = RepresentativeDocument,
+        russian_bank_account = transmute_bank_account(1, 2, BankAccount)
+    }}};
+transmute_contractor(1, 2, Contractor) ->
+    Contractor.
+
+transmute_payout_tool(1, 2, ?legacy_payout_tool(
+    ID,
+    CreatedAt,
+    Currency,
+    {bank_account, BankAccount}
+)) ->
+    #domain_PayoutTool{
+        id = ID,
+        created_at = CreatedAt,
+        currency = Currency,
+        payout_tool_info = {russian_bank_account, transmute_bank_account(1, 2, BankAccount)}
+    };
+transmute_payout_tool(1, 2, PayoutTool) ->
+    PayoutTool.
+
+transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAccount, BankBik)) ->
+    #domain_RussianBankAccount{
+        account = Account,
+        bank_name = BankName,
+        bank_post_account = BankPostAccount,
+        bank_bik = BankBik
+    }.

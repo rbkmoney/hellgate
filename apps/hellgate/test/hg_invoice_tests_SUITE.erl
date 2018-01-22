@@ -154,7 +154,7 @@ init_per_suite(C) ->
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     NewC = [
@@ -566,7 +566,7 @@ payment_w_incorrect_customer(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     PartyClient = cfg(party_client, C),
-    AnotherShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
+    AnotherShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
@@ -766,11 +766,11 @@ get_cashflow_account(Type, CF) ->
     hg_ct_helper:get_account(ID).
 
 get_adjustment_fixture(Revision) ->
-    Globals = hg_domain:get(Revision, {globals, ?glob()}),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     [
-        {globals, #domain_GlobalsObject{
-            ref = ?glob(),
-            data = Globals#domain_Globals{
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = PaymentInstitution#domain_PaymentInstitution{
                 providers = {value, ?ordset([
                     ?prv(100)
                 ])}
@@ -851,11 +851,10 @@ get_adjustment_provider_cashflow(actual) ->
 
 invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
-    ShopID = <<"TESTSHOP">>,
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(PartyClient),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
@@ -870,8 +869,7 @@ external_account_posting(C) ->
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    _ = hg_ct_helper:create_party_and_shop(PartyClient),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
@@ -907,7 +905,7 @@ external_account_posting(C) ->
 payment_refund_success(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), ?tmpl(2), PartyClient),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     RefundParams = make_refund_params(),
@@ -1020,11 +1018,11 @@ rounding_cashflow_volume(C) ->
     ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {external, outcome}, CF).
 
 get_cashflow_rounding_fixture(Revision) ->
-    Globals = hg_domain:get(Revision, {globals, ?glob()}),
+    PaymentInstituition = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     [
-        {globals, #domain_GlobalsObject{
-            ref = ?glob(),
-            data = Globals#domain_Globals{
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = PaymentInstituition#domain_PaymentInstitution{
                 providers = {value, ?ordset([
                     ?prv(100)
                 ])}
@@ -1513,7 +1511,7 @@ construct_domain_fixture() ->
             ])},
             payment_methods = {decisions, [
                 #domain_PaymentMethodDecision{
-                    if_   = ?partycond(<<"DEPRIVED ONE">>, {shop_is, <<"TESTSHOP">>}),
+                    if_   = ?partycond(<<"DEPRIVED ONE">>, undefined),
                     then_ = {value, ordsets:new()}
                 },
                 #domain_PaymentMethodDecision{
@@ -1680,32 +1678,23 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
 
         hg_ct_fixture:construct_system_account_set(?sas(1)),
+        hg_ct_fixture:construct_system_account_set(?sas(2)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(2), <<"Assist">>, ?cur(<<"RUB">>)),
 
-        {globals, #domain_GlobalsObject{
-            ref = #domain_GlobalsRef{},
-            data = #domain_Globals{
-                party_prototype = #domain_PartyPrototypeRef{id = 42},
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = #domain_PaymentInstitution{
+                name = <<"Test Inc.">>,
+                system_account_set = {value, ?sas(1)},
+                default_contract_template = {value, ?tmpl(1)},
                 providers = {value, ?ordset([
                     ?prv(1),
                     ?prv(2),
                     ?prv(3)
                 ])},
-                system_account_set = {value, ?sas(1)},
-                external_account_set = {decisions, [
-                    #domain_ExternalAccountSetDecision{
-                        if_ = {condition, {party, #domain_PartyCondition{
-                            id = <<"LGBT">>
-                        }}},
-                        then_ = {value, ?eas(2)}
-                    },
-                    #domain_ExternalAccountSetDecision{
-                        if_ = {constant, true},
-                        then_ = {value, ?eas(1)}
-                    }
-                ]},
-                default_contract_template = ?tmpl(2),
+
+                % TODO do we realy need this decision hell here?
                 inspector = {decisions, [
                     #domain_InspectorDecision{
                         if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
@@ -1737,35 +1726,76 @@ construct_domain_fixture() ->
                             }
                         ]}
                     }
-                ]}
+                ]},
+                residences = [],
+                realm = test
             }
         }},
-        {party_prototype, #domain_PartyPrototypeObject{
-            ref = #domain_PartyPrototypeRef{id = 42},
-            data = #domain_PartyPrototype{
-                shop = #domain_ShopPrototype{
-                    shop_id = <<"TESTSHOP">>,
-                    category = ?cat(1),
-                    currency = ?cur(<<"RUB">>),
-                    details  = #domain_ShopDetails{
-                        name = <<"SUPER DEFAULT SHOP">>
-                    },
-                    location = {url, <<"">>}
-                },
-                contract = #domain_ContractPrototype{
-                    contract_id = <<"TESTCONTRACT">>,
-                    test_contract_template = ?tmpl(1),
-                    payout_tool = #domain_PayoutToolPrototype{
-                        payout_tool_id = <<"TESTPAYOUTTOOL">>,
-                        payout_tool_info = {bank_account, #domain_BankAccount{
-                            account = <<"">>,
-                            bank_name = <<"">>,
-                            bank_post_account = <<"">>,
-                            bank_bik = <<"">>
-                        }},
-                        payout_tool_currency = ?cur(<<"RUB">>)
+
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(2),
+            data = #domain_PaymentInstitution{
+                name = <<"Chetky Payments Inc.">>,
+                system_account_set = {value, ?sas(2)},
+                default_contract_template = {value, ?tmpl(2)},
+                providers = {value, ?ordset([
+                    ?prv(1),
+                    ?prv(2),
+                    ?prv(3)
+                ])},
+                inspector = {decisions, [
+                    #domain_InspectorDecision{
+                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {decisions, [
+                            #domain_InspectorDecision{
+                                if_ = {condition, {category_is, ?cat(3)}},
+                                then_ = {value, ?insp(2)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                    {inclusive, ?cash(        0, <<"RUB">>)},
+                                    {exclusive, ?cash(   500000, <<"RUB">>)}
+                                )}},
+                                then_ = {value, ?insp(1)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                    {inclusive, ?cash(   500000, <<"RUB">>)},
+                                    {exclusive, ?cash(100000000, <<"RUB">>)}
+                                )}},
+                                then_ = {value, ?insp(2)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                    {inclusive, ?cash( 100000000, <<"RUB">>)},
+                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                )}},
+                                then_ = {value, ?insp(3)}
+                            }
+                        ]}
                     }
-                }
+                ]},
+                residences = [],
+                realm = live
+            }
+        }},
+
+        {globals, #domain_GlobalsObject{
+            ref = #domain_GlobalsRef{},
+            data = #domain_Globals{
+                external_account_set = {decisions, [
+                    #domain_ExternalAccountSetDecision{
+                        if_ = {condition, {party, #domain_PartyCondition{
+                            id = <<"LGBT">>
+                        }}},
+                        then_ = {value, ?eas(2)}
+                    },
+                    #domain_ExternalAccountSetDecision{
+                        if_ = {constant, true},
+                        then_ = {value, ?eas(1)}
+                    }
+                ]},
+                payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
         {term_set_hierarchy, #domain_TermSetHierarchyObject{

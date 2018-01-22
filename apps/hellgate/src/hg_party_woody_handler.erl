@@ -29,11 +29,11 @@ handle_function_('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
     ok = assert_party_accessible(PartyID),
     hg_party_machine:start(PartyID, PartyParams);
 
-handle_function_('Checkout', [UserInfo, PartyID, Timestamp], _Opts) ->
+handle_function_('Checkout', [UserInfo, PartyID, RevisionParam], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    checkout_party(PartyID, Timestamp);
+    checkout_party(PartyID, RevisionParam);
 
 handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -78,7 +78,7 @@ handle_function_('ComputeContractTerms', [UserInfo, PartyID, ContractID, Timesta
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    Party = checkout_party(PartyID, Timestamp),
+    Party = checkout_party(PartyID, {timestamp, Timestamp}),
     Contract = ensure_contract(hg_party:get_contract(ContractID, Party)),
     Revision = hg_domain:head(),
     hg_party:reduce_terms(
@@ -124,7 +124,7 @@ handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Op
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    Party = checkout_party(PartyID, Timestamp),
+    Party = checkout_party(PartyID, {timestamp, Timestamp}),
     Shop = hg_party:get_shop(ShopID, Party),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Revision = hg_domain:head(),
@@ -229,7 +229,28 @@ handle_function_('RemoveMetaData', [UserInfo, PartyID, NS], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    hg_party_machine:call(PartyID, {remove_metadata, NS}).
+    hg_party_machine:call(PartyID, {remove_metadata, NS});
+
+%% Payment Institutions
+
+handle_function_(
+    'ComputePaymentInstitutionTerms',
+    [UserInfo, PartyID, PaymentInstitutionRef],
+    _Opts
+) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    Revision = hg_domain:head(),
+    case hg_domain:find(Revision, {payment_institution, PaymentInstitutionRef}) of
+        #domain_PaymentInstitution{} = P ->
+            VS = #{party => hg_party_machine:get_party(PartyID)},
+            ContractTemplate = get_default_contract_template(P, VS, Revision),
+            Terms = hg_party:get_terms(ContractTemplate, hg_datetime:format_now(), Revision),
+            hg_party:reduce_terms(Terms, VS, Revision);
+        notfound ->
+            throw(#payproc_PaymentInstitutionNotFound{})
+    end.
 
 %%
 
@@ -253,12 +274,12 @@ set_party_mgmt_meta(PartyID) ->
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
-checkout_party(PartyID, Timestamp) ->
+checkout_party(PartyID, RevisionParam) ->
     try
-        hg_party_machine:checkout(PartyID, Timestamp)
+        hg_party_machine:checkout(PartyID, RevisionParam)
     catch
         error:revision_not_found ->
-            throw(#payproc_PartyNotExistsYet{})
+            throw(#payproc_InvalidPartyRevision{})
     end.
 
 ensure_contract(#domain_Contract{} = Contract) ->
@@ -270,3 +291,7 @@ ensure_shop(#domain_Shop{} = Shop) ->
     Shop;
 ensure_shop(undefined) ->
     throw(#payproc_ShopNotFound{}).
+
+get_default_contract_template(#domain_PaymentInstitution{default_contract_template = ContractSelector}, VS, Revision) ->
+    ContractTemplateRef = hg_selector:reduce_to_value(ContractSelector, VS, Revision),
+    hg_domain:get(Revision, {contract_template, ContractTemplateRef}).

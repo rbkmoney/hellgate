@@ -43,6 +43,7 @@
 -export([fold/3]).
 -export([collect/1]).
 -export([reduce/3]).
+-export([reduce_to_value/3]).
 
 -define(const(Bool), {constant, Bool}).
 
@@ -67,6 +68,17 @@ fold_decisions(_, Acc, []) ->
 
 collect(S) ->
     fold(fun (V, Acc) -> [V | Acc] end, [], S).
+
+
+-spec reduce_to_value(t(), varset(), hg_domain:revision()) -> value() | no_return().
+
+reduce_to_value(Selector, VS, Revision) ->
+    case reduce(Selector, VS, Revision) of
+        {value, Value} ->
+            Value;
+        _ ->
+            error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}})
+    end.
 
 -spec reduce(t(), varset(), hg_domain:revision()) ->
     t().

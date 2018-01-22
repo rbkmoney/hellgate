@@ -169,7 +169,6 @@ handle_token_callback(_Tag, <<"suspended">>, TokenInfo, _Opts) ->
 token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
     #prxprv_RecurrentTokenProxyResult{
         intent = ?recurrent_token_finish(Token),
-        token  = Token,
         trx    = #domain_TransactionInfo{id = PaymentTool#prxprv_RecurrentPaymentTool.id, extra = #{}}
     }.
 
