@@ -17,7 +17,7 @@ services:
         condition: service_healthy
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:9e6558e4e8e6aef38f18a9fd7e43665be57265e5
+    image: dr.rbkmoney.com/rbkmoney/dominant:68d75c0d8523a150a68852de4572ad1c1ee140ef
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
