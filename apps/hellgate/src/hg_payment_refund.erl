@@ -14,6 +14,11 @@
 -export([commit_refund_cashflow/2]).
 -export([rollback_refund_cashflow/2]).
 
+%% Marshalling
+
+-export([marshal/1]).
+-export([unmarshal/1]).
+
 -record(st, {
     refund            :: undefined | refund(),
     cash_flow         :: undefined | cash_flow(),
@@ -249,3 +254,98 @@ get_session_trx(#{trx := Trx}) ->
 
 get_session_tags(#{tags := Tags}) ->
     Tags.
+
+%% Marshalling
+
+-include("legacy_structures.hrl").
+
+-spec marshal(change()) ->
+    hg_msgpack_marshalling:value().
+
+marshal(Change) ->
+    marshal(change, Change).
+
+marshal(change, ?refund_created(Refund, Cashflow)) ->
+    [2, [<<"created">>, marshal(refund, Refund), hg_cashflow:marshal(Cashflow)]];
+marshal(change, ?refund_status_changed(Status)) ->
+    [2, [<<"status">>, marshal(status, Status)]];
+marshal(change, ?session_ev(_Target, Payload)) ->
+    [2, [<<"session">>, hg_proxy_provider_session:marshal(Payload)]];
+
+marshal(refund, #domain_InvoicePaymentRefund{} = Refund) ->
+    genlib_map:compact(#{
+        <<"id">>         => marshal(str, Refund#domain_InvoicePaymentRefund.id),
+        <<"created_at">> => marshal(str, Refund#domain_InvoicePaymentRefund.created_at),
+        <<"rev">>        => marshal(int, Refund#domain_InvoicePaymentRefund.domain_revision),
+        <<"reason">>     => marshal(str, Refund#domain_InvoicePaymentRefund.reason)
+    });
+
+marshal(status, ?refund_pending()) ->
+    <<"pending">>;
+marshal(status, ?refund_succeeded()) ->
+    <<"succeeded">>;
+marshal(status, ?refund_failed(Failure)) ->
+    [<<"failed">>, marshal(failure, Failure)];
+
+marshal(failure, {operation_timeout, _}) ->
+    [2, <<"operation_timeout">>];
+marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
+    [2, [<<"external_failure">>, genlib_map:compact(#{
+        <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
+        <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
+    })]];
+
+marshal(_, Other) ->
+    Other.
+
+-spec unmarshal(hg_msgpack_marshalling:value()) -> change().
+
+unmarshal(Change) ->
+    unmarshal(change, Change).
+
+unmarshal(change, [2, [<<"created">>, Refund, Cashflow]]) ->
+    ?refund_created(unmarshal(refund, Refund), hg_cashflow:unmarshal(Cashflow));
+unmarshal(change, [2, [<<"status">>, Status]]) ->
+    ?refund_status_changed(unmarshal(status, Status));
+unmarshal(change, [2, [<<"session">>, Payload]]) ->
+    ?session_ev(?refunded(), hg_proxy_provider_session:unmarshal(Payload));
+
+unmarshal(refund, #{
+    <<"id">>         := ID,
+    <<"created_at">> := CreatedAt,
+    <<"rev">>        := Rev
+} = V) ->
+    #domain_InvoicePaymentRefund{
+        id              = unmarshal(str, ID),
+        status          = ?refund_pending(),
+        created_at      = unmarshal(str, CreatedAt),
+        domain_revision = unmarshal(int, Rev),
+        reason          = genlib_map:get(<<"reason">>, V)
+    };
+
+unmarshal(status, <<"pending">>) ->
+    ?refund_pending();
+unmarshal(status, <<"succeeded">>) ->
+    ?refund_succeeded();
+unmarshal(status, [<<"failed">>, Failure]) ->
+    ?refund_failed(unmarshal(failure, Failure));
+
+unmarshal(failure, [2, <<"operation_timeout">>]) ->
+    {operation_timeout, #domain_OperationTimeout{}};
+unmarshal(failure, [2, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]]) ->
+    Description = maps:get(<<"description">>, ExternalFailure, undefined),
+    {external_failure, #domain_ExternalFailure{
+        code        = unmarshal(str, Code),
+        description = unmarshal(str, Description)
+    }};
+
+unmarshal(failure, [1, ?legacy_operation_timeout()]) ->
+    {operation_timeout, #domain_OperationTimeout{}};
+unmarshal(failure, [1, ?legacy_external_failure(Code, Description)]) ->
+    {external_failure, #domain_ExternalFailure{
+        code        = unmarshal(str, Code),
+        description = unmarshal(str, Description)
+    }};
+
+unmarshal(_, Other) ->
+    Other.

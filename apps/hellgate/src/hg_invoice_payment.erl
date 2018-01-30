@@ -1521,7 +1521,7 @@ marshal(change, ?session_ev(Target, Payload)) ->
     [2, #{
         <<"change">>        => <<"session_change">>,
         <<"target">>        => marshal(status, Target),
-        <<"payload">>       => marshal(session_change, Payload)
+        <<"payload">>       => hg_proxy_provider_session:marshal(Payload)
     }];
 marshal(change, ?adjustment_ev(AdjustmentID, Payload)) ->
     [2, #{
@@ -1533,7 +1533,7 @@ marshal(change, ?refund_ev(RefundID, Payload)) ->
     [2, #{
         <<"change">>        => <<"refund">>,
         <<"id">>            => marshal(str, RefundID),
-        <<"payload">>       => marshal(refund_change, Payload)
+        <<"payload">>       => hg_payment_refund:marshal(Payload)
     }];
 
 %% Payment
@@ -1575,61 +1575,12 @@ marshal(status, ?captured_with_reason(Reason)) ->
 marshal(status, ?cancelled_with_reason(Reason)) ->
     [<<"cancelled">>, marshal(str, Reason)];
 
-%% Session change
-
-marshal(session_change, ?session_started()) ->
-    [3, <<"started">>];
-marshal(session_change, ?session_finished(Result)) ->
-    [3, [
-        <<"finished">>,
-        marshal(session_status, Result)
-    ]];
-marshal(session_change, ?session_suspended(Tag)) ->
-    [3, [
-        <<"suspended">>,
-        marshal(str, Tag)
-    ]];
-marshal(session_change, ?session_activated()) ->
-    [3, <<"activated">>];
-marshal(session_change, ?trx_bound(Trx)) ->
-    [3, [
-        <<"transaction_bound">>,
-        marshal(trx, Trx)
-    ]];
-marshal(session_change, ?proxy_st_changed(ProxySt)) ->
-    [3, [
-        <<"proxy_state_changed">>,
-        marshal(bin, {bin, ProxySt})
-    ]];
-marshal(session_change, ?interaction_requested(UserInteraction)) ->
-    [3, [
-        <<"interaction_requested">>,
-        marshal(interaction, UserInteraction)
-    ]];
-
-marshal(session_status, ?session_succeeded()) ->
-    <<"succeeded">>;
-marshal(session_status, ?session_failed(PayloadFailure)) ->
-    [
-        <<"failed">>,
-        marshal(failure, PayloadFailure)
-    ];
-
 %% Adjustment change
 
 marshal(adjustment_change, ?adjustment_created(Adjustment)) ->
     [2, [<<"created">>, marshal(adjustment, Adjustment)]];
 marshal(adjustment_change, ?adjustment_status_changed(Status)) ->
     [2, [<<"status_changed">>, marshal(adjustment_status, Status)]];
-
-%% Refund change
-
-marshal(refund_change, ?refund_created(Refund, Cashflow)) ->
-    [2, [<<"created">>, marshal(refund, Refund), hg_cashflow:marshal(Cashflow)]];
-marshal(refund_change, ?refund_status_changed(Status)) ->
-    [2, [<<"status">>, marshal(refund_status, Status)]];
-marshal(refund_change, ?session_ev(_Target, Payload)) ->
-    [2, [<<"session">>, marshal(session_change, Payload)]];
 
 %% Adjustment
 
@@ -1652,23 +1603,6 @@ marshal(adjustment_status, ?adjustment_captured(At)) ->
     [<<"captured">>, marshal(str, At)];
 marshal(adjustment_status, ?adjustment_cancelled(At)) ->
     [<<"cancelled">>, marshal(str, At)];
-
-%% Refund
-
-marshal(refund, #domain_InvoicePaymentRefund{} = Refund) ->
-    genlib_map:compact(#{
-        <<"id">>         => marshal(str, Refund#domain_InvoicePaymentRefund.id),
-        <<"created_at">> => marshal(str, Refund#domain_InvoicePaymentRefund.created_at),
-        <<"rev">>        => marshal(int, Refund#domain_InvoicePaymentRefund.domain_revision),
-        <<"reason">>     => marshal(str, Refund#domain_InvoicePaymentRefund.reason)
-    });
-
-marshal(refund_status, ?refund_pending()) ->
-    <<"pending">>;
-marshal(refund_status, ?refund_succeeded()) ->
-    <<"succeeded">>;
-marshal(refund_status, ?refund_failed(Failure)) ->
-    [<<"failed">>, marshal(failure, Failure)];
 
 %%
 
@@ -1707,38 +1641,6 @@ marshal(contact_info, #domain_ContactInfo{} = ContactInfo) ->
         <<"phone_number">>  => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
         <<"email">>         => marshal(str, ContactInfo#domain_ContactInfo.email)
     });
-
-marshal(trx, #domain_TransactionInfo{} = TransactionInfo) ->
-    genlib_map:compact(#{
-        <<"id">>            => marshal(str, TransactionInfo#domain_TransactionInfo.id),
-        <<"timestamp">>     => marshal(str, TransactionInfo#domain_TransactionInfo.timestamp),
-        <<"extra">>         => marshal(map_str, TransactionInfo#domain_TransactionInfo.extra)
-    });
-
-marshal(interaction, {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}}) ->
-    #{<<"redirect">> =>
-        [
-            <<"get_request">>,
-            marshal(str, URI)
-        ]
-    };
-marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}}) ->
-    #{<<"redirect">> =>
-        [
-            <<"post_request">>,
-            #{
-                <<"uri">>   => marshal(str, URI),
-                <<"form">>  => marshal(map_str, Form)
-            }
-        ]
-    };
-marshal(interaction, {payment_terminal_reciept, #'PaymentTerminalReceipt'{short_payment_id = SPID, due = DueDate}}) ->
-    #{<<"payment_terminal_receipt">> =>
-        #{
-            <<"spid">>  => marshal(str, SPID),
-            <<"due">>   => marshal(str, DueDate)
-        }
-    };
 
 marshal(failure, {operation_timeout, _}) ->
     [2, <<"operation_timeout">>];
@@ -1795,7 +1697,7 @@ unmarshal(change, [2, #{
     <<"payload">>   := Payload,
     <<"target">>    := Target
 }]) ->
-    ?session_ev(unmarshal(status, Target), unmarshal(session_change, Payload));
+    ?session_ev(unmarshal(status, Target), hg_proxy_provider_session:unmarshal(Payload));
 unmarshal(change, [2, #{
     <<"change">>    := <<"adjustment_change">>,
     <<"id">>        := AdjustmentID,
@@ -1807,7 +1709,7 @@ unmarshal(change, [2, #{
     <<"id">>        := RefundID,
     <<"payload">>   := Payload
 }]) ->
-    ?refund_ev(unmarshal(str, RefundID), unmarshal(refund_change, Payload));
+    ?refund_ev(unmarshal(str, RefundID), hg_payment_refund:unmarshal(Payload));
 
 unmarshal(change, [1, ?legacy_payment_started(Payment, RiskScore, Route, Cashflow)]) ->
     ?payment_started(
@@ -1819,7 +1721,7 @@ unmarshal(change, [1, ?legacy_payment_started(Payment, RiskScore, Route, Cashflo
 unmarshal(change, [1, ?legacy_payment_status_changed(Status)]) ->
     ?payment_status_changed(unmarshal(status, Status));
 unmarshal(change, [1, ?legacy_session_ev(Target, Payload)]) ->
-    ?session_ev(unmarshal(status, Target), unmarshal(session_change, [1, Payload]));
+    ?session_ev(unmarshal(status, Target), hg_proxy_provider_session:unmarshal([1, Payload]));
 unmarshal(change, [1, ?legacy_adjustment_ev(AdjustmentID, Payload)]) ->
     ?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adjustment_change, [1, Payload]));
 
@@ -1904,55 +1806,6 @@ unmarshal(status, ?legacy_captured(Reason)) ->
 unmarshal(status, ?legacy_cancelled(Reason)) ->
     ?cancelled_with_reason(unmarshal(str, Reason));
 
-%% Session change
-
-unmarshal(session_change, [3, [<<"suspended">>, Tag]]) ->
-    ?session_suspended(unmarshal(str, Tag));
-unmarshal(session_change, [3, Change]) ->
-    unmarshal(session_change, [2, Change]);
-
-unmarshal(session_change, [2, <<"started">>]) ->
-    ?session_started();
-unmarshal(session_change, [2, [<<"finished">>, Result]]) ->
-    ?session_finished(unmarshal(session_status, Result));
-unmarshal(session_change, [2, <<"suspended">>]) ->
-    ?session_suspended(undefined);
-unmarshal(session_change, [2, <<"activated">>]) ->
-    ?session_activated();
-unmarshal(session_change, [2, [<<"transaction_bound">>, Trx]]) ->
-    ?trx_bound(unmarshal(trx, Trx));
-unmarshal(session_change, [2, [<<"proxy_state_changed">>, {bin, ProxySt}]]) ->
-    ?proxy_st_changed(unmarshal(bin, ProxySt));
-unmarshal(session_change, [2, [<<"interaction_requested">>, UserInteraction]]) ->
-    ?interaction_requested(unmarshal(interaction, UserInteraction));
-
-unmarshal(session_change, [1, ?legacy_session_started()]) ->
-    ?session_started();
-unmarshal(session_change, [1, ?legacy_session_finished(Result)]) ->
-    ?session_finished(unmarshal(session_status, Result));
-unmarshal(session_change, [1, ?legacy_session_suspended()]) ->
-    ?session_suspended(undefined);
-unmarshal(session_change, [1, ?legacy_session_activated()]) ->
-    ?session_activated();
-unmarshal(session_change, [1, ?legacy_trx_bound(Trx)]) ->
-    ?trx_bound(unmarshal(trx, Trx));
-unmarshal(session_change, [1, ?legacy_proxy_st_changed(ProxySt)]) ->
-    ?proxy_st_changed(unmarshal(bin, ProxySt));
-unmarshal(session_change, [1, ?legacy_interaction_requested(UserInteraction)]) ->
-    ?interaction_requested(unmarshal(interaction, UserInteraction));
-
-%% Session status
-
-unmarshal(session_status, <<"succeeded">>) ->
-    ?session_succeeded();
-unmarshal(session_status, [<<"failed">>, Failure]) ->
-    ?session_failed(unmarshal(failure, Failure));
-
-unmarshal(session_status, ?legacy_session_succeeded()) ->
-    ?session_succeeded();
-unmarshal(session_status, ?legacy_session_failed(Failure)) ->
-    ?session_failed(unmarshal(failure, Failure));
-
 %% Adjustment change
 
 unmarshal(adjustment_change, [2, [<<"created">>, Adjustment]]) ->
@@ -1964,15 +1817,6 @@ unmarshal(adjustment_change, [1, ?legacy_adjustment_created(Adjustment)]) ->
     ?adjustment_created(unmarshal(adjustment, Adjustment));
 unmarshal(adjustment_change, [1, ?legacy_adjustment_status_changed(Status)]) ->
     ?adjustment_status_changed(unmarshal(adjustment_status, Status));
-
-%% Refund change
-
-unmarshal(refund_change, [2, [<<"created">>, Refund, Cashflow]]) ->
-    ?refund_created(unmarshal(refund, Refund), hg_cashflow:unmarshal(Cashflow));
-unmarshal(refund_change, [2, [<<"status">>, Status]]) ->
-    ?refund_status_changed(unmarshal(refund_status, Status));
-unmarshal(refund_change, [2, [<<"session">>, Payload]]) ->
-    ?session_ev(?refunded(), unmarshal(session_change, Payload));
 
 %% Adjustment
 
@@ -2022,28 +1866,6 @@ unmarshal(adjustment_status, ?legacy_adjustment_captured(At)) ->
     ?adjustment_captured(At);
 unmarshal(adjustment_status, ?legacy_adjustment_cancelled(At)) ->
     ?adjustment_cancelled(At);
-
-%% Refund
-
-unmarshal(refund, #{
-    <<"id">>         := ID,
-    <<"created_at">> := CreatedAt,
-    <<"rev">>        := Rev
-} = V) ->
-    #domain_InvoicePaymentRefund{
-        id              = unmarshal(str, ID),
-        status          = ?refund_pending(),
-        created_at      = unmarshal(str, CreatedAt),
-        domain_revision = unmarshal(int, Rev),
-        reason          = genlib_map:get(<<"reason">>, V)
-    };
-
-unmarshal(refund_status, <<"pending">>) ->
-    ?refund_pending();
-unmarshal(refund_status, <<"succeeded">>) ->
-    ?refund_succeeded();
-unmarshal(refund_status, [<<"failed">>, Failure]) ->
-    ?refund_failed(unmarshal(failure, Failure));
 
 %% Payer
 
@@ -2158,60 +1980,6 @@ unmarshal(contact_info, ContractInfo) ->
         phone_number    = unmarshal(str, PhoneNumber),
         email           = unmarshal(str, Email)
     };
-
-unmarshal(trx, #{
-    <<"id">>    := ID,
-    <<"extra">> := Extra
-} = TRX) ->
-    Timestamp = maps:get(<<"timestamp">>, TRX, undefined),
-    #domain_TransactionInfo{
-        id          = unmarshal(str, ID),
-        timestamp   = unmarshal(str, Timestamp),
-        extra       = unmarshal(map_str, Extra)
-    };
-
-unmarshal(trx, ?legacy_trx(ID, Timestamp, Extra)) ->
-    #domain_TransactionInfo{
-        id          = unmarshal(str, ID),
-        timestamp   = unmarshal(str, Timestamp),
-        extra       = unmarshal(map_str, Extra)
-    };
-
-unmarshal(interaction, #{<<"redirect">> := [<<"get_request">>, URI]}) ->
-    {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
-unmarshal(interaction, #{<<"redirect">> := [<<"post_request">>, #{
-    <<"uri">>   := URI,
-    <<"form">>  := Form
-}]}) ->
-    {redirect, {post_request,
-        #'BrowserPostRequest'{
-            uri     = unmarshal(str, URI),
-            form    = unmarshal(map_str, Form)
-        }
-    }};
-unmarshal(interaction, #{<<"payment_terminal_receipt">> := #{
-    <<"spid">>  := SPID,
-    <<"due">>   := DueDate
-}}) ->
-    {payment_terminal_reciept, #'PaymentTerminalReceipt'{
-        short_payment_id = unmarshal(str, SPID),
-        due = unmarshal(str, DueDate)
-    }};
-
-unmarshal(interaction, ?legacy_get_request(URI)) ->
-    {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
-unmarshal(interaction, ?legacy_post_request(URI, Form)) ->
-    {redirect, {post_request,
-        #'BrowserPostRequest'{
-            uri     = unmarshal(str, URI),
-            form    = unmarshal(map_str, Form)
-        }
-    }};
-unmarshal(interaction, ?legacy_payment_terminal_reciept(SPID, DueDate)) ->
-    {payment_terminal_reciept, #'PaymentTerminalReceipt'{
-        short_payment_id = unmarshal(str, SPID),
-        due = unmarshal(str, DueDate)
-    }};
 
 unmarshal(failure, [2, <<"operation_timeout">>]) ->
     {operation_timeout, #domain_OperationTimeout{}};
