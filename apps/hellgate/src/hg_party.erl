@@ -431,10 +431,15 @@ ensure_payment_institution(undefined, _) ->
 -spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
     dmsl_domain_thrift:'TermSet'().
 
-reduce_terms(#domain_TermSet{payments = PaymentsTerms, recurrent_paytools = RecurrentPaytoolTerms}, VS, Revision) ->
+reduce_terms(
+    #domain_TermSet{payments = PaymentsTerms, recurrent_paytools = RecurrentPaytoolTerms, payouts = PayoutTerms},
+    VS,
+    Revision
+) ->
     #domain_TermSet{
         payments = reduce_payments_terms(PaymentsTerms, VS, Revision),
-        recurrent_paytools = reduce_recurrent_paytools_terms(RecurrentPaytoolTerms, VS, Revision)
+        recurrent_paytools = reduce_recurrent_paytools_terms(RecurrentPaytoolTerms, VS, Revision),
+        payouts = reduce_payout_terms(PayoutTerms, VS, Revision)
     }.
 
 reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
@@ -471,6 +476,17 @@ reduce_refunds_terms(#domain_PaymentRefundsServiceTerms{} = Terms, VS, Rev) ->
         fees            = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.fees, VS, Rev)
     };
 reduce_refunds_terms(undefined, _, _) ->
+    undefined.
+
+reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
+    #domain_PayoutsServiceTerms{
+        payout_schedules = reduce_if_defined(Terms#domain_PayoutsServiceTerms.payout_schedules, VS, Rev),
+        payout_methods   = reduce_if_defined(Terms#domain_PayoutsServiceTerms.payout_methods, VS, Rev),
+        cash_limit       = reduce_if_defined(Terms#domain_PayoutsServiceTerms.cash_limit, VS, Rev),
+        fees             = reduce_if_defined(Terms#domain_PayoutsServiceTerms.fees, VS, Rev),
+        policy           = Terms#domain_PayoutsServiceTerms.policy
+    };
+reduce_payout_terms(undefined, _, _) ->
     undefined.
 
 reduce_if_defined(Selector, VS, Rev) when Selector =/= undefined ->
@@ -556,12 +572,13 @@ merge_term_sets(TermSets) when is_list(TermSets)->
     lists:foldl(fun merge_term_sets/2, undefined, TermSets).
 
 merge_term_sets(
-    #domain_TermSet{payments = PaymentTerms1, recurrent_paytools = RecurrentPaytoolTerms1},
-    #domain_TermSet{payments = PaymentTerms0, recurrent_paytools = RecurrentPaytoolTerms0}
+    #domain_TermSet{payments = PaymentTerms1, recurrent_paytools = RecurrentPaytoolTerms1, payouts = PayoutTerms1},
+    #domain_TermSet{payments = PaymentTerms0, recurrent_paytools = RecurrentPaytoolTerms0, payouts = PayoutTerms0}
 ) ->
     #domain_TermSet{
         payments = merge_payments_terms(PaymentTerms0, PaymentTerms1),
-        recurrent_paytools = merge_recurrent_paytools_terms(RecurrentPaytoolTerms0, RecurrentPaytoolTerms1)
+        recurrent_paytools = merge_recurrent_paytools_terms(RecurrentPaytoolTerms0, RecurrentPaytoolTerms1),
+        payouts = merge_payouts_terms(PayoutTerms0, PayoutTerms1)
     };
 merge_term_sets(TermSet1, TermSet0) ->
     hg_utils:select_defined(TermSet1, TermSet0).
@@ -638,6 +655,32 @@ merge_refunds_terms(
         fees            = hg_utils:select_defined(Fee1, Fee0)
     };
 merge_refunds_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_payouts_terms(
+    #domain_PayoutsServiceTerms{
+        payout_schedules = Ps0,
+        payout_methods   = Pm0,
+        cash_limit       = Cash0,
+        fees             = Fee0,
+        policy           = Pol0
+    },
+    #domain_PayoutsServiceTerms{
+        payout_schedules = Ps1,
+        payout_methods   = Pm1,
+        cash_limit       = Cash1,
+        fees             = Fee1,
+        policy           = Pol1
+    }
+) ->
+    #domain_PayoutsServiceTerms{
+        payout_schedules = hg_utils:select_defined(Ps1, Ps0),
+        payout_methods   = hg_utils:select_defined(Pm1, Pm0),
+        cash_limit       = hg_utils:select_defined(Cash1, Cash0),
+        fees             = hg_utils:select_defined(Fee1, Fee0),
+        policy           = hg_utils:select_defined(Pol1, Pol0)
+    };
+merge_payouts_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->

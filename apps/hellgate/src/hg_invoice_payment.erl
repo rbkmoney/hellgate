@@ -463,7 +463,7 @@ collect_cash_flow_context(
     #domain_InvoicePayment{cost = Cost}
 ) ->
     #{
-        payment_amount => Cost
+        operation_amount => Cost
     }.
 
 collect_account_map(
@@ -495,12 +495,12 @@ collect_account_map(
     end.
 
 choose_provider_account(Currency, Accounts) ->
-    choose_account(provider, Currency, Accounts).
+    hg_invoice_utils:choose_account(provider, Currency, Accounts).
 
 choose_system_account(SystemAccountSetSelector, Currency, VS, Revision) ->
     SystemAccountSetRef = reduce_selector(system_account_set, SystemAccountSetSelector, VS, Revision),
     SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
-    choose_account(
+    hg_invoice_utils:choose_account(
         system,
         Currency,
         SystemAccountSet#domain_SystemAccountSet.accounts
@@ -518,14 +518,6 @@ choose_external_account(Currency, VS, Revision) ->
             );
         _ ->
             undefined
-    end.
-
-choose_account(Name, Currency, Accounts) ->
-    case maps:find(Currency, Accounts) of
-        {ok, Account} ->
-            Account;
-        error ->
-            error({misconfiguration, {'No account for a given currency', {Name, Currency}}})
     end.
 
 get_account_state(AccountType, AccountMap, Accounts) ->

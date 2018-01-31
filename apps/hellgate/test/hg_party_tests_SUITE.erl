@@ -1240,7 +1240,7 @@ construct_domain_fixture() ->
                 ?cfpost(
                     {merchant, settlement},
                     {system, settlement},
-                    ?share(45, 1000, payment_amount)
+                    ?share(45, 1000, operation_amount)
                 )
             ]}
         }

@@ -13,7 +13,9 @@
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
 -export([compute_shop_terms/4]).
+-export([choose_account/3]).
 
+-type account()    :: dmsl_domain_thrift:'ProviderAccount'() | dmsl_domain_thrift:'SystemAccount'().
 -type amount()     :: dmsl_domain_thrift:'Amount'().
 -type currency()   :: dmsl_domain_thrift:'CurrencyRef'().
 -type cash()       :: dmsl_domain_thrift:'Cash'().
@@ -91,6 +93,15 @@ compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp) ->
     Args = [UserInfo, PartyID, ShopID, Timestamp],
     {ok, TermSet} = hg_woody_wrapper:call(party_management, 'ComputeShopTerms', Args),
     TermSet.
+
+-spec choose_account(atom(), currency(), map()) -> account().
+choose_account(Name, Currency, Accounts) ->
+    case maps:find(Currency, Accounts) of
+        {ok, Account} ->
+            Account;
+        error ->
+            error({misconfiguration, {'No account for a given currency', {Name, Currency}}})
+    end.
 
 validate_currency_(Currency, Currency) ->
     ok;

@@ -283,7 +283,9 @@ make_shop_modification_effect(_, ?proxy_modification(Proxy), _) ->
 make_shop_modification_effect(_, {location_modification, Location}, _) ->
     {location_changed, Location};
 make_shop_modification_effect(_, {shop_account_creation, Params}, _) ->
-    {account_created, create_shop_account(Params)}.
+    {account_created, create_shop_account(Params)};
+make_shop_modification_effect(_, ?payout_schedule_modification(ScheduleRef), _) ->
+    ?payout_schedule_changed(ScheduleRef).
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);
@@ -437,8 +439,11 @@ update_shop({payout_tool_changed, PayoutToolID}, Shop) ->
     Shop#domain_Shop{payout_tool_id = PayoutToolID};
 update_shop({location_changed, Location}, Shop) ->
     Shop#domain_Shop{location = Location};
-update_shop({proxy_changed, #payproc_ShopProxyChanged{proxy = Proxy}}, Shop) ->
-    Shop#domain_Shop{proxy = Proxy};
+update_shop({proxy_changed, _}, Shop) ->
+    % depricated
+    Shop;
+update_shop(?payout_schedule_changed(ScheduleRef), Shop) ->
+    Shop#domain_Shop{payout_schedule = ScheduleRef};
 update_shop({account_created, Account}, Shop) ->
     Shop#domain_Shop{account = Account}.
 
@@ -534,7 +539,7 @@ assert_payment_institutions_equals(OldContractID, NewContractID, Party) ->
             ok;
         #domain_Contract{} ->
             % TODO change to special invalid_changeset error
-            throw(#'InvalidRequest'{errors = [<<"Can't change shop's payment institution">>]});
+            hg_woody_handler_utils:raise_invalid_request(<<"Can't change shop's payment institution">>);
         undefined ->
             raise_invalid_changeset({contract_not_exists, NewContractID})
     end.
