@@ -33,7 +33,7 @@
     rec_payment_tool     :: undefined | rec_payment_tool(),
     route                :: undefined | route(),
     risk_score           :: undefined | risk_score(),
-    session              :: undefined | session(),
+    session              :: undefined | hg_proxy_provider_session:st(),
     minimal_payment_cost :: undefined | cash()
 }).
 -type st() :: #st{}.
@@ -51,18 +51,6 @@
 -type party()          :: dmsl_domain_thrift:'Party'().
 -type merchant_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
 -type payment_tool()   :: dmsl_domain_thrift:'PaymentTool'().
-
--type session() :: #{
-    status      := active | suspended | finished,
-    result      => session_result(),
-    trx         => undefined | trx_info(),
-    proxy_state => proxy_state()
-}.
-
--type proxy_state()    :: dmsl_proxy_thrift:'ProxyState'().
--type trx_info()       :: dmsl_domain_thrift:'TransactionInfo'().
--type session_result() :: dmsl_payment_processing_thrift:'SessionResult'().
-
 
 %% Woody handler
 
@@ -275,7 +263,7 @@ handle_signal(timeout, St) ->
 
 process_timeout(St) ->
     Action = hg_machine_action:new(),
-    case get_session_status(get_session(St)) of
+    case hg_proxy_provider_session:get_status(get_session(St)) of
         active ->
             process(Action, St);
         suspended ->
@@ -284,9 +272,6 @@ process_timeout(St) ->
 
 get_session(#st{session = Session}) ->
     Session.
-
-get_session_status(Session) ->
-    maps:get(status, Session).
 
 process(Action, St) ->
     ProxyContext = construct_proxy_context(St),
@@ -312,19 +297,14 @@ construct_proxy_context(St) ->
 
 construct_session(St) ->
     #prxprv_RecurrentTokenSession{
-        state = maps:get(proxy_state, get_session(St), undefined)
+        state = hg_proxy_provider_session:get_proxy_state(get_session(St))
     }.
 
 construct_token_info(St) ->
     #prxprv_RecurrentTokenInfo{
         payment_tool = construct_proxy_payment_tool(St),
-        trx          = get_session_trx(get_session(St))
+        trx          = hg_proxy_provider_session:get_trx(get_session(St))
     }.
-
-get_session_trx(#{trx := Trx}) ->
-    Trx;
-get_session_trx(_) ->
-    undefined.
 
 get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
@@ -402,18 +382,21 @@ wrap_session_events(SessionEvents) ->
 
 finish_processing({Changes, Action, Token}, St) ->
     St1 = apply_changes(Changes, St),
-    case get_session(St1) of
-        #{status := finished, result := ?session_succeeded()} ->
+    Session = get_session(St1),
+    Status = hg_proxy_provider_session:get_status(Session),
+    Result = hg_proxy_provider_session:get_result(Session),
+    case {Status, Result} of
+        {finished, ?session_succeeded()} ->
             #{
                 changes => Changes ++ [?recurrent_payment_tool_has_acquired(Token)],
                 action  => Action
             };
-        #{status := finished, result := ?session_failed(Failure)} ->
+        {finished, ?session_failed(Failure)} ->
             #{
                 changes => Changes ++ [?recurrent_payment_tool_has_failed(Failure)],
                 action  => Action
             };
-        #{} ->
+        {_, _} ->
             #{
                 changes => Changes,
                 action  => Action
@@ -457,31 +440,12 @@ apply_change(?recurrent_payment_tool_has_failed(Failure), St) ->
         }
     };
 apply_change(?session_ev(?session_started()), St) ->
-    St#st{session = create_session()};
+    St#st{session = hg_proxy_provider_session:create()};
 apply_change(?session_ev(Event), St) ->
-    Session = merge_session_change(Event, get_session(St)),
+    Session = hg_proxy_provider_session:merge_change(Event, get_session(St)),
     St#st{session = Session}.
 
-merge_session_change(?session_finished(Result), Session) ->
-    Session#{status := finished, result => Result};
-merge_session_change(?session_activated(), Session) ->
-    Session#{status := active};
-merge_session_change(?session_suspended(), Session) ->
-    Session#{status := suspended};
-merge_session_change(?trx_bound(Trx), Session) ->
-    Session#{trx := Trx};
-merge_session_change(?proxy_st_changed(ProxyState), Session) ->
-    Session#{proxy_state => ProxyState};
-merge_session_change(?interaction_requested(_), Session) ->
-    Session.
-
 %%
-
-create_session() ->
-    #{
-        status => active,
-        trx => undefined
-    }.
 
 -type call() :: abandon.
 
@@ -507,7 +471,7 @@ handle_call({callback, Callback}, St) ->
 
 dispatch_callback({provider, Payload}, St) ->
     Action = hg_machine_action:new(),
-    case get_session_status(get_session(St)) of
+    case hg_proxy_provider_session:get_status(get_session(St)) of
         suspended ->
             ProxyContext = construct_proxy_context(St),
             {ok, CallbackResult} = hg_proxy_provider:handle_recurrent_token_callback(

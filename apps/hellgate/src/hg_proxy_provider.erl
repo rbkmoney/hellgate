@@ -90,20 +90,23 @@ get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
 bind_transaction(undefined, _Session) ->
     % no transaction yet
     [];
-bind_transaction(Trx, #{trx := undefined}) ->
-    % got transaction, nothing bound so far
-    [?trx_bound(Trx)];
-bind_transaction(Trx, #{trx := Trx}) ->
-    % got the same transaction as one which has been bound previously
-    [];
-bind_transaction(Trx, #{trx := TrxWas}) ->
-    % got transaction which differs from the bound one
-    % verify against proxy contracts
-    case Trx#domain_TransactionInfo.id of
-        ID when ID =:= TrxWas#domain_TransactionInfo.id ->
+bind_transaction(Trx, Session) ->
+    case hg_proxy_provider_session:get_trx(Session) of
+        undefined ->
+            % got transaction, nothing bound so far
             [?trx_bound(Trx)];
-        _ ->
-            error(proxy_contract_violated)
+        Trx ->
+            % got the same transaction as one which has been bound previously
+            [];
+        TrxWas ->
+            % got transaction which differs from the bound one
+            % verify against proxy contracts
+            case Trx#domain_TransactionInfo.id of
+                ID when ID =:= TrxWas#domain_TransactionInfo.id ->
+                    [?trx_bound(Trx)];
+                _ ->
+                    error(proxy_contract_violated)
+            end
     end.
 
 %%

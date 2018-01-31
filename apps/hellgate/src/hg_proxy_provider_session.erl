@@ -1,13 +1,116 @@
 -module(hg_proxy_provider_session).
+-include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
--include("payment_events.hrl").
+-export([merge_change/2]).
+-export([create/0, create/2]).
+-export([get_status/1]).
+-export([get_trx/1]).
+-export([get_tags/1]).
+-export([get_target/1]).
+-export([get_result/1]).
+-export([get_proxy_state/1]).
+
+-export([construct_prxprv_session/1]).
 
 -export([marshal/1]).
 -export([unmarshal/1]).
 
+-record(st, {
+    target      :: undefined | target(),
+    status      :: status(),
+    trx         :: undefined | trx_info(),
+    tags        :: undefined | [tag()],
+    result      :: undefined | result(),
+    proxy_state :: undefined | proxy_state()
+}).
+
+-type status()  :: active | suspended | finished.
+-type st() :: #st{}.
+
+-export_type([st/0]).
+
+-type target()            :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
+-type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
+-type result()            :: dmsl_payment_processing_thrift:'SessionResult'().
+-type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
+-type tag()               :: dmsl_proxy_thrift:'CallbackTag'().
+-type prxprv_session()    :: dmsl_proxy_provider_thrift:'Session'().
+
 -type change() ::
     dmsl_payment_processing_thrift:'SessionChangePayload'().
+
+-include("payment_events.hrl").
+
+-spec merge_change(change(), st()) -> st().
+
+merge_change(?session_finished(Result), Session) ->
+    Session#st{status = finished, result = Result};
+merge_change(?session_activated(), Session) ->
+    Session#st{status = active};
+merge_change(?session_suspended(undefined), Session) ->
+    Session#st{status = suspended};
+merge_change(?session_suspended(Tag), Session) ->
+    Session#st{status = suspended, tags = [Tag | get_tags(Session)]};
+merge_change(?trx_bound(Trx), Session) ->
+    Session#st{trx = Trx};
+merge_change(?proxy_st_changed(ProxyState), Session) ->
+    Session#st{proxy_state = ProxyState};
+merge_change(?interaction_requested(_), Session) ->
+    Session.
+
+-spec create() -> st().
+
+create() ->
+    #st{status = active}.
+
+-spec create(target() | undefined, st()) -> st().
+
+create(Target, Trx) ->
+    #st{
+        target = Target,
+        status = active,
+        trx    = Trx,
+        tags   = []
+    }.
+
+-spec get_status(st()) -> status().
+
+get_status(#st{status = Status}) ->
+    Status.
+
+-spec get_trx(st()) -> trx_info() | undefined.
+
+get_trx(#st{trx = Trx}) ->
+    Trx.
+
+-spec get_tags(st()) -> [tag()] | undefined.
+
+get_tags(#st{tags = Tags}) ->
+    Tags.
+
+-spec get_target(st()) -> target() | undefined.
+
+get_target(#st{target = Target}) ->
+    Target.
+
+-spec get_result(st()) -> result() | undefined.
+
+get_result(#st{result = Result}) ->
+    Result.
+
+-spec get_proxy_state(st()) -> proxy_state() | undefined.
+
+get_proxy_state(#st{proxy_state = ProxyState}) ->
+    ProxyState.
+
+-spec construct_prxprv_session(st()) -> prxprv_session().
+
+construct_prxprv_session(#st{target = Target, proxy_state = ProxyState}) ->
+    #prxprv_Session{
+        target = Target,
+        state = ProxyState
+    }.
 
 %% Marshalling
 

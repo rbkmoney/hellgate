@@ -22,7 +22,7 @@
 -record(st, {
     refund            :: undefined | refund(),
     cash_flow         :: undefined | cash_flow(),
-    session           :: undefined | session(),
+    session           :: undefined | hg_proxy_provider_session:session(),
     opts              :: undefined | opts()
 }).
 
@@ -34,21 +34,7 @@
 -type invoice()           :: dmsl_domain_thrift:'Invoice'().
 -type payment()           :: dmsl_domain_thrift:'InvoicePayment'().
 -type cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
--type target()            :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
--type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
--type session_result()    :: dmsl_payment_processing_thrift:'SessionResult'().
--type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
 -type prxprv_refund()     :: dmsl_proxy_provider_thrift:'InvoicePaymentRefund'().
--type tag()               :: dmsl_proxy_thrift:'CallbackTag'().
-
--type session() :: #{
-    target      := target(),
-    status      := active | suspended | finished,
-    trx         := trx_info() | undefined,
-    tags        := [tag()],
-    result      => session_result(),
-    proxy_state => proxy_state()
-}.
 
 -type st() :: #st{}.
 
@@ -172,7 +158,7 @@ construct_proxy_refund(#st{
     #prxprv_InvoicePaymentRefund{
         id         = ID,
         created_at = CreatedAt,
-        trx        = get_session_trx(Session)
+        trx        = hg_proxy_provider_session:get_trx(Session)
     }.
 
 collapse_changes(Changes, St) ->
@@ -185,11 +171,11 @@ merge_change(?refund_created(Refund, Cashflow), undefined) ->
 merge_change(?refund_status_changed(Status), St) ->
     set_refund(set_refund_status(Status, get_refund(St)), St);
 merge_change(?session_ev(?refunded(), ?session_started()), St) ->
-    set_refund_session(create_session(?refunded(), undefined), St);
+    set_refund_session(hg_proxy_provider_session:create(?refunded(), undefined), St);
 merge_change(?session_ev(?refunded(), Change), St) ->
-    set_refund_session(merge_session_change(Change, get_refund_session(St)), St).
+    set_refund_session(hg_proxy_provider_session:merge_change(Change, get_refund_session(St)), St).
 
--spec get_refund_session(st()) -> session().
+-spec get_refund_session(st()) -> hg_proxy_provider_session:session().
 
 get_refund_session(#st{session = Session}) ->
     Session.
@@ -214,29 +200,6 @@ set_refund_status(Status, Refund = #domain_InvoicePaymentRefund{}) ->
 get_refund_cashflow(#st{cash_flow = CashFlow}) ->
     CashFlow.
 
-merge_session_change(?session_finished(Result), Session) ->
-    Session#{status := finished, result => Result};
-merge_session_change(?session_activated(), Session) ->
-    Session#{status := active};
-merge_session_change(?session_suspended(undefined), Session) ->
-    Session#{status := suspended};
-merge_session_change(?session_suspended(Tag), Session) ->
-    Session#{status := suspended, tags := [Tag | get_session_tags(Session)]};
-merge_session_change(?trx_bound(Trx), Session) ->
-    Session#{trx := Trx};
-merge_session_change(?proxy_st_changed(ProxyState), Session) ->
-    Session#{proxy_state => ProxyState};
-merge_session_change(?interaction_requested(_), Session) ->
-    Session.
-
-create_session(Target, Trx) ->
-    #{
-        target => Target,
-        status => active,
-        trx    => Trx,
-        tags   => []
-    }.
-
 get_invoice(#{invoice := Invoice}) ->
     Invoice.
 
@@ -248,12 +211,6 @@ get_payment(#{payment := Payment}) ->
 
 get_payment_id(#domain_InvoicePayment{id = ID}) ->
     ID.
-
-get_session_trx(#{trx := Trx}) ->
-    Trx.
-
-get_session_tags(#{tags := Tags}) ->
-    Tags.
 
 %% Marshalling
 
