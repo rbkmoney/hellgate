@@ -64,7 +64,7 @@ merge_change(?interaction_requested(_), Session) ->
 create() ->
     #st{status = active}.
 
--spec create(target() | undefined, st()) -> st().
+-spec create(target(), trx_info() | undefined) -> st().
 
 create(Target, Trx) ->
     #st{

@@ -3,16 +3,15 @@
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([init/6]).
+-export([process_signal/4]).
+
 -export([get_refunds/1]).
 -export([get_refund/1]).
 -export([get_refund_status/1]).
 -export([get_refund_session/1]).
 
-% -export([finish_processing/3]).
 -export([merge_change/2]).
 -export([construct_proxy_refund/1]).
--export([commit_refund_cashflow/2]).
--export([rollback_refund_cashflow/2]).
 
 %% Marshalling
 
@@ -22,8 +21,9 @@
 -record(st, {
     refund            :: undefined | refund(),
     cash_flow         :: undefined | cash_flow(),
-    session           :: undefined | hg_proxy_provider_session:session(),
-    opts              :: undefined | opts()
+    session           :: undefined | hg_proxy_provider_session:st(),
+    opts              :: undefined | opts(),
+    payment_st        :: undefined | hg_invoice_payment:st()
 }).
 
 -type refund()            :: dmsl_domain_thrift:'InvoicePaymentRefund'().
@@ -66,7 +66,7 @@ get_refunds(Rs) ->
 get_refund(#st{refund = Refund}) ->
     Refund.
 
--spec init(refund_id(), refund_params(), integer(), #{}, cash_flow(), opts()) ->
+-spec init(refund_id(), refund_params(), integer(), #{any() => any()}, cash_flow(), opts()) ->
     {refund(), result()}.
 
 init(RefundID, Params, Revision, AccountMap, FinalCashflow, Opts) ->
@@ -87,6 +87,57 @@ init(RefundID, Params, Revision, AccountMap, FinalCashflow, Opts) ->
         Available when Available < 0 ->
             _AffectedAccounts = rollback_refund_cashflow(RefundSt, Opts),
             throw(#payproc_InsufficientAccountBalance{})
+    end.
+
+-spec process_signal(timeout, st(), hg_invoice_payment:st(), opts()) ->
+    {next | done, result()}.
+
+process_signal(timeout, St, PaymentSt, Opts) ->
+    scoper:scope(
+        refund,
+        fun() -> handle_timeout(St#st{opts = Opts, payment_st = PaymentSt}) end
+    ).
+
+handle_timeout(#st{session = Session} = St) ->
+    Action = hg_machine_action:new(),
+    case hg_proxy_provider_session:get_status(Session) of
+        active ->
+            process(Action, St);
+        suspended ->
+            process_callback_timeout(Action, St)
+    end.
+
+process_callback_timeout(Action, #st{session = Session} = St) ->
+    Result = hg_proxy_provider:handle_proxy_callback_timeout(Action, Session),
+    finish_processing(Result, St).
+
+process(Action, #st{session = Session, payment_st = PaymentSt} = St) ->
+    ProxyContext = construct_proxy_context(St),
+    {ok, ProxyResult} = hg_proxy_provider:process_payment(ProxyContext, hg_invoice_payment:get_route(PaymentSt)),
+    Result = hg_proxy_provider:handle_proxy_result(ProxyResult, Action, Session),
+    finish_processing(Result, St).
+
+construct_proxy_context(#st{session = Session, opts = Opts0, payment_st = PaymentSt}) ->
+    Opts1 = maps:remove(payment, Opts0),
+    PaymentInfo = hg_invoice_payment:construct_payment_info(PaymentSt, Opts1),
+    hg_proxy_provider:construct_proxy_context(Session, PaymentInfo, hg_invoice_payment:get_route(PaymentSt)).
+
+finish_processing({Events0, Action}, #st{opts = Opts} = St) ->
+    St1 = collapse_changes(Events0, St),
+    Session = get_refund_session(St1),
+    SessionStatus = hg_proxy_provider_session:get_status(Session),
+    SessionResult = hg_proxy_provider_session:get_result(Session),
+    case {SessionStatus, SessionResult} of
+        {finished, ?session_succeeded()} ->
+            _AffectedAccounts = commit_refund_cashflow(St1, Opts),
+            Events1 = [?refund_status_changed(?refund_succeeded())],
+            {done, {Events0 ++ Events1, Action}};
+        {finished, ?session_failed(Failure)} ->
+            _AffectedAccounts = rollback_refund_cashflow(St1, Opts),
+            Events1 = [?refund_status_changed(?refund_failed(Failure))],
+            {done, {Events0 ++ Events1, Action}};
+        {_, _} ->
+            {next, {Events0, Action}}
     end.
 
 construct_refund(ID, CreatedAt, Revision, Params) ->
@@ -111,30 +162,11 @@ get_account_state(AccountType, AccountMap, Accounts) ->
 get_available_amount(#{min_available_amount := V}) ->
     V.
 
-% -spec finish_processing(any(), st(), opts()) -> [changes()].
-
-% finish_processing(Events, St, Opts) ->
-%     St1 = collapse_changes(Events, St),
-%     case get_refund_session(St1) of
-%         #{status := finished, result := ?session_succeeded()} ->
-%             _AffectedAccounts = commit_refund_cashflow(St1, Opts),
-%             [?refund_status_changed(?refund_succeeded())];
-%         #{status := finished, result := ?session_failed(Failure)} ->
-%             _AffectedAccounts = rollback_refund_cashflow(St1, Opts),
-%             [?refund_status_changed(?refund_failed(Failure))];
-%         #{} ->
-%             []
-%     end.
-
 prepare_refund_cashflow(St, Opts) ->
     hg_accounting:plan(construct_refund_plan_id(St, Opts), get_refund_cashflow_plan(St)).
 
--spec commit_refund_cashflow(st(), opts()) -> any().
-
 commit_refund_cashflow(St, Opts) ->
     hg_accounting:commit(construct_refund_plan_id(St, Opts), [get_refund_cashflow_plan(St)]).
-
--spec rollback_refund_cashflow(st(), opts()) -> any().
 
 rollback_refund_cashflow(St, Opts) ->
     hg_accounting:rollback(construct_refund_plan_id(St, Opts), [get_refund_cashflow_plan(St)]).
@@ -175,7 +207,7 @@ merge_change(?session_ev(?refunded(), ?session_started()), St) ->
 merge_change(?session_ev(?refunded(), Change), St) ->
     set_refund_session(hg_proxy_provider_session:merge_change(Change, get_refund_session(St)), St).
 
--spec get_refund_session(st()) -> hg_proxy_provider_session:session().
+-spec get_refund_session(st()) -> hg_proxy_provider_session:st().
 
 get_refund_session(#st{session = Session}) ->
     Session.

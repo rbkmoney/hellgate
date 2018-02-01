@@ -3,6 +3,7 @@
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
+-export([construct_proxy_context/3]).
 -export([collect_proxy_options/1]).
 
 -export([process_payment/2]).
@@ -15,6 +16,11 @@
 -export([handle_proxy_intent/2]).
 -export([wrap_session_events/2]).
 
+-export([handle_proxy_result/3]).
+-export([handle_callback_result/3]).
+-export([handle_proxy_callback_result/3]).
+-export([handle_proxy_callback_timeout/2]).
+
 -include("domain.hrl").
 -include("payment_events.hrl").
 
@@ -22,11 +28,33 @@
 
 -type trx_info() :: dmsl_domain_thrift:'TransactionInfo'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
+-type payment_info() :: dmsl_proxy_provider_thrift:'PaymentInfo'().
+-type payment_context() :: dmsl_proxy_provider_thrift:'PaymentContext'().
+-type proxy_result() :: dmsl_proxy_provider_thrift:'PaymentProxyResult'().
+-type callback_result() :: dmsl_proxy_provider_thrift:'PaymentCallbackResult'().
+-type callback_proxy_result() :: dmsl_proxy_provider_thrift:'PaymentCallbackProxyResult'().
 
 %%
 
+-spec construct_proxy_context(hg_proxy_provider_session:st(), payment_info(), route()) ->
+    payment_context().
+
+construct_proxy_context(Session, PaymentInfo, Route) ->
+    #prxprv_PaymentContext{
+        session      = construct_session(Session),
+        payment_info = PaymentInfo,
+        options      = collect_proxy_options(Route)
+    }.
+
+construct_session(Session) ->
+    #prxprv_Session{
+        target = hg_proxy_provider_session:get_target(Session),
+        state = hg_proxy_provider_session:get_proxy_state(Session)
+    }.
+
 -spec collect_proxy_options(route()) ->
     dmsl_domain_thrift:'ProxyOptions'().
+
 collect_proxy_options(#domain_PaymentRoute{provider = ProviderRef, terminal = TerminalRef}) ->
     Revision = hg_domain:head(),
     Provider = hg_domain:get(Revision, {provider, ProviderRef}),
@@ -153,7 +181,59 @@ try_request_interaction(UserInteraction) ->
 
 %%
 
+-spec handle_proxy_result(proxy_result(), _Action, hg_proxy_provider_session:st()) ->
+    {list(), _Action}.
+
+handle_proxy_result(
+    #prxprv_PaymentProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
+    Action0,
+    Session
+) ->
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
+    {Events3, Action} = handle_proxy_intent(Intent, Action0),
+    {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
+
+-spec handle_callback_result(callback_result(), _Action, hg_proxy_provider_session:st()) ->
+    {binary(), _Action}.
+
+handle_callback_result(
+    #prxprv_PaymentCallbackResult{result = ProxyResult, response = Response},
+    Action0,
+    Session
+) ->
+    {Response, handle_proxy_callback_result(ProxyResult, Action0, Session)}.
+
+-spec handle_proxy_callback_result(callback_proxy_result(), _Action, hg_proxy_provider_session:st()) ->
+    {list(), _Action}.
+
+handle_proxy_callback_result(
+    #prxprv_PaymentCallbackProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
+    Action0,
+    Session
+) ->
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
+    {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
+    {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
+handle_proxy_callback_result(
+    #prxprv_PaymentCallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
+    Action0,
+    Session
+) ->
+    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events2 = update_proxy_state(ProxyState),
+    {wrap_session_events(Events1 ++ Events2, Session), Action0}.
+
+-spec handle_proxy_callback_timeout(_Action, hg_proxy_provider_session:st()) ->
+    {list(), _Action}.
+
+handle_proxy_callback_timeout(Action, Session) ->
+    Events = [?session_finished(?session_failed(?operation_timeout()))],
+    {wrap_session_events(Events, Session), Action}.
+
 -spec wrap_session_events(list(), _Action) ->
     list().
-wrap_session_events(SessionEvents, #{target := Target}) ->
+wrap_session_events(SessionEvents, Session) ->
+    Target = hg_proxy_provider_session:get_target(Session),
     [?session_ev(Target, Ev) || Ev <- SessionEvents].

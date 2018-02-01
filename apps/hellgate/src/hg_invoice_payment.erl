@@ -35,6 +35,7 @@
 
 -export([get_activity/1]).
 -export([get_tags/1]).
+-export([get_route/1]).
 
 -export([construct_payment_info/2]).
 
@@ -78,7 +79,7 @@
     cash_flow         :: undefined | cash_flow(),
     trx               :: undefined | trx_info(),
     target            :: undefined | target(),
-    sessions    = #{} :: #{target() => hg_proxy_provider_session:session()},
+    sessions    = #{} :: #{target() => hg_proxy_provider_session:st()},
     refunds     = #{} :: #{hg_payment_refund:refund_id() => hg_payment_refund:st()},
     adjustments = []  :: [adjustment()],
     opts              :: undefined | opts()
@@ -760,18 +761,25 @@ process_signal(timeout, St, Options) ->
         fun() -> process_timeout(St#st{opts = Options}) end
     ).
 
-process_timeout(St) ->
+process_timeout(#st{activity = payment} = St) ->
+    Session = get_active_session(St),
+    process_timeout(Session, St);
+process_timeout(#st{activity = {refund, ID}} = St) ->
+    RefundSt = try_get_refund_state(ID, St),
+    Payment = get_payment(St),
+    Opts = get_opts(St),
+    RefundResult = hg_payment_refund:process_signal(timeout, RefundSt, St, Opts#{payment => Payment}),
+    handle_refund_result(ID, RefundResult, St).
+
+process_timeout(undefined, St) ->
+    process_finished_session(St);
+process_timeout(Session, St) ->
     Action = hg_machine_action:new(),
-    case get_active_session(St) of
-        Session when Session /= undefined ->
-            case hg_proxy_provider_session:get_status(Session) of
-                active ->
-                    process(Action, St);
-                suspended ->
-                    process_callback_timeout(Action, St)
-            end;
-        undefined ->
-            process_finished_session(St)
+    case hg_proxy_provider_session:get_status(Session) of
+        active ->
+            process(Action, St);
+        suspended ->
+            process_callback_timeout(Action, St)
     end.
 
 -spec process_call({callback, tag(), _}, st(), opts()) ->
@@ -802,13 +810,13 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
 
 process_callback_timeout(Action, St) ->
     Session = get_active_session(St),
-    Result = handle_proxy_callback_timeout(Action, Session),
+    Result = hg_proxy_provider:handle_proxy_callback_timeout(Action, Session),
     finish_processing(Result, St).
 
 process(Action, St) ->
     ProxyContext = construct_proxy_context(St),
-    {ok, ProxyResult} = issue_process_call(ProxyContext, St),
-    Result = handle_proxy_result(ProxyResult, Action, get_active_session(St)),
+    {ok, ProxyResult} = hg_proxy_provider:process_payment(ProxyContext, get_route(St)),
+    Result = hg_proxy_provider:handle_proxy_result(ProxyResult, Action, get_active_session(St)),
     finish_processing(Result, St).
 
 process_finished_session(St) ->
@@ -828,14 +836,11 @@ process_finished_session(St) ->
 
 handle_callback(Payload, Action, St) ->
     ProxyContext = construct_proxy_context(St),
-    {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St),
-    {Response, Result} = handle_callback_result(CallbackResult, Action, get_active_session(St)),
+    {ok, CallbackResult} = hg_proxy_provider:handle_payment_callback(Payload, ProxyContext, get_route(St)),
+    {Response, Result} = hg_proxy_provider:handle_callback_result(CallbackResult, Action, get_active_session(St)),
     {Response, finish_processing(Result, St)}.
 
-finish_processing(Result, St) ->
-    finish_processing(get_activity(St), Result, St).
-
-finish_processing(payment, {Events, Action}, St) ->
+finish_processing({Events, Action}, St) ->
     Target = get_target(St),
     St1 = collapse_changes(Events, St),
     Session = get_session(Target, St1),
@@ -860,34 +865,24 @@ finish_processing(payment, {Events, Action}, St) ->
             {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
         {_, _} ->
             {next, {Events, Action}}
-    end;
-finish_processing({refund, ID}, {Events, Action}, St) ->
-    Events1 = [?refund_ev(ID, Ev) || Ev <- Events],
-    St1 = collapse_changes(Events1, St),
-    RefundSt1 = try_get_refund_state(ID, St1),
-    Payment = get_payment(St1),
-    Opts = get_opts(St1),
-    RefundOpts = Opts#{payment => Payment},
-    Session = hg_payment_refund:get_refund_session(RefundSt1),
-    SessionStatus = hg_proxy_provider_session:get_status(Session),
-    SessionResult = hg_proxy_provider_session:get_result(Session),
-    case {SessionStatus, SessionResult} of
-        {finished, ?session_succeeded()} ->
-            _AffectedAccounts = hg_payment_refund:commit_refund_cashflow(RefundSt1, RefundOpts),
-            Events2 = [
-                ?refund_ev(ID, ?refund_status_changed(?refund_succeeded())),
-                ?payment_status_changed(?refunded())
-            ],
-            {done, {Events1 ++ Events2, Action}};
-        {finished, ?session_failed(Failure)} ->
-            _AffectedAccounts = hg_payment_refund:rollback_refund_cashflow(RefundSt1, RefundOpts),
-            Events2 = [
-                ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
-            ],
-            {done, {Events1 ++ Events2, Action}};
-        {_, _} ->
-            {next, {Events1, Action}}
     end.
+
+handle_refund_result(ID, {next, {Changes, Action}}, _) ->
+    {next, {wrap_refund_changes(ID, Changes), Action}};
+handle_refund_result(ID, {done, {Changes0, Action}}, St0) ->
+    Changes1 = wrap_refund_changes(ID, Changes0),
+    St1 = collapse_changes(Changes1, St0),
+    RefundSt = try_get_refund_state(ID, St1),
+    case hg_payment_refund:get_refund_status(hg_payment_refund:get_refund(RefundSt)) of
+        ?refund_succeeded() ->
+            Changes2 = [?payment_status_changed(?refunded())],
+            {done, {Changes1 ++ Changes2, Action}};
+        ?refund_failed(_) ->
+            {done, {Changes1, Action}}
+    end.
+
+wrap_refund_changes(ID, Events) ->
+    [?refund_ev(ID, Ev) || Ev <- Events].
 
 get_action({processed, _}, Action, St) ->
     case get_payment_flow(get_payment(St)) of
@@ -899,80 +894,6 @@ get_action({processed, _}, Action, St) ->
 get_action(_, Action, _) ->
     Action.
 
-handle_proxy_result(
-    #prxprv_PaymentProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
-    Action0,
-    Session
-) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
-    {Events3, Action} = handle_proxy_intent(Intent, Action0),
-    {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
-
-handle_callback_result(
-    #prxprv_PaymentCallbackResult{result = ProxyResult, response = Response},
-    Action0,
-    Session
-) ->
-    {Response, handle_proxy_callback_result(ProxyResult, Action0, Session)}.
-
-handle_proxy_callback_result(
-    #prxprv_PaymentCallbackProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
-    Action0,
-    Session
-) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
-    {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
-    {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
-handle_proxy_callback_result(
-    #prxprv_PaymentCallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
-    Action0,
-    Session
-) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
-    {wrap_session_events(Events1 ++ Events2, Session), Action0}.
-
-handle_proxy_callback_timeout(Action, Session) ->
-    Events = [?session_finished(?session_failed(?operation_timeout()))],
-    {wrap_session_events(Events, Session), Action}.
-
-wrap_session_events(SessionEvents, Session) ->
-    Target = hg_proxy_provider_session:get_target(Session),
-    [?session_ev(Target, Ev) || Ev <- SessionEvents].
-
-update_proxy_state(undefined) ->
-    [];
-update_proxy_state(ProxyState) ->
-    [?proxy_st_changed(ProxyState)].
-
-handle_proxy_intent(#'FinishIntent'{status = {success, _}}, Action) ->
-    Events = [?session_finished(?session_succeeded())],
-    {Events, Action};
-
-handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, Action) ->
-    Events = [?session_finished(?session_failed(convert_failure(Failure)))],
-    {Events, Action};
-
-handle_proxy_intent(#'SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
-    Action = hg_machine_action:set_timer(Timer, Action0),
-    Events = try_request_interaction(UserInteraction),
-    {Events, Action};
-
-handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
-    Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
-    Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
-    {Events, Action}.
-
-set_timer(Timer, Action) ->
-    hg_machine_action:set_timer(Timer, Action).
-
-try_request_interaction(undefined) ->
-    [];
-try_request_interaction(UserInteraction) ->
-    [?interaction_requested(UserInteraction)].
-
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
 
@@ -983,6 +904,12 @@ get_cashflow_plan(St) ->
     [{1, get_cashflow(St)}].
 
 %%
+
+construct_proxy_context(St) ->
+    Session = get_active_session(St),
+    PaymentInfo = construct_payment_info(St, get_opts(St)),
+    Route = get_route(St),
+    hg_proxy_provider:construct_proxy_context(Session, PaymentInfo, Route).
 
 -type payment_info() :: dmsl_proxy_provider_thrift:'PaymentInfo'().
 
@@ -999,19 +926,6 @@ construct_payment_info(St, Opts) ->
             payment = construct_proxy_payment(get_payment(St), get_trx(St))
         }
     ).
-
-construct_proxy_context(St) ->
-    #prxprv_PaymentContext{
-        session      = construct_session(get_active_session(St)),
-        payment_info = construct_payment_info(St, get_opts(St)),
-        options      = collect_proxy_options(St)
-    }.
-
-construct_session(Session) ->
-    #prxprv_Session{
-        target = hg_proxy_provider_session:get_target(Session),
-        state = hg_proxy_provider_session:get_proxy_state(Session)
-    }.
 
 construct_payment_info(payment, _St, PaymentInfo) ->
     PaymentInfo;
@@ -1108,34 +1022,6 @@ construct_proxy_cash(#domain_Cash{
         amount = Amount,
         currency = hg_domain:get(Revision, {currency, CurrencyRef})
     }.
-
-collect_proxy_options(
-    #st{
-        route = #domain_PaymentRoute{provider = ProviderRef, terminal = TerminalRef}
-    }
-) ->
-    Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, ProviderRef}),
-    Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
-    Proxy    = Provider#domain_Provider.proxy,
-    ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
-    lists:foldl(
-        fun
-            (undefined, M) ->
-                M;
-            (M1, M) ->
-                maps:merge(M1, M)
-        end,
-        #{},
-        [
-            Terminal#domain_Terminal.options,
-            Proxy#domain_Proxy.additional,
-            ProxyDef#domain_ProxyDefinition.options
-        ]
-    ).
-
-convert_failure(#'Failure'{code = Code, description = Description}) ->
-    ?external_failure(Code, Description).
 
 %%
 
@@ -1340,21 +1226,7 @@ get_customer(CustomerID) ->
         {exception, Error} ->
             error({<<"Can't get customer">>, Error})
     end.
-
-issue_process_call(ProxyContext, St) ->
-    issue_proxy_call('ProcessPayment', [ProxyContext], St).
-
-issue_callback_call(Payload, ProxyContext, St) ->
-    issue_proxy_call('HandlePaymentCallback', [Payload, ProxyContext], St).
-
-issue_proxy_call(Func, Args, St) ->
-    CallOpts = get_call_options(St),
-    hg_woody_wrapper:call(proxy_provider, Func, Args, CallOpts).
-
-get_call_options(St) ->
-    Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, get_route_provider_ref(get_route(St))}),
-    hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
+-spec get_route(st()) -> route().
 
 get_route(#st{route = Route}) ->
     Route.
