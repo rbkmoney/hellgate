@@ -275,7 +275,7 @@ handle_function_(
         #domain_TermSet{payouts = PayoutsTerms} when PayoutsTerms /= undefined ->
             compute_payout_cash_flow(Amount, PayoutsTerms, Shop, Contract, VS, Revision);
         #domain_TermSet{payouts = undefined} ->
-            hg_woody_handler_utils:raise_invalid_request(<<"Payouts not permited by contract terms">>)
+            throw(#'InvalidRequest'{errors = [<<"Payouts not permited by contract terms">>]})
     end.
 
 %%

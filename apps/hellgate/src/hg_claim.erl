@@ -440,7 +440,7 @@ update_shop({payout_tool_changed, PayoutToolID}, Shop) ->
 update_shop({location_changed, Location}, Shop) ->
     Shop#domain_Shop{location = Location};
 update_shop({proxy_changed, _}, Shop) ->
-    % depricated
+    % deprecated
     Shop;
 update_shop(?payout_schedule_changed(ScheduleRef), Shop) ->
     Shop#domain_Shop{payout_schedule = ScheduleRef};
@@ -539,7 +539,7 @@ assert_payment_institutions_equals(OldContractID, NewContractID, Party) ->
             ok;
         #domain_Contract{} ->
             % TODO change to special invalid_changeset error
-            hg_woody_handler_utils:raise_invalid_request(<<"Can't change shop's payment institution">>);
+            throw(#'InvalidRequest'{errors = [<<"Can't change shop's payment institution">>]});
         undefined ->
             raise_invalid_changeset({contract_not_exists, NewContractID})
     end.

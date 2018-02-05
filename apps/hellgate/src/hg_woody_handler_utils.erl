@@ -8,7 +8,6 @@
 -export([collect_user_identity/1]).
 -export([set_user_identity/1]).
 -export([assume_user_identity/1]).
--export([raise_invalid_request/1]).
 
 -spec get_user_identity() -> woody_user_identity:user_identity() | undefined.
 
@@ -60,8 +59,3 @@ map_user_type({internal_user, #payproc_InternalUser{}}) ->
 
 map_user_type({service_user, #payproc_ServiceUser{}}) ->
     <<"service">>.
-
--spec raise_invalid_request(binary()) -> no_return().
-
-raise_invalid_request(Msg) ->
-    throw(#'InvalidRequest'{errors = [Msg]}).
