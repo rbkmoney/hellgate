@@ -741,7 +741,7 @@ ensure_payment_institution(#payproc_ContractParams{} = ContractParams, _) ->
     ContractParams.
 
 get_realm(C, Timestamp, Revision) ->
-    Categories = hg_party:get_categories(C, Timestamp, Revision),
+    Categories = hg_contract:get_categories(C, Timestamp, Revision),
     {Test, Live} = lists:foldl(
         fun(CategoryRef, {TestFound, LiveFound}) ->
             case hg_domain:get(Revision, {category, CategoryRef}) of

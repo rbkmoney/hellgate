@@ -180,7 +180,7 @@ is_shop_modification_need_acceptance(undefined, {creation, ShopParams}, Party, R
             % we can check contract creation and forget about this shop change
             false;
         #domain_Contract{} ->
-            hg_party:is_live_contract(Contract, Revision)
+            hg_contract:is_live(Contract, Revision)
     end;
 is_shop_modification_need_acceptance(undefined, _AnyModification, _, _) ->
     % shop does not exist, so it should be created in same claim
@@ -189,7 +189,7 @@ is_shop_modification_need_acceptance(undefined, _AnyModification, _, _) ->
 is_shop_modification_need_acceptance(Shop, _AnyModification, Party, Revision) ->
     % shop exist, so contract should be
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    hg_party:is_live_contract(Contract, Revision).
+    hg_contract:is_live(Contract, Revision).
 
 is_contract_modification_need_acceptance(undefined, {creation, ContractParams}, Revision) ->
     PaymentInstitution = hg_domain:get(
@@ -204,7 +204,7 @@ is_contract_modification_need_acceptance(undefined, _AnyModification, _) ->
     false;
 is_contract_modification_need_acceptance(Contract, _AnyModification, Revision) ->
     % contract exist
-    hg_party:is_live_contract(Contract, Revision).
+    hg_contract:is_live(Contract, Revision).
 
 has_changeset_conflict(Changeset, ChangesetPending, Timestamp, Revision, Party) ->
     % NOTE We can safely assume that conflict is essentially the fact that two changesets are
@@ -255,13 +255,13 @@ make_change_effect(?shop_modification(ID, Modification), Timestamp, _Revision) -
     ?shop_effect(ID, make_shop_modification_effect(ID, Modification, Timestamp)).
 
 make_contract_modification_effect(ID, {creation, ContractParams}, Timestamp, Revision) ->
-    {created, hg_party:create_contract(ID, ContractParams, Timestamp, Revision)};
+    {created, hg_contract:create(ID, ContractParams, Timestamp, Revision)};
 make_contract_modification_effect(_, ?contract_termination(_), Timestamp, _) ->
     {status_changed, {terminated, #domain_ContractTerminated{terminated_at = Timestamp}}};
 make_contract_modification_effect(_, ?adjustment_creation(AdjustmentID, Params), Timestamp, Revision) ->
-    {adjustment_created, hg_party:create_contract_adjustment(AdjustmentID, Params, Timestamp, Revision)};
+    {adjustment_created, hg_contract:create_adjustment(AdjustmentID, Params, Timestamp, Revision)};
 make_contract_modification_effect(_, ?payout_tool_creation(PayoutToolID, Params), Timestamp, _) ->
-    {payout_tool_created, hg_party:create_payout_tool(PayoutToolID, Params, Timestamp)};
+    {payout_tool_created, hg_payout_tool:create(PayoutToolID, Params, Timestamp)};
 make_contract_modification_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
     {legal_agreement_bound, LegalAgreement}.
 
@@ -490,7 +490,7 @@ assert_contract_change_applicable(ID, {creation, _}, #domain_Contract{}) ->
 assert_contract_change_applicable(ID, _AnyModification, undefined) ->
     raise_invalid_changeset({contract_not_exists, ID});
 assert_contract_change_applicable(ID, ?contract_termination(_), Contract) ->
-    case hg_party:is_contract_active(Contract) of
+    case hg_contract:is_active(Contract) of
         true ->
             ok;
         false ->
@@ -500,14 +500,14 @@ assert_contract_change_applicable(ID, ?contract_termination(_), Contract) ->
             }})
     end;
 assert_contract_change_applicable(_, ?adjustment_creation(AdjustmentID, _), Contract) ->
-    case hg_party:get_contract_adjustment(AdjustmentID, Contract) of
+    case hg_contract:get_adjustment(AdjustmentID, Contract) of
         undefined ->
             ok;
         _ ->
             raise_invalid_changeset({contract_adjustment_already_exists, AdjustmentID})
     end;
 assert_contract_change_applicable(_, ?payout_tool_creation(PayoutToolID, _), Contract) ->
-    case hg_party:get_contract_payout_tool(PayoutToolID, Contract) of
+    case hg_contract:get_payout_tool(PayoutToolID, Contract) of
         undefined ->
             ok;
         _ ->

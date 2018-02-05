@@ -263,7 +263,7 @@ handle_function_(
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Currency = Amount#domain_Cash.currency,
     ok = hg_invoice_utils:validate_currency(Currency, Shop),
-    PayoutTool = hg_party:get_contract_payout_tool(Shop#domain_Shop.payout_tool_id, Contract),
+    PayoutTool = hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract),
     VS = #{
         party => Party,
         shop => Shop,
