@@ -263,19 +263,21 @@ handle_function_(
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Currency = Amount#domain_Cash.currency,
     ok = hg_invoice_utils:validate_currency(Currency, Shop),
-    Revision = hg_domain:head(),
+    PayoutTool = hg_party:get_contract_payout_tool(Shop#domain_Shop.payout_tool_id, Contract),
     VS = #{
         party => Party,
         shop => Shop,
         category => Shop#domain_Shop.category,
         currency => Currency,
-        cost => Amount
+        cost => Amount,
+        payout_method => hg_payout_tool:get_method(PayoutTool)
     },
+    Revision = hg_domain:head(),
     case hg_party:get_terms(Contract, Timestamp, Revision) of
         #domain_TermSet{payouts = PayoutsTerms} when PayoutsTerms /= undefined ->
             compute_payout_cash_flow(Amount, PayoutsTerms, Shop, Contract, VS, Revision);
         #domain_TermSet{payouts = undefined} ->
-            throw(#'InvalidRequest'{errors = [<<"Payouts not permited by contract terms">>]})
+            throw(#payproc_OperationNotPermitted{})
     end.
 
 %%
