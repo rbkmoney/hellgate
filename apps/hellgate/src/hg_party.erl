@@ -20,10 +20,9 @@
 -export([blocking/2]).
 -export([suspension/2]).
 
--export([set_new_contract/3]).
--export([set_contract/2]).
-
 -export([get_contract/2]).
+-export([set_contract/2]).
+-export([set_new_contract/3]).
 
 -export([get_terms/3]).
 -export([reduce_terms/3]).

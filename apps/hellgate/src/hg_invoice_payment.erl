@@ -469,14 +469,14 @@ collect_cash_flow_context(
 collect_account_map(
     Payment,
     #domain_Shop{account = MerchantAccount},
-    #domain_PaymentInstitution{system_account_set = SystemAccountSetSelector},
+    PaymentInstitution,
     #domain_Provider{accounts = ProviderAccounts},
     VS,
     Revision
 ) ->
     Currency = get_currency(get_payment_cost(Payment)),
     ProviderAccount = choose_provider_account(Currency, ProviderAccounts),
-    SystemAccount = choose_system_account(SystemAccountSetSelector, Currency, VS, Revision),
+    SystemAccount = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
     M = #{
         {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
         {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
@@ -495,16 +495,12 @@ collect_account_map(
     end.
 
 choose_provider_account(Currency, Accounts) ->
-    hg_invoice_utils:choose_account(provider, Currency, Accounts).
-
-choose_system_account(SystemAccountSetSelector, Currency, VS, Revision) ->
-    SystemAccountSetRef = reduce_selector(system_account_set, SystemAccountSetSelector, VS, Revision),
-    SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
-    hg_invoice_utils:choose_account(
-        system,
-        Currency,
-        SystemAccountSet#domain_SystemAccountSet.accounts
-    ).
+    case maps:find(Currency, Accounts) of
+        {ok, Account} ->
+            Account;
+        error ->
+            error({misconfiguration, {'No provider account for a given currency', Currency}})
+    end.
 
 choose_external_account(Currency, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),

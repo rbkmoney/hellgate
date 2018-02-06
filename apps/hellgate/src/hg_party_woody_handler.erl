@@ -354,18 +354,9 @@ collect_payout_account_map(
     Revision
 ) ->
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    SystemAccount = choose_system_account(PaymentInstitution, Currency, VS, Revision),
+    SystemAccount = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
     #{
         {merchant , settlement} => ShopAccount#domain_ShopAccount.settlement,
         {merchant , guarantee } => ShopAccount#domain_ShopAccount.guarantee,
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
     }.
-
-choose_system_account(#domain_PaymentInstitution{system_account_set = S}, Currency, VS, Revision) ->
-    SystemAccountSetRef = hg_selector:reduce_to_value(S, VS, Revision),
-    SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
-    hg_invoice_utils:choose_account(
-        system,
-        Currency,
-        SystemAccountSet#domain_SystemAccountSet.accounts
-    ).
