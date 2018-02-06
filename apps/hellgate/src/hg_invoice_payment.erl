@@ -112,8 +112,8 @@
 -type cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
 -type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
 -type session_result()    :: dmsl_payment_processing_thrift:'SessionResult'().
--type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
--type tag()               :: dmsl_proxy_thrift:'CallbackTag'().
+-type proxy_state()       :: dmsl_proxy_provider_thrift:'ProxyState'().
+-type tag()               :: dmsl_proxy_provider_thrift:'CallbackTag'().
 
 -type session() :: #{
     target      := target(),
@@ -1010,20 +1010,20 @@ update_proxy_state(undefined) ->
 update_proxy_state(ProxyState) ->
     [?proxy_st_changed(ProxyState)].
 
-handle_proxy_intent(#'FinishIntent'{status = {success, _}}, Action) ->
+handle_proxy_intent(#'prxprv_FinishIntent'{status = {success, _}}, Action) ->
     Events = [?session_finished(?session_succeeded())],
     {Events, Action};
 
-handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, Action) ->
-    Events = [?session_finished(?session_failed(convert_failure(Failure)))],
+handle_proxy_intent(#'prxprv_FinishIntent'{status = {failure, Failure}}, Action) ->
+    Events = [?session_finished(?session_failed({failure, Failure}))],
     {Events, Action};
 
-handle_proxy_intent(#'SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
+handle_proxy_intent(#'prxprv_SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
     Events = try_request_interaction(UserInteraction),
     {Events, Action};
 
-handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
+handle_proxy_intent(#'prxprv_SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
     {Events, Action}.
@@ -1206,9 +1206,6 @@ collect_proxy_options(
             ProxyDef#domain_ProxyDefinition.options
         ]
     ).
-
-convert_failure(#'Failure'{code = Code, description = Description}) ->
-    ?external_failure(Code, Description).
 
 %%
 
@@ -1849,12 +1846,21 @@ marshal(interaction, {payment_terminal_reciept, #'PaymentTerminalReceipt'{short_
         }
     };
 
+marshal(sub_failure, undefined) ->
+    undefined;
+marshal(sub_failure, #domain_SubFailure{} = SubFailure) ->
+    genlib_map:compact(#{
+        <<"code">> => marshal(str        , SubFailure#domain_SubFailure.code),
+        <<"sub" >> => marshal(sub_failure, SubFailure#domain_SubFailure.sub )
+    });
+
 marshal(failure, {operation_timeout, _}) ->
-    [2, <<"operation_timeout">>];
-marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
-    [2, [<<"external_failure">>, genlib_map:compact(#{
-        <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
-        <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
+    [3, <<"operation_timeout">>];
+marshal(failure, {failure, #domain_Failure{} = Failure}) ->
+    [3, [<<"failure">>, genlib_map:compact(#{
+        <<"code"  >> => marshal(str        , Failure#domain_Failure.code  ),
+        <<"reason">> => marshal(str        , Failure#domain_Failure.reason),
+        <<"sub"   >> => marshal(sub_failure, Failure#domain_Failure.sub   )
     })]];
 
 marshal(on_hold_expiration, cancel) ->
@@ -2322,21 +2328,38 @@ unmarshal(interaction, ?legacy_payment_terminal_reciept(SPID, DueDate)) ->
         due = unmarshal(str, DueDate)
     }};
 
+unmarshal(sub_failure, undefined) ->
+    undefined;
+unmarshal(sub_failure, #{<<"code">> := Code} = SubFailure) ->
+    #domain_SubFailure{
+        code   = unmarshal(str        , Code),
+        sub    = unmarshal(sub_failure, maps:get(<<"sub">>, SubFailure, undefined))
+    };
+
+unmarshal(failure, [3, <<"operation_timeout">>]) ->
+    {operation_timeout, #domain_OperationTimeout{}};
+unmarshal(failure, [3, [<<"failure">>, #{<<"code">> := Code} = Failure]]) ->
+    {failure, #domain_Failure{
+        code   = unmarshal(str        , Code),
+        reason = unmarshal(str        , maps:get(<<"reason">>, Failure, undefined)),
+        sub    = unmarshal(sub_failure, maps:get(<<"sub"   >>, Failure, undefined))
+    }};
+
 unmarshal(failure, [2, <<"operation_timeout">>]) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [2, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]]) ->
     Description = maps:get(<<"description">>, ExternalFailure, undefined),
-    {external_failure, #domain_ExternalFailure{
-        code        = unmarshal(str, Code),
-        description = unmarshal(str, Description)
+    {failure, #domain_Failure{
+        code   = unmarshal(str, Code),
+        reason = unmarshal(str, Description)
     }};
 
 unmarshal(failure, [1, ?legacy_operation_timeout()]) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [1, ?legacy_external_failure(Code, Description)]) ->
-    {external_failure, #domain_ExternalFailure{
-        code        = unmarshal(str, Code),
-        description = unmarshal(str, Description)
+    {failure, #domain_Failure{
+        code   = unmarshal(str, Code),
+        reason = unmarshal(str, Description)
     }};
 
 unmarshal(on_hold_expiration, <<"cancel">>) ->

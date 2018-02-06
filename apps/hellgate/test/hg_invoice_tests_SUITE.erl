@@ -1143,7 +1143,7 @@ payment_with_offsite_preauth_failed(C) ->
     [
         ?payment_ev(
             PaymentID,
-            ?session_ev(?processed(), ?session_finished(?session_failed(Failure = ?external_failure(<<"smth wrong">>))))
+            ?session_ev(?processed(), ?session_finished(?session_failed(Failure = ?failure(<<"smth wrong">>))))
         ),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
     ] = next_event(InvoiceID, Client),

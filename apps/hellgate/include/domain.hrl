@@ -13,10 +13,10 @@
         terminal = TerminalRef
     }).
 
--define(external_failure(Code),
-    ?external_failure(Code, undefined)).
--define(external_failure(Code, Description),
-    {external_failure, #domain_ExternalFailure{code = Code, description = Description}}).
+-define(failure(Code),
+    ?failure(Code, undefined)).
+-define(failure(Code, Reason),
+    {failure, #domain_Failure{code = Code, reason = Reason}}).
 
 -define(operation_timeout(),
     {operation_timeout, #domain_OperationTimeout{}}).

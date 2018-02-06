@@ -22,15 +22,15 @@
 -define(COWBOY_PORT, 9988).
 
 -define(sleep(To, UI),
-    {sleep, #'SleepIntent'{timer = {timeout, To}, user_interaction = UI}}).
+    {sleep, #'prxprv_SleepIntent'{timer = {timeout, To}, user_interaction = UI}}).
 -define(suspend(Tag, To, UI),
-    {suspend, #'SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
+    {suspend, #'prxprv_SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
 -define(finish(Status),
-    {finish, #'FinishIntent'{status = Status}}).
+    {finish, #'prxprv_FinishIntent'{status = Status}}).
 -define(success(),
-    {success, #'Success'{}}).
+    {success, #'prxprv_Success'{}}).
 -define(failure(),
-    {failure, #'Failure'{code = <<"smth wrong">>}}).
+    {failure, #'domain_Failure'{code = <<"smth wrong">>}}).
 -define(recurrent_token_finish(Token),
     {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
 -define(recurrent_token_finish_w_failure(Failure),
@@ -137,7 +137,7 @@ generate_token(undefined, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPay
     case get_recurrent_paytool_scenario(RecurrentPaytool) of
         forbidden ->
             #prxprv_RecurrentTokenProxyResult{
-                intent = ?recurrent_token_finish_w_failure(#'Failure'{code = <<"forbidden">>})
+                intent = ?recurrent_token_finish_w_failure(#'domain_Failure'{code = <<"forbidden">>})
             };
         _ ->
             token_sleep(1, <<"sleeping">>)
