@@ -242,14 +242,42 @@ handle_function_(
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     Revision = hg_domain:head(),
-    case hg_domain:find(Revision, {payment_institution, PaymentInstitutionRef}) of
-        #domain_PaymentInstitution{} = P ->
-            VS = #{party => hg_party_machine:get_party(PartyID)},
-            ContractTemplate = get_default_contract_template(P, VS, Revision),
-            Terms = hg_party:get_terms(ContractTemplate, hg_datetime:format_now(), Revision),
-            hg_party:reduce_terms(Terms, VS, Revision);
-        notfound ->
-            throw(#payproc_PaymentInstitutionNotFound{})
+    PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
+    VS = #{party => hg_party_machine:get_party(PartyID)},
+    ContractTemplate = get_default_contract_template(PaymentInstitution, VS, Revision),
+    Terms = hg_party:get_terms(ContractTemplate, hg_datetime:format_now(), Revision),
+    hg_party:reduce_terms(Terms, VS, Revision);
+
+%% Payouts adhocs
+
+handle_function_(
+    'ComputePayoutCashFlow',
+    [UserInfo, PartyID, #payproc_PayoutParams{id = ShopID, amount = Amount, timestamp = Timestamp} = _PayoutParams],
+    _Opts
+) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_party_mgmt_meta(PartyID),
+    ok = assert_party_accessible(PartyID),
+    Party = checkout_party(PartyID, {timestamp, Timestamp}),
+    Shop = hg_party:get_shop(ShopID, Party),
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    Currency = Amount#domain_Cash.currency,
+    ok = hg_invoice_utils:validate_currency(Currency, Shop),
+    PayoutTool = hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract),
+    VS = #{
+        party => Party,
+        shop => Shop,
+        category => Shop#domain_Shop.category,
+        currency => Currency,
+        cost => Amount,
+        payout_method => hg_payout_tool:get_method(PayoutTool)
+    },
+    Revision = hg_domain:head(),
+    case hg_party:get_terms(Contract, Timestamp, Revision) of
+        #domain_TermSet{payouts = PayoutsTerms} when PayoutsTerms /= undefined ->
+            compute_payout_cash_flow(Amount, PayoutsTerms, Shop, Contract, VS, Revision);
+        #domain_TermSet{payouts = undefined} ->
+            throw(#payproc_OperationNotPermitted{})
     end.
 
 %%
@@ -292,6 +320,43 @@ ensure_shop(#domain_Shop{} = Shop) ->
 ensure_shop(undefined) ->
     throw(#payproc_ShopNotFound{}).
 
+get_payment_institution(PaymentInstitutionRef, Revision) ->
+    case hg_domain:find(Revision, {payment_institution, PaymentInstitutionRef}) of
+        #domain_PaymentInstitution{} = P ->
+            P;
+        notfound ->
+            throw(#payproc_PaymentInstitutionNotFound{})
+    end.
+
 get_default_contract_template(#domain_PaymentInstitution{default_contract_template = ContractSelector}, VS, Revision) ->
     ContractTemplateRef = hg_selector:reduce_to_value(ContractSelector, VS, Revision),
     hg_domain:get(Revision, {contract_template, ContractTemplateRef}).
+
+compute_payout_cash_flow(
+    Amount,
+    #domain_PayoutsServiceTerms{fees = CashFlowSelector},
+    Shop,
+    Contract,
+    VS,
+    Revision
+) ->
+    Cashflow = hg_selector:reduce_to_value(CashFlowSelector, VS, Revision),
+    CashFlowContext = #{operation_amount => Amount},
+    Currency = Amount#domain_Cash.currency,
+    AccountMap = collect_payout_account_map(Currency, Shop, Contract, VS, Revision),
+    hg_cashflow:finalize(Cashflow, CashFlowContext, AccountMap).
+
+collect_payout_account_map(
+    Currency,
+    #domain_Shop{account = ShopAccount},
+    #domain_Contract{payment_institution = PaymentInstitutionRef},
+    VS,
+    Revision
+) ->
+    PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
+    SystemAccount = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
+    #{
+        {merchant , settlement} => ShopAccount#domain_ShopAccount.settlement,
+        {merchant , guarantee } => ShopAccount#domain_ShopAccount.guarantee,
+        {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
+    }.
