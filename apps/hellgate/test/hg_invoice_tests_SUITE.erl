@@ -7,6 +7,7 @@
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -1143,11 +1144,13 @@ payment_with_offsite_preauth_failed(C) ->
     [
         ?payment_ev(
             PaymentID,
-            ?session_ev(?processed(), ?session_finished(?session_failed(Failure = ?failure(<<"smth wrong">>))))
+            ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
         ),
-        ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client),
+    {authorization_failure, {unknown, #payprocerr_GeneralFailure{}}} = hg_errors:error_to_static(Failure),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
+
 %%
 
 next_event(InvoiceID, Client) ->

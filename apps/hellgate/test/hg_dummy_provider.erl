@@ -1,4 +1,7 @@
 -module(hg_dummy_provider).
+
+-include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
+
 -behaviour(hg_woody_wrapper).
 
 -export([handle_function/3]).
@@ -29,8 +32,8 @@
     {finish, #'prxprv_FinishIntent'{status = Status}}).
 -define(success(),
     {success, #'prxprv_Success'{}}).
--define(failure(),
-    {failure, #'domain_Failure'{code = <<"smth wrong">>}}).
+-define(failure(Failure),
+    {failure, Failure}).
 -define(recurrent_token_finish(Token),
     {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
 -define(recurrent_token_finish_w_failure(Failure),
@@ -250,7 +253,8 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
         processed ->
             finish(?success(), get_payment_id(PaymentInfo));
         {pending, Count} when Count > 3 ->
-            finish(?failure());
+            Failure = hg_errors:error_to_dynamic({authorization_failure, {unknown, #payprocerr_GeneralFailure{}}}),
+            finish(?failure(Failure));
         {pending, Count} ->
             set_transaction_state(Key, {pending, Count + 1}),
             sleep(1, <<"sleeping_with_user_interaction">>);
