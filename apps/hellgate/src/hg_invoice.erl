@@ -565,49 +565,51 @@ process_payment_call(Call, PaymentID, PaymentSession, St) ->
     {Response, PaymentResult} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
     maps:merge(#{response => Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, St)).
 
-handle_payment_result(Result, PaymentID, PaymentSession, St) ->
-    case Result of
-        {next, {Changes, Action}} ->
+handle_payment_result({next, {Changes, Action}}, PaymentID, _PaymentSession, St) ->
+    #{
+        changes => wrap_payment_changes(PaymentID, Changes),
+        action  => Action,
+        state   => St
+    };
+handle_payment_result({done, {Changes1, Action}}, PaymentID, PaymentSession, #st{invoice = Invoice} = St) ->
+    PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Changes1),
+    Payment = hg_invoice_payment:get_payment(PaymentSession1),
+    case get_payment_status(Payment) of
+        ?processed() ->
             #{
-                changes => wrap_payment_changes(PaymentID, Changes),
+                changes => wrap_payment_changes(PaymentID, Changes1),
                 action  => Action,
                 state   => St
             };
-        {done, {Changes1, Action}} ->
-            PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Changes1),
-            Payment = hg_invoice_payment:get_payment(PaymentSession1),
-            case get_payment_status(Payment) of
-                ?processed() ->
-                    #{
-                        changes => wrap_payment_changes(PaymentID, Changes1),
-                        action  => Action,
-                        state   => St
-                    };
-                ?captured() ->
-                    Changes2 = [?invoice_status_changed(?invoice_paid())],
-                    #{
-                        changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
-                        action  => Action,
-                        state   => St
-                    };
-                ?refunded() ->
-                    #{
-                        changes => wrap_payment_changes(PaymentID, Changes1),
-                        state   => St
-                    };
-                ?failed(_) ->
-                    #{
-                        changes => wrap_payment_changes(PaymentID, Changes1),
-                        action  => set_invoice_timer(St),
-                        state   => St
-                    };
-                ?cancelled() ->
-                    #{
-                        changes => wrap_payment_changes(PaymentID, Changes1),
-                        action  => set_invoice_timer(St),
-                        state   => St
-                    }
-            end
+        ?captured() ->
+            Changes2 = case Invoice of
+                #domain_Invoice{status = ?invoice_paid()} ->
+                    [];
+                #domain_Invoice{} ->
+                    [?invoice_status_changed(?invoice_paid())]
+            end,
+            #{
+                changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
+                action  => Action,
+                state   => St
+            };
+        ?refunded() ->
+            #{
+                changes => wrap_payment_changes(PaymentID, Changes1),
+                state   => St
+            };
+        ?failed(_) ->
+            #{
+                changes => wrap_payment_changes(PaymentID, Changes1),
+                action  => set_invoice_timer(St),
+                state   => St
+            };
+        ?cancelled() ->
+            #{
+                changes => wrap_payment_changes(PaymentID, Changes1),
+                action  => set_invoice_timer(St),
+                state   => St
+            }
     end.
 
 wrap_payment_changes(PaymentID, Changes) ->

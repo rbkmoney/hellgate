@@ -49,6 +49,7 @@
 -export([payment_hold_capturing/1]).
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
+-export([payment_partial_refunds_success/1]).
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
 -export([payment_with_offsite_preauth_failed/1]).
@@ -114,6 +115,7 @@ all() ->
         {group, holds_management},
 
         payment_refund_success,
+        payment_partial_refunds_success,
 
         rounding_cashflow_volume,
         {group, offsite_preauth_payment},
@@ -209,6 +211,8 @@ end_per_suite(C) ->
     {exception, #payproc_OperationNotPermitted{}}).
 -define(insufficient_account_balance(),
     {exception, #payproc_InsufficientAccountBalance{}}).
+-define(invoice_payment_amount_exceeded(Maximum),
+    {exception, #payproc_InvoicePaymentAmountExceeded{maximum = Maximum}}).
 
 -spec init_per_group(group_name(), config()) -> config().
 
@@ -925,10 +929,7 @@ payment_refund_success(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     Refund =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _))),
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))
-    ] = next_event(InvoiceID, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded())))),
@@ -940,6 +941,74 @@ payment_refund_success(C) ->
     % no more refunds for you
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
+
+-spec payment_partial_refunds_success(config()) -> _ | no_return().
+
+payment_partial_refunds_success(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    RefundParams0 = make_refund_params(43000, <<"RUB">>),
+    % top up merchant account
+    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 3000, C),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    % refund amount exceeds payment amount
+    ?invoice_payment_amount_exceeded(_) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams0, Client),
+    % first refund
+    RefundParams1 = make_refund_params(10000, <<"RUB">>),
+    Refund1 = #domain_InvoicePaymentRefund{id = RefundID1} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID1, Refund1, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    % refund amount exceeds payment amount
+    RefundParams2 = make_refund_params(33000, <<"RUB">>),
+    ?invoice_payment_amount_exceeded(_) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
+    % second refund
+    RefundParams3 = make_refund_params(30000, <<"RUB">>),
+    Refund3 = #domain_InvoicePaymentRefund{id = RefundID3} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams3, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID3, Refund3, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    % check payment status = captured
+    #payproc_InvoicePayment{
+        payment = #domain_InvoicePayment{status = ?captured()},
+        refunds =
+            [
+                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
+                #domain_InvoicePaymentRefund{cash = ?cash(30000, <<"RUB">>), status = ?refund_succeeded()}
+            ]
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    % last refund
+    RefundParams4 = make_refund_params(2000, <<"RUB">>),
+    Refund4 = #domain_InvoicePaymentRefund{id = RefundID4} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams4, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID4, Refund4, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?session_finished(?session_succeeded())))),
+        ?payment_ev(PaymentID, ?refund_ev(_, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
+    ] = next_event(InvoiceID, Client),
+    % check payment status = refunded and all refunds
+    #payproc_InvoicePayment{
+        payment = #domain_InvoicePayment{status = ?refunded()},
+        refunds =
+            [
+                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
+                #domain_InvoicePaymentRefund{cash = ?cash(30000, <<"RUB">>), status = ?refund_succeeded()},
+                #domain_InvoicePaymentRefund{cash = ?cash(2000, <<"RUB">>), status = ?refund_succeeded()}
+            ]
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    % no more refunds for you
+    RefundParams5 = make_refund_params(1000, <<"RUB">>),
+    ?invalid_payment_status(?refunded()) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams5, Client).
 
 %%
 
@@ -1349,6 +1418,12 @@ make_refund_params() ->
         reason = <<"ZANOZED">>
     }.
 
+make_refund_params(Amount, Currency) ->
+    #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>,
+        cash = make_cash(Amount, Currency)
+    }.
+
 make_adjustment_params() ->
     make_adjustment_params(<<>>).
 
@@ -1439,6 +1514,21 @@ await_payment_process_failure(InvoiceID, PaymentID, Client) ->
             ?session_ev(?processed(), ?session_finished(?session_failed(Failure = ?operation_timeout())))
         ),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
+
+refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client) ->
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
+
+await_refund_payment_process_finish(InvoiceID, PaymentID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?session_finished(?session_succeeded())))),
+        ?payment_ev(PaymentID, ?refund_ev(_, ?refund_status_changed(?refund_succeeded())))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
