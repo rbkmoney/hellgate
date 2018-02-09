@@ -10,6 +10,7 @@
 -export([between/3]).
 -export([add_interval/2]).
 -export([parse_ts/1]).
+-export([add_time_span/2]).
 
 -include_lib("dmsl/include/dmsl_base_thrift.hrl").
 
@@ -18,6 +19,7 @@
 -type timestamp() :: dmsl_base_thrift:'Timestamp'().
 -type timestamp_interval() :: dmsl_base_thrift:'TimestampInterval'().
 -type timestamp_interval_bound() :: dmsl_base_thrift:'TimestampIntervalBound'().
+-type time_span() :: dmsl_base_thrift:'TimeSpan'().
 
 %%
 
@@ -71,6 +73,26 @@ add_interval(Timestamp, {YY, MM, DD}) ->
 
 parse_ts(Bin) when is_binary(Bin) ->
     hg_utils:unwrap_result(rfc3339:to_time(Bin, seconds)).
+
+-spec add_time_span(time_span(), timestamp() | integer()) -> timestamp().
+
+add_time_span(TimeSpan, Timestamp) when is_binary(Timestamp) ->
+    add_time_span(TimeSpan, parse_ts(Timestamp));
+
+add_time_span(#'TimeSpan'{years = Years} = TimeSpan, Timestamp) when Years =/= undefined ->
+    add_time_span(TimeSpan#'TimeSpan'{years = undefined}, genlib_time:add_days(Years * 365, Timestamp));
+add_time_span(#'TimeSpan'{months = Months} = TimeSpan, Timestamp) when Months =/= undefined ->
+    add_time_span(TimeSpan#'TimeSpan'{months = undefined}, genlib_time:add_days(Months * 30, Timestamp));
+add_time_span(#'TimeSpan'{days = Days} = TimeSpan, Timestamp) when Days =/= undefined ->
+    add_time_span(TimeSpan#'TimeSpan'{days = undefined}, genlib_time:add_days(Timestamp, Days));
+add_time_span(#'TimeSpan'{hours = Hours} = TimeSpan, Timestamp) when Hours =/= undefined ->
+    add_time_span(TimeSpan#'TimeSpan'{hours = undefined}, genlib_time:add_hours(Timestamp, Hours));
+add_time_span(#'TimeSpan'{minutes = Minutes} = TimeSpan, Timestamp) when Minutes =/= undefined ->
+    add_time_span(TimeSpan#'TimeSpan'{minutes = undefined}, genlib_time:add_minutes(Timestamp, Minutes));
+add_time_span(#'TimeSpan'{seconds = Seconds} = TimeSpan, Timestamp) when Seconds =/= undefined ->
+    add_time_span(TimeSpan#'TimeSpan'{seconds = undefined}, genlib_time:add_seconds(Timestamp, Seconds));
+add_time_span(_, Timestamp) ->
+    format_ts(Timestamp).
 
 %% Internal functions
 

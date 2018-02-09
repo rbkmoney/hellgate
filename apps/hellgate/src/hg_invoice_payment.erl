@@ -392,9 +392,16 @@ validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     VS#{payment_tool => PaymentTool}.
 
 validate_payment_cost(Cost, CashLimitSelector, VS, Revision) ->
-    Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
-    ok = validate_limit(Cost, Limit),
+    ok = validate_cash(Cost, CashLimitSelector, VS, Revision),
     VS#{cost => Cost}.
+
+validate_refund_cash(Cash, CashLimitSelector, VS, Revision) ->
+    ok = validate_cash(Cash, CashLimitSelector, VS, Revision),
+    VS#{cash => Cash}.
+
+validate_cash(Cash, CashLimitSelector, VS, Revision) ->
+    Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
+    ok = validate_limit(Cash, Limit).
 
 validate_limit(Cash, CashRange) ->
     case hg_condition:test_cash_range(Cash, CashRange) of
@@ -415,6 +422,16 @@ validate_route(Route = #domain_PaymentRoute{}, _Payment) ->
     Route;
 validate_route(undefined, Payment) ->
     error({misconfiguration, {'No route found for a payment', Payment}}).
+
+validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Revision) ->
+    EligibilityTime = reduce_selector(eligibility_time, TimeSpanSelector, VS, Revision),
+    RefundEndTime = hg_datetime:add_time_span(EligibilityTime, PaymentCreatedAt),
+    case hg_datetime:compare(RefundCreatedAt, RefundEndTime) of
+        later ->
+            throw(#payproc_OperationNotPermitted{});
+        Other when Other == earlier; Other == simultaneously ->
+            VS
+    end.
 
 collect_varset(St, Opts) ->
     collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
@@ -615,7 +632,7 @@ refund(Params, St0, Opts) ->
         cash            = Cash
     },
     MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision)),
-    VS1 = validate_refund(Payment, MerchantTerms, VS0, Revision),
+    VS1 = validate_refund(Refund, Payment, MerchantTerms, VS0, Revision),
     ProviderTerms = get_provider_refunds_terms(get_provider_payments_terms(Route, Revision), Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
@@ -678,14 +695,27 @@ get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = Terms}, _Pay
 get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = undefined}, Payment) ->
     error({misconfiguration, {'No refund terms for a payment', Payment}}).
 
-validate_refund(Payment, RefundTerms, VS0, Revision) ->
+validate_refund(Refund, Payment, RefundTerms, VS0, Revision) ->
     VS1 = validate_payment_tool(
         get_payment_tool(Payment),
         RefundTerms#domain_PaymentRefundsServiceTerms.payment_methods,
         VS0,
         Revision
     ),
-    VS1.
+    VS2 = validate_refund_cash(
+        get_refund_cash(Refund),
+        RefundTerms#domain_PaymentRefundsServiceTerms.cash_limit,
+        VS1,
+        Revision
+    ),
+    VS3 = validate_refund_time(
+        get_refund_created_at(Refund),
+        get_payment_created_at(Payment),
+        RefundTerms#domain_PaymentRefundsServiceTerms.eligibility_time,
+        VS2,
+        Revision
+    ),
+    VS3.
 
 collect_refund_cashflow(
     #domain_PaymentRefundsServiceTerms{fees = MerchantCashflowSelector},
@@ -1286,6 +1316,9 @@ get_payment_flow(#domain_InvoicePayment{flow = Flow}) ->
 
 get_payment_tool(#domain_InvoicePayment{payer = Payer}) ->
     get_payer_payment_tool(Payer).
+
+get_payment_created_at(#domain_InvoicePayment{created_at = CreatedAt}) ->
+    CreatedAt.
 
 get_payer_payment_tool(?payment_resource_payer(PaymentResource, _ContactInfo)) ->
     get_resource_payment_tool(PaymentResource);

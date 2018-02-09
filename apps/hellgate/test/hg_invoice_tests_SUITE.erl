@@ -50,6 +50,8 @@
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
 -export([payment_partial_refunds_success/1]).
+-export([invalid_amount_payment_partial_refund/1]).
+-export([invalid_time_payment_partial_refund/1]).
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
 -export([payment_with_offsite_preauth_failed/1]).
@@ -116,6 +118,8 @@ all() ->
 
         payment_refund_success,
         payment_partial_refunds_success,
+        invalid_amount_payment_partial_refund,
+        invalid_time_payment_partial_refund,
 
         rounding_cashflow_volume,
         {group, offsite_preauth_payment},
@@ -1010,6 +1014,36 @@ payment_partial_refunds_success(C) ->
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams5, Client).
 
+
+-spec invalid_amount_payment_partial_refund(config()) -> _ | no_return().
+
+invalid_amount_payment_partial_refund(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    RefundParams = make_refund_params(500, <<"RUB">>),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Invalid amount, less than allowed minumum">>]
+    }} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
+
+-spec invalid_time_payment_partial_refund(config()) -> _ | no_return().
+
+invalid_time_payment_partial_refund(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    RefundParams = make_refund_params(5000, <<"RUB">>),
+    ok = hg_domain:update(construct_term_set_for_refund_eligibility_time(1)),
+    ?operation_not_permitted() =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
+
 %%
 
 -spec consistent_history(config()) -> test_return().
@@ -1659,7 +1693,12 @@ construct_domain_fixture() ->
                         {system, settlement},
                         ?fixed(100, <<"RUB">>)
                     )
-                ]}
+                ]},
+                cash_limit = {value, ?cashrng(
+                    {inclusive, ?cash(      1000, <<"RUB">>)},
+                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                )},
+                eligibility_time = {value, #'TimeSpan'{minutes = 1}}
             }
         },
         recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
@@ -1739,7 +1778,12 @@ construct_domain_fixture() ->
                     ?pmt(bank_card, mastercard)
                 ])},
                 fees = {value, [
-                ]}
+                ]},
+                cash_limit = {value, ?cashrng(
+                    {inclusive, ?cash(      1000, <<"RUB">>)},
+                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                )},
+                eligibility_time = {value, #'TimeSpan'{minutes = 1}}
             }
         }
     },
@@ -2217,4 +2261,34 @@ construct_term_set_for_cost(LowerBound, UpperBound) ->
             }]
         }
     }}.
+
+construct_term_set_for_refund_eligibility_time(Seconds) ->
+    TermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            refunds = #domain_PaymentRefundsServiceTerms{
+                payment_methods = {value, ?ordset([
+                    ?pmt(bank_card, visa),
+                    ?pmt(bank_card, mastercard)
+                ])},
+                fees = {value, [
+                ]},
+                cash_limit = {value, ?cashrng(
+                    {inclusive, ?cash(      1000, <<"RUB">>)},
+                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                )},
+                eligibility_time = {value, #'TimeSpan'{seconds = Seconds}}
+            }
+        }
+    },
+    {term_set_hierarchy, #domain_TermSetHierarchyObject{
+        ref = ?trms(2),
+        data = #domain_TermSetHierarchy{
+            parent_terms = undefined,
+            term_sets = [#domain_TimedTermSet{
+                action_time = #'TimestampInterval'{},
+                terms = TermSet
+            }]
+        }
+    }}.
+
 %
