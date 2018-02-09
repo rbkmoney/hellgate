@@ -480,13 +480,13 @@ collect_cash_flow_context(
     #domain_InvoicePayment{cost = Cost}
 ) ->
     #{
-        payment_amount => Cost
+        operation_amount => Cost
     };
 collect_cash_flow_context(
     #domain_InvoicePaymentRefund{cash = Cash}
 ) ->
     #{
-        payment_amount => Cash
+        operation_amount => Cash
     }.
 
 collect_account_map(
