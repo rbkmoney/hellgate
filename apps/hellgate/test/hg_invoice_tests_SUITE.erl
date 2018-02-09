@@ -828,12 +828,12 @@ get_adjustment_provider_cashflow(initial) ->
         ?cfpost(
             {provider, settlement},
             {merchant, settlement},
-            ?share(1, 1, payment_amount)
+            ?share(1, 1, operation_amount)
         ),
         ?cfpost(
             {system, settlement},
             {provider, settlement},
-            ?share(21, 1000, payment_amount)
+            ?share(21, 1000, operation_amount)
         )
     ];
 get_adjustment_provider_cashflow(actual) ->
@@ -841,12 +841,12 @@ get_adjustment_provider_cashflow(actual) ->
         ?cfpost(
             {provider, settlement},
             {merchant, settlement},
-            ?share(1, 1, payment_amount)
+            ?share(1, 1, operation_amount)
         ),
         ?cfpost(
             {system, settlement},
             {provider, settlement},
-            ?share(16, 1000, payment_amount)
+            ?share(16, 1000, operation_amount)
         ),
         ?cfpost(
             {system, settlement},
@@ -1158,17 +1158,17 @@ get_cashflow_rounding_fixture(Revision) ->
                         ?cfpost(
                             {provider, settlement},
                             {merchant, settlement},
-                            ?share_with_rounding_method(1, 200000, payment_amount, round_half_towards_zero)
+                            ?share_with_rounding_method(1, 200000, operation_amount, round_half_towards_zero)
                         ),
                         ?cfpost(
                             {system, settlement},
                             {provider, settlement},
-                            ?share_with_rounding_method(1, 200000, payment_amount, round_half_away_from_zero)
+                            ?share_with_rounding_method(1, 200000, operation_amount, round_half_away_from_zero)
                         ),
                         ?cfpost(
                             {system, settlement},
                             {external, outcome},
-                            ?share(1, 200000, payment_amount)
+                            ?share(1, 200000, operation_amount)
                         )
                     ]}
                 }
@@ -1665,7 +1665,7 @@ construct_domain_fixture() ->
                         ?cfpost(
                             {merchant, settlement},
                             {system, settlement},
-                            ?share(45, 1000, payment_amount)
+                            ?share(45, 1000, operation_amount)
                         )
                     ]}
                 }
@@ -1745,7 +1745,7 @@ construct_domain_fixture() ->
                         ?cfpost(
                             {merchant, settlement},
                             {system, settlement},
-                            ?share(45, 1000, payment_amount)
+                            ?share(45, 1000, operation_amount)
                         )
                     ]}
                 },
@@ -1755,7 +1755,7 @@ construct_domain_fixture() ->
                         ?cfpost(
                             {merchant, settlement},
                             {system, settlement},
-                            ?share(65, 1000, payment_amount)
+                            ?share(65, 1000, operation_amount)
                         )
                     ]}
                 }
@@ -1992,12 +1992,12 @@ construct_domain_fixture() ->
                                 ?cfpost(
                                     {provider, settlement},
                                     {merchant, settlement},
-                                    ?share(1, 1, payment_amount)
+                                    ?share(1, 1, operation_amount)
                                 ),
                                 ?cfpost(
                                     {system, settlement},
                                     {provider, settlement},
-                                    ?share(18, 1000, payment_amount)
+                                    ?share(18, 1000, operation_amount)
                                 )
                             ]}
                         },
@@ -2009,12 +2009,12 @@ construct_domain_fixture() ->
                                 ?cfpost(
                                     {provider, settlement},
                                     {merchant, settlement},
-                                    ?share(1, 1, payment_amount)
+                                    ?share(1, 1, operation_amount)
                                 ),
                                 ?cfpost(
                                     {system, settlement},
                                     {provider, settlement},
-                                    ?share(19, 1000, payment_amount)
+                                    ?share(19, 1000, operation_amount)
                                 )
                             ]}
                         },
@@ -2026,12 +2026,12 @@ construct_domain_fixture() ->
                                 ?cfpost(
                                     {provider, settlement},
                                     {merchant, settlement},
-                                    ?share(1, 1, payment_amount)
+                                    ?share(1, 1, operation_amount)
                                 ),
                                 ?cfpost(
                                     {system, settlement},
                                     {provider, settlement},
-                                    ?share(20, 1000, payment_amount)
+                                    ?share(20, 1000, operation_amount)
                                 )
                             ]}
                         }
@@ -2051,7 +2051,7 @@ construct_domain_fixture() ->
                             ?cfpost(
                                 {merchant, settlement},
                                 {provider, settlement},
-                                ?share(1, 1, payment_amount)
+                                ?share(1, 1, operation_amount)
                             )
                         ]}
                     }
@@ -2108,12 +2108,12 @@ construct_domain_fixture() ->
                         ?cfpost(
                             {provider, settlement},
                             {merchant, settlement},
-                            ?share(1, 1, payment_amount)
+                            ?share(1, 1, operation_amount)
                         ),
                         ?cfpost(
                             {system, settlement},
                             {provider, settlement},
-                            ?share(16, 1000, payment_amount)
+                            ?share(16, 1000, operation_amount)
                         )
                     ]},
                     refunds = #domain_PaymentRefundsProvisionTerms{
@@ -2121,7 +2121,7 @@ construct_domain_fixture() ->
                             ?cfpost(
                                 {merchant, settlement},
                                 {provider, settlement},
-                                ?share(1, 1, payment_amount)
+                                ?share(1, 1, operation_amount)
                             )
                         ]}
                     }
@@ -2152,12 +2152,12 @@ construct_domain_fixture() ->
                         ?cfpost(
                             {provider, settlement},
                             {merchant, settlement},
-                            ?share(1, 1, payment_amount)
+                            ?share(1, 1, operation_amount)
                         ),
                         ?cfpost(
                             {system, settlement},
                             {provider, settlement},
-                            ?share(16, 1000, payment_amount)
+                            ?share(16, 1000, operation_amount)
                         ),
                         ?cfpost(
                             {system, settlement},
@@ -2211,12 +2211,12 @@ construct_domain_fixture() ->
                         ?cfpost(
                             {provider, settlement},
                             {merchant, settlement},
-                            ?share(1, 1, payment_amount)
+                            ?share(1, 1, operation_amount)
                         ),
                         ?cfpost(
                             {system, settlement},
                             {provider, settlement},
-                            ?share(21, 1000, payment_amount)
+                            ?share(21, 1000, operation_amount)
                         )
                     ]}
                 }
