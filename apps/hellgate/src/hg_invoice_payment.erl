@@ -397,7 +397,7 @@ validate_payment_cost(Cost, CashLimitSelector, VS, Revision) ->
 
 validate_refund_cash(Cash, CashLimitSelector, VS, Revision) ->
     ok = validate_cash(Cash, CashLimitSelector, VS, Revision),
-    VS#{cash => Cash}.
+    VS.
 
 validate_cash(Cash, CashLimitSelector, VS, Revision) ->
     Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),

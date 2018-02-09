@@ -74,25 +74,20 @@ add_interval(Timestamp, {YY, MM, DD}) ->
 parse_ts(Bin) when is_binary(Bin) ->
     hg_utils:unwrap_result(rfc3339:to_time(Bin, seconds)).
 
--spec add_time_span(time_span(), timestamp() | integer()) -> timestamp().
+-spec add_time_span(time_span(), timestamp()) -> timestamp().
 
-add_time_span(TimeSpan, Timestamp) when is_binary(Timestamp) ->
-    add_time_span(TimeSpan, parse_ts(Timestamp));
-
-add_time_span(#'TimeSpan'{years = Years} = TimeSpan, Timestamp) when Years =/= undefined ->
-    add_time_span(TimeSpan#'TimeSpan'{years = undefined}, genlib_time:add_days(Years * 365, Timestamp));
-add_time_span(#'TimeSpan'{months = Months} = TimeSpan, Timestamp) when Months =/= undefined ->
-    add_time_span(TimeSpan#'TimeSpan'{months = undefined}, genlib_time:add_days(Months * 30, Timestamp));
-add_time_span(#'TimeSpan'{days = Days} = TimeSpan, Timestamp) when Days =/= undefined ->
-    add_time_span(TimeSpan#'TimeSpan'{days = undefined}, genlib_time:add_days(Timestamp, Days));
-add_time_span(#'TimeSpan'{hours = Hours} = TimeSpan, Timestamp) when Hours =/= undefined ->
-    add_time_span(TimeSpan#'TimeSpan'{hours = undefined}, genlib_time:add_hours(Timestamp, Hours));
-add_time_span(#'TimeSpan'{minutes = Minutes} = TimeSpan, Timestamp) when Minutes =/= undefined ->
-    add_time_span(TimeSpan#'TimeSpan'{minutes = undefined}, genlib_time:add_minutes(Timestamp, Minutes));
-add_time_span(#'TimeSpan'{seconds = Seconds} = TimeSpan, Timestamp) when Seconds =/= undefined ->
-    add_time_span(TimeSpan#'TimeSpan'{seconds = undefined}, genlib_time:add_seconds(Timestamp, Seconds));
-add_time_span(_, Timestamp) ->
-    format_ts(Timestamp).
+add_time_span(#'TimeSpan'{} = TimeSpan, Timestamp0) ->
+    Years = nvl(TimeSpan#'TimeSpan'.years),
+    Months = nvl(TimeSpan#'TimeSpan'.months),
+    Days = nvl(TimeSpan#'TimeSpan'.days),
+    Hours = nvl(TimeSpan#'TimeSpan'.hours),
+    Minutes = nvl(TimeSpan#'TimeSpan'.minutes),
+    Seconds = nvl(TimeSpan#'TimeSpan'.seconds),
+    Timestamp1 = parse_ts(add_interval(Timestamp0, {Years, Months, Days})),
+    Timestamp2 = genlib_time:add_hours(Timestamp1, Hours),
+    Timestamp3 = genlib_time:add_minutes(Timestamp2, Minutes),
+    Timestamp4 = genlib_time:add_seconds(Timestamp3, Seconds),
+    format_ts(Timestamp4).
 
 %% Internal functions
 
