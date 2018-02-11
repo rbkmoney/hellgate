@@ -427,10 +427,10 @@ validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Re
     EligibilityTime = reduce_selector(eligibility_time, TimeSpanSelector, VS, Revision),
     RefundEndTime = hg_datetime:add_time_span(EligibilityTime, PaymentCreatedAt),
     case hg_datetime:compare(RefundCreatedAt, RefundEndTime) of
+        Result when Result == earlier; Result == simultaneously ->
+            VS;
         later ->
-            throw(#payproc_OperationNotPermitted{});
-        Other when Other == earlier; Other == simultaneously ->
-            VS
+            throw(#payproc_OperationNotPermitted{})
     end.
 
 collect_varset(St, Opts) ->

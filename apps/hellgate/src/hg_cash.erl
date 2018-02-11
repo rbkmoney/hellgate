@@ -40,8 +40,8 @@ marshal(Cash) ->
 marshal(cash, ?cash(Amount, SymbolicCode)) ->
     [2, [Amount, SymbolicCode]];
 
-marshal(_, Other) ->
-    Other.
+marshal(cash, undefined) ->
+    undefined.
 
 %% Unmarshalling
 
@@ -57,5 +57,5 @@ unmarshal(cash, [2, [Amount, SymbolicCode]]) ->
 unmarshal(cash, [1, {'domain_Cash', Amount, {'domain_CurrencyRef', SymbolicCode}}]) ->
     ?cash(Amount, SymbolicCode);
 
-unmarshal(_, Other) ->
-    Other.
+unmarshal(cash, undefined) ->
+    undefined.
