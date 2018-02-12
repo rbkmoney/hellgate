@@ -933,8 +933,6 @@ payment_refund_success(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     Refund =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
-    [Refund] =
-        hg_client_invoicing:get_payment_refunds(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
