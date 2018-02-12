@@ -166,7 +166,7 @@ get_adjustment(ID, St) ->
 get_refunds(#st{refunds = Rs} = St) ->
     lists:keysort(
         #domain_InvoicePaymentRefund.id,
-        [enrich_refand_with_cash(R#refund_st.refund, St) || R <- maps:values(Rs)]
+        [enrich_refund_with_cash(R#refund_st.refund, St) || R <- maps:values(Rs)]
     ).
 
 -spec get_refund(refund_id(), st()) -> refund() | no_return().
@@ -174,7 +174,7 @@ get_refunds(#st{refunds = Rs} = St) ->
 get_refund(ID, St) ->
     case try_get_refund_state(ID, St) of
         #refund_st{refund = Refund} ->
-            enrich_refand_with_cash(Refund, St);
+            enrich_refund_with_cash(Refund, St);
         undefined ->
             throw(#payproc_InvoicePaymentRefundNotFound{})
     end.
@@ -1473,7 +1473,7 @@ get_refund_cash(#domain_InvoicePaymentRefund{cash = Cash}) ->
 get_refund_created_at(#domain_InvoicePaymentRefund{created_at = CreatedAt}) ->
     CreatedAt.
 
-enrich_refand_with_cash(Refund, #st{payment = Payment}) ->
+enrich_refund_with_cash(Refund, #st{payment = Payment}) ->
     Cash = define_refund_cash(Refund#domain_InvoicePaymentRefund.cash, Payment),
     Refund#domain_InvoicePaymentRefund{cash = Cash}.
 
