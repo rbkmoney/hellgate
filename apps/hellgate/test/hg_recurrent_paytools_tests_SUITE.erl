@@ -492,7 +492,7 @@ construct_simple_term_set() ->
                 ?cfpost(
                     {merchant, settlement},
                     {system, settlement},
-                    ?share(45, 1000, payment_amount)
+                    ?share(45, 1000, operation_amount)
                 )
             ]}
         }
@@ -580,12 +580,12 @@ construct_domain_fixture(TermSet) ->
                         ?cfpost(
                             {provider, settlement},
                             {merchant, settlement},
-                            ?share(1, 1, payment_amount)
+                            ?share(1, 1, operation_amount)
                         ),
                         ?cfpost(
                             {system, settlement},
                             {provider, settlement},
-                            ?share(18, 1000, payment_amount)
+                            ?share(18, 1000, operation_amount)
                         )
                     ]}
                 },

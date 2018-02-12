@@ -10,6 +10,7 @@
 -export([between/3]).
 -export([add_interval/2]).
 -export([parse_ts/1]).
+-export([add_time_span/2]).
 
 -include_lib("dmsl/include/dmsl_base_thrift.hrl").
 
@@ -18,6 +19,7 @@
 -type timestamp() :: dmsl_base_thrift:'Timestamp'().
 -type timestamp_interval() :: dmsl_base_thrift:'TimestampInterval'().
 -type timestamp_interval_bound() :: dmsl_base_thrift:'TimestampIntervalBound'().
+-type time_span() :: dmsl_base_thrift:'TimeSpan'().
 
 %%
 
@@ -71,6 +73,21 @@ add_interval(Timestamp, {YY, MM, DD}) ->
 
 parse_ts(Bin) when is_binary(Bin) ->
     hg_utils:unwrap_result(rfc3339:to_time(Bin, seconds)).
+
+-spec add_time_span(time_span(), timestamp()) -> timestamp().
+
+add_time_span(#'TimeSpan'{} = TimeSpan, Timestamp0) ->
+    Years = nvl(TimeSpan#'TimeSpan'.years),
+    Months = nvl(TimeSpan#'TimeSpan'.months),
+    Days = nvl(TimeSpan#'TimeSpan'.days),
+    Hours = nvl(TimeSpan#'TimeSpan'.hours),
+    Minutes = nvl(TimeSpan#'TimeSpan'.minutes),
+    Seconds = nvl(TimeSpan#'TimeSpan'.seconds),
+    Timestamp1 = parse_ts(add_interval(Timestamp0, {Years, Months, Days})),
+    Timestamp2 = genlib_time:add_hours(Timestamp1, Hours),
+    Timestamp3 = genlib_time:add_minutes(Timestamp2, Minutes),
+    Timestamp4 = genlib_time:add_seconds(Timestamp3, Seconds),
+    format_ts(Timestamp4).
 
 %% Internal functions
 
