@@ -235,7 +235,7 @@ handle_function_('RemoveMetaData', [UserInfo, PartyID, NS], _Opts) ->
 
 handle_function_(
     'ComputePaymentInstitutionTerms',
-    [UserInfo, PartyID, PaymentInstitutionRef],
+    [UserInfo, PartyID, PaymentInstitutionRef, Varset],
     _Opts
 ) ->
     ok = assume_user_identity(UserInfo),
@@ -243,7 +243,7 @@ handle_function_(
     ok = assert_party_accessible(PartyID),
     Revision = hg_domain:head(),
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    VS = #{party => hg_party_machine:get_party(PartyID)},
+    VS = prepare_varset(hg_party_machine:get_party(PartyID), Varset),
     ContractTemplate = get_default_contract_template(PaymentInstitution, VS, Revision),
     Terms = hg_party:get_terms(ContractTemplate, hg_datetime:format_now(), Revision),
     hg_party:reduce_terms(Terms, VS, Revision);
@@ -360,3 +360,18 @@ collect_payout_account_map(
         {merchant , guarantee } => ShopAccount#domain_ShopAccount.guarantee,
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
     }.
+
+prepare_varset(Party, #payproc_Varset{} = V) ->
+    genlib_map:compact(#{
+        party => Party,
+        category => V#payproc_Varset.category,
+        currency => V#payproc_Varset.currency,
+        cost => V#payproc_Varset.amount,
+        payment_tool => prepare_payment_tool_var(V#payproc_Varset.payment_method),
+        payout_method => V#payproc_Varset.payout_method
+    }).
+
+prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->
+    hg_payment_tool:create_from_method(PaymentMethodRef);
+prepare_payment_tool_var(undefined) ->
+    undefined.

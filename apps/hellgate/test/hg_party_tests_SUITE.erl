@@ -620,6 +620,7 @@ compute_payment_institution_terms(C) ->
     Client = cfg(client, C),
     #domain_TermSet{} = hg_client_party:compute_payment_institution_terms(
         ?pinst(1),
+        #payproc_Varset{},
         Client
     ).
 

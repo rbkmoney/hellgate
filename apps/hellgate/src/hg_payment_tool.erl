@@ -6,6 +6,7 @@
 %%
 
 -export([get_method/1]).
+-export([create_from_method/1]).
 -export([test_condition/3]).
 
 -export([marshal/1]).
@@ -25,6 +26,24 @@ get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalTy
     #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
 get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
     #domain_PaymentMethodRef{id = {digital_wallet, Provider}}.
+
+-spec create_from_method(method()) -> t().
+
+%% TODO empty strings - ugly hack for dialyzar
+create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
+    {bank_card, #domain_BankCard{
+        payment_system = PaymentSystem,
+        token = <<"">>,
+        bin = <<"">>,
+        masked_pan = <<"">>
+    }};
+create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->
+    {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}};
+create_from_method(#domain_PaymentMethodRef{id = {digital_wallet, Provider}}) ->
+    {digital_wallet, #domain_DigitalWallet{
+        provider = Provider,
+        id = <<"">>
+    }}.
 
 %%
 
