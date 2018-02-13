@@ -5,8 +5,10 @@
 
 -export([all/0]).
 
--export([known_error_test  /1]).
--export([unknown_error_test/1]).
+-export([known_error_test       /1]).
+-export([unknown_error_test     /1]).
+-export([unknown_error_atom_test/1]).
+-export([bad_static_type_test   /1]).
 
 %%
 
@@ -18,7 +20,9 @@
 all() ->
     [
         known_error_test,
-        unknown_error_test
+        unknown_error_test,
+        unknown_error_atom_test,
+        bad_static_type_test
     ].
 
 
@@ -26,36 +30,61 @@ all() ->
     ok.
 known_error_test(_C) ->
     DE = #domain_Failure{
-            code = <<"authorization_failure">>,
+            code = <<"authorization_failed">>,
             sub = #domain_SubFailure{
-                    code = <<"payment_tool_reject">>,
+                    code = <<"payment_tool_rejected">>,
                     sub = #domain_SubFailure{
-                            code = <<"bank_card_reject">>,
+                            code = <<"bank_card_rejected">>,
                             sub = #domain_SubFailure{
-                                    code = <<"invalid_cvv">>
+                                    code = <<"cvv_invalid">>
                                 }
                         }
                 }
         },
-    SE = {authorization_failure,
-            {payment_tool_reject,
-                {bank_card_reject,
-                    {invalid_cvv, #payprocerr_GeneralFailure{}}
+    SE = {authorization_failed,
+            {payment_tool_rejected,
+                {bank_card_rejected,
+                    {cvv_invalid, #payprocerr_GeneralFailure{}}
                 }
             }
         },
-    SE = hg_errors:error_to_static(DE),
-    DE = hg_errors:error_to_dynamic(SE),
+    SE = hg_errors:error_to_static ('PaymentFailure', DE),
+    DE = hg_errors:error_to_dynamic('PaymentFailure', SE),
     ok.
 
--spec unknown_error_test(config()) ->
+-spec unknown_error_atom_test(config()) ->
     ok.
-unknown_error_test(_C) ->
+unknown_error_atom_test(_C) ->
     UnknownCode = <<"unknown big fucking error">>,
     DE = #domain_Failure{
             code = UnknownCode
         },
     SE = {{unknown_error, UnknownCode}, #payprocerr_GeneralFailure{}},
-    SE = hg_errors:error_to_static(DE),
-    DE = hg_errors:error_to_dynamic(SE),
+    SE = hg_errors:error_to_static ('PaymentFailure', DE),
+    DE = hg_errors:error_to_dynamic('PaymentFailure', SE),
+    ok.
+
+-spec unknown_error_test(config()) ->
+    ok.
+unknown_error_test(_C) ->
+    bad_error_code, % construct an atom
+    UnknownCode = <<"ok">>,
+    DE = #domain_Failure{
+            code = UnknownCode
+        },
+    SE = {{unknown_error, UnknownCode}, #payprocerr_GeneralFailure{}},
+    SE = hg_errors:error_to_static ('PaymentFailure', DE),
+    DE = hg_errors:error_to_dynamic('PaymentFailure', SE),
+    ok.
+
+-spec bad_static_type_test(config()) ->
+    ok.
+bad_static_type_test(_C) ->
+    Bad = {qwe, #payprocerr_GeneralFailure{}},
+    {'EXIT', {badarg, _}} =
+        (catch hg_errors:error_to_dynamic('PaymentFailure', {authorization_failed, Bad})),
+    {'EXIT', {badarg, _}} =
+        (catch hg_errors:error_to_dynamic('PaymentFailure', {qwe, Bad})),
+    {'EXIT', {badarg, _}} =
+        (catch hg_errors:error_to_dynamic('PaymentFailure', Bad)),
     ok.
