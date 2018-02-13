@@ -151,6 +151,7 @@ groups() ->
         ]},
         {contract_management, [sequence], [
             party_creation,
+            compute_payment_institution_terms,
             contract_not_found,
             contract_creation,
             contract_terms_retrieval,
@@ -161,8 +162,7 @@ groups() ->
             contract_legal_agreement_binding,
             contract_payout_tool_creation,
             contract_adjustment_creation,
-            contract_adjustment_expiration,
-            compute_payment_institution_terms
+            contract_adjustment_expiration
         ]},
         {shop_management, [sequence], [
             party_creation,
@@ -466,7 +466,20 @@ contract_terms_retrieval(C) ->
     ContractID = ?REAL_CONTRACT_ID,
     TermSet1 = hg_client_party:compute_contract_terms(ContractID, hg_datetime:format_now(), Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {decisions, [
+            #domain_PaymentMethodDecision{
+                if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                then_ = {value, [?pmt(bank_card, visa)]}
+            },
+            #domain_PaymentMethodDecision{
+                if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                then_ = {value, [?pmt(bank_card, mastercard)]}
+            },
+            #domain_PaymentMethodDecision{
+                if_   = {constant, true},
+                then_ = {value, []}
+            }
+        ]}
     }} = TermSet1,
     ok = hg_domain:update(construct_term_set_for_party(PartyID, undefined)),
     TermSet2 = hg_client_party:compute_contract_terms(ContractID, hg_datetime:format_now(), Client),
@@ -618,11 +631,24 @@ contract_adjustment_expiration(C) ->
 
 compute_payment_institution_terms(C) ->
     Client = cfg(client, C),
-    #domain_TermSet{} = hg_client_party:compute_payment_institution_terms(
-        ?pinst(1),
+    #domain_TermSet{} = T1 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(2),
         #payproc_Varset{},
         Client
-    ).
+    ),
+    #domain_TermSet{} = T2 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(2),
+        #payproc_Varset{currency = ?cur(<<"RUB">>)},
+        Client
+    ),
+    T1 /= T2 orelse error({equal_term_sets, T1, T2}),
+    #domain_TermSet{} = T3 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(2),
+        #payproc_Varset{currency = ?cur(<<"USD">>)},
+        Client
+    ),
+    T1 /= T3 orelse error({equal_term_sets, T1, T3}),
+    T2 /= T3 orelse error({equal_term_sets, T2, T3}).
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
@@ -1226,9 +1252,20 @@ construct_domain_fixture() ->
                 ?cat(2),
                 ?cat(3)
             ])},
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa)
-            ])}
+            payment_methods = {decisions, [
+                #domain_PaymentMethodDecision{
+                    if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, ordsets:from_list([?pmt(bank_card, visa)])}
+                },
+                #domain_PaymentMethodDecision{
+                    if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                    then_ = {value, ordsets:from_list([?pmt(bank_card, mastercard)])}
+                },
+                #domain_PaymentMethodDecision{
+                    if_   = {constant, true},
+                    then_ = {value, ordsets:from_list([])}
+                }
+            ]}
         }
     },
     TermSet = #domain_TermSet{
