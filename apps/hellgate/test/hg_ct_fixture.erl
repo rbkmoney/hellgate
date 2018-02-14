@@ -10,6 +10,7 @@
 -export([construct_category/2]).
 -export([construct_category/3]).
 -export([construct_payment_method/1]).
+-export([construct_payout_method/1]).
 -export([construct_proxy/2]).
 -export([construct_proxy/3]).
 -export([construct_inspector/3]).
@@ -85,6 +86,19 @@ construct_payment_method(?pmt(_Type, Name) = Ref) ->
     {payment_method, #domain_PaymentMethodObject{
         ref = Ref,
         data = #domain_PaymentMethodDefinition{
+            name = Def,
+            description = Def
+        }
+    }}.
+
+-spec construct_payout_method(dmsl_domain_thrift:'PayoutMethodRef'()) ->
+    {payout_method, dmsl_domain_thrift:'PayoutMethodObject'()}.
+
+construct_payout_method(?pomt(M) = Ref) ->
+    Def = erlang:atom_to_binary(M, unicode),
+    {payout_method, #domain_PayoutMethodObject{
+        ref = Ref,
+        data = #domain_PayoutMethodDefinition{
             name = Def,
             description = Def
         }
