@@ -18,7 +18,8 @@
         hg_proto,
         dmt_client,
         woody_user_identity,
-        scoper
+        scoper,
+        payproc_errors
     ]},
     {env, []},
     {modules, []},

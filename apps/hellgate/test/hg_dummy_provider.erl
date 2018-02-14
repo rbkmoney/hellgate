@@ -253,7 +253,7 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
         processed ->
             finish(?success(), get_payment_id(PaymentInfo));
         {pending, Count} when Count > 3 ->
-            Failure = hg_errors:construct('PaymentFailure',
+            Failure = payproc_errors:construct('PaymentFailure',
                 {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}),
             finish(?failure(Failure));
         {pending, Count} ->

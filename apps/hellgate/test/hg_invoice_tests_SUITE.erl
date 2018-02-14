@@ -1149,7 +1149,7 @@ payment_with_offsite_preauth_failed(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client),
 
-    ok = hg_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
+    ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
 %%
