@@ -218,6 +218,7 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
 handle_function_('Repair', [UserInfo, InvoiceID, Changes], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
+    _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
     repair(InvoiceID, {changes, Changes}).
 
 assert_invoice_operable(St) ->
