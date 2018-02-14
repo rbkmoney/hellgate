@@ -1024,11 +1024,16 @@ invalid_amount_payment_partial_refund(C) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    RefundParams = make_refund_params(500, <<"RUB">>),
+    RefundParams1 = make_refund_params(50, <<"RUB">>),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, less than allowed minumum">>]
     }} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
+    RefundParams2 = make_refund_params(40001, <<"RUB">>),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Invalid amount, more than allowed maximum">>]
+    }} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client).
 
 -spec invalid_time_payment_partial_refund(config()) -> _ | no_return().
 
@@ -1039,8 +1044,8 @@ invalid_time_payment_partial_refund(C) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    RefundParams = make_refund_params(5000, <<"RUB">>),
     ok = hg_domain:update(construct_term_set_for_refund_eligibility_time(1)),
+    RefundParams = make_refund_params(5000, <<"RUB">>),
     ?operation_not_permitted() =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
 
@@ -1694,11 +1699,13 @@ construct_domain_fixture() ->
                         ?fixed(100, <<"RUB">>)
                     )
                 ]},
-                cash_limit = {value, ?cashrng(
-                    {inclusive, ?cash(      1000, <<"RUB">>)},
-                    {exclusive, ?cash(1000000000, <<"RUB">>)}
-                )},
-                eligibility_time = {value, #'TimeSpan'{minutes = 1}}
+                eligibility_time = {value, #'TimeSpan'{minutes = 1}},
+                partial_refunds = #domain_PartialRefundsServiceTerms{
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash( 1000, <<"RUB">>)},
+                        {exclusive, ?cash(40000, <<"RUB">>)}
+                    )}
+                }
             }
         },
         recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
@@ -1779,11 +1786,13 @@ construct_domain_fixture() ->
                 ])},
                 fees = {value, [
                 ]},
-                cash_limit = {value, ?cashrng(
-                    {inclusive, ?cash(      1000, <<"RUB">>)},
-                    {exclusive, ?cash(1000000000, <<"RUB">>)}
-                )},
-                eligibility_time = {value, #'TimeSpan'{minutes = 1}}
+                eligibility_time = {value, #'TimeSpan'{minutes = 1}},
+                partial_refunds = #domain_PartialRefundsServiceTerms{
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash( 1000, <<"RUB">>)},
+                        {exclusive, ?cash(40000, <<"RUB">>)}
+                    )}
+                }
             }
         }
     },
@@ -2053,7 +2062,13 @@ construct_domain_fixture() ->
                                 {provider, settlement},
                                 ?share(1, 1, operation_amount)
                             )
-                        ]}
+                        ]},
+                        partial_refunds = #domain_PartialRefundsProvisionTerms{
+                            cash_limit = {value, ?cashrng(
+                                {inclusive, ?cash(        10, <<"RUB">>)},
+                                {exclusive, ?cash(1000000000, <<"RUB">>)}
+                            )}
+                        }
                     }
                 },
                 recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
@@ -2123,7 +2138,13 @@ construct_domain_fixture() ->
                                 {provider, settlement},
                                 ?share(1, 1, operation_amount)
                             )
-                        ]}
+                        ]},
+                        partial_refunds = #domain_PartialRefundsProvisionTerms{
+                            cash_limit = {value, ?cashrng(
+                                {inclusive, ?cash(        10, <<"RUB">>)},
+                                {exclusive, ?cash(1000000000, <<"RUB">>)}
+                            )}
+                        }
                     }
                 }
             }
@@ -2272,11 +2293,13 @@ construct_term_set_for_refund_eligibility_time(Seconds) ->
                 ])},
                 fees = {value, [
                 ]},
-                cash_limit = {value, ?cashrng(
-                    {inclusive, ?cash(      1000, <<"RUB">>)},
-                    {exclusive, ?cash(1000000000, <<"RUB">>)}
-                )},
-                eligibility_time = {value, #'TimeSpan'{seconds = Seconds}}
+                eligibility_time = {value, #'TimeSpan'{seconds = Seconds}},
+                partial_refunds = #domain_PartialRefundsServiceTerms{
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(      1000, <<"RUB">>)},
+                        {exclusive, ?cash(1000000000, <<"RUB">>)}
+                    )}
+                }
             }
         }
     },
