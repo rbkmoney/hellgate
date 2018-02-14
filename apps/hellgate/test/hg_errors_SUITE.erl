@@ -48,9 +48,8 @@ known_error_test(_C) ->
                 }
             }
         },
-    SE = hg_errors:error_to_static ('PaymentFailure', DE),
-    DE = hg_errors:error_to_dynamic('PaymentFailure', SE),
-    ok.
+    DE = hg_errors:construct('PaymentFailure', SE),
+    ok = hg_errors:match('PaymentFailure', DE, fun(SE_) when SE =:= SE_ -> ok end).
 
 -spec unknown_error_atom_test(config()) ->
     ok.
@@ -60,9 +59,9 @@ unknown_error_atom_test(_C) ->
             code = UnknownCode
         },
     SE = {{unknown_error, UnknownCode}, #payprocerr_GeneralFailure{}},
-    SE = hg_errors:error_to_static ('PaymentFailure', DE),
-    DE = hg_errors:error_to_dynamic('PaymentFailure', SE),
-    ok.
+    DE = hg_errors:construct('PaymentFailure', SE),
+    ok = hg_errors:match('PaymentFailure', DE, fun(SE_) when SE =:= SE_  -> ok end).
+
 
 -spec unknown_error_test(config()) ->
     ok.
@@ -73,18 +72,17 @@ unknown_error_test(_C) ->
             code = UnknownCode
         },
     SE = {{unknown_error, UnknownCode}, #payprocerr_GeneralFailure{}},
-    SE = hg_errors:error_to_static ('PaymentFailure', DE),
-    DE = hg_errors:error_to_dynamic('PaymentFailure', SE),
-    ok.
+    DE = hg_errors:construct('PaymentFailure', SE),
+    ok = hg_errors:match('PaymentFailure', DE, fun(SE_) when SE =:= SE_  -> ok end).
 
 -spec bad_static_type_test(config()) ->
     ok.
 bad_static_type_test(_C) ->
     Bad = {qwe, #payprocerr_GeneralFailure{}},
     {'EXIT', {badarg, _}} =
-        (catch hg_errors:error_to_dynamic('PaymentFailure', {authorization_failed, Bad})),
+        (catch hg_errors:construct('PaymentFailure', {authorization_failed, Bad})),
     {'EXIT', {badarg, _}} =
-        (catch hg_errors:error_to_dynamic('PaymentFailure', {qwe, Bad})),
+        (catch hg_errors:construct('PaymentFailure', {qwe, Bad})),
     {'EXIT', {badarg, _}} =
-        (catch hg_errors:error_to_dynamic('PaymentFailure', Bad)),
+        (catch hg_errors:construct('PaymentFailure', Bad)),
     ok.

@@ -1,7 +1,7 @@
 -module(hg_errors).
 
--export([error_to_static /2]).
--export([error_to_dynamic/2]).
+-export([construct/2]).
+-export([match    /3]).
 
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
@@ -21,6 +21,18 @@
 -type dynamic_code() :: binary().
 -type dynamic_error() :: dmsl_domain_thrift:'Failure'().
 -type dynamic_sub_error() :: dmsl_domain_thrift:'SubFailure'() | undefined.
+
+%%
+
+-spec construct(error_type(), static_error()) ->
+    dynamic_error().
+construct(Type, SE) ->
+    error_to_dynamic(Type, SE).
+
+-spec match(error_type(), dynamic_error(), fun((static_error()) -> R)) ->
+    R.
+match(Type, DE, MatchFun) ->
+    MatchFun(error_to_static(Type, DE)).
 
 %%
 
@@ -111,4 +123,3 @@ type_by_field(Code, Type) ->
 struct_info(Type) ->
     {struct, _, Fs} = dmsl_payment_processing_errors_thrift:struct_info(Type),
     [{FN, FT} || {_, _, {struct, _, {'dmsl_payment_processing_errors_thrift', FT}}, FN, _} <- Fs].
-
