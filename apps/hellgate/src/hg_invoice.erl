@@ -213,7 +213,12 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
     ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp),
     Revision = hg_domain:head(),
     Cash = get_cost(St),
-    hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision).
+    hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+
+handle_function_('Repair', [UserInfo, InvoiceID, Changes], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID),
+    repair(InvoiceID, {changes, Changes}).
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
@@ -304,6 +309,9 @@ start(ID, Args) ->
 call(ID, Args) ->
     map_error(hg_machine:call(?NS, ID, Args)).
 
+repair(ID, Args) ->
+    map_repair_error(hg_machine:repair(?NS, ID, Args)).
+
 map_error({ok, CallResult}) ->
     case CallResult of
         {ok, Result} ->
@@ -324,6 +332,16 @@ map_history_error({error, notfound}) ->
 map_start_error({ok, _}) ->
     ok;
 map_start_error({error, Reason}) ->
+    error(Reason).
+
+map_repair_error({ok, _}) ->
+    ok;
+map_repair_error({error, notfound}) ->
+    throw(#payproc_InvoiceNotFound{});
+map_repair_error({error, working}) ->
+    % TODO
+    throw(#'InvalidRequest'{errors = [<<"No need to repair">>]});
+map_repair_error({error, Reason}) ->
     error(Reason).
 
 %%
@@ -388,8 +406,14 @@ handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
 
-handle_signal({repair, _}, St) ->
-    #{
+handle_signal({repair, {changes, Changes}}, St) ->
+    Result = case Changes of
+        [_ | _] ->
+            #{changes => Changes};
+        [] ->
+            #{}
+    end,
+    Result#{
         state => St
     }.
 
