@@ -618,10 +618,24 @@ contract_adjustment_expiration(C) ->
 
 compute_payment_institution_terms(C) ->
     Client = cfg(client, C),
-    #domain_TermSet{} = hg_client_party:compute_payment_institution_terms(
+    #domain_TermSet{} = T1 = hg_client_party:compute_payment_institution_terms(
         ?pinst(1),
+        #payproc_Varset{},
         Client
-    ).
+    ),
+    #domain_TermSet{} = T2 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(1),
+        #payproc_Varset{payment_method = ?pmt(bank_card, visa)},
+        Client
+    ),
+    T1 /= T2 orelse error({equal_term_sets, T1, T2}),
+    #domain_TermSet{} = T3 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(1),
+        #payproc_Varset{payment_method = ?pmt(payment_terminal, euroset)},
+        Client
+    ),
+    T1 /= T3 orelse error({equal_term_sets, T1, T3}),
+    T2 /= T3 orelse error({equal_term_sets, T2, T3}).
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
@@ -1213,6 +1227,30 @@ construct_domain_fixture() ->
         payments = #domain_PaymentsServiceTerms{
             currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
             categories = {value, ordsets:from_list([?cat(1)])}
+        },
+        payouts = #domain_PayoutsServiceTerms{
+            payout_methods = {decisions, [
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool,
+                        {bank_card, #domain_BankCardCondition{
+                            definition = {bin_in, ?binrange(1)}
+                        }}
+                    }},
+                    then_ = {value, ordsets:from_list([?pomt(russian_bank_account), ?pomt(international_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{}}}},
+                    then_ = {value, ordsets:from_list([?pomt(russian_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool, {payment_terminal, #domain_PaymentTerminalCondition{}}}},
+                    then_ = {value, ordsets:from_list([?pomt(international_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {constant, true},
+                    then_ = {value, ordsets:from_list([])}
+                }
+            ]}
         }
     },
     DefaultTermSet = #domain_TermSet{
@@ -1256,6 +1294,10 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+
+        hg_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
+        hg_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
@@ -1370,6 +1412,14 @@ construct_domain_fixture() ->
                         }
                     }
                 }]
+            }
+        }},
+        {bank_card_bin_range, #domain_BankCardBINRangeObject{
+            ref = ?binrange(1),
+            data = #domain_BankCardBINRange{
+                name = <<"Test BIN range">>,
+                description = <<"Test BIN range">>,
+                bins = ordsets:from_list([<<"1234">>, <<"5678">>])
             }
         }}
     ].

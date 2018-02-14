@@ -781,6 +781,8 @@ get_template(TemplateRef, Revision) ->
 
 %%
 
+%% TODO add transmutations for new international legal entities and bank accounts
+
 -define(TOP_VERSION, 2).
 
 wrap_events(Events) ->

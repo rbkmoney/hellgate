@@ -8,6 +8,7 @@
 -define(glob(),         #domain_GlobalsRef{}).
 -define(cur(ID),        #domain_CurrencyRef{symbolic_code = ID}).
 -define(pmt(C, T),      #domain_PaymentMethodRef{id = {C, T}}).
+-define(pomt(M),        #domain_PayoutMethodRef{id = M}).
 -define(cat(ID),        #domain_CategoryRef{id = ID}).
 -define(prx(ID),        #domain_ProxyRef{id = ID}).
 -define(prv(ID),        #domain_ProviderRef{id = ID}).
@@ -18,6 +19,7 @@
 -define(eas(ID),        #domain_ExternalAccountSetRef{id = ID}).
 -define(insp(ID),       #domain_InspectorRef{id = ID}).
 -define(pinst(ID),      #domain_PaymentInstitutionRef{id = ID}).
+-define(binrange(ID),   #domain_BankCardBINRangeRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).
