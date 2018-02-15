@@ -17,6 +17,8 @@
 %%%  - think about safe clamping of timers returned by some proxy
 %%%  - why don't user interaction events imprint anything on the state?
 %%%  - adjustments look and behave very much like claims over payments
+%%%  - payment status transition are caused by the fact that some session
+%%%    finishes, which could have happened in the past, not just now
 
 -module(hg_invoice_payment).
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").

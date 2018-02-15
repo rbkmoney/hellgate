@@ -142,6 +142,8 @@ generate_token(undefined, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPay
             #prxprv_RecurrentTokenProxyResult{
                 intent = ?recurrent_token_finish_w_failure(#'domain_Failure'{code = <<"forbidden">>})
             };
+        unexpected_failure ->
+            error(unexpected_failure);
         _ ->
             token_sleep(1, <<"sleeping">>)
     end;
@@ -243,10 +245,17 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             sleep(1, <<"sleeping">>);
         recurrent ->
             %% simple workflow without 3DS
-            sleep(1, <<"sleeping">>)
+            sleep(1, <<"sleeping">>);
+        unexpected_failure ->
+            sleep(1, <<"sleeping">>, undefined, get_payment_id(PaymentInfo))
     end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
-    finish(?success(), get_payment_id(PaymentInfo));
+    case get_payment_info_scenario(PaymentInfo) of
+        unexpected_failure ->
+            error(unexpected_failure);
+        _ ->
+            finish(?success(), get_payment_id(PaymentInfo))
+    end;
 process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo, _) ->
     Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
     case get_transaction_state(Key) of
@@ -305,6 +314,13 @@ sleep(Timeout, State, UserInteraction) ->
         next_state = State
     }.
 
+sleep(Timeout, State, UserInteraction, TrxID) ->
+    #prxprv_PaymentProxyResult{
+        intent     = ?sleep(Timeout, UserInteraction),
+        trx        = #domain_TransactionInfo{id = TrxID, extra = #{}},
+        next_state = State
+    }.
+
 suspend(Tag, Timeout, State, UserInteraction) ->
     #prxprv_PaymentProxyResult{
         intent     = ?suspend(Tag, Timeout, UserInteraction),
@@ -349,6 +365,8 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_
     preauth_3ds_offsite;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>}}) ->
     forbidden;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_failure">>}}) ->
+    unexpected_failure;
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
     terminal;
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
@@ -364,6 +382,8 @@ make_payment_tool(preauth_3ds_offsite) ->
     make_simple_payment_tool(<<"preauth_3ds_offsite">>, jcb);
 make_payment_tool(forbidden) ->
     make_simple_payment_tool(<<"forbidden">>, visa);
+make_payment_tool(unexpected_failure) ->
+    make_simple_payment_tool(<<"unexpected_failure">>, visa);
 make_payment_tool(terminal) ->
     {
         {payment_terminal, #domain_PaymentTerminal{

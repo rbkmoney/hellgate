@@ -64,6 +64,7 @@
 
 -export([start/3]).
 -export([call/3]).
+-export([repair/3]).
 -export([get_history/2]).
 -export([get_history/4]).
 
@@ -108,6 +109,13 @@ call(Ns, Ref, Args) ->
             Error
     end.
 
+-spec repair(ns(), ref(), term()) ->
+    {ok, term()} | {error, notfound | failed | working} | no_return().
+
+repair(Ns, Ref, Args) ->
+    Descriptor = prepare_descriptor(Ns, Ref, #'HistoryRange'{}),
+    call_automaton('Repair', [Descriptor, wrap_args(Args)]).
+
 -spec get_history(ns(), ref()) ->
     {ok, history()} | {error, notfound} | no_return().
 
@@ -140,7 +148,9 @@ call_automaton(Function, Args) ->
         {exception, #'MachineNotFound'{}} ->
             {error, notfound};
         {exception, #'MachineFailed'{}} ->
-            {error, failed}
+            {error, failed};
+        {exception, #'MachineAlreadyWorking'{}} ->
+            {error, working}
     end.
 
 %%
