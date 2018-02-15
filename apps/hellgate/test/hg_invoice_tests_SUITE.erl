@@ -1113,11 +1113,13 @@ terms_retrieval(C) ->
             ?pmt(payment_terminal, euroset)
         ]}
     }} = TermSet1,
+    Revision = hg_domain:head(),
     ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
-    }} = TermSet2.
+    }} = TermSet2,
+    ok = hg_domain:reset(Revision).
 
 %%
 
