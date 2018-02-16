@@ -273,8 +273,7 @@ reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
         payout_schedules = reduce_if_defined(Terms#domain_PayoutsServiceTerms.payout_schedules, VS, Rev),
         payout_methods   = reduce_if_defined(Terms#domain_PayoutsServiceTerms.payout_methods, VS, Rev),
         cash_limit       = reduce_if_defined(Terms#domain_PayoutsServiceTerms.cash_limit, VS, Rev),
-        fees             = reduce_if_defined(Terms#domain_PayoutsServiceTerms.fees, VS, Rev),
-        policy           = Terms#domain_PayoutsServiceTerms.policy
+        fees             = reduce_if_defined(Terms#domain_PayoutsServiceTerms.fees, VS, Rev)
     };
 reduce_payout_terms(undefined, _, _) ->
     undefined.
@@ -425,23 +424,20 @@ merge_payouts_terms(
         payout_schedules = Ps0,
         payout_methods   = Pm0,
         cash_limit       = Cash0,
-        fees             = Fee0,
-        policy           = Pol0
+        fees             = Fee0
     },
     #domain_PayoutsServiceTerms{
         payout_schedules = Ps1,
         payout_methods   = Pm1,
         cash_limit       = Cash1,
-        fees             = Fee1,
-        policy           = Pol1
+        fees             = Fee1
     }
 ) ->
     #domain_PayoutsServiceTerms{
         payout_schedules = hg_utils:select_defined(Ps1, Ps0),
         payout_methods   = hg_utils:select_defined(Pm1, Pm0),
         cash_limit       = hg_utils:select_defined(Cash1, Cash0),
-        fees             = hg_utils:select_defined(Fee1, Fee0),
-        policy           = hg_utils:select_defined(Pol1, Pol0)
+        fees             = hg_utils:select_defined(Fee1, Fee0)
     };
 merge_payouts_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
