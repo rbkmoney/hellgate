@@ -635,8 +635,9 @@ refund(Params, St0, Opts) ->
         cash            = Cash
     },
     MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision)),
-    VS1 = validate_refund(Refund, Payment, MerchantTerms, VS0, Revision),
-    ProviderTerms = get_provider_refunds_terms(get_provider_payments_terms(Route, Revision), Payment),
+    VS1 = validate_refund(MerchantTerms, Refund, Payment, VS0, Revision),
+    ProviderPaymentsTerms = get_provider_payments_terms(Route, Revision),
+    ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment, VS1, Revision),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
     FinalCashflow = construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap),
@@ -693,32 +694,101 @@ get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = Terms}) when T
 get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = undefined}) ->
     throw(#payproc_OperationNotPermitted{}).
 
-get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = Terms}, _Payment) when Terms /= undefined ->
-    Terms;
-get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = undefined}, Payment) ->
+get_provider_refunds_terms(
+    #domain_PaymentsProvisionTerms{refunds = Terms},
+    Refund,
+    Payment,
+    VS,
+    Revision
+) when Terms /= undefined ->
+    Cost = get_payment_cost(Payment),
+    Cash = get_refund_cash(Refund),
+    case hg_cash:sub(Cost, Cash) of
+        ?cash(0, _) ->
+            Terms;
+        ?cash(Amount, _) when Amount > 0 ->
+            get_provider_partial_refunds_terms(Terms, Refund, Payment, VS, Revision)
+    end;
+get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = undefined}, _Refund, Payment, _VS, _Revision) ->
     error({misconfiguration, {'No refund terms for a payment', Payment}}).
 
-validate_refund(Refund, Payment, RefundTerms, VS0, Revision) ->
-    VS1 = validate_payment_tool(
-        get_payment_tool(Payment),
-        RefundTerms#domain_PaymentRefundsServiceTerms.payment_methods,
-        VS0,
-        Revision
-    ),
+get_provider_partial_refunds_terms(
+    #domain_PaymentRefundsProvisionTerms{
+        partial_refunds = #domain_PartialRefundsProvisionTerms{
+            cash_limit = CashLimitSelector
+        }
+    } = Terms,
+    Refund,
+    _Payment,
+    VS,
+    Revision
+) ->
+    Cash = get_refund_cash(Refund),
+    CashRange = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
+    case hg_condition:test_cash_range(Cash, CashRange) of
+        within ->
+            Terms;
+        {exceeds, _} ->
+            error({misconfiguration, {'Refund amount doesnt match allowed cash range', CashRange}})
+    end;
+get_provider_partial_refunds_terms(
+    #domain_PaymentRefundsProvisionTerms{partial_refunds = undefined},
+    _Refund,
+    Payment,
+    _VS,
+    _Revision
+) ->
+    error({misconfiguration, {'No partial refund terms for a payment', Payment}}).
+
+validate_refund(Terms, Refund, Payment, VS0, Revision) ->
+    Cost = get_payment_cost(Payment),
+    Cash = get_refund_cash(Refund),
+    case hg_cash:sub(Cost, Cash) of
+        ?cash(0, _) ->
+            validate_common_refund_terms(Terms, Refund, Payment, VS0, Revision);
+        ?cash(Amount, _) when Amount > 0 ->
+            validate_partial_refund(Terms, Refund, Payment, VS0, Revision)
+    end.
+
+validate_partial_refund(
+    #domain_PaymentRefundsServiceTerms{partial_refunds = PRs} = Terms,
+    Refund,
+    Payment,
+    VS0,
+    Revision
+) when PRs /= undefined ->
+    VS1 = validate_common_refund_terms(Terms, Refund, Payment, VS0, Revision),
     VS2 = validate_refund_cash(
         get_refund_cash(Refund),
-        RefundTerms#domain_PaymentRefundsServiceTerms.cash_limit,
+        PRs#domain_PartialRefundsServiceTerms.cash_limit,
         VS1,
         Revision
     ),
-    VS3 = validate_refund_time(
-        get_refund_created_at(Refund),
-        get_payment_created_at(Payment),
-        RefundTerms#domain_PaymentRefundsServiceTerms.eligibility_time,
-        VS2,
+    VS2;
+validate_partial_refund(
+    #domain_PaymentRefundsServiceTerms{partial_refunds = undefined},
+    _Refund,
+    _Payment,
+    _VS0,
+    _Revision
+) ->
+    throw(#payproc_OperationNotPermitted{}).
+
+validate_common_refund_terms(Terms, Refund, Payment, VS0, Revision) ->
+    VS1 = validate_payment_tool(
+        get_payment_tool(Payment),
+        Terms#domain_PaymentRefundsServiceTerms.payment_methods,
+        VS0,
         Revision
     ),
-    VS3.
+    VS2 = validate_refund_time(
+        get_refund_created_at(Refund),
+        get_payment_created_at(Payment),
+        Terms#domain_PaymentRefundsServiceTerms.eligibility_time,
+        VS1,
+        Revision
+    ),
+    VS2.
 
 collect_refund_cashflow(
     #domain_PaymentRefundsServiceTerms{fees = MerchantCashflowSelector},
