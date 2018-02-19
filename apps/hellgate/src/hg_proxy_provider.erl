@@ -21,6 +21,8 @@
 -export([handle_proxy_callback_result/3]).
 -export([handle_proxy_callback_timeout/2]).
 
+-export([get_route_provider/2]).
+
 -include("domain.hrl").
 -include("payment_events.hrl").
 
@@ -28,6 +30,7 @@
 
 -type trx_info() :: dmsl_domain_thrift:'TransactionInfo'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
+-type provider() :: dmsl_domain_thrift:'Provider'().
 -type payment_info() :: dmsl_proxy_provider_thrift:'PaymentInfo'().
 -type payment_context() :: dmsl_proxy_provider_thrift:'PaymentContext'().
 -type proxy_result() :: dmsl_proxy_provider_thrift:'PaymentProxyResult'().
@@ -105,10 +108,10 @@ issue_call(Func, Args, Route) ->
 
 get_call_options(Route) ->
     Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, get_route_provider(Route)}),
+    Provider = get_route_provider(Route, Revision),
     hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
 
-get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
+get_route_provider_ref(#domain_PaymentRoute{provider = ProviderRef}) ->
     ProviderRef.
 
 %%
@@ -237,3 +240,9 @@ handle_proxy_callback_timeout(Action, Session) ->
 wrap_session_events(SessionEvents, Session) ->
     Target = hg_proxy_provider_session:get_target(Session),
     [?session_ev(Target, Ev) || Ev <- SessionEvents].
+
+
+-spec get_route_provider(route(), integer()) ->
+    provider().
+get_route_provider(Route, Revision) ->
+    hg_domain:get(Revision, {provider, get_route_provider_ref(Route)}).

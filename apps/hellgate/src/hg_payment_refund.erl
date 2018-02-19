@@ -2,7 +2,7 @@
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
--export([init/6]).
+-export([init/2]).
 -export([process_signal/4]).
 
 -export([get_refunds/1]).
@@ -55,6 +55,7 @@
     dmsl_payment_processing_thrift:'InvoicePaymentRefundChangePayload'().
 
 -include("payment_events.hrl").
+-include("domain.hrl").
 
 -spec get_refunds([st()]) -> [refund()].
 
@@ -66,10 +67,27 @@ get_refunds(Rs) ->
 get_refund(#st{refund = Refund}) ->
     Refund.
 
--spec init(refund_id(), refund_params(), integer(), #{any() => any()}, cash_flow(), opts()) ->
-    {refund(), result()}.
+-spec init(refund_id(), [refund_params()]) ->
+    hg_machine:result().
 
-init(RefundID, Params, Revision, AccountMap, FinalCashflow, Opts) ->
+init(RefundID, [InvoiceRef, PaymentRef, Revision, Params]) ->
+    PaymentSt = hg_invoice:get_payment_by_refs(InvoiceRef, PaymentRef),
+    Payment = hg_invoice_payment:get_payment(PaymentSt),
+    Route = hg_invoice_payment:get_route(PaymentSt),
+    Shop = hg_invoice:get_shop_by_ref(InvoiceRef),
+    Party = hg_invoice:get_party_by_ref(InvoiceRef),
+    Contract = hg_invoice:get_contract_by_ref(InvoiceRef),
+    PaymentInstitution = get_payment_institution(Contract, Revision),
+    Provider = hg_proxy_provider:get_route_provider(Route, Revision),
+    Invoice = hg_invoice:get_invoice_by_ref(InvoiceRef),
+    VS0 = collect_varset(Party, Shop, Payment, #{}),
+    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Invoice, Contract, Revision)),
+    VS1 = validate_refund(Payment, MerchantTerms, VS0, Revision),
+    ProviderTerms = get_provider_refunds_terms(hg_routing:get_payments_terms(Route, Revision), Payment),
+    Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
+    % TODO specific cashflow context needed, with defined `refund_amount` for instance
+    AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
+    FinalCashflow = construct_final_cashflow(Cashflow, collect_cash_flow_context(Payment), AccountMap),
     CreatedAt = hg_datetime:format_now(),
     Refund = construct_refund(RefundID, CreatedAt, Revision, Params),
     Changes = [
@@ -77,15 +95,17 @@ init(RefundID, Params, Revision, AccountMap, FinalCashflow, Opts) ->
         ?session_ev(?refunded(), ?session_started())
     ],
     RefundSt = collapse_changes(Changes, undefined),
-    AffectedAccounts = prepare_refund_cashflow(RefundSt, Opts),
+    AffectedAccounts = prepare_refund_cashflow(RefundSt, Invoice, Payment),
     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
     case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
-            Action = hg_machine_action:instant(),
-            {Refund, {[?refund_ev(RefundID, C) || C <- Changes], Action}};
+            #{
+                events => Changes,
+                action => hg_machine_action:instant()
+            };
         Available when Available < 0 ->
-            _AffectedAccounts = rollback_refund_cashflow(RefundSt, Opts),
+            _AffectedAccounts = rollback_refund_cashflow(RefundSt, Invoice, Payment),
             throw(#payproc_InsufficientAccountBalance{})
     end.
 
@@ -127,13 +147,15 @@ finish_processing({Events0, Action}, #st{opts = Opts} = St) ->
     Session = get_refund_session(St1),
     SessionStatus = hg_proxy_provider_session:get_status(Session),
     SessionResult = hg_proxy_provider_session:get_result(Session),
+    Invoice = get_invoice(Opts),
+    Payment = get_payment(Opts),
     case {SessionStatus, SessionResult} of
         {finished, ?session_succeeded()} ->
-            _AffectedAccounts = commit_refund_cashflow(St1, Opts),
+            _AffectedAccounts = commit_refund_cashflow(St1, Invoice, Payment),
             Events1 = [?refund_status_changed(?refund_succeeded())],
             {done, {Events0 ++ Events1, Action}};
         {finished, ?session_failed(Failure)} ->
-            _AffectedAccounts = rollback_refund_cashflow(St1, Opts),
+            _AffectedAccounts = rollback_refund_cashflow(St1, Invoice, Payment),
             Events1 = [?refund_status_changed(?refund_failed(Failure))],
             {done, {Events0 ++ Events1, Action}};
         {_, _} ->
@@ -162,19 +184,19 @@ get_account_state(AccountType, AccountMap, Accounts) ->
 get_available_amount(#{min_available_amount := V}) ->
     V.
 
-prepare_refund_cashflow(St, Opts) ->
-    hg_accounting:plan(construct_refund_plan_id(St, Opts), get_refund_cashflow_plan(St)).
+prepare_refund_cashflow(St, Invoice, Payment) ->
+    hg_accounting:plan(construct_refund_plan_id(St, Invoice, Payment), get_refund_cashflow_plan(St)).
 
-commit_refund_cashflow(St, Opts) ->
-    hg_accounting:commit(construct_refund_plan_id(St, Opts), [get_refund_cashflow_plan(St)]).
+commit_refund_cashflow(St, Invoice, Payment) ->
+    hg_accounting:commit(construct_refund_plan_id(St, Invoice, Payment), [get_refund_cashflow_plan(St)]).
 
-rollback_refund_cashflow(St, Opts) ->
-    hg_accounting:rollback(construct_refund_plan_id(St, Opts), [get_refund_cashflow_plan(St)]).
+rollback_refund_cashflow(St, Invoice, Payment) ->
+    hg_accounting:rollback(construct_refund_plan_id(St, Invoice, Payment), [get_refund_cashflow_plan(St)]).
 
-construct_refund_plan_id(St, Opts) ->
+construct_refund_plan_id(St, Invoice, Payment) ->
     hg_utils:construct_complex_id([
-        get_invoice_id(get_invoice(Opts)),
-        get_payment_id(get_payment(Opts)),
+        get_invoice_id(Invoice),
+        get_payment_id(Payment),
         {refund, get_refund_id(get_refund(St))}
     ]).
 
@@ -238,11 +260,187 @@ get_invoice(#{invoice := Invoice}) ->
 get_invoice_id(#domain_Invoice{id = ID}) ->
     ID.
 
+get_invoice_created_at(#domain_Invoice{created_at = Dt}) ->
+    Dt.
+
 get_payment(#{payment := Payment}) ->
     Payment.
 
 get_payment_id(#domain_InvoicePayment{id = ID}) ->
     ID.
+
+get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
+    Cost.
+
+get_payment_institution(Contract, Revision) ->
+    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
+    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+
+get_payment_tool(#domain_InvoicePayment{payer = Payer}) ->
+    get_payer_payment_tool(Payer).
+
+get_payer_payment_tool(?payment_resource_payer(PaymentResource, _ContactInfo)) ->
+    get_resource_payment_tool(PaymentResource);
+get_payer_payment_tool(?customer_payer(_CustomerID, _, _, PaymentTool, _)) ->
+    PaymentTool.
+
+get_currency(#domain_Cash{currency = Currency}) ->
+    Currency.
+
+get_resource_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
+    PaymentTool.
+
+collect_varset(Party, Shop = #domain_Shop{
+    category = Category,
+    account = #domain_ShopAccount{currency = Currency}
+}, VS) ->
+    VS#{
+        party    => Party,
+        shop     => Shop,
+        category => Category,
+        currency => Currency
+    }.
+
+collect_varset(Party, Shop, Payment, VS) ->
+    VS0 = collect_varset(Party, Shop, VS),
+    VS0#{
+        cost         => get_payment_cost(Payment),
+        payment_tool => get_payment_tool(Payment)
+    }.
+
+get_merchant_payments_terms(Invoice, Contract, Revision) ->
+    ok = assert_contract_active(Contract),
+    TermSet = hg_party:get_terms(
+        Contract,
+        get_invoice_created_at(Invoice),
+        Revision
+    ),
+    TermSet#domain_TermSet.payments.
+
+get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = Terms}) when Terms /= undefined ->
+    Terms;
+get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = undefined}) ->
+    throw(#payproc_OperationNotPermitted{}).
+
+get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = Terms}, _Payment) when Terms /= undefined ->
+    Terms;
+get_provider_refunds_terms(#domain_PaymentsProvisionTerms{refunds = undefined}, Payment) ->
+    error({misconfiguration, {'No refund terms for a payment', Payment}}).
+
+validate_refund(Payment, RefundTerms, VS0, Revision) ->
+    VS1 = validate_payment_tool(
+        get_payment_tool(Payment),
+        RefundTerms#domain_PaymentRefundsServiceTerms.payment_methods,
+        VS0,
+        Revision
+    ),
+    VS1.
+
+validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
+    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
+    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+        throw_invalid_request(<<"Invalid payment method">>),
+    VS#{payment_tool => PaymentTool}.
+
+collect_refund_cashflow(
+    #domain_PaymentRefundsServiceTerms{fees = MerchantCashflowSelector},
+    #domain_PaymentRefundsProvisionTerms{cash_flow = ProviderCashflowSelector},
+    VS,
+    Revision
+) ->
+    MerchantCashflow = reduce_selector(merchant_refund_fees     , MerchantCashflowSelector, VS, Revision),
+    ProviderCashflow = reduce_selector(provider_refund_cash_flow, ProviderCashflowSelector, VS, Revision),
+    MerchantCashflow ++ ProviderCashflow.
+
+collect_account_map(
+    Payment,
+    #domain_Shop{account = MerchantAccount},
+    #domain_PaymentInstitution{system_account_set = SystemAccountSetSelector},
+    #domain_Provider{accounts = ProviderAccounts},
+    VS,
+    Revision
+) ->
+    Currency = get_currency(get_payment_cost(Payment)),
+    ProviderAccount = choose_provider_account(Currency, ProviderAccounts),
+    SystemAccount = choose_system_account(SystemAccountSetSelector, Currency, VS, Revision),
+    M = #{
+        {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
+        {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
+        {provider , settlement} => ProviderAccount#domain_ProviderAccount.settlement ,
+        {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
+    },
+    % External account probably can be optional for some payments
+    case choose_external_account(Currency, VS, Revision) of
+        #domain_ExternalAccount{income = Income, outcome = Outcome} ->
+            M#{
+                {external, income} => Income,
+                {external, outcome} => Outcome
+            };
+        undefined ->
+            M
+    end.
+
+choose_provider_account(Currency, Accounts) ->
+    choose_account(provider, Currency, Accounts).
+
+choose_system_account(SystemAccountSetSelector, Currency, VS, Revision) ->
+    SystemAccountSetRef = reduce_selector(system_account_set, SystemAccountSetSelector, VS, Revision),
+    SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
+    choose_account(
+        system,
+        Currency,
+        SystemAccountSet#domain_SystemAccountSet.accounts
+    ).
+
+choose_external_account(Currency, VS, Revision) ->
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    ExternalAccountSetSelector = Globals#domain_Globals.external_account_set,
+    case hg_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
+        {value, ExternalAccountSetRef} ->
+            ExternalAccountSet = hg_domain:get(Revision, {external_account_set, ExternalAccountSetRef}),
+            genlib_map:get(
+                Currency,
+                ExternalAccountSet#domain_ExternalAccountSet.accounts
+            );
+        _ ->
+            undefined
+    end.
+
+choose_account(Name, Currency, Accounts) ->
+    case maps:find(Currency, Accounts) of
+        {ok, Account} ->
+            Account;
+        error ->
+            error({misconfiguration, {'No account for a given currency', {Name, Currency}}})
+    end.
+
+construct_final_cashflow(Cashflow, Context, AccountMap) ->
+    hg_cashflow:finalize(Cashflow, Context, AccountMap).
+
+collect_cash_flow_context(
+    #domain_InvoicePayment{cost = Cost}
+) ->
+    #{
+        payment_amount => Cost
+    }.
+
+reduce_selector(Name, Selector, VS, Revision) ->
+    case hg_selector:reduce(Selector, VS, Revision) of
+        {value, V} ->
+            V;
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
+
+assert_contract_active(#domain_Contract{status = {active, _}}) ->
+    ok;
+assert_contract_active(#domain_Contract{status = Status}) ->
+    throw(#payproc_InvalidContractStatus{status = Status}).
+
+-spec throw_invalid_request(binary()) -> no_return().
+
+throw_invalid_request(Why) ->
+    throw(#'InvalidRequest'{errors = [Why]}).
 
 %% Marshalling
 

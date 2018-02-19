@@ -26,6 +26,12 @@
 -export([get_payment/2]).
 -export([get_payment_opts/1]).
 
+-export([get_invoice_by_ref/1]).
+-export([get_party_by_ref/1]).
+-export([get_shop_by_ref/1]).
+-export([get_contract_by_ref/1]).
+-export([get_payment_by_refs/2]).
+
 %% Woody handler called by hg_woody_wrapper
 
 -behaviour(hg_woody_wrapper).
@@ -92,6 +98,62 @@ get_payment_opts(St = #st{invoice = Invoice}) ->
         invoice => Invoice
     }.
 
+-spec get_invoice_by_ref(hg_machine:ref()) ->
+    invoice().
+
+get_invoice_by_ref(Ref) ->
+    case hg_invoice:get(Ref) of
+        {ok, #st{invoice = Invoice}} ->
+            Invoice;
+        Error ->
+            Error
+    end.
+
+-spec get_party_by_ref(hg_machine:ref()) ->
+    party().
+
+get_party_by_ref(Ref) ->
+    case hg_invoice:get(Ref) of
+        {ok, St} ->
+            get_party(get_party_id(St));
+        Error ->
+            Error
+    end.
+
+-spec get_shop_by_ref(hg_machine:ref()) ->
+    shop().
+
+get_shop_by_ref(Ref) ->
+    case hg_invoice:get(Ref) of
+        {ok, St} ->
+            hg_party:get_shop(get_shop_id(St), get_party(get_party_id(St)));
+        Error ->
+            Error
+    end.
+
+-spec get_contract_by_ref(hg_machine:ref()) ->
+    contract().
+
+get_contract_by_ref(Ref) ->
+    case hg_invoice:get(Ref) of
+        {ok, St} ->
+            Party = get_party(get_party_id(St)),
+            Shop = hg_party:get_shop(get_shop_id(St), Party),
+            hg_party:get_contract(Shop#domain_Shop.contract_id, Party);
+        Error ->
+            Error
+    end.
+
+-spec get_payment_by_refs(hg_machine:ref(), hg_machine:ref()) ->
+    payment_st().
+
+get_payment_by_refs(InvoiceRef, PaymentRef) ->
+    case hg_invoice:get(InvoiceRef) of
+        {ok, St} ->
+            try_get_payment_session(PaymentRef, St);
+        Error ->
+            Error
+    end.
 %%
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
@@ -337,6 +399,9 @@ map_start_error({error, Reason}) ->
 -type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 -type adjustment_id() :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type refund_params() :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
+-type party() :: dmsl_domain_thrift:'Party'().
+-type shop() :: dmsl_domain_thrift:'Shop'().
+-type contract() :: dmsl_domain_thrift:'Contract'().
 -type payment_st() :: hg_invoice_payment:st().
 
 -type msgpack_ev() :: hg_msgpack_marshalling:value().
@@ -477,13 +542,16 @@ handle_call({rescind, Reason}, St) ->
         state    => St
     };
 
-handle_call({refund_payment, PaymentID, Params}, St) ->
+handle_call({refund_payment, PaymentID, Params}, #st{invoice = #domain_Invoice{id = InvoiceID}} = St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
-    PaymentSession = get_payment_session(PaymentID, St),
+    #{events := Changes, action := Action} = hg_invoice_payment:refund(InvoiceID, PaymentID, Params),
+    Response = hg_payment_refund:get_refund(
+        lists:foldl(fun hg_payment_refund:merge_change/2, undefined, unwrap_refund_changes(Changes))
+    ),
     wrap_payment_impact(
         PaymentID,
-        hg_invoice_payment:refund(Params, PaymentSession, get_payment_opts(St)),
+        {Response, {Changes, Action}},
         St
     );
 
@@ -542,14 +610,13 @@ set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
 
 -include("payment_events.hrl").
 
-start_payment(PaymentParams, St) ->
+start_payment(PaymentParams, #st{invoice = #domain_Invoice{id = InvoiceID}} = St) ->
     PaymentID = create_payment_id(St),
-    Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
-    {PaymentSession, {Changes1, _}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
+    #{events := Changes1} = hg_invoice_payment:init(PaymentID, [InvoiceID, PaymentParams]),
     {ok, {Changes2, Action}} = hg_invoice_payment:start_session(?processed()),
     #{
-        response => PaymentSession,
+        response => lists:foldl(fun hg_invoice_payment:merge_change/2, undefined, Changes1),
         changes  => wrap_payment_changes(PaymentID, Changes1 ++ Changes2),
         action   => Action,
         state    => St
@@ -620,6 +687,9 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St) ->
         action   => Action,
         state    => St
     }.
+
+unwrap_refund_changes(Events) ->
+    [Ev || ?refund_ev(_, Ev) <- Events].
 
 checkout_party(St = #st{invoice = #domain_Invoice{created_at = CreationTimestamp}}) ->
     PartyID = get_party_id(St),
