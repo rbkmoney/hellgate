@@ -814,15 +814,16 @@ transmute_change(1, 2,
     ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _))
 ) ->
     ?party_created(ID, ContactInfo, CreatedAt);
-transmute_change(V1, V2, ?claim_created(LegacyClaim)) when V1 =:= 1; V1 =:= 2 ->
-    ?legacy_claim(
+transmute_change(V1, V2,
+    ?claim_created(?legacy_claim(
         ID,
         Status,
         Changeset,
         Revision,
         CreatedAt,
         UpdatedAt
-    ) = LegacyClaim,
+    ))
+) when V1 =:= 1; V1 =:= 2 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_created(#payproc_Claim{
         id = ID,
@@ -842,7 +843,7 @@ transmute_change(V1, V2,
 ) when V1 =:= 1; V1 =:= 2 ->
     NewEffects = [transmute_claim_effect(V1, V2, E) || E <- Effects],
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
-transmute_change(_, _, C) ->
+transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
     C.
 
 transmute_party_modification(V1, V2,
@@ -863,7 +864,7 @@ transmute_party_modification(V1, V2,
         tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
     },
     ?contract_modification(ContractID, ?payout_tool_creation(ID, PayoutToolParams));
-transmute_party_modification(_, _, C) ->
+transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
     C.
 
 transmute_claim_effect(V1, V2, ?legacy_contract_effect(
@@ -921,7 +922,7 @@ transmute_claim_effect(2, 3, ?legacy_shop_effect(
         payout_tool_id = PayoutToolID
     },
     ?shop_effect(ID, {created, Shop});
-transmute_claim_effect(_, _, C) ->
+transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
     C.
 
 transmute_contractor(1, 2,
@@ -962,7 +963,7 @@ transmute_contractor(2, 3,
         registered_address = RegisteredAddress,
         actual_address = ActualAddress
     }}};
-transmute_contractor(_, _, Contractor) ->
+transmute_contractor(V1, _, Contractor) when V1 =:= 1; V1 =:= 2 ->
     Contractor.
 
 transmute_payout_tool(V1, V2, ?legacy_payout_tool(
@@ -977,7 +978,7 @@ transmute_payout_tool(V1, V2, ?legacy_payout_tool(
         currency = Currency,
         payout_tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
     };
-transmute_payout_tool(_, _, PayoutTool) ->
+transmute_payout_tool(V1, _, PayoutTool) when V1 =:= 1; V1 =:= 2 ->
     PayoutTool.
 
 transmute_payout_tool_info(1, 2, {bank_account, BankAccount}) ->
@@ -996,7 +997,7 @@ transmute_payout_tool_info(2, 3, {international_bank_account, ?legacy_internatio
         iban = Iban,
         bic = Bic
     }};
-transmute_payout_tool_info(_, _, ToolInfo) ->
+transmute_payout_tool_info(V1, _, ToolInfo) when V1 =:= 1; V1 =:= 2 ->
     ToolInfo.
 
 transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAccount, BankBik)) ->
