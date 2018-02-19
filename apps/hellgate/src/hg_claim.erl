@@ -284,8 +284,8 @@ make_shop_modification_effect(_, {location_modification, Location}, _) ->
     {location_changed, Location};
 make_shop_modification_effect(_, {shop_account_creation, Params}, _) ->
     {account_created, create_shop_account(Params)};
-make_shop_modification_effect(_, ?payout_schedule_modification(ScheduleRef), _) ->
-    ?payout_schedule_changed(ScheduleRef).
+make_shop_modification_effect(_, ?payout_schedule_modification(PayoutScheduleRef), _) ->
+    ?payout_schedule_changed(PayoutScheduleRef).
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);
@@ -442,8 +442,8 @@ update_shop({location_changed, Location}, Shop) ->
 update_shop({proxy_changed, _}, Shop) ->
     % deprecated
     Shop;
-update_shop(?payout_schedule_changed(ScheduleRef), Shop) ->
-    Shop#domain_Shop{payout_schedule = ScheduleRef};
+update_shop(?payout_schedule_changed(PayoutScheduleRef), Shop) ->
+    Shop#domain_Shop{payout_schedule = PayoutScheduleRef};
 update_shop({account_created, Account}, Shop) ->
     Shop#domain_Shop{account = Account}.
 

@@ -72,12 +72,46 @@
         BankAccount
     }).
 
+-define(legacy_international_legal_entity(LegalName, TradingName, RegisteredAddress, ActualAddress),
+    {domain_InternationalLegalEntity,
+        LegalName,
+        TradingName,
+        RegisteredAddress,
+        ActualAddress
+    }).
+
 -define(legacy_bank_account(Account, BankName, BankPostAccount, BankBik),
     {domain_BankAccount,
         Account,
         BankName,
         BankPostAccount,
         BankBik
+    }).
+
+-define(legacy_international_bank_account(AccountHolder, BankName, BankAddress, Iban, Bic),
+    {domain_InternationalBankAccount,
+        AccountHolder,
+        BankName,
+        BankAddress,
+        Iban,
+        Bic
+    }).
+
+-define(legacy_shop_effect(ID, Effect),
+    {shop_effect, {payproc_ShopEffectUnit, ID, Effect}}).
+
+-define(legacy_shop(ID, CreatedAt, Blocking, Suspension, Details, Location, Category, Account, ContractID, PayoutToolID),
+    {domain_Shop,
+        ID,
+        CreatedAt,
+        Blocking,
+        Suspension,
+        Details,
+        Location,
+        Category,
+        Account,
+        ContractID,
+        PayoutToolID
     }).
 
 -define(legacy_contract_effect(ID, Effect),

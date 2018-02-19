@@ -783,7 +783,7 @@ get_template(TemplateRef, Revision) ->
 
 %% TODO add transmutations for new international legal entities and bank accounts
 
--define(TOP_VERSION, 2).
+-define(TOP_VERSION, 3).
 
 wrap_events(Events) ->
     [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
@@ -814,7 +814,7 @@ transmute_change(1, 2,
     ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _))
 ) ->
     ?party_created(ID, ContactInfo, CreatedAt);
-transmute_change(1, 2,
+transmute_change(V1, V2,
     ?claim_created(?legacy_claim(
         ID,
         Status,
@@ -823,8 +823,8 @@ transmute_change(1, 2,
         CreatedAt,
         UpdatedAt
     ))
-) ->
-    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
+) when V1 =:= 1; V1 =:= 2 ->
+    NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_created(#payproc_Claim{
         id = ID,
         status = Status,
@@ -833,41 +833,41 @@ transmute_change(1, 2,
         created_at = CreatedAt,
         updated_at = UpdatedAt
     });
-transmute_change(1, 2,
+transmute_change(V1, V2,
     ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
-) ->
-    NewChangeset = [transmute_party_modification(1, 2, M) || M <- Changeset],
+) when V1 =:= 1; V1 =:= 2 ->
+    NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
-transmute_change(1, 2,
+transmute_change(V1, V2,
     ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
-) ->
-    NewEffects = [transmute_claim_effect(1, 2, E) || E <- Effects],
+) when V1 =:= 1; V1 =:= 2 ->
+    NewEffects = [transmute_claim_effect(V1, V2, E) || E <- Effects],
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
-transmute_change(1, 2, C) ->
+transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
     C.
 
-transmute_party_modification(1, 2,
+transmute_party_modification(V1, V2,
     ?legacy_contract_modification(ID, {creation, ?legacy_contract_params(Contractor, TemplateRef)})
-) ->
+) when V1 =:= 1; V1 =:= 2 ->
     ?contract_modification(ID, {creation, #payproc_ContractParams{
-        contractor = transmute_contractor(1, 2, Contractor),
+        contractor = transmute_contractor(V1, V2, Contractor),
         template = TemplateRef
     }});
-transmute_party_modification(1, 2,
+transmute_party_modification(V1, V2,
     ?legacy_contract_modification(ContractID, ?legacy_payout_tool_creation(
         ID,
-        ?legacy_payout_tool_params(Currency, {bank_account, BankAccount})
+        ?legacy_payout_tool_params(Currency, ToolInfo)
     ))
-) ->
+) when V1 =:= 1; V1 =:= 2 ->
     PayoutToolParams = #payproc_PayoutToolParams{
         currency = Currency,
-        tool_info = {russian_bank_account, transmute_bank_account(1, 2, BankAccount)}
+        tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
     },
     ?contract_modification(ContractID, ?payout_tool_creation(ID, PayoutToolParams));
-transmute_party_modification(1, 2, C) ->
+transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
     C.
 
-transmute_claim_effect(1, 2, ?legacy_contract_effect(
+transmute_claim_effect(V1, V2, ?legacy_contract_effect(
     ID,
     {created, ?legacy_contract(
         ID,
@@ -881,29 +881,48 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
         PayoutTools,
         LegalAgreement
     )}
-)) ->
+)) when V1 =:= 1; V1 =:= 2 ->
     Contract = #domain_Contract{
         id = ID,
-        contractor = transmute_contractor(1, 2, Contractor),
+        contractor = transmute_contractor(V1, V2, Contractor),
         created_at = CreatedAt,
         valid_since = ValidSince,
         valid_until = ValidUntil,
         status = Status,
         terms = Terms,
         adjustments = Adjustments,
-        payout_tools = [transmute_payout_tool(1, 2, P) || P <- PayoutTools],
+        payout_tools = [transmute_payout_tool(V1, V2, P) || P <- PayoutTools],
         legal_agreement = LegalAgreement
     },
     ?contract_effect(ID, {created, Contract});
-transmute_claim_effect(1, 2, ?legacy_contract_effect(
+transmute_claim_effect(V1, V2, ?legacy_contract_effect(
     ContractID,
     {payout_tool_created, PayoutTool}
-)) ->
+)) when V1 =:= 1; V1 =:= 2 ->
     ?contract_effect(
         ContractID,
-        {payout_tool_created, transmute_payout_tool(1, 2, PayoutTool)}
+        {payout_tool_created, transmute_payout_tool(V1, V2, PayoutTool)}
     );
-transmute_claim_effect(1, 2, C) ->
+transmute_claim_effect(2, 3, ?legacy_shop_effect(
+    ID,
+    {created, ?legacy_shop(
+        ID, CreatedAt, Blocking, Suspension, Details, Location, Category, Account, ContractID, PayoutToolID
+    )}
+)) ->
+    Shop = #domain_Shop{
+        id = ID,
+        created_at = CreatedAt,
+        blocking = Blocking,
+        suspension = Suspension,
+        details = Details,
+        location = Location,
+        category = Category,
+        account = Account,
+        contract_id = ContractID,
+        payout_tool_id = PayoutToolID
+    },
+    ?shop_effect(ID, {created, Shop});
+transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
     C.
 
 transmute_contractor(1, 2,
@@ -930,23 +949,56 @@ transmute_contractor(1, 2,
         representative_document = RepresentativeDocument,
         russian_bank_account = transmute_bank_account(1, 2, BankAccount)
     }}};
-transmute_contractor(1, 2, Contractor) ->
+transmute_contractor(2, 3,
+    {legal_entity, {international_legal_entity, ?legacy_international_legal_entity(
+        LegalName,
+        TradingName,
+        RegisteredAddress,
+        ActualAddress
+    )}}
+) ->
+    {legal_entity, {international_legal_entity, #domain_InternationalLegalEntity{
+        legal_name = LegalName,
+        trading_name = TradingName,
+        registered_address = RegisteredAddress,
+        actual_address = ActualAddress
+    }}};
+transmute_contractor(V1, _, Contractor) when V1 =:= 1; V1 =:= 2 ->
     Contractor.
 
-transmute_payout_tool(1, 2, ?legacy_payout_tool(
+transmute_payout_tool(V1, V2, ?legacy_payout_tool(
     ID,
     CreatedAt,
     Currency,
-    {bank_account, BankAccount}
-)) ->
+    ToolInfo
+)) when V1 =:= 1; V1 =:= 2 ->
     #domain_PayoutTool{
         id = ID,
         created_at = CreatedAt,
         currency = Currency,
-        payout_tool_info = {russian_bank_account, transmute_bank_account(1, 2, BankAccount)}
+        payout_tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
     };
-transmute_payout_tool(1, 2, PayoutTool) ->
+transmute_payout_tool(V1, _, PayoutTool) when V1 =:= 1; V1 =:= 2 ->
     PayoutTool.
+
+transmute_payout_tool_info(1, 2, {bank_account, BankAccount}) ->
+    {russian_bank_account, transmute_bank_account(1, 2, BankAccount)};
+transmute_payout_tool_info(2, 3, {international_bank_account, ?legacy_international_bank_account(
+    AccountHolder,
+    BankName,
+    BankAddress,
+    Iban,
+    Bic
+)}) ->
+    {international_bank_account, #domain_InternationalBankAccount{
+        account_holder = AccountHolder,
+        bank_name = BankName,
+        bank_address = BankAddress,
+        iban = Iban,
+        bic = Bic
+    }};
+transmute_payout_tool_info(V1, _, ToolInfo) when V1 =:= 1; V1 =:= 2 ->
+    ToolInfo.
 
 transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAccount, BankBik)) ->
     #domain_RussianBankAccount{
