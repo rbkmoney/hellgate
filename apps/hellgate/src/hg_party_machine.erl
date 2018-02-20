@@ -854,7 +854,14 @@ transmute_party_modification(1, 2,
         undefined
     )});
 transmute_party_modification(2, 3,
-    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v2(Contractor, TemplateRef, PaymentInstitutionRef)})
+    ?legacy_contract_modification(
+        ID,
+        {creation, ?legacy_contract_params_v2(
+            Contractor,
+            TemplateRef,
+            PaymentInstitutionRef
+        )}
+    )
 ) ->
     ?contract_modification(ID, {creation, #payproc_ContractParams{
         contractor = transmute_contractor(2, 3, Contractor),
