@@ -867,9 +867,9 @@ transmute_party_modification(V1, V2,
 transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
     C.
 
-transmute_claim_effect(V1, V2, ?legacy_contract_effect(
+transmute_claim_effect(1, 2, ?legacy_contract_effect(
     ID,
-    {created, ?legacy_contract(
+    {created, ?legacy_contract_v1(
         ID,
         Contractor,
         CreatedAt,
@@ -881,17 +881,48 @@ transmute_claim_effect(V1, V2, ?legacy_contract_effect(
         PayoutTools,
         LegalAgreement
     )}
-)) when V1 =:= 1; V1 =:= 2 ->
+)) ->
+    Contract = ?legacy_contract_v2(
+        ID,
+        transmute_contractor(1, 2, Contractor),
+        undefined,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        [transmute_payout_tool(1, 2, P) || P <- PayoutTools],
+        LegalAgreement
+    ),
+    ?legacy_contract_effect(ID, {created, Contract});
+transmute_claim_effect(2, 3, ?legacy_contract_effect(
+    ID,
+    {created, ?legacy_contract_v2(
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    )}
+)) ->
     Contract = #domain_Contract{
         id = ID,
-        contractor = transmute_contractor(V1, V2, Contractor),
+        contractor = transmute_contractor(2, 3, Contractor),
+        payment_institution = PaymentInstitutionRef,
         created_at = CreatedAt,
         valid_since = ValidSince,
         valid_until = ValidUntil,
         status = Status,
         terms = Terms,
         adjustments = Adjustments,
-        payout_tools = [transmute_payout_tool(V1, V2, P) || P <- PayoutTools],
+        payout_tools = [transmute_payout_tool(2, 3, P) || P <- PayoutTools],
         legal_agreement = LegalAgreement
     },
     ?contract_effect(ID, {created, Contract});

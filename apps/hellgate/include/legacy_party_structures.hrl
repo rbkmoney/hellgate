@@ -117,7 +117,7 @@
 -define(legacy_contract_effect(ID, Effect),
     {contract_effect, {payproc_ContractEffectUnit, ID, Effect}}).
 
--define(legacy_contract(
+-define(legacy_contract_v1(
         ID,
         Contractor,
         CreatedAt,
@@ -132,6 +132,34 @@
     {domain_Contract,
         ID,
         Contractor,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    }
+).
+
+-define(legacy_contract_v2(
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    ),
+    {domain_Contract,
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
         CreatedAt,
         ValidSince,
         ValidUntil,
