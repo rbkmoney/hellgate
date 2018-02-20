@@ -40,8 +40,11 @@
 -define(legacy_contract_modification(ID, Modification),
     {contract_modification, {payproc_ContractModificationUnit, ID, Modification}}).
 
--define(legacy_contract_params(Contractor, TemplateRef),
+-define(legacy_contract_params_v1(Contractor, TemplateRef),
     {payproc_ContractParams, Contractor, TemplateRef}).
+
+-define(legacy_contract_params_v2(Contractor, TemplateRef, PaymentInstitutionRef),
+    {payproc_ContractParams, Contractor, TemplateRef, PaymentInstitutionRef}).
 
 -define(legacy_payout_tool_creation(ID, Params),
     {payout_tool_modification, {payproc_PayoutToolModificationUnit, ID, {creation, Params}}}).

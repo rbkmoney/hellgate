@@ -845,13 +845,21 @@ transmute_change(V1, V2,
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
 transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
     C.
-
-transmute_party_modification(V1, V2,
-    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params(Contractor, TemplateRef)})
-) when V1 =:= 1; V1 =:= 2 ->
+transmute_party_modification(1, 2,
+    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v1(Contractor, TemplateRef)})
+) ->
+    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v2(
+        transmute_contractor(1, 2, Contractor),
+        TemplateRef,
+        undefined
+    )});
+transmute_party_modification(2, 3,
+    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v2(Contractor, TemplateRef, PaymentInstitutionRef)})
+) ->
     ?contract_modification(ID, {creation, #payproc_ContractParams{
-        contractor = transmute_contractor(V1, V2, Contractor),
-        template = TemplateRef
+        contractor = transmute_contractor(2, 3, Contractor),
+        template = TemplateRef,
+        payment_institution = PaymentInstitutionRef
     }});
 transmute_party_modification(V1, V2,
     ?legacy_contract_modification(ContractID, ?legacy_payout_tool_creation(
