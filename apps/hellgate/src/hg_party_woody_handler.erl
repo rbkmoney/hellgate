@@ -33,7 +33,7 @@ handle_function_('Checkout', [UserInfo, PartyID, RevisionParam], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    checkout_party(PartyID, RevisionParam);
+    checkout_party(PartyID, RevisionParam, #payproc_InvalidPartyRevision{});
 
 handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -259,7 +259,7 @@ handle_function_(
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
-    Shop = hg_party:get_shop(ShopID, Party),
+    Shop = ensure_shop(hg_party:get_shop(ShopID, Party)),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Currency = Amount#domain_Cash.currency,
     ok = hg_invoice_utils:validate_currency(Currency, Shop),
@@ -303,11 +303,14 @@ assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
 checkout_party(PartyID, RevisionParam) ->
+    checkout_party(PartyID, RevisionParam, #payproc_PartyNotExistsYet{}).
+
+checkout_party(PartyID, RevisionParam, Exception) ->
     try
         hg_party_machine:checkout(PartyID, RevisionParam)
     catch
         error:revision_not_found ->
-            throw(#payproc_InvalidPartyRevision{})
+            throw(Exception)
     end.
 
 ensure_contract(#domain_Contract{} = Contract) ->
@@ -358,6 +361,7 @@ collect_payout_account_map(
     #{
         {merchant , settlement} => ShopAccount#domain_ShopAccount.settlement,
         {merchant , guarantee } => ShopAccount#domain_ShopAccount.guarantee,
+        {merchant , payout    } => ShopAccount#domain_ShopAccount.payout,
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
     }.
 

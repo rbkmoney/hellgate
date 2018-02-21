@@ -24,6 +24,7 @@
 -export([get_shop/2]).
 -export([compute_shop_terms/3]).
 -export([compute_payment_institution_terms/3]).
+-export([compute_payout_cash_flow/2]).
 
 -export([block_shop/3]).
 -export([unblock_shop/3]).
@@ -184,6 +185,12 @@ compute_contract_terms(ID, Timestamp, Client) ->
 
 compute_payment_institution_terms(Ref, Varset, Client) ->
     map_result_error(gen_server:call(Client, {call, 'ComputePaymentInstitutionTerms', [Ref, Varset]})).
+
+-spec compute_payout_cash_flow(dmsl_payment_processing_thrift:'PayoutParams'(), pid()) ->
+    dmsl_domain_thrift:'FinalCashFlow'() | woody_error:business_error().
+
+compute_payout_cash_flow(Params, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputePayoutCashFlow', [Params]})).
 
 -spec get_shop(shop_id(), pid()) ->
     dmsl_domain_thrift:'Shop'() | woody_error:business_error().
