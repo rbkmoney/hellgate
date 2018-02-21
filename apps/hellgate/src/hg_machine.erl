@@ -23,7 +23,9 @@
 -type result() :: #{
     events    => [event_payload()],
     action    => hg_machine_action:t(),
-    auxst     => auxst()
+    auxst     => auxst(),
+    result    => next | done,
+    response  => any()
 }.
 
 -callback namespace() ->

@@ -565,8 +565,11 @@ refund(InvoiceRef, PaymentRef, Params) ->
     _ = assert_payment_status(captured, Payment),
     _ = assert_no_refund_pending(St),
     ID = construct_refund_id(St),
-    Result = hg_payment_refund:init(ID, [InvoiceRef, PaymentRef, Revision, Params]),
-    Result#{events => wrap_refund_changes(ID, maps:get(events, Result))}.
+    #{
+        events := Events,
+        action := Action
+    } = hg_payment_refund:init(ID, [InvoiceRef, PaymentRef, Revision, Params]),
+    #{events => wrap_refund_changes(ID, Events), action => Action}.
 
 construct_refund_id(#st{}) ->
     % FIXME we employ unique id in order not to reuse plan id occasionally
@@ -714,14 +717,20 @@ get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{new_cash_flow = Cashflo
 
 %%
 
--spec process_signal(timeout, st(), opts()) ->
-    {next | done, result()}.
+-spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
+    hg_machine:result().
 
-process_signal(timeout, St, Options) ->
+process_signal(timeout, History, #{invoice_id := InvoiceID}) ->
+    Events = [unmarshal(Event) || Event <- History],
+    St = collapse_changes(Events, undefined),
+    Options = #{
+        invoice => hg_invoice:get_invoice_by_ref(InvoiceID),
+        party => hg_invoice: get_party_by_ref(InvoiceID)
+    },
     scoper:scope(
         payment,
         get_st_meta(St),
-        fun() -> process_timeout(St#st{opts = Options}) end
+        fun() -> wrap_result(process_timeout(St#st{opts = Options})) end
     ).
 
 process_timeout(#st{activity = payment} = St) ->
@@ -745,14 +754,20 @@ process_timeout(Session, St) ->
             process_callback_timeout(Action, St)
     end.
 
--spec process_call({callback, tag(), _}, st(), opts()) ->
-    {_, {next | done, result()}}. % FIXME
+-spec process_call({callback, tag(), _}, hg_machine:history(), hg_machine:auxst()) ->
+    hg_machine:result().
 
-process_call({callback, Tag, Payload}, St, Options) ->
+process_call({callback, Tag, Payload}, History, #{invoice_id := InvoiceID}) ->
+    Events = [unmarshal(Event) || Event <- History],
+    St = collapse_changes(Events, undefined),
+    Options = #{
+        invoice => hg_invoice:get_invoice_by_ref(InvoiceID),
+        party => hg_invoice: get_party_by_ref(InvoiceID)
+    },
     scoper:scope(
         payment,
         get_st_meta(St),
-        fun() -> process_callback(Tag, Payload, St#st{opts = Options}) end
+        fun() -> wrap_result(process_callback(Tag, Payload, St#st{opts = Options})) end
     ).
 
 process_callback(Tag, Payload, St) ->
@@ -770,6 +785,11 @@ process_callback(Tag, Payload, Action, Session, St) when Session /= undefined ->
 
 process_callback(_Tag, _Payload, _Action, undefined, _St) ->
     throw(invalid_callback).
+
+wrap_result({Response, {_, {_, _}} = Result}) ->
+    maps:merge(wrap_result(Result), #{response => Response});
+wrap_result({Result, {Events, Action}}) ->
+    #{result => Result, events => Events, action => Action}.
 
 process_callback_timeout(Action, St) ->
     Session = get_active_session(St),
