@@ -33,7 +33,7 @@ handle_function_('Checkout', [UserInfo, PartyID, RevisionParam], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_party_mgmt_meta(PartyID),
     ok = assert_party_accessible(PartyID),
-    checkout_party(PartyID, RevisionParam);
+    checkout_party(PartyID, RevisionParam, #payproc_InvalidPartyRevision{});
 
 handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -303,11 +303,14 @@ assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
 checkout_party(PartyID, RevisionParam) ->
+    checkout_party(PartyID, RevisionParam, #payproc_PartyNotExistsYet{}).
+
+checkout_party(PartyID, RevisionParam, Exception) ->
     try
         hg_party_machine:checkout(PartyID, RevisionParam)
     catch
         error:revision_not_found ->
-            throw(#payproc_InvalidPartyRevision{})
+            throw(Exception)
     end.
 
 ensure_contract(#domain_Contract{} = Contract) ->
