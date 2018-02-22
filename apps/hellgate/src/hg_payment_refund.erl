@@ -3,7 +3,7 @@
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([init/2]).
--export([process_signal/4]).
+-export([process_signal/3]).
 
 -export([get_refunds/1]).
 -export([get_refund/1]).
@@ -48,8 +48,6 @@
     invoice => invoice(),
     payment => payment()
 }.
-
--type result() :: {[_], hg_machine_action:t()}.
 
 -type change() ::
     dmsl_payment_processing_thrift:'InvoicePaymentRefundChangePayload'().
@@ -109,10 +107,18 @@ init(RefundID, [InvoiceRef, PaymentRef, Revision, Params]) ->
             throw(#payproc_InsufficientAccountBalance{})
     end.
 
--spec process_signal(timeout, st(), hg_invoice_payment:st(), opts()) ->
-    {next | done, result()}.
+-spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
+    hg_machine:result().
 
-process_signal(timeout, St, PaymentSt, Opts) ->
+process_signal(timeout, History, #{invoice_id := InvoiceID, payment_id := PaymentID}) ->
+    Events = [unmarshal(Event) || Event <- History],
+    St = collapse_changes(Events, undefined),
+    PaymentSt = hg_invoice:get_payment_by_refs(InvoiceID, PaymentID),
+    Opts = #{
+        invoice => hg_invoice:get_invoice_by_ref(InvoiceID),
+        party => hg_invoice:get_party_by_ref(InvoiceID),
+        payment => hg_invoice_payment:get_payment(PaymentSt)
+    },
     scoper:scope(
         refund,
         fun() -> handle_timeout(St#st{opts = Opts, payment_st = PaymentSt}) end
@@ -120,12 +126,13 @@ process_signal(timeout, St, PaymentSt, Opts) ->
 
 handle_timeout(#st{session = Session} = St) ->
     Action = hg_machine_action:new(),
-    case hg_proxy_provider_session:get_status(Session) of
+    {Result, {Changes, Action}} = case hg_proxy_provider_session:get_status(Session) of
         active ->
             process(Action, St);
         suspended ->
             process_callback_timeout(Action, St)
-    end.
+    end,
+    #{result => Result, events => Changes, action => Action}.
 
 process_callback_timeout(Action, #st{session = Session} = St) ->
     Result = hg_proxy_provider:handle_proxy_callback_timeout(Action, Session),

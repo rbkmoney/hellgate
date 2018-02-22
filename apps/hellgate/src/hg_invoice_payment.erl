@@ -725,27 +725,29 @@ process_signal(timeout, History, #{invoice_id := InvoiceID}) ->
     St = collapse_changes(Events, undefined),
     Options = #{
         invoice => hg_invoice:get_invoice_by_ref(InvoiceID),
-        party => hg_invoice: get_party_by_ref(InvoiceID)
+        party => hg_invoice:get_party_by_ref(InvoiceID)
     },
     scoper:scope(
         payment,
         get_st_meta(St),
-        fun() -> wrap_result(process_timeout(St#st{opts = Options})) end
+        fun() -> wrap_result(process_timeout(Events, St#st{opts = Options})) end
     ).
 
-process_timeout(#st{activity = payment} = St) ->
+process_timeout(_, #st{activity = payment} = St) ->
     Session = get_active_session(St),
-    process_timeout(Session, St);
-process_timeout(#st{activity = {refund, ID}} = St) ->
-    RefundSt = try_get_refund_state(ID, St),
-    Payment = get_payment(St),
-    Opts = get_opts(St),
-    RefundResult = hg_payment_refund:process_signal(timeout, RefundSt, St, Opts#{payment => Payment}),
+    process_timeout_session(Session, St);
+process_timeout(Events, #st{activity = {refund, ID}, payment = Payment, opts = #{invoice := Invoice}} = St) ->
+    RefundChanges = [hg_payment_refund:marshal(Ch) || ?refund_ev(_, Ch) <- Events],
+    AuxSt = #{
+        invoice_id => get_invoice_id(Invoice),
+        payment_id => get_payment_id(Payment)
+    },
+    RefundResult = hg_payment_refund:process_signal(timeout, RefundChanges, AuxSt),
     handle_refund_result(ID, RefundResult, St).
 
-process_timeout(undefined, St) ->
+process_timeout_session(undefined, St) ->
     process_finished_session(St);
-process_timeout(Session, St) ->
+process_timeout_session(Session, St) ->
     Action = hg_machine_action:new(),
     case hg_proxy_provider_session:get_status(Session) of
         active ->
@@ -850,9 +852,9 @@ finish_processing({Events, Action}, St) ->
             {next, {Events, Action}}
     end.
 
-handle_refund_result(ID, {next, {Changes, Action}}, _) ->
+handle_refund_result(ID, #{result := next, events := Changes, action := Action}, _) ->
     {next, {wrap_refund_changes(ID, Changes), Action}};
-handle_refund_result(ID, {done, {Changes0, Action}}, St0) ->
+handle_refund_result(ID, #{result := done, events := Changes0, action := Action}, St0) ->
     Changes1 = wrap_refund_changes(ID, Changes0),
     St1 = collapse_changes(Changes1, St0),
     RefundSt = try_get_refund_state(ID, St1),
