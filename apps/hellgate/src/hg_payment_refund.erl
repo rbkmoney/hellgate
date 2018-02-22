@@ -28,6 +28,8 @@
 
 -type refund()            :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type refund_id()         :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
+-type invoice_id()        :: dmsl_domain_thrift:'InvoiceID'().
+-type payment_id()        :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type refund_status()     :: dmsl_domain_thrift:'InvoicePaymentRefundStatus'().
 -type refund_params()     :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type party()             :: dmsl_domain_thrift:'Party'().
@@ -65,7 +67,7 @@ get_refunds(Rs) ->
 get_refund(#st{refund = Refund}) ->
     Refund.
 
--spec init(refund_id(), [refund_params()]) ->
+-spec init(refund_id(), [invoice_id() | payment_id() | integer() | refund_params()]) ->
     hg_machine:result().
 
 init(RefundID, [InvoiceRef, PaymentRef, Revision, Params]) ->
