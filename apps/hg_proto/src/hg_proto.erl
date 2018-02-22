@@ -44,7 +44,9 @@ get_service(automaton) ->
 get_service(processor) ->
     {mg_proto_state_processing_thrift, 'Processor'};
 get_service(eventsink) ->
-    {mg_proto_state_processing_thrift, 'EventSink'}.
+    {mg_proto_state_processing_thrift, 'EventSink'};
+get_service(sequences) ->
+    {seq_proto_sequences_thrift, 'Sequences'}.
 
 -spec get_service_spec(Name :: atom()) -> service_spec().
 
