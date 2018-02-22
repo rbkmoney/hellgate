@@ -1,5 +1,4 @@
 -module(hg_sequences).
--include_lib("seq_proto/include/seq_proto_sequences_thrift.hrl").
 
 -export([get_current/1]).
 -export([get_next/1]).
@@ -11,7 +10,8 @@
     value().
 
 get_current(SeqID) ->
-    issue_call('GetCurrent', [SeqID]).
+    {ok, Value} = issue_call('GetCurrent', [SeqID]),
+    Value.
 
 -spec get_next(seq_id()) ->
     value().
