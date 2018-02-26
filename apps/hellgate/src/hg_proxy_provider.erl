@@ -119,29 +119,26 @@ update_proxy_state(ProxyState) ->
 
 -spec handle_proxy_intent(_Intent, _Action) ->
     {list(), _Action}.
-handle_proxy_intent(#'FinishIntent'{status = {success, _}}, Action) ->
+handle_proxy_intent(#'prxprv_FinishIntent'{status = {success, _}}, Action) ->
     Events = [?session_finished(?session_succeeded())],
     {Events, Action};
-handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, Action) ->
-    Events = [?session_finished(?session_failed(convert_failure(Failure)))],
+handle_proxy_intent(#'prxprv_FinishIntent'{status = {failure, Failure}}, Action) ->
+    Events = [?session_finished(?session_failed({failure, Failure}))],
     {Events, Action};
 handle_proxy_intent(#'prxprv_RecurrentTokenFinishIntent'{status = {success, _}}, Action) ->
     Events = [?session_finished(?session_succeeded())],
     {Events, Action};
 handle_proxy_intent(#'prxprv_RecurrentTokenFinishIntent'{status = {failure, Failure}}, Action) ->
-    Events = [?session_finished(?session_failed(convert_failure(Failure)))],
+    Events = [?session_finished(?session_failed({failure, Failure}))],
     {Events, Action};
-handle_proxy_intent(#'SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
+handle_proxy_intent(#'prxprv_SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
     Events = try_request_interaction(UserInteraction),
     {Events, Action};
-handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
+handle_proxy_intent(#'prxprv_SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
     {Events, Action}.
-
-convert_failure(#'Failure'{code = Code, description = Description}) ->
-    ?external_failure(Code, Description).
 
 try_request_interaction(undefined) ->
     [];
