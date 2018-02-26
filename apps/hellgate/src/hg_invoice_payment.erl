@@ -622,10 +622,10 @@ refund(Params, St0, Opts) ->
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     _ = assert_payment_status(captured, Payment),
-    ID = construct_refund_id(St),
     VS0 = collect_varset(St, Opts),
     Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
     _ = assert_refund_cash(Cash, St),
+    ID = construct_refund_id(St),
     Refund = #domain_InvoicePaymentRefund{
         id              = ID,
         created_at      = hg_datetime:format_now(),
@@ -658,10 +658,15 @@ refund(Params, St0, Opts) ->
             throw(#payproc_InsufficientAccountBalance{})
     end.
 
-construct_refund_id(#st{}) ->
-    % FIXME we employ unique id in order not to reuse plan id occasionally
-    %       should track sequence with some aux state instead
-    hg_utils:unique_id().
+construct_refund_id(St) ->
+    PaymentID = get_payment_id(get_payment(St)),
+    InvoiceID = get_invoice_id(get_invoice(get_opts(St))),
+    SequenceID = make_refund_squence_id(PaymentID, InvoiceID),
+    IntRefundID = hg_sequences:get_next(SequenceID),
+    integer_to_binary(IntRefundID).
+
+make_refund_squence_id(PaymentID, InvoiceID) ->
+    <<InvoiceID/binary, <<"_">>/binary, PaymentID/binary>>.
 
 assert_refund_cash(Cash, St) ->
     PaymentAmount = get_remaining_payment_amount(Cash, St),

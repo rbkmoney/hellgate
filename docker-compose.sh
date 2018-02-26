@@ -23,6 +23,13 @@ services:
       machinegun:
         condition: service_healthy
 
+  sequences:
+    image: dr.rbkmoney.com/rbkmoney/sequences:727c81115f861dc3d9b80c0e06e64d27728d447f
+    command: /opt/sequences/bin/sequences foreground
+    depends_on:
+      machinegun:
+        condition: service_healthy
+
   machinegun:
     image: dr.rbkmoney.com/rbkmoney/machinegun:1844dff663c24acdcd32f30ae3ea208f5d05a008
     command: /opt/machinegun/bin/machinegun foreground

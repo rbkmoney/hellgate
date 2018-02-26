@@ -1012,7 +1012,9 @@ payment_partial_refunds_success(C) ->
     % no more refunds for you
     RefundParams5 = make_refund_params(1000, <<"RUB">>),
     ?invalid_payment_status(?refunded()) =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams5, Client).
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams5, Client),
+    % Check sequence
+    <<"1">> =:= RefundID1 andalso <<"2">> =:= RefundID3 andalso <<"3">> =:= RefundID4.
 
 
 -spec invalid_amount_payment_partial_refund(config()) -> _ | no_return().
