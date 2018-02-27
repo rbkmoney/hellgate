@@ -40,8 +40,11 @@
 -define(legacy_contract_modification(ID, Modification),
     {contract_modification, {payproc_ContractModificationUnit, ID, Modification}}).
 
--define(legacy_contract_params(Contractor, TemplateRef),
+-define(legacy_contract_params_v1(Contractor, TemplateRef),
     {payproc_ContractParams, Contractor, TemplateRef}).
+
+-define(legacy_contract_params_v2(Contractor, TemplateRef, PaymentInstitutionRef),
+    {payproc_ContractParams, Contractor, TemplateRef, PaymentInstitutionRef}).
 
 -define(legacy_payout_tool_creation(ID, Params),
     {payout_tool_modification, {payproc_PayoutToolModificationUnit, ID, {creation, Params}}}).
@@ -72,6 +75,14 @@
         BankAccount
     }).
 
+-define(legacy_international_legal_entity(LegalName, TradingName, RegisteredAddress, ActualAddress),
+    {domain_InternationalLegalEntity,
+        LegalName,
+        TradingName,
+        RegisteredAddress,
+        ActualAddress
+    }).
+
 -define(legacy_bank_account(Account, BankName, BankPostAccount, BankBik),
     {domain_BankAccount,
         Account,
@@ -80,10 +91,36 @@
         BankBik
     }).
 
+-define(legacy_international_bank_account(AccountHolder, BankName, BankAddress, Iban, Bic),
+    {domain_InternationalBankAccount,
+        AccountHolder,
+        BankName,
+        BankAddress,
+        Iban,
+        Bic
+    }).
+
+-define(legacy_shop_effect(ID, Effect),
+    {shop_effect, {payproc_ShopEffectUnit, ID, Effect}}).
+
+-define(legacy_shop(ID, CreatedAt, Blocking, Suspension, Details, Location, Category, Account, ContractID, PayoutToolID),
+    {domain_Shop,
+        ID,
+        CreatedAt,
+        Blocking,
+        Suspension,
+        Details,
+        Location,
+        Category,
+        Account,
+        ContractID,
+        PayoutToolID
+    }).
+
 -define(legacy_contract_effect(ID, Effect),
     {contract_effect, {payproc_ContractEffectUnit, ID, Effect}}).
 
--define(legacy_contract(
+-define(legacy_contract_v1(
         ID,
         Contractor,
         CreatedAt,
@@ -98,6 +135,34 @@
     {domain_Contract,
         ID,
         Contractor,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    }
+).
+
+-define(legacy_contract_v2(
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    ),
+    {domain_Contract,
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
         CreatedAt,
         ValidSince,
         ValidUntil,
