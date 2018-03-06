@@ -612,6 +612,7 @@ refund(Params, St0, Opts) ->
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     _ = assert_payment_status(captured, Payment),
+    _ = assert_previous_refunds_finished(St),
     VS0 = collect_varset(St, Opts),
     Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
     _ = assert_refund_cash(Cash, St),
@@ -667,6 +668,22 @@ assert_remaining_payment_amount(?cash(Amount, _), _St) when Amount >= 0 ->
 assert_remaining_payment_amount(?cash(Amount, _), St) when Amount < 0 ->
     Maximum = get_payment_cost(get_payment(St)),
     throw(#payproc_InvoicePaymentAmountExceeded{maximum = Maximum}).
+
+assert_previous_refunds_finished(St) ->
+    PendingRefunds = lists:filter(
+        fun
+            (#domain_InvoicePaymentRefund{status = ?refund_pending()}) ->
+                true;
+            (#domain_InvoicePaymentRefund{}) ->
+                false
+        end,
+        get_refunds(St)),
+    case PendingRefunds of
+        [] ->
+            ok;
+        [_R|_] ->
+            throw(#payproc_OperationNotPermitted{})
+    end.
 
 get_remaining_payment_amount(RefundCash, St) ->
     PaymentAmount = get_payment_cost(get_payment(St)),
