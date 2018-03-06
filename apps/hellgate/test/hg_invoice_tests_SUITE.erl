@@ -53,6 +53,7 @@
 -export([payment_partial_refunds_success/1]).
 -export([invalid_amount_payment_partial_refund/1]).
 -export([invalid_time_payment_partial_refund/1]).
+-export([cant_start_simultaneous_partial_refunds/1]).
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
 -export([payment_with_offsite_preauth_failed/1]).
@@ -124,6 +125,7 @@ all() ->
         payment_refund_success,
         payment_partial_refunds_success,
         invalid_amount_payment_partial_refund,
+        cant_start_simultaneous_partial_refunds,
         invalid_time_payment_partial_refund,
 
         rounding_cashflow_volume,
@@ -1044,6 +1046,35 @@ invalid_amount_payment_partial_refund(C) ->
         errors = [<<"Invalid amount, more than allowed maximum">>]
     }} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client).
+
+-spec cant_start_simultaneous_partial_refunds(config()) -> _ | no_return().
+
+cant_start_simultaneous_partial_refunds(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    RefundParams = make_refund_params(10000, <<"RUB">>),
+    Refund1 = #domain_InvoicePaymentRefund{id = RefundID1} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    ?operation_not_permitted() =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID1, Refund1, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    Refund2 = #domain_InvoicePaymentRefund{id = RefundID2} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID2, Refund2, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    #payproc_InvoicePayment{
+        payment = #domain_InvoicePayment{status = ?captured()},
+        refunds =
+            [
+                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
+                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()}
+            ]
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client).
 
 -spec invalid_time_payment_partial_refund(config()) -> _ | no_return().
 
