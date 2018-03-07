@@ -262,10 +262,21 @@ reduce_holds_terms(undefined, _, _) ->
 
 reduce_refunds_terms(#domain_PaymentRefundsServiceTerms{} = Terms, VS, Rev) ->
     #domain_PaymentRefundsServiceTerms{
-        payment_methods = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.payment_methods, VS, Rev),
-        fees            = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.fees, VS, Rev)
+        payment_methods     = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.payment_methods, VS, Rev),
+        fees                = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.fees, VS, Rev),
+        eligibility_time    = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.eligibility_time, VS, Rev),
+        partial_refunds     = reduce_partial_refunds_terms(
+            Terms#domain_PaymentRefundsServiceTerms.partial_refunds, VS, Rev
+        )
     };
 reduce_refunds_terms(undefined, _, _) ->
+    undefined.
+
+reduce_partial_refunds_terms(#domain_PartialRefundsServiceTerms{} = Terms, VS, Rev) ->
+    #domain_PartialRefundsServiceTerms{
+        cash_limit = reduce_if_defined(Terms#domain_PartialRefundsServiceTerms.cash_limit, VS, Rev)
+    };
+reduce_partial_refunds_terms(undefined, _, _) ->
     undefined.
 
 reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
@@ -405,19 +416,37 @@ merge_holds_terms(Terms0, Terms1) ->
 merge_refunds_terms(
     #domain_PaymentRefundsServiceTerms{
         payment_methods = Pm0,
-        fees = Fee0
+        fees = Fee0,
+        eligibility_time = ElTime0,
+        partial_refunds = PartRef0
     },
     #domain_PaymentRefundsServiceTerms{
         payment_methods = Pm1,
-        fees = Fee1
+        fees = Fee1,
+        eligibility_time = ElTime1,
+        partial_refunds = PartRef1
     }
 ) ->
     #domain_PaymentRefundsServiceTerms{
-        payment_methods = hg_utils:select_defined(Pm1, Pm0),
-        fees            = hg_utils:select_defined(Fee1, Fee0)
+        payment_methods     = hg_utils:select_defined(Pm1, Pm0),
+        fees                = hg_utils:select_defined(Fee1, Fee0),
+        eligibility_time    = hg_utils:select_defined(ElTime1, ElTime0),
+        partial_refunds     = merge_partial_refunds_terms(PartRef0, PartRef1)
     };
 merge_refunds_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
+
+merge_partial_refunds_terms(
+    #domain_PartialRefundsServiceTerms{
+        cash_limit  = Cash0
+    },
+    #domain_PartialRefundsServiceTerms{
+        cash_limit  = Cash1
+    }
+) ->
+    #domain_PartialRefundsServiceTerms{
+        cash_limit  = hg_utils:select_defined(Cash1, Cash0)
+    }.
 
 merge_payouts_terms(
     #domain_PayoutsServiceTerms{
