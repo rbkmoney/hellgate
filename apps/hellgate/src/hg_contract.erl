@@ -191,47 +191,43 @@ ensure_contract_creation_params(
     } = Params,
     Revision
 ) ->
-    ValidRef = ensure_payment_institution(PaymentInstitutionRef, Revision),
+    ValidRef = ensure_payment_institution(PaymentInstitutionRef),
     Params#payproc_ContractParams{
-        template = ensure_contract_template(TemplateRef, PaymentInstitutionRef, Revision),
+        template = ensure_contract_template(TemplateRef, ValidRef, Revision),
         payment_institution = ValidRef
     }.
 
 -spec ensure_contract_template(contract_template_ref(), dmsl_domain_thrift:'PaymentInstitutionRef'(), revision()) ->
     contract_template_ref() | no_return().
 
-ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, _PaymentInstitutionRef, Revision) ->
-    try
-        _GoodTemplate = get_template(TemplateRef, Revision),
-        TemplateRef
-    catch
-        error:{object_not_found, _} ->
-            raise_invalid_request(<<"contract template not found">>)
-    end;
-
+ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, _, _) ->
+    TemplateRef;
 ensure_contract_template(undefined, PaymentInstitutionRef, Revision) ->
     get_default_template_ref(PaymentInstitutionRef, Revision).
 
--spec ensure_payment_institution(payment_inst_ref(), revision()) ->
+-spec ensure_payment_institution(payment_inst_ref()) ->
     payment_inst_ref() | no_return().
 
-ensure_payment_institution(#domain_PaymentInstitutionRef{} = PaymentInstitutionRef, Revision) ->
-    try
-        _PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-        PaymentInstitutionRef
-    catch
-        error:{object_not_found, _} ->
-            raise_invalid_request(<<"payment institution not found">>)
-    end;
-ensure_payment_institution(undefined, _) ->
-    raise_invalid_request(<<"undefined payment institution">>).
-
+ensure_payment_institution(#domain_PaymentInstitutionRef{} = PaymentInstitutionRef) ->
+    PaymentInstitutionRef;
+ensure_payment_institution(undefined) ->
+    throw({contract_payment_institution_invalid, undefined}).
 
 get_template(TemplateRef, Revision) ->
-    hg_domain:get(Revision, {contract_template, TemplateRef}).
+    try
+        hg_domain:get(Revision, {contract_template, TemplateRef})
+    catch
+        error:{object_not_found, _} ->
+            throw({contract_template_invalid, TemplateRef})
+    end.
 
 get_payment_institution(PaymentInstitutionRef, Revision) ->
-    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+    try
+        hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef})
+    catch
+        error:{object_not_found, _} ->
+            throw({contract_payment_institution_invalid, PaymentInstitutionRef})
+    end.
 
 get_default_template_ref(PaymentInstitutionRef, Revision) ->
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
@@ -253,9 +249,3 @@ add_interval(Timestamp, Interval) ->
         days = DD
     } = Interval,
     hg_datetime:add_interval(Timestamp, {YY, MM, DD}).
-
--spec raise_invalid_request(binary()) ->
-    no_return().
-
-raise_invalid_request(Error) ->
-    throw(#'InvalidRequest'{errors = [Error]}).

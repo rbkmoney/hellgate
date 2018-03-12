@@ -249,7 +249,24 @@ make_changeset_effects(Changeset, Timestamp, Revision) ->
     )).
 
 make_change_effect(?contract_modification(ID, Modification), Timestamp, Revision) ->
-    ?contract_effect(ID, make_contract_modification_effect(ID, Modification, Timestamp, Revision));
+    try
+        ?contract_effect(ID, make_contract_modification_effect(ID, Modification, Timestamp, Revision))
+    catch
+        throw:{contract_payment_institution_invalid, Ref} ->
+            raise_invalid_changeset(
+                {contract_payment_institution_invalid, #payproc_ContractPaymentInstitutionInvalid{
+                    contract_id = ID,
+                    payment_institution = Ref
+                }}
+            );
+        throw:{contract_template_invalid, TemplateRef} ->
+            raise_invalid_changeset(
+                {contract_template_invalid, #payproc_ContractTemplateInvalid{
+                    contract_id = ID,
+                    contract_template = TemplateRef
+                }}
+            )
+    end;
 
 make_change_effect(?shop_modification(ID, Modification), Timestamp, _Revision) ->
     ?shop_effect(ID, make_shop_modification_effect(ID, Modification, Timestamp)).
@@ -537,9 +554,14 @@ assert_payment_institutions_equals(OldContractID, NewContractID, Party) ->
     case hg_party:get_contract(NewContractID, Party) of
         #domain_Contract{payment_institution = OldRef} ->
             ok;
-        #domain_Contract{} ->
-            % TODO change to special invalid_changeset error
-            throw(#'InvalidRequest'{errors = [<<"Can't change shop's payment institution">>]});
+        #domain_Contract{payment_institution = NewRef} ->
+            % Can't change shop's payment institution
+            raise_invalid_changeset(
+                {contract_payment_institution_invalid, #payproc_ContractPaymentInstitutionInvalid{
+                    contract_id = NewContractID,
+                    payment_institution = NewRef
+                }}
+            );
         undefined ->
             raise_invalid_changeset({contract_not_exists, NewContractID})
     end.
