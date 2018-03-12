@@ -446,7 +446,9 @@ merge_partial_refunds_terms(
 ) ->
     #domain_PartialRefundsServiceTerms{
         cash_limit  = hg_utils:select_defined(Cash1, Cash0)
-    }.
+    };
+merge_partial_refunds_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
 
 merge_payouts_terms(
     #domain_PayoutsServiceTerms{
