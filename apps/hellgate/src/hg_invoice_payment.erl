@@ -2233,7 +2233,7 @@ unmarshal(session_status, [<<"failed">>, Failure]) ->
 unmarshal(session_status, ?legacy_session_succeeded()) ->
     ?session_succeeded();
 unmarshal(session_status, ?legacy_session_failed(Failure)) ->
-    ?session_failed(unmarshal(failure, Failure));
+    ?session_failed(unmarshal(failure, [1, Failure]));
 
 %% Adjustment change
 
