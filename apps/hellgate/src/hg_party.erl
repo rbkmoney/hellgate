@@ -32,7 +32,6 @@
 -export([shop_suspension/3]).
 -export([set_shop/2]).
 
--export([get_new_shop_currency/4]).
 -export([get_shop/2]).
 -export([get_shop_account/2]).
 -export([get_account_state/2]).
@@ -51,7 +50,6 @@
 -type shop()                  :: dmsl_domain_thrift:'Shop'().
 -type shop_id()               :: dmsl_domain_thrift:'ShopID'().
 -type shop_params()           :: dmsl_payment_processing_thrift:'ShopParams'().
--type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
 
 -type blocking()              :: dmsl_domain_thrift:'Blocking'().
 -type suspension()            :: dmsl_domain_thrift:'Suspension'().
@@ -195,18 +193,6 @@ get_account_state(AccountID, Party) ->
         available_amount = MinAvailableAmount,
         currency = Currency
     }.
-
--spec get_new_shop_currency(shop(), party(), timestamp(), revision()) ->
-    currency().
-
-get_new_shop_currency(#domain_Shop{contract_id = ContractID}, Party, Timestamp, Revision) ->
-    Currencies = case get_contract(ContractID, Party) of
-        undefined ->
-            throw({contract_not_exists, ContractID});
-        Contract ->
-            hg_contract:get_currencies(Contract, Timestamp, Revision)
-    end,
-    erlang:hd(ordsets:to_list(Currencies)).
 
 %% Internals
 
@@ -537,8 +523,7 @@ assert_shop_contract_valid(
                     #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}}
                 );
         undefined ->
-            % TODO change to special invalid_changeset error
-            throw(#'InvalidRequest'{errors = [<<"Can't create shop without account">>]})
+            hg_claim:raise_invalid_changeset({shop_without_account, ID})
     end,
     Categories = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse

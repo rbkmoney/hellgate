@@ -9,7 +9,6 @@
 -export([update_status/2]).
 
 -export([get_categories/3]).
--export([get_currencies/3]).
 -export([get_adjustment/2]).
 -export([get_payout_tool/2]).
 
@@ -27,7 +26,6 @@
 -type adjustment_params()     :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
 -type payout_tool()           :: dmsl_domain_thrift:'PayoutTool'().
 -type payout_tool_id()        :: dmsl_domain_thrift:'PayoutToolID'().
--type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
 -type category()              :: dmsl_domain_thrift:'CategoryRef'().
 -type contract_template_ref() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type payment_inst_ref()      :: dmsl_domain_thrift:'PaymentInstitutionRef'().
@@ -122,23 +120,6 @@ get_categories(Contract, Timestamp, Revision) ->
             Value;
         false ->
             error({misconfiguration, {'Empty set in category selector\'s value', CategorySelector, Revision}})
-    end.
-
--spec get_currencies(contract(), timestamp(), revision()) ->
-    ordsets:ordset(currency()) | no_return().
-
-get_currencies(Contract, Timestamp, Revision) ->
-    #domain_TermSet{
-        payments = #domain_PaymentsServiceTerms{
-            currencies = CurrencySelector
-        }
-    } = hg_party:get_terms(Contract, Timestamp, Revision),
-    Value = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
-    case ordsets:size(Value) > 0 of
-        true ->
-            Value;
-        false ->
-            error({misconfiguration, {'Empty set in currency selector\'s value', CurrencySelector, Revision}})
     end.
 
 -spec get_adjustment(adjustment_id(), contract()) ->
