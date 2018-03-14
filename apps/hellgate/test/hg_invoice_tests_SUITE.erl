@@ -1334,8 +1334,7 @@ payment_with_offsite_preauth_failed(C) ->
             ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
         ),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
-    ] = next_event(InvoiceID, Client),
-
+    ] = next_event(InvoiceID, 8000, Client),
     ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
