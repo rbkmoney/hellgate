@@ -261,7 +261,7 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
     case get_transaction_state(Key) of
         processed ->
             finish(?success(), get_payment_id(PaymentInfo));
-        {pending, Count} when Count > 3 ->
+        {pending, Count} when Count > 2 ->
             Failure = payproc_errors:construct('PaymentFailure',
                 {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}),
             finish(?failure(Failure));
@@ -269,7 +269,7 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
             set_transaction_state(Key, {pending, Count + 1}),
             sleep(1, <<"sleeping_with_user_interaction">>);
         undefined ->
-            set_transaction_state(Key, {pending, 0}),
+            set_transaction_state(Key, {pending, 1}),
             sleep(1, <<"sleeping_with_user_interaction">>)
     end;
 

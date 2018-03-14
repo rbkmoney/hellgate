@@ -133,8 +133,7 @@ all() ->
 
         terms_retrieval,
 
-        adhoc_repair_working_failed,
-        adhoc_repair_failed_succeeded,
+        {group, adhoc_repairs},
 
         consistent_history
     ].
@@ -152,6 +151,10 @@ groups() ->
         {offsite_preauth_payment, [parallel], [
             payment_with_offsite_preauth_success,
             payment_with_offsite_preauth_failed
+        ]},
+        {adhoc_repairs, [parallel], [
+            adhoc_repair_working_failed,
+            adhoc_repair_failed_succeeded
         ]}
     ].
 
