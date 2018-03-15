@@ -120,7 +120,7 @@ update_proxy_state(ProxyState, Session) ->
         ProxyState ->
             % proxy state did not change, no need to publish an event
             [];
-        _NewState ->
+        _WasState ->
             [?proxy_st_changed(ProxyState)]
     end.
 
