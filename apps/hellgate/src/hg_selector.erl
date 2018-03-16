@@ -37,8 +37,7 @@
     shop            => dmsl_domain_thrift:'Shop'(),
     risk_score      => dmsl_domain_thrift:'RiskScore'(),
     flow            => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
-    payout_method   => dmsl_domain_thrift:'PayoutMethodRef'(),
-    cost_for_refund => dmsl_domain_thrift:'Cash'()
+    payout_method   => dmsl_domain_thrift:'PayoutMethodRef'()
 }.
 
 -export_type([varset/0]).

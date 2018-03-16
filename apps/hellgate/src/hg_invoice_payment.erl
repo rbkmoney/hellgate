@@ -317,9 +317,8 @@ get_customer_contact_info(#payproc_Customer{contact_info = ContactInfo}) ->
     ContactInfo.
 
 construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Revision) ->
-    PaymentTool = get_payer_payment_tool(Payer),
     VS1 = validate_payment_tool(
-        PaymentTool,
+        get_payer_payment_tool(Payer),
         Terms#domain_PaymentsServiceTerms.payment_methods,
         VS0,
         Revision
@@ -328,8 +327,7 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Rev
         Cost,
         Terms#domain_PaymentsServiceTerms.cash_limit,
         VS1,
-        Revision,
-        fun validate_limit/2
+        Revision
     ),
     {Flow, VS3} = construct_payment_flow(
         FlowParams,
@@ -338,12 +336,9 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Rev
         VS2,
         Revision
     ),
-    VS4 = validate_refund_terms(
-        Cost,
-        PaymentTool,
+    VS4 = collect_refund_varset(
         Terms#domain_PaymentsServiceTerms.refunds,
-        VS3,
-        Revision
+        VS3
     ),
     {
         #domain_InvoicePayment{
@@ -405,17 +400,17 @@ validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
         throw_invalid_request(<<"Invalid payment method">>),
     VS#{payment_tool => PaymentTool}.
 
-validate_payment_cost(Cost, CashLimitSelector, VS, Revision, ValidateFun) ->
-    ok = validate_cash(Cost, CashLimitSelector, VS, Revision, ValidateFun),
+validate_payment_cost(Cost, CashLimitSelector, VS, Revision) ->
+    ok = validate_cash(Cost, CashLimitSelector, VS, Revision),
     VS#{cost => Cost}.
 
 validate_refund_cash(Cash, CashLimitSelector, VS, Revision) ->
-    ok = validate_cash(Cash, CashLimitSelector, VS, Revision, fun validate_limit/2),
+    ok = validate_cash(Cash, CashLimitSelector, VS, Revision),
     VS.
 
-validate_cash(Cash, CashLimitSelector, VS, Revision, ValidateFun) ->
+validate_cash(Cash, CashLimitSelector, VS, Revision) ->
     Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
-    ok = ValidateFun(Cash, Limit).
+    ok = validate_limit(Cash, Limit).
 
 validate_limit(Cash, CashRange) ->
     case hg_condition:test_cash_range(Cash, CashRange) of
@@ -425,14 +420,6 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, less than allowed minumum">>);
         {exceeds, upper} ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
-    end.
-
-validate_lower_limit(Cash, CashRange) ->
-    case hg_condition:test_cash_range(Cash, CashRange) of
-        Result when Result == within; Result == {exceeds, upper} ->
-            ok;
-        {exceeds, lower} ->
-            throw_invalid_request(<<"Invalid payment amount, less than allowed refund minumum">>)
     end.
 
 validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
@@ -455,41 +442,9 @@ validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Re
             throw(#payproc_OperationNotPermitted{})
     end.
 
-validate_refund_terms(
-    Cost,
-    PaymentTool,
-    #domain_PaymentRefundsServiceTerms{
-        payment_methods = PMs,
-        fees = Fees,
-        eligibility_time = ElTime,
-        partial_refunds = PRs
-    },
-    VS,
-    Revision
-) ->
-    NotAllTermsDefined = lists:any(fun(undefined) -> true; (_) -> false end, [PMs, Fees, ElTime]),
-    case NotAllTermsDefined of
-        true ->
-            throw_invalid_request(<<"Refunds are not available">>);
-        false ->
-            _ = validate_payment_tool(PaymentTool, PMs, #{}, Revision),
-            RefundVS = validate_partial_refund_terms(Cost, PRs, #{}, Revision),
-            VS#{refunds => RefundVS}
-    end;
-validate_refund_terms(_, _, undefined, VS, _) ->
-    VS.
-
-validate_partial_refund_terms(
-    Cost,
-    #domain_PartialRefundsServiceTerms{cash_limit = CashLimitSelector},
-    VS,
-    Revision
-) when CashLimitSelector /= undefined ->
-    PartRefundVS = validate_payment_cost(Cost, CashLimitSelector, VS, Revision, fun validate_lower_limit/2),
-    #{partial_refunds => PartRefundVS};
-validate_partial_refund_terms(_, #domain_PartialRefundsServiceTerms{cash_limit = undefined}, _, _) ->
-    throw_invalid_request(<<"Partial refunds are not available">>);
-validate_partial_refund_terms(_, undefined, VS, _) ->
+collect_refund_varset(#domain_PaymentRefundsServiceTerms{}, VS) ->
+    VS#{refunds => allowed};
+collect_refund_varset(undefined, VS) ->
     VS.
 
 collect_varset(St, Opts) ->

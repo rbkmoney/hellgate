@@ -1778,10 +1778,7 @@ construct_domain_fixture() ->
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
                     ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard),
-                    ?pmt(bank_card, jcb),
-                    ?pmt(payment_terminal, euroset),
-                    ?pmt(digital_wallet, qiwi)
+                    ?pmt(bank_card, mastercard)
                 ])},
                 fees = {value, [
                     ?cfpost(
