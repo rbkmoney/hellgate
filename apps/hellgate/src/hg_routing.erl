@@ -165,7 +165,8 @@ acceptable_payment_terms(
         categories      = CategoriesSelector,
         payment_methods = PMsSelector,
         cash_limit      = CashLimitSelector,
-        holds           = HoldsTerms
+        holds           = HoldsTerms,
+        refunds         = RefundsTerms
     },
     VS,
     Revision
@@ -177,6 +178,7 @@ acceptable_payment_terms(
     _ = try_accept_term(payment_tool , PMsSelector        , VS, Revision),
     _ = try_accept_term(cost         , CashLimitSelector  , VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
+    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), Revision),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
     throw(false).
@@ -193,6 +195,30 @@ acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
         undefined ->
             throw(false)
     end.
+
+acceptable_refunds_terms(_Terms, undefined, _Revision) ->
+    true;
+acceptable_refunds_terms(
+    #domain_PaymentRefundsProvisionTerms{
+        partial_refunds = PRs
+    },
+    VS,
+    Revision
+) ->
+    _ = acceptable_partial_refunds_terms(PRs, getv(partial_refunds, VS, undefined), Revision),
+    true;
+acceptable_refunds_terms(undefined, _VS, _Revision) ->
+    false.
+
+acceptable_partial_refunds_terms(
+    #domain_PartialRefundsProvisionTerms{cash_limit = CashLimitSelector},
+    #{cost := Cost},
+    Revision
+) ->
+    _ = try_accept_term(cost_for_refund, CashLimitSelector, #{cost_for_refund => Cost}, Revision),
+    true;
+acceptable_partial_refunds_terms(_Terms, _Refunds, _Revision) ->
+    true.
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
@@ -259,7 +285,10 @@ test_term(payment_tool, PT, PMs) ->
 test_term(cost, Cost, CashRange) ->
     hg_condition:test_cash_range(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
-    Lifetime =< Allowed.
+    Lifetime =< Allowed;
+test_term(cost_for_refund, Cost, CashRange) ->
+    Result = hg_condition:test_cash_range(Cost, CashRange),
+    (Result == within) or (Result == {exceeds, upper}).
 
 %%
 
