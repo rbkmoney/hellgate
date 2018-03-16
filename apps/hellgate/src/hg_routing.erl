@@ -201,7 +201,7 @@ acceptable_refunds_terms(_Terms, undefined, _Revision) ->
 acceptable_refunds_terms(#domain_PaymentRefundsProvisionTerms{}, allowed, _Revision) ->
     true;
 acceptable_refunds_terms(undefined, allowed, _Revision) ->
-    false.
+    throw(false).
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
