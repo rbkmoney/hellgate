@@ -771,13 +771,22 @@ marshal(redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}})
         }
     ];
 
+marshal(sub_failure, undefined) ->
+    undefined;
+marshal(sub_failure, #domain_SubFailure{} = SubFailure) ->
+    genlib_map:compact(#{
+        <<"code">> => marshal(str        , SubFailure#domain_SubFailure.code),
+        <<"sub" >> => marshal(sub_failure, SubFailure#domain_SubFailure.sub )
+    });
+
 marshal(failure, {operation_timeout, _}) ->
-    <<"operation_timeout">>;
-marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
-    [<<"external_failure">>, genlib_map:compact(#{
-        <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
-        <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
-    })];
+    [1, <<"operation_timeout">>];
+marshal(failure, {failure, #domain_Failure{} = Failure}) ->
+    [1, [<<"failure">>, genlib_map:compact(#{
+        <<"code"  >> => marshal(str        , Failure#domain_Failure.code  ),
+        <<"reason">> => marshal(str        , Failure#domain_Failure.reason),
+        <<"sub"   >> => marshal(sub_failure, Failure#domain_Failure.sub   )
+    })]];
 
 marshal(metadata, Metadata) ->
     hg_msgpack_marshalling:marshal(json, Metadata);
@@ -961,12 +970,30 @@ unmarshal(redirect, [<<"post">>, #{<<"uri">> := URI, <<"form">> := Form}]) ->
         #'BrowserPostRequest'{uri = unmarshal(str, URI), form = unmarshal(map_str, Form)}
     };
 
+unmarshal(sub_failure, undefined) ->
+    undefined;
+unmarshal(sub_failure, #{<<"code">> := Code} = SubFailure) ->
+    #domain_SubFailure{
+        code   = unmarshal(str        , Code),
+        sub    = unmarshal(sub_failure, maps:get(<<"sub">>, SubFailure, undefined))
+    };
+
+unmarshal(failure, [1, <<"operation_timeout">>]) ->
+    {operation_timeout, #domain_OperationTimeout{}};
+unmarshal(failure, [1, [<<"failure">>, #{<<"code">> := Code} = Failure]]) ->
+    {failure, #domain_Failure{
+        code   = unmarshal(str        , Code),
+        reason = unmarshal(str        , maps:get(<<"reason">>, Failure, undefined)),
+        sub    = unmarshal(sub_failure, maps:get(<<"sub"   >>, Failure, undefined))
+    }};
+
 unmarshal(failure, <<"operation_timeout">>) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]) ->
-    {external_failure, #domain_ExternalFailure{
-        code        = unmarshal(str, Code),
-        description = unmarshal(str, genlib_map:get(<<"description">>, ExternalFailure))
+    Description = maps:get(<<"description">>, ExternalFailure, undefined),
+    {failure, #domain_Failure{
+        code   = unmarshal(str, Code),
+        reason = unmarshal(str, Description)
     }};
 
 unmarshal(contact_info, ContactInfo) ->

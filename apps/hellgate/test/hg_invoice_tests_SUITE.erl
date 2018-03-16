@@ -7,6 +7,7 @@
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -52,10 +53,15 @@
 -export([payment_partial_refunds_success/1]).
 -export([invalid_amount_payment_partial_refund/1]).
 -export([invalid_time_payment_partial_refund/1]).
+-export([cant_start_simultaneous_partial_refunds/1]).
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
 -export([payment_with_offsite_preauth_failed/1]).
 -export([terms_retrieval/1]).
+
+-export([adhoc_repair_working_failed/1]).
+-export([adhoc_repair_failed_succeeded/1]).
+
 -export([consistent_history/1]).
 
 %%
@@ -119,12 +125,15 @@ all() ->
         payment_refund_success,
         payment_partial_refunds_success,
         invalid_amount_payment_partial_refund,
+        cant_start_simultaneous_partial_refunds,
         invalid_time_payment_partial_refund,
 
         rounding_cashflow_volume,
         {group, offsite_preauth_payment},
 
         terms_retrieval,
+
+        {group, adhoc_repairs},
 
         consistent_history
     ].
@@ -142,6 +151,10 @@ groups() ->
         {offsite_preauth_payment, [parallel], [
             payment_with_offsite_preauth_success,
             payment_with_offsite_preauth_failed
+        ]},
+        {adhoc_repairs, [parallel], [
+            adhoc_repair_working_failed,
+            adhoc_repair_failed_succeeded
         ]}
     ].
 
@@ -1037,6 +1050,35 @@ invalid_amount_payment_partial_refund(C) ->
     }} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client).
 
+-spec cant_start_simultaneous_partial_refunds(config()) -> _ | no_return().
+
+cant_start_simultaneous_partial_refunds(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    RefundParams = make_refund_params(10000, <<"RUB">>),
+    Refund1 = #domain_InvoicePaymentRefund{id = RefundID1} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    ?operation_not_permitted() =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID1, Refund1, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    Refund2 = #domain_InvoicePaymentRefund{id = RefundID2} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID2, Refund2, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    #payproc_InvoicePayment{
+        payment = #domain_InvoicePayment{status = ?captured()},
+        refunds =
+            [
+                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
+                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()}
+            ]
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client).
+
 -spec invalid_time_payment_partial_refund(config()) -> _ | no_return().
 
 invalid_time_payment_partial_refund(C) ->
@@ -1216,11 +1258,47 @@ terms_retrieval(C) ->
             ?pmt(payment_terminal, euroset)
         ]}
     }} = TermSet1,
+    Revision = hg_domain:head(),
     ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
-    }} = TermSet2.
+    }} = TermSet2,
+    ok = hg_domain:reset(Revision).
+
+%%
+
+-spec adhoc_repair_working_failed(config()) -> _ | no_return().
+
+adhoc_repair_working_failed(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    {exception, #'InvalidRequest'{}} = repair_invoice(InvoiceID, [], Client),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec adhoc_repair_failed_succeeded(config()) -> _ | no_return().
+
+adhoc_repair_failed_succeeded(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    PaymentParams = make_payment_params(PaymentTool, Session),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
+    ] = next_event(InvoiceID, Client),
+    % assume no more events here since machine is FUBAR already
+    timeout = next_event(InvoiceID, 2000, Client),
+    Changes = [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ],
+    ok = repair_invoice(InvoiceID, Changes, Client),
+    Changes = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
 -spec payment_with_offsite_preauth_success(config()) -> test_return().
 
@@ -1228,7 +1306,7 @@ payment_with_offsite_preauth_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite),
-    PaymentParams = make_payment_params(PaymentTool, Session, instant),
+    PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     timer:sleep(2000),
@@ -1253,11 +1331,13 @@ payment_with_offsite_preauth_failed(C) ->
     [
         ?payment_ev(
             PaymentID,
-            ?session_ev(?processed(), ?session_finished(?session_failed(Failure = ?external_failure(<<"smth wrong">>))))
+            ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
         ),
-        ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
-    ] = next_event(InvoiceID, Client),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
+    ] = next_event(InvoiceID, 8000, Client),
+    ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
+
 %%
 
 next_event(InvoiceID, Client) ->
@@ -1435,6 +1515,9 @@ make_payment_params(FlowType) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
     make_payment_params(PaymentTool, Session, FlowType).
 
+make_payment_params(PaymentTool, Session) ->
+    make_payment_params(PaymentTool, Session, instant).
+
 make_payment_params(PaymentTool, Session, FlowType) ->
     Flow = case FlowType of
         instant ->
@@ -1483,6 +1566,9 @@ make_due_date(LifetimeSeconds) ->
 create_invoice(InvoiceParams, Client) ->
     ?invoice_state(?invoice(InvoiceID)) = hg_client_invoicing:create(InvoiceParams, Client),
     InvoiceID.
+
+repair_invoice(InvoiceID, Changes, Client) ->
+    hg_client_invoicing:repair(InvoiceID, Changes, Client).
 
 start_invoice(Product, Due, Amount, C) ->
     start_invoice(cfg(shop_id, C), Product, Due, Amount, C).

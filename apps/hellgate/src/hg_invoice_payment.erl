@@ -17,6 +17,8 @@
 %%%  - think about safe clamping of timers returned by some proxy
 %%%  - why don't user interaction events imprint anything on the state?
 %%%  - adjustments look and behave very much like claims over payments
+%%%  - payment status transition are caused by the fact that some session
+%%%    finishes, which could have happened in the past, not just now
 
 -module(hg_invoice_payment).
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
@@ -112,8 +114,8 @@
 -type cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
 -type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
 -type session_result()    :: dmsl_payment_processing_thrift:'SessionResult'().
--type proxy_state()       :: dmsl_proxy_thrift:'ProxyState'().
--type tag()               :: dmsl_proxy_thrift:'CallbackTag'().
+-type proxy_state()       :: dmsl_proxy_provider_thrift:'ProxyState'().
+-type tag()               :: dmsl_proxy_provider_thrift:'CallbackTag'().
 
 -type session() :: #{
     target      := target(),
@@ -549,14 +551,14 @@ collect_cash_flow_context(
 collect_account_map(
     Payment,
     #domain_Shop{account = MerchantAccount},
-    #domain_PaymentInstitution{system_account_set = SystemAccountSetSelector},
+    PaymentInstitution,
     #domain_Provider{accounts = ProviderAccounts},
     VS,
     Revision
 ) ->
     Currency = get_currency(get_payment_cost(Payment)),
     ProviderAccount = choose_provider_account(Currency, ProviderAccounts),
-    SystemAccount = choose_system_account(SystemAccountSetSelector, Currency, VS, Revision),
+    SystemAccount = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
     M = #{
         {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
         {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
@@ -575,16 +577,12 @@ collect_account_map(
     end.
 
 choose_provider_account(Currency, Accounts) ->
-    choose_account(provider, Currency, Accounts).
-
-choose_system_account(SystemAccountSetSelector, Currency, VS, Revision) ->
-    SystemAccountSetRef = reduce_selector(system_account_set, SystemAccountSetSelector, VS, Revision),
-    SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
-    choose_account(
-        system,
-        Currency,
-        SystemAccountSet#domain_SystemAccountSet.accounts
-    ).
+    case maps:find(Currency, Accounts) of
+        {ok, Account} ->
+            Account;
+        error ->
+            error({misconfiguration, {'No provider account for a given currency', Currency}})
+    end.
 
 choose_external_account(Currency, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
@@ -598,14 +596,6 @@ choose_external_account(Currency, VS, Revision) ->
             );
         _ ->
             undefined
-    end.
-
-choose_account(Name, Currency, Accounts) ->
-    case maps:find(Currency, Accounts) of
-        {ok, Account} ->
-            Account;
-        error ->
-            error({misconfiguration, {'No account for a given currency', {Name, Currency}}})
     end.
 
 get_account_state(AccountType, AccountMap, Accounts) ->
@@ -676,6 +666,7 @@ refund(Params, St0, Opts) ->
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     _ = assert_payment_status(captured, Payment),
+    _ = assert_previous_refunds_finished(St),
     VS0 = collect_varset(St, Opts),
     Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
     _ = assert_refund_cash(Cash, St),
@@ -731,6 +722,22 @@ assert_remaining_payment_amount(?cash(Amount, _), _St) when Amount >= 0 ->
 assert_remaining_payment_amount(?cash(Amount, _), St) when Amount < 0 ->
     Maximum = get_payment_cost(get_payment(St)),
     throw(#payproc_InvoicePaymentAmountExceeded{maximum = Maximum}).
+
+assert_previous_refunds_finished(St) ->
+    PendingRefunds = lists:filter(
+        fun
+            (#domain_InvoicePaymentRefund{status = ?refund_pending()}) ->
+                true;
+            (#domain_InvoicePaymentRefund{}) ->
+                false
+        end,
+        get_refunds(St)),
+    case PendingRefunds of
+        [] ->
+            ok;
+        [_R|_] ->
+            throw(#payproc_OperationNotPermitted{})
+    end.
 
 get_remaining_payment_amount(RefundCash, St) ->
     PaymentAmount = get_payment_cost(get_payment(St)),
@@ -1163,7 +1170,7 @@ handle_proxy_result(
     Session
 ) ->
     Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
+    Events2 = update_proxy_state(ProxyState, Session),
     {Events3, Action} = handle_proxy_intent(Intent, Action0),
     {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
@@ -1180,7 +1187,7 @@ handle_proxy_callback_result(
     Session
 ) ->
     Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
+    Events2 = update_proxy_state(ProxyState, Session),
     {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
     {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
 handle_proxy_callback_result(
@@ -1189,7 +1196,7 @@ handle_proxy_callback_result(
     Session
 ) ->
     Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
+    Events2 = update_proxy_state(ProxyState, Session),
     {wrap_session_events(Events1 ++ Events2, Session), Action0}.
 
 handle_proxy_callback_timeout(Action, Session) ->
@@ -1199,25 +1206,31 @@ handle_proxy_callback_timeout(Action, Session) ->
 wrap_session_events(SessionEvents, #{target := Target}) ->
     [?session_ev(Target, Ev) || Ev <- SessionEvents].
 
-update_proxy_state(undefined) ->
+update_proxy_state(undefined, _Session) ->
     [];
-update_proxy_state(ProxyState) ->
-    [?proxy_st_changed(ProxyState)].
+update_proxy_state(ProxyState, Session) ->
+    case get_session_proxy_state(Session) of
+        ProxyState ->
+            % proxy state did not change, no need to publish an event
+            [];
+        _WasState ->
+            [?proxy_st_changed(ProxyState)]
+    end.
 
-handle_proxy_intent(#'FinishIntent'{status = {success, _}}, Action) ->
+handle_proxy_intent(#'prxprv_FinishIntent'{status = {success, _}}, Action) ->
     Events = [?session_finished(?session_succeeded())],
     {Events, Action};
 
-handle_proxy_intent(#'FinishIntent'{status = {failure, Failure}}, Action) ->
-    Events = [?session_finished(?session_failed(convert_failure(Failure)))],
+handle_proxy_intent(#'prxprv_FinishIntent'{status = {failure, Failure}}, Action) ->
+    Events = [?session_finished(?session_failed({failure, Failure}))],
     {Events, Action};
 
-handle_proxy_intent(#'SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
+handle_proxy_intent(#'prxprv_SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
     Events = try_request_interaction(UserInteraction),
     {Events, Action};
 
-handle_proxy_intent(#'SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
+handle_proxy_intent(#'prxprv_SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
     {Events, Action}.
@@ -1267,7 +1280,7 @@ construct_proxy_context(St) ->
 construct_session(Session = #{target := Target}) ->
     #prxprv_Session{
         target = Target,
-        state = maps:get(proxy_state, Session, undefined)
+        state = get_session_proxy_state(Session)
     }.
 
 construct_payment_info(payment, _St, PaymentInfo) ->
@@ -1401,9 +1414,6 @@ collect_proxy_options(
             ProxyDef#domain_ProxyDefinition.options
         ]
     ).
-
-convert_failure(#'Failure'{code = Code, description = Description}) ->
-    ?external_failure(Code, Description).
 
 %%
 
@@ -1651,6 +1661,9 @@ get_session_status(#{status := Status}) ->
 
 get_session_trx(#{trx := Trx}) ->
     Trx.
+
+get_session_proxy_state(Session) ->
+    maps:get(proxy_state, Session, undefined).
 
 get_session_tags(#{tags := Tags}) ->
     Tags.
@@ -2063,12 +2076,21 @@ marshal(interaction, {payment_terminal_reciept, #'PaymentTerminalReceipt'{short_
         }
     };
 
+marshal(sub_failure, undefined) ->
+    undefined;
+marshal(sub_failure, #domain_SubFailure{} = SubFailure) ->
+    genlib_map:compact(#{
+        <<"code">> => marshal(str        , SubFailure#domain_SubFailure.code),
+        <<"sub" >> => marshal(sub_failure, SubFailure#domain_SubFailure.sub )
+    });
+
 marshal(failure, {operation_timeout, _}) ->
-    [2, <<"operation_timeout">>];
-marshal(failure, {external_failure, #domain_ExternalFailure{} = ExternalFailure}) ->
-    [2, [<<"external_failure">>, genlib_map:compact(#{
-        <<"code">>          => marshal(str, ExternalFailure#domain_ExternalFailure.code),
-        <<"description">>   => marshal(str, ExternalFailure#domain_ExternalFailure.description)
+    [3, <<"operation_timeout">>];
+marshal(failure, {failure, #domain_Failure{} = Failure}) ->
+    [3, [<<"failure">>, genlib_map:compact(#{
+        <<"code"  >> => marshal(str        , Failure#domain_Failure.code  ),
+        <<"reason">> => marshal(str        , Failure#domain_Failure.reason),
+        <<"sub"   >> => marshal(sub_failure, Failure#domain_Failure.sub   )
     })]];
 
 marshal(on_hold_expiration, cancel) ->
@@ -2274,7 +2296,7 @@ unmarshal(session_status, [<<"failed">>, Failure]) ->
 unmarshal(session_status, ?legacy_session_succeeded()) ->
     ?session_succeeded();
 unmarshal(session_status, ?legacy_session_failed(Failure)) ->
-    ?session_failed(unmarshal(failure, Failure));
+    ?session_failed(unmarshal(failure, [1, Failure]));
 
 %% Adjustment change
 
@@ -2538,21 +2560,38 @@ unmarshal(interaction, ?legacy_payment_terminal_reciept(SPID, DueDate)) ->
         due = unmarshal(str, DueDate)
     }};
 
+unmarshal(sub_failure, undefined) ->
+    undefined;
+unmarshal(sub_failure, #{<<"code">> := Code} = SubFailure) ->
+    #domain_SubFailure{
+        code   = unmarshal(str        , Code),
+        sub    = unmarshal(sub_failure, maps:get(<<"sub">>, SubFailure, undefined))
+    };
+
+unmarshal(failure, [3, <<"operation_timeout">>]) ->
+    {operation_timeout, #domain_OperationTimeout{}};
+unmarshal(failure, [3, [<<"failure">>, #{<<"code">> := Code} = Failure]]) ->
+    {failure, #domain_Failure{
+        code   = unmarshal(str        , Code),
+        reason = unmarshal(str        , maps:get(<<"reason">>, Failure, undefined)),
+        sub    = unmarshal(sub_failure, maps:get(<<"sub"   >>, Failure, undefined))
+    }};
+
 unmarshal(failure, [2, <<"operation_timeout">>]) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [2, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]]) ->
     Description = maps:get(<<"description">>, ExternalFailure, undefined),
-    {external_failure, #domain_ExternalFailure{
-        code        = unmarshal(str, Code),
-        description = unmarshal(str, Description)
+    {failure, #domain_Failure{
+        code   = unmarshal(str, Code),
+        reason = unmarshal(str, Description)
     }};
 
 unmarshal(failure, [1, ?legacy_operation_timeout()]) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [1, ?legacy_external_failure(Code, Description)]) ->
-    {external_failure, #domain_ExternalFailure{
-        code        = unmarshal(str, Code),
-        description = unmarshal(str, Description)
+    {failure, #domain_Failure{
+        code   = unmarshal(str, Code),
+        reason = unmarshal(str, Description)
     }};
 
 unmarshal(on_hold_expiration, <<"cancel">>) ->

@@ -28,6 +28,8 @@ test({shop_location_is, V}, #{shop := S}, _) ->
     V =:= S#domain_Shop.location;
 test({party, V}, #{party := P} = VS, _) ->
     test_party(V, P, genlib_map:get(shop, VS));
+test({payout_method_is, V1}, #{payout_method := V2}, _) ->
+    V1 =:= V2;
 test(_, #{}, _) ->
     undefined.
 

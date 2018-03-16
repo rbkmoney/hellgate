@@ -82,6 +82,7 @@
 -export([contract_adjustment_expiration/1]).
 
 -export([compute_payment_institution_terms/1]).
+-export([compute_payout_cash_flow/1]).
 
 %% tests descriptions
 
@@ -174,6 +175,7 @@ groups() ->
             shop_terms_retrieval,
             shop_already_exists,
             shop_update,
+            compute_payout_cash_flow,
             {group, shop_blocking_suspension}
         ]},
         {shop_blocking_suspension, [sequence], [
@@ -390,6 +392,7 @@ end_per_testcase(_Name, _C) ->
 -spec contract_adjustment_creation(config()) -> _ | no_return().
 -spec contract_adjustment_expiration(config()) -> _ | no_return().
 -spec compute_payment_institution_terms(config()) -> _ | no_return().
+-spec compute_payout_cash_flow(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -618,10 +621,44 @@ contract_adjustment_expiration(C) ->
 
 compute_payment_institution_terms(C) ->
     Client = cfg(client, C),
-    #domain_TermSet{} = hg_client_party:compute_payment_institution_terms(
-        ?pinst(1),
+    #domain_TermSet{} = T1 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(2),
+        #payproc_Varset{},
         Client
-    ).
+    ),
+    #domain_TermSet{} = T2 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(2),
+        #payproc_Varset{payment_method = ?pmt(bank_card, visa)},
+        Client
+    ),
+    T1 /= T2 orelse error({equal_term_sets, T1, T2}),
+    #domain_TermSet{} = T3 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(2),
+        #payproc_Varset{payment_method = ?pmt(payment_terminal, euroset)},
+        Client
+    ),
+    T1 /= T3 orelse error({equal_term_sets, T1, T3}),
+    T2 /= T3 orelse error({equal_term_sets, T2, T3}).
+
+compute_payout_cash_flow(C) ->
+    Client = cfg(client, C),
+    Params = #payproc_PayoutParams{
+        id = ?REAL_SHOP_ID,
+        amount = #domain_Cash{amount = 10000, currency = ?cur(<<"RUB">>)},
+        timestamp = hg_datetime:format_now()
+    },
+    [
+        #domain_FinalCashFlowPosting{
+            source = #domain_FinalCashFlowAccount{account_type = {merchant, settlement}},
+            destination = #domain_FinalCashFlowAccount{account_type = {merchant, payout}},
+            volume = #domain_Cash{amount = 7500, currency = ?cur(<<"RUB">>)}
+        },
+        #domain_FinalCashFlowPosting{
+            source = #domain_FinalCashFlowAccount{account_type = {merchant, settlement}},
+            destination = #domain_FinalCashFlowAccount{account_type = {system, settlement}},
+            volume = #domain_Cash{amount = 2500, currency = ?cur(<<"RUB">>)}
+        }
+    ] = hg_client_party:compute_payout_cash_flow(Params, Client).
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
@@ -1243,6 +1280,42 @@ construct_domain_fixture() ->
                     ?share(45, 1000, operation_amount)
                 )
             ]}
+        },
+        payouts = #domain_PayoutsServiceTerms{
+            payout_methods = {decisions, [
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool,
+                        {bank_card, #domain_BankCardCondition{
+                            definition = {bin_in, ?binrange(1)}
+                        }}
+                    }},
+                    then_ = {value, ordsets:from_list([?pomt(russian_bank_account), ?pomt(international_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{}}}},
+                    then_ = {value, ordsets:from_list([?pomt(russian_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool, {payment_terminal, #domain_PaymentTerminalCondition{}}}},
+                    then_ = {value, ordsets:from_list([?pomt(international_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {constant, true},
+                    then_ = {value, ordsets:from_list([])}
+                }
+            ]},
+            fees = {value, [
+                ?cfpost(
+                    {merchant, settlement},
+                    {merchant, payout},
+                    ?share(750, 1000, operation_amount)
+                ),
+                ?cfpost(
+                    {merchant, settlement},
+                    {system, settlement},
+                    ?share(250, 1000, operation_amount)
+                )
+            ]}
         }
     },
     [
@@ -1256,6 +1329,10 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+
+        hg_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
+        hg_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
@@ -1370,6 +1447,14 @@ construct_domain_fixture() ->
                         }
                     }
                 }]
+            }
+        }},
+        {bank_card_bin_range, #domain_BankCardBINRangeObject{
+            ref = ?binrange(1),
+            data = #domain_BankCardBINRange{
+                name = <<"Test BIN range">>,
+                description = <<"Test BIN range">>,
+                bins = ordsets:from_list([<<"1234">>, <<"5678">>])
             }
         }}
     ].
