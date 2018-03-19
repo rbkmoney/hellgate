@@ -442,9 +442,23 @@ validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Re
             throw(#payproc_OperationNotPermitted{})
     end.
 
-collect_refund_varset(#domain_PaymentRefundsServiceTerms{}, VS) ->
-    VS#{refunds => allowed};
+collect_refund_varset(
+    #domain_PaymentRefundsServiceTerms{
+        partial_refunds = PartialRefundsServiceTerms
+    },
+    VS
+) ->
+    PartialRefundsVS = collect_partial_refund_varset(PartialRefundsServiceTerms, #{}),
+    VS#{refunds => PartialRefundsVS};
 collect_refund_varset(undefined, VS) ->
+    VS.
+
+collect_partial_refund_varset(
+    #domain_PartialRefundsServiceTerms{},
+    VS
+) ->
+    VS#{partial_refunds => allowed};
+collect_partial_refund_varset(undefined, VS) ->
     VS.
 
 collect_varset(St, Opts) ->

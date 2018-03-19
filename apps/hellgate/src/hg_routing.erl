@@ -178,7 +178,7 @@ acceptable_payment_terms(
     _ = try_accept_term(payment_tool , PMsSelector        , VS, Revision),
     _ = try_accept_term(cost         , CashLimitSelector  , VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
-    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), Revision),
+    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined)),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
     throw(false).
@@ -196,11 +196,27 @@ acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
             throw(false)
     end.
 
-acceptable_refunds_terms(_Terms, undefined, _Revision) ->
+% TODO:
+% - need to compare merchant's and providers's selectors;
+% - providers's selector should be wider or equal merchant's selector.
+acceptable_refunds_terms(_Terms, undefined) ->
     true;
-acceptable_refunds_terms(#domain_PaymentRefundsProvisionTerms{}, allowed, _Revision) ->
+acceptable_refunds_terms(
+    #domain_PaymentRefundsProvisionTerms{
+        partial_refunds =  PartialRefundsTerms
+    },
+    VS
+) ->
+    _ = acceptable_partial_refunds_terms(PartialRefundsTerms, getv(partial_refunds, VS, undefined)),
     true;
-acceptable_refunds_terms(undefined, allowed, _Revision) ->
+acceptable_refunds_terms(undefined, _VS) ->
+    throw(false).
+
+acceptable_partial_refunds_terms(_Terms, undefined) ->
+    true;
+acceptable_partial_refunds_terms(#domain_PartialRefundsProvisionTerms{}, allowed) ->
+    true;
+acceptable_partial_refunds_terms(undefined, _VS) ->
     throw(false).
 
 merge_payment_terms(
