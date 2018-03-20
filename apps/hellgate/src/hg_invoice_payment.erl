@@ -338,7 +338,8 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Rev
     ),
     VS4 = collect_refund_varset(
         Terms#domain_PaymentsServiceTerms.refunds,
-        VS3
+        VS3,
+        Revision
     ),
     {
         #domain_InvoicePayment{
@@ -446,19 +447,24 @@ collect_refund_varset(
     #domain_PaymentRefundsServiceTerms{
         partial_refunds = PartialRefundsServiceTerms
     },
-    VS
+    VS,
+    Revision
 ) ->
-    PartialRefundsVS = collect_partial_refund_varset(PartialRefundsServiceTerms, #{}),
+    PartialRefundsVS = collect_partial_refund_varset(PartialRefundsServiceTerms, #{}, Revision),
     VS#{refunds => PartialRefundsVS};
-collect_refund_varset(undefined, VS) ->
+collect_refund_varset(undefined, VS, _Revision) ->
     VS.
 
 collect_partial_refund_varset(
-    #domain_PartialRefundsServiceTerms{},
-    VS
+    #domain_PartialRefundsServiceTerms{
+        cash_limit = CashLimitSelector
+    },
+    VS,
+    Revision
 ) ->
-    VS#{partial_refunds => allowed};
-collect_partial_refund_varset(undefined, VS) ->
+    Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
+    VS#{partial_refunds => #{cash_limit => Limit}};
+collect_partial_refund_varset(undefined, VS, _Revision) ->
     VS.
 
 collect_varset(St, Opts) ->

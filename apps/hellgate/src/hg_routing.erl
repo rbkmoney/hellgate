@@ -178,7 +178,7 @@ acceptable_payment_terms(
     _ = try_accept_term(payment_tool , PMsSelector        , VS, Revision),
     _ = try_accept_term(cost         , CashLimitSelector  , VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
-    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined)),
+    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
     throw(false).
@@ -196,27 +196,37 @@ acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
             throw(false)
     end.
 
-% TODO:
-% - need to compare merchant's and providers's selectors;
-% - providers's selector should be wider or equal merchant's selector.
-acceptable_refunds_terms(_Terms, undefined) ->
+acceptable_refunds_terms(_Terms, undefined, _VS, _Revision) ->
     true;
 acceptable_refunds_terms(
     #domain_PaymentRefundsProvisionTerms{
         partial_refunds =  PartialRefundsTerms
     },
-    VS
+    RVS,
+    VS,
+    Revision
 ) ->
-    _ = acceptable_partial_refunds_terms(PartialRefundsTerms, getv(partial_refunds, VS, undefined)),
+    _ = acceptable_partial_refunds_terms(
+        PartialRefundsTerms,
+        getv(partial_refunds, RVS, undefined),
+        VS,
+        Revision
+    ),
     true;
-acceptable_refunds_terms(undefined, _VS) ->
+acceptable_refunds_terms(undefined, _RVS, _VS, _Revision) ->
     throw(false).
 
-acceptable_partial_refunds_terms(_Terms, undefined) ->
+acceptable_partial_refunds_terms(_Terms, undefined, _VS, _Revision) ->
     true;
-acceptable_partial_refunds_terms(#domain_PartialRefundsProvisionTerms{}, allowed) ->
-    true;
-acceptable_partial_refunds_terms(undefined, _VS) ->
+acceptable_partial_refunds_terms(
+    #domain_PartialRefundsProvisionTerms{cash_limit = CashLimitSelector},
+    #{cash_limit := MerchantLimit},
+    VS,
+    Revision
+) ->
+    ProviderLimit = reduce(cash_limit, CashLimitSelector, VS, Revision),
+    hg_cash_range:test_inclusive_intersection(MerchantLimit, ProviderLimit) == true orelse throw(false);
+acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
     throw(false).
 
 merge_payment_terms(

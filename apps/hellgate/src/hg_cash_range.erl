@@ -5,6 +5,8 @@
 -export([marshal/1]).
 -export([unmarshal/1]).
 
+-export([test_inclusive_intersection/2]).
+
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 
 %% Marshalling
@@ -61,3 +63,30 @@ unmarshal(cash_bound_legacy, {Exclusiveness, Cash}) when
     Exclusiveness == exclusive; Exclusiveness == inclusive
 ->
     {Exclusiveness, hg_cash:unmarshal([1, Cash])}.
+
+
+-spec test_inclusive_intersection(cash_range(), cash_range()) ->
+    true | false.
+
+test_inclusive_intersection(
+    #domain_CashRange{lower = Lower1, upper = Upper1},
+    #domain_CashRange{lower = Lower2, upper = Upper2}
+) ->
+    case {
+        test_cash_bound(fun erlang:'>'/2, Lower1, Lower2),
+        test_cash_bound(fun erlang:'<'/2, Upper1, Upper2)
+    } of
+        {true, true} ->
+            true;
+        {_, _} ->
+            false
+    end.
+
+test_cash_bound(_, {_, Cash}, {inclusive, Cash}) ->
+    true;
+test_cash_bound(_, {exclusive, Cash}, {exclusive, Cash}) ->
+    true;
+test_cash_bound(F, {_, ?cash(Amount1, Currency)}, {_, ?cash(Amount2, Currency)}) ->
+    F(Amount1, Amount2);
+test_cash_bound(_, _, _) ->
+    false.
