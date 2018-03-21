@@ -5,20 +5,20 @@
 -export([marshal/1]).
 -export([unmarshal/1]).
 
--export([test_cash/2]).
--export([compare/2]).
+-export([is_inside/2]).
+-export([is_subrange/2]).
 -export([intersect/2]).
 
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 -type cash()       :: dmsl_domain_thrift:'Cash'().
 
--spec test_cash(cash(), cash_range()) ->
+-spec is_inside(cash(), cash_range()) ->
     within | {exceeds, lower | upper}.
 
-test_cash(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper}) ->
+is_inside(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper}) ->
     case {
-        test_cash_bound(fun erlang:'>'/2, Cash, Lower),
-        test_cash_bound(fun erlang:'<'/2, Cash, Upper)
+        compare_cash(fun erlang:'>'/2, Cash, Lower),
+        compare_cash(fun erlang:'<'/2, Cash, Upper)
     } of
         {true, true} ->
             within;
@@ -30,6 +30,16 @@ test_cash(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper}) ->
             error({misconfiguration, {'Invalid cash range specified', CashRange, Cash}})
     end.
 
+-spec is_subrange(cash_range(), cash_range()) ->
+    true | false.
+
+is_subrange(
+    #domain_CashRange{lower = Lower1, upper = Upper1},
+    #domain_CashRange{lower = Lower2, upper = Upper2}
+) ->
+    compare_bound(fun erlang:'>'/2, Lower1, Lower2) and
+        compare_bound(fun erlang:'<'/2, Upper1, Upper2).
+
 -spec intersect(cash_range(), cash_range()) ->
     cash_range() | undefined.
 
@@ -39,43 +49,33 @@ intersect(
 ) ->
     Lower3 = intersect_bounds(fun erlang:'>'/2, Lower1, Lower2),
     Upper3 = intersect_bounds(fun erlang:'<'/2, Upper1, Upper2),
-    case compare_bounds(fun erlang:'<'/2, Lower3, Upper3) of
+    case compare_bound(fun erlang:'<'/2, Lower3, Upper3) of
         true ->
             #domain_CashRange{lower = Lower3, upper = Upper3};
         false ->
             undefined
     end.
 
--spec compare(cash_range(), cash_range()) ->
-    true | false.
-
-compare(
-    #domain_CashRange{lower = Lower1, upper = Upper1},
-    #domain_CashRange{lower = Lower2, upper = Upper2}
-) ->
-    compare_bounds(fun erlang:'>'/2, Lower1, Lower2) and
-        compare_bounds(fun erlang:'<'/2, Upper1, Upper2).
-
 %%
 
 intersect_bounds(F, Lower1, Lower2) ->
-    case compare_bounds(F, Lower1, Lower2) of
+    case compare_bound(F, Lower1, Lower2) of
         true ->
             Lower1;
         false ->
             Lower2
     end.
 
-compare_bounds(_, {exclusive, Cash}, {exclusive, Cash}) ->
+compare_bound(_, {exclusive, Cash}, {exclusive, Cash}) ->
     true;
-compare_bounds(F, {_, Cash}, Bound) ->
-    test_cash_bound(F, Cash, Bound) == true orelse false.
+compare_bound(F, {_, Cash}, Bound) ->
+    compare_cash(F, Cash, Bound) == true orelse false.
 
-test_cash_bound(_, V, {inclusive, V}) ->
+compare_cash(_, V, {inclusive, V}) ->
     true;
-test_cash_bound(F, ?cash(A, C), {_, ?cash(Am, C)}) ->
+compare_cash(F, ?cash(A, C), {_, ?cash(Am, C)}) ->
     F(A, Am);
-test_cash_bound(_, _, _) ->
+compare_cash(_, _, _) ->
     error.
 
 

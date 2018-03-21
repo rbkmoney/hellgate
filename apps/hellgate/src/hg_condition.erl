@@ -19,7 +19,7 @@ test({category_is, V1}, #{category := V2}, _) ->
 test({currency_is, V1}, #{currency := V2}, _) ->
     V1 =:= V2;
 test({cost_in, V}, #{cost := C}, _) ->
-    hg_cash_range:test_cash(C, V) =:= within;
+    hg_cash_range:is_inside(C, V) =:= within;
 test({payment_tool, C}, #{payment_tool := V}, Rev) ->
     hg_payment_tool:test_condition(C, V, Rev);
 test({shop_location_is, V}, #{shop := S}, _) ->

@@ -225,12 +225,8 @@ acceptable_partial_refunds_terms(
     Revision
 ) ->
     ProviderLimit = reduce(cash_limit, CashLimitSelector, VS, Revision),
-    case hg_cash_range:intersect(MerchantLimit, ProviderLimit) of
-        LimitsIntersection when LimitsIntersection /= undefined ->
-            hg_cash_range:compare(LimitsIntersection, ProviderLimit) == true orelse throw(false);
-        undefined ->
-            throw(false)
-    end;
+    hg_cash_range:is_subrange(MerchantLimit, ProviderLimit) == true orelse throw(false);
+
 acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
     throw(false).
 
@@ -297,7 +293,7 @@ test_term(category, V, Vs) ->
 test_term(payment_tool, PT, PMs) ->
     ordsets:is_element(hg_payment_tool:get_method(PT), PMs);
 test_term(cost, Cost, CashRange) ->
-    hg_cash_range:test_cash(Cost, CashRange) == within;
+    hg_cash_range:is_inside(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
     Lifetime =< Allowed.
 
