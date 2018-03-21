@@ -297,7 +297,7 @@ test_term(category, V, Vs) ->
 test_term(payment_tool, PT, PMs) ->
     ordsets:is_element(hg_payment_tool:get_method(PT), PMs);
 test_term(cost, Cost, CashRange) ->
-    hg_condition:test_cash_range(Cost, CashRange) == within;
+    hg_cash_range:test_cash(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
     Lifetime =< Allowed.
 

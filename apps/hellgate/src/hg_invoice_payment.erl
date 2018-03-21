@@ -414,7 +414,7 @@ validate_cash(Cash, CashLimitSelector, VS, Revision) ->
     ok = validate_limit(Cash, Limit).
 
 validate_limit(Cash, CashRange) ->
-    case hg_condition:test_cash_range(Cash, CashRange) of
+    case hg_cash_range:test_cash(Cash, CashRange) of
         within ->
             ok;
         {exceeds, lower} ->
@@ -766,7 +766,7 @@ get_provider_partial_refunds_terms(
 ) ->
     Cash = get_refund_cash(Refund),
     CashRange = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
-    case hg_condition:test_cash_range(Cash, CashRange) of
+    case hg_cash_range:test_cash(Cash, CashRange) of
         within ->
             Terms;
         {exceeds, _} ->
