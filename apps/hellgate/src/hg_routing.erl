@@ -208,7 +208,7 @@ acceptable_refunds_terms(
 ) ->
     _ = acceptable_partial_refunds_terms(
         PartialRefundsTerms,
-        getv(partial_refunds, RVS, undefined),
+        getv(partial, RVS, undefined),
         VS,
         Revision
     ),
@@ -225,7 +225,12 @@ acceptable_partial_refunds_terms(
     Revision
 ) ->
     ProviderLimit = reduce(cash_limit, CashLimitSelector, VS, Revision),
-    hg_cash_range:test_inclusive_intersection(MerchantLimit, ProviderLimit) == true orelse throw(false);
+    case hg_cash_range:intersect(MerchantLimit, ProviderLimit) of
+        LimitsIntersection when LimitsIntersection /= undefined ->
+            hg_cash_range:compare(LimitsIntersection, ProviderLimit) == true orelse throw(false);
+        undefined ->
+            throw(false)
+    end;
 acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
     throw(false).
 

@@ -463,7 +463,7 @@ collect_partial_refund_varset(
     Revision
 ) ->
     Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
-    VS#{partial_refunds => #{cash_limit => Limit}};
+    VS#{partial => #{cash_limit => Limit}};
 collect_partial_refund_varset(undefined, VS, _Revision) ->
     VS.
 
