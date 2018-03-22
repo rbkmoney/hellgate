@@ -1549,8 +1549,10 @@ get_refund_cashflow(#refund_st{cash_flow = CashFlow}) ->
 
 define_refund_cash(undefined, #domain_InvoicePayment{cost = Cost}) ->
     Cost;
-define_refund_cash(Cash, _Payment) ->
-    Cash.
+define_refund_cash(?cash(_, SymbCode) = Cash, #domain_InvoicePayment{cost = ?cash(_, SymbCode)}) ->
+    Cash;
+define_refund_cash(?cash(_, SymbCode), _Payment) ->
+    throw(#payproc_InconsistentRefundCurrency{currency = SymbCode}).
 
 get_refund_cash(#domain_InvoicePaymentRefund{cash = Cash}) ->
     Cash.

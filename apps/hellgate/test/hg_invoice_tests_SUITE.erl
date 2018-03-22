@@ -53,6 +53,7 @@
 -export([payment_partial_refunds_success/1]).
 -export([invalid_amount_payment_partial_refund/1]).
 -export([invalid_time_payment_partial_refund/1]).
+-export([invalid_currency_payment_partial_refund/1]).
 -export([cant_start_simultaneous_partial_refunds/1]).
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
@@ -125,6 +126,7 @@ all() ->
         payment_refund_success,
         payment_partial_refunds_success,
         invalid_amount_payment_partial_refund,
+        invalid_currency_payment_partial_refund,
         cant_start_simultaneous_partial_refunds,
         invalid_time_payment_partial_refund,
 
@@ -230,6 +232,8 @@ end_per_suite(C) ->
     {exception, #payproc_InsufficientAccountBalance{}}).
 -define(invoice_payment_amount_exceeded(Maximum),
     {exception, #payproc_InvoicePaymentAmountExceeded{maximum = Maximum}}).
+-define(inconsistent_refund_currency(Currency),
+    {exception, #payproc_InconsistentRefundCurrency{currency = Currency}}).
 
 -spec init_per_group(group_name(), config()) -> config().
 
@@ -1029,6 +1033,19 @@ payment_partial_refunds_success(C) ->
     % Check sequence
     <<"1">> =:= RefundID1 andalso <<"2">> =:= RefundID3 andalso <<"3">> =:= RefundID4.
 
+
+-spec invalid_currency_payment_partial_refund(config()) -> _ | no_return().
+
+invalid_currency_payment_partial_refund(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    RefundParams1 = make_refund_params(50, <<"EUR">>),
+    ?inconsistent_refund_currency(<<"EUR">>) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client).
 
 -spec invalid_amount_payment_partial_refund(config()) -> _ | no_return().
 
