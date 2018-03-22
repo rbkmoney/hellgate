@@ -1549,10 +1549,10 @@ get_refund_cashflow(#refund_st{cash_flow = CashFlow}) ->
 
 define_refund_cash(undefined, #domain_InvoicePayment{cost = Cost}) ->
     Cost;
-define_refund_cash(?cash(_, SymbCode) = Cash, #domain_InvoicePayment{cost = ?cash(_, SymbCode)}) ->
+define_refund_cash(?cash(_, SymCode) = Cash, #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
     Cash;
-define_refund_cash(?cash(_, SymbCode), _Payment) ->
-    throw(#payproc_InconsistentRefundCurrency{currency = SymbCode}).
+define_refund_cash(?cash(_, SymCode), _Payment) ->
+    throw(#payproc_InconsistentRefundCurrency{currency = SymCode}).
 
 get_refund_cash(#domain_InvoicePaymentRefund{cash = Cash}) ->
     Cash.
@@ -1746,8 +1746,8 @@ make_log_params(
     }
 ) ->
     [{id, ID}, {cost, make_log_params(cash, Cost)}, {flow, make_log_params(flow, Flow)}];
-make_log_params(cash, ?cash(Amount, SymbolicCode)) ->
-    [{amount, Amount}, {currency, SymbolicCode}];
+make_log_params(cash, ?cash(Amount, SymCode)) ->
+    [{amount, Amount}, {currency, SymCode}];
 make_log_params(flow, ?invoice_payment_flow_instant()) ->
     [{type, instant}];
 make_log_params(flow, ?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
@@ -1755,8 +1755,8 @@ make_log_params(flow, ?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
 make_log_params(cashflow, CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
     Accounts = lists:map(
-        fun ({Account, ?cash(Amount, SymbolicCode)}) ->
-            Remainder = [{remainder, [{amount, Amount}, {currency, SymbolicCode}]}],
+        fun ({Account, ?cash(Amount, SymCode)}) ->
+            Remainder = [{remainder, [{amount, Amount}, {currency, SymCode}]}],
             {get_account_key(Account), Remainder}
         end,
         Reminders
