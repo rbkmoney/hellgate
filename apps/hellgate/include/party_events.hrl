@@ -99,4 +99,10 @@
         revision = Revision
     }}).
 
+-define(invalid_shop(ID, Reason),
+    {invalid_shop, #payproc_InvalidShop{id = ID, reason = Reason}}).
+
+-define(invalid_contract(ID, Reason),
+    {invalid_contract, #payproc_InvalidContract{id = ID, reason = Reason}}).
+
 -endif.

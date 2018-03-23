@@ -192,14 +192,14 @@ ensure_contract_template(undefined, PaymentInstitutionRef, Revision) ->
 ensure_payment_institution(#domain_PaymentInstitutionRef{} = PaymentInstitutionRef) ->
     PaymentInstitutionRef;
 ensure_payment_institution(undefined) ->
-    throw({contract_payment_institution_invalid, undefined}).
+    throw({payment_institution_invalid, undefined}).
 
 get_template(TemplateRef, Revision) ->
     try
         hg_domain:get(Revision, {contract_template, TemplateRef})
     catch
         error:{object_not_found, _} ->
-            throw({contract_template_invalid, TemplateRef})
+            throw({template_invalid, TemplateRef})
     end.
 
 get_payment_institution(PaymentInstitutionRef, Revision) ->
@@ -207,7 +207,7 @@ get_payment_institution(PaymentInstitutionRef, Revision) ->
         hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef})
     catch
         error:{object_not_found, _} ->
-            throw({contract_payment_institution_invalid, PaymentInstitutionRef})
+            throw({payment_institution_invalid, PaymentInstitutionRef})
     end.
 
 get_default_template_ref(PaymentInstitutionRef, Revision) ->

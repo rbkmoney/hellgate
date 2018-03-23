@@ -524,7 +524,7 @@ assert_shop_contract_valid(
                 );
         undefined ->
             % TODO remove cross-deps between claim-party-contract
-            hg_claim:raise_invalid_changeset({shop_without_account, ID})
+            hg_claim:raise_invalid_changeset(?invalid_shop(ID, {no_account, ID}))
     end,
     Categories = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse
@@ -540,14 +540,14 @@ assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = undefined, payout_sc
     ok;
 assert_shop_payout_tool_valid(#domain_Shop{id = ID, payout_tool_id = undefined, payout_schedule = _Schedule}, _) ->
     % automatic payouts enabled for this shop but no payout tool specified
-    hg_claim:raise_invalid_changeset({shop_payout_tool_invalid, #payproc_ShopPayoutToolInvalid{
-        shop_id = ID,
-        payout_tool_id = undefined
-    }});
-assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = PayoutToolID}, Contract) ->
+    hg_claim:raise_invalid_changeset(?invalid_shop(ID, {payout_tool_invalid, #payproc_ShopPayoutToolInvalid{}}));
+assert_shop_payout_tool_valid(#domain_Shop{id = ID, payout_tool_id = PayoutToolID}, Contract) ->
     case hg_contract:get_payout_tool(PayoutToolID, Contract) of
         undefined ->
-            hg_claim:raise_invalid_changeset({payout_tool_not_exists, PayoutToolID});
+            hg_claim:raise_invalid_changeset(?invalid_shop(
+                ID,
+                {payout_tool_invalid, #payproc_ShopPayoutToolInvalid{payout_tool_id = PayoutToolID}}
+            ));
         #domain_PayoutTool{} ->
             ok
     end.
@@ -555,10 +555,10 @@ assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = PayoutToolID}, Contr
 -spec raise_contract_terms_violated(shop_id(), contract_id(), dmsl_domain_thrift:'TermSet'()) -> no_return().
 
 raise_contract_terms_violated(ShopID, ContractID, Terms) ->
-    hg_claim:raise_invalid_changeset(
+    hg_claim:raise_invalid_changeset(?invalid_shop(
+        ShopID,
         {contract_terms_violated, #payproc_ContractTermsViolated{
-            shop_id = ShopID,
             contract_id = ContractID,
             terms = Terms
         }}
-    ).
+    )).
