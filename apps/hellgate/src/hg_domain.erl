@@ -14,6 +14,7 @@
 -export([all/1]).
 -export([get/2]).
 -export([find/2]).
+-export([exists/2]).
 -export([commit/2]).
 -export([reset/1]).
 
@@ -65,6 +66,17 @@ find(Revision, Ref) ->
     catch
         throw:object_not_found ->
             notfound
+    end.
+
+-spec exists(revision(), ref()) -> boolean().
+
+exists(Revision, Ref) ->
+    try
+        _ = dmt_client:checkout_object({version, Revision}, Ref),
+        true
+    catch
+        throw:object_not_found ->
+            false
     end.
 
 extract_data(#'VersionedObject'{object = {_Tag, {_Name, _Ref, Data}}}) ->
