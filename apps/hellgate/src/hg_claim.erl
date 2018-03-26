@@ -571,11 +571,10 @@ assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
 
 assert_payout_schedule_valid(ShopID, #domain_PayoutScheduleRef{} = PayoutScheduleRef, Revision) ->
     Ref = {payout_schedule, PayoutScheduleRef},
-    try
-        _ = hg_domain:get(Revision, Ref),
-        ok
-    catch
-        error:{object_not_found, _} ->
+    case hg_domain:exists(Revision, Ref) of
+        true ->
+            ok;
+        false ->
             raise_invalid_changeset(?invalid_shop(
                 ShopID,
                 {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
