@@ -336,6 +336,11 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Rev
         VS2,
         Revision
     ),
+    VS4 = collect_refund_varset(
+        Terms#domain_PaymentsServiceTerms.refunds,
+        VS3,
+        Revision
+    ),
     {
         #domain_InvoicePayment{
             id              = PaymentID,
@@ -346,7 +351,7 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Rev
             payer           = Payer,
             flow            = Flow
         },
-        VS3
+        VS4
     }.
 
 construct_payment_flow({instant, _}, _CreatedAt, _Terms, VS, _Revision) ->
@@ -409,7 +414,7 @@ validate_cash(Cash, CashLimitSelector, VS, Revision) ->
     ok = validate_limit(Cash, Limit).
 
 validate_limit(Cash, CashRange) ->
-    case hg_condition:test_cash_range(Cash, CashRange) of
+    case hg_cash_range:is_inside(Cash, CashRange) of
         within ->
             ok;
         {exceeds, lower} ->
@@ -437,6 +442,30 @@ validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Re
         later ->
             throw(#payproc_OperationNotPermitted{})
     end.
+
+collect_refund_varset(
+    #domain_PaymentRefundsServiceTerms{
+        partial_refunds = PartialRefundsServiceTerms
+    },
+    VS,
+    Revision
+) ->
+    PartialRefundsVS = collect_partial_refund_varset(PartialRefundsServiceTerms, #{}, Revision),
+    VS#{refunds => PartialRefundsVS};
+collect_refund_varset(undefined, VS, _Revision) ->
+    VS.
+
+collect_partial_refund_varset(
+    #domain_PartialRefundsServiceTerms{
+        cash_limit = CashLimitSelector
+    },
+    VS,
+    Revision
+) ->
+    Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
+    VS#{partial => #{cash_limit => Limit}};
+collect_partial_refund_varset(undefined, VS, _Revision) ->
+    VS.
 
 collect_varset(St, Opts) ->
     collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
@@ -737,7 +766,7 @@ get_provider_partial_refunds_terms(
 ) ->
     Cash = get_refund_cash(Refund),
     CashRange = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
-    case hg_condition:test_cash_range(Cash, CashRange) of
+    case hg_cash_range:is_inside(Cash, CashRange) of
         within ->
             Terms;
         {exceeds, _} ->
@@ -1116,7 +1145,7 @@ handle_proxy_result(
     Session
 ) ->
     Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
+    Events2 = update_proxy_state(ProxyState, Session),
     {Events3, Action} = handle_proxy_intent(Intent, Action0),
     {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
@@ -1133,7 +1162,7 @@ handle_proxy_callback_result(
     Session
 ) ->
     Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
+    Events2 = update_proxy_state(ProxyState, Session),
     {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
     {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
 handle_proxy_callback_result(
@@ -1142,7 +1171,7 @@ handle_proxy_callback_result(
     Session
 ) ->
     Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Events2 = update_proxy_state(ProxyState),
+    Events2 = update_proxy_state(ProxyState, Session),
     {wrap_session_events(Events1 ++ Events2, Session), Action0}.
 
 handle_proxy_callback_timeout(Action, Session) ->
@@ -1152,10 +1181,16 @@ handle_proxy_callback_timeout(Action, Session) ->
 wrap_session_events(SessionEvents, #{target := Target}) ->
     [?session_ev(Target, Ev) || Ev <- SessionEvents].
 
-update_proxy_state(undefined) ->
+update_proxy_state(undefined, _Session) ->
     [];
-update_proxy_state(ProxyState) ->
-    [?proxy_st_changed(ProxyState)].
+update_proxy_state(ProxyState, Session) ->
+    case get_session_proxy_state(Session) of
+        ProxyState ->
+            % proxy state did not change, no need to publish an event
+            [];
+        _WasState ->
+            [?proxy_st_changed(ProxyState)]
+    end.
 
 handle_proxy_intent(#'prxprv_FinishIntent'{status = {success, _}}, Action) ->
     Events = [?session_finished(?session_succeeded())],
@@ -1220,7 +1255,7 @@ construct_proxy_context(St) ->
 construct_session(Session = #{target := Target}) ->
     #prxprv_Session{
         target = Target,
-        state = maps:get(proxy_state, Session, undefined)
+        state = get_session_proxy_state(Session)
     }.
 
 construct_payment_info(payment, _St, PaymentInfo) ->
@@ -1543,8 +1578,10 @@ get_refund_cashflow(#refund_st{cash_flow = CashFlow}) ->
 
 define_refund_cash(undefined, #domain_InvoicePayment{cost = Cost}) ->
     Cost;
-define_refund_cash(Cash, _Payment) ->
-    Cash.
+define_refund_cash(?cash(_, SymCode) = Cash, #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
+    Cash;
+define_refund_cash(?cash(_, SymCode), _Payment) ->
+    throw(#payproc_InconsistentRefundCurrency{currency = SymCode}).
 
 get_refund_cash(#domain_InvoicePaymentRefund{cash = Cash}) ->
     Cash.
@@ -1601,6 +1638,9 @@ get_session_status(#{status := Status}) ->
 
 get_session_trx(#{trx := Trx}) ->
     Trx.
+
+get_session_proxy_state(Session) ->
+    maps:get(proxy_state, Session, undefined).
 
 get_session_tags(#{tags := Tags}) ->
     Tags.
@@ -1735,8 +1775,8 @@ make_log_params(
     }
 ) ->
     [{id, ID}, {cost, make_log_params(cash, Cost)}, {flow, make_log_params(flow, Flow)}];
-make_log_params(cash, ?cash(Amount, SymbolicCode)) ->
-    [{amount, Amount}, {currency, SymbolicCode}];
+make_log_params(cash, ?cash(Amount, SymCode)) ->
+    [{amount, Amount}, {currency, SymCode}];
 make_log_params(flow, ?invoice_payment_flow_instant()) ->
     [{type, instant}];
 make_log_params(flow, ?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
@@ -1744,8 +1784,8 @@ make_log_params(flow, ?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
 make_log_params(cashflow, CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
     Accounts = lists:map(
-        fun ({Account, ?cash(Amount, SymbolicCode)}) ->
-            Remainder = [{remainder, [{amount, Amount}, {currency, SymbolicCode}]}],
+        fun ({Account, ?cash(Amount, SymCode)}) ->
+            Remainder = [{remainder, [{amount, Amount}, {currency, SymCode}]}],
             {get_account_key(Account), Remainder}
         end,
         Reminders

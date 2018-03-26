@@ -366,7 +366,7 @@ handle_proxy_result(
     Session
 ) ->
     Changes1 = hg_proxy_provider:bind_transaction(Trx, Session),
-    Changes2 = hg_proxy_provider:update_proxy_state(ProxyState),
+    Changes2 = hg_proxy_provider:update_proxy_state(ProxyState, Session),
     {Changes3, Action} = hg_proxy_provider:handle_proxy_intent(Intent, Action0),
     Changes = Changes1 ++ Changes2 ++ Changes3,
     case Intent of

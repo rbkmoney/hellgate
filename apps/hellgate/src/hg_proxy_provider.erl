@@ -11,7 +11,7 @@
 -export([handle_recurrent_token_callback/3]).
 
 -export([bind_transaction/2]).
--export([update_proxy_state/1]).
+-export([update_proxy_state/2]).
 -export([handle_proxy_intent/2]).
 -export([wrap_session_events/2]).
 
@@ -22,6 +22,9 @@
 
 -type trx_info() :: dmsl_domain_thrift:'TransactionInfo'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
+
+-type change()      :: dmsl_payment_processing_thrift:'SessionChangePayload'().
+-type proxy_state() :: dmsl_base_thrift:'Opaque'().
 
 %%
 
@@ -86,7 +89,7 @@ get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
 %%
 
 -spec bind_transaction(trx_info(), term()) ->
-    list().
+    [change()].
 bind_transaction(undefined, _Session) ->
     % no transaction yet
     [];
@@ -108,12 +111,21 @@ bind_transaction(Trx, #{trx := TrxWas}) ->
 
 %%
 
--spec update_proxy_state(term()) ->
-    list().
-update_proxy_state(undefined) ->
+-spec update_proxy_state(proxy_state() | undefined, _Session) ->
+    [change()].
+update_proxy_state(undefined, _Session) ->
     [];
-update_proxy_state(ProxyState) ->
-    [?proxy_st_changed(ProxyState)].
+update_proxy_state(ProxyState, Session) ->
+    case get_session_proxy_state(Session) of
+        ProxyState ->
+            % proxy state did not change, no need to publish an event
+            [];
+        _WasState ->
+            [?proxy_st_changed(ProxyState)]
+    end.
+
+get_session_proxy_state(Session) ->
+    maps:get(proxy_state, Session, undefined).
 
 %%
 

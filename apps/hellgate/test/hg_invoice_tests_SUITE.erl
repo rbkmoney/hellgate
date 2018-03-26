@@ -53,6 +53,7 @@
 -export([payment_partial_refunds_success/1]).
 -export([invalid_amount_payment_partial_refund/1]).
 -export([invalid_time_payment_partial_refund/1]).
+-export([invalid_currency_payment_partial_refund/1]).
 -export([cant_start_simultaneous_partial_refunds/1]).
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
@@ -125,6 +126,7 @@ all() ->
         payment_refund_success,
         payment_partial_refunds_success,
         invalid_amount_payment_partial_refund,
+        invalid_currency_payment_partial_refund,
         cant_start_simultaneous_partial_refunds,
         invalid_time_payment_partial_refund,
 
@@ -133,8 +135,7 @@ all() ->
 
         terms_retrieval,
 
-        adhoc_repair_working_failed,
-        adhoc_repair_failed_succeeded,
+        {group, adhoc_repairs},
 
         consistent_history
     ].
@@ -152,6 +153,10 @@ groups() ->
         {offsite_preauth_payment, [parallel], [
             payment_with_offsite_preauth_success,
             payment_with_offsite_preauth_failed
+        ]},
+        {adhoc_repairs, [parallel], [
+            adhoc_repair_working_failed,
+            adhoc_repair_failed_succeeded
         ]}
     ].
 
@@ -227,6 +232,8 @@ end_per_suite(C) ->
     {exception, #payproc_InsufficientAccountBalance{}}).
 -define(invoice_payment_amount_exceeded(Maximum),
     {exception, #payproc_InvoicePaymentAmountExceeded{maximum = Maximum}}).
+-define(inconsistent_refund_currency(Currency),
+    {exception, #payproc_InconsistentRefundCurrency{currency = Currency}}).
 
 -spec init_per_group(group_name(), config()) -> config().
 
@@ -819,6 +826,21 @@ get_adjustment_fixture(Revision) ->
                     ])},
                     cash_flow = {value,
                         get_adjustment_provider_cashflow(initial)
+                    },
+                    refunds = #domain_PaymentRefundsProvisionTerms{
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {merchant, settlement},
+                                {provider, settlement},
+                                ?share(1, 1, operation_amount)
+                            )
+                        ]},
+                        partial_refunds = #domain_PartialRefundsProvisionTerms{
+                            cash_limit = {value, ?cashrng(
+                                {inclusive, ?cash(        10, <<"RUB">>)},
+                                {exclusive, ?cash(1000000000, <<"RUB">>)}
+                            )}
+                        }
                     }
                 }
             }
@@ -1027,6 +1049,19 @@ payment_partial_refunds_success(C) ->
     <<"1">> =:= RefundID1 andalso <<"2">> =:= RefundID3 andalso <<"3">> =:= RefundID4.
 
 
+-spec invalid_currency_payment_partial_refund(config()) -> _ | no_return().
+
+invalid_currency_payment_partial_refund(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    RefundParams1 = make_refund_params(50, <<"EUR">>),
+    ?inconsistent_refund_currency(<<"EUR">>) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client).
+
 -spec invalid_amount_payment_partial_refund(config()) -> _ | no_return().
 
 invalid_amount_payment_partial_refund(C) ->
@@ -1216,7 +1251,22 @@ get_cashflow_rounding_fixture(Revision) ->
                             {external, outcome},
                             ?share(1, 200000, operation_amount)
                         )
-                    ]}
+                    ]},
+                    refunds = #domain_PaymentRefundsProvisionTerms{
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {merchant, settlement},
+                                {provider, settlement},
+                                ?share(1, 1, operation_amount)
+                            )
+                        ]},
+                        partial_refunds = #domain_PartialRefundsProvisionTerms{
+                            cash_limit = {value, ?cashrng(
+                                {inclusive, ?cash(        10, <<"RUB">>)},
+                                {exclusive, ?cash(1000000000, <<"RUB">>)}
+                            )}
+                        }
+                    }
                 }
             }
         }},
@@ -1331,8 +1381,7 @@ payment_with_offsite_preauth_failed(C) ->
             ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
         ),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
-    ] = next_event(InvoiceID, Client),
-
+    ] = next_event(InvoiceID, 8000, Client),
     ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
 
@@ -2325,7 +2374,22 @@ construct_domain_fixture() ->
                             {provider, settlement},
                             ?share(21, 1000, operation_amount)
                         )
-                    ]}
+                    ]},
+                    refunds = #domain_PaymentRefundsProvisionTerms{
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {merchant, settlement},
+                                {provider, settlement},
+                                ?share(1, 1, operation_amount)
+                            )
+                        ]},
+                        partial_refunds = #domain_PartialRefundsProvisionTerms{
+                            cash_limit = {value, ?cashrng(
+                                {inclusive, ?cash(        10, <<"RUB">>)},
+                                {exclusive, ?cash(1000000000, <<"RUB">>)}
+                            )}
+                        }
+                    }
                 }
             }
         }},

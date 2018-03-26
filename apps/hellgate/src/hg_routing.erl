@@ -165,7 +165,8 @@ acceptable_payment_terms(
         categories      = CategoriesSelector,
         payment_methods = PMsSelector,
         cash_limit      = CashLimitSelector,
-        holds           = HoldsTerms
+        holds           = HoldsTerms,
+        refunds         = RefundsTerms
     },
     VS,
     Revision
@@ -177,6 +178,7 @@ acceptable_payment_terms(
     _ = try_accept_term(payment_tool , PMsSelector        , VS, Revision),
     _ = try_accept_term(cost         , CashLimitSelector  , VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
+    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
     throw(false).
@@ -193,6 +195,40 @@ acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
         undefined ->
             throw(false)
     end.
+
+acceptable_refunds_terms(_Terms, undefined, _VS, _Revision) ->
+    true;
+acceptable_refunds_terms(
+    #domain_PaymentRefundsProvisionTerms{
+        partial_refunds =  PartialRefundsTerms
+    },
+    RVS,
+    VS,
+    Revision
+) ->
+    _ = acceptable_partial_refunds_terms(
+        PartialRefundsTerms,
+        getv(partial, RVS, undefined),
+        VS,
+        Revision
+    ),
+    true;
+acceptable_refunds_terms(undefined, _RVS, _VS, _Revision) ->
+    throw(false).
+
+acceptable_partial_refunds_terms(_Terms, undefined, _VS, _Revision) ->
+    true;
+acceptable_partial_refunds_terms(
+    #domain_PartialRefundsProvisionTerms{cash_limit = CashLimitSelector},
+    #{cash_limit := MerchantLimit},
+    VS,
+    Revision
+) ->
+    ProviderLimit = reduce(cash_limit, CashLimitSelector, VS, Revision),
+    hg_cash_range:is_subrange(MerchantLimit, ProviderLimit) == true orelse throw(false);
+
+acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
+    throw(false).
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
@@ -257,7 +293,7 @@ test_term(category, V, Vs) ->
 test_term(payment_tool, PT, PMs) ->
     ordsets:is_element(hg_payment_tool:get_method(PT), PMs);
 test_term(cost, Cost, CashRange) ->
-    hg_condition:test_cash_range(Cost, CashRange) == within;
+    hg_cash_range:is_inside(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
     Lifetime =< Allowed.
 
