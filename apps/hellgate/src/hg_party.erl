@@ -541,15 +541,22 @@ assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = undefined, payout_sc
 assert_shop_payout_tool_valid(#domain_Shop{id = ID, payout_tool_id = undefined, payout_schedule = _Schedule}, _) ->
     % automatic payouts enabled for this shop but no payout tool specified
     hg_claim:raise_invalid_changeset(?invalid_shop(ID, {payout_tool_invalid, #payproc_ShopPayoutToolInvalid{}}));
-assert_shop_payout_tool_valid(#domain_Shop{id = ID, payout_tool_id = PayoutToolID}, Contract) ->
+assert_shop_payout_tool_valid(#domain_Shop{id = ID, payout_tool_id = PayoutToolID} = Shop, Contract) ->
+    ShopCurrency = (Shop#domain_Shop.account)#domain_ShopAccount.currency,
     case hg_contract:get_payout_tool(PayoutToolID, Contract) of
-        undefined ->
+        #domain_PayoutTool{currency = ShopCurrency} ->
+            ok;
+        #domain_PayoutTool{} ->
+            % currency missmatch
             hg_claim:raise_invalid_changeset(?invalid_shop(
                 ID,
                 {payout_tool_invalid, #payproc_ShopPayoutToolInvalid{payout_tool_id = PayoutToolID}}
             ));
-        #domain_PayoutTool{} ->
-            ok
+        undefined ->
+            hg_claim:raise_invalid_changeset(?invalid_shop(
+                ID,
+                {payout_tool_invalid, #payproc_ShopPayoutToolInvalid{payout_tool_id = PayoutToolID}}
+            ))
     end.
 
 -spec raise_contract_terms_violated(shop_id(), contract_id(), dmsl_domain_thrift:'TermSet'()) -> no_return().
