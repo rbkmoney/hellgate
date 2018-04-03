@@ -21,6 +21,8 @@
 -type timestamp_interval_bound() :: dmsl_base_thrift:'TimestampIntervalBound'().
 -type time_span() :: dmsl_base_thrift:'TimeSpan'().
 
+-export_type([timestamp/0]).
+
 %%
 
 -spec format_dt(datetime()) -> timestamp().
