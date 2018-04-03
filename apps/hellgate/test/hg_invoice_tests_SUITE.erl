@@ -737,6 +737,7 @@ payment_adjustment_success(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
     SysAccount1 = get_cashflow_account({system, settlement}, CF1),
+    MrcAccount1 = get_cashflow_account({merchant, settlement}, CF1),
     %% update terminal cashflow
     ProviderRef = ?prv(100),
     Provider = hg_domain:get(hg_domain:head(), {provider, ProviderRef}),
@@ -753,6 +754,10 @@ payment_adjustment_success(C) ->
             }
         }}
     ),
+    %% update merchant fees
+    PartyClient = cfg(party_client, C),
+    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
     %% make an adjustment
     Params = make_adjustment_params(Reason = <<"imdrunk">>),
     ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment =
@@ -778,8 +783,11 @@ payment_adjustment_success(C) ->
     #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} = Adjustment,
     PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
     SysAccount2 = get_cashflow_account({system, settlement}, CF2),
-    500  = maps:get(own_amount, PrvAccount1) - maps:get(own_amount, PrvAccount2),
-    -480 = maps:get(own_amount, SysAccount1) - maps:get(own_amount, SysAccount2).
+    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
+    500  = MrcDiff = maps:get(own_amount, MrcAccount2) - maps:get(own_amount, MrcAccount1),
+    -500 = PrvDiff = maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1),
+    SysDiff = MrcDiff + PrvDiff - 20,
+    SysDiff = maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1).
 
 get_cashflow_account(Type, CF) ->
     [ID] = [V || #domain_FinalCashFlowPosting{
@@ -793,6 +801,27 @@ get_cashflow_account(Type, CF) ->
 get_adjustment_fixture(Revision) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     [
+
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(3),
+            data = #domain_TermSetHierarchy{
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = #domain_TermSet{
+                        payments = #domain_PaymentsServiceTerms{
+                            fees = {value, [
+                                ?cfpost(
+                                    {merchant, settlement},
+                                    {system, settlement},
+                                    ?share(40, 1000, operation_amount)
+                                )
+                            ]}
+                        }
+                    }
+                }]
+            }
+        }},
+
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
             data = PaymentInstitution#domain_PaymentInstitution{
@@ -853,6 +882,7 @@ get_adjustment_fixture(Revision) ->
                 risk_coverage = low
             }
         }}
+
     ].
 
 get_adjustment_provider_cashflow(initial) ->
@@ -1954,6 +1984,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
         hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
+        hg_ct_fixture:construct_contract_template(?tmpl(3), ?trms(3)),
 
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_system_account_set(?sas(2)),
@@ -2092,6 +2123,13 @@ construct_domain_fixture() ->
                     action_time = #'TimestampInterval'{},
                     terms = DefaultTermSet
                 }]
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(3),
+            data = #domain_TermSetHierarchy{
+                parent_terms = ?trms(1),
+                term_sets = []
             }
         }},
 
