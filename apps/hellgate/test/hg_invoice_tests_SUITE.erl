@@ -1836,10 +1836,16 @@ construct_domain_fixture() ->
                 ]},
                 eligibility_time = {value, #'TimeSpan'{minutes = 1}},
                 partial_refunds = #domain_PartialRefundsServiceTerms{
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash( 1000, <<"RUB">>)},
-                        {exclusive, ?cash(40000, <<"RUB">>)}
-                    )}
+                    cash_limit = {decisions, [
+                        #domain_CashLimitDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ = {value, ?cashrng(
+                                {inclusive, ?cash(      1000, <<"RUB">>)},
+                                {exclusive, ?cash(1000000000, <<"RUB">>)}
+                            )}
+                        }
+                    ]}
+
                 }
             }
         },
