@@ -450,7 +450,7 @@ collect_refund_varset(
     VS,
     Revision
 ) ->
-    PartialRefundsVS = collect_partial_refund_varset(PartialRefundsServiceTerms, #{}, Revision),
+    PartialRefundsVS = collect_partial_refund_varset(PartialRefundsServiceTerms, VS, Revision),
     VS#{refunds => PartialRefundsVS};
 collect_refund_varset(undefined, VS, _Revision) ->
     VS.
@@ -462,10 +462,11 @@ collect_partial_refund_varset(
     VS,
     Revision
 ) ->
-    Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
-    VS#{partial => #{cash_limit => Limit}};
-collect_partial_refund_varset(undefined, VS, _Revision) ->
-    VS.
+    #{partial => #{
+        cash_limit => reduce_selector(cash_limit, CashLimitSelector, VS, Revision)
+    }};
+collect_partial_refund_varset(undefined, _, _) ->
+    #{}.
 
 collect_varset(St, Opts) ->
     collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
