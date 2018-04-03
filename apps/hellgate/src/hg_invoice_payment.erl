@@ -48,7 +48,7 @@
 -export([cancel/2]).
 -export([refund/3]).
 
--export([create_adjustment/3]).
+-export([create_adjustment/4]).
 -export([capture_adjustment/3]).
 -export([cancel_adjustment/3]).
 
@@ -862,10 +862,10 @@ get_refund_cashflow_plan(RefundSt) ->
 
 %%
 
--spec create_adjustment(adjustment_params(), st(), opts()) ->
+-spec create_adjustment(hg_datetime:timestamp(), adjustment_params(), st(), opts()) ->
     {adjustment(), result()}.
 
-create_adjustment(Params, St, Opts) ->
+create_adjustment(Timestamp, Params, St, Opts) ->
     Payment = get_payment(St),
     Revision = get_adjustment_revision(Params),
     _ = assert_payment_status(captured, Payment),
@@ -883,7 +883,7 @@ create_adjustment(Params, St, Opts) ->
     Adjustment = #domain_InvoicePaymentAdjustment{
         id                    = ID,
         status                = ?adjustment_pending(),
-        created_at            = hg_datetime:format_now(),
+        created_at            = Timestamp,
         domain_revision       = Revision,
         reason                = Params#payproc_InvoicePaymentAdjustmentParams.reason,
         old_cash_flow_inverse = hg_cashflow:revert(get_cashflow(St)),
