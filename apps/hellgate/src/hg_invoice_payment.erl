@@ -1738,16 +1738,15 @@ get_log_params(?payment_started(Payment, _, _, Cashflow), _) ->
         event_type => invoice_payment_started
     },
     make_log_params(Params);
-get_log_params(?payment_status_changed({Status, _}), State) ->
-    Payment = get_payment(State),
-    Cashflow = get_cashflow(State),
-    Params = #{
-        status => Status,
-        payment => Payment,
-        cashflow => Cashflow,
-        event_type => invoice_payment_status_changed
-    },
-    make_log_params(Params);
+get_log_params(?payment_status_changed(Status), State) ->
+    make_log_params(
+        #{
+            status     => Status,
+            payment    => get_payment(State),
+            cashflow   => get_cashflow(State),
+            event_type => invoice_payment_status_changed
+        }
+    );
 get_log_params(_, _) ->
     undefined.
 
@@ -1791,10 +1790,23 @@ make_log_params(cashflow, CashFlow) ->
         Reminders
     ),
     [{accounts, Accounts}];
-make_log_params(status, Status) ->
-    [{status, Status}];
+make_log_params(status, {StatusTag, StatusDetails}) ->
+    [{status, StatusTag}] ++ format_status_details(StatusDetails);
 make_log_params(event_type, EventType) ->
     [{type, EventType}].
+
+format_status_details(#domain_InvoicePaymentFailed{failure = Failure}) ->
+    [{error, list_to_binary(format_failure(Failure))}];
+format_status_details(_) ->
+    [].
+
+format_failure({operation_timeout, _}) ->
+    [<<"timeout">>];
+format_failure({failure, Failure}) ->
+    format_domain_failure(Failure).
+
+format_domain_failure(Failure) ->
+    payproc_errors:format_raw(Failure).
 
 get_account_key({AccountParty, AccountType}) ->
     list_to_binary(lists:concat([atom_to_list(AccountParty), ".", atom_to_list(AccountType)])).

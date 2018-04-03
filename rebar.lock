@@ -36,7 +36,7 @@
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.0.2">>},2},
  {<<"payproc_errors">>,
   {git,"git@github.com:rbkmoney/payproc-errors-erlang.git",
-       {ref,"17e6976c6f05fc2c1adeccaff2b58b4aa99d0181"}},
+       {ref,"9c720534eb88edc6ba47af084939efabceb9b2d6"}},
   0},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.4.0">>},2},
  {<<"rfc3339">>,{pkg,<<"rfc3339">>,<<"0.9.0">>},0},
