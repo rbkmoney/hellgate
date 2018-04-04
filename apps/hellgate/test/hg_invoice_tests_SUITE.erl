@@ -2418,22 +2418,7 @@ construct_domain_fixture() ->
                             {provider, settlement},
                             ?share(21, 1000, operation_amount)
                         )
-                    ]},
-                    refunds = #domain_PaymentRefundsProvisionTerms{
-                        cash_flow = {value, [
-                            ?cfpost(
-                                {merchant, settlement},
-                                {provider, settlement},
-                                ?share(1, 1, operation_amount)
-                            )
-                        ]},
-                        partial_refunds = #domain_PartialRefundsProvisionTerms{
-                            cash_limit = {value, ?cashrng(
-                                {inclusive, ?cash(        10, <<"RUB">>)},
-                                {exclusive, ?cash(1000000000, <<"RUB">>)}
-                            )}
-                        }
-                    }
+                    ]}
                 }
             }
         }},

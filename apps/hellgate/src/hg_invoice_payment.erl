@@ -445,13 +445,20 @@ validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Re
 
 collect_refund_varset(
     #domain_PaymentRefundsServiceTerms{
-        partial_refunds = PartialRefundsServiceTerms
+        payment_methods  = PaymentMethodSelector,
+        partial_refunds  = PartialRefundsServiceTerms
     },
     VS,
     Revision
 ) ->
-    PartialRefundsVS = collect_partial_refund_varset(PartialRefundsServiceTerms, VS, Revision),
-    VS#{refunds => PartialRefundsVS};
+    RPMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
+    case ordsets:is_element(hg_payment_tool:get_method(maps:get(payment_tool, VS)), RPMs) of
+        true ->
+            RVS = collect_partial_refund_varset(PartialRefundsServiceTerms, VS, Revision),
+            VS#{refunds => RVS};
+        false ->
+            VS
+    end;
 collect_refund_varset(undefined, VS, _Revision) ->
     VS.
 
