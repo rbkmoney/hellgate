@@ -58,6 +58,7 @@
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
 -export([payment_with_offsite_preauth_failed/1]).
+-export([payment_with_tokenized_bank_card/1]).
 -export([terms_retrieval/1]).
 
 -export([adhoc_repair_working_failed/1]).
@@ -132,6 +133,8 @@ all() ->
 
         rounding_cashflow_volume,
         {group, offsite_preauth_payment},
+
+        payment_with_tokenized_bank_card,
 
         terms_retrieval,
 
@@ -1332,7 +1335,8 @@ terms_retrieval(C) ->
             ?pmt(bank_card, mastercard),
             ?pmt(bank_card, visa),
             ?pmt(digital_wallet, qiwi),
-            ?pmt(payment_terminal, euroset)
+            ?pmt(payment_terminal, euroset),
+            ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
         ]}
     }} = TermSet1,
     Revision = hg_domain:head(),
@@ -1414,6 +1418,19 @@ payment_with_offsite_preauth_failed(C) ->
     ] = next_event(InvoiceID, 8000, Client),
     ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client).
+
+-spec payment_with_tokenized_bank_card(config()) -> test_return().
+
+payment_with_tokenized_bank_card(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_tokenized_bank_card_payment_params(),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 %%
 
@@ -1584,6 +1601,10 @@ make_customer_payment_params(CustomerID) ->
         }},
         flow = {instant, #payproc_InvoicePaymentParamsFlowInstant{}}
     }.
+
+make_tokenized_bank_card_payment_params() ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(tokenized_bank_card),
+    make_payment_params(PaymentTool, Session).
 
 make_payment_params() ->
     make_payment_params(instant).
@@ -1815,7 +1836,8 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, mastercard),
                         ?pmt(bank_card, jcb),
                         ?pmt(payment_terminal, euroset),
-                        ?pmt(digital_wallet, qiwi)
+                        ?pmt(digital_wallet, qiwi),
+                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
                     ])}
                 }
             ]},
@@ -1980,6 +2002,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, jcb)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
+        hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -2165,7 +2188,8 @@ construct_domain_fixture() ->
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa),
                         ?pmt(bank_card, mastercard),
-                        ?pmt(bank_card, jcb)
+                        ?pmt(bank_card, jcb),
+                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -2228,7 +2252,7 @@ construct_domain_fixture() ->
                         lifetime = {decisions, [
                             #domain_HoldLifetimeDecision{
                                 if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                    payment_system_is = visa
+                                    definition = {payment_system_is, visa}
                                 }}}},
                                 then_ = {value, ?hold_lifetime(5)}
                             }

@@ -398,18 +398,24 @@ make_payment_tool(digital_wallet) ->
             id       = <<"+79876543210">>
         }},
         <<>>
-    }.
+    };
+make_payment_tool(tokenized_bank_card) ->
+    make_simple_payment_tool(<<"no_preauth">>, visa, applepay).
 
 make_simple_payment_tool(Token, PaymentSystem) ->
-    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>, <<"SESSION42">>).
+    make_simple_payment_tool(Token, PaymentSystem, undefined).
 
-construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, Session) ->
+make_simple_payment_tool(Token, PaymentSystem, TokenProvider) ->
+    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>, TokenProvider, <<"SESSION42">>).
+
+construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider, Session) ->
     {
         {bank_card, #domain_BankCard{
             token          = Token,
             payment_system = PaymentSystem,
             bin            = Bin,
-            masked_pan     = Pan
+            masked_pan     = Pan,
+            token_provider = TokenProvider
         }},
         Session
     }.

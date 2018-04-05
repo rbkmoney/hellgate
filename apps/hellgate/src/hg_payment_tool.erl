@@ -20,8 +20,13 @@
 
 -spec get_method(t()) -> method().
 
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem}}) ->
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
     #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}};
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider}}) ->
+    #domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
+        payment_system = PaymentSystem,
+        token_provider = TokenProvider
+    }}};
 get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
     #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
 get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
@@ -36,6 +41,17 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
         token = <<"">>,
         bin = <<"">>,
         masked_pan = <<"">>
+    }};
+create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
+        payment_system = PaymentSystem,
+        token_provider = TokenProvider
+}}}) ->
+    {bank_card, #domain_BankCard{
+        payment_system = PaymentSystem,
+        token = <<"">>,
+        bin = <<"">>,
+        masked_pan = <<"">>,
+        token_provider = TokenProvider
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->
     {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}};
@@ -60,21 +76,25 @@ test_condition(_PaymentTool, _Condition, _Rev) ->
 
 test_bank_card_condition(#domain_BankCardCondition{definition = Def}, V, Rev) when Def /= undefined ->
     test_bank_card_condition_def(Def, V, Rev);
-
-% legacy
-test_bank_card_condition(#domain_BankCardCondition{payment_system_is = Ps}, V, Rev) when Ps /= undefined ->
-    test_bank_card_condition_def({payment_system_is, Ps}, V, Rev);
-test_bank_card_condition(#domain_BankCardCondition{bin_in = RangeRef}, V, Rev) when RangeRef /= undefined ->
-    test_bank_card_condition_def({bin_in, RangeRef}, V, Rev);
-
 test_bank_card_condition(#domain_BankCardCondition{}, _, _Rev) ->
     true.
 
+% legacy
 test_bank_card_condition_def({payment_system_is, Ps}, #domain_BankCard{payment_system = Ps0}, _Rev) ->
     Ps =:= Ps0;
+
 test_bank_card_condition_def({bin_in, RangeRef}, #domain_BankCard{bin = BIN}, Rev) ->
     #domain_BankCardBINRange{bins = BINs} = hg_domain:get(Rev, {bank_card_bin_range, RangeRef}),
-    ordsets:is_element(BIN, BINs).
+    ordsets:is_element(BIN, BINs);
+test_bank_card_condition_def({payment_system, PaymentSystem}, V, Rev) ->
+    test_payment_system_condition(PaymentSystem, V, Rev).
+
+test_payment_system_condition(
+    #domain_PaymentSystemCondition{payment_system_is = Ps, token_provider_is = Tp},
+    #domain_BankCard{payment_system = Ps0, token_provider = Tp0},
+    _Rev
+) ->
+    Ps =:= Ps0 and (Tp0 =:= undefined orelse Tp =:= Tp0).
 
 test_payment_terminal_condition(#domain_PaymentTerminalCondition{definition = Def}, V, Rev) ->
     Def =:= undefined orelse test_payment_terminal_condition_def(Def, V, Rev).
@@ -102,12 +122,13 @@ marshal(payment_tool, {PaymentMethod, V}) ->
     [3, marshal(payment_method, PaymentMethod), marshal(PaymentMethod, V)];
 
 marshal(bank_card = T, #domain_BankCard{} = BankCard) ->
-    #{
+    genlib_map:compact(#{
         <<"token">>             => marshal(str, BankCard#domain_BankCard.token),
         <<"payment_system">>    => marshal({T, payment_system}, BankCard#domain_BankCard.payment_system),
         <<"bin">>               => marshal(str, BankCard#domain_BankCard.bin),
-        <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.masked_pan)
-    };
+        <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.masked_pan),
+        <<"token_provider">>    => marshal({T, token_provider}, BankCard#domain_BankCard.token_provider)
+    });
 marshal(payment_terminal = T, #domain_PaymentTerminal{terminal_type = TerminalType}) ->
     marshal({T, type}, TerminalType);
 marshal(digital_wallet = T, #domain_DigitalWallet{} = DigitalWallet) ->
@@ -148,6 +169,13 @@ marshal({bank_card, payment_system}, jcb) ->
 marshal({bank_card, payment_system}, nspkmir) ->
     <<"nspkmir">>;
 
+marshal({bank_card, token_provider}, applepay) ->
+    <<"applepay">>;
+marshal({bank_card, token_provider}, googlepay) ->
+    <<"googlepay">>;
+marshal({bank_card, token_provider}, samsungpay) ->
+    <<"samsungpay">>;
+
 marshal({payment_terminal, type}, euroset) ->
     <<"euroset">>;
 
@@ -174,12 +202,14 @@ unmarshal(bank_card = T, #{
     <<"payment_system">> := PaymentSystem,
     <<"bin">>            := Bin,
     <<"masked_pan">>     := MaskedPan
-}) ->
+} = V) ->
+    TokenProvider = genlib_map:get(<<"token_provider">>, V),
     #domain_BankCard{
         token            = unmarshal(str, Token),
         payment_system   = unmarshal({T, payment_system}, PaymentSystem),
         bin              = unmarshal(str, Bin),
-        masked_pan       = unmarshal(str, MaskedPan)
+        masked_pan       = unmarshal(str, MaskedPan),
+        token_provider   = unmarshal({T, token_provider}, TokenProvider)
     };
 unmarshal(payment_terminal = T, TerminalType) ->
     #domain_PaymentTerminal{
@@ -240,6 +270,13 @@ unmarshal({bank_card, payment_system}, <<"jcb">>) ->
     jcb;
 unmarshal({bank_card, payment_system}, <<"nspkmir">>) ->
     nspkmir;
+
+unmarshal({bank_card, token_provider}, <<"applepay">>) ->
+    applepay;
+unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
+    googlepay;
+unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
+    samsungpay;
 
 unmarshal({payment_terminal, type}, <<"euroset">>) ->
     euroset;
