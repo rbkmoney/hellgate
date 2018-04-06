@@ -80,8 +80,12 @@ test_bank_card_condition(#domain_BankCardCondition{}, _, _Rev) ->
     true.
 
 % legacy
-test_bank_card_condition_def({payment_system_is, Ps}, #domain_BankCard{payment_system = Ps0}, _Rev) ->
-    Ps =:= Ps0;
+test_bank_card_condition_def(
+    {payment_system_is, Ps},
+    #domain_BankCard{payment_system = Ps0, token_provider = Tp0},
+    _Rev
+) ->
+    Ps =:= Ps0 andalso Tp0 =:= undefined;
 
 test_bank_card_condition_def({bin_in, RangeRef}, #domain_BankCard{bin = BIN}, Rev) ->
     #domain_BankCardBINRange{bins = BINs} = hg_domain:get(Rev, {bank_card_bin_range, RangeRef}),
