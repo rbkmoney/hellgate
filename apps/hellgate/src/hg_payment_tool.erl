@@ -82,10 +82,12 @@ test_bank_card_condition(#domain_BankCardCondition{}, _, _Rev) ->
 % legacy
 test_bank_card_condition_def(
     {payment_system_is, Ps},
-    #domain_BankCard{payment_system = Ps0, token_provider = Tp0},
+    #domain_BankCard{payment_system = Ps, token_provider = undefined},
     _Rev
 ) ->
-    Ps =:= Ps0 andalso Tp0 =:= undefined;
+    true;
+test_bank_card_condition_def({payment_system_is, _Ps}, #domain_BankCard{}, _Rev) ->
+    false;
 
 test_bank_card_condition_def({bin_in, RangeRef}, #domain_BankCard{bin = BIN}, Rev) ->
     #domain_BankCardBINRange{bins = BINs} = hg_domain:get(Rev, {bank_card_bin_range, RangeRef}),
@@ -95,10 +97,12 @@ test_bank_card_condition_def({payment_system, PaymentSystem}, V, Rev) ->
 
 test_payment_system_condition(
     #domain_PaymentSystemCondition{payment_system_is = Ps, token_provider_is = Tp},
-    #domain_BankCard{payment_system = Ps0, token_provider = Tp0},
+    #domain_BankCard{payment_system = Ps, token_provider = Tp},
     _Rev
 ) ->
-    Ps =:= Ps0 and (Tp0 =:= undefined orelse Tp =:= Tp0).
+    true;
+test_payment_system_condition(#domain_PaymentSystemCondition{}, #domain_BankCard{}, _Rev) ->
+    false.
 
 test_payment_terminal_condition(#domain_PaymentTerminalCondition{definition = Def}, V, Rev) ->
     Def =:= undefined orelse test_payment_terminal_condition_def(Def, V, Rev).

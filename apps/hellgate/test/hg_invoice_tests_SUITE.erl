@@ -2246,6 +2246,26 @@ construct_domain_fixture() ->
                                     ?share(20, 1000, operation_amount)
                                 )
                             ]}
+                        },
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                definition = {payment_system, #domain_PaymentSystemCondition{
+                                    payment_system_is = visa,
+                                    token_provider_is = applepay
+                                }}
+                            }}}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(20, 1000, operation_amount)
+                                )
+                            ]}
                         }
                     ]},
                     holds = #domain_PaymentHoldsProvisionTerms{
