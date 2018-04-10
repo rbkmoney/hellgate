@@ -26,6 +26,11 @@
 -define(shop_suspension(ID, Suspension),
     {shop_suspension, #payproc_ShopSuspension{shop_id = ID, suspension = Suspension}}).
 
+-define(wallet_blocking(ID, Blocking),
+    {wallet_blocking, #payproc_WalletBlocking{wallet_id = ID, blocking = Blocking}}).
+-define(wallet_suspension(ID, Suspension),
+    {wallet_suspension, #payproc_WalletSuspension{wallet_id = ID, suspension = Suspension}}).
+
 -define(blocked(Reason, Since), {blocked, #domain_Blocked{reason = Reason, since = Since}}).
 -define(unblocked(Reason, Since), {unblocked, #domain_Unblocked{reason = Reason, since = Since}}).
 -define(unblocked(Since), {unblocked, #domain_Unblocked{reason = <<"">>, since = Since}}).

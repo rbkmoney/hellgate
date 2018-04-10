@@ -47,25 +47,24 @@
 -type st() :: #st{}.
 
 -type call() ::
-    {block, binary()}                                           |
-    {unblock, binary()}                                         |
-    suspend                                                     |
-    activate                                                    |
+    {block, call_target(), binary()}                            |
+    {unblock, call_target(), binary()}                          |
+    {suspend, call_target()}                                    |
+    {activate, call_target()}                                   |
     {set_metadata, meta_ns(), meta_data()}                      |
     {remove_metadata, meta_ns()}                                |
-    {block_shop, shop_id(), binary()}                           |
-    {unblock_shop, shop_id(), binary()}                         |
-    {suspend_shop, shop_id()}                                   |
-    {activate_shop, shop_id()}                                  |
     {create_claim, changeset()}                                 |
     {update_claim, claim_id(), claim_revision(), changeset()}   |
     {accept_claim, claim_id(), claim_revision()}                |
     {deny_claim, claim_id(), claim_revision(), binary()}        |
     {revoke_claim, claim_id(), claim_revision(), binary()}.
 
+-type call_target()     :: party | {shop, shop_id()} | {wallet, wallet_id()}.
+
 -type party()           :: dmsl_domain_thrift:'Party'().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
+-type wallet_id()       :: dmsl_domain_thrift:'WalletID'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
 -type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
@@ -133,41 +132,41 @@ get_call_name(Call) when is_tuple(Call) ->
 get_call_name(Call) when is_atom(Call) ->
     Call.
 
-handle_call({block, Reason}, {St, _}) ->
-    ok = assert_unblocked(St),
+handle_call({block, Target, Reason}, {St, _}) ->
+    ok = assert_unblocked(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?party_blocking(?blocked(Reason, Timestamp)),
+        block(Target, Reason, Timestamp),
         ?revision_changed(Timestamp, Revision)
     ]);
 
-handle_call({unblock, Reason}, {St, _}) ->
-    ok = assert_blocked(St),
+handle_call({unblock, Target, Reason}, {St, _}) ->
+    ok = assert_blocked(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?party_blocking(?unblocked(Reason, Timestamp)),
+        unblock(Target, Reason, Timestamp),
         ?revision_changed(Timestamp, Revision)
     ]);
 
-handle_call(suspend, {St, _}) ->
-    ok = assert_unblocked(St),
-    ok = assert_active(St),
+handle_call({suspend, Target}, {St, _}) ->
+    ok = assert_unblocked(Target, St),
+    ok = assert_active(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?party_suspension(?suspended(Timestamp)),
+        suspend(Target, Timestamp),
         ?revision_changed(Timestamp, Revision)
     ]);
 
-handle_call(activate, {St, _}) ->
-    ok = assert_unblocked(St),
-    ok = assert_suspended(St),
+handle_call({activate, Target}, {St, _}) ->
+    ok = assert_unblocked(Target, St),
+    ok = assert_suspended(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(ok, [
-        ?party_suspension(?active(Timestamp)),
+        activate(Target, Timestamp),
         ?revision_changed(Timestamp, Revision)
     ]);
 
@@ -178,55 +177,13 @@ handle_call({remove_metadata, NS}, {St, _}) ->
     _ = get_st_metadata(NS, St),
     respond(ok, [?party_meta_removed(NS)]);
 
-handle_call({block_shop, ID, Reason}, {St, _}) ->
-    ok = assert_unblocked(St),
-    ok = assert_shop_unblocked(ID, St),
-    Timestamp = hg_datetime:format_now(),
-    Revision = get_next_party_revision(St),
-    respond(ok, [
-        ?shop_blocking(ID, ?blocked(Reason, Timestamp)),
-        ?revision_changed(Timestamp, Revision)
-    ]);
-
-handle_call({unblock_shop, ID, Reason}, {St, _}) ->
-    ok = assert_unblocked(St),
-    ok = assert_shop_blocked(ID, St),
-    Timestamp = hg_datetime:format_now(),
-    Revision = get_next_party_revision(St),
-    respond(ok, [
-        ?shop_blocking(ID, ?unblocked(Reason, Timestamp)),
-        ?revision_changed(Timestamp, Revision)
-    ]);
-
-handle_call({suspend_shop, ID}, {St, _}) ->
-    ok = assert_unblocked(St),
-    ok = assert_shop_unblocked(ID, St),
-    ok = assert_shop_active(ID, St),
-    Timestamp = hg_datetime:format_now(),
-    Revision = get_next_party_revision(St),
-    respond(ok, [
-        ?shop_suspension(ID, ?suspended(Timestamp)),
-        ?revision_changed(Timestamp, Revision)
-    ]);
-
-handle_call({activate_shop, ID}, {St, _}) ->
-    ok = assert_unblocked(St),
-    ok = assert_shop_unblocked(ID, St),
-    ok = assert_shop_suspended(ID, St),
-    Timestamp = hg_datetime:format_now(),
-    Revision = get_next_party_revision(St),
-    respond(ok, [
-        ?shop_suspension(ID, ?active(Timestamp)),
-        ?revision_changed(Timestamp, Revision)
-    ]);
-
 handle_call({create_claim, Changeset}, {St, _}) ->
-    ok = assert_operable(St),
+    ok = assert_party_operable(St),
     {Claim, Changes} = create_claim(Changeset, St),
     respond(Claim, Changes);
 
 handle_call({update_claim, ID, ClaimRevision, Changeset}, {St, _}) ->
-    ok = assert_operable(St),
+    ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     respond(ok, update_claim(ID, Changeset, St));
 
@@ -248,7 +205,7 @@ handle_call({deny_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     respond(ok, [finalize_claim(Claim, get_st_timestamp(St))]);
 
 handle_call({revoke_claim, ID, ClaimRevision, Reason}, {St, _}) ->
-    ok = assert_operable(St),
+    ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:revoke(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
     respond(ok, [finalize_claim(Claim, get_st_timestamp(St))]).
@@ -598,6 +555,12 @@ merge_party_change(?shop_blocking(ID, Blocking), St) ->
 merge_party_change(?shop_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
     St#st{party = hg_party:shop_suspension(ID, Suspension, Party)};
+merge_party_change(?wallet_blocking(ID, Blocking), St) ->
+    Party = get_st_party(St),
+    St#st{party = hg_party:wallet_blocking(ID, Blocking, Party)};
+merge_party_change(?wallet_suspension(ID, Suspension), St) ->
+    Party = get_st_party(St),
+    St#st{party = hg_party:wallet_suspension(ID, Suspension, Party)};
 merge_party_change(?claim_created(Claim0), St) ->
     Claim = ensure_claim(Claim0),
     St1 = set_claim(Claim, St),
@@ -612,26 +575,94 @@ merge_party_change(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) -
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1).
 
-assert_operable(St) ->
-    _ = assert_unblocked(St),
-    _ = assert_active(St).
+block(party, Reason, Timestamp) ->
+    ?party_blocking(?blocked(Reason, Timestamp));
+block({shop, ID}, Reason, Timestamp) ->
+    ?shop_blocking(ID, ?blocked(Reason, Timestamp));
+block({wallet, ID}, Reason, Timestamp) ->
+    ?wallet_blocking(ID, ?blocked(Reason, Timestamp)).
 
-assert_unblocked(St) ->
-    assert_blocking(get_st_party(St), unblocked).
+unblock(party, Reason, Timestamp) ->
+    ?party_blocking(?unblocked(Reason, Timestamp));
+unblock({shop, ID}, Reason, Timestamp) ->
+    ?shop_blocking(ID, ?unblocked(Reason, Timestamp));
+unblock({wallet, ID}, Reason, Timestamp) ->
+    ?wallet_blocking(ID, ?unblocked(Reason, Timestamp)).
 
-assert_blocked(St) ->
-    assert_blocking(get_st_party(St), blocked).
+suspend(party, Timestamp) ->
+    ?party_suspension(?suspended(Timestamp));
+suspend({shop, ID}, Timestamp) ->
+    ?shop_suspension(ID, ?suspended(Timestamp));
+suspend({wallet, ID}, Timestamp) ->
+    ?wallet_suspension(ID, ?suspended(Timestamp)).
+
+activate(party, Timestamp) ->
+    ?party_suspension(?active(Timestamp));
+activate({shop, ID}, Timestamp) ->
+    ?shop_suspension(ID, ?active(Timestamp));
+activate({wallet, ID}, Timestamp) ->
+    ?wallet_suspension(ID, ?active(Timestamp)).
+
+assert_party_operable(St) ->
+    _ = assert_unblocked(party, St),
+    _ = assert_active(party, St).
+
+assert_unblocked(party, St) ->
+    assert_blocking(get_st_party(St), unblocked);
+assert_unblocked({shop, ID}, St) ->
+    Party = get_st_party(St),
+    ok = assert_blocking(Party, unblocked),
+    Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
+    assert_shop_blocking(Shop, unblocked);
+assert_unblocked({wallet, ID}, St) ->
+    Party = get_st_party(St),
+    ok = assert_blocking(Party, unblocked),
+    Wallet = assert_wallet_found(hg_party:get_wallet(ID, Party)),
+    assert_wallet_blocking(Wallet, unblocked).
+
+assert_blocked(party, St) ->
+    assert_blocking(get_st_party(St), blocked);
+assert_blocked({shop, ID}, St) ->
+    Party = get_st_party(St),
+    ok = assert_blocking(Party, unblocked),
+    Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
+    assert_shop_blocking(Shop, blocked);
+assert_blocked({wallet, ID}, St) ->
+    Party = get_st_party(St),
+    ok = assert_blocking(Party, unblocked),
+    Wallet = assert_wallet_found(hg_party:get_wallet(ID, Party)),
+    assert_wallet_blocking(Wallet, blocked).
 
 assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
     ok;
 assert_blocking(#domain_Party{blocking = Blocking}, _) ->
     throw(#payproc_InvalidPartyStatus{status = {blocking, Blocking}}).
 
-assert_active(St) ->
-    assert_suspension(get_st_party(St), active).
+assert_active(party, St) ->
+    assert_suspension(get_st_party(St), active);
+assert_active({shop, ID}, St) ->
+    Party = get_st_party(St),
+    ok = assert_suspension(Party, active),
+    Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
+    assert_shop_suspension(Shop, active);
+assert_active({wallet, ID}, St) ->
+    Party = get_st_party(St),
+    ok = assert_suspension(Party, active),
+    Wallet = assert_wallet_found(hg_party:get_wallet(ID, Party)),
+    assert_wallet_suspension(Wallet, active).
 
-assert_suspended(St) ->
-    assert_suspension(get_st_party(St), suspended).
+assert_suspended(party, St) ->
+    assert_suspension(get_st_party(St), suspended);
+assert_suspended({shop, ID}, St) ->
+    Party = get_st_party(St),
+    ok = assert_suspension(Party, active),
+    Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
+    assert_shop_suspension(Shop, suspended);
+assert_suspended({wallet, ID}, St) ->
+    Party = get_st_party(St),
+    ok = assert_suspension(Party, active),
+    Wallet = assert_wallet_found(hg_party:get_wallet(ID, Party)),
+    assert_wallet_suspension(Wallet, suspended).
 
 assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
     ok;
@@ -643,31 +674,30 @@ assert_shop_found(#domain_Shop{} = Shop) ->
 assert_shop_found(undefined) ->
     throw(#payproc_ShopNotFound{}).
 
-assert_shop_unblocked(ID, St) ->
-    Shop = assert_shop_found(hg_party:get_shop(ID, get_st_party(St))),
-    assert_shop_blocking(Shop, unblocked).
-
-assert_shop_blocked(ID, St) ->
-    Shop = assert_shop_found(hg_party:get_shop(ID, get_st_party(St))),
-    assert_shop_blocking(Shop, blocked).
-
 assert_shop_blocking(#domain_Shop{blocking = {Status, _}}, Status) ->
     ok;
 assert_shop_blocking(#domain_Shop{blocking = Blocking}, _) ->
     throw(#payproc_InvalidShopStatus{status = {blocking, Blocking}}).
 
-assert_shop_active(ID, St) ->
-    Shop = assert_shop_found(hg_party:get_shop(ID, get_st_party(St))),
-    assert_shop_suspension(Shop, active).
-
-assert_shop_suspended(ID, St) ->
-    Shop = assert_shop_found(hg_party:get_shop(ID, get_st_party(St))),
-    assert_shop_suspension(Shop, suspended).
-
 assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
     ok;
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
+
+assert_wallet_found(#domain_Wallet{} = Wallet) ->
+    Wallet;
+assert_wallet_found(undefined) ->
+    throw(#payproc_WalletNotFound{}).
+
+assert_wallet_blocking(#domain_Wallet{blocking = {Status, _}}, Status) ->
+    ok;
+assert_wallet_blocking(#domain_Wallet{blocking = Blocking}, _) ->
+    throw(#payproc_InvalidWalletStatus{status = {blocking, Blocking}}).
+
+assert_wallet_suspension(#domain_Wallet{suspension = {Status, _}}, Status) ->
+    ok;
+assert_wallet_suspension(#domain_Wallet{suspension = Suspension}, _) ->
+    throw(#payproc_InvalidWalletStatus{status = {suspension, Suspension}}).
 
 %% backward compatibility stuff
 %% TODO remove after migration

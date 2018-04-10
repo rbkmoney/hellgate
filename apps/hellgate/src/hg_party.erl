@@ -36,6 +36,10 @@
 -export([get_shop_account/2]).
 -export([get_account_state/2]).
 
+-export([get_wallet/2]).
+-export([wallet_blocking/3]).
+-export([wallet_suspension/3]).
+
 %% Asserts
 
 -export([assert_party_objects_valid/3]).
@@ -50,6 +54,9 @@
 -type shop()                  :: dmsl_domain_thrift:'Shop'().
 -type shop_id()               :: dmsl_domain_thrift:'ShopID'().
 -type shop_params()           :: dmsl_payment_processing_thrift:'ShopParams'().
+-type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
+-type wallet()                :: dmsl_domain_thrift:'Wallet'().
+-type wallet_id()             :: dmsl_domain_thrift:'WalletID'().
 
 -type blocking()              :: dmsl_domain_thrift:'Blocking'().
 -type suspension()            :: dmsl_domain_thrift:'Suspension'().
@@ -71,8 +78,10 @@ create_party(PartyID, ContactInfo, Timestamp) ->
         contact_info    = ContactInfo,
         blocking        = ?unblocked(Timestamp),
         suspension      = ?active(Timestamp),
+        contractors     = #{},
         contracts       = #{},
-        shops           = #{}
+        shops           = #{},
+        wallets         = #{}
     }.
 
 -spec blocking(blocking(), party()) ->
@@ -193,6 +202,32 @@ get_account_state(AccountID, Party) ->
         available_amount = MinAvailableAmount,
         currency = Currency
     }.
+
+-spec get_wallet(wallet_id(), party()) ->
+    wallet() | undefined.
+
+get_wallet(ID, #domain_Party{wallets = Wallets}) ->
+    maps:get(ID, Wallets, undefined).
+
+-spec set_wallet(wallet(), party()) ->
+    party().
+
+set_wallet(Wallet = #domain_Wallet{id = ID}, Party = #domain_Party{wallets = Wallets}) ->
+    Party#domain_Party{wallets = Wallets#{ID => Wallet}}.
+
+-spec wallet_blocking(wallet_id(), blocking(), party()) ->
+    party().
+
+wallet_blocking(ID, Blocking, Party) ->
+    Wallet = get_wallet(ID, Party),
+    set_wallet(Wallet#domain_Wallet{blocking = Blocking}, Party).
+
+-spec wallet_suspension(wallet_id(), suspension(), party()) ->
+    party().
+
+wallet_suspension(ID, Suspension, Party) ->
+    Wallet = get_wallet(ID, Party),
+    set_wallet(Wallet#domain_Wallet{suspension = Suspension}, Party).
 
 %% Internals
 
