@@ -88,6 +88,12 @@
 -define(payout_schedule_changed(PayoutScheduleRef),
     {payout_schedule_changed, #payproc_ScheduleChanged{schedule = PayoutScheduleRef}}).
 
+-define(wallet_modification(ID, Modification),
+    {wallet_modification, #payproc_WalletModificationUnit{id = ID, modification = Modification}}).
+
+-define(wallet_effect(ID, Effect),
+    {wallet_effect, #payproc_WalletEffectUnit{id = ID, effect = Effect}}).
+
 -define(claim_created(Claim),
     {claim_created, Claim}).
 

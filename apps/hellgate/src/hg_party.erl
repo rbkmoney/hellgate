@@ -42,6 +42,7 @@
 -export([get_wallet/2]).
 -export([wallet_blocking/3]).
 -export([wallet_suspension/3]).
+-export([set_wallet/2]).
 
 -export_type([party/0]).
 

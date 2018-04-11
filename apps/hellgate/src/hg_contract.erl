@@ -30,7 +30,7 @@
 -type contract_template_ref() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type payment_inst_ref()      :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 
--type timestamp()             :: dmsl_base_thrift:'Timestamp'().
+-type timestamp()             :: hg_datetime:timestamp().
 -type revision()              :: hg_domain:revision().
 
 %%

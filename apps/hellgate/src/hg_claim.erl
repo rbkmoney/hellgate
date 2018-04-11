@@ -32,9 +32,9 @@
 -type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
 -type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
 
--type party()           :: dmsl_domain_thrift:'Party'().
+-type party()           :: hg_party:party().
 
--type timestamp()       :: dmsl_base_thrift:'Timestamp'().
+-type timestamp()       :: hg_datetime:timestamp().
 -type revision()        :: hg_domain:revision().
 
 %% Interface
@@ -336,7 +336,9 @@ apply_claim_effect(?contractor_effect(ID, Effect), _, Party) ->
 apply_claim_effect(?contract_effect(ID, Effect), Timestamp, Party) ->
     apply_contract_effect(ID, Effect, Timestamp, Party);
 apply_claim_effect(?shop_effect(ID, Effect), _, Party) ->
-    apply_shop_effect(ID, Effect, Party).
+    apply_shop_effect(ID, Effect, Party);
+apply_claim_effect(?wallet_effect(ID, Effect), _, Party) ->
+    apply_wallet_effect(ID, Effect, Party).
 
 apply_contractor_effect(_, {created, PartyContractor}, Party) ->
     hg_party:set_contractor(PartyContractor, Party);
@@ -397,6 +399,15 @@ update_shop(?payout_schedule_changed(PayoutScheduleRef), Shop) ->
     Shop#domain_Shop{payout_schedule = PayoutScheduleRef};
 update_shop({account_created, Account}, Shop) ->
     Shop#domain_Shop{account = Account}.
+
+apply_wallet_effect(_, {created, Wallet}, Party) ->
+    hg_party:set_wallet(Wallet, Party);
+apply_wallet_effect(ID, Effect, Party) ->
+    Wallet = hg_party:get_wallet(ID, Party),
+    hg_party:set_wallet(update_wallet(Effect, Wallet), Party).
+
+update_wallet({account_created, Account}, Wallet) ->
+    Wallet#domain_Wallet{account = Account}.
 
 -spec raise_invalid_changeset(dmsl_payment_processing_thrift:'InvalidChangesetReason'()) ->
     no_return().

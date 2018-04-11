@@ -41,7 +41,10 @@ make(?contract_modification(ID, Modification), Timestamp, Revision) ->
     end;
 
 make(?shop_modification(ID, Modification), Timestamp, _Revision) ->
-    ?shop_effect(ID, make_shop_effect(ID, Modification, Timestamp)).
+    ?shop_effect(ID, make_shop_effect(ID, Modification, Timestamp));
+
+make(?wallet_modification(ID, Modification), Timestamp, _Revision) ->
+    ?wallet_effect(ID, make_wallet_effect(ID, Modification, Timestamp)).
 
 -spec make_safe(change(), timestamp(), revision()) -> effect() | no_return().
 
@@ -58,7 +61,8 @@ make_safe(
             payout = make_rand_account_id()
         }}
     );
-
+make_safe(?wallet_modification(ID, {account_creation, Params}), _, _) ->
+    ?wallet_effect(ID, {account_created, hg_wallet:create_fake_account(Params)});
 make_safe(Change, Timestamp, Revision) ->
     make(Change, Timestamp, Revision).
 
@@ -105,6 +109,11 @@ make_shop_effect(_, {shop_account_creation, Params}, _) ->
     {account_created, create_shop_account(Params)};
 make_shop_effect(_, ?payout_schedule_modification(PayoutScheduleRef), _) ->
     ?payout_schedule_changed(PayoutScheduleRef).
+
+make_wallet_effect(ID, {creation, Params}, Timestamp) ->
+    {created, hg_wallet:create(ID, Params, Timestamp)};
+make_wallet_effect(_, {account_creation, Params}, _) ->
+    {account_created, hg_wallet:create_account(Params)}.
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);
