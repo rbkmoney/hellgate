@@ -56,9 +56,9 @@ make_safe(
     ?shop_effect(ID,
         {account_created, #domain_ShopAccount{
             currency = Currency,
-            settlement = make_rand_account_id(),
-            guarantee = make_rand_account_id(),
-            payout = make_rand_account_id()
+            settlement = 0,
+            guarantee = 0,
+            payout = 0
         }}
     );
 make_safe(?wallet_modification(ID, {account_creation, Params}), _, _) ->
@@ -127,7 +127,4 @@ create_shop_account(#domain_CurrencyRef{symbolic_code = SymbolicCode} = Currency
         guarantee = GuaranteeID,
         payout = PayoutID
     }.
-
-make_rand_account_id() ->
-    rand:uniform(9999999).
 

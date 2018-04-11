@@ -56,11 +56,6 @@ create_account(#payproc_WalletAccountParams{currency = Currency}) ->
 create_fake_account(#payproc_WalletAccountParams{currency = Currency}) ->
     #domain_WalletAccount{
         currency = Currency,
-        settlement = make_rand_account_id(),
-        payout = make_rand_account_id()
+        settlement = 0,
+        payout = 0
     }.
-
-%% Implementation
-
-make_rand_account_id() ->
-    rand:uniform(9999999).

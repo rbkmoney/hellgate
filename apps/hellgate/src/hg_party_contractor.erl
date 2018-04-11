@@ -21,6 +21,3 @@ create(ID, Contractor) ->
         status = none,
         identity_documents = []
     }.
-
-%% Implementation
-
