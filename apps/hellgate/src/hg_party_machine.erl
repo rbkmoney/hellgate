@@ -61,7 +61,7 @@
 
 -type call_target()     :: party | {shop, shop_id()} | {wallet, wallet_id()}.
 
--type party()           :: dmsl_domain_thrift:'Party'().
+-type party()           :: hg_party:party().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
 -type wallet_id()       :: dmsl_domain_thrift:'WalletID'().

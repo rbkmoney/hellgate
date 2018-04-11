@@ -38,6 +38,17 @@
 -define(active(Since), {active, #domain_Active{since = Since}}).
 -define(suspended(Since), {suspended, #domain_Suspended{since = Since}}).
 
+-define(contractor_modification(ID, Modification),
+    {contractor_modification, #payproc_ContractorModificationUnit{id = ID, modification = Modification}}).
+
+-define(identity_documents_modification(Docs),
+    {identity_documents_modification, #payproc_ContractorIdentityDocumentsModification{
+        identity_documents = Docs
+    }}).
+
+-define(contractor_effect(ID, Effect),
+    {contractor_effect, #payproc_ContractorEffectUnit{id = ID, effect = Effect}}).
+
 -define(contract_modification(ID, Modification),
     {contract_modification, #payproc_ContractModificationUnit{id = ID, modification = Modification}}).
 

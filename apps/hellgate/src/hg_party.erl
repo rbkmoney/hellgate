@@ -20,6 +20,9 @@
 -export([blocking/2]).
 -export([suspension/2]).
 
+-export([get_contractor/2]).
+-export([set_contractor/2]).
+
 -export([get_contract/2]).
 -export([set_contract/2]).
 -export([set_new_contract/3]).
@@ -40,6 +43,8 @@
 -export([wallet_blocking/3]).
 -export([wallet_suspension/3]).
 
+-export_type([party/0]).
+
 %% Asserts
 
 -export([assert_party_objects_valid/3]).
@@ -50,6 +55,8 @@
 -type party_id()              :: dmsl_domain_thrift:'PartyID'().
 -type contract()              :: dmsl_domain_thrift:'Contract'().
 -type contract_id()           :: dmsl_domain_thrift:'ContractID'().
+-type contractor()            :: dmsl_domain_thrift:'PartyContractor'().
+-type contractor_id()         :: dmsl_domain_thrift:'ContractorID'().
 -type contract_template()     :: dmsl_domain_thrift:'ContractTemplate'().
 -type shop()                  :: dmsl_domain_thrift:'Shop'().
 -type shop_id()               :: dmsl_domain_thrift:'ShopID'().
@@ -95,6 +102,18 @@ blocking(Blocking, Party) ->
 
 suspension(Suspension, Party) ->
     Party#domain_Party{suspension = Suspension}.
+
+-spec get_contractor(contractor_id(), party()) ->
+    contractor() | undefined.
+
+get_contractor(ID, #domain_Party{contractors = Contractors}) ->
+    maps:get(ID, Contractors, undefined).
+
+-spec set_contractor(contractor(), party()) ->
+    party().
+
+set_contractor(Contractor = #domain_PartyContractor{id = ID}, Party = #domain_Party{contractors = Contractors}) ->
+    Party#domain_Party{contractors = Contractors#{ID => Contractor}}.
 
 -spec get_contract(contract_id(), party()) ->
     contract() | undefined.
