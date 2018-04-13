@@ -40,6 +40,7 @@
 
 create(ID, Params, Timestamp, Revision) ->
     #payproc_ContractParams{
+        contractor_id = ContractorID,
         contractor = Contractor,
         template = TemplateRef,
         payment_institution = PaymentInstitutionRef
@@ -51,6 +52,7 @@ create(ID, Params, Timestamp, Revision) ->
     } = get_template(TemplateRef, Revision),
     #domain_Contract{
         id = ID,
+        contractor_id = ContractorID,
         contractor = Contractor,
         payment_institution = PaymentInstitutionRef,
         created_at = Timestamp,

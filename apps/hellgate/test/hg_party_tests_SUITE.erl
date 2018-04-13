@@ -84,6 +84,12 @@
 -export([compute_payment_institution_terms/1]).
 -export([compute_payout_cash_flow/1]).
 
+-export([contractor_creation/1]).
+-export([contractor_modification/1]).
+
+-export([wallet_creation/1]).
+-export([wallet_modification/1]).
+
 %% tests descriptions
 
 -type config() :: hg_ct_helper:config().
@@ -105,6 +111,8 @@ all() ->
         {group, contract_management},
         {group, shop_management},
         {group, shop_account_lazy_creation},
+        {group, contractor_management},
+        {group, wallet_management},
 
         {group, claim_management},
 
@@ -188,6 +196,20 @@ groups() ->
             shop_already_suspended,
             shop_activation,
             shop_already_active
+        ]},
+        {contractor_management, [sequence], [
+            party_creation,
+            contractor_creation,
+            contractor_modification
+        ]},
+        {wallet_management, [sequence], [
+            party_creation,
+            wallet_creation,
+            wallet_modification,
+            {group, wallet_blocking_suspension}
+        ]},
+        {wallet_blocking_suspension, [sequence], [
+            %% TODO add tests here
         ]},
         {shop_account_lazy_creation, [sequence], [
             party_creation,
@@ -322,7 +344,9 @@ end_per_testcase(_Name, _C) ->
     {exception, #payproc_InvalidChangeset{reason = Reason}}).
 
 -define(REAL_SHOP_ID, <<"SHOP1">>).
+-define(REAL_CONTRACTOR_ID, <<"CONTRACTOR1">>).
 -define(REAL_CONTRACT_ID, <<"CONTRACT1">>).
+-define(REAL_WALLET_ID, <<"WALLET1">>).
 -define(REAL_PARTY_PAYMENT_METHODS,
     [?pmt(bank_card, maestro), ?pmt(bank_card, mastercard), ?pmt(bank_card, visa)]).
 
@@ -393,6 +417,12 @@ end_per_testcase(_Name, _C) ->
 -spec contract_adjustment_expiration(config()) -> _ | no_return().
 -spec compute_payment_institution_terms(config()) -> _ | no_return().
 -spec compute_payout_cash_flow(config()) -> _ | no_return().
+
+-spec contractor_creation(config()) -> _ | no_return().
+-spec contractor_modification(config()) -> _ | no_return().
+
+-spec wallet_creation(config()) -> _ | no_return().
+-spec wallet_modification(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -1103,6 +1133,70 @@ shop_account_retrieval(C) ->
     {shop_account_set_retrieval, #domain_ShopAccount{guarantee = AccountID}} = ?config(saved_config, C),
     #payproc_AccountState{account_id = AccountID} = hg_client_party:get_account_state(AccountID, Client).
 
+%%
+
+contractor_creation(C) ->
+    Client = cfg(client, C),
+    ContractorParams = make_contractor_params(),
+    ContractorID = ?REAL_CONTRACTOR_ID,
+    Changeset = [
+        ?contractor_modification(ContractorID, {creation, ContractorParams})
+    ],
+    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
+    ok = accept_claim(Claim, Client),
+    Party = hg_client_party:get(Client),
+    #domain_PartyContractor{} = hg_party:get_contractor(ContractorID, Party).
+
+contractor_modification(C) ->
+    Client = cfg(client, C),
+    ContractorID = ?REAL_CONTRACTOR_ID,
+    Party1 = hg_client_party:get(Client),
+    #domain_PartyContractor{} = C1 = hg_party:get_contractor(ContractorID, Party1),
+    Changeset = [
+        ?contractor_modification(ContractorID, {identification_level_modification, full}),
+        ?contractor_modification(ContractorID, {
+            identity_documents_modification,
+            #payproc_ContractorIdentityDocumentsModification{
+                identity_documents = [<<"some_binary">>, <<"and_even_more_binary">>]
+            }
+        })
+    ],
+    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
+    ok = accept_claim(Claim, Client),
+    Party2 = hg_client_party:get(Client),
+    #domain_PartyContractor{} = C2 = hg_party:get_contractor(ContractorID, Party2),
+    C1 /= C2 orelse error(same_contractor).
+
+%%
+
+wallet_creation(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    WalletParams = make_wallet_params(?REAL_CONTRACT_ID),
+    Changeset = [
+        ?wallet_modification(WalletID, {creation, WalletParams})
+    ],
+    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
+    ok = accept_claim(Claim, Client),
+    #domain_Wallet{} = hg_client_party:get_wallet(WalletID, Client).
+
+wallet_modification(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    #domain_Wallet{} = W1 = hg_client_party:get_wallet(WalletID, Client),
+    Changeset = [
+        ?wallet_modification(WalletID, {
+            account_creation,
+            #payproc_WalletAccountParams{
+                currency = ?cur(<<"RUB">>)
+            }
+        })
+    ],
+    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
+    ok = accept_claim(Claim, Client),
+    #domain_Wallet{} = W2 = hg_client_party:get_wallet(WalletID, Client),
+    W1 /= W2 orelse error(same_wallet).
+
 %% Access control tests
 
 party_access_control(C) ->
@@ -1212,6 +1306,15 @@ make_contract_params() ->
 
 make_contract_params(TemplateRef) ->
     hg_ct_helper:make_battle_ready_contract_params(TemplateRef, ?pinst(2)).
+
+make_contractor_params() ->
+    hg_ct_helper:make_battle_ready_contractor().
+
+make_wallet_params(ContractID) ->
+    #payproc_WalletParams{
+        name = <<"Some wallet">>,
+        contract_id = ContractID
+    }.
 
 construct_term_set_for_party(PartyID, Def) ->
     TermSet = #domain_TermSet{

@@ -438,7 +438,9 @@ assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
             ok = assert_contract_change_applicable(ID, Modification, Contract);
         ?shop_modification(ID, Modification) ->
             Shop = hg_party:get_shop(ID, Party),
-            ok = assert_shop_change_applicable(ID, Modification, Shop, Party)
+            ok = assert_shop_change_applicable(ID, Modification, Shop, Party);
+        _ ->
+            ok
     end,
     Effect = hg_claim_effect:make_safe(Change, Timestamp, Revision),
     assert_changeset_applicable(Others, Timestamp, Revision, apply_claim_effect(Effect, Timestamp, Party));
