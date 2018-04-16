@@ -89,6 +89,15 @@
 
 -export([wallet_creation/1]).
 -export([wallet_modification/1]).
+-export([wallet_blocking/1]).
+-export([wallet_unblocking/1]).
+-export([wallet_already_blocked/1]).
+-export([wallet_already_unblocked/1]).
+-export([wallet_blocked_on_suspend/1]).
+-export([wallet_suspension/1]).
+-export([wallet_activation/1]).
+-export([wallet_already_suspended/1]).
+-export([wallet_already_active/1]).
 
 %% tests descriptions
 
@@ -209,7 +218,15 @@ groups() ->
             {group, wallet_blocking_suspension}
         ]},
         {wallet_blocking_suspension, [sequence], [
-            %% TODO add tests here
+            wallet_blocking,
+            wallet_already_blocked,
+            wallet_blocked_on_suspend,
+            wallet_unblocking,
+            wallet_already_unblocked,
+            wallet_suspension,
+            wallet_already_suspended,
+            wallet_activation,
+            wallet_already_active
         ]},
         {shop_account_lazy_creation, [sequence], [
             party_creation,
@@ -259,6 +276,8 @@ end_per_suite(C) ->
 
 init_per_group(shop_blocking_suspension, C) ->
     C;
+init_per_group(wallet_blocking_suspension, C) ->
+    C;
 init_per_group(Group, C) ->
     PartyID = list_to_binary(lists:concat([Group, ".", erlang:system_time()])),
     ApiClient = hg_ct_helper:create_client(cfg(root_url, C), PartyID),
@@ -287,6 +306,8 @@ end_per_testcase(_Name, _C) ->
     #domain_Party{id = ID, blocking = Blocking, suspension = Suspension}).
 -define(shop_w_status(ID, Blocking, Suspension),
     #domain_Shop{id = ID, blocking = Blocking, suspension = Suspension}).
+-define(wallet_w_status(ID, Blocking, Suspension),
+    #domain_Wallet{id = ID, blocking = Blocking, suspension = Suspension}).
 
 -define(invalid_user(),
     {exception, #payproc_InvalidUser{}}).
@@ -328,6 +349,17 @@ end_per_testcase(_Name, _C) ->
     {exception, #payproc_InvalidShopStatus{status = {suspension, ?suspended(_)}}}).
 -define(shop_active(),
     {exception, #payproc_InvalidShopStatus{status = {suspension, ?active(_)}}}).
+
+-define(wallet_not_found(),
+    {exception, #payproc_WalletNotFound{}}).
+-define(wallet_blocked(Reason),
+    {exception, #payproc_InvalidWalletStatus{status = {blocking, ?blocked(Reason, _)}}}).
+-define(wallet_unblocked(Reason),
+    {exception, #payproc_InvalidWalletStatus{status = {blocking, ?unblocked(Reason, _)}}}).
+-define(wallet_suspended(),
+    {exception, #payproc_InvalidWalletStatus{status = {suspension, ?suspended(_)}}}).
+-define(wallet_active(),
+    {exception, #payproc_InvalidWalletStatus{status = {suspension, ?active(_)}}}).
 
 -define(claim(ID),
     #payproc_Claim{id = ID}).
@@ -423,6 +455,15 @@ end_per_testcase(_Name, _C) ->
 
 -spec wallet_creation(config()) -> _ | no_return().
 -spec wallet_modification(config()) -> _ | no_return().
+-spec wallet_blocking(config()) -> _ | no_return().
+-spec wallet_unblocking(config()) -> _ | no_return().
+-spec wallet_already_blocked(config()) -> _ | no_return().
+-spec wallet_already_unblocked(config()) -> _ | no_return().
+-spec wallet_blocked_on_suspend(config()) -> _ | no_return().
+-spec wallet_suspension(config()) -> _ | no_return().
+-spec wallet_activation(config()) -> _ | no_return().
+-spec wallet_already_suspended(config()) -> _ | no_return().
+-spec wallet_already_active(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -1196,6 +1237,61 @@ wallet_modification(C) ->
     ok = accept_claim(Claim, Client),
     #domain_Wallet{} = W2 = hg_client_party:get_wallet(WalletID, Client),
     W1 /= W2 orelse error(same_wallet).
+
+wallet_blocking(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    Reason = <<"i said so">>,
+    ok = hg_client_party:block_wallet(WalletID, Reason, Client),
+    [?wallet_blocking(WalletID, ?blocked(Reason, _)), ?revision_changed(_, _)] = next_event(Client),
+    ?wallet_w_status(WalletID, ?blocked(Reason, _), _) = hg_client_party:get_wallet(WalletID, Client).
+
+wallet_unblocking(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    Reason = <<"enough">>,
+    ok = hg_client_party:unblock_wallet(WalletID, Reason, Client),
+    [?wallet_blocking(WalletID, ?unblocked(Reason, _)), ?revision_changed(_, _)] = next_event(Client),
+    ?wallet_w_status(WalletID, ?unblocked(Reason, _), _) = hg_client_party:get_wallet(WalletID, Client).
+
+wallet_already_blocked(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    ?wallet_blocked(_) = hg_client_party:block_wallet(WalletID, <<"too much">>, Client).
+
+wallet_already_unblocked(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    ?wallet_unblocked(_) = hg_client_party:unblock_wallet(WalletID, <<"too free">>, Client).
+
+wallet_blocked_on_suspend(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    ?wallet_blocked(_) = hg_client_party:suspend_wallet(WalletID, Client).
+
+wallet_suspension(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    ok = hg_client_party:suspend_wallet(WalletID, Client),
+    [?wallet_suspension(WalletID, ?suspended(_)), ?revision_changed(_, _)] = next_event(Client),
+    ?wallet_w_status(WalletID, _, ?suspended(_)) = hg_client_party:get_wallet(WalletID, Client).
+
+wallet_activation(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    ok = hg_client_party:activate_wallet(WalletID, Client),
+    [?wallet_suspension(WalletID, ?active(_)), ?revision_changed(_, _)] = next_event(Client),
+    ?wallet_w_status(WalletID, _, ?active(_)) = hg_client_party:get_wallet(WalletID, Client).
+
+wallet_already_suspended(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    ?wallet_suspended() = hg_client_party:suspend_wallet(WalletID, Client).
+
+wallet_already_active(C) ->
+    Client = cfg(client, C),
+    WalletID = ?REAL_WALLET_ID,
+    ?wallet_active() = hg_client_party:activate_wallet(WalletID, Client).
 
 %% Access control tests
 
