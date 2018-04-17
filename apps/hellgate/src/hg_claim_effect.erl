@@ -40,8 +40,8 @@ make(?contract_modification(ID, Modification), Timestamp, Revision) ->
             ))
     end;
 
-make(?shop_modification(ID, Modification), Timestamp, _Revision) ->
-    ?shop_effect(ID, make_shop_effect(ID, Modification, Timestamp));
+make(?shop_modification(ID, Modification), Timestamp, Revision) ->
+    ?shop_effect(ID, make_shop_effect(ID, Modification, Timestamp, Revision));
 
 make(?wallet_modification(ID, Modification), Timestamp, _Revision) ->
     ?wallet_effect(ID, make_wallet_effect(ID, Modification, Timestamp)).
@@ -88,32 +88,47 @@ make_contract_effect(_, ?payout_tool_creation(PayoutToolID, Params), Timestamp, 
 make_contract_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
     {legal_agreement_bound, LegalAgreement}.
 
-make_shop_effect(ID, {creation, ShopParams}, Timestamp) ->
+make_shop_effect(ID, {creation, ShopParams}, Timestamp, _) ->
     {created, hg_party:create_shop(ID, ShopParams, Timestamp)};
-make_shop_effect(_, {category_modification, Category}, _) ->
+make_shop_effect(_, {category_modification, Category}, _, _) ->
     {category_changed, Category};
-make_shop_effect(_, {details_modification, Details}, _) ->
+make_shop_effect(_, {details_modification, Details}, _, _) ->
     {details_changed, Details};
-make_shop_effect(_, ?shop_contract_modification(ContractID, PayoutToolID), _) ->
+make_shop_effect(_, ?shop_contract_modification(ContractID, PayoutToolID), _, _) ->
     {contract_changed, #payproc_ShopContractChanged{
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
     }};
-make_shop_effect(_, {payout_tool_modification, PayoutToolID}, _) ->
+make_shop_effect(_, {payout_tool_modification, PayoutToolID}, _, _) ->
     {payout_tool_changed, PayoutToolID};
-make_shop_effect(_, ?proxy_modification(Proxy), _) ->
+make_shop_effect(_, ?proxy_modification(Proxy), _, _) ->
     {proxy_changed, #payproc_ShopProxyChanged{proxy = Proxy}};
-make_shop_effect(_, {location_modification, Location}, _) ->
+make_shop_effect(_, {location_modification, Location}, _, _) ->
     {location_changed, Location};
-make_shop_effect(_, {shop_account_creation, Params}, _) ->
+make_shop_effect(_, {shop_account_creation, Params}, _, _) ->
     {account_created, create_shop_account(Params)};
-make_shop_effect(_, ?payout_schedule_modification(PayoutScheduleRef), _) ->
+make_shop_effect(ID, ?payout_schedule_modification(PayoutScheduleRef), _, Revision) ->
+    _ = assert_payout_schedule_valid(ID, PayoutScheduleRef, Revision),
     ?payout_schedule_changed(PayoutScheduleRef).
 
 make_wallet_effect(ID, {creation, Params}, Timestamp) ->
     {created, hg_wallet:create(ID, Params, Timestamp)};
 make_wallet_effect(_, {account_creation, Params}, _) ->
     {account_created, hg_wallet:create_account(Params)}.
+
+assert_payout_schedule_valid(ShopID, #domain_PayoutScheduleRef{} = PayoutScheduleRef, Revision) ->
+    Ref = {payout_schedule, PayoutScheduleRef},
+    case hg_domain:exists(Revision, Ref) of
+        true ->
+            ok;
+        false ->
+            raise_invalid_changeset(?invalid_shop(
+                ShopID,
+                {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
+            ))
+    end;
+assert_payout_schedule_valid(_, undefined, _) ->
+    ok.
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);

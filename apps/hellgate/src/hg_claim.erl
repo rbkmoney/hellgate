@@ -439,8 +439,12 @@ assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
         ?shop_modification(ID, Modification) ->
             Shop = hg_party:get_shop(ID, Party),
             ok = assert_shop_change_applicable(ID, Modification, Shop, Party);
-        _ ->
-            ok
+        ?contractor_modification(ID, Modification) ->
+            Contractor = hg_party:get_contractor(ID, Party),
+            ok = assert_contractor_change_applicable(ID, Modification, Contractor);
+        ?wallet_modification(ID, Modification) ->
+            Wallet = hg_party:get_wallet(ID, Party),
+            ok = assert_wallet_change_applicable(ID, Modification, Wallet)
     end,
     Effect = hg_claim_effect:make_safe(Change, Timestamp, Revision),
     assert_changeset_applicable(Others, Timestamp, Revision, apply_claim_effect(Effect, Timestamp, Party));
@@ -485,12 +489,43 @@ assert_shop_change_applicable(ID, {creation, _}, #domain_Shop{}, _) ->
     raise_invalid_changeset(?invalid_shop(ID, {already_exists, ID}));
 assert_shop_change_applicable(
     _ID,
+    {shop_account_creation, _},
+    #domain_Shop{account = Account},
+    _Party
+) when Account /= undefined ->
+    throw(#'InvalidRequest'{errors = [<<"Can't change shop's account">>]});
+assert_shop_change_applicable(
+    _ID,
     {contract_modification, #payproc_ShopContractModification{contract_id = NewContractID}},
     #domain_Shop{contract_id = OldContractID},
     Party
 ) ->
     assert_payment_institutions_equals(OldContractID, NewContractID, Party);
 assert_shop_change_applicable(_, _, _, _) ->
+    ok.
+
+assert_contractor_change_applicable(_, {creation, _}, undefined) ->
+    ok;
+assert_contractor_change_applicable(ID, _AnyModification, undefined) ->
+    raise_invalid_changeset({contractor_not_exists, ID});
+assert_contractor_change_applicable(ID, {creation, _}, #domain_PartyContractor{}) ->
+    raise_invalid_changeset({contractor_already_exists, ID});
+assert_contractor_change_applicable(_, _, _) ->
+    ok.
+
+assert_wallet_change_applicable(_, {creation, _}, undefined) ->
+    ok;
+assert_wallet_change_applicable(ID, _AnyModification, undefined) ->
+    raise_invalid_changeset({wallet_not_exists, ID});
+assert_wallet_change_applicable(ID, {creation, _}, #domain_Wallet{}) ->
+    raise_invalid_changeset({wallet_already_exists, ID});
+assert_wallet_change_applicable(
+    _ID,
+    {account_creation, _},
+    #domain_Wallet{account = Account}
+) when Account /= undefined ->
+    throw(#'InvalidRequest'{errors = [<<"Can't change wallet's account">>]});
+assert_wallet_change_applicable(_, _, _) ->
     ok.
 
 assert_payment_institutions_equals(OldContractID, NewContractID, Party) ->
@@ -514,20 +549,6 @@ assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
-
-assert_payout_schedule_valid(ShopID, #domain_PayoutScheduleRef{} = PayoutScheduleRef, Revision) ->
-    Ref = {payout_schedule, PayoutScheduleRef},
-    case hg_domain:exists(Revision, Ref) of
-        true ->
-            ok;
-        false ->
-            raise_invalid_changeset(?invalid_shop(
-                ShopID,
-                {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
-            ))
-    end;
-assert_payout_schedule_valid(_, undefined, _) ->
-    ok.
 
 make_optional_domain_ref(_, undefined) ->
     undefined;
