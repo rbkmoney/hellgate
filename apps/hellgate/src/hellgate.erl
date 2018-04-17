@@ -52,6 +52,7 @@ init([]) ->
 
 get_api_child_spec(MachineHandlers) ->
     {ok, Ip} = inet:parse_address(genlib_app:env(?MODULE, ip, "::")),
+    HealthCheckers = genlib_app:env(?MODULE, health_checkers, []),
     woody_server:child_spec(
         ?MODULE,
         #{
@@ -68,7 +69,8 @@ get_api_child_spec(MachineHandlers) ->
                 construct_service_handler(recurrent_paytool_eventsink  , hg_recurrent_paytool  ),
                 construct_service_handler(proxy_host_provider          , hg_proxy_host_provider),
                 construct_service_handler(payment_processing_eventsink , hg_event_sink_handler )
-            ]
+            ],
+            additional_routes => [erl_health_handle:get_route(HealthCheckers)]
         }
     ).
 

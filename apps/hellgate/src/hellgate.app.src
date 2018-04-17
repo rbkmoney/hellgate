@@ -19,7 +19,8 @@
         dmt_client,
         woody_user_identity,
         scoper,
-        payproc_errors
+        payproc_errors,
+        erl_health
     ]},
     {env, []},
     {modules, []},

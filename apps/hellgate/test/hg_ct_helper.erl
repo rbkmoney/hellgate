@@ -15,6 +15,7 @@
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
 -export([get_first_payout_tool_id/2]).
+-export([adjust_contract/3]).
 
 -export([make_battle_ready_contract_params/2]).
 -export([make_battle_ready_payout_tool_params/0]).
@@ -291,14 +292,7 @@ create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef,
         ?shop_modification(ShopID, {creation, ShopParams}),
         ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
     ],
-    #payproc_Claim{id = ClaimID, revision = ClaimRevision, status = Status} =
-        hg_client_party:create_claim(Changeset, Client),
-    case Status of
-        {accepted, _} ->
-            ok;
-        _ ->
-            ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client)
-    end,
+    ok = ensure_claim_accepted(hg_client_party:create_claim(Changeset, Client), Client),
     _Shop = hg_client_party:get_shop(ShopID, Client),
     ShopID.
 
@@ -333,6 +327,29 @@ get_first_battle_ready_contract_id(Client) ->
             lists:min(IDs);
         [] ->
             error(not_found)
+    end.
+
+-spec adjust_contract(contract_id(), contract_tpl(), Client :: pid()) -> ok.
+
+adjust_contract(ContractID, TemplateRef, Client) ->
+    ensure_claim_accepted(hg_client_party:create_claim([
+        {contract_modification, #payproc_ContractModificationUnit{
+            id           = ContractID,
+            modification = {adjustment_modification, #payproc_ContractAdjustmentModificationUnit{
+                adjustment_id = hg_utils:unique_id(),
+                modification  = {creation, #payproc_ContractAdjustmentParams{
+                    template = TemplateRef
+                }}
+            }}
+        }}
+    ], Client), Client).
+
+ensure_claim_accepted(#payproc_Claim{id = ClaimID, revision = ClaimRevision, status = Status}, Client) ->
+    case Status of
+        {accepted, _} ->
+            ok;
+        _ ->
+            ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client)
     end.
 
 -spec get_account(account_id()) -> account().

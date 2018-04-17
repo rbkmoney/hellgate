@@ -48,7 +48,7 @@
 -export([cancel/2]).
 -export([refund/3]).
 
--export([create_adjustment/3]).
+-export([create_adjustment/4]).
 -export([capture_adjustment/3]).
 -export([cancel_adjustment/3]).
 
@@ -225,7 +225,7 @@ init_(PaymentID, Params, Opts) ->
     Payer = construct_payer(get_payer_params(Params), Shop),
     Flow = get_flow_params(Params),
     CreatedAt = hg_datetime:format_now(),
-    MerchantTerms = get_merchant_payments_terms(Invoice, Party, Revision),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
     VS0 = collect_varset(Party, Shop, #{}),
     {Payment, VS1} = construct_payment(PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, VS0, Revision),
     {RiskScore, VS2} = validate_risk_score(inspect(Payment, PaymentInstitution, VS1, Opts), VS1),
@@ -250,17 +250,15 @@ init_(PaymentID, Params, Opts) ->
     {collapse_changes(Events), {Events, hg_machine_action:new()}}.
 
 get_merchant_payments_terms(Opts, Revision) ->
-    get_merchant_payments_terms(get_invoice(Opts), get_party(Opts), Revision).
+    get_merchant_payments_terms(Opts, Revision, get_invoice_created_at(get_invoice(Opts))).
 
-get_merchant_payments_terms(Invoice, Party, Revision) ->
+get_merchant_payments_terms(Opts, Revision, Timestamp) ->
+    Invoice = get_invoice(Opts),
+    Party = get_party(Opts),
     Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    TermSet = hg_party:get_terms(
-        Contract,
-        get_invoice_created_at(Invoice),
-        Revision
-    ),
+    TermSet = hg_party:get_terms(Contract, Timestamp, Revision),
     TermSet#domain_TermSet.payments.
 
 get_provider_payments_terms(Route, Revision) ->
@@ -445,13 +443,20 @@ validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Re
 
 collect_refund_varset(
     #domain_PaymentRefundsServiceTerms{
-        partial_refunds = PartialRefundsServiceTerms
+        payment_methods  = PaymentMethodSelector,
+        partial_refunds  = PartialRefundsServiceTerms
     },
     VS,
     Revision
 ) ->
-    PartialRefundsVS = collect_partial_refund_varset(PartialRefundsServiceTerms, #{}, Revision),
-    VS#{refunds => PartialRefundsVS};
+    RPMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
+    case ordsets:is_element(hg_payment_tool:get_method(maps:get(payment_tool, VS)), RPMs) of
+        true ->
+            RVS = collect_partial_refund_varset(PartialRefundsServiceTerms, VS, Revision),
+            VS#{refunds => RVS};
+        false ->
+            VS
+    end;
 collect_refund_varset(undefined, VS, _Revision) ->
     VS.
 
@@ -462,10 +467,11 @@ collect_partial_refund_varset(
     VS,
     Revision
 ) ->
-    Limit = reduce_selector(cash_limit, CashLimitSelector, VS, Revision),
-    VS#{partial => #{cash_limit => Limit}};
-collect_partial_refund_varset(undefined, VS, _Revision) ->
-    VS.
+    #{partial => #{
+        cash_limit => reduce_selector(cash_limit, CashLimitSelector, VS, Revision)
+    }};
+collect_partial_refund_varset(undefined, _, _) ->
+    #{}.
 
 collect_varset(St, Opts) ->
     collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
@@ -862,17 +868,17 @@ get_refund_cashflow_plan(RefundSt) ->
 
 %%
 
--spec create_adjustment(adjustment_params(), st(), opts()) ->
+-spec create_adjustment(hg_datetime:timestamp(), adjustment_params(), st(), opts()) ->
     {adjustment(), result()}.
 
-create_adjustment(Params, St, Opts) ->
+create_adjustment(Timestamp, Params, St, Opts) ->
     Payment = get_payment(St),
     Revision = get_adjustment_revision(Params),
     _ = assert_payment_status(captured, Payment),
     _ = assert_no_adjustment_pending(St),
     Shop = get_shop(Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp),
     Route = get_route(St),
     Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
@@ -883,7 +889,7 @@ create_adjustment(Params, St, Opts) ->
     Adjustment = #domain_InvoicePaymentAdjustment{
         id                    = ID,
         status                = ?adjustment_pending(),
-        created_at            = hg_datetime:format_now(),
+        created_at            = Timestamp,
         domain_revision       = Revision,
         reason                = Params#payproc_InvoicePaymentAdjustmentParams.reason,
         old_cash_flow_inverse = hg_cashflow:revert(get_cashflow(St)),
@@ -1738,16 +1744,15 @@ get_log_params(?payment_started(Payment, _, _, Cashflow), _) ->
         event_type => invoice_payment_started
     },
     make_log_params(Params);
-get_log_params(?payment_status_changed({Status, _}), State) ->
-    Payment = get_payment(State),
-    Cashflow = get_cashflow(State),
-    Params = #{
-        status => Status,
-        payment => Payment,
-        cashflow => Cashflow,
-        event_type => invoice_payment_status_changed
-    },
-    make_log_params(Params);
+get_log_params(?payment_status_changed(Status), State) ->
+    make_log_params(
+        #{
+            status     => Status,
+            payment    => get_payment(State),
+            cashflow   => get_cashflow(State),
+            event_type => invoice_payment_status_changed
+        }
+    );
 get_log_params(_, _) ->
     undefined.
 
@@ -1791,10 +1796,23 @@ make_log_params(cashflow, CashFlow) ->
         Reminders
     ),
     [{accounts, Accounts}];
-make_log_params(status, Status) ->
-    [{status, Status}];
+make_log_params(status, {StatusTag, StatusDetails}) ->
+    [{status, StatusTag}] ++ format_status_details(StatusDetails);
 make_log_params(event_type, EventType) ->
     [{type, EventType}].
+
+format_status_details(#domain_InvoicePaymentFailed{failure = Failure}) ->
+    [{error, list_to_binary(format_failure(Failure))}];
+format_status_details(_) ->
+    [].
+
+format_failure({operation_timeout, _}) ->
+    [<<"timeout">>];
+format_failure({failure, Failure}) ->
+    format_domain_failure(Failure).
+
+format_domain_failure(Failure) ->
+    payproc_errors:format_raw(Failure).
 
 get_account_key({AccountParty, AccountType}) ->
     list_to_binary(lists:concat([atom_to_list(AccountParty), ".", atom_to_list(AccountType)])).
