@@ -86,9 +86,9 @@
 
 -export([contractor_creation/1]).
 -export([contractor_modification/1]).
+-export([contract_w_contractor_creation/1]).
 
 -export([wallet_creation/1]).
--export([wallet_modification/1]).
 -export([wallet_blocking/1]).
 -export([wallet_unblocking/1]).
 -export([wallet_already_blocked/1]).
@@ -209,12 +209,13 @@ groups() ->
         {contractor_management, [sequence], [
             party_creation,
             contractor_creation,
-            contractor_modification
+            contractor_modification,
+            contract_w_contractor_creation
         ]},
         {wallet_management, [sequence], [
             party_creation,
+            contract_creation,
             wallet_creation,
-            wallet_modification,
             {group, wallet_blocking_suspension}
         ]},
         {wallet_blocking_suspension, [sequence], [
@@ -452,9 +453,9 @@ end_per_testcase(_Name, _C) ->
 
 -spec contractor_creation(config()) -> _ | no_return().
 -spec contractor_modification(config()) -> _ | no_return().
+-spec contract_w_contractor_creation(config()) -> _ | no_return().
 
 -spec wallet_creation(config()) -> _ | no_return().
--spec wallet_modification(config()) -> _ | no_return().
 -spec wallet_blocking(config()) -> _ | no_return().
 -spec wallet_unblocking(config()) -> _ | no_return().
 -spec wallet_already_blocked(config()) -> _ | no_return().
@@ -1208,6 +1209,18 @@ contractor_modification(C) ->
     #domain_PartyContractor{} = C2 = hg_party:get_contractor(ContractorID, Party2),
     C1 /= C2 orelse error(same_contractor).
 
+contract_w_contractor_creation(C) ->
+    Client = cfg(client, C),
+    ContractorID = ?REAL_CONTRACTOR_ID,
+    ContractParams = make_contract_w_contractor_params(ContractorID),
+    ContractID = ?REAL_CONTRACT_ID,
+    Changeset = [
+        ?contract_modification(ContractID, {creation, ContractParams})
+    ],
+    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{id = ContractID, contractor_id = ContractorID} = hg_client_party:get_contract(ContractID, Client).
+
 %%
 
 wallet_creation(C) ->
@@ -1215,17 +1228,7 @@ wallet_creation(C) ->
     WalletID = ?REAL_WALLET_ID,
     WalletParams = make_wallet_params(?REAL_CONTRACT_ID),
     Changeset = [
-        ?wallet_modification(WalletID, {creation, WalletParams})
-    ],
-    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
-    ok = accept_claim(Claim, Client),
-    #domain_Wallet{} = hg_client_party:get_wallet(WalletID, Client).
-
-wallet_modification(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    #domain_Wallet{} = W1 = hg_client_party:get_wallet(WalletID, Client),
-    Changeset = [
+        ?wallet_modification(WalletID, {creation, WalletParams}),
         ?wallet_modification(WalletID, {
             account_creation,
             #payproc_WalletAccountParams{
@@ -1235,8 +1238,7 @@ wallet_modification(C) ->
     ],
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
-    #domain_Wallet{} = W2 = hg_client_party:get_wallet(WalletID, Client),
-    W1 /= W2 orelse error(same_wallet).
+    #domain_Wallet{} = hg_client_party:get_wallet(WalletID, Client).
 
 wallet_blocking(C) ->
     Client = cfg(client, C),
@@ -1402,6 +1404,13 @@ make_contract_params() ->
 
 make_contract_params(TemplateRef) ->
     hg_ct_helper:make_battle_ready_contract_params(TemplateRef, ?pinst(2)).
+
+make_contract_w_contractor_params(ContractorID) ->
+    #payproc_ContractParams{
+        contractor_id = ContractorID,
+        template = undefined,
+        payment_institution = ?pinst(2)
+    }.
 
 make_contractor_params() ->
     hg_ct_helper:make_battle_ready_contractor().

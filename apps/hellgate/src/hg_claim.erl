@@ -196,8 +196,7 @@ is_contract_modification_need_acceptance(undefined, {creation, ContractParams}, 
         Revision,
         {payment_institution, ContractParams#payproc_ContractParams.payment_institution}
     ),
-    % TODO abstraction leek
-    PaymentInstitution#domain_PaymentInstitution.realm =:= live;
+    hg_payment_institution:is_live(PaymentInstitution);
 is_contract_modification_need_acceptance(undefined, _AnyModification, _) ->
     % contract does not exist, so it should be created in same claim
     % we can check contract creation and forget about this contract change
@@ -507,18 +506,18 @@ assert_shop_change_applicable(_, _, _, _) ->
 assert_contractor_change_applicable(_, {creation, _}, undefined) ->
     ok;
 assert_contractor_change_applicable(ID, _AnyModification, undefined) ->
-    raise_invalid_changeset({contractor_not_exists, ID});
+    raise_invalid_changeset(?invalid_contractor(ID, {not_exists, ID}));
 assert_contractor_change_applicable(ID, {creation, _}, #domain_PartyContractor{}) ->
-    raise_invalid_changeset({contractor_already_exists, ID});
+    raise_invalid_changeset(?invalid_contractor(ID, {already_exists, ID}));
 assert_contractor_change_applicable(_, _, _) ->
     ok.
 
 assert_wallet_change_applicable(_, {creation, _}, undefined) ->
     ok;
 assert_wallet_change_applicable(ID, _AnyModification, undefined) ->
-    raise_invalid_changeset({wallet_not_exists, ID});
+    raise_invalid_changeset(?invalid_wallet(ID, {not_exists, ID}));
 assert_wallet_change_applicable(ID, {creation, _}, #domain_Wallet{}) ->
-    raise_invalid_changeset({wallet_already_exists, ID});
+    raise_invalid_changeset(?invalid_wallet(ID, {already_exists, ID}));
 assert_wallet_change_applicable(
     _ID,
     {account_creation, _},

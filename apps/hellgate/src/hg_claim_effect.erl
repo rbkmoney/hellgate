@@ -25,14 +25,14 @@ make(?contract_modification(ID, Modification), Timestamp, Revision) ->
         ?contract_effect(ID, make_contract_effect(ID, Modification, Timestamp, Revision))
     catch
         throw:{payment_institution_invalid, Ref} ->
-            raise_invalid_changeset(?invalid_contract(
+            hg_claim:raise_invalid_changeset(?invalid_contract(
                 ID,
                 {invalid_object_reference, #payproc_InvalidObjectReference{
                     ref = make_optional_domain_ref(payment_institution, Ref)
                 }}
             ));
         throw:{template_invalid, Ref} ->
-            raise_invalid_changeset(?invalid_contract(
+            hg_claim:raise_invalid_changeset(?invalid_contract(
                 ID,
                 {invalid_object_reference, #payproc_InvalidObjectReference{
                     ref = make_optional_domain_ref(contract_template, Ref)
@@ -122,7 +122,7 @@ assert_payout_schedule_valid(ShopID, #domain_PayoutScheduleRef{} = PayoutSchedul
         true ->
             ok;
         false ->
-            raise_invalid_changeset(?invalid_shop(
+            hg_claim:raise_invalid_changeset(?invalid_shop(
                 ShopID,
                 {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
             ))
@@ -143,3 +143,7 @@ create_shop_account(#domain_CurrencyRef{symbolic_code = SymbolicCode} = Currency
         payout = PayoutID
     }.
 
+make_optional_domain_ref(_, undefined) ->
+    undefined;
+make_optional_domain_ref(Type, Ref) ->
+    {Type, Ref}.

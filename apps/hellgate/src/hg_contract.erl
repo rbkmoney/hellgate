@@ -160,7 +160,7 @@ is_active(_) ->
 is_live(Contract, Revision) ->
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    PaymentInstitution#domain_PaymentInstitution.realm =:= live.
+    hg_payment_institution:is_live(PaymentInstitution).
 
 %% Internals
 

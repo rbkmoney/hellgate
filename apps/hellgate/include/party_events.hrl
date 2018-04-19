@@ -127,4 +127,10 @@
 -define(invalid_contract(ID, Reason),
     {invalid_contract, #payproc_InvalidContract{id = ID, reason = Reason}}).
 
+-define(invalid_contractor(ID, Reason),
+    {invalid_contractor, #payproc_InvalidContractor{id = ID, reason = Reason}}).
+
+-define(invalid_wallet(ID, Reason),
+    {invalid_wallet, #payproc_InvalidWallet{id = ID, reason = Reason}}).
+
 -endif.

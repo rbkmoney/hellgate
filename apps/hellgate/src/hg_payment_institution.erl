@@ -5,7 +5,7 @@
 %%
 
 -export([get_system_account/4]).
-
+-export([is_live/1]).
 %%
 
 -type currency()        :: dmsl_domain_thrift:'CurrencyRef'().
@@ -27,3 +27,8 @@ get_system_account(Currency, VS, Revision, #domain_PaymentInstitution{system_acc
         error ->
             error({misconfiguration, {'No system account for a given currency', Currency}})
     end.
+
+-spec is_live(payment_inst()) -> boolean().
+
+is_live(#domain_PaymentInstitution{realm = Realm}) ->
+    Realm =:= live.
