@@ -541,14 +541,14 @@ checkout_history_by_timestamp([{_, _, Ev} | Rest], Timestamp, #st{timestamp = Pr
     EventTimestamp = St1#st.timestamp,
     case hg_datetime:compare(EventTimestamp, Timestamp) of
         later when PrevTimestamp =/= undefined ->
-            {ok, St};
+            {ok, St#st{timestamp = Timestamp}};
         later when PrevTimestamp == undefined ->
             {error, revision_not_found};
         _ ->
             checkout_history_by_timestamp(Rest, Timestamp, St1)
     end;
-checkout_history_by_timestamp([], _, St) ->
-    {ok, St}.
+checkout_history_by_timestamp([], Timestamp, St) ->
+    {ok, St#st{timestamp = Timestamp}}.
 
 checkout_history_by_revision([{_, _, Ev} | Rest], Revision, St) ->
     St1 = merge_event(Ev, St),

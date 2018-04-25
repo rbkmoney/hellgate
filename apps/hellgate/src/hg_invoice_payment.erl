@@ -225,7 +225,7 @@ init_(PaymentID, Params, Opts) ->
     Payer = construct_payer(get_payer_params(Params), Shop),
     Flow = get_flow_params(Params),
     CreatedAt = hg_datetime:format_now(),
-    MerchantTerms = get_merchant_payments_terms(Invoice, Party, Revision),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
     VS0 = collect_varset(Party, Shop, #{}),
     {Payment, VS1} = construct_payment(PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, VS0, Revision),
     {RiskScore, VS2} = validate_risk_score(inspect(Payment, PaymentInstitution, VS1, Opts), VS1),
@@ -250,17 +250,15 @@ init_(PaymentID, Params, Opts) ->
     {collapse_changes(Events), {Events, hg_machine_action:new()}}.
 
 get_merchant_payments_terms(Opts, Revision) ->
-    get_merchant_payments_terms(get_invoice(Opts), get_party(Opts), Revision).
+    get_merchant_payments_terms(Opts, Revision, get_invoice_created_at(get_invoice(Opts))).
 
-get_merchant_payments_terms(Invoice, Party, Revision) ->
+get_merchant_payments_terms(Opts, Revision, Timestamp) ->
+    Invoice = get_invoice(Opts),
+    Party = get_party(Opts),
     Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    TermSet = hg_party:get_terms(
-        Contract,
-        get_invoice_created_at(Invoice),
-        Revision
-    ),
+    TermSet = hg_party:get_terms(Contract, Timestamp, Revision),
     TermSet#domain_TermSet.payments.
 
 get_provider_payments_terms(Route, Revision) ->
@@ -880,7 +878,7 @@ create_adjustment(Timestamp, Params, St, Opts) ->
     _ = assert_no_adjustment_pending(St),
     Shop = get_shop(Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp),
     Route = get_route(St),
     Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),

@@ -249,10 +249,27 @@ make_changeset_effects(Changeset, Timestamp, Revision) ->
     )).
 
 make_change_effect(?contract_modification(ID, Modification), Timestamp, Revision) ->
-    ?contract_effect(ID, make_contract_modification_effect(ID, Modification, Timestamp, Revision));
+    try
+        ?contract_effect(ID, make_contract_modification_effect(ID, Modification, Timestamp, Revision))
+    catch
+        throw:{payment_institution_invalid, Ref} ->
+            raise_invalid_changeset(?invalid_contract(
+                ID,
+                {invalid_object_reference, #payproc_InvalidObjectReference{
+                    ref = make_optional_domain_ref(payment_institution, Ref)
+                }}
+            ));
+        throw:{template_invalid, Ref} ->
+            raise_invalid_changeset(?invalid_contract(
+                ID,
+                {invalid_object_reference, #payproc_InvalidObjectReference{
+                    ref = make_optional_domain_ref(contract_template, Ref)
+                }}
+            ))
+    end;
 
-make_change_effect(?shop_modification(ID, Modification), Timestamp, _Revision) ->
-    ?shop_effect(ID, make_shop_modification_effect(ID, Modification, Timestamp)).
+make_change_effect(?shop_modification(ID, Modification), Timestamp, Revision) ->
+    ?shop_effect(ID, make_shop_modification_effect(ID, Modification, Timestamp, Revision)).
 
 make_contract_modification_effect(ID, {creation, ContractParams}, Timestamp, Revision) ->
     {created, hg_contract:create(ID, ContractParams, Timestamp, Revision)};
@@ -265,26 +282,27 @@ make_contract_modification_effect(_, ?payout_tool_creation(PayoutToolID, Params)
 make_contract_modification_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
     {legal_agreement_bound, LegalAgreement}.
 
-make_shop_modification_effect(ID, {creation, ShopParams}, Timestamp) ->
+make_shop_modification_effect(ID, {creation, ShopParams}, Timestamp, _) ->
     {created, hg_party:create_shop(ID, ShopParams, Timestamp)};
-make_shop_modification_effect(_, {category_modification, Category}, _) ->
+make_shop_modification_effect(_, {category_modification, Category}, _, _) ->
     {category_changed, Category};
-make_shop_modification_effect(_, {details_modification, Details}, _) ->
+make_shop_modification_effect(_, {details_modification, Details}, _, _) ->
     {details_changed, Details};
-make_shop_modification_effect(_, ?shop_contract_modification(ContractID, PayoutToolID), _) ->
+make_shop_modification_effect(_, ?shop_contract_modification(ContractID, PayoutToolID), _, _) ->
     {contract_changed, #payproc_ShopContractChanged{
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
     }};
-make_shop_modification_effect(_, {payout_tool_modification, PayoutToolID}, _) ->
+make_shop_modification_effect(_, {payout_tool_modification, PayoutToolID}, _, _) ->
     {payout_tool_changed, PayoutToolID};
-make_shop_modification_effect(_, ?proxy_modification(Proxy), _) ->
+make_shop_modification_effect(_, ?proxy_modification(Proxy), _, _) ->
     {proxy_changed, #payproc_ShopProxyChanged{proxy = Proxy}};
-make_shop_modification_effect(_, {location_modification, Location}, _) ->
+make_shop_modification_effect(_, {location_modification, Location}, _, _) ->
     {location_changed, Location};
-make_shop_modification_effect(_, {shop_account_creation, Params}, _) ->
+make_shop_modification_effect(_, {shop_account_creation, Params}, _, _) ->
     {account_created, create_shop_account(Params)};
-make_shop_modification_effect(_, ?payout_schedule_modification(PayoutScheduleRef), _) ->
+make_shop_modification_effect(ID, ?payout_schedule_modification(PayoutScheduleRef), _, Revision) ->
+    _ = assert_payout_schedule_valid(ID, PayoutScheduleRef, Revision),
     ?payout_schedule_changed(PayoutScheduleRef).
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
@@ -346,7 +364,7 @@ squash_contract_effect(?contract_effect(ContractID, Mod) = Effect, Squashed) ->
                 {[?contract_effect(ID, {created, update_contract(Mod, Contract)}) | Acc], true};
             (?contract_effect(ID, {created, _}), {_, true}) when ID =:= ContractID ->
                 % One more created contract with same id - error.
-                raise_invalid_changeset({contract_already_exists, ID});
+                raise_invalid_changeset(?invalid_contract(ID, {already_exists, ID}));
             (E, {Acc, Flag}) ->
                 {[E | Acc], Flag}
         end,
@@ -373,7 +391,7 @@ squash_shop_effect(?shop_effect(ShopID, Mod) = Effect, Squashed) ->
                 {[?shop_effect(ID, {created, update_shop(Mod, Shop)}) | Acc], true};
             (?shop_effect(ID, {created, _}), {_, true}) when ID =:= ShopID ->
                 % One more shop with same id - error.
-                raise_invalid_changeset({shop_already_exists, ID});
+                raise_invalid_changeset(?invalid_shop(ID, {already_exists, ID}));
             (E, {Acc, Flag}) ->
                 {[E | Acc], Flag}
         end,
@@ -486,32 +504,29 @@ assert_changeset_applicable([], _, _, _) ->
 assert_contract_change_applicable(_, {creation, _}, undefined) ->
     ok;
 assert_contract_change_applicable(ID, {creation, _}, #domain_Contract{}) ->
-    raise_invalid_changeset({contract_already_exists, ID});
+    raise_invalid_changeset(?invalid_contract(ID, {already_exists, ID}));
 assert_contract_change_applicable(ID, _AnyModification, undefined) ->
-    raise_invalid_changeset({contract_not_exists, ID});
+    raise_invalid_changeset(?invalid_contract(ID, {not_exists, ID}));
 assert_contract_change_applicable(ID, ?contract_termination(_), Contract) ->
     case hg_contract:is_active(Contract) of
         true ->
             ok;
         false ->
-            raise_invalid_changeset({contract_status_invalid, #payproc_ContractStatusInvalid{
-                contract_id = ID,
-                status = Contract#domain_Contract.status
-            }})
+            raise_invalid_changeset(?invalid_contract(ID, {invalid_status, Contract#domain_Contract.status}))
     end;
-assert_contract_change_applicable(_, ?adjustment_creation(AdjustmentID, _), Contract) ->
+assert_contract_change_applicable(ID, ?adjustment_creation(AdjustmentID, _), Contract) ->
     case hg_contract:get_adjustment(AdjustmentID, Contract) of
         undefined ->
             ok;
         _ ->
-            raise_invalid_changeset({contract_adjustment_already_exists, AdjustmentID})
+            raise_invalid_changeset(?invalid_contract(ID, {contract_adjustment_already_exists, AdjustmentID}))
     end;
-assert_contract_change_applicable(_, ?payout_tool_creation(PayoutToolID, _), Contract) ->
+assert_contract_change_applicable(ID, ?payout_tool_creation(PayoutToolID, _), Contract) ->
     case hg_contract:get_payout_tool(PayoutToolID, Contract) of
         undefined ->
             ok;
         _ ->
-            raise_invalid_changeset({payout_tool_already_exists, PayoutToolID})
+            raise_invalid_changeset(?invalid_contract(ID, {payout_tool_already_exists, PayoutToolID}))
     end;
 assert_contract_change_applicable(_, _, _) ->
     ok.
@@ -519,9 +534,9 @@ assert_contract_change_applicable(_, _, _) ->
 assert_shop_change_applicable(_, {creation, _}, undefined, _) ->
     ok;
 assert_shop_change_applicable(ID, _AnyModification, undefined, _) ->
-    raise_invalid_changeset({shop_not_exists, ID});
+    raise_invalid_changeset(?invalid_shop(ID, {not_exists, ID}));
 assert_shop_change_applicable(ID, {creation, _}, #domain_Shop{}, _) ->
-    raise_invalid_changeset({shop_already_exists, ID});
+    raise_invalid_changeset(?invalid_shop(ID, {already_exists, ID}));
 assert_shop_change_applicable(
     _ID,
     {contract_modification, #payproc_ShopContractModification{contract_id = NewContractID}},
@@ -537,11 +552,16 @@ assert_payment_institutions_equals(OldContractID, NewContractID, Party) ->
     case hg_party:get_contract(NewContractID, Party) of
         #domain_Contract{payment_institution = OldRef} ->
             ok;
-        #domain_Contract{} ->
-            % TODO change to special invalid_changeset error
-            throw(#'InvalidRequest'{errors = [<<"Can't change shop's payment institution">>]});
+        #domain_Contract{payment_institution = NewRef} ->
+            % Can't change shop's payment institution
+            raise_invalid_changeset(?invalid_contract(
+                NewContractID,
+                {invalid_object_reference, #payproc_InvalidObjectReference{
+                    ref = make_optional_domain_ref(payment_institution, NewRef)
+                }}
+            ));
         undefined ->
-            raise_invalid_changeset({contract_not_exists, NewContractID})
+            raise_invalid_changeset(?invalid_contract(NewContractID, {not_exists, NewContractID}))
     end.
 
 assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
@@ -549,3 +569,21 @@ assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
 
+assert_payout_schedule_valid(ShopID, #domain_PayoutScheduleRef{} = PayoutScheduleRef, Revision) ->
+    Ref = {payout_schedule, PayoutScheduleRef},
+    case hg_domain:exists(Revision, Ref) of
+        true ->
+            ok;
+        false ->
+            raise_invalid_changeset(?invalid_shop(
+                ShopID,
+                {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
+            ))
+    end;
+assert_payout_schedule_valid(_, undefined, _) ->
+    ok.
+
+make_optional_domain_ref(_, undefined) ->
+    undefined;
+make_optional_domain_ref(Type, Ref) ->
+    {Type, Ref}.

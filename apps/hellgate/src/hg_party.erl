@@ -32,7 +32,6 @@
 -export([shop_suspension/3]).
 -export([set_shop/2]).
 
--export([get_new_shop_currency/4]).
 -export([get_shop/2]).
 -export([get_shop_account/2]).
 -export([get_account_state/2]).
@@ -51,7 +50,6 @@
 -type shop()                  :: dmsl_domain_thrift:'Shop'().
 -type shop_id()               :: dmsl_domain_thrift:'ShopID'().
 -type shop_params()           :: dmsl_payment_processing_thrift:'ShopParams'().
--type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
 
 -type blocking()              :: dmsl_domain_thrift:'Blocking'().
 -type suspension()            :: dmsl_domain_thrift:'Suspension'().
@@ -195,18 +193,6 @@ get_account_state(AccountID, Party) ->
         available_amount = MinAvailableAmount,
         currency = Currency
     }.
-
--spec get_new_shop_currency(shop(), party(), timestamp(), revision()) ->
-    currency().
-
-get_new_shop_currency(#domain_Shop{contract_id = ContractID}, Party, Timestamp, Revision) ->
-    Currencies = case get_contract(ContractID, Party) of
-        undefined ->
-            throw({contract_not_exists, ContractID});
-        Contract ->
-            hg_contract:get_currencies(Contract, Timestamp, Revision)
-    end,
-    erlang:hd(ordsets:to_list(Currencies)).
 
 %% Internals
 
@@ -537,8 +523,8 @@ assert_shop_contract_valid(
                     #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}}
                 );
         undefined ->
-            % TODO change to special invalid_changeset error
-            throw(#'InvalidRequest'{errors = [<<"Can't create shop without account">>]})
+            % TODO remove cross-deps between claim-party-contract
+            hg_claim:raise_invalid_changeset(?invalid_shop(ID, {no_account, ID}))
     end,
     Categories = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
     _ = ordsets:is_element(CategoryRef, Categories) orelse
@@ -549,22 +535,37 @@ assert_shop_contract_valid(
         ),
     ok.
 
+assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = undefined, payout_schedule = undefined}, _) ->
+    % automatic payouts disabled for this shop and it's ok
+    ok;
+assert_shop_payout_tool_valid(#domain_Shop{id = ID, payout_tool_id = undefined, payout_schedule = _Schedule}, _) ->
+    % automatic payouts enabled for this shop but no payout tool specified
+    hg_claim:raise_invalid_changeset(?invalid_shop(ID, {payout_tool_invalid, #payproc_ShopPayoutToolInvalid{}}));
+assert_shop_payout_tool_valid(#domain_Shop{id = ID, payout_tool_id = PayoutToolID} = Shop, Contract) ->
+    ShopCurrency = (Shop#domain_Shop.account)#domain_ShopAccount.currency,
+    case hg_contract:get_payout_tool(PayoutToolID, Contract) of
+        #domain_PayoutTool{currency = ShopCurrency} ->
+            ok;
+        #domain_PayoutTool{} ->
+            % currency missmatch
+            hg_claim:raise_invalid_changeset(?invalid_shop(
+                ID,
+                {payout_tool_invalid, #payproc_ShopPayoutToolInvalid{payout_tool_id = PayoutToolID}}
+            ));
+        undefined ->
+            hg_claim:raise_invalid_changeset(?invalid_shop(
+                ID,
+                {payout_tool_invalid, #payproc_ShopPayoutToolInvalid{payout_tool_id = PayoutToolID}}
+            ))
+    end.
+
 -spec raise_contract_terms_violated(shop_id(), contract_id(), dmsl_domain_thrift:'TermSet'()) -> no_return().
 
 raise_contract_terms_violated(ShopID, ContractID, Terms) ->
-    hg_claim:raise_invalid_changeset(
+    hg_claim:raise_invalid_changeset(?invalid_shop(
+        ShopID,
         {contract_terms_violated, #payproc_ContractTermsViolated{
-            shop_id = ShopID,
             contract_id = ContractID,
             terms = Terms
         }}
-    ).
-
-assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = PayoutToolID}, Contract) ->
-    case hg_contract:get_payout_tool(PayoutToolID, Contract) of
-        undefined ->
-            hg_claim:raise_invalid_changeset({payout_tool_not_exists, PayoutToolID});
-        _ ->
-            ok
-    end.
-
+    )).

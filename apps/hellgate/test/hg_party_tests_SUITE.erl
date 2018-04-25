@@ -482,7 +482,10 @@ contract_already_exists(C) ->
     ContractParams = make_contract_params(),
     ContractID = ?REAL_CONTRACT_ID,
     Changeset = [?contract_modification(ContractID, {creation, ContractParams})],
-    ?invalid_changeset({contract_already_exists, ContractID}) = hg_client_party:create_claim(Changeset, Client).
+    ?invalid_changeset(?invalid_contract(
+        ContractID,
+        {already_exists, ContractID}
+    )) = hg_client_party:create_claim(Changeset, Client).
 
 contract_termination(C) ->
     Client = cfg(client, C),
@@ -501,7 +504,10 @@ contract_already_terminated(C) ->
     Changeset = [
         ?contract_modification(ContractID, ?contract_termination(<<"JUST TO BE SURE.">>))
     ],
-    ?invalid_changeset({contract_status_invalid, _}) = hg_client_party:create_claim(Changeset, Client).
+    ?invalid_changeset(?invalid_contract(
+        ContractID,
+        {invalid_status, _}
+    )) = hg_client_party:create_claim(Changeset, Client).
 
 contract_expiration(C) ->
     Client = cfg(client, C),
@@ -717,7 +723,7 @@ shop_already_exists(C) ->
         payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
     Changeset = [?shop_modification(ShopID, {creation, Params})],
-    ?invalid_changeset({shop_already_exists, ShopID}) = hg_client_party:create_claim(Changeset, Client).
+    ?invalid_changeset(?invalid_shop(ShopID, {already_exists, _})) = hg_client_party:create_claim(Changeset, Client).
 
 shop_update(C) ->
     Client = cfg(client, C),
