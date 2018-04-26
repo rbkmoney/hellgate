@@ -280,7 +280,9 @@ make_contract_modification_effect(_, ?adjustment_creation(AdjustmentID, Params),
 make_contract_modification_effect(_, ?payout_tool_creation(PayoutToolID, Params), Timestamp, _) ->
     {payout_tool_created, hg_payout_tool:create(PayoutToolID, Params, Timestamp)};
 make_contract_modification_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
-    {legal_agreement_bound, LegalAgreement}.
+    {legal_agreement_bound, LegalAgreement};
+make_contract_modification_effect(_, {report_preferences_modification, ReportPreferences}, _, _) ->
+    {report_preferences_changed, ReportPreferences}.
 
 make_shop_modification_effect(ID, {creation, ShopParams}, Timestamp, _) ->
     {created, hg_party:create_shop(ID, ShopParams, Timestamp)};
@@ -301,9 +303,9 @@ make_shop_modification_effect(_, {location_modification, Location}, _, _) ->
     {location_changed, Location};
 make_shop_modification_effect(_, {shop_account_creation, Params}, _, _) ->
     {account_created, create_shop_account(Params)};
-make_shop_modification_effect(ID, ?payout_schedule_modification(PayoutScheduleRef), _, Revision) ->
-    _ = assert_payout_schedule_valid(ID, PayoutScheduleRef, Revision),
-    ?payout_schedule_changed(PayoutScheduleRef).
+make_shop_modification_effect(ID, ?payout_schedule_modification(BusinessScheduleRef), _, Revision) ->
+    _ = assert_payout_schedule_valid(ID, BusinessScheduleRef, Revision),
+    ?payout_schedule_changed(BusinessScheduleRef).
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);
@@ -436,7 +438,9 @@ update_contract({payout_tool_created, PayoutTool}, Contract) ->
     PayoutTools = Contract#domain_Contract.payout_tools ++ [PayoutTool],
     Contract#domain_Contract{payout_tools = PayoutTools};
 update_contract({legal_agreement_bound, LegalAgreement}, Contract) ->
-    Contract#domain_Contract{legal_agreement = LegalAgreement}.
+    Contract#domain_Contract{legal_agreement = LegalAgreement};
+update_contract({report_preferences_changed, ReportPreferences}, Contract) ->
+    Contract#domain_Contract{report_preferences = ReportPreferences}.
 
 apply_shop_effect(_, {created, Shop}, Party) ->
     hg_party:set_shop(Shop, Party);
@@ -460,8 +464,8 @@ update_shop({location_changed, Location}, Shop) ->
 update_shop({proxy_changed, _}, Shop) ->
     % deprecated
     Shop;
-update_shop(?payout_schedule_changed(PayoutScheduleRef), Shop) ->
-    Shop#domain_Shop{payout_schedule = PayoutScheduleRef};
+update_shop(?payout_schedule_changed(BusinessScheduleRef), Shop) ->
+    Shop#domain_Shop{payout_schedule = BusinessScheduleRef};
 update_shop({account_created, Account}, Shop) ->
     Shop#domain_Shop{account = Account}.
 
@@ -569,8 +573,8 @@ assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
 
-assert_payout_schedule_valid(ShopID, #domain_PayoutScheduleRef{} = PayoutScheduleRef, Revision) ->
-    Ref = {payout_schedule, PayoutScheduleRef},
+assert_payout_schedule_valid(ShopID, #domain_BusinessScheduleRef{} = BusinessScheduleRef, Revision) ->
+    Ref = {payout_schedule, BusinessScheduleRef},
     case hg_domain:exists(Revision, Ref) of
         true ->
             ok;
