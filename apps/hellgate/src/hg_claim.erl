@@ -281,7 +281,8 @@ make_contract_modification_effect(_, ?payout_tool_creation(PayoutToolID, Params)
     {payout_tool_created, hg_payout_tool:create(PayoutToolID, Params, Timestamp)};
 make_contract_modification_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
     {legal_agreement_bound, LegalAgreement};
-make_contract_modification_effect(_, {report_preferences_modification, ReportPreferences}, _, _) ->
+make_contract_modification_effect(ID, {report_preferences_modification, ReportPreferences}, _, Revision) ->
+    _ = assert_report_schedule_valid(ID, ReportPreferences, Revision),
     {report_preferences_changed, ReportPreferences}.
 
 make_shop_modification_effect(ID, {creation, ShopParams}, Timestamp, _) ->
@@ -573,8 +574,30 @@ assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
 
+assert_report_schedule_valid(_, #domain_ReportPreferences{service_acceptance_act_preferences = undefined}, _) ->
+    ok;
+assert_report_schedule_valid(
+    ID,
+    #domain_ReportPreferences{
+        service_acceptance_act_preferences = #domain_ServiceAcceptanceActPreferences{
+            schedule = BusinessScheduleRef
+        }
+    },
+    Revision
+) ->
+    Ref = {business_schedule, BusinessScheduleRef},
+    case hg_domain:exists(Revision, Ref) of
+        true ->
+            ok;
+        false ->
+            raise_invalid_changeset(?invalid_contract(
+                ID,
+                {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
+            ))
+    end.
+
 assert_payout_schedule_valid(ShopID, #domain_BusinessScheduleRef{} = BusinessScheduleRef, Revision) ->
-    Ref = {payout_schedule, BusinessScheduleRef},
+    Ref = {business_schedule, BusinessScheduleRef},
     case hg_domain:exists(Revision, Ref) of
         true ->
             ok;

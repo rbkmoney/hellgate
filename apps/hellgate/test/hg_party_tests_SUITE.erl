@@ -550,8 +550,7 @@ contract_report_preferences_modification(C) ->
     Pref1 = #domain_ReportPreferences{},
     Pref2 = #domain_ReportPreferences{
         service_acceptance_act_preferences = #domain_ServiceAcceptanceActPreferences{
-            %% TODO check for valid ref
-            schedule = #domain_BusinessScheduleRef{id = 1},
+            schedule = ?bussched(1),
             signer = #domain_Representative{
                 position = <<"69">>,
                 full_name = <<"Generic Name">>,
@@ -1376,6 +1375,8 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_system_account_set(?sas(2)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
+
+        hg_ct_fixture:construct_business_schedule(?bussched(1)),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
