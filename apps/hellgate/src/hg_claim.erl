@@ -585,30 +585,29 @@ assert_report_schedule_valid(
     },
     Revision
 ) ->
-    Ref = {business_schedule, BusinessScheduleRef},
-    case hg_domain:exists(Revision, Ref) of
-        true ->
-            ok;
-        false ->
-            raise_invalid_changeset(?invalid_contract(
-                ID,
-                {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
-            ))
-    end.
+    assert_valid_object_ref({contract, ID}, {business_schedule, BusinessScheduleRef}, Revision).
 
-assert_payout_schedule_valid(ShopID, #domain_BusinessScheduleRef{} = BusinessScheduleRef, Revision) ->
-    Ref = {business_schedule, BusinessScheduleRef},
-    case hg_domain:exists(Revision, Ref) of
-        true ->
-            ok;
-        false ->
-            raise_invalid_changeset(?invalid_shop(
-                ShopID,
-                {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
-            ))
-    end;
+assert_payout_schedule_valid(ID, #domain_BusinessScheduleRef{} = BusinessScheduleRef, Revision) ->
+    assert_valid_object_ref({shop, ID}, {business_schedule, BusinessScheduleRef}, Revision);
 assert_payout_schedule_valid(_, undefined, _) ->
     ok.
+
+assert_valid_object_ref(Prefix, Ref, Revision) ->
+    case hg_domain:exists(Revision, Ref) of
+        true ->
+            ok;
+        false ->
+            raise_invalid_object_ref(Prefix, Ref)
+    end.
+
+raise_invalid_object_ref(Prefix, Ref) ->
+    Ex = {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}},
+    raise_invalid_object_ref_(Prefix, Ex).
+
+raise_invalid_object_ref_({shop, ID}, Ex) ->
+    raise_invalid_changeset(?invalid_shop(ID, Ex));
+raise_invalid_object_ref_({contract, ID}, Ex) ->
+    raise_invalid_changeset(?invalid_contract(ID, Ex)).
 
 make_optional_domain_ref(_, undefined) ->
     undefined;
