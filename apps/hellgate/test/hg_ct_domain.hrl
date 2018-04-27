@@ -20,6 +20,7 @@
 -define(insp(ID),       #domain_InspectorRef{id = ID}).
 -define(pinst(ID),      #domain_PaymentInstitutionRef{id = ID}).
 -define(binrange(ID),   #domain_BankCardBINRangeRef{id = ID}).
+-define(bussched(ID),   #domain_BusinessScheduleRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).

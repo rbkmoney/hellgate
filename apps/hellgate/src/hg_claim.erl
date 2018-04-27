@@ -280,7 +280,10 @@ make_contract_modification_effect(_, ?adjustment_creation(AdjustmentID, Params),
 make_contract_modification_effect(_, ?payout_tool_creation(PayoutToolID, Params), Timestamp, _) ->
     {payout_tool_created, hg_payout_tool:create(PayoutToolID, Params, Timestamp)};
 make_contract_modification_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
-    {legal_agreement_bound, LegalAgreement}.
+    {legal_agreement_bound, LegalAgreement};
+make_contract_modification_effect(ID, {report_preferences_modification, ReportPreferences}, _, Revision) ->
+    _ = assert_report_schedule_valid(ID, ReportPreferences, Revision),
+    {report_preferences_changed, ReportPreferences}.
 
 make_shop_modification_effect(ID, {creation, ShopParams}, Timestamp, _) ->
     {created, hg_party:create_shop(ID, ShopParams, Timestamp)};
@@ -301,9 +304,9 @@ make_shop_modification_effect(_, {location_modification, Location}, _, _) ->
     {location_changed, Location};
 make_shop_modification_effect(_, {shop_account_creation, Params}, _, _) ->
     {account_created, create_shop_account(Params)};
-make_shop_modification_effect(ID, ?payout_schedule_modification(PayoutScheduleRef), _, Revision) ->
-    _ = assert_payout_schedule_valid(ID, PayoutScheduleRef, Revision),
-    ?payout_schedule_changed(PayoutScheduleRef).
+make_shop_modification_effect(ID, ?payout_schedule_modification(BusinessScheduleRef), _, Revision) ->
+    _ = assert_payout_schedule_valid(ID, BusinessScheduleRef, Revision),
+    ?payout_schedule_changed(BusinessScheduleRef).
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);
@@ -436,7 +439,9 @@ update_contract({payout_tool_created, PayoutTool}, Contract) ->
     PayoutTools = Contract#domain_Contract.payout_tools ++ [PayoutTool],
     Contract#domain_Contract{payout_tools = PayoutTools};
 update_contract({legal_agreement_bound, LegalAgreement}, Contract) ->
-    Contract#domain_Contract{legal_agreement = LegalAgreement}.
+    Contract#domain_Contract{legal_agreement = LegalAgreement};
+update_contract({report_preferences_changed, ReportPreferences}, Contract) ->
+    Contract#domain_Contract{report_preferences = ReportPreferences}.
 
 apply_shop_effect(_, {created, Shop}, Party) ->
     hg_party:set_shop(Shop, Party);
@@ -460,8 +465,8 @@ update_shop({location_changed, Location}, Shop) ->
 update_shop({proxy_changed, _}, Shop) ->
     % deprecated
     Shop;
-update_shop(?payout_schedule_changed(PayoutScheduleRef), Shop) ->
-    Shop#domain_Shop{payout_schedule = PayoutScheduleRef};
+update_shop(?payout_schedule_changed(BusinessScheduleRef), Shop) ->
+    Shop#domain_Shop{payout_schedule = BusinessScheduleRef};
 update_shop({account_created, Account}, Shop) ->
     Shop#domain_Shop{account = Account}.
 
@@ -569,19 +574,48 @@ assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
 
-assert_payout_schedule_valid(ShopID, #domain_PayoutScheduleRef{} = PayoutScheduleRef, Revision) ->
-    Ref = {payout_schedule, PayoutScheduleRef},
+assert_report_schedule_valid(_, #domain_ReportPreferences{service_acceptance_act_preferences = undefined}, _) ->
+    ok;
+assert_report_schedule_valid(
+    ID,
+    #domain_ReportPreferences{
+        service_acceptance_act_preferences = #domain_ServiceAcceptanceActPreferences{
+            schedule = BusinessScheduleRef
+        }
+    },
+    Revision
+) ->
+    assert_valid_object_ref({contract, ID}, {business_schedule, BusinessScheduleRef}, Revision).
+
+assert_payout_schedule_valid(ID, #domain_BusinessScheduleRef{} = BusinessScheduleRef, Revision) ->
+    assert_valid_object_ref({shop, ID}, {business_schedule, BusinessScheduleRef}, Revision);
+assert_payout_schedule_valid(_, undefined, _) ->
+    ok.
+
+assert_valid_object_ref(Prefix, Ref, Revision) ->
     case hg_domain:exists(Revision, Ref) of
         true ->
             ok;
         false ->
-            raise_invalid_changeset(?invalid_shop(
-                ShopID,
-                {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
-            ))
-    end;
-assert_payout_schedule_valid(_, undefined, _) ->
-    ok.
+            raise_invalid_object_ref(Prefix, Ref)
+    end.
+
+-spec raise_invalid_object_ref(
+    {shop, dmsl_domain_thrift:'ShopID'()} | {contract, dmsl_domain_thrift:'ContractID'()},
+    hg_domain:ref()
+) ->
+    no_return().
+
+raise_invalid_object_ref(Prefix, Ref) ->
+    Ex = {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}},
+    raise_invalid_object_ref_(Prefix, Ex).
+
+-spec raise_invalid_object_ref_(term(), term()) -> no_return().
+
+raise_invalid_object_ref_({shop, ID}, Ex) ->
+    raise_invalid_changeset(?invalid_shop(ID, Ex));
+raise_invalid_object_ref_({contract, ID}, Ex) ->
+    raise_invalid_changeset(?invalid_contract(ID, Ex)).
 
 make_optional_domain_ref(_, undefined) ->
     undefined;

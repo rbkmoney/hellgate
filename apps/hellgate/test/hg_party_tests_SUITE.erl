@@ -77,6 +77,7 @@
 -export([contract_already_terminated/1]).
 -export([contract_expiration/1]).
 -export([contract_legal_agreement_binding/1]).
+-export([contract_report_preferences_modification/1]).
 -export([contract_payout_tool_creation/1]).
 -export([contract_adjustment_creation/1]).
 -export([contract_adjustment_expiration/1]).
@@ -160,6 +161,7 @@ groups() ->
             contract_already_terminated,
             contract_expiration,
             contract_legal_agreement_binding,
+            contract_report_preferences_modification,
             contract_payout_tool_creation,
             contract_adjustment_creation,
             contract_adjustment_expiration,
@@ -388,6 +390,7 @@ end_per_testcase(_Name, _C) ->
 -spec contract_already_terminated(config()) -> _ | no_return().
 -spec contract_expiration(config()) -> _ | no_return().
 -spec contract_legal_agreement_binding(config()) -> _ | no_return().
+-spec contract_report_preferences_modification(config()) -> _ | no_return().
 -spec contract_payout_tool_creation(config()) -> _ | no_return().
 -spec contract_adjustment_creation(config()) -> _ | no_return().
 -spec contract_adjustment_expiration(config()) -> _ | no_return().
@@ -539,6 +542,33 @@ contract_legal_agreement_binding(C) ->
     #domain_Contract{
         id = ContractID,
         legal_agreement = LA
+    } = hg_client_party:get_contract(ContractID, Client).
+
+contract_report_preferences_modification(C) ->
+    Client = cfg(client, C),
+    ContractID = ?REAL_CONTRACT_ID,
+    Pref1 = #domain_ReportPreferences{},
+    Pref2 = #domain_ReportPreferences{
+        service_acceptance_act_preferences = #domain_ServiceAcceptanceActPreferences{
+            schedule = ?bussched(1),
+            signer = #domain_Representative{
+                position = <<"69">>,
+                full_name = <<"Generic Name">>,
+                document = {articles_of_association, #domain_ArticlesOfAssociation{}}
+            },
+            need_sign = false,
+            need_reference = true
+        }
+    },
+    Changeset = [
+        ?contract_modification(ContractID, {report_preferences_modification, Pref1}),
+        ?contract_modification(ContractID, {report_preferences_modification, Pref2})
+    ],
+    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{
+        id = ContractID,
+        report_preferences = Pref2
     } = hg_client_party:get_contract(ContractID, Client).
 
 contract_payout_tool_creation(C) ->
@@ -1345,6 +1375,8 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_system_account_set(?sas(2)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
+
+        hg_ct_fixture:construct_business_schedule(?bussched(1)),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
