@@ -600,9 +600,17 @@ assert_valid_object_ref(Prefix, Ref, Revision) ->
             raise_invalid_object_ref(Prefix, Ref)
     end.
 
+-spec raise_invalid_object_ref(
+    {shop, dmsl_domain_thrift:'ShopID'()} | {contract, dmsl_domain_thrift:'ContractID'()},
+    hg_domain:ref()
+) ->
+    no_return().
+
 raise_invalid_object_ref(Prefix, Ref) ->
     Ex = {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}},
     raise_invalid_object_ref_(Prefix, Ex).
+
+-spec raise_invalid_object_ref_(term(), term()) -> no_return().
 
 raise_invalid_object_ref_({shop, ID}, Ex) ->
     raise_invalid_changeset(?invalid_shop(ID, Ex));
