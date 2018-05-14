@@ -555,9 +555,7 @@ contract_report_preferences_modification(C) ->
                 position = <<"69">>,
                 full_name = <<"Generic Name">>,
                 document = {articles_of_association, #domain_ArticlesOfAssociation{}}
-            },
-            need_sign = false,
-            need_reference = true
+            }
         }
     },
     Changeset = [
