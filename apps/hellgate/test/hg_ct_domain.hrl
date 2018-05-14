@@ -62,4 +62,10 @@
         phone_number = Phone
     }).
 
+-define(tkz_bank_card(PaymentSystem, TokenProvider),
+    #domain_TokenizedBankCard{
+        payment_system = PaymentSystem,
+        token_provider = TokenProvider
+    }).
+
 -endif.
