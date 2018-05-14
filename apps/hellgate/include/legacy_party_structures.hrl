@@ -145,7 +145,7 @@
     }
 ).
 
--define(legacy_contract_v2(
+-define(legacy_contract_v2_3(
         ID,
         Contractor,
         PaymentInstitutionRef,

@@ -904,7 +904,7 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
         LegalAgreement
     )}
 )) ->
-    Contract = ?legacy_contract_v2(
+    Contract = ?legacy_contract_v2_3(
         ID,
         transmute_contractor(1, 2, Contractor),
         undefined,
@@ -920,7 +920,7 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
     ?legacy_contract_effect(ID, {created, Contract});
 transmute_claim_effect(2, 3, ?legacy_contract_effect(
     ID,
-    {created, ?legacy_contract_v2(
+    {created, ?legacy_contract_v2_3(
         ID,
         Contractor,
         PaymentInstitutionRef,
@@ -950,7 +950,7 @@ transmute_claim_effect(2, 3, ?legacy_contract_effect(
     ?contract_effect(ID, {created, Contract});
 transmute_claim_effect(3, 4, ?legacy_contract_effect(
     ID,
-    {created, ?legacy_contract_v2(
+    {created, ?legacy_contract_v2_3(
         ID,
         Contractor,
         PaymentInstitutionRef,
