@@ -476,12 +476,16 @@ collect_partial_refund_varset(undefined, _, _) ->
 collect_varset(St, Opts) ->
     collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
 
-collect_varset(Party, Shop = #domain_Shop{
-    category = Category,
-    account = #domain_ShopAccount{currency = Currency}
-}, VS) ->
+collect_varset(
+    #domain_Party{id = PartyID},
+    Shop = #domain_Shop{
+        category = Category,
+        account = #domain_ShopAccount{currency = Currency}
+    },
+    VS
+) ->
     VS#{
-        party    => Party,
+        party_id => PartyID,
         shop     => Shop,
         category => Category,
         currency => Currency

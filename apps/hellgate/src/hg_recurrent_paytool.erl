@@ -237,12 +237,16 @@ assert_contract_active(#domain_Contract{status = Status}) ->
     % FIXME no such exception on the service interface
     throw(#payproc_InvalidContractStatus{status = Status}).
 
-collect_varset(Party, Shop = #domain_Shop{
-    category = Category,
-    account = #domain_ShopAccount{currency = Currency}
-}, VS) ->
+collect_varset(
+    #domain_Party{id = PartyID},
+    #domain_Shop{
+        category = Category,
+        account = #domain_ShopAccount{currency = Currency}
+    } = Shop,
+    VS
+) ->
     VS#{
-        party        => Party,
+        party_id     => PartyID,
         shop         => Shop,
         category     => Category,
         currency     => Currency

@@ -83,7 +83,7 @@ handle_function_('ComputeContractTerms', [UserInfo, PartyID, ContractID, Timesta
     Revision = hg_domain:head(),
     hg_party:reduce_terms(
         hg_party:get_terms(Contract, Timestamp, Revision),
-        #{party => Party},
+        #{party_id => PartyID},
         Revision
     );
 
@@ -129,8 +129,8 @@ handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Op
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Revision = hg_domain:head(),
     VS = #{
-        party => Party,
-        shop => Shop,
+        party_id => PartyID,
+        shop     => Shop,
         category => Shop#domain_Shop.category,
         currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency
     },
@@ -243,7 +243,7 @@ handle_function_(
     ok = assert_party_accessible(PartyID),
     Revision = hg_domain:head(),
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    VS = prepare_varset(hg_party_machine:get_party(PartyID), Varset),
+    VS = prepare_varset(PartyID, Varset),
     ContractTemplate = get_default_contract_template(PaymentInstitution, VS, Revision),
     Terms = hg_party:get_terms(ContractTemplate, hg_datetime:format_now(), Revision),
     hg_party:reduce_terms(Terms, VS, Revision);
@@ -265,7 +265,7 @@ handle_function_(
     ok = hg_invoice_utils:validate_currency(Currency, Shop),
     PayoutTool = hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract),
     VS = #{
-        party => Party,
+        party_id => PartyID,
         shop => Shop,
         category => Shop#domain_Shop.category,
         currency => Currency,
@@ -365,9 +365,9 @@ collect_payout_account_map(
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
     }.
 
-prepare_varset(Party, #payproc_Varset{} = V) ->
+prepare_varset(PartyID, #payproc_Varset{} = V) ->
     genlib_map:compact(#{
-        party => Party,
+        party_id => PartyID,
         category => V#payproc_Varset.category,
         currency => V#payproc_Varset.currency,
         cost => V#payproc_Varset.amount,
