@@ -36,6 +36,7 @@
 -define(legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp),
     {claim_updated, {payproc_ClaimUpdated, ID, Changeset, ClaimRevision, Timestamp}}).
 
+
 -define(legacy_contract_modification(ID, Modification),
     {contract_modification, {payproc_ContractModificationUnit, ID, Modification}}).
 
@@ -145,7 +146,7 @@
     }
 ).
 
--define(legacy_contract_v2_3(
+-define(legacy_contract_v2(
         ID,
         Contractor,
         PaymentInstitutionRef,
@@ -184,15 +185,6 @@
         CreatedAt,
         Currency,
         PayoutToolInfo
-    }).
-
--define(legacy_legal_agreement(
-        SignedAt,
-        LegalAgreementID
-    ),
-    {domain_LegalAgreement,
-        SignedAt,
-        LegalAgreementID
     }).
 
 -endif.

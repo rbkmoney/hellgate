@@ -22,7 +22,6 @@
 -export([construct_system_account_set/3]).
 -export([construct_external_account_set/1]).
 -export([construct_external_account_set/3]).
--export([construct_business_schedule/1]).
 
 %%
 
@@ -37,12 +36,6 @@
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
-
--type business_schedule() :: dmsl_domain_thrift:'BusinessScheduleRef'().
-
-%%
-
--define(EVERY, {every, #'ScheduleEvery'{}}).
 
 %%
 
@@ -238,25 +231,5 @@ construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
                 income  = AccountID1,
                 outcome = AccountID2
             }}
-        }
-    }}.
-
--spec construct_business_schedule(business_schedule()) ->
-    {business_schedule, dmsl_domain_thrift:'BusinessScheduleObject'()}.
-
-construct_business_schedule(Ref) ->
-    {business_schedule, #domain_BusinessScheduleObject{
-        ref = Ref,
-        data = #domain_BusinessSchedule{
-            name = <<"Every day at 7:40">>,
-            schedule = #'Schedule'{
-                year = ?EVERY,
-                month = ?EVERY,
-                day_of_month = ?EVERY,
-                day_of_week = ?EVERY,
-                hour = {on, [7]},
-                minute = {on, [40]},
-                second = {on, [0]}
-            }
         }
     }}.
