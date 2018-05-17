@@ -99,10 +99,16 @@
         Bic
     }).
 
+-define(legacy_shop_modification(ID, Modification),
+    {shop_modification, {payproc_ShopModificationUnit, ID, Modification}}).
+
+-define(legacy_schedule_modification(PayoutScheduleRef),
+    {payproc_ScheduleModification, PayoutScheduleRef}).
+
 -define(legacy_shop_effect(ID, Effect),
     {shop_effect, {payproc_ShopEffectUnit, ID, Effect}}).
 
--define(legacy_shop(ID, CreatedAt, Blocking, Suspension, Details, Location, Category, Account, ContractID, PayoutToolID),
+-define(legacy_shop_v2(ID, CreatedAt, Blocking, Suspension, Details, Location, Category, Account, ContractID, PayoutToolID),
     {domain_Shop,
         ID,
         CreatedAt,
@@ -115,6 +121,39 @@
         ContractID,
         PayoutToolID
     }).
+
+-define(legacy_shop_v3(
+        ID,
+        CreatedAt,
+        Blocking,
+        Suspension,
+        Details,
+        Location,
+        Category,
+        Account,
+        ContractID,
+        PayoutToolID,
+        PayoutScheduleRef
+    ),
+    {domain_Shop,
+        ID,
+        CreatedAt,
+        Blocking,
+        Suspension,
+        Details,
+        Location,
+        Category,
+        Account,
+        ContractID,
+        PayoutToolID,
+        PayoutScheduleRef
+    }).
+
+-define(legacy_payout_schedule_ref(ID),
+    {domain_PayoutScheduleRef, ID}).
+
+-define(legacy_schedule_changed(PayoutScheduleRef),
+    {payproc_ScheduleChanged, PayoutScheduleRef}).
 
 -define(legacy_contract_effect(ID, Effect),
     {contract_effect, {payproc_ContractEffectUnit, ID, Effect}}).

@@ -886,6 +886,18 @@ transmute_party_modification(3, 4,
     )
 ) ->
     ?contract_modification(ID, {legal_agreement_binding, transmute_legal_agreement(3, 4, LegalAgreement)});
+transmute_party_modification(3, 4,
+    ?legacy_shop_modification(
+        ID,
+        {payout_schedule_modification, ?legacy_schedule_modification(PayoutScheduleRef)}
+    )
+) ->
+    ?shop_modification(
+        ID,
+        {payout_schedule_modification, #payproc_ScheduleModification{
+            schedule = transmute_payout_schedule_ref(3, 4, PayoutScheduleRef)
+        }}
+    );
 transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
     C.
 
@@ -993,7 +1005,7 @@ transmute_claim_effect(3, 4, ?legacy_contract_effect(
     ?contract_effect(ContractID, {legal_agreement_bound, transmute_legal_agreement(3, 4, LegalAgreement)});
 transmute_claim_effect(2, 3, ?legacy_shop_effect(
     ID,
-    {created, ?legacy_shop(
+    {created, ?legacy_shop_v2(
         ID, CreatedAt, Blocking, Suspension, Details, Location, Category, Account, ContractID, PayoutToolID
     )}
 )) ->
@@ -1010,6 +1022,43 @@ transmute_claim_effect(2, 3, ?legacy_shop_effect(
         payout_tool_id = PayoutToolID
     },
     ?shop_effect(ID, {created, Shop});
+transmute_claim_effect(3, 4, ?legacy_shop_effect(
+    ID,
+    {created, ?legacy_shop_v3(
+        ID,
+        CreatedAt,
+        Blocking,
+        Suspension,
+        Details,
+        Location,
+        Category,
+        Account,
+        ContractID,
+        PayoutToolID,
+        PayoutSchedule
+    )}
+)) ->
+    Shop = #domain_Shop{
+        id = ID,
+        created_at = CreatedAt,
+        blocking = Blocking,
+        suspension = Suspension,
+        details = Details,
+        location = Location,
+        category = Category,
+        account = Account,
+        contract_id = ContractID,
+        payout_tool_id = PayoutToolID,
+        payout_schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
+    },
+    ?shop_effect(ID, {created, Shop});
+transmute_claim_effect(3, 4, ?legacy_shop_effect(
+    ID,
+    {payout_schedule_changed, ?legacy_schedule_changed(PayoutSchedule)}
+)) ->
+    ?shop_effect(ID, {payout_schedule_changed, #payproc_ScheduleChanged{
+        schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
+    }});
 transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
     C.
 
@@ -1101,3 +1150,8 @@ transmute_legal_agreement(3, 4, ?legacy_legal_agreement(SignedAt, LegalAgreement
         signed_at =  SignedAt,
         legal_agreement_id = LegalAgreementID
     }.
+
+transmute_payout_schedule_ref(3, 4, ?legacy_payout_schedule_ref(ID)) ->
+    #domain_BusinessScheduleRef{id = ID};
+transmute_payout_schedule_ref(3, 4, undefined) ->
+    undefined.
