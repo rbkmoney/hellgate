@@ -331,13 +331,24 @@ merge_term_sets(TermSets) when is_list(TermSets)->
     lists:foldl(fun merge_term_sets/2, undefined, TermSets).
 
 merge_term_sets(
-    #domain_TermSet{payments = PaymentTerms1, recurrent_paytools = RecurrentPaytoolTerms1, payouts = PayoutTerms1},
-    #domain_TermSet{payments = PaymentTerms0, recurrent_paytools = RecurrentPaytoolTerms0, payouts = PayoutTerms0}
+    #domain_TermSet{
+        payments = PaymentTerms1,
+        recurrent_paytools = RecurrentPaytoolTerms1,
+        payouts = PayoutTerms1,
+        reports = Reports1
+    },
+    #domain_TermSet{
+        payments = PaymentTerms0,
+        recurrent_paytools = RecurrentPaytoolTerms0,
+        payouts = PayoutTerms0,
+        reports = Reports0
+    }
 ) ->
     #domain_TermSet{
         payments = merge_payments_terms(PaymentTerms0, PaymentTerms1),
         recurrent_paytools = merge_recurrent_paytools_terms(RecurrentPaytoolTerms0, RecurrentPaytoolTerms1),
-        payouts = merge_payouts_terms(PayoutTerms0, PayoutTerms1)
+        payouts = merge_payouts_terms(PayoutTerms0, PayoutTerms1),
+        reports = merge_reports_terms(Reports0, Reports1)
     };
 merge_term_sets(TermSet1, TermSet0) ->
     hg_utils:select_defined(TermSet1, TermSet0).
@@ -457,6 +468,34 @@ merge_payouts_terms(
         fees             = hg_utils:select_defined(Fee1, Fee0)
     };
 merge_payouts_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_reports_terms(
+    #domain_ReportsServiceTerms{
+        acts = Acts0
+    },
+    #domain_ReportsServiceTerms{
+        acts = Acts1
+    }
+) ->
+    #domain_ReportsServiceTerms{
+        acts = merge_service_acceptance_acts_terms(Acts0, Acts1)
+    };
+merge_reports_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_service_acceptance_acts_terms(
+    #domain_ServiceAcceptanceActsTerms{
+        schedules = Schedules0
+    },
+    #domain_ServiceAcceptanceActsTerms{
+        schedules = Schedules1
+    }
+) ->
+    #domain_ServiceAcceptanceActsTerms{
+        schedules = hg_utils:select_defined(Schedules1, Schedules0)
+    };
+merge_service_acceptance_acts_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
