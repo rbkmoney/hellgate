@@ -959,7 +959,7 @@ transmute_claim_effect(2, 3, ?legacy_contract_effect(
         [transmute_payout_tool(2, 3, P) || P <- PayoutTools],
         LegalAgreement
     ),
-    ?contract_effect(ID, {created, Contract});
+    ?legacy_contract_effect(ID, {created, Contract});
 transmute_claim_effect(3, 4, ?legacy_contract_effect(
     ID,
     {created, ?legacy_contract_v2_3(
