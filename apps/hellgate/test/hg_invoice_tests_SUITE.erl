@@ -30,6 +30,7 @@
 -export([overdue_invoice_cancellation/1]).
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
+-export([no_route_found_for_payment/1]).
 
 -export([payment_success/1]).
 -export([payment_w_terminal_success/1]).
@@ -104,6 +105,7 @@ all() ->
         overdue_invoice_cancellation,
         invoice_cancellation_after_payment_timeout,
         invalid_payment_amount,
+        no_route_found_for_payment,
         payment_success,
         payment_w_terminal_success,
         payment_w_wallet_success,
@@ -524,6 +526,20 @@ invalid_payment_amount(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
+
+-spec no_route_found_for_payment(config()) -> test_return().
+
+no_route_found_for_payment(C) ->
+    Client = cfg(client, C),
+    PaymentParams = make_payment_params(),
+    InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 10, C),
+    try
+        _ = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
+        error(route_found_for_payment)
+    catch
+        error:_WoodyScaryError ->
+            ok
+    end.
 
 -spec payment_success(config()) -> test_return().
 
@@ -1845,7 +1861,7 @@ construct_domain_fixture() ->
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, ?cashrng(
-                        {inclusive, ?cash(     1000, <<"RUB">>)},
+                        {inclusive, ?cash(     10, <<"RUB">>)},
                         {exclusive, ?cash(420000000, <<"RUB">>)}
                     )}
                 }
@@ -1926,7 +1942,7 @@ construct_domain_fixture() ->
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, ?cashrng(
-                        {inclusive, ?cash(     1000, <<"RUB">>)},
+                        {inclusive, ?cash(     10, <<"RUB">>)},
                         {exclusive, ?cash(  4200000, <<"RUB">>)}
                     )}
                 },

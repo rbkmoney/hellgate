@@ -233,10 +233,7 @@ init_(PaymentID, Params, Opts) ->
         {ok, R} ->
             R;
         undefined ->
-            validate_route(
-                hg_routing:choose(payment, PaymentInstitution, VS2, Revision),
-                Payment
-            )
+            hg_routing:choose(payment, PaymentInstitution, VS2, Revision)
     end,
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     Provider = get_route_provider(Route, Revision),
@@ -425,11 +422,6 @@ validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}};
 validate_risk_score(fatal, _VS) ->
     throw_invalid_request(<<"Fatal error">>).
-
-validate_route(Route = #domain_PaymentRoute{}, _Payment) ->
-    Route;
-validate_route(undefined, Payment) ->
-    error({misconfiguration, {'No route found for a payment', Payment}}).
 
 validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Revision) ->
     EligibilityTime = reduce_selector(eligibility_time, TimeSpanSelector, VS, Revision),

@@ -202,11 +202,7 @@ init(RecPaymentToolID, [PaymentTool, Params]) ->
     RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Revision),
     VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
     {RiskScore     ,  VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
-    {Route         , _VS2} = validate_route(
-        hg_routing:choose(recurrent_paytool, PaymentInstitution, VS1, Revision),
-        RecPaymentTool,
-        VS1
-    ),
+    Route = hg_routing:choose(recurrent_paytool, PaymentInstitution, VS1, Revision),
     {ok, {Changes, Action}} = start_session(),
     handle_result(#{
         changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
@@ -258,11 +254,6 @@ inspect(_RecPaymentTool, _VS) ->
 
 validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}}.
-
-validate_route(Route = #domain_PaymentRoute{}, _RecPaymentTool, VS) ->
-    {Route, VS};
-validate_route(undefined, RecPaymentTool, _VS) ->
-    error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}).
 
 start_session() ->
     Events = [?session_ev(?session_started())],
