@@ -521,7 +521,7 @@ find_shop_account(ID, [{_, #domain_Shop{account = Account}} | Rest]) ->
     end.
 
 %% Asserts
-%% TODO there should be more concise way to express this assertions in terms of preconditions
+%% TODO there should be more concise way to express these assertions in terms of preconditions
 
 -spec assert_party_objects_valid(timestamp(), revision(), party()) -> ok | no_return().
 -spec assert_shop_contract_valid(shop(), contract(), timestamp(), revision()) -> ok | no_return().

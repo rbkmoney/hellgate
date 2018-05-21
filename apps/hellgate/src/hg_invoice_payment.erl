@@ -3,17 +3,11 @@
 %%% TODO
 %%%  - make proper submachine interface
 %%%     - `init` / `start_session` should provide `next` or `done` to the caller
-%%%  - distinguish between different error classes:
-%%%     - regular operation error
-%%%     - callback timeout
-%%%     - internal error ?
 %%%  - handle idempotent callbacks uniformly
 %%%     - get rid of matches against session status
 %%%  - tag machine with the provider trx
 %%%     - distinguish between trx tags and callback tags
 %%%     - tag namespaces
-%%%  - clean the mess with error handling
-%%%     - abuse transient error passthrough
 %%%  - think about safe clamping of timers returned by some proxy
 %%%  - why don't user interaction events imprint anything on the state?
 %%%  - adjustments look and behave very much like claims over payments
