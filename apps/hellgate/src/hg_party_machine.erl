@@ -946,19 +946,19 @@ transmute_claim_effect(2, 3, ?legacy_contract_effect(
         LegalAgreement
     )}
 )) ->
-    Contract = #domain_Contract{
-        id = ID,
-        contractor = transmute_contractor(2, 3, Contractor),
-        payment_institution = PaymentInstitutionRef,
-        created_at = CreatedAt,
-        valid_since = ValidSince,
-        valid_until = ValidUntil,
-        status = Status,
-        terms = Terms,
-        adjustments = Adjustments,
-        payout_tools = [transmute_payout_tool(2, 3, P) || P <- PayoutTools],
-        legal_agreement = LegalAgreement
-    },
+    Contract = ?legacy_contract_v2_3(
+        ID,
+        transmute_contractor(2, 3, Contractor),
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        [transmute_payout_tool(2, 3, P) || P <- PayoutTools],
+        LegalAgreement
+    ),
     ?contract_effect(ID, {created, Contract});
 transmute_claim_effect(3, 4, ?legacy_contract_effect(
     ID,
