@@ -810,6 +810,9 @@ transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1->
 transmute_event(V, V, Event) ->
     Event.
 
+-spec transmute_change(pos_integer(), pos_integer(), term()) ->
+    dmsl_payment_processing_thrift:'PartyChange'().
+
 transmute_change(1, 2,
     ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _))
 ) ->
