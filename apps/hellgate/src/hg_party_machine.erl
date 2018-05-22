@@ -1145,7 +1145,9 @@ transmute_legal_agreement(3, 4, ?legacy_legal_agreement(SignedAt, LegalAgreement
     #domain_LegalAgreement{
         signed_at =  SignedAt,
         legal_agreement_id = LegalAgreementID
-    }.
+    };
+transmute_legal_agreement(3, 4, undefined) ->
+    undefined.
 
 transmute_payout_schedule_ref(3, 4, ?legacy_payout_schedule_ref(ID)) ->
     #domain_BusinessScheduleRef{id = ID};
