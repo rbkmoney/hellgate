@@ -9,7 +9,6 @@
 %%%           - simpler flow control (?)
 %%%           - event publishing (?)
 %%%  - unify somehow with operability assertions from hg_party
-%%%  - should party blocking / suspension be version-locked? probably _not_
 %%%  - if someone has access to a party then it has access to an invoice
 %%%    belonging to this party
 

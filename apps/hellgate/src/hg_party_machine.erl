@@ -344,7 +344,7 @@ get_public_history(PartyID, AfterID, Limit) ->
     [publish_party_event({party_id, PartyID}, Ev) || Ev <- get_history(PartyID, AfterID, Limit)].
 
 get_state(PartyID) ->
-    collapse_history(assert_nonempty_history(get_history(PartyID))).
+    collapse_history(get_history(PartyID)).
 
 get_history(PartyID) ->
     map_history_error(hg_machine:get_history(?NS, PartyID)).
@@ -401,13 +401,6 @@ get_st_metadata(NS, #st{meta = Meta}) ->
         undefined ->
             throw(#payproc_PartyMetaNamespaceNotFound{})
     end.
-
-%% TODO remove this hack as soon as machinegun learns to tell the difference between
-%%      nonexsitent machine and empty history
-assert_nonempty_history([_ | _] = Result) ->
-    Result;
-assert_nonempty_history([]) ->
-    throw(#payproc_PartyNotFound{}).
 
 set_claim(
     #payproc_Claim{id = ID} = Claim,
