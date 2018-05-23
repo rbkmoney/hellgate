@@ -23,18 +23,30 @@
 
 -define(rejected(Reason), {rejected, Reason}).
 
+-type reject_context():: #{
+    predestination      := route_predestination(),
+    varset              := hg_selector:varset(),
+    rejected_providers  := list(rejected_provider()),
+    rejected_terminals  := list(rejected_terminal())
+}.
+-type rejected_provider() :: {provider_ref(), Reason :: term()}.
+-type rejected_terminal() :: {terminal_ref(), Reason :: term()}.
+-type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
+-type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
+
 -spec choose(
     route_predestination(),
     dmsl_domain_thrift:'PaymentInstitution'(),
     hg_selector:varset(),
     hg_domain:revision()
 ) ->
-    route() | undefined.
+    {ok, route()} | {error, {no_route_found, reject_context()}}.
 
 choose(Predestination, PaymentInstitution, VS, Revision) ->
     % TODO not the optimal strategy
     RejectContext0 = #{
-        predestination => Predestination
+        predestination => Predestination,
+        varset => VS
     },
     {Providers, RejectContext1} = collect_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext0),
     {Choices, RejectContext2} = collect_routes(Predestination, Providers, VS, Revision, RejectContext1),
@@ -54,9 +66,9 @@ collect_routes(Predestination, Providers, VS, Revision, RejectContext) ->
 choose_route(Routes, VS, RejectContext) ->
     case lists:reverse(lists:keysort(1, score_routes(Routes, VS))) of
         [{_Score, Route} | _] ->
-            export_route(Route);
+            {ok, export_route(Route)};
         [] ->
-            error_no_route_found(VS, RejectContext)
+            {error, {no_route_found, RejectContext}}
     end.
 
 score_routes(Routes, VS) ->
@@ -327,18 +339,6 @@ getv(Name, VS) ->
 
 getv(Name, VS, Default) ->
     maps:get(Name, VS, Default).
-
--spec error_no_route_found(hg_selector:varset(), map()) -> no_return().
-
-error_no_route_found(VS, RejectContext) ->
-    Predestination = maps:get(predestination, RejectContext),
-    LogFun = fun(Msg, Param) ->
-        _ = lager:log(error, [{routing_error, [{predestination, Predestination}]}], Msg, [Param])
-    end,
-    _ = LogFun("No route found, varset: ~p", VS),
-    _ = LogFun("No route found, rejected providers: ~p", genlib_map:get(rejected_providers, RejectContext, [])),
-    _ = LogFun("No route found, rejected terminals: ~p", genlib_map:get(rejected_terminals, RejectContext, [])),
-    error({misconfiguration, {'No route found for', Predestination}}).
 
 %% Marshalling
 

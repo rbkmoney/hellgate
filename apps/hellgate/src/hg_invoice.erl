@@ -916,7 +916,7 @@ log_changes(Changes, St) ->
 log_change(Change, St) ->
     case get_log_params(Change, St) of
         {ok, #{type := Type, params := Params, message := Message}} ->
-            _ = lager:log(info, [{Type, Params}], Message),
+            _ = lager:log(info, [{Type, Params} | lager:md()], Message),
             ok;
         undefined ->
             ok

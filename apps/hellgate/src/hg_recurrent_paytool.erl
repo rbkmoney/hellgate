@@ -202,7 +202,10 @@ init(RecPaymentToolID, [PaymentTool, Params]) ->
     RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Revision),
     VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
     {RiskScore     ,  VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
-    Route = hg_routing:choose(recurrent_paytool, PaymentInstitution, VS1, Revision),
+    Route = validate_route(
+        hg_routing:choose(recurrent_paytool, PaymentInstitution, VS1, Revision),
+        RecPaymentTool
+    ),
     {ok, {Changes, Action}} = start_session(),
     handle_result(#{
         changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
@@ -254,6 +257,22 @@ inspect(_RecPaymentTool, _VS) ->
 
 validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}}.
+
+validate_route({ok, Route}, _RecPaymentTool) ->
+    Route;
+validate_route({error, {no_route_found, RejectContext}}, RecPaymentTool) ->
+    LogFun = fun(Msg, Param) ->
+        _ = lager:log(
+                error,
+                [{routing_error, [{predestination, maps:get(predestination, RejectContext)}]} | lager:md()],
+                Msg,
+                [Param]
+            )
+    end,
+    _ = LogFun("No route found, varset: ~p", maps:get(varset, RejectContext)),
+    _ = LogFun("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
+    _ = LogFun("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
+    error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}).
 
 start_session() ->
     Events = [?session_ev(?session_started())],

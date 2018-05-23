@@ -227,7 +227,10 @@ init_(PaymentID, Params, Opts) ->
         {ok, R} ->
             R;
         undefined ->
-            hg_routing:choose(payment, PaymentInstitution, VS2, Revision)
+            validate_route(
+                hg_routing:choose(payment, PaymentInstitution, VS2, Revision),
+                Payment
+            )
     end,
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     Provider = get_route_provider(Route, Revision),
@@ -416,6 +419,22 @@ validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}};
 validate_risk_score(fatal, _VS) ->
     throw_invalid_request(<<"Fatal error">>).
+
+validate_route({ok, Route}, _Payment) ->
+    Route;
+validate_route({error, {no_route_found, RejectContext}}, Payment) ->
+    LogFun = fun(Msg, Param) ->
+        _ = lager:log(
+                error,
+                [{routing_error, [{predestination, maps:get(predestination, RejectContext)}]} | lager:md()],
+                Msg,
+                [Param]
+            )
+    end,
+    _ = LogFun("No route found, varset: ~p", maps:get(varset, RejectContext)),
+    _ = LogFun("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
+    _ = LogFun("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
+    error({misconfiguration, {'No route found for a payment', Payment}}).
 
 validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Revision) ->
     EligibilityTime = reduce_selector(eligibility_time, TimeSpanSelector, VS, Revision),
