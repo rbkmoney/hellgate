@@ -24,7 +24,6 @@
 -define(rejected(Reason), {rejected, Reason}).
 
 -type reject_context():: #{
-    predestination      := route_predestination(),
     varset              := hg_selector:varset(),
     rejected_providers  := list(rejected_provider()),
     rejected_terminals  := list(rejected_terminal())
@@ -45,7 +44,6 @@
 choose(Predestination, PaymentInstitution, VS, Revision) ->
     % TODO not the optimal strategy
     RejectContext0 = #{
-        predestination => Predestination,
         varset => VS
     },
     {Providers, RejectContext1} = collect_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext0),
@@ -180,7 +178,7 @@ acceptable_terminal(recurrent_paytool, TerminalRef, #domain_Provider{recurrent_p
 acceptable_risk(RiskCoverage, VS) ->
     RiskScore = getv(risk_score, VS),
     hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0
-        orelse throw(?rejected({risk_score_too_high, RiskScore})).
+        orelse throw(?rejected({'Terminal', risk_coverage})).
 
 %%
 
@@ -207,7 +205,7 @@ acceptable_payment_terms(
     _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
-    throw(?rejected(payments_provision_terms_undefined)).
+    throw(?rejected({'PaymentsProvisionTerms', undefined})).
 
 acceptable_holds_terms(_Terms, undefined, _VS, _Revision) ->
     true;

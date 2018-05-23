@@ -264,7 +264,7 @@ validate_route({error, {no_route_found, RejectContext}}, RecPaymentTool) ->
     LogFun = fun(Msg, Param) ->
         _ = lager:log(
                 error,
-                [{routing_error, [{predestination, maps:get(predestination, RejectContext)}]} | lager:md()],
+                lager:md(),
                 Msg,
                 [Param]
             )
