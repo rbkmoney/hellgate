@@ -541,11 +541,22 @@ no_route_found_for_payment(_C) ->
         risk_score      => low,
         flow            => instant
     },
-    {error, {no_route_found, _}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
+    {error, {no_route_found, #{
+        varset := VS1,
+        rejected_providers := [
+            {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
+            {?prv(2), {'PaymentsProvisionTerms', category}},
+            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
+        ],
+        rejected_terminals := []
+    }}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
     VS2 = VS1#{
-        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
     },
-    {ok, _} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
+    {ok, #domain_PaymentRoute{
+        provider = ?prv(3),
+        terminal = ?trm(10)
+    }} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
 
 -spec payment_success(config()) -> test_return().
 
