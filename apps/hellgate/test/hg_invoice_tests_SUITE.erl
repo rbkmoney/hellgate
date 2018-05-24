@@ -529,17 +529,23 @@ invalid_payment_amount(C) ->
 
 -spec no_route_found_for_payment(config()) -> test_return().
 
-no_route_found_for_payment(C) ->
-    Client = cfg(client, C),
-    PaymentParams = make_payment_params(),
-    InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 10, C),
-    try
-        _ = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
-        error(route_found_for_payment)
-    catch
-        error:_WoodyScaryError ->
-            ok
-    end.
+no_route_found_for_payment(_C) ->
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+    VS1 = #{
+        category        => ?cat(1),
+        currency        => ?cur(<<"RUB">>),
+        cost            => ?cash(1000, <<"RUB">>),
+        payment_tool    => {bank_card, #domain_BankCard{}},
+        party_id        => <<"12345">>,
+        risk_score      => low,
+        flow            => instant
+    },
+    {error, {no_route_found, _}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
+    VS2 = VS1#{
+        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
+    },
+    {ok, _} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
 
 -spec payment_success(config()) -> test_return().
 
