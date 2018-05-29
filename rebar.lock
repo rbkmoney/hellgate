@@ -20,7 +20,7 @@
   1},
  {<<"erl_health">>,
   {git,"https://github.com/rbkmoney/erlang-health.git",
-       {ref,"0398b5c6cf276732cb5d2170f247f04207cb9ebb"}},
+       {ref,"ab3ca1ccab6e77905810aa270eb936dbe70e02f8"}},
   0},
  {<<"genlib">>,
   {git,"https://github.com/rbkmoney/genlib.git",
