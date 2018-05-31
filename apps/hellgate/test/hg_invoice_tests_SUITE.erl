@@ -52,6 +52,7 @@
 -export([payment_hold_auto_capturing/1]).
 -export([payment_refund_success/1]).
 -export([payment_partial_refunds_success/1]).
+-export([payment_temporary_unavailability_retry_success/1]).
 -export([invalid_amount_payment_partial_refund/1]).
 -export([invalid_time_payment_partial_refund/1]).
 -export([invalid_currency_payment_partial_refund/1]).
@@ -114,6 +115,7 @@ all() ->
         payment_w_deleted_customer,
         payment_success_on_second_try,
         payment_fail_after_silent_callback,
+        payment_temporary_unavailability_retry_success,
         invoice_success_on_third_payment,
 
         payment_risk_score_check,
@@ -183,6 +185,7 @@ init_per_suite(C) ->
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
+    ok = start_kv_store(SupPid),
     NewC = [
         {party_id, PartyID},
         {party_client, PartyClient},
@@ -242,18 +245,11 @@ end_per_suite(C) ->
 
 -spec init_per_group(group_name(), config()) -> config().
 
-init_per_group(offsite_preauth_payment, C) ->
-    {ok, SupPid} = supervisor:start_link(?MODULE, []),
-    _ = unlink(SupPid),
-    ok = start_kv_store(SupPid),
-    [{kv_store_sup, SupPid} | C];
 init_per_group(_, C) ->
     C.
 
 -spec end_per_group(group_name(), config()) -> _.
 
-end_per_group(offsite_preauth_payment, C) ->
-    exit(cfg(kv_store_sup, C), shutdown);
 end_per_group(_Group, _C) ->
     ok.
 
@@ -824,6 +820,20 @@ payment_adjustment_success(C) ->
     -500 = PrvDiff = maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1),
     SysDiff = MrcDiff + PrvDiff - 20,
     SysDiff = maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1).
+
+-spec payment_temporary_unavailability_retry_success(config()) -> test_return().
+
+payment_temporary_unavailability_retry_success(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_temporary_unavailability_payment_params([f, f, f]),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_process_multiple_sessions_finish(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 get_cashflow_account(Type, CF) ->
     [ID] = [V || #domain_FinalCashFlowPosting{
@@ -1639,6 +1649,10 @@ make_tokenized_bank_card_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(tokenized_bank_card),
     make_payment_params(PaymentTool, Session).
 
+make_temporary_unavailability_payment_params(Scenario) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({temporary_unavailability, Scenario}),
+    make_payment_params(PaymentTool, Session, instant).
+
 make_payment_params() ->
     make_payment_params(instant).
 
@@ -1737,6 +1751,21 @@ await_payment_process_finish(InvoiceID, PaymentID, Client) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID, Client),
     PaymentID.
+
+await_payment_process_multiple_sessions_finish(InvoiceID, PaymentID, Client) ->
+    case next_event(InvoiceID, Client) of
+        [
+            ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(_)))),
+            ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
+            ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+        ] ->
+            PaymentID;
+        [
+            ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed(_)))),
+            ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+        ] ->
+            await_payment_process_multiple_sessions_finish(InvoiceID, PaymentID, Client)
+    end.
 
 await_payment_capture(InvoiceID, PaymentID, Client) ->
     await_payment_capture(InvoiceID, PaymentID, undefined, Client).

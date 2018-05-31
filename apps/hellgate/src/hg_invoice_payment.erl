@@ -17,6 +17,7 @@
 -module(hg_invoice_payment).
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
 -include_lib("dmsl/include/dmsl_msgpack_thrift.hrl").
 
 %% API
@@ -75,6 +76,7 @@
     trx               :: undefined | trx_info(),
     target            :: undefined | target(),
     sessions    = #{} :: #{target() => session()},
+    attempts    = #{} :: #{target() => pos_integer()},
     refunds     = #{} :: #{refund_id() => refund_state()},
     adjustments = []  :: [adjustment()],
     opts              :: undefined | opts()
@@ -126,6 +128,13 @@
 }.
 
 -export_type([opts/0]).
+
+-record(retry_policy, {
+    max_attempts             :: infinity | pos_integer(),
+    max_timeout = infinity   :: infinity | pos_integer()
+}).
+
+-type retry_policy() :: #retry_policy{}.
 
 %%
 
@@ -1092,7 +1101,7 @@ handle_callback(Payload, Action, St) ->
 finish_processing(Result, St) ->
     finish_processing(get_activity(St), Result, St).
 
-finish_processing(payment, {Events, Action}, St) ->
+finish_processing(payment = Activity, {Events, Action}, St) ->
     Target = get_target(St),
     St1 = collapse_changes(Events, St),
     case get_session(Target, St1) of
@@ -1108,14 +1117,12 @@ finish_processing(payment, {Events, Action}, St) ->
             NewAction = get_action(Target, Action, St),
             {done, {Events ++ [?payment_status_changed(Target)], NewAction}};
         #{status := finished, result := ?session_failed(Failure)} ->
-            % TODO is it always rollback?
-            _AffectedAccounts = rollback_payment_cashflow(St),
-            {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
+            process_failure(Activity, Events, Action, Failure, St);
         #{} ->
             {next, {Events, Action}}
     end;
 
-finish_processing({refund, ID}, {Events, Action}, St) ->
+finish_processing({refund, ID} = Activity, {Events, Action}, St) ->
     Events1 = [?refund_ev(ID, Ev) || Ev <- Events],
     St1 = collapse_changes(Events1, St),
     RefundSt1 = try_get_refund_state(ID, St1),
@@ -1135,14 +1142,79 @@ finish_processing({refund, ID}, {Events, Action}, St) ->
             end,
             {done, {Events1 ++ Events2 ++ Events3, Action}};
         #{status := finished, result := ?session_failed(Failure)} ->
-            _AffectedAccounts = rollback_refund_cashflow(RefundSt1, St1),
-            Events2 = [
-                ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
-            ],
-            {done, {Events1 ++ Events2, Action}};
+            process_failure(Activity, Events1, Action, Failure, St1, RefundSt1);
         #{} ->
             {next, {Events1, Action}}
     end.
+
+process_failure(Activity, Events, Action, Failure, St) ->
+    process_failure(Activity, Events, Action, Failure, St, undefined).
+
+process_failure(payment, Events, Action, Failure, St, _RefundSt) ->
+    RetryPolicy = get_retry_policy(),
+    case check_retry_possibility(Failure, RetryPolicy, St) of
+        fatal ->
+            _AffectedAccounts = rollback_payment_cashflow(St),
+            {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
+        retry ->
+            retry_session(Events, Action, RetryPolicy, St)
+    end;
+process_failure({refund, ID}, Events, Action, Failure, St, RefundSt) ->
+    _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
+    Events2 = [
+        ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
+    ],
+    {done, {Events ++ Events2, Action}}.
+
+retry_session(Events, Action, RetryPolicy, St) ->
+    Target = get_target(St),
+    {ok, {NewEvents, _Action}} = start_session(Target),
+    %% exponential backoff
+    Timeout0 = erlang:trunc(math:pow(1.5, get_attempt(St) - 1)),
+    Timeout = apply_policy_to_timeout(Timeout0, RetryPolicy),
+    NewAction = set_timer({timeout, Timeout}, Action),
+    {next, {Events ++ NewEvents, NewAction}}.
+
+-spec get_retry_policy() -> retry_policy().
+get_retry_policy() ->
+    %% TODO: Allow to configure retry policy
+    #retry_policy{max_timeout = 30, max_attempts = 5}.
+
+-spec apply_policy_to_timeout(pos_integer(), retry_policy()) -> pos_integer().
+% apply_policy_to_timeout(Timeout, #retry_policy{max_timeout = infinity}) ->
+%     Timeout;
+apply_policy_to_timeout(Timeout, #retry_policy{max_timeout = MaxTimeout}) ->
+    min(Timeout, MaxTimeout).
+
+-spec check_retry_possibility(Failure, RetryPolicy, State) -> retry | fatal when
+    Failure :: dmsl_domain_thrift:'OperationFailure'(),
+    RetryPolicy :: retry_policy(),
+    State :: st().
+% check_retry_possibility(Failure, #retry_policy{max_attempts = infinity}, _St) ->
+%     check_failure_type(Failure);
+check_retry_possibility(Failure, #retry_policy{max_attempts = MaxAttempts}, St) ->
+    case check_failure_type(Failure) of
+        retry ->
+            case get_attempt(St) of
+                Attempt when Attempt < MaxAttempts ->
+                    retry;
+                _Other ->
+                    fatal
+            end;
+        fatal ->
+            fatal
+    end.
+
+-spec check_failure_type(dmsl_domain_thrift:'OperationFailure'()) -> retry | fatal.
+check_failure_type({failure, Failure}) ->
+    payproc_errors:match('PaymentFailure', Failure, fun do_check_failure_type/1);
+check_failure_type(_Other) ->
+    fatal.
+
+do_check_failure_type({authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}) ->
+    retry;
+do_check_failure_type(_Failure) ->
+    fatal.
 
 get_action({processed, _}, Action, St) ->
     case get_payment_flow(get_payment(St)) of
@@ -1514,7 +1586,8 @@ merge_change(?adjustment_ev(ID, Event), St) ->
     end;
 merge_change(?session_ev(Target, ?session_started()), St) ->
     % FIXME why the hell dedicated handling
-    set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target});
+    St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
+    inc_attempts_number(Target, St1);
 merge_change(?session_ev(Target, Event), St) ->
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
@@ -1526,6 +1599,12 @@ merge_change(?session_ev(Target, Event), St) ->
         _ ->
             St2
     end.
+
+inc_attempts_number(Target, #st{attempts = Attempts} = St) ->
+    St#st{attempts = maps:update_with(Target, fun(N) -> N + 1 end, 1, Attempts)}.
+
+get_attempt(#st{attempts = Attempts} = St) ->
+    maps:get(get_target(St), Attempts, 0).
 
 collapse_refund_changes(Changes) ->
     lists:foldl(fun merge_refund_change/2, undefined, Changes).

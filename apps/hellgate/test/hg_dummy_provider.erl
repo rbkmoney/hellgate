@@ -69,6 +69,8 @@ get_http_cowboy_spec() ->
 construct_silent_callback(Form) ->
     Form#{<<"payload">> => ?LAY_LOW_BUDDY}.
 
+-type failure_scenario_step() :: g | f.
+-type failure_scenario() :: [failure_scenario_step()].
 %%
 
 -include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
@@ -247,12 +249,24 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>);
         unexpected_failure ->
-            sleep(1, <<"sleeping">>, undefined, get_payment_id(PaymentInfo))
+            sleep(1, <<"sleeping">>, undefined, get_payment_id(PaymentInfo));
+        {temporary_unavailability, _Scenario} ->
+            sleep(1, <<"sleeping">>)
     end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
+    Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
     case get_payment_info_scenario(PaymentInfo) of
         unexpected_failure ->
             error(unexpected_failure);
+        {temporary_unavailability, Scenario} ->
+            case do_failure_scenario_step(Scenario, Key) of
+                g ->
+                    finish(?success(), get_payment_id(PaymentInfo));
+                f ->
+                    Failure = payproc_errors:construct('PaymentFailure',
+                        {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}),
+                    finish(?failure(Failure))
+            end;
         _ ->
             finish(?success(), get_payment_id(PaymentInfo))
     end;
@@ -290,6 +304,22 @@ handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) 
         intent     = ?sleep(1, undefined),
         next_state = <<"sleeping">>
     }).
+
+-spec do_failure_scenario_step(failure_scenario(), term()) -> failure_scenario_step().
+do_failure_scenario_step(Scenario, Key) ->
+    Step = case get_transaction_state(Key) of
+        {scenario_step, S} ->
+            S;
+        undefined ->
+            1
+    end,
+    set_transaction_state(Key, {scenario_step, Step + 1}),
+    get_failure_scenario_step(Scenario, Step).
+
+get_failure_scenario_step(Scenario, Step) when Step > length(Scenario) ->
+    g;
+get_failure_scenario_step(Scenario, Step) ->
+    lists:nth(Step, Scenario).
 
 process_refund(undefined, PaymentInfo, _) ->
     finish(?success(), hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
@@ -367,12 +397,18 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>
     forbidden;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_failure">>}}) ->
     unexpected_failure;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"temporary_unavailability_",
+                                                                   BinScenario/binary>>}}) ->
+    Scenario = decode_temporary_unavailability_sceanrio(BinScenario),
+    {temporary_unavailability, Scenario};
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
     terminal;
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
     digital_wallet.
 
--spec make_payment_tool(atom()) -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+-spec make_payment_tool(PaymenToolCode) -> PaymenTool when
+    PaymenToolCode :: atom() | {temporary_unavailability, failure_scenario()},
+    PaymenTool :: {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
 
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
@@ -384,6 +420,9 @@ make_payment_tool(forbidden) ->
     make_simple_payment_tool(<<"forbidden">>, visa);
 make_payment_tool(unexpected_failure) ->
     make_simple_payment_tool(<<"unexpected_failure">>, visa);
+make_payment_tool({temporary_unavailability, Scenario}) ->
+    BinScenario = encode_temporary_unavailability_sceanrio(Scenario),
+    make_simple_payment_tool(<<"temporary_unavailability_", BinScenario/binary>>, visa);
 make_payment_tool(terminal) ->
     {
         {payment_terminal, #domain_PaymentTerminal{
@@ -428,6 +467,16 @@ get_short_payment_id(#prxprv_PaymentInfo{invoice = Invoice, payment = Payment}) 
 
 get_invoice_due_date(#prxprv_PaymentInfo{invoice = Invoice}) ->
     Invoice#prxprv_Invoice.due.
+
+-spec encode_temporary_unavailability_sceanrio(failure_scenario()) -> binary().
+
+encode_temporary_unavailability_sceanrio(Scenario) ->
+    << <<(erlang:atom_to_binary(S, latin1))/binary>> || S <- Scenario >>.
+
+-spec decode_temporary_unavailability_sceanrio(binary()) -> failure_scenario().
+
+decode_temporary_unavailability_sceanrio(BinScenario) ->
+    [erlang:binary_to_existing_atom(<<B>>, latin1) || <<B:8>> <= BinScenario].
 
 %%
 
