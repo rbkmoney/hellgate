@@ -826,7 +826,7 @@ payment_adjustment_success(C) ->
 payment_temporary_unavailability_retry_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_temporary_unavailability_payment_params([f, f, f]),
+    PaymentParams = make_temporary_unavailability_payment_params([fail, fail, fail]),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_process_multiple_sessions_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),

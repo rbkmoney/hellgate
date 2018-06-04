@@ -1153,11 +1153,11 @@ process_failure(Activity, Events, Action, Failure, St) ->
 process_failure(payment, Events, Action, Failure, St, _RefundSt) ->
     RetryPolicy = get_retry_policy(),
     case check_retry_possibility(Failure, RetryPolicy, St) of
+        retry ->
+            retry_session(Events, Action, RetryPolicy, St);
         fatal ->
             _AffectedAccounts = rollback_payment_cashflow(St),
-            {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
-        retry ->
-            retry_session(Events, Action, RetryPolicy, St)
+            {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}
     end;
 process_failure({refund, ID}, Events, Action, Failure, St, RefundSt) ->
     _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
@@ -1211,7 +1211,7 @@ check_failure_type({failure, Failure}) ->
 check_failure_type(_Other) ->
     fatal.
 
-do_check_failure_type({authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}) ->
+do_check_failure_type({authorization_failed, {temporarily_unavailable, _}}) ->
     retry;
 do_check_failure_type(_Failure) ->
     fatal.

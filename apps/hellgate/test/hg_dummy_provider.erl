@@ -69,7 +69,7 @@ get_http_cowboy_spec() ->
 construct_silent_callback(Form) ->
     Form#{<<"payload">> => ?LAY_LOW_BUDDY}.
 
--type failure_scenario_step() :: g | f.
+-type failure_scenario_step() :: good | fail.
 -type failure_scenario() :: [failure_scenario_step()].
 %%
 
@@ -251,7 +251,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         unexpected_failure ->
             sleep(1, <<"sleeping">>, undefined, get_payment_id(PaymentInfo));
         {temporary_unavailability, _Scenario} ->
-            sleep(1, <<"sleeping">>)
+            sleep(0, <<"sleeping">>)
     end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
     Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
@@ -260,9 +260,9 @@ process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
             error(unexpected_failure);
         {temporary_unavailability, Scenario} ->
             case do_failure_scenario_step(Scenario, Key) of
-                g ->
+                good ->
                     finish(?success(), get_payment_id(PaymentInfo));
-                f ->
+                fail ->
                     Failure = payproc_errors:construct('PaymentFailure',
                         {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}),
                     finish(?failure(Failure))
@@ -316,8 +316,9 @@ do_failure_scenario_step(Scenario, Key) ->
     set_transaction_state(Key, {scenario_step, Step + 1}),
     get_failure_scenario_step(Scenario, Step).
 
+-spec get_failure_scenario_step(failure_scenario(), Index :: pos_integer()) -> failure_scenario_step().
 get_failure_scenario_step(Scenario, Step) when Step > length(Scenario) ->
-    g;
+    good;
 get_failure_scenario_step(Scenario, Step) ->
     lists:nth(Step, Scenario).
 
@@ -399,7 +400,7 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_f
     unexpected_failure;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"temporary_unavailability_",
                                                                    BinScenario/binary>>}}) ->
-    Scenario = decode_temporary_unavailability_sceanrio(BinScenario),
+    Scenario = decode_failure_scenario(BinScenario),
     {temporary_unavailability, Scenario};
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
     terminal;
@@ -421,7 +422,7 @@ make_payment_tool(forbidden) ->
 make_payment_tool(unexpected_failure) ->
     make_simple_payment_tool(<<"unexpected_failure">>, visa);
 make_payment_tool({temporary_unavailability, Scenario}) ->
-    BinScenario = encode_temporary_unavailability_sceanrio(Scenario),
+    BinScenario = encode_failure_scenario(Scenario),
     make_simple_payment_tool(<<"temporary_unavailability_", BinScenario/binary>>, visa);
 make_payment_tool(terminal) ->
     {
@@ -468,15 +469,29 @@ get_short_payment_id(#prxprv_PaymentInfo{invoice = Invoice, payment = Payment}) 
 get_invoice_due_date(#prxprv_PaymentInfo{invoice = Invoice}) ->
     Invoice#prxprv_Invoice.due.
 
--spec encode_temporary_unavailability_sceanrio(failure_scenario()) -> binary().
+-spec encode_failure_scenario(failure_scenario()) -> binary().
 
-encode_temporary_unavailability_sceanrio(Scenario) ->
-    << <<(erlang:atom_to_binary(S, latin1))/binary>> || S <- Scenario >>.
+encode_failure_scenario(Scenario) ->
+    << <<(encode_failure_scenario_step(S)):8>> || S <- Scenario >>.
 
--spec decode_temporary_unavailability_sceanrio(binary()) -> failure_scenario().
+-spec decode_failure_scenario(binary()) -> failure_scenario().
 
-decode_temporary_unavailability_sceanrio(BinScenario) ->
-    [erlang:binary_to_existing_atom(<<B>>, latin1) || <<B:8>> <= BinScenario].
+decode_failure_scenario(BinScenario) ->
+    [decode_failure_scenario_step(B) || <<B:8>> <= BinScenario].
+
+-spec encode_failure_scenario_step(failure_scenario_step()) -> byte().
+
+encode_failure_scenario_step(good) ->
+    $g;
+encode_failure_scenario_step(fail) ->
+    $f.
+
+-spec decode_failure_scenario_step(byte()) -> failure_scenario_step().
+
+decode_failure_scenario_step($g) ->
+    good;
+decode_failure_scenario_step($f) ->
+    fail.
 
 %%
 
