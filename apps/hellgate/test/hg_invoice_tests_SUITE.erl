@@ -53,6 +53,7 @@
 -export([payment_refund_success/1]).
 -export([payment_partial_refunds_success/1]).
 -export([payment_temporary_unavailability_retry_success/1]).
+-export([payment_temporary_unavailability_too_many_retries/1]).
 -export([invalid_amount_payment_partial_refund/1]).
 -export([invalid_time_payment_partial_refund/1]).
 -export([invalid_currency_payment_partial_refund/1]).
@@ -116,6 +117,7 @@ all() ->
         payment_success_on_second_try,
         payment_fail_after_silent_callback,
         payment_temporary_unavailability_retry_success,
+        payment_temporary_unavailability_too_many_retries,
         invoice_success_on_third_payment,
 
         payment_risk_score_check,
@@ -186,6 +188,10 @@ init_per_suite(C) ->
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
+    Targets = [captured, processed, refunded],
+    Policy = {intervals, [1, 1, 1]},
+    RetryPolicy = maps:from_list([{T, Policy} || T <- Targets]),
+    ok = application:set_env(hellgate, payment_retry_policy, RetryPolicy),
     NewC = [
         {party_id, PartyID},
         {party_client, PartyClient},
@@ -834,6 +840,20 @@ payment_temporary_unavailability_retry_success(C) ->
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_temporary_unavailability_too_many_retries(config()) -> test_return().
+
+payment_temporary_unavailability_too_many_retries(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_temporary_unavailability_payment_params([fail, fail, fail, fail]),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    {failed, PaymentID, Failure} = await_payment_process_multiple_sessions_failure(InvoiceID, PaymentID, Client),
+    ok = payproc_errors:match(
+        'PaymentFailure',
+        Failure,
+        fun({authorization_failed, {temporarily_unavailable, _}}) -> ok end
+    ).
 
 get_cashflow_account(Type, CF) ->
     [ID] = [V || #domain_FinalCashFlowPosting{
@@ -1765,6 +1785,20 @@ await_payment_process_multiple_sessions_finish(InvoiceID, PaymentID, Client) ->
             ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
         ] ->
             await_payment_process_multiple_sessions_finish(InvoiceID, PaymentID, Client)
+    end.
+
+await_payment_process_multiple_sessions_failure(InvoiceID, PaymentID, Client) ->
+    case next_event(InvoiceID, Client) of
+        [
+            ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+            ?payment_ev(PaymentID, ?payment_status_changed(?failed(_)))
+        ] ->
+            {failed, PaymentID, Failure};
+        [
+            ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed(_)))),
+            ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+        ] ->
+            await_payment_process_multiple_sessions_failure(InvoiceID, PaymentID, Client)
     end.
 
 await_payment_capture(InvoiceID, PaymentID, Client) ->

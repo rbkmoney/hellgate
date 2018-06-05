@@ -75,10 +75,10 @@
     cash_flow              :: undefined | cash_flow(),
     trx                    :: undefined | trx_info(),
     target                 :: undefined | target(),
-    sessions    = #{}      :: #{target() => session()},
+    sessions       = #{}   :: #{target() => session()},
     retry_attempts = #{}   :: #{target() => non_neg_integer()},
-    refunds     = #{}      :: #{refund_id() => refund_state()},
-    adjustments = []       :: [adjustment()],
+    refunds        = #{}   :: #{refund_id() => refund_state()},
+    adjustments    = []    :: [adjustment()],
     opts                   :: undefined | opts()
 }).
 
@@ -129,6 +129,15 @@
 }.
 
 -export_type([opts/0]).
+
+-type retries_num() :: pos_integer() | infinity.
+-type genlib_retry_policy() ::
+      {linear, retries_num() | {max_total_timeout, pos_integer()}, pos_integer()}
+    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer()}
+    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer(), timeout()}
+    | {intervals, [pos_integer(), ...]}
+    | {timecap, timeout(), genlib_retry_policy()}
+    | no_retry.
 
 %%
 
@@ -1136,7 +1145,7 @@ finish_processing({refund, ID} = Activity, {Events, Action}, St) ->
             end,
             {done, {Events1 ++ Events2 ++ Events3, Action}};
         #{status := finished, result := ?session_failed(Failure)} ->
-            process_failure(Activity, Events1, Action, Failure, St1, RefundSt1);
+            process_failure(Activity, Events, Action, Failure, St1, RefundSt1);
         #{} ->
             {next, {Events1, Action}}
     end.
@@ -1170,9 +1179,9 @@ get_actual_retry_strategy(Target, #st{retry_attempts = Attempts}) ->
     apply_attempts_to_strategy(get_initial_retry_strategy(Target), AttemptNum).
 
 -spec get_initial_retry_strategy(target()) -> retry_strategy().
-get_initial_retry_strategy(_Target) ->
-    %% TODO: Allow to configure initial retry strategy
-    genlib_retry:exponential(5, 1.5, 1, 30).
+get_initial_retry_strategy({TargetCode, _DomainRecord}) ->
+    PolicyConfig = genlib_app:env(hellgate, payment_retry_policy, #{}),
+    genlib_retry_new(maps:get(TargetCode, PolicyConfig, no_retry)).
 
 -spec check_retry_possibility(Target, Failure, St) -> {retry, Timeout} | fatal when
     Failure :: dmsl_domain_thrift:'OperationFailure'(),
@@ -1215,6 +1224,24 @@ apply_attempts_to_strategy(Strategy, N) when N > 0 ->
             NextStrategy
     end,
     apply_attempts_to_strategy(NewStrategy, N - 1).
+
+-spec genlib_retry_new(genlib_retry_policy()) ->
+    genlib_retry:strategy().
+genlib_retry_new({linear, Retries, Timeout}) ->
+    genlib_retry:linear(Retries, Timeout);
+genlib_retry_new({exponential, Retries, Factor, Timeout}) ->
+    genlib_retry:exponential(Retries, Factor, Timeout);
+genlib_retry_new({exponential, Retries, Factor, Timeout, MaxTimeout}) ->
+    genlib_retry:exponential(Retries, Factor, Timeout, MaxTimeout);
+genlib_retry_new({intervals, Array}) ->
+    genlib_retry:intervals(Array);
+genlib_retry_new({timecap, Timeout, Policy}) ->
+    genlib_retry:timecap(Timeout, genlib_retry_new(Policy));
+genlib_retry_new(no_retry) ->
+    finish;
+genlib_retry_new(BadPolicy) ->
+    erlang:error(badarg, [BadPolicy]).
+
 
 get_action({processed, _}, Action, St) ->
     case get_payment_flow(get_payment(St)) of
