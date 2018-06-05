@@ -95,56 +95,12 @@ cfg(Key, C) ->
 
 all() ->
     [
-        invalid_invoice_shop,
-        invalid_invoice_amount,
-        invalid_invoice_currency,
         invalid_party_status,
         invalid_shop_status,
-        invalid_invoice_template_cost,
-        invalid_invoice_template_id,
-        invoice_w_template,
-        invoice_cancellation,
-        overdue_invoice_cancellation,
-        invoice_cancellation_after_payment_timeout,
-        invalid_payment_amount,
-        no_route_found_for_payment,
-        payment_success,
-        payment_w_terminal_success,
-        payment_w_wallet_success,
-        payment_w_customer_success,
-        payment_w_incorrect_customer,
-        payment_w_deleted_customer,
-        payment_success_on_second_try,
-        payment_fail_after_silent_callback,
-        payment_temporary_unavailability_retry_success,
-        payment_temporary_unavailability_too_many_retries,
-        invoice_success_on_third_payment,
 
         payment_risk_score_check,
 
-        invalid_payment_adjustment,
-        payment_adjustment_success,
-
-        invalid_payment_w_deprived_party,
-        external_account_posting,
-
-        {group, holds_management},
-
-        payment_refund_success,
-        payment_partial_refunds_success,
-        invalid_amount_payment_partial_refund,
-        invalid_currency_payment_partial_refund,
-        cant_start_simultaneous_partial_refunds,
-        invalid_time_payment_partial_refund,
-
-        rounding_cashflow_volume,
-        {group, offsite_preauth_payment},
-
-        payment_with_tokenized_bank_card,
-
-        terms_retrieval,
-
-        {group, adhoc_repairs},
+        {group, all_non_destructive_tests},
 
         consistent_history
     ].
@@ -153,6 +109,67 @@ all() ->
 
 groups() ->
     [
+        {all_non_destructive_tests, [parallel], [
+            {group, base_payments},
+
+            {group, adjustments},
+
+            invalid_payment_w_deprived_party,
+            external_account_posting,
+
+            {group, holds_management},
+
+            {group, refunds},
+
+            rounding_cashflow_volume,
+            {group, offsite_preauth_payment},
+
+            payment_with_tokenized_bank_card,
+
+            terms_retrieval,
+
+            {group, adhoc_repairs}
+        ]},
+
+        {base_payments, [parallel], [
+            invalid_invoice_shop,
+            invalid_invoice_amount,
+            invalid_invoice_currency,
+            invalid_invoice_template_cost,
+            invalid_invoice_template_id,
+            invoice_w_template,
+            invoice_cancellation,
+            overdue_invoice_cancellation,
+            invoice_cancellation_after_payment_timeout,
+            invalid_payment_amount,
+            no_route_found_for_payment,
+            payment_success,
+            payment_w_terminal_success,
+            payment_w_wallet_success,
+            payment_w_customer_success,
+            payment_w_incorrect_customer,
+            payment_w_deleted_customer,
+            payment_success_on_second_try,
+            payment_fail_after_silent_callback,
+            payment_temporary_unavailability_retry_success,
+            payment_temporary_unavailability_too_many_retries,
+            invoice_success_on_third_payment
+        ]},
+
+        {adjustments, [parallel], [
+            invalid_payment_adjustment,
+            payment_adjustment_success
+        ]},
+
+        {refunds, [], [
+            payment_refund_success,
+            payment_partial_refunds_success,
+            invalid_amount_payment_partial_refund,
+            invalid_currency_payment_partial_refund,
+            cant_start_simultaneous_partial_refunds,
+            invalid_time_payment_partial_refund
+        ]},
+
         {holds_management, [parallel], [
             payment_hold_cancellation,
             payment_hold_auto_cancellation,
