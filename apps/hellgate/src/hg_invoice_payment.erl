@@ -112,7 +112,7 @@
 -type session_result()    :: dmsl_payment_processing_thrift:'SessionResult'().
 -type proxy_state()       :: dmsl_proxy_provider_thrift:'ProxyState'().
 -type tag()               :: dmsl_proxy_provider_thrift:'CallbackTag'().
--type retry_strategy()    :: genlib_retry:strategy().
+-type retry_strategy()    :: hg_retry:strategy().
 
 -type session() :: #{
     target      := target(),
@@ -129,15 +129,6 @@
 }.
 
 -export_type([opts/0]).
-
--type retries_num() :: pos_integer() | infinity.
--type genlib_retry_policy() ::
-      {linear, retries_num() | {max_total_timeout, pos_integer()}, pos_integer()}
-    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer()}
-    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer(), timeout()}
-    | {intervals, [pos_integer(), ...]}
-    | {timecap, timeout(), genlib_retry_policy()}
-    | no_retry.
 
 %%
 
@@ -1145,7 +1136,7 @@ finish_processing({refund, ID} = Activity, {Events, Action}, St) ->
             end,
             {done, {Events1 ++ Events2 ++ Events3, Action}};
         #{status := finished, result := ?session_failed(Failure)} ->
-            process_failure(Activity, Events, Action, Failure, St1, RefundSt1);
+            process_failure(Activity, Events1, Action, Failure, St1, RefundSt1);
         #{} ->
             {next, {Events1, Action}}
     end.
@@ -1157,31 +1148,40 @@ process_failure(payment, Events, Action, Failure, St, _RefundSt) ->
     Target = get_target(St),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
-            retry_session(Events, Action, Target, Timeout);
+            {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
+            {next, {Events ++ SessionEvents, SessionAction}};
         fatal ->
             _AffectedAccounts = rollback_payment_cashflow(St),
             {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}
     end;
 process_failure({refund, ID}, Events, Action, Failure, St, RefundSt) ->
-    _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
-    Events2 = [
-        ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
-    ],
-    {done, {Events ++ Events2, Action}}.
+    Target = ?refunded(),
+    case check_retry_possibility(Target, Failure, St) of
+        {retry, Timeout} ->
+            {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
+            Events1 = [?refund_ev(ID, E) || E <- SessionEvents],
+            {next, {Events ++ Events1, SessionAction}};
+        fatal ->
+            _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
+            Events1 = [
+                ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
+            ],
+            {done, {Events ++ Events1, Action}}
+    end.
 
-retry_session(Events, Action, Target, Timeout) ->
+retry_session(Action, Target, Timeout) ->
     {ok, {NewEvents, _Action}} = start_session(Target),
     NewAction = set_timer({timeout, Timeout}, Action),
-    {next, {Events ++ NewEvents, NewAction}}.
+    {NewEvents, NewAction}.
 
 get_actual_retry_strategy(Target, #st{retry_attempts = Attempts}) ->
     AttemptNum = maps:get(Target, Attempts, 0),
-    apply_attempts_to_strategy(get_initial_retry_strategy(Target), AttemptNum).
+    hg_retry:skip_steps(get_initial_retry_strategy(Target), AttemptNum).
 
 -spec get_initial_retry_strategy(target()) -> retry_strategy().
 get_initial_retry_strategy({TargetCode, _DomainRecord}) ->
     PolicyConfig = genlib_app:env(hellgate, payment_retry_policy, #{}),
-    genlib_retry_new(maps:get(TargetCode, PolicyConfig, no_retry)).
+    hg_retry:new_strategy(maps:get(TargetCode, PolicyConfig, no_retry)).
 
 -spec check_retry_possibility(Target, Failure, St) -> {retry, Timeout} | fatal when
     Failure :: dmsl_domain_thrift:'OperationFailure'(),
@@ -1192,7 +1192,7 @@ check_retry_possibility(Target, Failure, St) ->
     case check_failure_type(Failure) of
         transient ->
             RetryStrategy = get_actual_retry_strategy(Target, St),
-            case genlib_retry:next_step(RetryStrategy) of
+            case hg_retry:next_step(RetryStrategy) of
                 {wait, Timeout, _NewStrategy} ->
                     {retry, Timeout};
                 finish ->
@@ -1212,36 +1212,6 @@ do_check_failure_type({authorization_failed, {temporarily_unavailable, _}}) ->
     transient;
 do_check_failure_type(_Failure) ->
     fatal.
-
--spec apply_attempts_to_strategy(retry_strategy(), non_neg_integer()) -> retry_strategy().
-apply_attempts_to_strategy(Strategy, 0) ->
-    Strategy;
-apply_attempts_to_strategy(Strategy, N) when N > 0 ->
-    NewStrategy = case genlib_retry:next_step(Strategy) of
-        {wait, _Timeout, NextStrategy} ->
-            NextStrategy;
-        finish = NextStrategy ->
-            NextStrategy
-    end,
-    apply_attempts_to_strategy(NewStrategy, N - 1).
-
--spec genlib_retry_new(genlib_retry_policy()) ->
-    genlib_retry:strategy().
-genlib_retry_new({linear, Retries, Timeout}) ->
-    genlib_retry:linear(Retries, Timeout);
-genlib_retry_new({exponential, Retries, Factor, Timeout}) ->
-    genlib_retry:exponential(Retries, Factor, Timeout);
-genlib_retry_new({exponential, Retries, Factor, Timeout, MaxTimeout}) ->
-    genlib_retry:exponential(Retries, Factor, Timeout, MaxTimeout);
-genlib_retry_new({intervals, Array}) ->
-    genlib_retry:intervals(Array);
-genlib_retry_new({timecap, Timeout, Policy}) ->
-    genlib_retry:timecap(Timeout, genlib_retry_new(Policy));
-genlib_retry_new(no_retry) ->
-    finish;
-genlib_retry_new(BadPolicy) ->
-    erlang:error(badarg, [BadPolicy]).
-
 
 get_action({processed, _}, Action, St) ->
     case get_payment_flow(get_payment(St)) of

@@ -254,19 +254,11 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             sleep(0, <<"sleeping">>)
     end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
-    Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
     case get_payment_info_scenario(PaymentInfo) of
         unexpected_failure ->
             error(unexpected_failure);
         {temporary_unavailability, Scenario} ->
-            case do_failure_scenario_step(Scenario, Key) of
-                good ->
-                    finish(?success(), get_payment_id(PaymentInfo));
-                fail ->
-                    Failure = payproc_errors:construct('PaymentFailure',
-                        {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}),
-                    finish(?failure(Failure))
-            end;
+            process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
             finish(?success(), get_payment_id(PaymentInfo))
     end;
@@ -288,7 +280,12 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
     end;
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
-    finish(?success(), get_payment_id(PaymentInfo));
+    case get_payment_info_scenario(PaymentInfo) of
+        {temporary_unavailability, Scenario} ->
+            process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
+        _ ->
+            finish(?success(), get_payment_id(PaymentInfo))
+    end;
 
 process_payment(?cancelled(), _, PaymentInfo, _) ->
     finish(?success(), get_payment_id(PaymentInfo)).
@@ -323,7 +320,24 @@ get_failure_scenario_step(Scenario, Step) ->
     lists:nth(Step, Scenario).
 
 process_refund(undefined, PaymentInfo, _) ->
-    finish(?success(), hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)])).
+    case get_payment_info_scenario(PaymentInfo) of
+        {temporary_unavailability, Scenario} ->
+            PaymentId = hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)]),
+            process_failure_scenario(PaymentInfo, Scenario, PaymentId);
+        _ ->
+            finish(?success(), get_payment_id(PaymentInfo))
+    end.
+
+process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
+    Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
+    case do_failure_scenario_step(Scenario, Key) of
+        good ->
+            finish(?success(), PaymentId);
+        fail ->
+            Failure = payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}),
+            finish(?failure(Failure))
+    end.
 
 finish(Status, TrxID) ->
     #prxprv_PaymentProxyResult{
