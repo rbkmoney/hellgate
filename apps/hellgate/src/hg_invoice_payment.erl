@@ -1148,7 +1148,7 @@ process_failure(payment, Events, Action, Failure, St, _RefundSt) ->
     Target = get_target(St),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
-            lager:log(info, lager:md(), "Retry session after transient failure, wait ~p", [Timeout]),
+            _ = lager:info("Retry session after transient failure, wait ~p", [Timeout]),
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             {next, {Events ++ SessionEvents, SessionAction}};
         fatal ->
@@ -1159,6 +1159,7 @@ process_failure({refund, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
+            _ = lager:info("Retry session after transient failure, wait ~p", [Timeout]),
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             Events1 = [?refund_ev(ID, E) || E <- SessionEvents],
             {next, {Events ++ Events1, SessionAction}};
@@ -1197,11 +1198,11 @@ check_retry_possibility(Target, Failure, St) ->
                 {wait, Timeout, _NewStrategy} ->
                     {retry, Timeout};
                 finish ->
-                    lager:log(debug, lager:md(), "Retries strategy is exceed", []),
+                    _ = lager:debug("Retries strategy is exceed"),
                     fatal
             end;
         fatal ->
-            lager:log(debug, lager:md(), "Failure is fatal", []),
+            _ = lager:debug("Failure is fatal"),
             fatal
     end.
 
