@@ -806,7 +806,7 @@ get_template(TemplateRef, Revision) ->
 
 %% TODO add transmutations for new international legal entities and bank accounts
 
--define(TOP_VERSION, 4).
+-define(TOP_VERSION, 5).
 
 wrap_events(Events) ->
     [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
@@ -849,7 +849,7 @@ transmute_change(V1, V2,
         CreatedAt,
         UpdatedAt
     ))
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_created(#payproc_Claim{
         id = ID,
@@ -861,15 +861,15 @@ transmute_change(V1, V2,
     });
 transmute_change(V1, V2,
     ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
 transmute_change(V1, V2,
     ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
     NewEffects = [transmute_claim_effect(V1, V2, E) || E <- Effects],
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
-transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
+transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
     C.
 transmute_party_modification(1, 2,
     ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v1(Contractor, TemplateRef)})
@@ -889,8 +889,26 @@ transmute_party_modification(2, 3,
         )}
     )
 ) ->
+    ?legacy_contract_modification(
+        ID,
+        {creation, ?legacy_contract_params_v3_4(
+            transmute_contractor(2, 3, Contractor),
+            TemplateRef,
+            PaymentInstitutionRef
+        )}
+    );
+transmute_party_modification(4, 5,
+    ?legacy_contract_modification(
+        ID,
+        {creation, ?legacy_contract_params_v3_4(
+            Contractor,
+            TemplateRef,
+            PaymentInstitutionRef
+        )}
+    )
+) ->
     ?contract_modification(ID, {creation, #payproc_ContractParams{
-        contractor = transmute_contractor(2, 3, Contractor),
+        contractor = Contractor,
         template = TemplateRef,
         payment_institution = PaymentInstitutionRef
     }});
@@ -924,7 +942,7 @@ transmute_party_modification(3, 4,
             schedule = transmute_payout_schedule_ref(3, 4, PayoutScheduleRef)
         }}
     );
-transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
+transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
     C.
 
 transmute_claim_effect(1, 2, ?legacy_contract_effect(
@@ -1002,6 +1020,38 @@ transmute_claim_effect(3, 4, ?legacy_contract_effect(
         LegalAgreement
     )}
 )) ->
+    Contract = ?legacy_contract_v4(
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement,
+        undefined
+    ),
+    ?legacy_contract_effect(ID, {created, Contract});
+transmute_claim_effect(4, 5, ?legacy_contract_effect(
+    ID,
+    {created, ?legacy_contract_v4(
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement,
+        ReportPreferences
+    )}
+)) ->
     Contract = #domain_Contract{
         id = ID,
         contractor = Contractor,
@@ -1013,7 +1063,8 @@ transmute_claim_effect(3, 4, ?legacy_contract_effect(
         terms = Terms,
         adjustments = Adjustments,
         payout_tools = PayoutTools,
-        legal_agreement = transmute_legal_agreement(3, 4, LegalAgreement)
+        legal_agreement = LegalAgreement,
+        report_preferences = ReportPreferences
     },
     ?contract_effect(ID, {created, Contract});
 transmute_claim_effect(V1, V2, ?legacy_contract_effect(

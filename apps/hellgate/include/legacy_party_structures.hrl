@@ -45,6 +45,9 @@
 -define(legacy_contract_params_v2(Contractor, TemplateRef, PaymentInstitutionRef),
     {payproc_ContractParams, Contractor, TemplateRef, PaymentInstitutionRef}).
 
+-define(legacy_contract_params_v3_4(Contractor, TemplateRef, PaymentInstitutionRef),
+    {payproc_ContractParams, Contractor, TemplateRef, PaymentInstitutionRef}).
+
 -define(legacy_payout_tool_creation(ID, Params),
     {payout_tool_modification, {payproc_PayoutToolModificationUnit, ID, {creation, Params}}}).
 
@@ -209,6 +212,36 @@
         Adjustments,
         PayoutTools,
         LegalAgreement
+    }
+).
+
+-define(legacy_contract_v4(
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement,
+        ReportPreferences
+    ),
+    {domain_Contract,
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement,
+        ReportPreferences
     }
 ).
 
