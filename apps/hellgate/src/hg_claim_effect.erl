@@ -25,19 +25,9 @@ make(?contract_modification(ID, Modification), Timestamp, Revision) ->
         ?contract_effect(ID, make_contract_effect(ID, Modification, Timestamp, Revision))
     catch
         throw:{payment_institution_invalid, Ref} ->
-            hg_claim:raise_invalid_changeset(?invalid_contract(
-                ID,
-                {invalid_object_reference, #payproc_InvalidObjectReference{
-                    ref = make_optional_domain_ref(payment_institution, Ref)
-                }}
-            ));
+            raise_invalid_object_ref({contract, ID}, make_optional_domain_ref(payment_institution, Ref));
         throw:{template_invalid, Ref} ->
-            hg_claim:raise_invalid_changeset(?invalid_contract(
-                ID,
-                {invalid_object_reference, #payproc_InvalidObjectReference{
-                    ref = make_optional_domain_ref(contract_template, Ref)
-                }}
-            ))
+            raise_invalid_object_ref({contract, ID}, make_optional_domain_ref(contract_template, Ref))
     end;
 
 make(?shop_modification(ID, Modification), Timestamp, Revision) ->
@@ -86,7 +76,10 @@ make_contract_effect(_, ?adjustment_creation(AdjustmentID, Params), Timestamp, R
 make_contract_effect(_, ?payout_tool_creation(PayoutToolID, Params), Timestamp, _) ->
     {payout_tool_created, hg_payout_tool:create(PayoutToolID, Params, Timestamp)};
 make_contract_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
-    {legal_agreement_bound, LegalAgreement}.
+    {legal_agreement_bound, LegalAgreement};
+make_contract_effect(ID, {report_preferences_modification, ReportPreferences}, _, Revision) ->
+    _ = assert_report_schedule_valid(ID, ReportPreferences, Revision),
+    {report_preferences_changed, ReportPreferences}.
 
 make_shop_effect(ID, {creation, ShopParams}, Timestamp, _) ->
     {created, hg_party:create_shop(ID, ShopParams, Timestamp)};
@@ -116,19 +109,48 @@ make_wallet_effect(ID, {creation, Params}, Timestamp) ->
 make_wallet_effect(_, {account_creation, Params}, _) ->
     {account_created, hg_wallet:create_account(Params)}.
 
-assert_payout_schedule_valid(ShopID, #domain_PayoutScheduleRef{} = PayoutScheduleRef, Revision) ->
-    Ref = {payout_schedule, PayoutScheduleRef},
+assert_report_schedule_valid(_, #domain_ReportPreferences{service_acceptance_act_preferences = undefined}, _) ->
+    ok;
+assert_report_schedule_valid(
+    ID,
+    #domain_ReportPreferences{
+        service_acceptance_act_preferences = #domain_ServiceAcceptanceActPreferences{
+            schedule = BusinessScheduleRef
+        }
+    },
+    Revision
+) ->
+    assert_valid_object_ref({contract, ID}, {business_schedule, BusinessScheduleRef}, Revision).
+
+assert_payout_schedule_valid(ID, #domain_BusinessScheduleRef{} = BusinessScheduleRef, Revision) ->
+    assert_valid_object_ref({shop, ID}, {business_schedule, BusinessScheduleRef}, Revision);
+assert_payout_schedule_valid(_, undefined, _) ->
+    ok.
+
+assert_valid_object_ref(Prefix, Ref, Revision) ->
     case hg_domain:exists(Revision, Ref) of
         true ->
             ok;
         false ->
-            hg_claim:raise_invalid_changeset(?invalid_shop(
-                ShopID,
-                {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}}
-            ))
-    end;
-assert_payout_schedule_valid(_, undefined, _) ->
-    ok.
+            raise_invalid_object_ref(Prefix, Ref)
+    end.
+
+-spec raise_invalid_object_ref(
+    {shop, dmsl_domain_thrift:'ShopID'()} | {contract, dmsl_domain_thrift:'ContractID'()},
+    hg_domain:ref()
+) ->
+    no_return().
+
+raise_invalid_object_ref(Prefix, Ref) ->
+    Ex = {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}},
+    raise_invalid_object_ref_(Prefix, Ex).
+
+-spec raise_invalid_object_ref_(term(), term()) -> no_return().
+
+raise_invalid_object_ref_({shop, ID}, Ex) ->
+    hg_claim:raise_invalid_changeset(?invalid_shop(ID, Ex));
+raise_invalid_object_ref_({contract, ID}, Ex) ->
+    hg_claim:raise_invalid_changeset(?invalid_contract(ID, Ex)).
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);

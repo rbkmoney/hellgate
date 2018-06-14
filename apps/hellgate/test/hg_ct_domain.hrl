@@ -20,6 +20,7 @@
 -define(insp(ID),       #domain_InspectorRef{id = ID}).
 -define(pinst(ID),      #domain_PaymentInstitutionRef{id = ID}).
 -define(binrange(ID),   #domain_BankCardBINRangeRef{id = ID}).
+-define(bussched(ID),   #domain_BusinessScheduleRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).
@@ -59,6 +60,12 @@
     #domain_ContactInfo{
         email = EMail,
         phone_number = Phone
+    }).
+
+-define(tkz_bank_card(PaymentSystem, TokenProvider),
+    #domain_TokenizedBankCard{
+        payment_system = PaymentSystem,
+        token_provider = TokenProvider
     }).
 
 -endif.

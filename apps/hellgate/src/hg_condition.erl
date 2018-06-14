@@ -24,21 +24,21 @@ test({payment_tool, C}, #{payment_tool := V}, Rev) ->
     hg_payment_tool:test_condition(C, V, Rev);
 test({shop_location_is, V}, #{shop := S}, _) ->
     V =:= S#domain_Shop.location;
-test({party, V}, #{party := P} = VS, _) ->
-    test_party(V, P, genlib_map:get(shop, VS));
+test({party, V}, #{party_id := PartyID} = VS, _) ->
+    test_party(V, PartyID, genlib_map:get(shop, VS));
 test({payout_method_is, V1}, #{payout_method := V2}, _) ->
     V1 =:= V2;
 test(_, #{}, _) ->
     undefined.
 
-test_party(#domain_PartyCondition{id = ID, definition = Def}, P = #domain_Party{id = ID}, S) ->
-    test_party_(Def, P, S);
+test_party(#domain_PartyCondition{id = PartyID, definition = Def}, PartyID, S) ->
+    test_party_(Def, S);
 test_party(_, _, _) ->
     false.
 
-test_party_(undefined, _, _) ->
+test_party_(undefined, _) ->
     true;
-test_party_({shop_is, ID1}, _, #domain_Shop{id = ID2}) ->
+test_party_({shop_is, ID1}, #domain_Shop{id = ID2}) ->
     ID1 =:= ID2;
-test_party_(_, _, _) ->
+test_party_(_, _) ->
     undefined.

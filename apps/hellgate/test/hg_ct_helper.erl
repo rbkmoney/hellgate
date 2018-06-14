@@ -134,6 +134,11 @@ start_app(hellgate = AppName) ->
                 connect_timeout => 1000,
                 recv_timeout    => 1000
             }
+        }},
+        {payment_retry_policy, #{
+            processed => {intervals, [1, 1, 1]},
+            captured => {intervals, [1, 1, 1]},
+            refunded => {intervals, [1, 1, 1]}
         }}
     ]), #{
         hellgate_root_url => get_hellgate_url()

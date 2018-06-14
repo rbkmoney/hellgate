@@ -76,8 +76,8 @@
 -define(proxy_modification(Proxy),
     {proxy_modification, #payproc_ProxyModification{proxy = Proxy}}).
 
--define(payout_schedule_modification(PayoutScheduleRef),
-    {payout_schedule_modification, #payproc_ScheduleModification{schedule = PayoutScheduleRef}}).
+-define(payout_schedule_modification(BusinessScheduleRef),
+    {payout_schedule_modification, #payproc_ScheduleModification{schedule = BusinessScheduleRef}}).
 
 -define(contract_effect(ID, Effect),
     {contract_effect, #payproc_ContractEffectUnit{contract_id = ID, effect = Effect}}).
@@ -85,8 +85,8 @@
 -define(shop_effect(ID, Effect),
     {shop_effect, #payproc_ShopEffectUnit{shop_id = ID, effect = Effect}}).
 
--define(payout_schedule_changed(PayoutScheduleRef),
-    {payout_schedule_changed, #payproc_ScheduleChanged{schedule = PayoutScheduleRef}}).
+-define(payout_schedule_changed(BusinessScheduleRef),
+    {payout_schedule_changed, #payproc_ScheduleChanged{schedule = BusinessScheduleRef}}).
 
 -define(wallet_modification(ID, Modification),
     {wallet_modification, #payproc_WalletModificationUnit{id = ID, modification = Modification}}).

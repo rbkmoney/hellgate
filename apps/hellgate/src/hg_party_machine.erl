@@ -301,7 +301,7 @@ get_public_history(PartyID, AfterID, Limit) ->
     [publish_party_event({party_id, PartyID}, Ev) || Ev <- get_history(PartyID, AfterID, Limit)].
 
 get_state(PartyID) ->
-    collapse_history(assert_nonempty_history(get_history(PartyID))).
+    collapse_history(get_history(PartyID)).
 
 get_history(PartyID) ->
     map_history_error(hg_machine:get_history(?NS, PartyID)).
@@ -358,13 +358,6 @@ get_st_metadata(NS, #st{meta = Meta}) ->
         undefined ->
             throw(#payproc_PartyMetaNamespaceNotFound{})
     end.
-
-%% TODO remove this hack as soon as machinegun learns to tell the difference between
-%%      nonexsitent machine and empty history
-assert_nonempty_history([_ | _] = Result) ->
-    Result;
-assert_nonempty_history([]) ->
-    throw(#payproc_PartyNotFound{}).
 
 set_claim(
     #payproc_Claim{id = ID} = Claim,
@@ -813,7 +806,7 @@ get_template(TemplateRef, Revision) ->
 
 %% TODO add transmutations for new international legal entities and bank accounts
 
--define(TOP_VERSION, 3).
+-define(TOP_VERSION, 4).
 
 wrap_events(Events) ->
     [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
@@ -840,6 +833,9 @@ transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1->
 transmute_event(V, V, Event) ->
     Event.
 
+-spec transmute_change(pos_integer(), pos_integer(), term()) ->
+    dmsl_payment_processing_thrift:'PartyChange'().
+
 transmute_change(1, 2,
     ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _))
 ) ->
@@ -853,7 +849,7 @@ transmute_change(V1, V2,
         CreatedAt,
         UpdatedAt
     ))
-) when V1 =:= 1; V1 =:= 2 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_created(#payproc_Claim{
         id = ID,
@@ -865,15 +861,15 @@ transmute_change(V1, V2,
     });
 transmute_change(V1, V2,
     ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
 transmute_change(V1, V2,
     ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
     NewEffects = [transmute_claim_effect(V1, V2, E) || E <- Effects],
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
-transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
+transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
     C.
 transmute_party_modification(1, 2,
     ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v1(Contractor, TemplateRef)})
@@ -909,7 +905,26 @@ transmute_party_modification(V1, V2,
         tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
     },
     ?contract_modification(ContractID, ?payout_tool_creation(ID, PayoutToolParams));
-transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
+transmute_party_modification(3, 4,
+    ?legacy_contract_modification(
+        ID,
+        {legal_agreement_binding, LegalAgreement}
+    )
+) ->
+    ?contract_modification(ID, {legal_agreement_binding, transmute_legal_agreement(3, 4, LegalAgreement)});
+transmute_party_modification(3, 4,
+    ?legacy_shop_modification(
+        ID,
+        {payout_schedule_modification, ?legacy_schedule_modification(PayoutScheduleRef)}
+    )
+) ->
+    ?shop_modification(
+        ID,
+        {payout_schedule_modification, #payproc_ScheduleModification{
+            schedule = transmute_payout_schedule_ref(3, 4, PayoutScheduleRef)
+        }}
+    );
+transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
     C.
 
 transmute_claim_effect(1, 2, ?legacy_contract_effect(
@@ -927,7 +942,7 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
         LegalAgreement
     )}
 )) ->
-    Contract = ?legacy_contract_v2(
+    Contract = ?legacy_contract_v2_3(
         ID,
         transmute_contractor(1, 2, Contractor),
         undefined,
@@ -943,7 +958,37 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
     ?legacy_contract_effect(ID, {created, Contract});
 transmute_claim_effect(2, 3, ?legacy_contract_effect(
     ID,
-    {created, ?legacy_contract_v2(
+    {created, ?legacy_contract_v2_3(
+        ID,
+        Contractor,
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        PayoutTools,
+        LegalAgreement
+    )}
+)) ->
+    Contract = ?legacy_contract_v2_3(
+        ID,
+        transmute_contractor(2, 3, Contractor),
+        PaymentInstitutionRef,
+        CreatedAt,
+        ValidSince,
+        ValidUntil,
+        Status,
+        Terms,
+        Adjustments,
+        [transmute_payout_tool(2, 3, P) || P <- PayoutTools],
+        LegalAgreement
+    ),
+    ?legacy_contract_effect(ID, {created, Contract});
+transmute_claim_effect(3, 4, ?legacy_contract_effect(
+    ID,
+    {created, ?legacy_contract_v2_3(
         ID,
         Contractor,
         PaymentInstitutionRef,
@@ -959,7 +1004,7 @@ transmute_claim_effect(2, 3, ?legacy_contract_effect(
 )) ->
     Contract = #domain_Contract{
         id = ID,
-        contractor = transmute_contractor(2, 3, Contractor),
+        contractor = Contractor,
         payment_institution = PaymentInstitutionRef,
         created_at = CreatedAt,
         valid_since = ValidSince,
@@ -967,8 +1012,8 @@ transmute_claim_effect(2, 3, ?legacy_contract_effect(
         status = Status,
         terms = Terms,
         adjustments = Adjustments,
-        payout_tools = [transmute_payout_tool(2, 3, P) || P <- PayoutTools],
-        legal_agreement = LegalAgreement
+        payout_tools = PayoutTools,
+        legal_agreement = transmute_legal_agreement(3, 4, LegalAgreement)
     },
     ?contract_effect(ID, {created, Contract});
 transmute_claim_effect(V1, V2, ?legacy_contract_effect(
@@ -979,9 +1024,14 @@ transmute_claim_effect(V1, V2, ?legacy_contract_effect(
         ContractID,
         {payout_tool_created, transmute_payout_tool(V1, V2, PayoutTool)}
     );
+transmute_claim_effect(3, 4, ?legacy_contract_effect(
+    ContractID,
+    {legal_agreement_bound, LegalAgreement}
+)) ->
+    ?contract_effect(ContractID, {legal_agreement_bound, transmute_legal_agreement(3, 4, LegalAgreement)});
 transmute_claim_effect(2, 3, ?legacy_shop_effect(
     ID,
-    {created, ?legacy_shop(
+    {created, ?legacy_shop_v2(
         ID, CreatedAt, Blocking, Suspension, Details, Location, Category, Account, ContractID, PayoutToolID
     )}
 )) ->
@@ -998,7 +1048,44 @@ transmute_claim_effect(2, 3, ?legacy_shop_effect(
         payout_tool_id = PayoutToolID
     },
     ?shop_effect(ID, {created, Shop});
-transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2 ->
+transmute_claim_effect(3, 4, ?legacy_shop_effect(
+    ID,
+    {created, ?legacy_shop_v3(
+        ID,
+        CreatedAt,
+        Blocking,
+        Suspension,
+        Details,
+        Location,
+        Category,
+        Account,
+        ContractID,
+        PayoutToolID,
+        PayoutSchedule
+    )}
+)) ->
+    Shop = #domain_Shop{
+        id = ID,
+        created_at = CreatedAt,
+        blocking = Blocking,
+        suspension = Suspension,
+        details = Details,
+        location = Location,
+        category = Category,
+        account = Account,
+        contract_id = ContractID,
+        payout_tool_id = PayoutToolID,
+        payout_schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
+    },
+    ?shop_effect(ID, {created, Shop});
+transmute_claim_effect(3, 4, ?legacy_shop_effect(
+    ID,
+    {payout_schedule_changed, ?legacy_schedule_changed(PayoutSchedule)}
+)) ->
+    ?shop_effect(ID, {payout_schedule_changed, #payproc_ScheduleChanged{
+        schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
+    }});
+transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
     C.
 
 transmute_contractor(1, 2,
@@ -1083,3 +1170,16 @@ transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAcc
         bank_post_account = BankPostAccount,
         bank_bik = BankBik
     }.
+
+transmute_legal_agreement(3, 4, ?legacy_legal_agreement(SignedAt, LegalAgreementID)) ->
+    #domain_LegalAgreement{
+        signed_at =  SignedAt,
+        legal_agreement_id = LegalAgreementID
+    };
+transmute_legal_agreement(3, 4, undefined) ->
+    undefined.
+
+transmute_payout_schedule_ref(3, 4, ?legacy_payout_schedule_ref(ID)) ->
+    #domain_BusinessScheduleRef{id = ID};
+transmute_payout_schedule_ref(3, 4, undefined) ->
+    undefined.

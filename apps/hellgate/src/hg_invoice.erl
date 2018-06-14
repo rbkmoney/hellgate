@@ -9,7 +9,6 @@
 %%%           - simpler flow control (?)
 %%%           - event publishing (?)
 %%%  - unify somehow with operability assertions from hg_party
-%%%  - should party blocking / suspension be version-locked? probably _not_
 %%%  - if someone has access to a party then it has access to an invoice
 %%%    belonging to this party
 
@@ -917,7 +916,7 @@ log_changes(Changes, St) ->
 log_change(Change, St) ->
     case get_log_params(Change, St) of
         {ok, #{type := Type, params := Params, message := Message}} ->
-            _ = lager:log(info, [{Type, Params}], Message),
+            _ = lager:log(info, [{Type, Params} | lager:md()], Message),
             ok;
         undefined ->
             ok

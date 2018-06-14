@@ -370,7 +370,9 @@ update_contract({payout_tool_created, PayoutTool}, Contract) ->
     PayoutTools = Contract#domain_Contract.payout_tools ++ [PayoutTool],
     Contract#domain_Contract{payout_tools = PayoutTools};
 update_contract({legal_agreement_bound, LegalAgreement}, Contract) ->
-    Contract#domain_Contract{legal_agreement = LegalAgreement}.
+    Contract#domain_Contract{legal_agreement = LegalAgreement};
+update_contract({report_preferences_changed, ReportPreferences}, Contract) ->
+    Contract#domain_Contract{report_preferences = ReportPreferences}.
 
 apply_shop_effect(_, {created, Shop}, Party) ->
     hg_party:set_shop(Shop, Party);
@@ -394,8 +396,8 @@ update_shop({location_changed, Location}, Shop) ->
 update_shop({proxy_changed, _}, Shop) ->
     % deprecated
     Shop;
-update_shop(?payout_schedule_changed(PayoutScheduleRef), Shop) ->
-    Shop#domain_Shop{payout_schedule = PayoutScheduleRef};
+update_shop(?payout_schedule_changed(BusinessScheduleRef), Shop) ->
+    Shop#domain_Shop{payout_schedule = BusinessScheduleRef};
 update_shop({account_created, Account}, Shop) ->
     Shop#domain_Shop{account = Account}.
 

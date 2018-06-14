@@ -21,45 +21,58 @@
 -type route()                :: dmsl_domain_thrift:'PaymentRoute'().
 -type route_predestination() :: payment | recurrent_paytool.
 
+-define(rejected(Reason), {rejected, Reason}).
+
+-type reject_context():: #{
+    varset              := hg_selector:varset(),
+    rejected_providers  := list(rejected_provider()),
+    rejected_terminals  := list(rejected_terminal())
+}.
+-type rejected_provider() :: {provider_ref(), Reason :: term()}.
+-type rejected_terminal() :: {terminal_ref(), Reason :: term()}.
+-type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
+-type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
+
 -spec choose(
     route_predestination(),
     dmsl_domain_thrift:'PaymentInstitution'(),
     hg_selector:varset(),
     hg_domain:revision()
 ) ->
-    route() | undefined.
+    {ok, route()} | {error, {no_route_found, reject_context()}}.
 
 choose(Predestination, PaymentInstitution, VS, Revision) ->
     % TODO not the optimal strategy
-    Providers = collect_providers(Predestination, PaymentInstitution, VS, Revision),
-    Choices = collect_routes(Predestination, Providers, VS, Revision),
-    choose_route(Choices).
+    RejectContext0 = #{
+        varset => VS
+    },
+    {Providers, RejectContext1} = collect_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext0),
+    {Choices, RejectContext2} = collect_routes(Predestination, Providers, VS, Revision, RejectContext1),
+    choose_route(Choices, VS, RejectContext2).
 
-collect_routes(Predestination, Providers, VS, Revision) ->
-    lists:flatmap(
-        fun (Provider) ->
-            Terminals = collect_terminals(Predestination, Provider, VS, Revision),
-            lists:map(
-                fun (Terminal) ->
-                    Route = {Provider, Terminal},
-                    {score_route(Route, VS), Route}
-                end,
-                Terminals
-            )
+collect_routes(Predestination, Providers, VS, Revision, RejectContext) ->
+    {Accepted, Rejected} = lists:foldl(
+        fun (Provider, {AcceptedTerminals, RejectedTerminals}) ->
+            {Accepts, Rejects} = collect_routes_for_provider(Predestination, Provider, VS, Revision),
+            {Accepts ++ AcceptedTerminals, Rejects ++ RejectedTerminals}
         end,
+        {[], []},
         Providers
-    ).
+    ),
+    {Accepted, RejectContext#{rejected_terminals => Rejected}}.
 
-choose_route(Routes) ->
-    case lists:reverse(lists:keysort(1, Routes)) of
+choose_route(Routes, VS, RejectContext) ->
+    case lists:reverse(lists:keysort(1, score_routes(Routes, VS))) of
         [{_Score, Route} | _] ->
-            export_route(Route);
+            {ok, export_route(Route)};
         [] ->
-            undefined
+            {error, {no_route_found, RejectContext}}
     end.
 
+score_routes(Routes, VS) ->
+    [{score_route(R, VS), R} || R <- Routes].
 
-export_route({{ProviderRef, _Provider}, {TerminalRef, _Terminal}}) ->
+export_route({ProviderRef, {TerminalRef, _Terminal}}) ->
     % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
     %      `get_terminal_ref/1` instead?
     ?route(ProviderRef, TerminalRef).
@@ -93,44 +106,53 @@ score_risk_coverage({_Provider, {_TerminalRef, Terminal}}, VS) ->
 
 %%
 
-collect_providers(Predestination, PaymentInstitution, VS, Revision) ->
+collect_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
     ProviderSelector = PaymentInstitution#domain_PaymentInstitution.providers,
     ProviderRefs = reduce(provider, ProviderSelector, VS, Revision),
-    lists:filtermap(
-        fun (ProviderRef) ->
-            try acceptable_provider(Predestination, ProviderRef, VS, Revision) catch
-                false ->
-                    false
+    {Providers, RejectReasons} = lists:foldl(
+        fun (ProviderRef, {Prvs, Reasons}) ->
+            try
+                P = acceptable_provider(Predestination, ProviderRef, VS, Revision),
+                {[P | Prvs], Reasons}
+             catch
+                ?rejected(Reason) ->
+                    {Prvs, [{ProviderRef, Reason} | Reasons]}
             end
         end,
+        {[], []},
         ordsets:to_list(ProviderRefs)
-    ).
+    ),
+    {Providers, RejectContext#{rejected_providers => RejectReasons}}.
 
 acceptable_provider(payment, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
         payment_terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
     _ = acceptable_payment_terms(Terms, VS, Revision),
-    {true, {ProviderRef, Provider}};
+    {ProviderRef, Provider};
 acceptable_provider(recurrent_paytool, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
         recurrent_paytool_terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
     _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
-    {true, {ProviderRef, Provider}}.
+    {ProviderRef, Provider}.
 
 %%
 
-collect_terminals(Predestination, {_ProviderRef, Provider}, VS, Revision) ->
+collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revision) ->
     TerminalSelector = Provider#domain_Provider.terminal,
     TerminalRefs = reduce(terminal, TerminalSelector, VS, Revision),
-    lists:filtermap(
-        fun (TerminalRef) ->
-            try acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision) catch
-                false ->
-                    false
+    lists:foldl(
+        fun (TerminalRef, {Accepted, Rejected}) ->
+            try
+                Terminal = acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
+                {[{ProviderRef, Terminal} | Accepted], Rejected}
+            catch
+                ?rejected(Reason) ->
+                    {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]}
             end
         end,
+        {[], []},
         ordsets:to_list(TerminalRefs)
     ).
 
@@ -144,18 +166,19 @@ acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms
     Terms = merge_payment_terms(Terms0, Terms1),
     _ = acceptable_payment_terms(Terms, VS, Revision),
     _ = acceptable_risk(RiskCoverage, VS),
-    {true, {TerminalRef, Terminal}};
+    {TerminalRef, Terminal};
 acceptable_terminal(recurrent_paytool, TerminalRef, #domain_Provider{recurrent_paytool_terms = Terms}, VS, Revision) ->
     Terminal = #domain_Terminal{
         risk_coverage = RiskCoverage
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
     _ = acceptable_risk(RiskCoverage, VS),
-    {true, {TerminalRef, Terminal}}.
+    {TerminalRef, Terminal}.
 
 acceptable_risk(RiskCoverage, VS) ->
     RiskScore = getv(risk_score, VS),
-    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0 orelse throw(false).
+    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0
+        orelse throw(?rejected({'Terminal', risk_coverage})).
 
 %%
 
@@ -173,15 +196,16 @@ acceptable_payment_terms(
 ) ->
     % TODO varsets getting mixed up
     %      it seems better to pass down here hierarchy of contexts w/ appropriate module accessors
-    _ = try_accept_term(currency     , CurrenciesSelector , VS, Revision),
-    _ = try_accept_term(category     , CategoriesSelector , VS, Revision),
-    _ = try_accept_term(payment_tool , PMsSelector        , VS, Revision),
-    _ = try_accept_term(cost         , CashLimitSelector  , VS, Revision),
+    ParentName = 'PaymentsProvisionTerms',
+    _ = try_accept_term(ParentName, currency     , CurrenciesSelector , VS, Revision),
+    _ = try_accept_term(ParentName, category     , CategoriesSelector , VS, Revision),
+    _ = try_accept_term(ParentName, payment_tool , PMsSelector        , VS, Revision),
+    _ = try_accept_term(ParentName, cost         , CashLimitSelector  , VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
     _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
-    throw(false).
+    throw(?rejected({'PaymentsProvisionTerms', undefined})).
 
 acceptable_holds_terms(_Terms, undefined, _VS, _Revision) ->
     true;
@@ -190,10 +214,10 @@ acceptable_holds_terms(_Terms, instant, _VS, _Revision) ->
 acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
     case Terms of
         #domain_PaymentHoldsProvisionTerms{lifetime = LifetimeSelector} ->
-            _ = try_accept_term(lifetime, Lifetime, LifetimeSelector, VS, Revision),
+            _ = try_accept_term('PaymentHoldsProvisionTerms', lifetime, Lifetime, LifetimeSelector, VS, Revision),
             true;
         undefined ->
-            throw(false)
+            throw(?rejected({'PaymentHoldsProvisionTerms', undefined}))
     end.
 
 acceptable_refunds_terms(_Terms, undefined, _VS, _Revision) ->
@@ -214,7 +238,7 @@ acceptable_refunds_terms(
     ),
     true;
 acceptable_refunds_terms(undefined, _RVS, _VS, _Revision) ->
-    throw(false).
+    throw(?rejected({'PaymentRefundsProvisionTerms', undefined})).
 
 acceptable_partial_refunds_terms(_Terms, undefined, _VS, _Revision) ->
     true;
@@ -225,10 +249,11 @@ acceptable_partial_refunds_terms(
     Revision
 ) ->
     ProviderLimit = reduce(cash_limit, CashLimitSelector, VS, Revision),
-    hg_cash_range:is_subrange(MerchantLimit, ProviderLimit) == true orelse throw(false);
+    hg_cash_range:is_subrange(MerchantLimit, ProviderLimit) == true
+        orelse throw(?rejected({'PartialRefundsProvisionTerms', cash_limit}));
 
 acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
-    throw(false).
+    throw(?rejected({'PartialRefundsProvisionTerms', undefined})).
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
@@ -273,18 +298,18 @@ acceptable_recurrent_paytool_terms(
     VS,
     Revision
 ) ->
-    _ = try_accept_term(category     , CategoriesSelector , VS, Revision),
-    _ = try_accept_term(payment_tool , PMsSelector        , VS, Revision),
+    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', category     , CategoriesSelector , VS, Revision),
+    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', payment_tool , PMsSelector        , VS, Revision),
     true;
 acceptable_recurrent_paytool_terms(undefined, _VS, _Revision) ->
-    throw(false).
+    throw(?rejected({'RecurrentPaytoolsProvisionTerms', undefined})).
 
-try_accept_term(Name, Selector, VS, Revision) ->
-    try_accept_term(Name, getv(Name, VS), Selector, VS, Revision).
+try_accept_term(ParentName, Name, Selector, VS, Revision) ->
+    try_accept_term(ParentName, Name, getv(Name, VS), Selector, VS, Revision).
 
-try_accept_term(Name, Value, Selector, VS, Revision) when Selector /= undefined ->
+try_accept_term(ParentName, Name, Value, Selector, VS, Revision) when Selector /= undefined ->
     Values = reduce(Name, Selector, VS, Revision),
-    test_term(Name, Value, Values) orelse throw(false).
+    test_term(Name, Value, Values) orelse throw(?rejected({ParentName, Name})).
 
 test_term(currency, V, Vs) ->
     ordsets:is_element(V, Vs);
