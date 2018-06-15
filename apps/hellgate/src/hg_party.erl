@@ -20,6 +20,9 @@
 -export([blocking/2]).
 -export([suspension/2]).
 
+-export([get_contractor/2]).
+-export([set_contractor/2]).
+
 -export([get_contract/2]).
 -export([set_contract/2]).
 -export([set_new_contract/3]).
@@ -36,6 +39,13 @@
 -export([get_shop_account/2]).
 -export([get_account_state/2]).
 
+-export([get_wallet/2]).
+-export([wallet_blocking/3]).
+-export([wallet_suspension/3]).
+-export([set_wallet/2]).
+
+-export_type([party/0]).
+
 %% Asserts
 
 -export([assert_party_objects_valid/3]).
@@ -46,10 +56,14 @@
 -type party_id()              :: dmsl_domain_thrift:'PartyID'().
 -type contract()              :: dmsl_domain_thrift:'Contract'().
 -type contract_id()           :: dmsl_domain_thrift:'ContractID'().
+-type contractor()            :: dmsl_domain_thrift:'PartyContractor'().
+-type contractor_id()         :: dmsl_domain_thrift:'ContractorID'().
 -type contract_template()     :: dmsl_domain_thrift:'ContractTemplate'().
 -type shop()                  :: dmsl_domain_thrift:'Shop'().
 -type shop_id()               :: dmsl_domain_thrift:'ShopID'().
 -type shop_params()           :: dmsl_payment_processing_thrift:'ShopParams'().
+-type wallet()                :: dmsl_domain_thrift:'Wallet'().
+-type wallet_id()             :: dmsl_domain_thrift:'WalletID'().
 
 -type blocking()              :: dmsl_domain_thrift:'Blocking'().
 -type suspension()            :: dmsl_domain_thrift:'Suspension'().
@@ -71,8 +85,10 @@ create_party(PartyID, ContactInfo, Timestamp) ->
         contact_info    = ContactInfo,
         blocking        = ?unblocked(Timestamp),
         suspension      = ?active(Timestamp),
+        contractors     = #{},
         contracts       = #{},
-        shops           = #{}
+        shops           = #{},
+        wallets         = #{}
     }.
 
 -spec blocking(blocking(), party()) ->
@@ -86,6 +102,18 @@ blocking(Blocking, Party) ->
 
 suspension(Suspension, Party) ->
     Party#domain_Party{suspension = Suspension}.
+
+-spec get_contractor(contractor_id(), party()) ->
+    contractor() | undefined.
+
+get_contractor(ID, #domain_Party{contractors = Contractors}) ->
+    maps:get(ID, Contractors, undefined).
+
+-spec set_contractor(contractor(), party()) ->
+    party().
+
+set_contractor(Contractor = #domain_PartyContractor{id = ID}, Party = #domain_Party{contractors = Contractors}) ->
+    Party#domain_Party{contractors = Contractors#{ID => Contractor}}.
 
 -spec get_contract(contract_id(), party()) ->
     contract() | undefined.
@@ -193,6 +221,32 @@ get_account_state(AccountID, Party) ->
         available_amount = MinAvailableAmount,
         currency = Currency
     }.
+
+-spec get_wallet(wallet_id(), party()) ->
+    wallet() | undefined.
+
+get_wallet(ID, #domain_Party{wallets = Wallets}) ->
+    maps:get(ID, Wallets, undefined).
+
+-spec set_wallet(wallet(), party()) ->
+    party().
+
+set_wallet(Wallet = #domain_Wallet{id = ID}, Party = #domain_Party{wallets = Wallets}) ->
+    Party#domain_Party{wallets = Wallets#{ID => Wallet}}.
+
+-spec wallet_blocking(wallet_id(), blocking(), party()) ->
+    party().
+
+wallet_blocking(ID, Blocking, Party) ->
+    Wallet = get_wallet(ID, Party),
+    set_wallet(Wallet#domain_Wallet{blocking = Blocking}, Party).
+
+-spec wallet_suspension(wallet_id(), suspension(), party()) ->
+    party().
+
+wallet_suspension(ID, Suspension, Party) ->
+    Wallet = get_wallet(ID, Party),
+    set_wallet(Wallet#domain_Wallet{suspension = Suspension}, Party).
 
 %% Internals
 
@@ -524,21 +578,68 @@ find_shop_account(ID, [{_, #domain_Shop{account = Account}} | Rest]) ->
 %% TODO there should be more concise way to express these assertions in terms of preconditions
 
 -spec assert_party_objects_valid(timestamp(), revision(), party()) -> ok | no_return().
--spec assert_shop_contract_valid(shop(), contract(), timestamp(), revision()) -> ok | no_return().
--spec assert_shop_payout_tool_valid(shop(), contract()) -> ok | no_return().
 
-assert_party_objects_valid(Timestamp, Revision, #domain_Party{shops = Shops} = Party) ->
+assert_party_objects_valid(Timestamp, Revision, Party) ->
+    _ = assert_contracts_valid(Timestamp, Revision, Party),
+    _ = assert_shops_valid(Timestamp, Revision, Party),
+    _ = assert_wallets_valid(Timestamp, Revision, Party),
+    ok.
+
+assert_contracts_valid(_Timestamp, _Revision, Party) ->
+    genlib_map:foreach(
+        fun(_ID, Contract) ->
+            assert_contract_valid(Contract, Party)
+        end,
+        Party#domain_Party.contracts
+    ).
+
+assert_shops_valid(Timestamp, Revision, Party) ->
     genlib_map:foreach(
         fun(_ID, Shop) ->
             assert_shop_valid(Shop, Timestamp, Revision, Party)
         end,
-        Shops
+        Party#domain_Party.shops
     ).
 
-assert_shop_valid(Shop, Timestamp, Revision, Party) ->
-    Contract = get_contract(Shop#domain_Shop.contract_id, Party),
-    ok = assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
-    ok = assert_shop_payout_tool_valid(Shop, Contract).
+assert_wallets_valid(Timestamp, Revision, Party) ->
+    genlib_map:foreach(
+        fun(_ID, Wallet) ->
+            assert_wallet_valid(Wallet, Timestamp, Revision, Party)
+        end,
+        Party#domain_Party.wallets
+    ).
+
+assert_contract_valid(
+    #domain_Contract{id = ID, contractor_id = ContractorID},
+    Party
+) when ContractorID /= undefined ->
+    case get_contractor(ContractorID, Party) of
+        #domain_PartyContractor{} ->
+            ok;
+        undefined ->
+            hg_claim:raise_invalid_changeset(
+                ?invalid_contract(ID, {contractor_not_exists, #payproc_ContractorNotExists{id = ContractorID}})
+            )
+    end;
+assert_contract_valid(
+    #domain_Contract{id = ID, contractor_id = undefined, contractor = undefined},
+    _Party
+) ->
+    hg_claim:raise_invalid_changeset(
+        ?invalid_contract(ID, {contractor_not_exists, #payproc_ContractorNotExists{}})
+    );
+assert_contract_valid(_, _) ->
+    ok.
+
+assert_shop_valid(#domain_Shop{contract_id = ContractID} = Shop, Timestamp, Revision, Party) ->
+    case get_contract(ContractID, Party) of
+        #domain_Contract{} = Contract ->
+            _ = assert_shop_contract_valid(Shop, Contract, Timestamp, Revision),
+            _ = assert_shop_payout_tool_valid(Shop, Contract),
+            ok;
+        undefined ->
+            hg_claim:raise_invalid_changeset(?invalid_contract(ContractID, {not_exists, ContractID}))
+    end.
 
 assert_shop_contract_valid(
     #domain_Shop{id = ID, category = CategoryRef, account = ShopAccount},
@@ -546,32 +647,15 @@ assert_shop_contract_valid(
     Timestamp,
     Revision
 ) ->
-    #domain_TermSet{
-        payments = #domain_PaymentsServiceTerms{
-            currencies = CurrencySelector,
-            categories = CategorySelector
-        }
-    } = get_terms(Contract, Timestamp, Revision),
+    Terms = get_terms(Contract, Timestamp, Revision),
     case ShopAccount of
         #domain_ShopAccount{currency = CurrencyRef} ->
-            Currencies = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
-            _ = ordsets:is_element(CurrencyRef, Currencies) orelse
-                raise_contract_terms_violated(
-                    ID,
-                    get_contract_id(Contract),
-                    #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}}
-                );
+            _ = assert_currency_valid({shop, ID}, get_contract_id(Contract), CurrencyRef, Terms, Revision);
         undefined ->
             % TODO remove cross-deps between claim-party-contract
             hg_claim:raise_invalid_changeset(?invalid_shop(ID, {no_account, ID}))
     end,
-    Categories = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
-    _ = ordsets:is_element(CategoryRef, Categories) orelse
-        raise_contract_terms_violated(
-            ID,
-            get_contract_id(Contract),
-            #domain_TermSet{payments = #domain_PaymentsServiceTerms{categories = CategorySelector}}
-        ),
+    _ = assert_category_valid({shop, ID}, get_contract_id(Contract), CategoryRef, Terms, Revision),
     ok.
 
 assert_shop_payout_tool_valid(#domain_Shop{payout_tool_id = undefined, payout_schedule = undefined}, _) ->
@@ -598,13 +682,80 @@ assert_shop_payout_tool_valid(#domain_Shop{id = ID, payout_tool_id = PayoutToolI
             ))
     end.
 
--spec raise_contract_terms_violated(shop_id(), contract_id(), dmsl_domain_thrift:'TermSet'()) -> no_return().
+assert_wallet_valid(#domain_Wallet{contract = ContractID} = Wallet, Timestamp, Revision, Party) ->
+    case get_contract(ContractID, Party) of
+        #domain_Contract{} = Contract ->
+            _ = assert_wallet_contract_valid(Wallet, Contract, Timestamp, Revision),
+            ok;
+        undefined ->
+            hg_claim:raise_invalid_changeset(?invalid_contract(ContractID, {not_exists, ContractID}))
+    end.
 
-raise_contract_terms_violated(ShopID, ContractID, Terms) ->
-    hg_claim:raise_invalid_changeset(?invalid_shop(
-        ShopID,
-        {contract_terms_violated, #payproc_ContractTermsViolated{
+assert_wallet_contract_valid(#domain_Wallet{id = ID, account = Account}, Contract, Timestamp, Revision) ->
+    case Account of
+        #domain_WalletAccount{currency = CurrencyRef} ->
+            Terms = get_terms(Contract, Timestamp, Revision),
+            _ = assert_currency_valid({wallet, ID}, get_contract_id(Contract), CurrencyRef, Terms, Revision),
+            ok;
+        undefined ->
+            hg_claim:raise_invalid_changeset(?invalid_wallet(ID, {no_account, ID}))
+    end.
+
+assert_currency_valid(
+    Prefix,
+    ContractID,
+    CurrencyRef,
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}
+    },
+    Revision
+) ->
+    Currencies = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
+    _ = ordsets:is_element(CurrencyRef, Currencies) orelse
+        raise_contract_terms_violated(
+            Prefix,
+            ContractID,
+            #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}}
+        ).
+
+assert_category_valid(
+    Prefix,
+    ContractID,
+    CategoryRef,
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{categories = CategorySelector}
+    },
+    Revision
+) ->
+    Categories = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
+    _ = ordsets:is_element(CategoryRef, Categories) orelse
+        raise_contract_terms_violated(
+            Prefix,
+            ContractID,
+            #domain_TermSet{payments = #domain_PaymentsServiceTerms{categories = CategorySelector}}
+        ).
+
+ -spec raise_contract_terms_violated(
+    {shop, shop_id()} | {wallet, wallet_id()},
+    contract_id(),
+    dmsl_domain_thrift:'TermSet'()
+) ->
+    no_return().
+
+raise_contract_terms_violated(Prefix, ContractID, Terms) ->
+    Payload = {
+        contract_terms_violated,
+        #payproc_ContractTermsViolated{
             contract_id = ContractID,
             terms = Terms
-        }}
-    )).
+        }
+    },
+    raise_contract_terms_violated(Prefix, Payload).
+
+%% ugly spec, just to cool down dialyzer
+-spec raise_contract_terms_violated(term(), term()) -> no_return().
+
+raise_contract_terms_violated({shop, ID}, Payload) ->
+    hg_claim:raise_invalid_changeset(?invalid_shop(ID, Payload));
+raise_contract_terms_violated({wallet, ID}, Payload) ->
+    hg_claim:raise_invalid_changeset(?invalid_wallet(ID, Payload)).

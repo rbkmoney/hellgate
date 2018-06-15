@@ -18,6 +18,7 @@
 -export([adjust_contract/3]).
 
 -export([make_battle_ready_contract_params/2]).
+-export([make_battle_ready_contractor/0]).
 -export([make_battle_ready_payout_tool_params/0]).
 
 -export([make_userinfo/1]).
@@ -385,13 +386,23 @@ get_first_payout_tool_id(ContractID, Client) ->
     dmsl_payment_processing_thrift:'ContractParams'().
 
 make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
+    #payproc_ContractParams{
+        contractor = make_battle_ready_contractor(),
+        template = TemplateRef,
+        payment_institution = PaymentInstitutionRef
+    }.
+
+-spec make_battle_ready_contractor() ->
+    dmsl_payment_processing_thrift:'Contractor'().
+
+make_battle_ready_contractor() ->
     BankAccount = #domain_RussianBankAccount{
         account = <<"4276300010908312893">>,
         bank_name = <<"SomeBank">>,
         bank_post_account = <<"123129876">>,
         bank_bik = <<"66642666">>
     },
-    Contractor = {legal_entity,
+    {legal_entity,
         {russian_legal_entity, #domain_RussianLegalEntity {
             registered_name = <<"Hoofs & Horns OJSC">>,
             registered_number = <<"1234509876">>,
@@ -403,11 +414,6 @@ make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
             representative_document = <<"100$ banknote">>,
             russian_bank_account = BankAccount
         }}
-    },
-    #payproc_ContractParams{
-        contractor = Contractor,
-        template = TemplateRef,
-        payment_institution = PaymentInstitutionRef
     }.
 
 -spec make_battle_ready_payout_tool_params() ->

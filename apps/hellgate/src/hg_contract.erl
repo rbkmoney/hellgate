@@ -30,7 +30,7 @@
 -type contract_template_ref() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type payment_inst_ref()      :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 
--type timestamp()             :: dmsl_base_thrift:'Timestamp'().
+-type timestamp()             :: hg_datetime:timestamp().
 -type revision()              :: hg_domain:revision().
 
 %%
@@ -40,6 +40,7 @@
 
 create(ID, Params, Timestamp, Revision) ->
     #payproc_ContractParams{
+        contractor_id = ContractorID,
         contractor = Contractor,
         template = TemplateRef,
         payment_institution = PaymentInstitutionRef
@@ -51,6 +52,7 @@ create(ID, Params, Timestamp, Revision) ->
     } = get_template(TemplateRef, Revision),
     #domain_Contract{
         id = ID,
+        contractor_id = ContractorID,
         contractor = Contractor,
         payment_institution = PaymentInstitutionRef,
         created_at = Timestamp,
@@ -158,7 +160,7 @@ is_active(_) ->
 is_live(Contract, Revision) ->
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    PaymentInstitution#domain_PaymentInstitution.realm =:= live.
+    hg_payment_institution:is_live(PaymentInstitution).
 
 %% Internals
 
