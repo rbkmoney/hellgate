@@ -1136,7 +1136,7 @@ transmute_claim_effect(3, 4, ?legacy_shop_effect(
     ?shop_effect(ID, {payout_schedule_changed, #payproc_ScheduleChanged{
         schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
     }});
-transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3 ->
+transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
     C.
 
 transmute_contractor(1, 2,
