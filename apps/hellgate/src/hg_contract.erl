@@ -41,7 +41,7 @@
 create(ID, Params, Timestamp, Revision) ->
     #payproc_ContractParams{
         contractor_id = ContractorID,
-        contractor = Contractor,
+        contractor = Contractor, %% Legacy
         template = TemplateRef,
         payment_institution = PaymentInstitutionRef
     } = ensure_contract_creation_params(Params, Revision),

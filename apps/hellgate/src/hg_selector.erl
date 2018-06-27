@@ -23,6 +23,7 @@
     dmsl_domain_thrift:'ExternalAccountSetSelector'() |
     dmsl_domain_thrift:'HoldLifetimeSelector'() |
     dmsl_domain_thrift:'CashValueSelector'() |
+    dmsl_domain_thrift:'CumulativeLimitSelector'() |
     dmsl_domain_thrift:'TimeSpanSelector'().
 
 -type value() ::
@@ -37,7 +38,9 @@
     shop            => dmsl_domain_thrift:'Shop'(),
     risk_score      => dmsl_domain_thrift:'RiskScore'(),
     flow            => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
-    payout_method   => dmsl_domain_thrift:'PayoutMethodRef'()
+    payout_method   => dmsl_domain_thrift:'PayoutMethodRef'(),
+    wallet_id       => dmsl_domain_thrift:'WalletID'(),
+    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'()
 }.
 
 -export_type([varset/0]).

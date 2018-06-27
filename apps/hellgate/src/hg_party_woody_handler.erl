@@ -95,7 +95,7 @@ handle_function_('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
 handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
-    Shop = hg_party:get_shop(ShopID, Party),
+    Shop = ensure_shop(hg_party:get_shop(ShopID, Party)),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Revision = hg_domain:head(),
     VS = #{
@@ -128,6 +128,20 @@ handle_function_('SuspendWallet', [UserInfo, PartyID, ID], _Opts) ->
 handle_function_('ActivateWallet', [UserInfo, PartyID, ID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:call(PartyID, {activate, {wallet, ID}});
+
+handle_function_('ComputeWalletTerms', [UserInfo, PartyID, ID, Timestamp], _Opts) ->
+    ok = set_meta_and_check_access(UserInfo, PartyID),
+    Party = checkout_party(PartyID, {timestamp, Timestamp}),
+    Wallet = ensure_wallet(hg_party:get_wallet(ID, Party)),
+    Contract = hg_party:get_contract(Wallet#domain_Wallet.contract, Party),
+    Revision = hg_domain:head(),
+    VS = #{
+        party_id => PartyID,
+        wallet_id => ID,
+        currency => (Wallet#domain_Wallet.account)#domain_WalletAccount.currency,
+        identification_level => get_identification_level(Contract, Party)
+    },
+    hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
 
 %% Claim
 
@@ -350,3 +364,10 @@ prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->
     hg_payment_tool:create_from_method(PaymentMethodRef);
 prepare_payment_tool_var(undefined) ->
     undefined.
+
+get_identification_level(#domain_Contract{contractor_id = undefined}, _) ->
+    %% TODO legacy, remove after migration
+    full;
+get_identification_level(#domain_Contract{contractor_id = ContractorID}, Party) ->
+    Contractor = hg_party:get_contractor(ContractorID, Party),
+    Contractor#domain_PartyContractor.status.
