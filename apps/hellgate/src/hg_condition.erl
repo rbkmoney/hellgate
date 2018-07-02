@@ -40,7 +40,7 @@ test_party(_, _, _) ->
 
 test_party_definition(undefined, _) ->
     true;
-test_party_definition({shop_is, ID1}, #{shop := #domain_Shop{id = ID2}}) ->
+test_party_definition({shop_is, ID1}, #{shop_id := ID2}) ->
     ID1 =:= ID2;
 test_party_definition({wallet_is, ID1}, #{wallet_id := ID2}) ->
     ID1 =:= ID2;

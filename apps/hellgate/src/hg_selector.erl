@@ -35,7 +35,7 @@
     cost            => dmsl_domain_thrift:'Cash'(),
     payment_tool    => dmsl_domain_thrift:'PaymentTool'(),
     party_id        => dmsl_domain_thrift:'PartyID'(),
-    shop            => dmsl_domain_thrift:'Shop'(),
+    shop_id         => dmsl_domain_thrift:'ShopID'(),
     risk_score      => dmsl_domain_thrift:'RiskScore'(),
     flow            => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
     payout_method   => dmsl_domain_thrift:'PayoutMethodRef'(),

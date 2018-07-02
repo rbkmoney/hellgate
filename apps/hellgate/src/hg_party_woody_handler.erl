@@ -65,7 +65,10 @@ handle_function_('ComputeContractTerms', [UserInfo, PartyID, ContractID, Timesta
     Revision = hg_domain:head(),
     hg_party:reduce_terms(
         hg_party:get_terms(Contract, Timestamp, Revision),
-        #{party_id => PartyID},
+        #{
+            party_id => PartyID,
+            identification_level => get_identification_level(Contract, Party)
+        },
         Revision
     );
 
@@ -100,9 +103,10 @@ handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Op
     Revision = hg_domain:head(),
     VS = #{
         party_id => PartyID,
-        shop     => Shop,
+        shop_id  => ShopID,
         category => Shop#domain_Shop.category,
-        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency
+        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
+        identification_level => get_identification_level(Contract, Party)
     },
     hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
 
@@ -241,10 +245,10 @@ handle_function_(
     PayoutTool = hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract),
     VS = #{
         party_id => PartyID,
-        shop => Shop,
+        shop_id  => ShopID,
         category => Shop#domain_Shop.category,
         currency => Currency,
-        cost => Amount,
+        cost     => Amount,
         payout_method => hg_payout_tool:get_method(PayoutTool)
     },
     Revision = hg_domain:head(),

@@ -239,14 +239,15 @@ assert_contract_active(#domain_Contract{status = Status}) ->
 collect_varset(
     #domain_Party{id = PartyID},
     #domain_Shop{
+        id = ShopID,
         category = Category,
         account = #domain_ShopAccount{currency = Currency}
-    } = Shop,
+    },
     VS
 ) ->
     VS#{
         party_id     => PartyID,
-        shop         => Shop,
+        shop_id      => ShopID,
         category     => Category,
         currency     => Currency
     }.
