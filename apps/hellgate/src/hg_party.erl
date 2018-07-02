@@ -274,11 +274,14 @@ reduce_terms(
     Revision
 ) ->
     #domain_TermSet{
-        payments = do_if_def(fun reduce_payments_terms/3, PaymentsTerms, VS, Revision),
-        recurrent_paytools = do_if_def(fun reduce_recurrent_paytools_terms/3, RecurrentPaytoolTerms, VS, Revision),
-        payouts = do_if_def(fun reduce_payout_terms/3, PayoutTerms, VS, Revision),
-        reports = do_if_def(fun reduce_reports_terms/3, ReportTerms, VS, Revision),
-        wallets = do_if_def(fun reduce_wallets_terms/3, WalletTerms, VS, Revision)
+        payments = hg_maybe:apply(fun(X) -> reduce_payments_terms(X, VS, Revision) end, PaymentsTerms),
+        recurrent_paytools = hg_maybe:apply(
+            fun(X) -> reduce_recurrent_paytools_terms(X, VS, Revision) end,
+            RecurrentPaytoolTerms
+        ),
+        payouts = hg_maybe:apply(fun(X) -> reduce_payout_terms(X, VS, Revision) end, PayoutTerms),
+        reports = hg_maybe:apply(fun(X) -> reduce_reports_terms(X, VS, Revision) end, ReportTerms),
+        wallets = hg_maybe:apply(fun(X) -> reduce_wallets_terms(X, VS, Revision) end, WalletTerms)
     }.
 
 reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
@@ -288,8 +291,14 @@ reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
         payment_methods = reduce_if_defined(Terms#domain_PaymentsServiceTerms.payment_methods, VS, Rev),
         cash_limit      = reduce_if_defined(Terms#domain_PaymentsServiceTerms.cash_limit, VS, Rev),
         fees            = reduce_if_defined(Terms#domain_PaymentsServiceTerms.fees, VS, Rev),
-        holds           = do_if_def(fun reduce_holds_terms/3, Terms#domain_PaymentsServiceTerms.holds, VS, Rev),
-        refunds         = do_if_def(fun reduce_refunds_terms/3, Terms#domain_PaymentsServiceTerms.refunds, VS, Rev)
+        holds           = hg_maybe:apply(
+            fun(X) -> reduce_holds_terms(X, VS, Rev) end,
+            Terms#domain_PaymentsServiceTerms.holds
+        ),
+        refunds         = hg_maybe:apply(
+            fun(X) -> reduce_refunds_terms(X, VS, Rev) end,
+            Terms#domain_PaymentsServiceTerms.refunds
+        )
     }.
 
 reduce_recurrent_paytools_terms(#domain_RecurrentPaytoolsServiceTerms{} = Terms, VS, Rev) ->
@@ -308,11 +317,9 @@ reduce_refunds_terms(#domain_PaymentRefundsServiceTerms{} = Terms, VS, Rev) ->
         payment_methods     = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.payment_methods, VS, Rev),
         fees                = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.fees, VS, Rev),
         eligibility_time    = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.eligibility_time, VS, Rev),
-        partial_refunds     = do_if_def(
-            fun reduce_partial_refunds_terms/3,
-            Terms#domain_PaymentRefundsServiceTerms.partial_refunds,
-            VS,
-            Rev
+        partial_refunds     = hg_maybe:apply(
+            fun(X) -> reduce_partial_refunds_terms(X, VS, Rev) end,
+            Terms#domain_PaymentRefundsServiceTerms.partial_refunds
         )
     }.
 
@@ -331,7 +338,7 @@ reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
 
 reduce_reports_terms(#domain_ReportsServiceTerms{acts = Acts}, VS, Rev) ->
     #domain_ReportsServiceTerms{
-        acts = do_if_def(fun reduce_acts_terms/3, Acts, VS, Rev)
+        acts = hg_maybe:apply(fun(X) -> reduce_acts_terms(X, VS, Rev) end, Acts)
     }.
 
 reduce_acts_terms(#domain_ServiceAcceptanceActsTerms{schedules = Schedules}, VS, Rev) ->
@@ -347,12 +354,7 @@ reduce_wallets_terms(#domain_WalletServiceTerms{} = Terms, VS, Rev) ->
     }.
 
 reduce_if_defined(Selector, VS, Rev) ->
-    do_if_def(fun hg_selector:reduce/3, Selector, VS, Rev).
-
-do_if_def(Fun, Arg1, Arg2, Arg3) when Arg1 =/= undefined ->
-    Fun(Arg1, Arg2, Arg3);
-do_if_def(_, undefined, _, _) ->
-    undefined.
+    hg_maybe:apply(fun(X) -> hg_selector:reduce(X, VS, Rev) end, Selector).
 
 compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp, Revision) ->
     ActiveAdjustments = lists:filter(fun(A) -> is_adjustment_active(A, Timestamp) end, Adjustments),
