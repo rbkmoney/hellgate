@@ -208,14 +208,20 @@ ensure_shop(undefined) ->
     dmsl_domain_thrift:'TermSet'().
 
 reduce_terms(
-    #domain_TermSet{payments = PaymentsTerms, recurrent_paytools = RecurrentPaytoolTerms, payouts = PayoutTerms},
+    #domain_TermSet{
+        payments = PaymentsTerms,
+        recurrent_paytools = RecurrentPaytoolTerms,
+        payouts = PayoutTerms,
+        reports = ReportTerms
+    },
     VS,
     Revision
 ) ->
     #domain_TermSet{
         payments = reduce_payments_terms(PaymentsTerms, VS, Revision),
         recurrent_paytools = reduce_recurrent_paytools_terms(RecurrentPaytoolTerms, VS, Revision),
-        payouts = reduce_payout_terms(PayoutTerms, VS, Revision)
+        payouts = reduce_payout_terms(PayoutTerms, VS, Revision),
+        reports = reduce_reports_terms(ReportTerms, VS, Revision)
     }.
 
 reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
@@ -273,6 +279,20 @@ reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
         fees             = reduce_if_defined(Terms#domain_PayoutsServiceTerms.fees, VS, Rev)
     };
 reduce_payout_terms(undefined, _, _) ->
+    undefined.
+
+reduce_reports_terms(#domain_ReportsServiceTerms{acts = Acts}, VS, Rev) ->
+    #domain_ReportsServiceTerms{
+        acts = reduce_acts_terms(Acts, VS, Rev)
+    };
+reduce_reports_terms(undefined, _, _) ->
+    undefined.
+
+reduce_acts_terms(#domain_ServiceAcceptanceActsTerms{schedules = Schedules}, VS, Rev) ->
+    #domain_ServiceAcceptanceActsTerms{
+        schedules = reduce_if_defined(Schedules, VS, Rev)
+    };
+reduce_acts_terms(undefined, _, _) ->
     undefined.
 
 reduce_if_defined(Selector, VS, Rev) when Selector =/= undefined ->
