@@ -747,21 +747,44 @@ assert_wallet_contract_valid(#domain_Wallet{id = ID, account = Account}, Contrac
     end.
 
 assert_currency_valid(
-    Prefix,
+    {shop, _} = Prefix,
     ContractID,
     CurrencyRef,
-    #domain_TermSet{
-        payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}
-    },
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = Selector}},
     Revision
 ) ->
-    Currencies = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
+    Terms = #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = Selector}},
+    assert_currency_valid(Prefix, ContractID, CurrencyRef, Selector, Terms, Revision);
+assert_currency_valid(
+    {shop, _} = Prefix,
+    ContractID,
+    _,
+    #domain_TermSet{payments = undefined},
+    _
+) ->
+    raise_contract_terms_violated(Prefix, ContractID, #domain_TermSet{});
+assert_currency_valid(
+    {wallet, _} = Prefix,
+    ContractID,
+    CurrencyRef,
+    #domain_TermSet{wallets = #domain_WalletServiceTerms{currencies = Selector}},
+    Revision
+) ->
+    Terms = #domain_TermSet{wallets = #domain_WalletServiceTerms{currencies = Selector}},
+    assert_currency_valid(Prefix, ContractID, CurrencyRef, Selector, Terms, Revision);
+assert_currency_valid(
+    {wallet, _} = Prefix,
+    ContractID,
+    _,
+    #domain_TermSet{wallets = undefined},
+    _
+) ->
+    raise_contract_terms_violated(Prefix, ContractID, #domain_TermSet{}).
+
+assert_currency_valid(Prefix, ContractID, CurrencyRef, Selector, Terms, Revision) ->
+    Currencies = hg_selector:reduce_to_value(Selector, #{}, Revision),
     _ = ordsets:is_element(CurrencyRef, Currencies) orelse
-        raise_contract_terms_violated(
-            Prefix,
-            ContractID,
-            #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}}
-        ).
+        raise_contract_terms_violated(Prefix, ContractID, Terms).
 
 assert_category_valid(
     Prefix,
