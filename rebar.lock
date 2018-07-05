@@ -47,7 +47,10 @@
        {ref,"9c720534eb88edc6ba47af084939efabceb9b2d6"}},
   0},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"1.4.0">>},2},
- {<<"rfc3339">>,{pkg,<<"rfc3339">>,<<"0.9.0">>},0},
+ {<<"rfc3339">>,
+  {git,"https://github.com/rbkmoney/rfc3339.git",
+       {ref,"ee3a1a6b1ee60219c49fdcaa9f36a25e91962bb5"}},
+  0},
  {<<"scoper">>,
   {git,"git@github.com:rbkmoney/scoper.git",
        {ref,"cbe3abc4a66ca1f9121083f2bea603c44dcf1984"}},
@@ -67,7 +70,7 @@
   1},
  {<<"woody">>,
   {git,"git@github.com:rbkmoney/woody_erlang.git",
-       {ref,"d9362a5f8128c031300958da09c237ca27076cc5"}},
+       {ref,"98469234e415214c1b197f08539612c20b3a3ee5"}},
   0},
  {<<"woody_user_identity">>,
   {git,"git@github.com:rbkmoney/woody_erlang_user_identity.git",
@@ -87,6 +90,5 @@
  {<<"metrics">>, <<"25F094DEA2CDA98213CECC3AEFF09E940299D950904393B2A29D191C346A8486">>},
  {<<"mimerl">>, <<"993F9B0E084083405ED8252B99460C4F0563E41729AB42D9074FD5E52439BE88">>},
  {<<"ranch">>, <<"10272F95DA79340FA7E8774BA7930B901713D272905D0012B06CA6D994F8826B">>},
- {<<"rfc3339">>, <<"2075653DC9407541C84B1E15F8BDA2ABE95FB17C9694025E079583F2D19C1060">>},
  {<<"ssl_verify_fun">>, <<"28A4D65B7F59893BC2C7DE786DEC1E1555BD742D336043FE644AE956C3497FBE">>}]}
 ].
