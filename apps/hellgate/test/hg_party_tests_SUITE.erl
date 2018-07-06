@@ -1558,6 +1558,9 @@ construct_domain_fixture() ->
                     ?share(250, 1000, operation_amount)
                 )
             ]}
+        },
+        wallets = #domain_WalletServiceTerms{
+            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])}
         }
     },
     [

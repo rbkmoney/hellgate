@@ -65,7 +65,10 @@ handle_function_('ComputeContractTerms', [UserInfo, PartyID, ContractID, Timesta
     Revision = hg_domain:head(),
     hg_party:reduce_terms(
         hg_party:get_terms(Contract, Timestamp, Revision),
-        #{party_id => PartyID},
+        #{
+            party_id => PartyID,
+            identification_level => get_identification_level(Contract, Party)
+        },
         Revision
     );
 
@@ -95,14 +98,15 @@ handle_function_('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
 handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
-    Shop = hg_party:get_shop(ShopID, Party),
+    Shop = ensure_shop(hg_party:get_shop(ShopID, Party)),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Revision = hg_domain:head(),
     VS = #{
         party_id => PartyID,
-        shop     => Shop,
+        shop_id  => ShopID,
         category => Shop#domain_Shop.category,
-        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency
+        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
+        identification_level => get_identification_level(Contract, Party)
     },
     hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
 
@@ -128,6 +132,20 @@ handle_function_('SuspendWallet', [UserInfo, PartyID, ID], _Opts) ->
 handle_function_('ActivateWallet', [UserInfo, PartyID, ID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:call(PartyID, {activate, {wallet, ID}});
+
+handle_function_('ComputeWalletTerms', [UserInfo, PartyID, ID, Timestamp], _Opts) ->
+    ok = set_meta_and_check_access(UserInfo, PartyID),
+    Party = checkout_party(PartyID, {timestamp, Timestamp}),
+    Wallet = ensure_wallet(hg_party:get_wallet(ID, Party)),
+    Contract = hg_party:get_contract(Wallet#domain_Wallet.contract, Party),
+    Revision = hg_domain:head(),
+    VS = #{
+        party_id => PartyID,
+        wallet_id => ID,
+        currency => (Wallet#domain_Wallet.account)#domain_WalletAccount.currency,
+        identification_level => get_identification_level(Contract, Party)
+    },
+    hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
 
 %% Claim
 
@@ -227,10 +245,10 @@ handle_function_(
     PayoutTool = hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract),
     VS = #{
         party_id => PartyID,
-        shop => Shop,
+        shop_id  => ShopID,
         category => Shop#domain_Shop.category,
         currency => Currency,
-        cost => Amount,
+        cost     => Amount,
         payout_method => hg_payout_tool:get_method(PayoutTool)
     },
     Revision = hg_domain:head(),
@@ -350,3 +368,15 @@ prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->
     hg_payment_tool:create_from_method(PaymentMethodRef);
 prepare_payment_tool_var(undefined) ->
     undefined.
+
+get_identification_level(#domain_Contract{contractor_id = undefined, contractor = Contractor}, _) ->
+    %% TODO legacy, remove after migration
+    case Contractor of
+        {legal_entity, _} ->
+            full;
+        _ ->
+            none
+    end;
+get_identification_level(#domain_Contract{contractor_id = ContractorID}, Party) ->
+    Contractor = hg_party:get_contractor(ContractorID, Party),
+    Contractor#domain_PartyContractor.status.

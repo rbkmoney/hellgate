@@ -261,15 +261,27 @@ ensure_shop(undefined) ->
 -spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
     dmsl_domain_thrift:'TermSet'().
 
+%% TODO rework this part for more generic approach
 reduce_terms(
-    #domain_TermSet{payments = PaymentsTerms, recurrent_paytools = RecurrentPaytoolTerms, payouts = PayoutTerms},
+    #domain_TermSet{
+        payments = PaymentsTerms,
+        recurrent_paytools = RecurrentPaytoolTerms,
+        payouts = PayoutTerms,
+        reports = ReportTerms,
+        wallets = WalletTerms
+    },
     VS,
     Revision
 ) ->
     #domain_TermSet{
-        payments = reduce_payments_terms(PaymentsTerms, VS, Revision),
-        recurrent_paytools = reduce_recurrent_paytools_terms(RecurrentPaytoolTerms, VS, Revision),
-        payouts = reduce_payout_terms(PayoutTerms, VS, Revision)
+        payments = hg_maybe:apply(fun(X) -> reduce_payments_terms(X, VS, Revision) end, PaymentsTerms),
+        recurrent_paytools = hg_maybe:apply(
+            fun(X) -> reduce_recurrent_paytools_terms(X, VS, Revision) end,
+            RecurrentPaytoolTerms
+        ),
+        payouts = hg_maybe:apply(fun(X) -> reduce_payout_terms(X, VS, Revision) end, PayoutTerms),
+        reports = hg_maybe:apply(fun(X) -> reduce_reports_terms(X, VS, Revision) end, ReportTerms),
+        wallets = hg_maybe:apply(fun(X) -> reduce_wallets_terms(X, VS, Revision) end, WalletTerms)
     }.
 
 reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
@@ -279,45 +291,42 @@ reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
         payment_methods = reduce_if_defined(Terms#domain_PaymentsServiceTerms.payment_methods, VS, Rev),
         cash_limit      = reduce_if_defined(Terms#domain_PaymentsServiceTerms.cash_limit, VS, Rev),
         fees            = reduce_if_defined(Terms#domain_PaymentsServiceTerms.fees, VS, Rev),
-        holds           = reduce_holds_terms(Terms#domain_PaymentsServiceTerms.holds, VS, Rev),
-        refunds         = reduce_refunds_terms(Terms#domain_PaymentsServiceTerms.refunds, VS, Rev)
-    };
-reduce_payments_terms(undefined, _, _) ->
-    undefined.
+        holds           = hg_maybe:apply(
+            fun(X) -> reduce_holds_terms(X, VS, Rev) end,
+            Terms#domain_PaymentsServiceTerms.holds
+        ),
+        refunds         = hg_maybe:apply(
+            fun(X) -> reduce_refunds_terms(X, VS, Rev) end,
+            Terms#domain_PaymentsServiceTerms.refunds
+        )
+    }.
 
 reduce_recurrent_paytools_terms(#domain_RecurrentPaytoolsServiceTerms{} = Terms, VS, Rev) ->
     #domain_RecurrentPaytoolsServiceTerms{
         payment_methods = reduce_if_defined(Terms#domain_RecurrentPaytoolsServiceTerms.payment_methods, VS, Rev)
-    };
-reduce_recurrent_paytools_terms(undefined, _, _) ->
-    undefined.
+    }.
 
 reduce_holds_terms(#domain_PaymentHoldsServiceTerms{} = Terms, VS, Rev) ->
     #domain_PaymentHoldsServiceTerms{
         payment_methods = reduce_if_defined(Terms#domain_PaymentHoldsServiceTerms.payment_methods, VS, Rev),
         lifetime        = reduce_if_defined(Terms#domain_PaymentHoldsServiceTerms.lifetime, VS, Rev)
-    };
-reduce_holds_terms(undefined, _, _) ->
-    undefined.
+    }.
 
 reduce_refunds_terms(#domain_PaymentRefundsServiceTerms{} = Terms, VS, Rev) ->
     #domain_PaymentRefundsServiceTerms{
         payment_methods     = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.payment_methods, VS, Rev),
         fees                = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.fees, VS, Rev),
         eligibility_time    = reduce_if_defined(Terms#domain_PaymentRefundsServiceTerms.eligibility_time, VS, Rev),
-        partial_refunds     = reduce_partial_refunds_terms(
-            Terms#domain_PaymentRefundsServiceTerms.partial_refunds, VS, Rev
+        partial_refunds     = hg_maybe:apply(
+            fun(X) -> reduce_partial_refunds_terms(X, VS, Rev) end,
+            Terms#domain_PaymentRefundsServiceTerms.partial_refunds
         )
-    };
-reduce_refunds_terms(undefined, _, _) ->
-    undefined.
+    }.
 
 reduce_partial_refunds_terms(#domain_PartialRefundsServiceTerms{} = Terms, VS, Rev) ->
     #domain_PartialRefundsServiceTerms{
         cash_limit = reduce_if_defined(Terms#domain_PartialRefundsServiceTerms.cash_limit, VS, Rev)
-    };
-reduce_partial_refunds_terms(undefined, _, _) ->
-    undefined.
+    }.
 
 reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
     #domain_PayoutsServiceTerms{
@@ -325,14 +334,27 @@ reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
         payout_methods   = reduce_if_defined(Terms#domain_PayoutsServiceTerms.payout_methods, VS, Rev),
         cash_limit       = reduce_if_defined(Terms#domain_PayoutsServiceTerms.cash_limit, VS, Rev),
         fees             = reduce_if_defined(Terms#domain_PayoutsServiceTerms.fees, VS, Rev)
-    };
-reduce_payout_terms(undefined, _, _) ->
-    undefined.
+    }.
 
-reduce_if_defined(Selector, VS, Rev) when Selector =/= undefined ->
-    hg_selector:reduce(Selector, VS, Rev);
-reduce_if_defined(undefined, _, _) ->
-    undefined.
+reduce_reports_terms(#domain_ReportsServiceTerms{acts = Acts}, VS, Rev) ->
+    #domain_ReportsServiceTerms{
+        acts = hg_maybe:apply(fun(X) -> reduce_acts_terms(X, VS, Rev) end, Acts)
+    }.
+
+reduce_acts_terms(#domain_ServiceAcceptanceActsTerms{schedules = Schedules}, VS, Rev) ->
+    #domain_ServiceAcceptanceActsTerms{
+        schedules = reduce_if_defined(Schedules, VS, Rev)
+    }.
+
+reduce_wallets_terms(#domain_WalletServiceTerms{} = Terms, VS, Rev) ->
+    #domain_WalletServiceTerms{
+        currencies = reduce_if_defined(Terms#domain_WalletServiceTerms.currencies, VS, Rev),
+        cash_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.cash_limit, VS, Rev),
+        turnover_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.turnover_limit, VS, Rev)
+    }.
+
+reduce_if_defined(Selector, VS, Rev) ->
+    hg_maybe:apply(fun(X) -> hg_selector:reduce(X, VS, Rev) end, Selector).
 
 compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp, Revision) ->
     ActiveAdjustments = lists:filter(fun(A) -> is_adjustment_active(A, Timestamp) end, Adjustments),
@@ -389,20 +411,23 @@ merge_term_sets(
         payments = PaymentTerms1,
         recurrent_paytools = RecurrentPaytoolTerms1,
         payouts = PayoutTerms1,
-        reports = Reports1
+        reports = Reports1,
+        wallets = Wallets1
     },
     #domain_TermSet{
         payments = PaymentTerms0,
         recurrent_paytools = RecurrentPaytoolTerms0,
         payouts = PayoutTerms0,
-        reports = Reports0
+        reports = Reports0,
+        wallets = Wallets0
     }
 ) ->
     #domain_TermSet{
         payments = merge_payments_terms(PaymentTerms0, PaymentTerms1),
         recurrent_paytools = merge_recurrent_paytools_terms(RecurrentPaytoolTerms0, RecurrentPaytoolTerms1),
         payouts = merge_payouts_terms(PayoutTerms0, PayoutTerms1),
-        reports = merge_reports_terms(Reports0, Reports1)
+        reports = merge_reports_terms(Reports0, Reports1),
+        wallets = merge_wallets_terms(Wallets0, Wallets1)
     };
 merge_term_sets(TermSet1, TermSet0) ->
     hg_utils:select_defined(TermSet1, TermSet0).
@@ -550,6 +575,26 @@ merge_service_acceptance_acts_terms(
         schedules = hg_utils:select_defined(Schedules1, Schedules0)
     };
 merge_service_acceptance_acts_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_wallets_terms(
+    #domain_WalletServiceTerms{
+        currencies = Currencies0,
+        cash_limit = CashLimit0,
+        turnover_limit = TurnoverLimit0
+    },
+    #domain_WalletServiceTerms{
+        currencies = Currencies1,
+        cash_limit = CashLimit1,
+        turnover_limit = TurnoverLimit1
+    }
+) ->
+    #domain_WalletServiceTerms{
+        currencies = hg_utils:select_defined(Currencies1, Currencies0),
+        cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
+        turnover_limit = hg_utils:select_defined(TurnoverLimit1, TurnoverLimit0)
+    };
+merge_wallets_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
@@ -702,21 +747,44 @@ assert_wallet_contract_valid(#domain_Wallet{id = ID, account = Account}, Contrac
     end.
 
 assert_currency_valid(
-    Prefix,
+    {shop, _} = Prefix,
     ContractID,
     CurrencyRef,
-    #domain_TermSet{
-        payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}
-    },
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = Selector}},
     Revision
 ) ->
-    Currencies = hg_selector:reduce_to_value(CurrencySelector, #{}, Revision),
+    Terms = #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = Selector}},
+    assert_currency_valid(Prefix, ContractID, CurrencyRef, Selector, Terms, Revision);
+assert_currency_valid(
+    {shop, _} = Prefix,
+    ContractID,
+    _,
+    #domain_TermSet{payments = undefined},
+    _
+) ->
+    raise_contract_terms_violated(Prefix, ContractID, #domain_TermSet{});
+assert_currency_valid(
+    {wallet, _} = Prefix,
+    ContractID,
+    CurrencyRef,
+    #domain_TermSet{wallets = #domain_WalletServiceTerms{currencies = Selector}},
+    Revision
+) ->
+    Terms = #domain_TermSet{wallets = #domain_WalletServiceTerms{currencies = Selector}},
+    assert_currency_valid(Prefix, ContractID, CurrencyRef, Selector, Terms, Revision);
+assert_currency_valid(
+    {wallet, _} = Prefix,
+    ContractID,
+    _,
+    #domain_TermSet{wallets = undefined},
+    _
+) ->
+    raise_contract_terms_violated(Prefix, ContractID, #domain_TermSet{}).
+
+assert_currency_valid(Prefix, ContractID, CurrencyRef, Selector, Terms, Revision) ->
+    Currencies = hg_selector:reduce_to_value(Selector, #{}, Revision),
     _ = ordsets:is_element(CurrencyRef, Currencies) orelse
-        raise_contract_terms_violated(
-            Prefix,
-            ContractID,
-            #domain_TermSet{payments = #domain_PaymentsServiceTerms{currencies = CurrencySelector}}
-        ).
+        raise_contract_terms_violated(Prefix, ContractID, Terms).
 
 assert_category_valid(
     Prefix,

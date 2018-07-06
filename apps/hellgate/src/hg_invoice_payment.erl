@@ -486,7 +486,8 @@ collect_varset(St, Opts) ->
 
 collect_varset(
     #domain_Party{id = PartyID},
-    Shop = #domain_Shop{
+    #domain_Shop{
+        id = ShopID,
         category = Category,
         account = #domain_ShopAccount{currency = Currency}
     },
@@ -494,7 +495,7 @@ collect_varset(
 ) ->
     VS#{
         party_id => PartyID,
-        shop     => Shop,
+        shop_id  => ShopID,
         category => Category,
         currency => Currency
     }.
