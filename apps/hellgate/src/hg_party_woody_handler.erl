@@ -369,9 +369,14 @@ prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->
 prepare_payment_tool_var(undefined) ->
     undefined.
 
-get_identification_level(#domain_Contract{contractor_id = undefined}, _) ->
+get_identification_level(#domain_Contract{contractor_id = undefined, contractor = Contractor}, _) ->
     %% TODO legacy, remove after migration
-    full;
+    case Contractor of
+        {legal_entity, _} ->
+            full;
+        _ ->
+            none
+    end;
 get_identification_level(#domain_Contract{contractor_id = ContractorID}, Party) ->
     Contractor = hg_party:get_contractor(ContractorID, Party),
     Contractor#domain_PartyContractor.status.
