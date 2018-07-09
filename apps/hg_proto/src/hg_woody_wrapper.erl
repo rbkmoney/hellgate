@@ -54,8 +54,8 @@ handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
     term().
 
 call(ServiceName, Function, Args) ->
-    Url = get_service_url(ServiceName),
-    call(ServiceName, Function, Args, #{url => Url}).
+    Opts = get_service(ServiceName),
+    call(ServiceName, Function, Args, Opts).
 
 -spec call(atom(), woody:func(), list(), client_opts()) ->
     term().
@@ -77,8 +77,13 @@ raise(Exception) ->
 
 %% Internal functions
 
-get_service_url(ServiceName) ->
-    maps:get(ServiceName, genlib_app:env(hellgate, service_urls)).
+get_service(ServiceName) ->
+    construct_opts(maps:get(ServiceName, genlib_app:env(hellgate, services))).
+
+construct_opts(Opts = #{url := Url}) ->
+    Opts#{url := genlib:to_binary(Url)};
+construct_opts(Url) ->
+    #{url => genlib:to_binary(Url)}.
 
 -spec get_service_modname(atom()) ->
     {module(), atom()}.
