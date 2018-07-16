@@ -120,7 +120,7 @@ start_app(hellgate = AppName) ->
     {start_app(AppName, [
         {host, ?HELLGATE_HOST},
         {port, ?HELLGATE_PORT},
-        {service_urls, #{
+        {services, #{
             automaton           => <<"http://machinegun:8022/v1/automaton">>,
             eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
             accounter           => <<"http://shumway:8022/accounter">>,
