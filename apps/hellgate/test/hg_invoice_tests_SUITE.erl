@@ -99,13 +99,14 @@ all() ->
         invalid_party_status,
         invalid_shop_status,
 
-        payment_risk_score_check,
-
+        % With constant domain config
         {group, all_non_destructive_tests},
 
+        % With variable domain config
         {group, adjustments},
-
+        {group, refunds},
         rounding_cashflow_volume,
+        terms_retrieval,
 
         consistent_history
     ].
@@ -117,18 +118,16 @@ groups() ->
         {all_non_destructive_tests, [parallel], [
             {group, base_payments},
 
+            payment_risk_score_check,
+
             invalid_payment_w_deprived_party,
             external_account_posting,
 
             {group, holds_management},
 
-            {group, refunds},
-
             {group, offsite_preauth_payment},
 
             payment_with_tokenized_bank_card,
-
-            terms_retrieval,
 
             {group, adhoc_repairs}
         ]},
