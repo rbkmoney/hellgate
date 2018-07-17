@@ -103,6 +103,10 @@ all() ->
 
         {group, all_non_destructive_tests},
 
+        {group, adjustments},
+
+        rounding_cashflow_volume,
+
         consistent_history
     ].
 
@@ -113,8 +117,6 @@ groups() ->
         {all_non_destructive_tests, [parallel], [
             {group, base_payments},
 
-            {group, adjustments},
-
             invalid_payment_w_deprived_party,
             external_account_posting,
 
@@ -122,7 +124,6 @@ groups() ->
 
             {group, refunds},
 
-            rounding_cashflow_volume,
             {group, offsite_preauth_payment},
 
             payment_with_tokenized_bank_card,
