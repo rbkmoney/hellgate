@@ -1031,7 +1031,7 @@ transmute_claim_effect(3, 4, ?legacy_contract_effect(
         Terms,
         Adjustments,
         PayoutTools,
-        LegalAgreement,
+        transmute_legal_agreement(3, 4, LegalAgreement),
         undefined
     ),
     ?legacy_contract_effect(ID, {created, Contract});
