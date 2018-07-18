@@ -224,7 +224,9 @@ init_(PaymentID, Params, Opts) ->
     CreatedAt = hg_datetime:format_now(),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision),
     VS0 = collect_varset(Party, Shop, #{}),
-    {Payment, VS1} = construct_payment(PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, VS0, Revision),
+    {Payment, VS1} = construct_payment(
+        PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, Party, Shop, VS0, Revision
+    ),
     {RiskScore, VS2} = validate_risk_score(inspect(Payment, PaymentInstitution, VS1, Opts), VS1),
     Route = case get_predefined_route(Payer) of
         {ok, R} ->
@@ -311,7 +313,7 @@ get_active_binding(#payproc_Customer{bindings = Bindings, active_binding_id = Bi
 get_customer_contact_info(#payproc_Customer{contact_info = ContactInfo}) ->
     ContactInfo.
 
-construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Revision) ->
+construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, Party, Shop, VS0, Revision) ->
     VS1 = validate_payment_tool(
         get_payer_payment_tool(Payer),
         Terms#domain_PaymentsServiceTerms.payment_methods,
@@ -340,6 +342,8 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, VS0, Rev
         #domain_InvoicePayment{
             id              = PaymentID,
             created_at      = CreatedAt,
+            owner_id        = Party#domain_Party.id,
+            shop_id         = Shop#domain_Shop.id,
             domain_revision = Revision,
             status          = ?pending(),
             cost            = Cost,

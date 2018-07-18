@@ -64,6 +64,7 @@
 -export([payment_with_offsite_preauth_failed/1]).
 -export([payment_with_tokenized_bank_card/1]).
 -export([terms_retrieval/1]).
+-export([payment_has_optional_fields/1]).
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
@@ -154,6 +155,7 @@ groups() ->
             payment_fail_after_silent_callback,
             payment_temporary_unavailability_retry_success,
             payment_temporary_unavailability_too_many_retries,
+            payment_has_optional_fields,
             invoice_success_on_third_payment
         ]},
 
@@ -587,6 +589,17 @@ payment_success(C) ->
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_has_optional_fields(config()) -> test_return().
+
+payment_has_optional_fields(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    ?payment_state(Payment) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment.
 
 -spec payment_w_terminal_success(config()) -> _ | no_return().
 
