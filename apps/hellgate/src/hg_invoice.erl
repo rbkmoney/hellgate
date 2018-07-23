@@ -583,11 +583,10 @@ start_payment(PaymentParams, St) ->
     PaymentID = create_payment_id(St),
     Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
-    {PaymentSession, {Changes1, _}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
-    {ok, {Changes2, Action}} = hg_invoice_payment:start_session(?processed()),
+    {PaymentSession, {Changes, Action}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
     #{
         response => PaymentSession,
-        changes  => wrap_payment_changes(PaymentID, Changes1 ++ Changes2),
+        changes  => wrap_payment_changes(PaymentID, Changes),
         action   => Action,
         state    => St
     }.
@@ -725,10 +724,10 @@ merge_change(?payment_ev(PaymentID, Event), St) ->
     PaymentSession1 = hg_invoice_payment:merge_change(Event, PaymentSession),
     St1 = set_payment_session(PaymentID, PaymentSession1, St),
     case hg_invoice_payment:get_activity(PaymentSession1) of
-        A when A /= undefined ->
+        A when A =/= idle ->
             % TODO Shouldn't we have here some kind of stack instead?
             St1#st{activity = {payment, PaymentID}};
-        undefined ->
+        idle ->
             St1#st{activity = invoice}
     end.
 
@@ -1059,13 +1058,13 @@ unmarshal({ID, Dt, Payload}) ->
 %% Version > 1
 
 unmarshal({list, changes}, Changes) when is_list(Changes) ->
-    [unmarshal(change, Change) || Change <- Changes];
+    lists:flatten([unmarshal(change, Change) || Change <- Changes]);
 
 %% Version 1
 
 unmarshal({list, changes}, {bin, Bin}) when is_binary(Bin) ->
     Changes = binary_to_term(Bin),
-    [unmarshal(change, [1, Change]) || Change <- Changes];
+    lists:flatten([unmarshal(change, [1, Change]) || Change <- Changes]);
 
 %% Changes
 
@@ -1084,20 +1083,16 @@ unmarshal(change, [2, #{
     <<"id">>        := PaymentID,
     <<"payload">>   := Payload
 }]) ->
-    ?payment_ev(
-        unmarshal(str, PaymentID),
-        hg_invoice_payment:unmarshal(Payload)
-    );
+    PaymentEvents = hg_invoice_payment:unmarshal(Payload),
+    [?payment_ev(unmarshal(str, PaymentID), Event) || Event <- PaymentEvents];
 
 unmarshal(change, [1, ?legacy_invoice_created(Invoice)]) ->
     ?invoice_created(unmarshal(invoice, Invoice));
 unmarshal(change, [1, ?legacy_invoice_status_changed(Status)]) ->
     ?invoice_status_changed(unmarshal(status, Status));
 unmarshal(change, [1, ?legacy_payment_ev(PaymentID, Payload)]) ->
-    ?payment_ev(
-        unmarshal(str, PaymentID),
-        hg_invoice_payment:unmarshal([1, Payload])
-    );
+    PaymentEvents = hg_invoice_payment:unmarshal([1, Payload]),
+    [?payment_ev(unmarshal(str, PaymentID), Event) || Event <- PaymentEvents];
 
 %% Change components
 

@@ -2,7 +2,7 @@
 %%%
 %%% TODO
 %%%  - make proper submachine interface
-%%%     - `init` / `start_session` should provide `next` or `done` to the caller
+%%%     - `init` should provide `next` or `done` to the caller
 %%%  - handle idempotent callbacks uniformly
 %%%     - get rid of matches against session status
 %%%  - tag machine with the provider trx
@@ -37,8 +37,6 @@
 
 %% Business logic
 
--export([start_session/1]).
-
 -export([capture/2]).
 -export([cancel/2]).
 -export([refund/3]).
@@ -65,7 +63,32 @@
 
 %%
 
--type activity()      :: undefined | payment | {refund, refund_id()}.
+-type activity()      :: payment_activity() | refund_activity() | idle.
+-type payment_activity()  :: {payment, payment_step()}.
+-type refund_activity()   :: {refund, refund_id()}.
+-type payment_step()      ::
+    new |
+    risk_scoring |
+    routing |
+    cash_flow_building |
+    ready |
+    processing |
+    flow_waiting |
+    finalizing.
+-type change_event_type() ::
+    payment_started |
+    legacy_payment_started |
+    risk_scored |
+    route_built |
+    cash_flow_built |
+    session_started |
+    payment_processed |
+    payment_failed |
+    payment_cancelled |
+    payment_captured |
+    payment_refunded |
+    {refund, refund_id()} |
+    partially_refunded.
 
 -record(st, {
     activity               :: activity(),
@@ -114,9 +137,10 @@
 -type tag()               :: dmsl_proxy_provider_thrift:'CallbackTag'().
 -type retry_strategy()    :: hg_retry:strategy().
 
+-type session_status()    :: active | suspended | finished.
 -type session() :: #{
     target      := target(),
-    status      := active | suspended | finished,
+    status      := session_status(),
     trx         := trx_info(),
     tags        := [tag()],
     result      => session_result(),
@@ -195,7 +219,11 @@ get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
 
 %%
 
--type result() :: {[_], hg_machine_action:t()}. % FIXME
+-type event()  :: any(). % FIXME
+-type action() :: hg_machine_action:t().
+-type events() :: [event()].
+-type result() :: {events(), action()}.
+-type machine_result() :: {next | done, result()}.
 
 -spec init(payment_id(), _, opts()) ->
     {payment(), result()}.
@@ -217,36 +245,18 @@ init_(PaymentID, Params, Opts) ->
     Party = get_party(Opts),
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
-    PaymentInstitution = get_payment_institution(Opts, Revision),
     Cost = get_invoice_cost(Invoice),
     Payer = construct_payer(get_payer_params(Params), Shop),
     Flow = get_flow_params(Params),
     CreatedAt = hg_datetime:format_now(),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision),
-    VS0 = collect_varset(Party, Shop, #{}),
-    {Payment, VS1} = construct_payment(
+    VS0 = collect_validation_varset(Party, Shop, #{}),
+    Payment = construct_payment(
         PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, Party, Shop, VS0, Revision
     ),
-    {RiskScore, VS2} = validate_risk_score(inspect(Payment, PaymentInstitution, VS1, Opts), VS1),
-    Route = case get_predefined_route(Payer) of
-        {ok, R} ->
-            R;
-        undefined ->
-            validate_route(
-                hg_routing:choose(payment, PaymentInstitution, VS2, Revision),
-                Payment
-            )
-    end,
-    ProviderTerms = get_provider_payments_terms(Route, Revision),
-    Provider = get_route_provider(Route, Revision),
-    Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS2, Revision),
-    FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS2, Revision),
-    _AffectedAccounts = hg_accounting:plan(
-        construct_payment_plan_id(Invoice, Payment),
-        {1, FinalCashflow}
-    ),
-    Events = [?payment_started(Payment, RiskScore, Route, FinalCashflow)],
-    {collapse_changes(Events), {Events, hg_machine_action:new()}}.
+    Events = [?payment_started(Payment)],
+    {collapse_changes(Events), {Events, hg_machine_action:instant()}}.
+
 
 get_merchant_payments_terms(Opts, Revision) ->
     get_merchant_payments_terms(Opts, Revision, get_invoice_created_at(get_invoice(Opts))).
@@ -326,46 +336,38 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, Party, S
         VS1,
         Revision
     ),
-    {Flow, VS3} = construct_payment_flow(
+    Flow = construct_payment_flow(
         FlowParams,
         CreatedAt,
         Terms#domain_PaymentsServiceTerms.holds,
         VS2,
         Revision
     ),
-    VS4 = collect_refund_varset(
-        Terms#domain_PaymentsServiceTerms.refunds,
-        VS3,
-        Revision
-    ),
-    {
-        #domain_InvoicePayment{
-            id              = PaymentID,
-            created_at      = CreatedAt,
-            owner_id        = Party#domain_Party.id,
-            shop_id         = Shop#domain_Shop.id,
-            domain_revision = Revision,
-            status          = ?pending(),
-            cost            = Cost,
-            payer           = Payer,
-            flow            = Flow
-        },
-        VS4
+    #domain_InvoicePayment{
+        id              = PaymentID,
+        created_at      = CreatedAt,
+        owner_id        = Party#domain_Party.id,
+        shop_id         = Shop#domain_Shop.id,
+        domain_revision = Revision,
+        status          = ?pending(),
+        cost            = Cost,
+        payer           = Payer,
+        flow            = Flow
     }.
 
-construct_payment_flow({instant, _}, _CreatedAt, _Terms, VS, _Revision) ->
-    {
-        ?invoice_payment_flow_instant(),
-        VS#{flow => instant}
-    };
+construct_payment_flow({instant, _}, _CreatedAt, _Terms, _VS, _Revision) ->
+    ?invoice_payment_flow_instant();
 construct_payment_flow({hold, Params}, CreatedAt, Terms, VS, Revision) ->
     OnHoldExpiration = Params#payproc_InvoicePaymentParamsFlowHold.on_hold_expiration,
-    Lifetime = ?hold_lifetime(Seconds) = validate_hold_lifetime(Terms, VS, Revision),
+    ?hold_lifetime(Seconds) = validate_hold_lifetime(Terms, VS, Revision),
     HeldUntil = hg_datetime:format_ts(hg_datetime:parse_ts(CreatedAt) + Seconds),
-    {
-        ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil),
-        VS#{flow => {hold, Lifetime}}
-    }.
+    ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil).
+
+reconstruct_payment_flow(?invoice_payment_flow_instant(), _Terms, _Revision, VS) ->
+    VS#{flow => instant};
+reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, _HeldUntil), Terms, Revision, VS) ->
+    Lifetime = validate_hold_lifetime(Terms, VS, Revision),
+    VS#{flow => {hold, Lifetime}}.
 
 get_predefined_route(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
     case get_rec_payment_tool(RecPaymentToolID) of
@@ -422,26 +424,25 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
-    {RiskScore, VS#{risk_score => RiskScore}};
-validate_risk_score(fatal, _VS) ->
-    throw_invalid_request(<<"Fatal error">>).
+choose_route(Payer, PaymentInstitution, VS, Revision) ->
+    case get_predefined_route(Payer) of
+        {ok, _Route} = Result ->
+            Result;
+        undefined ->
+            case hg_routing:choose(payment, PaymentInstitution, VS, Revision) of
+                {ok, _Route} = Result ->
+                    Result;
+                {error, {no_route_found, RejectContext}} = Error ->
+                    _ = log_reject_context(RejectContext),
+                    Error
+            end
+    end.
 
-validate_route({ok, Route}, _Payment) ->
-    Route;
-validate_route({error, {no_route_found, RejectContext}}, Payment) ->
-    LogFun = fun(Msg, Param) ->
-        _ = lager:log(
-                error,
-                lager:md(),
-                Msg,
-                [Param]
-            )
-    end,
-    _ = LogFun("No route found, varset: ~p", maps:get(varset, RejectContext)),
-    _ = LogFun("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
-    _ = LogFun("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
-    error({misconfiguration, {'No route found for a payment', Payment}}).
+log_reject_context(RejectContext) ->
+    _ = lager:info("No route found, varset: ~p", maps:get(varset, RejectContext)),
+    _ = lager:info("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
+    _ = lager:info("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
+    ok.
 
 validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Revision) ->
     EligibilityTime = reduce_selector(eligibility_time, TimeSpanSelector, VS, Revision),
@@ -485,18 +486,16 @@ collect_partial_refund_varset(
 collect_partial_refund_varset(undefined, _, _) ->
     #{}.
 
-collect_varset(St, Opts) ->
-    collect_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
+collect_validation_varset(St, Opts) ->
+    collect_validation_varset(get_party(Opts), get_shop(Opts), get_payment(St), #{}).
 
-collect_varset(
-    #domain_Party{id = PartyID},
+collect_validation_varset(Party, Shop, VS) ->
+    #domain_Party{id = PartyID} = Party,
     #domain_Shop{
         id = ShopID,
         category = Category,
         account = #domain_ShopAccount{currency = Currency}
-    },
-    VS
-) ->
+    } = Shop,
     VS#{
         party_id => PartyID,
         shop_id  => ShopID,
@@ -504,12 +503,47 @@ collect_varset(
         currency => Currency
     }.
 
-collect_varset(Party, Shop, Payment, VS) ->
-    VS0 = collect_varset(Party, Shop, VS),
+collect_validation_varset(Party, Shop, Payment, VS) ->
+    VS0 = collect_validation_varset(Party, Shop, VS),
     VS0#{
         cost         => get_payment_cost(Payment),
         payment_tool => get_payment_tool(Payment)
     }.
+
+collect_routing_varset(Payment, RiskScore, Opts, VS0) ->
+    collect_routing_varset(Payment, Opts, VS0#{risk_score => RiskScore}).
+
+collect_routing_varset(Payment, Opts, VS0) ->
+    #domain_InvoicePayment{
+        domain_revision = Revision,
+        cost            = Cost,
+        payer           = Payer,
+        flow            = DomainFlow,
+        owner_id        = PartyID,
+        shop_id         = ShopID
+    } = Payment,
+    #domain_Party{id = PartyID} = get_party(Opts),
+    #domain_Shop{
+        id = ShopID,
+        category = Category,
+        account = #domain_ShopAccount{currency = Currency}
+    } = get_shop(Opts),
+    PaymentTool = get_payer_payment_tool(Payer),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
+    VS1 = VS0#{
+        party_id => PartyID,
+        shop_id => ShopID,
+        category => Category,
+        currency => Currency,
+        payment_tool => PaymentTool,
+        cost => Cost
+    },
+    VS2 = reconstruct_payment_flow(DomainFlow, MerchantTerms#domain_PaymentsServiceTerms.holds, Revision, VS1),
+    collect_refund_varset(
+        MerchantTerms#domain_PaymentsServiceTerms.refunds,
+        VS2,
+        Revision
+    ).
 
 %%
 
@@ -629,12 +663,10 @@ reduce_selector(Name, Selector, VS, Revision) ->
 %%
 
 -spec start_session(target()) ->
-    {ok, result()}.
+    events().
 
 start_session(Target) ->
-    Events = [?session_ev(Target, ?session_started())],
-    Action = hg_machine_action:instant(),
-    {ok, {Events, Action}}.
+    [?session_ev(Target, ?session_started())].
 
 -spec capture(st(), atom()) -> {ok, result()}.
 
@@ -650,7 +682,7 @@ do_payment(St, Target) ->
     Payment = get_payment(St),
     _ = assert_payment_status(processed, Payment),
     _ = assert_payment_flow(hold, Payment),
-    start_session(Target).
+    {ok, {start_session(Target), hg_machine_action:instant()}}.
 
 -spec refund(refund_params(), st(), opts()) ->
     {refund(), result()}.
@@ -665,7 +697,7 @@ refund(Params, St0, Opts) ->
     Provider = get_route_provider(Route, Revision),
     _ = assert_payment_status(captured, Payment),
     _ = assert_previous_refunds_finished(St),
-    VS0 = collect_varset(St, Opts),
+    VS0 = collect_validation_varset(St, Opts),
     Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
     _ = assert_refund_cash(Cash, St),
     ID = construct_refund_id(St),
@@ -899,7 +931,7 @@ create_adjustment(Timestamp, Params, St, Opts) ->
     Route = get_route(St),
     Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
-    VS = collect_varset(St, Opts),
+    VS = collect_validation_varset(St, Opts),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
     FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
     ID = construct_adjustment_id(St),
@@ -1016,8 +1048,7 @@ get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{new_cash_flow = Cashflo
 %%
 
 -spec process_signal(timeout, st(), opts()) ->
-    {next | done, result()}.
-
+    machine_result().
 process_signal(timeout, St, Options) ->
     scoper:scope(
         payment,
@@ -1027,21 +1058,27 @@ process_signal(timeout, St, Options) ->
 
 process_timeout(St) ->
     Action = hg_machine_action:new(),
-    case get_active_session(St) of
-        Session when Session /= undefined ->
-            case get_session_status(Session) of
-                active ->
-                    process(Action, St);
-                suspended ->
-                    process_callback_timeout(Action, St)
-            end;
-        undefined ->
-            process_finished_session(St)
-    end.
+    process_timeout(get_activity(St), Action, St).
+
+-spec process_timeout(activity(), action(), st()) -> machine_result().
+process_timeout({payment, risk_scoring}, Action, St) ->
+    process_risk_scoring(Action, St);
+process_timeout({payment, routing}, Action, St) ->
+    %% There are two step processing here (routing and cash flow building)
+    process_routing(Action, St);
+process_timeout({payment, Step}, Action, St) when
+    Step =:= ready orelse
+    Step =:= processing orelse
+    Step =:= finalizing
+->
+    process_session(Action, St);
+process_timeout({refund, _ID}, Action, St) ->
+    process_session(Action, St);
+process_timeout({payment, flow_waiting}, Action, St) ->
+    finalize_payment(Action, St).
 
 -spec process_call({callback, tag(), _}, st(), opts()) ->
-    {_, {next | done, result()}}. % FIXME
-
+    {_, machine_result()}. % FIXME
 process_call({callback, Tag, Payload}, St, Options) ->
     scoper:scope(
         payment,
@@ -1051,7 +1088,7 @@ process_call({callback, Tag, Payload}, St, Options) ->
 
 process_callback(Tag, Payload, St) ->
     Action = hg_machine_action:new(),
-    Session = get_active_session(St),
+    Session = get_activity_session(St),
     process_callback(Tag, Payload, Action, Session, St).
 
 process_callback(Tag, Payload, Action, Session, St) when Session /= undefined ->
@@ -1061,22 +1098,90 @@ process_callback(Tag, Payload, Action, Session, St) when Session /= undefined ->
         _ ->
             throw(invalid_callback)
     end;
-
 process_callback(_Tag, _Payload, _Action, undefined, _St) ->
     throw(invalid_callback).
 
-process_callback_timeout(Action, St) ->
-    Session = get_active_session(St),
-    Result = handle_proxy_callback_timeout(Action, Session),
-    finish_processing(Result, St).
+%%
 
-process(Action, St) ->
+-spec process_risk_scoring(action(), st()) -> machine_result().
+process_risk_scoring(Action, St) ->
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    PaymentInstitution = get_payment_institution(Opts, Revision),
+    Payment = get_payment(St),
+    VS0 = collect_routing_varset(Payment, Opts, #{}),
+    RiskScore = inspect(Payment, PaymentInstitution, VS0, Opts),
+    Events = [?risk_score_changed(RiskScore)],
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+
+-spec process_routing(action(), st()) -> machine_result().
+process_routing(Action, St) ->
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payer = get_payment_payer(St),
+    PaymentInstitution = get_payment_institution(Opts, Revision),
+    Payment = get_payment(St),
+    RiskScore = get_risk_score(St),
+    VS = collect_routing_varset(Payment, RiskScore, Opts, #{}),
+    case choose_route(Payer, PaymentInstitution, VS, Revision) of
+        {ok, Route} ->
+            process_route(Route, VS, Payment, PaymentInstitution, Revision, Opts, Action);
+        {error, {no_route_found, _Details}} ->
+            Failure = {failure, payproc_errors:construct('PaymentFailure',
+                {no_route_found, #payprocerr_GeneralFailure{}}
+            )},
+            process_failure(get_activity(St), [], Action, Failure, St)
+    end.
+
+process_route(Route, VS, Payment, PaymentInstitution, Revision, Opts, Action) ->
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
+    ProviderTerms = get_provider_payments_terms(Route, Revision),
+    Provider = get_route_provider(Route, Revision),
+    Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
+    Shop = get_shop(Opts),
+    FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
+    Invoice = get_invoice(Opts),
+    _AffectedAccounts = hg_accounting:plan(
+        construct_payment_plan_id(Invoice, Payment),
+        {1, FinalCashflow}
+    ),
+    Events = [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+
+%%
+
+-spec process_session(action(), st()) -> machine_result().
+process_session(Action, St) ->
+    Session = get_activity_session(St),
+    process_session(Session, Action, St).
+
+process_session(undefined, Action, St0) ->
+    Events = start_session(get_target(St0)),
+    St1 = collapse_changes(Events, St0),
+    Session = get_activity_session(St1),
+    process_session(Session, Action, Events, St1);
+process_session(Session, Action, St) ->
+    process_session(Session, Action, [], St).
+
+process_session(Session, Action, Events, St) ->
+    Status = get_session_status(Session),
+    process_session(Status, Session, Action, Events, St).
+
+-spec process_session(session_status(), session(), action(), events(), st()) -> machine_result().
+process_session(active, Session, Action, Events, St) ->
+    process_active_session(Action, Session, Events, St);
+process_session(suspended, Session, Action, Events, St) ->
+    process_callback_timeout(Action, Session, Events, St).
+
+-spec process_active_session(action(), session(), events(), st()) -> machine_result().
+process_active_session(Action, Session, Events, St) ->
     ProxyContext = construct_proxy_context(St),
     {ok, ProxyResult} = issue_process_call(ProxyContext, St),
-    Result = handle_proxy_result(ProxyResult, Action, get_active_session(St)),
-    finish_processing(Result, St).
+    Result = handle_proxy_result(ProxyResult, Action, Events, Session),
+    finish_session_processing(Result, St).
 
-process_finished_session(St) ->
+-spec finalize_payment(action(), st()) -> machine_result().
+finalize_payment(Action, St) ->
     Target = case get_payment_flow(get_payment(St)) of
         ?invoice_payment_flow_instant() ->
             ?captured();
@@ -1088,19 +1193,28 @@ process_finished_session(St) ->
                     ?captured()
             end
     end,
-    {ok, Result} = start_session(Target),
-    {done, Result}.
+    StartEvents = start_session(Target),
+    {done, {StartEvents, hg_machine_action:set_timeout(0, Action)}}.
+
+-spec process_callback_timeout(action(), session(), events(), st()) -> machine_result().
+process_callback_timeout(Action, Session, Events, St) ->
+    Result = handle_proxy_callback_timeout(Action, Events, Session),
+    finish_session_processing(Result, St).
 
 handle_callback(Payload, Action, St) ->
     ProxyContext = construct_proxy_context(St),
     {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St),
-    {Response, Result} = handle_callback_result(CallbackResult, Action, get_active_session(St)),
-    {Response, finish_processing(Result, St)}.
+    {Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
+    {Response, finish_session_processing(Result, St)}.
 
-finish_processing(Result, St) ->
-    finish_processing(get_activity(St), Result, St).
+-spec finish_session_processing(result(), st()) -> machine_result().
+finish_session_processing(Result, St) ->
+    finish_session_processing(get_activity(St), Result, St).
 
-finish_processing(payment = Activity, {Events, Action}, St) ->
+finish_session_processing({payment, Step} = Activity, {Events, Action}, St) when
+    Step =:= processing orelse
+    Step =:= finalizing
+->
     Target = get_target(St),
     St1 = collapse_changes(Events, St),
     case get_session(Target, St1) of
@@ -1121,7 +1235,7 @@ finish_processing(payment = Activity, {Events, Action}, St) ->
             {next, {Events, Action}}
     end;
 
-finish_processing({refund, ID} = Activity, {Events, Action}, St) ->
+finish_session_processing({refund, ID} = Activity, {Events, Action}, St) ->
     Events1 = [?refund_ev(ID, Ev) || Ev <- Events],
     St1 = collapse_changes(Events1, St),
     RefundSt1 = try_get_refund_state(ID, St1),
@@ -1149,7 +1263,12 @@ finish_processing({refund, ID} = Activity, {Events, Action}, St) ->
 process_failure(Activity, Events, Action, Failure, St) ->
     process_failure(Activity, Events, Action, Failure, St, undefined).
 
-process_failure(payment, Events, Action, Failure, St, _RefundSt) ->
+process_failure({payment, routing}, Events, Action, Failure, _St, _RefundSt) ->
+    {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
+process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
+    Step =:= processing orelse
+    Step =:= finalizing
+->
     Target = get_target(St),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
@@ -1177,7 +1296,7 @@ process_failure({refund, ID}, Events, Action, Failure, St, RefundSt) ->
     end.
 
 retry_session(Action, Target, Timeout) ->
-    {ok, {NewEvents, _Action}} = start_session(Target),
+    NewEvents = start_session(Target),
     NewAction = set_timer({timeout, Timeout}, Action),
     {NewEvents, NewAction}.
 
@@ -1207,7 +1326,7 @@ check_retry_possibility(Target, Failure, St) ->
                     fatal
             end;
         fatal ->
-            _ = lager:debug("Failure is fatal"),
+            _ = lager:debug("Failure ~p is not transient", [Failure]),
             fatal
     end.
 
@@ -1222,25 +1341,26 @@ do_check_failure_type({authorization_failed, {temporarily_unavailable, _}}) ->
 do_check_failure_type(_Failure) ->
     fatal.
 
-get_action({processed, _}, Action, St) ->
+get_action(?processed(), Action, St) ->
     case get_payment_flow(get_payment(St)) of
         ?invoice_payment_flow_instant() ->
             hg_machine_action:set_timeout(0, Action);
         ?invoice_payment_flow_hold(_, HeldUntil) ->
             hg_machine_action:set_deadline(HeldUntil, Action)
     end;
-get_action(_, Action, _) ->
+get_action(_Target, Action, _St) ->
     Action.
 
 handle_proxy_result(
     #prxprv_PaymentProxyResult{intent = {_Type, Intent}, trx = Trx, next_state = ProxyState},
     Action0,
+    Events0,
     Session
 ) ->
     Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
     Events2 = update_proxy_state(ProxyState, Session),
     {Events3, Action} = handle_proxy_intent(Intent, Action0),
-    {wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
+    {Events0 ++ wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
 
 handle_callback_result(
     #prxprv_PaymentCallbackResult{result = ProxyResult, response = Response},
@@ -1267,9 +1387,9 @@ handle_proxy_callback_result(
     Events2 = update_proxy_state(ProxyState, Session),
     {wrap_session_events(Events1 ++ Events2, Session), Action0}.
 
-handle_proxy_callback_timeout(Action, Session) ->
-    Events = [?session_finished(?session_failed(?operation_timeout()))],
-    {wrap_session_events(Events, Session), Action}.
+handle_proxy_callback_timeout(Action, Events, Session) ->
+    SessionEvents = [?session_finished(?session_failed(?operation_timeout()))],
+    {Events ++ wrap_session_events(SessionEvents, Session), Action}.
 
 wrap_session_events(SessionEvents, #{target := Target}) ->
     [?session_ev(Target, Ev) || Ev <- SessionEvents].
@@ -1340,7 +1460,7 @@ construct_payment_info(St, Opts) ->
 
 construct_proxy_context(St) ->
     #prxprv_PaymentContext{
-        session      = construct_session(get_active_session(St)),
+        session      = construct_session(get_activity_session(St)),
         payment_info = construct_payment_info(St, get_opts(St)),
         options      = collect_proxy_options(St)
     }.
@@ -1351,7 +1471,7 @@ construct_session(Session = #{target := Target}) ->
         state = get_session_proxy_state(Session)
     }.
 
-construct_payment_info(payment, _St, PaymentInfo) ->
+construct_payment_info({payment, _Step}, _St, PaymentInfo) ->
     PaymentInfo;
 construct_payment_info({refund, ID}, St, PaymentInfo) ->
     PaymentInfo#prxprv_PaymentInfo{
@@ -1549,34 +1669,98 @@ throw_invalid_request(Why) ->
 
 %%
 
+-spec next_payment_step(change_event_type(), payment_step()) -> payment_step().
+
+next_payment_step(payment_started, new) ->
+    risk_scoring;
+next_payment_step(risk_scored, risk_scoring) ->
+    routing;
+next_payment_step(route_built, routing) ->
+    cash_flow_building;
+next_payment_step(cash_flow_built, cash_flow_building) ->
+    ready;
+next_payment_step(session_started, ready) ->
+    processing;
+next_payment_step(session_started, processing) ->
+    %% session retrying
+    processing;
+next_payment_step(payment_processed, processing) ->
+    flow_waiting;
+next_payment_step(session_started, flow_waiting) ->
+    finalizing;
+next_payment_step(session_started, finalizing) ->
+    %% session retrying
+    finalizing.
+
+-spec next_activity(change_event_type(), activity()) -> activity().
+
+next_activity(payment_captured, {payment, finalizing}) ->
+    idle;
+next_activity(payment_cancelled, {payment, finalizing}) ->
+    idle;
+next_activity(payment_failed, {payment, _Step}) ->
+    idle;
+next_activity(EventType, {payment, Step}) ->
+    {payment, next_payment_step(EventType, Step)};
+next_activity({refund, ID}, idle) ->
+    {refund, ID};
+next_activity({refund, ID}, {refund, ID}) ->
+    %% TODO: propertly describe refund stm events
+    {refund, ID};
+next_activity(partially_refunded, {refund, _ID}) ->
+    idle;
+next_activity(payment_refunded, idle) ->
+    idle.
+
+-spec set_next_activity(change_event_type(), st()) -> st().
+
+set_next_activity(EventType, #st{activity = Activity} = St) ->
+    St#st{activity = next_activity(EventType, Activity)}.
+
 -spec merge_change(change(), st() | undefined) -> st().
 
 merge_change(Event, undefined) ->
-    merge_change(Event, #st{});
+    merge_change(Event, #st{activity = {payment, new}});
 
-merge_change(?payment_started(Payment, RiskScore, Route, Cashflow), St) ->
-    St#st{
-        activity   = payment,
-        payment    = Payment,
-        risk_score = RiskScore,
-        route      = Route,
+merge_change(?payment_started(Payment, undefined, undefined, undefined), St) ->
+    set_next_activity(payment_started, St#st{
+        target     = ?processed(),
+        payment    = Payment
+    });
+merge_change(?risk_score_changed(RiskScore), St) ->
+    set_next_activity(risk_scored, St#st{
+        risk_score = RiskScore
+    });
+merge_change(?route_changed(Route), St) ->
+    set_next_activity(route_built, St#st{
+        route      = Route
+    });
+merge_change(?cash_flow_changed(Cashflow), St) ->
+    set_next_activity(cash_flow_built, St#st{
         cash_flow  = Cashflow
-    };
+    });
 merge_change(?payment_status_changed(Status), St = #st{payment = Payment}) ->
     St1 = St#st{payment = Payment#domain_InvoicePayment{status = Status}},
-    case Status of
-        {S, _} when S == captured; S == cancelled; S == failed ->
-            St1#st{activity = undefined};
-        _ ->
-            St1
-    end;
+    EventType = case Status of
+        {captured, _} ->
+            payment_captured;
+        {cancelled, _} ->
+            payment_cancelled;
+        {failed, _} ->
+            payment_failed;
+        {processed, _} ->
+            payment_processed;
+        {refunded, _} ->
+            payment_refunded
+    end,
+    set_next_activity(EventType, St1);
 merge_change(?refund_ev(ID, Event), St) ->
-    St1 = St#st{activity = {refund, ID}},
+    St1 = set_next_activity({refund, ID}, St),
     RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St1)),
     St2 = set_refund_state(ID, RefundSt, St1),
     case get_refund_status(get_refund(RefundSt)) of
         {S, _} when S == succeeded; S == failed ->
-            St2#st{activity = undefined};
+            set_next_activity(partially_refunded, St2);
         _ ->
             St2
     end;
@@ -1593,18 +1777,12 @@ merge_change(?adjustment_ev(ID, Event), St) ->
 merge_change(?session_ev(Target, ?session_started()), St) ->
     % FIXME why the hell dedicated handling
     St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
-    save_retry_attempt(Target, St1);
+    set_next_activity(session_started, save_retry_attempt(Target, St1));
 merge_change(?session_ev(Target, Event), St) ->
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
     % FIXME leaky transactions
-    St2 = set_trx(get_session_trx(Session), St1),
-    case get_session_status(Session) of
-        finished ->
-            St2#st{target = undefined};
-        _ ->
-            St2
-    end.
+    set_trx(get_session_trx(Session), St1).
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
     St#st{retry_attempts = maps:update_with(Target, fun(N) -> N + 1 end, 0, Attempts)}.
@@ -1748,14 +1926,25 @@ get_target(#st{target = Target}) ->
 get_opts(#st{opts = Opts}) ->
     Opts.
 
+get_risk_score(#st{risk_score = Score}) ->
+    Score.
+
+get_payment_revision(#st{payment = #domain_InvoicePayment{domain_revision = Revision}}) ->
+    Revision.
+
+get_payment_payer(#st{payment = #domain_InvoicePayment{payer = Payer}}) ->
+    Payer.
+
 %%
 
-get_active_session(St) ->
-    get_active_session(get_activity(St), St).
+get_activity_session(St) ->
+    get_activity_session(get_activity(St), St).
 
-get_active_session(payment, St) ->
+-spec get_activity_session(activity(), st()) -> session() | undefined.
+
+get_activity_session({payment, _Step}, St) ->
     get_session(get_target(St), St);
-get_active_session({refund, ID}, St) ->
+get_activity_session({refund, ID}, St) ->
     RefundSt = try_get_refund_state(ID, St),
     RefundSt#refund_st.session.
 
@@ -1828,10 +2017,36 @@ issue_customer_call(Func, Args) ->
 -spec get_log_params(change(), st()) ->
     {ok, #{type := invoice_payment_event, params := list(), message := string()}} | undefined.
 
-get_log_params(?payment_started(Payment, _, _, Cashflow), _) ->
+get_log_params(?payment_started(Payment), _) ->
+    Params = #{
+        payment => Payment,
+        event_type => invoice_payment_started
+    },
+    make_log_params(Params);
+get_log_params(?risk_score_changed(RiskScore), _) ->
+    Params = #{
+        risk_score => RiskScore,
+        event_type => invoice_payment_risk_score_changed
+    },
+    make_log_params(Params);
+get_log_params(?route_changed(Route), _) ->
+    Params = #{
+        route => Route,
+        event_type => invoice_payment_route_changed
+    },
+    make_log_params(Params);
+get_log_params(?cash_flow_changed(Cashflow), _) ->
+    Params = #{
+        cashflow => Cashflow,
+        event_type => invoice_payment_cash_flow_changed
+    },
+    make_log_params(Params);
+get_log_params(?payment_started(Payment, RiskScore, Route, Cashflow), _) ->
     Params = #{
         payment => Payment,
         cashflow => Cashflow,
+        risk_score => RiskScore,
+        route => Route,
         event_type => invoice_payment_started
     },
     make_log_params(Params);
@@ -1877,6 +2092,8 @@ make_log_params(flow, ?invoice_payment_flow_instant()) ->
     [{type, instant}];
 make_log_params(flow, ?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
     [{type, hold}, {on_hold_expiration, OnHoldExpiration}];
+make_log_params(cashflow, undefined) ->
+    [];
 make_log_params(cashflow, CashFlow) ->
     Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
     Accounts = lists:map(
@@ -1887,6 +2104,10 @@ make_log_params(cashflow, CashFlow) ->
         Reminders
     ),
     [{accounts, Accounts}];
+make_log_params(risk_score, Score) ->
+    [{risk_score, Score}];
+make_log_params(route, _Route) ->
+    [];
 make_log_params(status, {StatusTag, StatusDetails}) ->
     [{status, StatusTag}] ++ format_status_details(StatusDetails);
 make_log_params(event_type, EventType) ->
@@ -1910,6 +2131,12 @@ get_account_key({AccountParty, AccountType}) ->
 
 get_message(invoice_payment_started) ->
     "Invoice payment is started";
+get_message(invoice_payment_risk_score_changed) ->
+    "Invoice payment risk score is started";
+get_message(invoice_payment_route_changed) ->
+    "Invoice payment route is started";
+get_message(invoice_payment_cash_flow_changed) ->
+    "Invoice payment cash flow is started";
 get_message(invoice_payment_status_changed) ->
     "Invoice payment status is changed".
 
@@ -1925,12 +2152,24 @@ marshal(Change) ->
 
 %% Changes
 
-marshal(change, ?payment_started(Payment, RiskScore, Route, Cashflow)) ->
+marshal(change, ?payment_started(Payment)) ->
     [2, #{
-        <<"change">>        => <<"started">>,
-        <<"payment">>       => marshal(payment, Payment),
-        <<"risk_score">>    => marshal(risk_score, RiskScore),
-        <<"route">>         => hg_routing:marshal(Route),
+        <<"change">>        => <<"payment_created">>,
+        <<"payment">>       => marshal(payment, Payment)
+    }];
+marshal(change, ?risk_score_changed(RiskScore)) ->
+    [2, #{
+        <<"change">>        => <<"risk_score_changed">>,
+        <<"risk_score">>    => marshal(risk_score, RiskScore)
+    }];
+marshal(change, ?route_changed(Route)) ->
+    [2, #{
+        <<"change">>        => <<"route_changed">>,
+        <<"route">>         => hg_routing:marshal(Route)
+    }];
+marshal(change, ?cash_flow_changed(Cashflow)) ->
+    [2, #{
+        <<"change">>        => <<"cash_flow_changed">>,
         <<"cash_flow">>     => hg_cashflow:marshal(Cashflow)
     }];
 marshal(change, ?payment_status_changed(Status)) ->
@@ -1964,6 +2203,8 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         <<"id">>                => marshal(str, Payment#domain_InvoicePayment.id),
         <<"created_at">>        => marshal(str, Payment#domain_InvoicePayment.created_at),
         <<"domain_revision">>   => marshal(str, Payment#domain_InvoicePayment.domain_revision),
+        <<"owner_id">>          => marshal(str, Payment#domain_InvoicePayment.owner_id),
+        <<"shop_id">>           => marshal(str, Payment#domain_InvoicePayment.shop_id),
         <<"cost">>              => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
         <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
         <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow),
@@ -2196,7 +2437,7 @@ marshal(_, Other) ->
 
 %% Unmarshalling
 
--spec unmarshal(hg_msgpack_marshalling:value()) -> change().
+-spec unmarshal(hg_msgpack_marshalling:value()) -> [change()].
 
 unmarshal(Change) ->
     unmarshal(change, Change).
@@ -2204,55 +2445,78 @@ unmarshal(Change) ->
 %% Changes
 
 unmarshal(change, [2, #{
+    <<"change">>    := <<"payment_created">>,
+    <<"payment">>   := Payment
+}]) ->
+    [?payment_started(unmarshal(payment, Payment))];
+unmarshal(change, [2, #{
+    <<"change">>    := <<"status_changed">>,
+    <<"status">>    := Status
+}]) ->
+    [?payment_status_changed(unmarshal(status, Status))];
+unmarshal(change, [2, #{
+    <<"change">>    := <<"risk_score_changed">>,
+    <<"risk_score">>:= RiskScore
+}]) ->
+    [?risk_score_changed(unmarshal(risk_score, RiskScore))];
+unmarshal(change, [2, #{
+    <<"change">>    := <<"route_changed">>,
+    <<"route">>     := Route
+}]) ->
+    [?route_changed(hg_routing:unmarshal(Route))];
+unmarshal(change, [2, #{
+    <<"change">>    := <<"cash_flow_changed">>,
+    <<"cash_flow">> := Cashflow
+}]) ->
+    [?cash_flow_changed(hg_cashflow:unmarshal(Cashflow))];
+unmarshal(change, [2, #{
+    <<"change">>    := <<"session_change">>,
+    <<"payload">>   := Payload,
+    <<"target">>    := Target
+}]) ->
+    [?session_ev(unmarshal(status, Target), unmarshal(session_change, Payload))];
+unmarshal(change, [2, #{
+    <<"change">>    := <<"adjustment_change">>,
+    <<"id">>        := AdjustmentID,
+    <<"payload">>   := Payload
+}]) ->
+    [?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adjustment_change, Payload))];
+unmarshal(change, [2, #{
+    <<"change">>    := <<"refund">>,
+    <<"id">>        := RefundID,
+    <<"payload">>   := Payload
+}]) ->
+    [?refund_ev(unmarshal(str, RefundID), unmarshal(refund_change, Payload))];
+
+%% deprecated v2 changes
+unmarshal(change, [2, #{
     <<"change">>        := <<"started">>,
     <<"payment">>       := Payment,
     <<"risk_score">>    := RiskScore,
     <<"route">>         := Route,
     <<"cash_flow">>     := Cashflow
 }]) ->
-    ?payment_started(
-        unmarshal(payment, Payment),
-        unmarshal(risk_score, RiskScore),
-        hg_routing:unmarshal(Route),
-        hg_cashflow:unmarshal(Cashflow)
-    );
-unmarshal(change, [2, #{
-    <<"change">>    := <<"status_changed">>,
-    <<"status">>    := Status
-}]) ->
-    ?payment_status_changed(unmarshal(status, Status));
-unmarshal(change, [2, #{
-    <<"change">>    := <<"session_change">>,
-    <<"payload">>   := Payload,
-    <<"target">>    := Target
-}]) ->
-    ?session_ev(unmarshal(status, Target), unmarshal(session_change, Payload));
-unmarshal(change, [2, #{
-    <<"change">>    := <<"adjustment_change">>,
-    <<"id">>        := AdjustmentID,
-    <<"payload">>   := Payload
-}]) ->
-    ?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adjustment_change, Payload));
-unmarshal(change, [2, #{
-    <<"change">>    := <<"refund">>,
-    <<"id">>        := RefundID,
-    <<"payload">>   := Payload
-}]) ->
-    ?refund_ev(unmarshal(str, RefundID), unmarshal(refund_change, Payload));
+    [
+        ?payment_started(unmarshal(payment, Payment)),
+        ?risk_score_changed(unmarshal(risk_score, RiskScore)),
+        ?route_changed(hg_routing:unmarshal(Route)),
+        ?cash_flow_changed(hg_cashflow:unmarshal(Cashflow))
+    ];
 
+%% deprecated v1 changes
 unmarshal(change, [1, ?legacy_payment_started(Payment, RiskScore, Route, Cashflow)]) ->
-    ?payment_started(
-        unmarshal(payment, Payment),
-        unmarshal(risk_score, RiskScore),
-        hg_routing:unmarshal([1, Route]),
-        hg_cashflow:unmarshal([1, Cashflow])
-    );
+    [
+        ?payment_started(unmarshal(payment, Payment)),
+        ?risk_score_changed(unmarshal(risk_score, RiskScore)),
+        ?route_changed(hg_routing:unmarshal([1, Route])),
+        ?cash_flow_changed(hg_cashflow:unmarshal([1, Cashflow]))
+    ];
 unmarshal(change, [1, ?legacy_payment_status_changed(Status)]) ->
-    ?payment_status_changed(unmarshal(status, Status));
+    [?payment_status_changed(unmarshal(status, Status))];
 unmarshal(change, [1, ?legacy_session_ev(Target, Payload)]) ->
-    ?session_ev(unmarshal(status, Target), unmarshal(session_change, [1, Payload]));
+    [?session_ev(unmarshal(status, Target), unmarshal(session_change, [1, Payload]))];
 unmarshal(change, [1, ?legacy_adjustment_ev(AdjustmentID, Payload)]) ->
-    ?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adjustment_change, [1, Payload]));
+    [?adjustment_ev(unmarshal(str, AdjustmentID), unmarshal(adjustment_change, [1, Payload]))];
 
 %% Payment
 
@@ -2265,10 +2529,14 @@ unmarshal(payment, #{
     <<"flow">>              := Flow
 } = Payment) ->
     Context = maps:get(<<"context">>, Payment, undefined),
+    OwnerID = maps:get(<<"owner_id">>, Payment, undefined),
+    ShopID = maps:get(<<"shop_id">>, Payment, undefined),
     #domain_InvoicePayment{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
+        shop_id         = unmarshal(str, ShopID),
+        owner_id        = unmarshal(str, OwnerID),
         cost            = hg_cash:unmarshal(Cash),
         payer           = unmarshal(payer, MarshalledPayer),
         status          = ?pending(),
