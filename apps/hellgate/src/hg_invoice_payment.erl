@@ -677,7 +677,7 @@ cancel(St, Reason) ->
 
 do_payment(St, Target) ->
     Payment = get_payment(St),
-    _ = assert_payment_status(processed, Payment),
+    _ = assert_activity({payment, flow_waiting}, St),
     _ = assert_payment_flow(hold, Payment),
     {ok, {start_session(Target), hg_machine_action:instant()}}.
 
@@ -953,6 +953,13 @@ get_adjustment_revision(Params) ->
 
 construct_adjustment_id(#st{adjustments = As}) ->
     integer_to_binary(length(As) + 1).
+
+-spec assert_activity(activity(), st()) -> ok | no_return().
+assert_activity(Activity, #st{activity = Activity}) ->
+    ok;
+assert_activity(_Activity, St) ->
+    #domain_InvoicePayment{status = Status} = get_payment(St),
+    throw(#payproc_InvalidPaymentStatus{status = Status}).
 
 assert_payment_status(Status, #domain_InvoicePayment{status = {Status, _}}) ->
     ok;
