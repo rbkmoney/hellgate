@@ -510,9 +510,6 @@ collect_validation_varset(Party, Shop, Payment, VS) ->
         payment_tool => get_payment_tool(Payment)
     }.
 
-collect_routing_varset(Payment, RiskScore, Opts, VS0) ->
-    collect_routing_varset(Payment, Opts, VS0#{risk_score => RiskScore}).
-
 collect_routing_varset(Payment, Opts, VS0) ->
     #domain_InvoicePayment{
         domain_revision = Revision,
@@ -1062,9 +1059,7 @@ process_timeout(St) ->
 
 -spec process_timeout(activity(), action(), st()) -> machine_result().
 process_timeout({payment, risk_scoring}, Action, St) ->
-    process_risk_scoring(Action, St);
-process_timeout({payment, routing}, Action, St) ->
-    %% There are two step processing here (routing and cash flow building)
+    %% There are three processing steps here (scoring, routing and cash flow building)
     process_routing(Action, St);
 process_timeout({payment, Step}, Action, St) when
     Step =:= ready orelse
@@ -1103,37 +1098,28 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
 
 %%
 
--spec process_risk_scoring(action(), st()) -> machine_result().
-process_risk_scoring(Action, St) ->
+-spec process_routing(action(), st()) -> machine_result().
+process_routing(Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Payment = get_payment(St),
     VS0 = collect_routing_varset(Payment, Opts, #{}),
     RiskScore = inspect(Payment, PaymentInstitution, VS0, Opts),
-    Events = [?risk_score_changed(RiskScore)],
-    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
-
--spec process_routing(action(), st()) -> machine_result().
-process_routing(Action, St) ->
-    Opts = get_opts(St),
-    Revision = get_payment_revision(St),
+    Events0 = [?risk_score_changed(RiskScore)],
     Payer = get_payment_payer(St),
-    PaymentInstitution = get_payment_institution(Opts, Revision),
-    Payment = get_payment(St),
-    RiskScore = get_risk_score(St),
-    VS = collect_routing_varset(Payment, RiskScore, Opts, #{}),
-    case choose_route(Payer, PaymentInstitution, VS, Revision) of
+    VS1 = VS0#{risk_score => RiskScore},
+    case choose_route(Payer, PaymentInstitution, VS1, Revision) of
         {ok, Route} ->
-            process_route(Route, VS, Payment, PaymentInstitution, Revision, Opts, Action);
+            process_route(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, _Details}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',
                 {no_route_found, #payprocerr_GeneralFailure{}}
             )},
-            process_failure(get_activity(St), [], Action, Failure, St)
+            process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
 
-process_route(Route, VS, Payment, PaymentInstitution, Revision, Opts, Action) ->
+process_route(Route, VS, Payment, PaymentInstitution, Revision, Opts, Events0, Action) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     Provider = get_route_provider(Route, Revision),
@@ -1145,8 +1131,8 @@ process_route(Route, VS, Payment, PaymentInstitution, Revision, Opts, Action) ->
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
-    Events = [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
-    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
+    {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
 
@@ -1263,7 +1249,10 @@ finish_session_processing({refund, ID} = Activity, {Events, Action}, St) ->
 process_failure(Activity, Events, Action, Failure, St) ->
     process_failure(Activity, Events, Action, Failure, St, undefined).
 
-process_failure({payment, routing}, Events, Action, Failure, _St, _RefundSt) ->
+process_failure({payment, Step}, Events, Action, Failure, _St, _RefundSt) when
+    Step =:= risk_scoring orelse
+    Step =:= routing
+->
     {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
 process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
     Step =:= processing orelse
@@ -1925,9 +1914,6 @@ get_target(#st{target = Target}) ->
 
 get_opts(#st{opts = Opts}) ->
     Opts.
-
-get_risk_score(#st{risk_score = Score}) ->
-    Score.
 
 get_payment_revision(#st{payment = #domain_InvoicePayment{domain_revision = Revision}}) ->
     Revision.

@@ -743,9 +743,7 @@ payment_risk_score_check(C) ->
         ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID1, Client),
     [
-        ?payment_ev(PaymentID1, ?risk_score_changed(low)) % low risk score...
-    ] = next_event(InvoiceID1, Client),
-    [
+        ?payment_ev(PaymentID1, ?risk_score_changed(low)), % low risk score...
         % ...covered with high risk coverage terminal
         ?payment_ev(PaymentID1, ?route_changed(?route(?prv(1), ?trm(1)))),
         ?payment_ev(PaymentID1, ?cash_flow_changed(_))
@@ -762,9 +760,7 @@ payment_risk_score_check(C) ->
         ?payment_ev(PaymentID2, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID2, Client),
     [
-        ?payment_ev(PaymentID2, ?risk_score_changed(high)) % high risk score...
-    ] = next_event(InvoiceID2, Client),
-    [
+        ?payment_ev(PaymentID2, ?risk_score_changed(high)), % high risk score...
         % ...covered with the same terminal
         ?payment_ev(PaymentID2, ?route_changed(?route(?prv(1), ?trm(1)))),
         ?payment_ev(PaymentID2, ?cash_flow_changed(_))
@@ -782,9 +778,7 @@ payment_risk_score_check(C) ->
     ] = next_event(InvoiceID3, Client),
     [
         % fatal risk score is not going to be covered
-        ?payment_ev(PaymentID3, ?risk_score_changed(fatal))
-    ] = next_event(InvoiceID3, Client),
-    [
+        ?payment_ev(PaymentID3, ?risk_score_changed(fatal)),
         ?payment_ev(PaymentID3, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID3, Client),
     ok = payproc_errors:match(
@@ -822,9 +816,7 @@ payment_adjustment_success(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(low))
-    ] = next_event(InvoiceID, Client),
-    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
         ?payment_ev(PaymentID, ?route_changed(_)),
         ?payment_ev(PaymentID, ?cash_flow_changed(CF1))
     ] = next_event(InvoiceID, Client),
@@ -1077,9 +1069,7 @@ external_account_posting(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, InvoicingClient),
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(low))
-    ] = next_event(InvoiceID, InvoicingClient),
-    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
         ?payment_ev(PaymentID, ?route_changed(_)),
         ?payment_ev(PaymentID, ?cash_flow_changed(CF))
     ] = next_event(InvoiceID, InvoicingClient),
@@ -1392,9 +1382,7 @@ rounding_cashflow_volume(C) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(_))
-    ] = next_event(InvoiceID, Client),
-    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
         ?payment_ev(PaymentID, ?cash_flow_changed(CF))
     ] = next_event(InvoiceID, Client),
@@ -1863,9 +1851,7 @@ start_payment(InvoiceID, PaymentParams, Client) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(_))
-    ] = next_event(InvoiceID, Client),
-    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
