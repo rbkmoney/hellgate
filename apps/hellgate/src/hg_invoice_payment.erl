@@ -363,11 +363,11 @@ construct_payment_flow({hold, Params}, CreatedAt, Terms, VS, Revision) ->
     HeldUntil = hg_datetime:format_ts(hg_datetime:parse_ts(CreatedAt) + Seconds),
     ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil).
 
-reconstruct_payment_flow(?invoice_payment_flow_instant(), _Terms, _Revision, VS) ->
+reconstruct_payment_flow(?invoice_payment_flow_instant(), _CreatedAt, VS) ->
     VS#{flow => instant};
-reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, _HeldUntil), Terms, Revision, VS) ->
-    Lifetime = validate_hold_lifetime(Terms, VS, Revision),
-    VS#{flow => {hold, Lifetime}}.
+reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, HeldUntil), CreatedAt, VS) ->
+    Seconds = hg_datetime:parse_ts(HeldUntil) - hg_datetime:parse_ts(CreatedAt),
+    VS#{flow => {hold, ?hold_lifetime(Seconds)}}.
 
 get_predefined_route(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
     case get_rec_payment_tool(RecPaymentToolID) of
@@ -439,9 +439,9 @@ choose_route(Payer, PaymentInstitution, VS, Revision) ->
     end.
 
 log_reject_context(RejectContext) ->
-    _ = lager:info("No route found, varset: ~p", maps:get(varset, RejectContext)),
-    _ = lager:info("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
-    _ = lager:info("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
+    _ = lager:warning("No route found, varset: ~p", maps:get(varset, RejectContext)),
+    _ = lager:warning("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
+    _ = lager:warning("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
     ok.
 
 validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Revision) ->
@@ -512,6 +512,7 @@ collect_validation_varset(Party, Shop, Payment, VS) ->
 
 collect_routing_varset(Payment, Opts, VS0) ->
     #domain_InvoicePayment{
+        created_at      = CreatedAt,
         domain_revision = Revision,
         cost            = Cost,
         payer           = Payer,
@@ -535,7 +536,7 @@ collect_routing_varset(Payment, Opts, VS0) ->
         payment_tool => PaymentTool,
         cost => Cost
     },
-    VS2 = reconstruct_payment_flow(DomainFlow, MerchantTerms#domain_PaymentsServiceTerms.holds, Revision, VS1),
+    VS2 = reconstruct_payment_flow(DomainFlow, CreatedAt, VS1),
     collect_refund_varset(
         MerchantTerms#domain_PaymentsServiceTerms.refunds,
         VS2,
@@ -958,6 +959,7 @@ construct_adjustment_id(#st{adjustments = As}) ->
 assert_activity(Activity, #st{activity = Activity}) ->
     ok;
 assert_activity(_Activity, St) ->
+    %% TODO: Create dedicated error like "Payment is capturing already"
     #domain_InvoicePayment{status = Status} = get_payment(St),
     throw(#payproc_InvalidPaymentStatus{status = Status}).
 
@@ -1118,7 +1120,7 @@ process_routing(Action, St) ->
     VS1 = VS0#{risk_score => RiskScore},
     case choose_route(Payer, PaymentInstitution, VS1, Revision) of
         {ok, Route} ->
-            process_route(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
+            process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, _Details}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',
                 {no_route_found, #payprocerr_GeneralFailure{}}
@@ -1126,7 +1128,7 @@ process_routing(Action, St) ->
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
 
-process_route(Route, VS, Payment, PaymentInstitution, Revision, Opts, Events0, Action) ->
+process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opts, Events0, Action) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     Provider = get_route_provider(Route, Revision),
@@ -1674,11 +1676,8 @@ next_payment_step(risk_scored, risk_scoring) ->
 next_payment_step(route_built, routing) ->
     cash_flow_building;
 next_payment_step(cash_flow_built, cash_flow_building) ->
-    ready;
-next_payment_step(session_started, ready) ->
     processing;
 next_payment_step(session_started, processing) ->
-    %% session retrying
     processing;
 next_payment_step(payment_processed, processing) ->
     flow_waiting;
@@ -2125,11 +2124,11 @@ get_account_key({AccountParty, AccountType}) ->
 get_message(invoice_payment_started) ->
     "Invoice payment is started";
 get_message(invoice_payment_risk_score_changed) ->
-    "Invoice payment risk score is started";
+    "Invoice payment risk score changed";
 get_message(invoice_payment_route_changed) ->
-    "Invoice payment route is started";
+    "Invoice payment route changed";
 get_message(invoice_payment_cash_flow_changed) ->
-    "Invoice payment cash flow is started";
+    "Invoice payment cash flow changed";
 get_message(invoice_payment_status_changed) ->
     "Invoice payment status is changed".
 
