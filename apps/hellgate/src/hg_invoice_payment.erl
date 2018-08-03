@@ -71,7 +71,6 @@
     risk_scoring |
     routing |
     cash_flow_building |
-    ready |
     processing |
     flow_waiting |
     finalizing.
@@ -1071,7 +1070,6 @@ process_timeout({payment, risk_scoring}, Action, St) ->
     %% There are three processing steps here (scoring, routing and cash flow building)
     process_routing(Action, St);
 process_timeout({payment, Step}, Action, St) when
-    Step =:= ready orelse
     Step =:= processing orelse
     Step =:= finalizing
 ->
@@ -1742,7 +1740,7 @@ merge_change(?payment_status_changed(Status), St = #st{payment = Payment}) ->
         {cancelled, _} ->
             payment_cancelled;
         {failed, _} ->
-            payment_failed;
+            payment_failed; 
         {processed, _} ->
             payment_processed;
         {refunded, _} ->
