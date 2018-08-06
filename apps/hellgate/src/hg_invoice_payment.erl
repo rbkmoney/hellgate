@@ -74,20 +74,6 @@
     processing |
     flow_waiting |
     finalizing.
--type change_event_type() ::
-    payment_started |
-    legacy_payment_started |
-    risk_scored |
-    route_built |
-    cash_flow_built |
-    session_started |
-    payment_processed |
-    payment_failed |
-    payment_cancelled |
-    payment_captured |
-    payment_refunded |
-    {refund, refund_id()} |
-    partially_refunded.
 
 -record(st, {
     activity               :: activity(),
@@ -1665,95 +1651,73 @@ throw_invalid_request(Why) ->
 
 %%
 
--spec next_payment_step(change_event_type(), payment_step()) -> payment_step().
-
-next_payment_step(payment_started, new) ->
-    risk_scoring;
-next_payment_step(risk_scored, risk_scoring) ->
-    routing;
-next_payment_step(route_built, routing) ->
-    cash_flow_building;
-next_payment_step(cash_flow_built, cash_flow_building) ->
-    processing;
-next_payment_step(session_started, processing) ->
-    processing;
-next_payment_step(payment_processed, processing) ->
-    flow_waiting;
-next_payment_step(session_started, flow_waiting) ->
-    finalizing;
-next_payment_step(session_started, finalizing) ->
-    %% session retrying
-    finalizing.
-
--spec next_activity(change_event_type(), activity()) -> activity().
-
-next_activity(payment_captured, {payment, finalizing}) ->
-    idle;
-next_activity(payment_cancelled, {payment, finalizing}) ->
-    idle;
-next_activity(payment_failed, {payment, _Step}) ->
-    idle;
-next_activity(EventType, {payment, Step}) ->
-    {payment, next_payment_step(EventType, Step)};
-next_activity({refund, ID}, idle) ->
-    {refund, ID};
-next_activity({refund, ID}, {refund, ID}) ->
-    %% TODO: propertly describe refund stm events
-    {refund, ID};
-next_activity(partially_refunded, {refund, _ID}) ->
-    idle;
-next_activity(payment_refunded, idle) ->
-    idle.
-
--spec set_next_activity(change_event_type(), st()) -> st().
-
-set_next_activity(EventType, #st{activity = Activity} = St) ->
-    St#st{activity = next_activity(EventType, Activity)}.
-
 -spec merge_change(change(), st() | undefined) -> st().
 
 merge_change(Event, undefined) ->
     merge_change(Event, #st{activity = {payment, new}});
 
-merge_change(?payment_started(Payment, undefined, undefined, undefined), St) ->
-    set_next_activity(payment_started, St#st{
+merge_change(?payment_started(Payment), #st{activity = {payment, new}} = St) ->
+    St#st{
         target     = ?processed(),
-        payment    = Payment
-    });
-merge_change(?risk_score_changed(RiskScore), St) ->
-    set_next_activity(risk_scored, St#st{
-        risk_score = RiskScore
-    });
-merge_change(?route_changed(Route), St) ->
-    set_next_activity(route_built, St#st{
-        route      = Route
-    });
-merge_change(?cash_flow_changed(Cashflow), St) ->
-    set_next_activity(cash_flow_built, St#st{
-        cash_flow  = Cashflow
-    });
-merge_change(?payment_status_changed(Status), St = #st{payment = Payment}) ->
-    St1 = St#st{payment = Payment#domain_InvoicePayment{status = Status}},
-    EventType = case Status of
-        {captured, _} ->
-            payment_captured;
-        {cancelled, _} ->
-            payment_cancelled;
-        {failed, _} ->
-            payment_failed; 
-        {processed, _} ->
-            payment_processed;
-        {refunded, _} ->
-            payment_refunded
-    end,
-    set_next_activity(EventType, St1);
+        payment    = Payment,
+        activity   = {payment, risk_scoring}
+    };
+merge_change(?risk_score_changed(RiskScore), #st{activity = {payment, risk_scoring}} = St) ->
+    St#st{
+        risk_score = RiskScore,
+        activity   = {payment, routing}
+    };
+merge_change(?route_changed(Route), #st{activity = {payment, routing}} = St) ->
+    St#st{
+        route      = Route,
+        activity   = {payment, cash_flow_building}
+    };
+merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, cash_flow_building}} = St) ->
+    St#st{
+        cash_flow  = Cashflow,
+        activity   = {payment, processing}
+    };
+merge_change(
+    ?payment_status_changed({failed, _} = Status),
+    #st{payment = Payment, activity = {payment, _Step}} = St
+) ->
+    St#st{
+        payment    = Payment#domain_InvoicePayment{status = Status},
+        activity   = idle
+    };
+merge_change(
+    ?payment_status_changed({StatusTag, _} = Status),
+    #st{payment = Payment, activity = {payment, finalizing}} = St
+) when
+    StatusTag =:= cancelled orelse
+    StatusTag =:= captured
+->
+    St#st{
+        payment    = Payment#domain_InvoicePayment{status = Status},
+        activity   = idle
+    };
+merge_change(
+    ?payment_status_changed({processed, _} = Status),
+    #st{payment = Payment, activity = {payment, processing}} = St
+) ->
+    St#st{
+        payment    = Payment#domain_InvoicePayment{status = Status},
+        activity   = {payment, flow_waiting}
+    };
+merge_change(
+    ?payment_status_changed({refunded, _} = Status),
+    #st{payment = Payment, activity = idle} = St
+) ->
+    St#st{
+        payment    = Payment#domain_InvoicePayment{status = Status}
+    };
 merge_change(?refund_ev(ID, Event), St) ->
-    St1 = set_next_activity({refund, ID}, St),
+    St1 = St#st{activity = {refund, ID}},
     RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St1)),
     St2 = set_refund_state(ID, RefundSt, St1),
     case get_refund_status(get_refund(RefundSt)) of
         {S, _} when S == succeeded; S == failed ->
-            set_next_activity(partially_refunded, St2);
+            St2#st{activity = idle};
         _ ->
             St2
     end;
@@ -1767,10 +1731,24 @@ merge_change(?adjustment_ev(ID, Event), St) ->
         _ ->
             St1
     end;
-merge_change(?session_ev(Target, ?session_started()), St) ->
+merge_change(?session_ev(Target, ?session_started()), #st{activity = {payment, Step}} = St) when
+    Step =:= processing orelse
+    Step =:= flow_waiting orelse
+    Step =:= finalizing
+->
     % FIXME why the hell dedicated handling
     St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
-    set_next_activity(session_started, save_retry_attempt(Target, St1));
+    St2 = save_retry_attempt(Target, St1),
+    NextStep = case Step of
+        processing ->
+            processing;
+        flow_waiting ->
+            finalizing;
+        finalizing ->
+            %% session retrying
+            finalizing
+    end,
+    St2#st{activity = {payment, NextStep}};
 merge_change(?session_ev(Target, Event), St) ->
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
