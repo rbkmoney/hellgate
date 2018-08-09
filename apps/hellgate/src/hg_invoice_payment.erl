@@ -496,31 +496,13 @@ collect_validation_varset(Party, Shop, Payment, VS) ->
     }.
 
 collect_routing_varset(Payment, Opts, VS0) ->
+    VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     #domain_InvoicePayment{
         created_at      = CreatedAt,
         domain_revision = Revision,
-        cost            = Cost,
-        payer           = Payer,
-        flow            = DomainFlow,
-        owner_id        = PartyID,
-        shop_id         = ShopID
+        flow            = DomainFlow
     } = Payment,
-    #domain_Party{id = PartyID} = get_party(Opts),
-    #domain_Shop{
-        id = ShopID,
-        category = Category,
-        account = #domain_ShopAccount{currency = Currency}
-    } = get_shop(Opts),
-    PaymentTool = get_payer_payment_tool(Payer),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision),
-    VS1 = VS0#{
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Category,
-        currency => Currency,
-        payment_tool => PaymentTool,
-        cost => Cost
-    },
     VS2 = reconstruct_payment_flow(DomainFlow, CreatedAt, VS1),
     collect_refund_varset(
         MerchantTerms#domain_PaymentsServiceTerms.refunds,
