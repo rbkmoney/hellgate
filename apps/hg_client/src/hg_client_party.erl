@@ -31,12 +31,6 @@
 -export([suspend_shop/2]).
 -export([activate_shop/2]).
 
--export([get_wallet/2]).
--export([block_wallet/3]).
--export([unblock_wallet/3]).
--export([suspend_wallet/2]).
--export([activate_wallet/2]).
-
 -export([get_claim/2]).
 -export([get_claims/1]).
 -export([create_claim/2]).
@@ -67,7 +61,6 @@
 -type party_params()    :: dmsl_payment_processing_thrift:'PartyParams'().
 -type contract_id()     :: dmsl_domain_thrift:'ContractID'().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
--type wallet_id()       :: dmsl_domain_thrift:'WalletID'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
 -type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
@@ -234,36 +227,6 @@ activate_shop(ID, Client) ->
 
 compute_shop_terms(ID, Timestamp, Client) ->
     map_result_error(gen_server:call(Client, {call, 'ComputeShopTerms', [ID, Timestamp]})).
-
--spec get_wallet(wallet_id(), pid()) ->
-    dmsl_domain_thrift:'Wallet'() | woody_error:business_error().
-
-get_wallet(ID, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'GetWallet', [ID]})).
-
--spec block_wallet(wallet_id(), binary(), pid()) ->
-    ok | woody_error:business_error().
-
-block_wallet(ID, Reason, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'BlockWallet', [ID, Reason]})).
-
--spec unblock_wallet(wallet_id(), binary(), pid()) ->
-    ok | woody_error:business_error().
-
-unblock_wallet(ID, Reason, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'UnblockWallet', [ID, Reason]})).
-
--spec suspend_wallet(wallet_id(), pid()) ->
-    ok | woody_error:business_error().
-
-suspend_wallet(ID, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'SuspendWallet', [ID]})).
-
--spec activate_wallet(wallet_id(), pid()) ->
-    ok | woody_error:business_error().
-
-activate_wallet(ID, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ActivateWallet', [ID]})).
 
 -spec get_claim(claim_id(), pid()) ->
     claim() | woody_error:business_error().

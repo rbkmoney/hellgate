@@ -89,17 +89,6 @@
 -export([contractor_modification/1]).
 -export([contract_w_contractor_creation/1]).
 
--export([wallet_creation/1]).
--export([wallet_blocking/1]).
--export([wallet_unblocking/1]).
--export([wallet_already_blocked/1]).
--export([wallet_already_unblocked/1]).
--export([wallet_blocked_on_suspend/1]).
--export([wallet_suspension/1]).
--export([wallet_activation/1]).
--export([wallet_already_suspended/1]).
--export([wallet_already_active/1]).
-
 %% tests descriptions
 
 -type config() :: hg_ct_helper:config().
@@ -213,23 +202,6 @@ groups() ->
             contractor_creation,
             contractor_modification,
             contract_w_contractor_creation
-        ]},
-        {wallet_management, [sequence], [
-            party_creation,
-            contract_creation,
-            wallet_creation,
-            {group, wallet_blocking_suspension}
-        ]},
-        {wallet_blocking_suspension, [sequence], [
-            wallet_blocking,
-            wallet_already_blocked,
-            wallet_blocked_on_suspend,
-            wallet_unblocking,
-            wallet_already_unblocked,
-            wallet_suspension,
-            wallet_already_suspended,
-            wallet_activation,
-            wallet_already_active
         ]},
         {shop_account_lazy_creation, [sequence], [
             party_creation,
@@ -457,17 +429,6 @@ end_per_testcase(_Name, _C) ->
 -spec contractor_creation(config()) -> _ | no_return().
 -spec contractor_modification(config()) -> _ | no_return().
 -spec contract_w_contractor_creation(config()) -> _ | no_return().
-
--spec wallet_creation(config()) -> _ | no_return().
--spec wallet_blocking(config()) -> _ | no_return().
--spec wallet_unblocking(config()) -> _ | no_return().
--spec wallet_already_blocked(config()) -> _ | no_return().
--spec wallet_already_unblocked(config()) -> _ | no_return().
--spec wallet_blocked_on_suspend(config()) -> _ | no_return().
--spec wallet_suspension(config()) -> _ | no_return().
--spec wallet_activation(config()) -> _ | no_return().
--spec wallet_already_suspended(config()) -> _ | no_return().
--spec wallet_already_active(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -1249,80 +1210,6 @@ contract_w_contractor_creation(C) ->
     ok = accept_claim(Claim, Client),
     #domain_Contract{id = ContractID, contractor_id = ContractorID} = hg_client_party:get_contract(ContractID, Client).
 
-%%
-
-wallet_creation(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    WalletParams = make_wallet_params(?REAL_CONTRACT_ID),
-    Changeset = [
-        ?wallet_modification(WalletID, {creation, WalletParams}),
-        ?wallet_modification(WalletID, {
-            account_creation,
-            #payproc_WalletAccountParams{
-                currency = ?cur(<<"RUB">>)
-            }
-        })
-    ],
-    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
-    ok = accept_claim(Claim, Client),
-    #domain_Wallet{} = hg_client_party:get_wallet(WalletID, Client).
-
-wallet_blocking(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    Reason = <<"i said so">>,
-    ok = hg_client_party:block_wallet(WalletID, Reason, Client),
-    [?wallet_blocking(WalletID, ?blocked(Reason, _)), ?revision_changed(_, _)] = next_event(Client),
-    ?wallet_w_status(WalletID, ?blocked(Reason, _), _) = hg_client_party:get_wallet(WalletID, Client).
-
-wallet_unblocking(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    Reason = <<"enough">>,
-    ok = hg_client_party:unblock_wallet(WalletID, Reason, Client),
-    [?wallet_blocking(WalletID, ?unblocked(Reason, _)), ?revision_changed(_, _)] = next_event(Client),
-    ?wallet_w_status(WalletID, ?unblocked(Reason, _), _) = hg_client_party:get_wallet(WalletID, Client).
-
-wallet_already_blocked(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    ?wallet_blocked(_) = hg_client_party:block_wallet(WalletID, <<"too much">>, Client).
-
-wallet_already_unblocked(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    ?wallet_unblocked(_) = hg_client_party:unblock_wallet(WalletID, <<"too free">>, Client).
-
-wallet_blocked_on_suspend(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    ?wallet_blocked(_) = hg_client_party:suspend_wallet(WalletID, Client).
-
-wallet_suspension(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    ok = hg_client_party:suspend_wallet(WalletID, Client),
-    [?wallet_suspension(WalletID, ?suspended(_)), ?revision_changed(_, _)] = next_event(Client),
-    ?wallet_w_status(WalletID, _, ?suspended(_)) = hg_client_party:get_wallet(WalletID, Client).
-
-wallet_activation(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    ok = hg_client_party:activate_wallet(WalletID, Client),
-    [?wallet_suspension(WalletID, ?active(_)), ?revision_changed(_, _)] = next_event(Client),
-    ?wallet_w_status(WalletID, _, ?active(_)) = hg_client_party:get_wallet(WalletID, Client).
-
-wallet_already_suspended(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    ?wallet_suspended() = hg_client_party:suspend_wallet(WalletID, Client).
-
-wallet_already_active(C) ->
-    Client = cfg(client, C),
-    WalletID = ?REAL_WALLET_ID,
-    ?wallet_active() = hg_client_party:activate_wallet(WalletID, Client).
-
 %% Access control tests
 
 party_access_control(C) ->
@@ -1442,12 +1329,6 @@ make_contract_w_contractor_params(ContractorID) ->
 
 make_contractor_params() ->
     hg_ct_helper:make_battle_ready_contractor().
-
-make_wallet_params(ContractID) ->
-    #payproc_WalletParams{
-        name = <<"Some wallet">>,
-        contract_id = ContractID
-    }.
 
 construct_term_set_for_party(PartyID, Def) ->
     TermSet = #domain_TermSet{
