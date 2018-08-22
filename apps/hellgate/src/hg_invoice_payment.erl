@@ -424,9 +424,9 @@ choose_route(Payer, PaymentInstitution, VS, Revision) ->
     end.
 
 log_reject_context(RejectContext) ->
-    _ = lager:warning("No route found, varset: ~p", maps:get(varset, RejectContext)),
-    _ = lager:warning("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
-    _ = lager:warning("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
+    _ = lager:warning("No route found, varset: ~p", [maps:get(varset, RejectContext)]),
+    _ = lager:warning("No route found, rejected providers: ~p", [maps:get(rejected_providers, RejectContext)]),
+    _ = lager:warning("No route found, rejected terminals: ~p", [maps:get(rejected_terminals, RejectContext)]),
     ok.
 
 validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Revision) ->
