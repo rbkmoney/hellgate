@@ -94,7 +94,7 @@ get_payment_opts(St) ->
 get_payment_opts(Timestamp, St = #st{invoice = Invoice}) ->
     #{
         % TODO repalce with checkout by revision
-        party => hg_party_machine:checkout(get_party_id(St), {timestamp, Timestamp}),
+        party => hg_party:checkout(get_party_id(St), {timestamp, Timestamp}),
         invoice => Invoice
     }.
 
@@ -118,7 +118,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
     ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
     _ = assert_party_accessible(PartyID),
-    Party = get_party(PartyID),
+    Party = hg_party:get_party(PartyID),
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
@@ -229,16 +229,13 @@ handle_function_('Repair', [UserInfo, InvoiceID, Changes], _Opts) ->
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
-    Party = get_party(get_party_id(St)),
+    Party = hg_party:get_party(get_party_id(St)),
     Shop  = hg_party:get_shop(get_shop_id(St), Party),
     assert_party_shop_operable(Shop, Party).
 
 assert_party_shop_operable(Shop, Party) ->
     _ = assert_party_operable(Party),
     assert_shop_operable(Shop).
-
-get_party(PartyID) ->
-    hg_party_machine:get_party(PartyID).
 
 get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
     #payproc_Invoice{
@@ -788,11 +785,12 @@ assert_party_accessible(PartyID) ->
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
-make_invoice_params(#payproc_InvoiceWithTemplateParams{
-    template_id = TplID,
-    cost = Cost,
-    context = Context
-}) ->
+make_invoice_params(Params) ->
+    #payproc_InvoiceWithTemplateParams{
+        template_id = TplID,
+        cost = Cost,
+        context = Context
+    } = Params,
     #domain_InvoiceTemplate{
         owner_id = PartyID,
         shop_id = ShopID,
@@ -802,7 +800,7 @@ make_invoice_params(#payproc_InvoiceWithTemplateParams{
         details = TplDetails,
         context = TplContext
     } = hg_invoice_template:get(TplID),
-    Party = get_party(PartyID),
+    Party = hg_party:get_party(PartyID),
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_accessible(PartyID),
     _ = assert_party_shop_operable(Shop, Party),

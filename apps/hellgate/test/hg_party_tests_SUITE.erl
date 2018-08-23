@@ -696,7 +696,7 @@ contract_adjustment_creation(C) ->
 
 contract_adjustment_expiration(C) ->
     Client = cfg(client, C),
-    hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     ContractID = ?REAL_CONTRACT_ID,
     ID = <<"ADJ2">>,
     Revision = hg_domain:head(),

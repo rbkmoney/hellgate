@@ -362,9 +362,9 @@ ensure_claim_accepted(#payproc_Claim{id = ClaimID, revision = ClaimRevision, sta
 
 get_account(AccountID) ->
     % TODO we sure need to proxy this through the hellgate interfaces
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     Account = hg_accounting:get_account(AccountID),
-    _ = hg_context:cleanup(),
+    ok = hg_context:cleanup(),
     Account.
 
 -spec get_first_payout_tool_id(contract_id(), Client :: pid()) ->

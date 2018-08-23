@@ -16,6 +16,9 @@
 
 %% Party support functions
 
+-export([get_party/1]).
+-export([checkout/2]).
+
 -export([create_party/3]).
 -export([blocking/2]).
 -export([suspension/2]).
@@ -73,6 +76,34 @@
 
 
 %% Interface
+
+-spec get_party(party_id()) ->
+    party() | no_return().
+
+get_party(PartyID) ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    case party_client_thrift:get(PartyID, Client, Context) of
+        {ok, Party} ->
+            Party;
+        {error, Error} ->
+            erlang:throw(Error)
+    end.
+
+-spec checkout(party_id(), party_client_thrift:party_revision_param()) ->
+    party() | no_return().
+
+checkout(PartyID, RevisionParam) ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    case party_client_thrift:checkout(PartyID, RevisionParam, Client, Context) of
+        {ok, Party} ->
+            Party;
+        {error, Error} ->
+            erlang:throw(Error)
+    end.
 
 -spec create_party(party_id(), dmsl_domain_thrift:'PartyContactInfo'(), timestamp()) ->
     party().

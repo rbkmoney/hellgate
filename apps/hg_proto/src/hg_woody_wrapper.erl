@@ -9,7 +9,8 @@
 -export_type([client_opts/0]).
 
 -type handler_opts() :: #{
-    handler => module(),
+    handler := module(),
+    party_client := party_client:client(),
     user_identity => undefined | woody_user_identity:user_identity()
 }.
 
@@ -33,8 +34,12 @@
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), handler_opts()) ->
     {ok, term()} | no_return().
 
-handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
-    hg_context:set(Context),
+handle_function(Func, Args, Context, #{handler := Handler, party_client := PartyClient} = Opts) ->
+    ContextOptions = #{
+        woody_context => Context,
+        party_client => PartyClient
+    },
+    ok = hg_context:save(hg_context:create(ContextOptions)),
     try
         Result = Handler:handle_function(
             Func,
@@ -62,7 +67,7 @@ call(ServiceName, Function, Args) ->
 
 call(ServiceName, Function, Args, Opts) ->
     Service = get_service_modname(ServiceName),
-    Context = hg_context:get(),
+    Context = hg_context:get_woody_context(hg_context:load()),
     woody_client:call(
         {Service, Function, Args},
         Opts#{event_handler => scoper_woody_event_handler},

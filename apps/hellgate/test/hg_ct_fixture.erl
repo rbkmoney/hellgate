@@ -180,7 +180,7 @@ construct_contract_template(Ref, TermsRef, ValidSince, ValidUntil) ->
 -spec construct_provider_account_set([currency()]) -> dmsl_domain_thrift:'ProviderAccountSet'().
 
 construct_provider_account_set(Currencies) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountSet = lists:foldl(
         fun (Cur = ?cur(Code), Acc) ->
             Acc#{Cur => ?prvacc(hg_accounting:create_account(Code))}
@@ -201,7 +201,7 @@ construct_system_account_set(Ref) ->
     {system_account_set, dmsl_domain_thrift:'SystemAccountSetObject'()}.
 
 construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountID = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
     {system_account_set, #domain_SystemAccountSetObject{
@@ -225,7 +225,7 @@ construct_external_account_set(Ref) ->
     {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 
 construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountID1 = hg_accounting:create_account(CurrencyCode),
     AccountID2 = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
