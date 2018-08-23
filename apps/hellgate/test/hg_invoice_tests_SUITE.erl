@@ -64,6 +64,7 @@
 -export([payment_with_offsite_preauth_failed/1]).
 -export([payment_with_tokenized_bank_card/1]).
 -export([terms_retrieval/1]).
+-export([payment_has_optional_fields/1]).
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
@@ -154,6 +155,7 @@ groups() ->
             payment_fail_after_silent_callback,
             payment_temporary_unavailability_retry_success,
             payment_temporary_unavailability_too_many_retries,
+            payment_has_optional_fields,
             invoice_success_on_third_payment
         ]},
 
@@ -588,6 +590,17 @@ payment_success(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
+-spec payment_has_optional_fields(config()) -> test_return().
+
+payment_has_optional_fields(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    ?payment_state(Payment) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment.
+
 -spec payment_w_terminal_success(config()) -> _ | no_return().
 
 payment_w_terminal_success(C) ->
@@ -727,12 +740,15 @@ payment_risk_score_check(C) ->
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID1, ?payment_started(
-            ?payment_w_status(?pending()),
-            low,                      % low risk score...
-            ?route(?prv(1), ?trm(1)), % ...covered with high risk coverage terminal
-            _
-        )),
+        ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID1, Client),
+    [
+        ?payment_ev(PaymentID1, ?risk_score_changed(low)), % low risk score...
+        % ...covered with high risk coverage terminal
+        ?payment_ev(PaymentID1, ?route_changed(?route(?prv(1), ?trm(1)))),
+        ?payment_ev(PaymentID1, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID1, Client),
+    [
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
     PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
@@ -741,21 +757,35 @@ payment_risk_score_check(C) ->
     InvoiceID2 = start_invoice(<<"rubberbucks">>, make_due_date(10), 31337000, C),
     ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID2, ?payment_started(
-            ?payment_w_status(?pending()),
-            high,                     % high risk score...
-            ?route(?prv(1), ?trm(1)), % ...covered with the same terminal
-            _
-        )),
-        ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
+        ?payment_ev(PaymentID2, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID2, Client),
+    [
+        ?payment_ev(PaymentID2, ?risk_score_changed(high)), % high risk score...
+        % ...covered with the same terminal
+        ?payment_ev(PaymentID2, ?route_changed(?route(?prv(1), ?trm(1)))),
+        ?payment_ev(PaymentID2, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID2, Client),
+    [
+        ?payment_ev(PaymentID2, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
     PaymentID2 = await_payment_process_finish(InvoiceID2, PaymentID2, Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
     % Invoice w/ 100000000 =< cost
     InvoiceID3 = start_invoice(<<"rubbersocks">>, make_due_date(10), 100000000, C),
-    Exception = hg_client_invoicing:start_payment(InvoiceID3, PaymentParams, Client),
-    % fatal risk score is not going to be covered
-    {exception, #'InvalidRequest'{errors = [<<"Fatal error">>]}} = Exception.
+    ?payment_state(?payment(PaymentID3)) = hg_client_invoicing:start_payment(InvoiceID3, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID3, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID3, Client),
+    [
+        % fatal risk score is not going to be covered
+        ?payment_ev(PaymentID3, ?risk_score_changed(fatal)),
+        ?payment_ev(PaymentID3, ?payment_status_changed(?failed({failure, Failure})))
+    ] = next_event(InvoiceID3, Client),
+    ok = payproc_errors:match(
+        'PaymentFailure',
+        Failure,
+        fun({no_route_found, _}) -> ok end
+    ).
 
 -spec invalid_payment_adjustment(config()) -> test_return().
 
@@ -783,7 +813,14 @@ payment_adjustment_success(C) ->
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), _, _, CF1)),
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF1))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
@@ -862,6 +899,7 @@ payment_temporary_unavailability_too_many_retries(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_temporary_unavailability_payment_params([fail, fail, fail, fail]),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     {failed, PaymentID, {failure, Failure}} =
         await_payment_process_failure(InvoiceID, PaymentID, Client, 3),
     ok = payproc_errors:match(
@@ -1028,7 +1066,14 @@ external_account_posting(C) ->
         ?payment(PaymentID)
     ) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
     [
-        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), low, _, CF)),
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, InvoicingClient),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+    ] = next_event(InvoiceID, InvoicingClient),
+    [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, InvoicingClient),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
@@ -1334,7 +1379,14 @@ rounding_cashflow_volume(C) ->
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()), _, _, CF)),
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
     ?cash(0, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
@@ -1463,6 +1515,7 @@ adhoc_repair_working_failed(C) ->
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     {exception, #'InvalidRequest'{}} = repair_invoice(InvoiceID, [], Client),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
@@ -1476,6 +1529,7 @@ adhoc_repair_failed_succeeded(C) ->
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
     ] = next_event(InvoiceID, Client),
     % assume no more events here since machine is FUBAR already
@@ -1542,7 +1596,8 @@ payment_with_tokenized_bank_card(C) ->
 %%
 
 next_event(InvoiceID, Client) ->
-    next_event(InvoiceID, 5000, Client).
+    %% timeout should be at least as large as hold expiration in construct_domain_fixture/0
+    next_event(InvoiceID, 12000, Client).
 
 next_event(InvoiceID, Timeout, Client) ->
     case hg_client_invoicing:pull_event(InvoiceID, Timeout, Client) of
@@ -1793,8 +1848,12 @@ start_invoice(ShopID, Product, Due, Amount, C) ->
 start_payment(InvoiceID, PaymentParams, Client) ->
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending()))),
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
@@ -1803,10 +1862,18 @@ process_payment(InvoiceID, PaymentParams, Client) ->
 
 process_payment(InvoiceID, PaymentParams, Client, Restarts) ->
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client, Restarts).
+
+await_payment_session_started(InvoiceID, PaymentID, Client, Target) ->
+    [
+        ?payment_ev(PaymentID, ?session_ev(Target, ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
 
 await_payment_process_interaction(InvoiceID, PaymentID, Client) ->
     [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?interaction_requested(UserInteraction)))
     ] = next_event(InvoiceID, Client),
     UserInteraction.
@@ -2019,7 +2086,7 @@ construct_domain_fixture() ->
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
                         if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, #domain_HoldLifetime{seconds = 3}}
+                        then_ = {value, #domain_HoldLifetime{seconds = 10}}
                     }
                 ]}
             },
@@ -2423,7 +2490,7 @@ construct_domain_fixture() ->
                                 if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
                                     definition = {payment_system_is, visa}
                                 }}}},
-                                then_ = {value, ?hold_lifetime(5)}
+                                then_ = {value, ?hold_lifetime(12)}
                             }
                         ]}
                     },

@@ -5,7 +5,12 @@
 
 -define(payment_started(Payment),
     {invoice_payment_started,
-        #payproc_InvoicePaymentStarted{payment = Payment}
+        #payproc_InvoicePaymentStarted{
+            payment = Payment,
+            risk_score = undefined,
+            route = undefined,
+            cash_flow = undefined
+        }
     }
 ).
 -define(payment_started(Payment, RiskScore, Route, CashFlow),
@@ -16,6 +21,21 @@
             route = Route,
             cash_flow = CashFlow
         }
+    }
+).
+-define(risk_score_changed(RiskScore),
+    {invoice_payment_risk_score_changed,
+        #payproc_InvoicePaymentRiskScoreChanged{risk_score = RiskScore}
+    }
+).
+-define(route_changed(Route),
+    {invoice_payment_route_changed,
+        #payproc_InvoicePaymentRouteChanged{route = Route}
+    }
+).
+-define(cash_flow_changed(CashFlow),
+    {invoice_payment_cash_flow_changed,
+        #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}
     }
 ).
 -define(payment_status_changed(Status),
