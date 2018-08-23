@@ -112,27 +112,6 @@ handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Op
 
 %% Wallet
 
-handle_function_('GetWallet', [UserInfo, PartyID, ID], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = hg_party_machine:get_party(PartyID),
-    ensure_wallet(hg_party:get_wallet(ID, Party));
-
-handle_function_('BlockWallet', [UserInfo, PartyID, ID, Reason], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {block, {wallet, ID}, Reason});
-
-handle_function_('UnblockWallet', [UserInfo, PartyID, ID, Reason], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {unblock, {wallet, ID}, Reason});
-
-handle_function_('SuspendWallet', [UserInfo, PartyID, ID], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {suspend, {wallet, ID}});
-
-handle_function_('ActivateWallet', [UserInfo, PartyID, ID], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {activate, {wallet, ID}});
-
 handle_function_('ComputeWalletTerms', [UserInfo, PartyID, ContractID, WalletID, Currency, Timestamp], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
@@ -305,11 +284,6 @@ ensure_shop(#domain_Shop{} = Shop) ->
     Shop;
 ensure_shop(undefined) ->
     throw(#payproc_ShopNotFound{}).
-
-ensure_wallet(#domain_Wallet{} = Wallet) ->
-    Wallet;
-ensure_wallet(undefined) ->
-    throw(#payproc_WalletNotFound{}).
 
 get_payment_institution(PaymentInstitutionRef, Revision) ->
     case hg_domain:find(Revision, {payment_institution, PaymentInstitutionRef}) of
