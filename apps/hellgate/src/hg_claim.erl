@@ -497,11 +497,12 @@ assert_shop_change_applicable(
     throw(#'InvalidRequest'{errors = [<<"Can't change shop's account">>]});
 assert_shop_change_applicable(
     _ID,
-    {contract_modification, #payproc_ShopContractModification{contract_id = NewContractID}},
-    #domain_Shop{contract_id = OldContractID},
-    Party
+    {contract_modification, #payproc_ShopContractModification{contract_id = _NewContractID}},
+    #domain_Shop{contract_id = _OldContractID},
+    _Party
 ) ->
-    assert_payment_institutions_equals(OldContractID, NewContractID, Party);
+    %% TODO get this check back when we finish migration
+    ok;
 assert_shop_change_applicable(_, _, _, _) ->
     ok.
 
@@ -529,29 +530,7 @@ assert_wallet_change_applicable(
 assert_wallet_change_applicable(_, _, _) ->
     ok.
 
-assert_payment_institutions_equals(OldContractID, NewContractID, Party) ->
-    #domain_Contract{payment_institution = OldRef} = hg_party:get_contract(OldContractID, Party),
-    case hg_party:get_contract(NewContractID, Party) of
-        #domain_Contract{payment_institution = OldRef} ->
-            ok;
-        #domain_Contract{payment_institution = NewRef} ->
-            % Can't change shop's payment institution
-            raise_invalid_changeset(?invalid_contract(
-                NewContractID,
-                {invalid_object_reference, #payproc_InvalidObjectReference{
-                    ref = make_optional_domain_ref(payment_institution, NewRef)
-                }}
-            ));
-        undefined ->
-            raise_invalid_changeset(?invalid_contract(NewContractID, {not_exists, NewContractID}))
-    end.
-
 assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
-
-make_optional_domain_ref(_, undefined) ->
-    undefined;
-make_optional_domain_ref(Type, Ref) ->
-    {Type, Ref}.
