@@ -111,7 +111,6 @@ all() ->
         {group, shop_management},
         {group, shop_account_lazy_creation},
         {group, contractor_management},
-        {group, wallet_management},
 
         {group, claim_management},
 
