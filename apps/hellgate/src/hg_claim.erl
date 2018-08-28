@@ -1,6 +1,7 @@
 -module(hg_claim).
 
 -include("party_events.hrl").
+-include_lib("dmsl/include/dmsl_domain_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([create/5]).
@@ -439,7 +440,7 @@ assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
             ok = assert_contract_change_applicable(ID, Modification, Contract);
         ?shop_modification(ID, Modification) ->
             Shop = hg_party:get_shop(ID, Party),
-            ok = assert_shop_change_applicable(ID, Modification, Shop, Party);
+            ok = assert_shop_change_applicable(ID, Modification, Shop, Party, Revision);
         ?contractor_modification(ID, Modification) ->
             Contractor = hg_party:get_contractor(ID, Party),
             ok = assert_contractor_change_applicable(ID, Modification, Contractor);
@@ -482,28 +483,35 @@ assert_contract_change_applicable(ID, ?payout_tool_creation(PayoutToolID, _), Co
 assert_contract_change_applicable(_, _, _) ->
     ok.
 
-assert_shop_change_applicable(_, {creation, _}, undefined, _) ->
+assert_shop_change_applicable(_, {creation, _}, undefined, _, _) ->
     ok;
-assert_shop_change_applicable(ID, _AnyModification, undefined, _) ->
+assert_shop_change_applicable(ID, _AnyModification, undefined, _, _) ->
     raise_invalid_changeset(?invalid_shop(ID, {not_exists, ID}));
-assert_shop_change_applicable(ID, {creation, _}, #domain_Shop{}, _) ->
+assert_shop_change_applicable(ID, {creation, _}, #domain_Shop{}, _, _) ->
     raise_invalid_changeset(?invalid_shop(ID, {already_exists, ID}));
 assert_shop_change_applicable(
     _ID,
     {shop_account_creation, _},
     #domain_Shop{account = Account},
-    _Party
+    _Party,
+    _Revision
 ) when Account /= undefined ->
     throw(#'InvalidRequest'{errors = [<<"Can't change shop's account">>]});
 assert_shop_change_applicable(
     _ID,
-    {contract_modification, #payproc_ShopContractModification{contract_id = _NewContractID}},
-    #domain_Shop{contract_id = _OldContractID},
-    _Party
+    {contract_modification, #payproc_ShopContractModification{contract_id = NewContractID}},
+    #domain_Shop{contract_id = OldContractID},
+    Party,
+    Revision
 ) ->
-    %% TODO get this check back when we finish migration
-    ok;
-assert_shop_change_applicable(_, _, _, _) ->
+    OldContract = hg_party:get_contract(OldContractID, Party),
+    case hg_party:get_contract(NewContractID, Party) of
+        #domain_Contract{} = NewContract ->
+            assert_payment_institution_realm_equals(OldContract, NewContract, Revision);
+        undefined ->
+            raise_invalid_changeset(?invalid_contract(NewContractID, {not_exists, NewContractID}))
+    end;
+assert_shop_change_applicable(_, _, _, _, _) ->
     ok.
 
 assert_contractor_change_applicable(_, {creation, _}, undefined) ->
@@ -530,7 +538,47 @@ assert_wallet_change_applicable(
 assert_wallet_change_applicable(_, _, _) ->
     ok.
 
+assert_payment_institution_realm_equals(
+    #domain_Contract{id = OldContractID, payment_institution = OldRef},
+    #domain_Contract{id = NewContractID, payment_institution = NewRef},
+    Revision
+) ->
+    OldRealm = get_payment_institution_realm(OldRef, Revision, OldContractID),
+    case get_payment_institution_realm(NewRef, Revision, NewContractID) of
+        OldRealm ->
+            ok;
+        _NewRealm ->
+            raise_invalid_payment_institution(NewContractID, NewRef)
+    end.
+
+get_payment_institution_realm(Ref, Revision, ContractID) ->
+    case hg_domain:find(Revision, {payment_institution, Ref}) of
+        #domain_PaymentInstitution{} = P ->
+            hg_payment_institution:get_realm(P);
+        notfound ->
+            raise_invalid_payment_institution(ContractID, Ref)
+    end.
+
 assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).
+
+-spec raise_invalid_payment_institution(
+    dmsl_domain_thrift:'ContractID'(),
+    dmsl_domain_thrift:'PaymentInstitutionRef'() | undefined
+) ->
+    no_return().
+
+raise_invalid_payment_institution(ContractID, Ref) ->
+    raise_invalid_changeset(?invalid_contract(
+        ContractID,
+        {invalid_object_reference, #payproc_InvalidObjectReference{
+            ref = make_optional_domain_ref(payment_institution, Ref)
+        }}
+    )).
+
+make_optional_domain_ref(_, undefined) ->
+    undefined;
+make_optional_domain_ref(Type, Ref) ->
+    {Type, Ref}.
