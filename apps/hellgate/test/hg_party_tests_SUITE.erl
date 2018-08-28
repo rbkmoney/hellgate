@@ -804,7 +804,7 @@ shop_update(C) ->
     ContractID = <<"CONTRACT_IN_DIFFERENT_PAYMENT_INST">>,
     PayoutToolID = <<"1">>,
     Changeset3 = [
-        ?contract_modification(ContractID, {creation, make_contract_params(?tmpl(2), ?pinst(1))}),
+        ?contract_modification(ContractID, {creation, make_contract_params(?tmpl(2), ?pinst(3))}),
         ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID, PayoutToolParams)),
         ?shop_modification(ShopID, ?shop_contract_modification(ContractID, PayoutToolID))
     ],
@@ -1502,6 +1502,19 @@ construct_domain_fixture() ->
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(2),
+            data = #domain_PaymentInstitution{
+                name = <<"Chetky Payments Inc.">>,
+                system_account_set = {value, ?sas(2)},
+                default_contract_template = {value, ?tmpl(2)},
+                providers = {value, ?ordset([])},
+                inspector = {value, ?insp(1)},
+                residences = [],
+                realm = live
+            }
+        }},
+
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(3),
             data = #domain_PaymentInstitution{
                 name = <<"Chetky Payments Inc.">>,
                 system_account_set = {value, ?sas(2)},
