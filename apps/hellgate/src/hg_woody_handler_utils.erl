@@ -33,7 +33,7 @@ collect_user_identity(UserInfo) ->
 -spec set_user_identity(user_identity()) -> ok.
 
 set_user_identity(UserIdentity) ->
-    hg_context:save(hg_content:set_user_identity(UserIdentity, hg_context:load())).
+    hg_context:save(hg_context:set_user_identity(UserIdentity, hg_context:load())).
 
 -spec assume_user_identity(user_info()) -> ok.
 

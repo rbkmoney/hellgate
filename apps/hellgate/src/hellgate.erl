@@ -42,7 +42,7 @@ init([]) ->
         hg_customer,
         hg_recurrent_paytool
     ],
-    PartyClient = party_client:create(),
+    PartyClient = party_client:create_client(),
     Opts = #{party_client => PartyClient},
     {ok, {
         #{strategy => one_for_all, intensity => 6, period => 30},
@@ -63,7 +63,7 @@ get_api_child_spec(MachineHandlers, Opts) ->
             port          => genlib_app:env(?MODULE, port, 8022),
             net_opts      => genlib_app:env(?MODULE, net_opts, []),
             event_handler => scoper_woody_event_handler,
-            handlers      => hg_machine:get_service_handlers(MachineHandlers) ++ [
+            handlers      => hg_machine:get_service_handlers(MachineHandlers, Opts) ++ [
                 construct_service_handler(party_management             , hg_party_woody_handler, Opts),
                 construct_service_handler(invoicing                    , hg_invoice            , Opts),
                 construct_service_handler(invoice_templating           , hg_invoice_template   , Opts),

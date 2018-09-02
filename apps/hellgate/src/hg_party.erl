@@ -82,7 +82,7 @@
 
 get_party(PartyID) ->
     HgContext = hg_context:load(),
-    Client = hg_context:get_party_client_client(HgContext),
+    Client = hg_context:get_party_client(HgContext),
     Context = hg_context:get_party_client_context(HgContext),
     case party_client_thrift:get(PartyID, Client, Context) of
         {ok, Party} ->
@@ -96,7 +96,7 @@ get_party(PartyID) ->
 
 checkout(PartyID, RevisionParam) ->
     HgContext = hg_context:load(),
-    Client = hg_context:get_party_client_client(HgContext),
+    Client = hg_context:get_party_client(HgContext),
     Context = hg_context:get_party_client_context(HgContext),
     case party_client_thrift:checkout(PartyID, RevisionParam, Client, Context) of
         {ok, Party} ->

@@ -144,6 +144,22 @@ start_app(hellgate = AppName) ->
         hellgate_root_url => get_hellgate_url()
     }};
 
+start_app(party_client = AppName) ->
+    {start_app(AppName, [
+        {services, #{
+            party_management => "http://hellgate:8022/v1/processing/partymgmt"
+        }},
+        {woody, #{
+            cache_mode => safe,  % disabled | safe | aggressive
+            aggressive_caching_timeout => 30000,
+            options => #{
+                woody_client => #{
+                    % event_handler => scoper_woody_event_handler
+                }
+            }
+        }}
+    ]), #{}};
+
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
 

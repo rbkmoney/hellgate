@@ -71,7 +71,7 @@
 %% Dispatch
 
 -export([get_child_spec/1]).
--export([get_service_handlers/1]).
+-export([get_service_handlers/2]).
 -export([get_handler_module/1]).
 
 -export([start_link/1]).
@@ -273,16 +273,17 @@ get_child_spec(MachineHandlers) ->
         type => supervisor
     }.
 
--spec get_service_handlers([MachineHandler :: module()]) ->
+-spec get_service_handlers([MachineHandler :: module()], map()) ->
     [service_handler()].
 
-get_service_handlers(MachineHandlers) ->
-    lists:map(fun get_service_handler/1, MachineHandlers).
+get_service_handlers(MachineHandlers, Opts) ->
+    [get_service_handler(H, Opts) || H <- MachineHandlers].
 
-get_service_handler(MachineHandler) ->
+get_service_handler(MachineHandler, Opts) ->
     Ns = MachineHandler:namespace(),
+    FullOpts = maps:merge(#{ns => Ns, handler => ?MODULE}, Opts),
     {Path, Service} = hg_proto:get_service_spec(processor, #{namespace => Ns}),
-    {Path, {Service, {hg_woody_wrapper, #{ns => Ns, handler => ?MODULE}}}}.
+    {Path, {Service, {hg_woody_wrapper, FullOpts}}}.
 
 %%
 
