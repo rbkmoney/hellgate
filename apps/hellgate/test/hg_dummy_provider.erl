@@ -30,8 +30,8 @@
     {suspend, #'prxprv_SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
 -define(finish(Status),
     {finish, #'prxprv_FinishIntent'{status = Status}}).
--define(success(),
-    {success, #'prxprv_Success'{}}).
+-define(success(Token),
+    {success, #'prxprv_Success'{token = Token}}).
 -define(failure(Failure),
     {failure, Failure}).
 -define(recurrent_token_finish(Token),
@@ -260,13 +260,13 @@ process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
-            finish(?success(), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
     end;
 process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo, _) ->
     Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
     case get_transaction_state(Key) of
         processed ->
-            finish(?success(), get_payment_id(PaymentInfo));
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo));
         {pending, Count} when Count > 2 ->
             Failure = payproc_errors:construct('PaymentFailure',
                 {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}),
@@ -284,11 +284,11 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
-            finish(?success(), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
     end;
 
 process_payment(?cancelled(), _, PaymentInfo, _) ->
-    finish(?success(), get_payment_id(PaymentInfo)).
+    finish(success(PaymentInfo), get_payment_id(PaymentInfo)).
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
@@ -325,14 +325,14 @@ process_refund(undefined, PaymentInfo, _) ->
             PaymentId = hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)]),
             process_failure_scenario(PaymentInfo, Scenario, PaymentId);
         _ ->
-            finish(?success(), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
     end.
 
 process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
     Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
     case do_failure_scenario_step(Scenario, Key) of
         good ->
-            finish(?success(), PaymentId);
+            finish(success(PaymentInfo), PaymentId);
         fail ->
             Failure = payproc_errors:construct('PaymentFailure',
                 {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}),
@@ -377,6 +377,16 @@ respond(Response, CallbackResult) ->
         response   = Response,
         result     = CallbackResult
     }.
+
+success(PaymentInfo) ->
+    #prxprv_PaymentInfo{payment = #prxprv_InvoicePayment{recurrent_intention = Intention}} = PaymentInfo,
+    Token = case Intention of
+        true ->
+            ?REC_TOKEN;
+        Other when Other =:= false orelse Other =:= undefined ->
+            undefined
+    end,
+    ?success(Token).
 
 get_payment_id(#prxprv_PaymentInfo{payment = Payment}) ->
     Payment#prxprv_InvoicePayment.id.
