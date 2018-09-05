@@ -18,6 +18,8 @@
     transport_opts => [{_, _}]
 }.
 
+-define(DEFAULT_HANDLING_TIMEOUT, 30000).  % 30 seconds
+
 %% Callbacks
 
 -callback(handle_function(woody:func(), woody:args(), handler_opts()) ->
@@ -33,7 +35,8 @@
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), handler_opts()) ->
     {ok, term()} | no_return().
 
-handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
+handle_function(Func, Args, Context0, #{handler := Handler} = Opts) ->
+    Context = ensure_woody_deadline_set(Context0),
     hg_context:set(Context),
     try
         Result = Handler:handle_function(
@@ -90,3 +93,16 @@ construct_opts(Url) ->
 
 get_service_modname(ServiceName) ->
     hg_proto:get_service(ServiceName).
+
+-spec ensure_woody_deadline_set(woody_context:ctx()) ->
+    woody_context:ctx().
+
+ensure_woody_deadline_set(WoodyContext) ->
+    case woody_context:get_deadline(WoodyContext) of
+        undefined ->
+            DefaultTimeout = genlib_app:env(hellgate, default_woody_handling_timeout, ?DEFAULT_HANDLING_TIMEOUT),
+            Deadline = woody_deadline:from_timeout(DefaultTimeout),
+            woody_context:set_deadline(Deadline, WoodyContext);
+        _Other ->
+            WoodyContext
+    end.
