@@ -87,6 +87,7 @@
     retry_attempts = #{}   :: #{target() => non_neg_integer()},
     refunds        = #{}   :: #{refund_id() => refund_state()},
     adjustments    = []    :: [adjustment()],
+    recurrent_token        :: undefined | recurrent_token(),
     opts                   :: undefined | opts()
 }).
 
@@ -102,27 +103,34 @@
 
 -export_type([st/0]).
 
--type party()             :: dmsl_domain_thrift:'Party'().
--type invoice()           :: dmsl_domain_thrift:'Invoice'().
--type payment()           :: dmsl_domain_thrift:'InvoicePayment'().
--type payment_id()        :: dmsl_domain_thrift:'InvoicePaymentID'().
--type refund()            :: dmsl_domain_thrift:'InvoicePaymentRefund'().
--type refund_id()         :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
--type refund_params()     :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
--type adjustment()        :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
--type adjustment_id()     :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
--type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
--type target()            :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
--type risk_score()        :: dmsl_domain_thrift:'RiskScore'().
--type route()             :: dmsl_domain_thrift:'PaymentRoute'().
--type cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
--type trx_info()          :: dmsl_domain_thrift:'TransactionInfo'().
--type session_result()    :: dmsl_payment_processing_thrift:'SessionResult'().
--type proxy_state()       :: dmsl_proxy_provider_thrift:'ProxyState'().
--type tag()               :: dmsl_proxy_provider_thrift:'CallbackTag'().
--type retry_strategy()    :: hg_retry:strategy().
+-type shop()                :: dmsl_domain_thrift:'Shop'().
+-type party()               :: dmsl_domain_thrift:'Party'().
+-type payer()               :: dmsl_domain_thrift:'Payer'().
+-type invoice()             :: dmsl_domain_thrift:'Invoice'().
+-type invoice_id()          :: dmsl_domain_thrift:'InvoiceID'().
+-type payment()             :: dmsl_domain_thrift:'InvoicePayment'().
+-type payment_id()          :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type refund()              :: dmsl_domain_thrift:'InvoicePaymentRefund'().
+-type refund_id()           :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
+-type refund_params()       :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
+-type adjustment()          :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
+-type adjustment_id()       :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
+-type adjustment_params()   :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
+-type target()              :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
+-type risk_score()          :: dmsl_domain_thrift:'RiskScore'().
+-type route()               :: dmsl_domain_thrift:'PaymentRoute'().
+-type cash_flow()           :: dmsl_domain_thrift:'FinalCashFlow'().
+-type trx_info()            :: dmsl_domain_thrift:'TransactionInfo'().
+-type session_result()      :: dmsl_payment_processing_thrift:'SessionResult'().
+-type proxy_state()         :: dmsl_proxy_provider_thrift:'ProxyState'().
+-type tag()                 :: dmsl_proxy_provider_thrift:'CallbackTag'().
+-type recurrent_intention() :: dmsl_domain_thrift:'RecurrentIntention'() | undefined.
+-type recurrent_token_src() :: dmsl_domain_thrift:'RecurrentTokenSource'().
+-type is_recurring()        :: true | false | undefined.
+-type recurrent_token()     :: dmsl_domain_thrift:'Token'().
+-type retry_strategy()      :: hg_retry:strategy().
 
--type session_status()    :: active | suspended | finished.
+-type session_status()      :: active | suspended | finished.
 -type session() :: #{
     target      := target(),
     status      := session_status(),
@@ -233,11 +241,14 @@ init_(PaymentID, Params, Opts) ->
     Cost = get_invoice_cost(Invoice),
     Payer = construct_payer(get_payer_params(Params), Shop),
     Flow = get_flow_params(Params),
+    RecurrentIntention = get_recurrent_intention_params(Params),
+    IsRecurring = get_is_recurring_params(Params),
     CreatedAt = hg_datetime:format_now(),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision),
     VS0 = collect_validation_varset(Party, Shop, #{}),
     Payment = construct_payment(
-        PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, Party, Shop, VS0, Revision
+        PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, Party, Shop,
+        VS0, Revision, RecurrentIntention, IsRecurring
     ),
     Events = [?payment_started(Payment)],
     {collapse_changes(Events), {Events, hg_machine_action:instant()}}.
@@ -268,6 +279,14 @@ get_payer_params(#payproc_InvoicePaymentParams{payer = PayerParams}) ->
 
 get_flow_params(#payproc_InvoicePaymentParams{flow = FlowParams}) ->
     FlowParams.
+
+get_recurrent_intention_params(#payproc_InvoicePaymentParams{recurrent_intention = RecurrentIntention}) ->
+    RecurrentIntention.
+
+get_is_recurring_params(#payproc_InvoicePaymentParams{is_recurring = undefined}) ->
+    false;
+get_is_recurring_params(#payproc_InvoicePaymentParams{is_recurring = IsRecurring}) ->
+    IsRecurring.
 
 construct_payer({payment_resource, #payproc_PaymentResourcePayerParams{
     resource = Resource,
@@ -308,7 +327,8 @@ get_active_binding(#payproc_Customer{bindings = Bindings, active_binding_id = Bi
 get_customer_contact_info(#payproc_Customer{contact_info = ContactInfo}) ->
     ContactInfo.
 
-construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, Party, Shop, VS0, Revision) ->
+construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
+                  Party, Shop, VS0, Revision, RecurrentIntention, IsRecurring) ->
     VS1 = validate_payment_tool(
         get_payer_payment_tool(Payer),
         Terms#domain_PaymentsServiceTerms.payment_methods,
@@ -328,16 +348,19 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, Party, S
         VS2,
         Revision
     ),
+    ok = validate_recurrent_intention(Payer, Shop, Party, IsRecurring, RecurrentIntention),
     #domain_InvoicePayment{
-        id              = PaymentID,
-        created_at      = CreatedAt,
-        owner_id        = Party#domain_Party.id,
-        shop_id         = Shop#domain_Shop.id,
-        domain_revision = Revision,
-        status          = ?pending(),
-        cost            = Cost,
-        payer           = Payer,
-        flow            = Flow
+        id                  = PaymentID,
+        created_at          = CreatedAt,
+        owner_id            = Party#domain_Party.id,
+        shop_id             = Shop#domain_Shop.id,
+        domain_revision     = Revision,
+        status              = ?pending(),
+        cost                = Cost,
+        payer               = Payer,
+        flow                = Flow,
+        recurrent_intention = RecurrentIntention,
+        is_recurring        = IsRecurring
     }.
 
 construct_payment_flow({instant, _}, _CreatedAt, _Terms, _VS, _Revision) ->
@@ -354,7 +377,16 @@ reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, HeldUntil
     Seconds = hg_datetime:parse_ts(HeldUntil) - hg_datetime:parse_ts(CreatedAt),
     VS#{flow => {hold, ?hold_lifetime(Seconds)}}.
 
-get_predefined_route(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
+-spec get_predefined_route(payer(), recurrent_intention()) -> {ok, route()} | undefined.
+get_predefined_route(?payment_resource_payer(_, _), undefined = _RecurrentIntention) ->
+    undefined;
+get_predefined_route(?payment_resource_payer(_, _), ?recurrent_intention(TokenSource)) ->
+    get_predefined_recurrent_route(TokenSource);
+get_predefined_route(?customer_payer(_, _, _, _, _) = Payer, undefined = _RecurrentIntention) ->
+    get_predefined_customer_route(Payer).
+
+-spec get_predefined_customer_route(payer()) -> {ok, route()} | undefined.
+get_predefined_customer_route(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
     case get_rec_payment_tool(RecPaymentToolID) of
         {ok, #payproc_RecurrentPaymentTool{
             route = Route
@@ -363,9 +395,12 @@ get_predefined_route(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
         _ ->
             % TODO more elegant error
             error({'Can\'t get route for customer payer', Payer})
-    end;
-get_predefined_route(?payment_resource_payer(_, _)) ->
-    undefined.
+    end.
+
+-spec get_predefined_recurrent_route(recurrent_token_src()) -> {ok, route()}.
+get_predefined_recurrent_route(?payment_token_source(InvoiceID, PaymentID)) ->
+    PreviousPayment = get_payment_state(InvoiceID, PaymentID),
+    {ok, get_route(PreviousPayment)}.
 
 validate_hold_lifetime(
     #domain_PaymentHoldsServiceTerms{
@@ -380,6 +415,70 @@ validate_hold_lifetime(
     reduce_selector(hold_lifetime, LifetimeSelector, VS, Revision);
 validate_hold_lifetime(undefined, _VS, _Revision) ->
     throw_invalid_request(<<"Holds are not available">>).
+
+-spec validate_recurrent_intention(payer(), shop(), party(), is_recurring(), recurrent_intention()) ->
+    ok | no_return().
+validate_recurrent_intention(_Payer, _Shop, _Party, false = _IsRecurring, undefined = _RecurrentIntention) ->
+    ok;
+validate_recurrent_intention(Payer, Shop, Party, true = _IsRecurring, undefined = _RecurrentIntention) ->
+    ok = validate_recurrent_terms(Shop, Party),
+    ok = validate_recurrent_payer(Payer);
+validate_recurrent_intention(Payer, Shop, Party, _IsRecurring, RecurrentIntention) ->
+    ok = validate_recurrent_terms(Shop, Party),
+    ok = validate_recurrent_token_source(Shop, RecurrentIntention),
+    ok = validate_recurrent_payer(Payer).
+
+-spec validate_recurrent_terms(shop(), party()) -> ok | no_return().
+validate_recurrent_terms(Shop, Party) ->
+    _RecurrentTerms = hg_recurrent_paytool:assert_operation_permitted(Shop, Party),
+    ok.
+
+-spec validate_recurrent_token_source(shop(), recurrent_intention()) -> ok | no_return().
+validate_recurrent_token_source(Shop, ?recurrent_intention(?payment_token_source(InvoiceID, PaymentID))) ->
+    PreviousPayment = try get_payment_state(InvoiceID, PaymentID)
+    catch
+        throw:#payproc_InvoiceNotFound{} ->
+            throw_invalid_recurrent_intention(<<"Previous invoice not found">>);
+        throw:#payproc_InvoicePaymentNotFound{} ->
+            throw_invalid_recurrent_intention(<<"Previous payment not found">>)
+    end,
+    ok = validate_recurrent_token_presents(PreviousPayment),
+    ok = validate_recurrent_token_source_shop(Shop, PreviousPayment),
+    ok = validate_recurrent_token_source_payment_status(PreviousPayment).
+
+-spec validate_recurrent_token_presents(st()) -> ok | no_return().
+validate_recurrent_token_presents(PaymentState) ->
+    case get_recurrent_token(PaymentState) of
+        Token when Token =/= undefined ->
+            ok;
+        undefined ->
+            throw_invalid_recurrent_intention(<<"Previous payment has no recurrent token">>)
+    end.
+
+-spec validate_recurrent_token_source_shop(shop(), st()) -> ok | no_return().
+validate_recurrent_token_source_shop(Shop, PaymentState) ->
+    PaymentShopID = get_payment_shop_id(get_payment(PaymentState)),
+    case Shop of
+        #domain_Shop{id = ShopID} when ShopID =:= PaymentShopID ->
+            ok;
+        _Other ->
+            throw_invalid_recurrent_intention(<<"Previous payment refer to another shop">>)
+    end.
+
+-spec validate_recurrent_token_source_payment_status(st()) -> ok | no_return().
+validate_recurrent_token_source_payment_status(PaymentState) ->
+    case get_payment(PaymentState) of
+        #domain_InvoicePayment{status = {failed, _}} ->
+            throw_invalid_recurrent_intention(<<"Invalid previous payment status">>);
+        _Other ->
+            ok
+    end.
+
+-spec validate_recurrent_payer(payer()) -> ok | no_return().
+validate_recurrent_payer(?payment_resource_payer(_, _)) ->
+    ok;
+validate_recurrent_payer(_OtherPayer) ->
+    throw_invalid_request(<<"Invalid payer">>).
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
@@ -409,8 +508,8 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-choose_route(Payer, PaymentInstitution, VS, Revision) ->
-    case get_predefined_route(Payer) of
+choose_route(Payer, RecurrentIntention, PaymentInstitution, VS, Revision) ->
+    case get_predefined_route(Payer, RecurrentIntention) of
         {ok, _Route} = Result ->
             Result;
         undefined ->
@@ -1084,7 +1183,8 @@ process_routing(Action, St) ->
     Events0 = [?risk_score_changed(RiskScore)],
     Payer = get_payment_payer(St),
     VS1 = VS0#{risk_score => RiskScore},
-    case choose_route(Payer, PaymentInstitution, VS1, Revision) of
+    RecurrentIntention = get_recurrent_intention(St),
+    case choose_route(Payer, RecurrentIntention, PaymentInstitution, VS1, Revision) of
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, _Details}} ->
@@ -1321,10 +1421,10 @@ handle_proxy_result(
     Events0,
     Session
 ) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events1 = wrap_session_events(hg_proxy_provider:bind_transaction(Trx, Session), Session),
     Events2 = update_proxy_state(ProxyState, Session),
-    {Events3, Action} = handle_proxy_intent(Intent, Action0),
-    {Events0 ++ wrap_session_events(Events1 ++ Events2 ++ Events3, Session), Action}.
+    {Events3, Action} = handle_proxy_intent(Intent, Action0, Session),
+    {lists:flatten([Events0, Events1, Events2, Events3]), Action}.
 
 handle_callback_result(
     #prxprv_PaymentCallbackResult{result = ProxyResult, response = Response},
@@ -1338,10 +1438,11 @@ handle_proxy_callback_result(
     Action0,
     Session
 ) ->
-    Events1 = hg_proxy_provider:bind_transaction(Trx, Session),
+    Events0 = [wrap_session_event(?session_activated(), Session)],
+    Events1 = wrap_session_events(hg_proxy_provider:bind_transaction(Trx, Session), Session),
     Events2 = update_proxy_state(ProxyState, Session),
-    {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0)),
-    {wrap_session_events([?session_activated()] ++ Events1 ++ Events2 ++ Events3, Session), Action};
+    {Events3, Action} = handle_proxy_intent(Intent, hg_machine_action:unset_timer(Action0), Session),
+    {lists:flatten([Events0, Events1, Events2, Events3]), Action};
 handle_proxy_callback_result(
     #prxprv_PaymentCallbackProxyResult{intent = undefined, trx = Trx, next_state = ProxyState},
     Action0,
@@ -1358,6 +1459,9 @@ handle_proxy_callback_timeout(Action, Events, Session) ->
 wrap_session_events(SessionEvents, #{target := Target}) ->
     [?session_ev(Target, Ev) || Ev <- SessionEvents].
 
+wrap_session_event(SessionEvent, #{target := Target}) ->
+    ?session_ev(Target, SessionEvent).
+
 update_proxy_state(undefined, _Session) ->
     [];
 update_proxy_state(ProxyState, Session) ->
@@ -1366,26 +1470,33 @@ update_proxy_state(ProxyState, Session) ->
             % proxy state did not change, no need to publish an event
             [];
         _WasState ->
-            [?proxy_st_changed(ProxyState)]
+            [wrap_session_event(?proxy_st_changed(ProxyState), Session)]
     end.
 
-handle_proxy_intent(#'prxprv_FinishIntent'{status = {success, _}}, Action) ->
-    Events = [?session_finished(?session_succeeded())],
+handle_proxy_intent(#prxprv_FinishIntent{status = {success, Success}}, Action, Session) ->
+    Events0 = [wrap_session_event(?session_finished(?session_succeeded()), Session)],
+    Events1 = case Success of
+        #prxprv_Success{token = undefined} ->
+            Events0;
+        #prxprv_Success{token = Token} ->
+            [?rec_token_acquired(Token) | Events0]
+    end,
+    {Events1, Action};
+handle_proxy_intent(#prxprv_FinishIntent{status = {failure, Failure}}, Action, Session) ->
+    Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
     {Events, Action};
-
-handle_proxy_intent(#'prxprv_FinishIntent'{status = {failure, Failure}}, Action) ->
-    Events = [?session_finished(?session_failed({failure, Failure}))],
-    {Events, Action};
-
-handle_proxy_intent(#'prxprv_SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
+handle_proxy_intent(#prxprv_SleepIntent{timer = Timer, user_interaction = UserInteraction}, Action0, Session) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
-    Events = try_request_interaction(UserInteraction),
+    Events = wrap_session_events(try_request_interaction(UserInteraction), Session),
     {Events, Action};
-
-handle_proxy_intent(#'prxprv_SuspendIntent'{tag = Tag, timeout = Timer, user_interaction = UserInteraction}, Action0) ->
+handle_proxy_intent(
+    #prxprv_SuspendIntent{tag = Tag, timeout = Timer, user_interaction = UserInteraction},
+    Action0,
+    Session
+) ->
     Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
-    {Events, Action}.
+    {wrap_session_events(Events, Session), Action}.
 
 set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).
@@ -1447,7 +1558,9 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         payer = Payer,
-        cost = Cost
+        cost = Cost,
+        recurrent_intention = RecurrentIntention,
+        is_recurring = IsRecurring
     },
     Trx
 ) ->
@@ -1456,10 +1569,23 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         trx = Trx,
-        payment_resource = get_payment_resource(Payer),
+        payment_resource = construct_payment_resource(Payer, RecurrentIntention),
         cost = construct_proxy_cash(Cost),
-        contact_info = ContactInfo
+        contact_info = ContactInfo,
+        recurrent_intention = IsRecurring
     }.
+
+construct_payment_resource(Payer, undefined) ->
+    get_payment_resource(Payer);
+construct_payment_resource(Payer, ?recurrent_intention(?payment_token_source(InvoiceID, PaymentID))) ->
+    ?payment_resource_payer(Resource, _) = Payer,
+    #domain_DisposablePaymentResource{payment_tool = PaymentTool} = Resource,
+    PreviousPayment = get_payment_state(InvoiceID, PaymentID),
+    RecToken = get_recurrent_token(PreviousPayment),
+    {recurrent_payment_resource, #prxprv_RecurrentPaymentResource{
+        payment_tool = PaymentTool,
+        rec_token = RecToken
+    }}.
 
 get_payment_resource(?payment_resource_payer(Resource, _)) ->
     {disposable_payment_resource, Resource};
@@ -1608,6 +1734,9 @@ get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
 get_payment_flow(#domain_InvoicePayment{flow = Flow}) ->
     Flow.
 
+get_payment_shop_id(#domain_InvoicePayment{shop_id = ShopID}) ->
+    ShopID.
+
 get_payment_tool(#domain_InvoicePayment{payer = Payer}) ->
     get_payer_payment_tool(Payer).
 
@@ -1631,6 +1760,11 @@ get_resource_payment_tool(#domain_DisposablePaymentResource{payment_tool = Payme
 throw_invalid_request(Why) ->
     throw(#'InvalidRequest'{errors = [Why]}).
 
+
+-spec throw_invalid_recurrent_intention(binary()) -> no_return().
+
+throw_invalid_recurrent_intention(Details) ->
+    throw(#payproc_InvalidRecurrentIntention{details = Details}).
 %%
 
 -spec merge_change(change(), st() | undefined) -> st().
@@ -1659,6 +1793,8 @@ merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, cash_flow_bu
         cash_flow  = Cashflow,
         activity   = {payment, processing}
     };
+merge_change(?rec_token_acquired(Token), St) ->
+    St#st{recurrent_token = Token};
 merge_change(
     ?payment_status_changed({failed, _} = Status),
     #st{payment = Payment, activity = {payment, _Step}} = St
@@ -1855,6 +1991,24 @@ create_session(Target, Trx) ->
         tags   => []
     }.
 
+get_invoice_state(InvoiceID) ->
+    case hg_invoice:get(InvoiceID) of
+        {ok, Invoice} ->
+            Invoice;
+        {error, notfound} ->
+            throw(#payproc_InvoiceNotFound{})
+    end.
+
+-spec get_payment_state(invoice_id(), payment_id()) -> st() | no_return().
+get_payment_state(InvoiceID, PaymentID) ->
+    Invoice = get_invoice_state(InvoiceID),
+    case hg_invoice:get_payment(PaymentID, Invoice) of
+        {ok, Payment} ->
+            Payment;
+        {error, notfound} ->
+            throw(#payproc_InvoicePaymentNotFound{})
+    end.
+
 get_session(Target, #st{sessions = Sessions}) ->
     maps:get(Target, Sessions, undefined).
 
@@ -1878,6 +2032,12 @@ get_target(#st{target = Target}) ->
 
 get_opts(#st{opts = Opts}) ->
     Opts.
+
+get_recurrent_token(#st{recurrent_token = Token}) ->
+    Token.
+
+get_recurrent_intention(#st{payment = #domain_InvoicePayment{recurrent_intention = RecIntention}}) ->
+    RecIntention.
 
 get_payment_revision(#st{payment = #domain_InvoicePayment{domain_revision = Revision}}) ->
     Revision.
@@ -2145,20 +2305,27 @@ marshal(change, ?refund_ev(RefundID, Payload)) ->
         <<"id">>            => marshal(str, RefundID),
         <<"payload">>       => marshal(refund_change, Payload)
     }];
+marshal(change, ?rec_token_acquired(Token)) ->
+    [2, #{
+        <<"change">>        => <<"token_acquired">>,
+        <<"token">>         => marshal(str, Token)
+    }];
 
 %% Payment
 
 marshal(payment, #domain_InvoicePayment{} = Payment) ->
     genlib_map:compact(#{
-        <<"id">>                => marshal(str, Payment#domain_InvoicePayment.id),
-        <<"created_at">>        => marshal(str, Payment#domain_InvoicePayment.created_at),
-        <<"domain_revision">>   => marshal(str, Payment#domain_InvoicePayment.domain_revision),
-        <<"owner_id">>          => marshal(str, Payment#domain_InvoicePayment.owner_id),
-        <<"shop_id">>           => marshal(str, Payment#domain_InvoicePayment.shop_id),
-        <<"cost">>              => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
-        <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
-        <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow),
-        <<"context">>           => hg_content:marshal(Payment#domain_InvoicePayment.context)
+        <<"id">>                  => marshal(str, Payment#domain_InvoicePayment.id),
+        <<"created_at">>          => marshal(str, Payment#domain_InvoicePayment.created_at),
+        <<"domain_revision">>     => marshal(str, Payment#domain_InvoicePayment.domain_revision),
+        <<"owner_id">>            => marshal(str, Payment#domain_InvoicePayment.owner_id),
+        <<"shop_id">>             => marshal(str, Payment#domain_InvoicePayment.shop_id),
+        <<"cost">>                => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
+        <<"payer">>               => marshal(payer, Payment#domain_InvoicePayment.payer),
+        <<"flow">>                => marshal(flow, Payment#domain_InvoicePayment.flow),
+        <<"context">>             => hg_content:marshal(Payment#domain_InvoicePayment.context),
+        <<"is_recurring">>        => marshal(bool, Payment#domain_InvoicePayment.is_recurring),
+        <<"recurrent_intention">> => marshal(recurrent_intention, Payment#domain_InvoicePayment.recurrent_intention)
     });
 
 %% Flow
@@ -2170,6 +2337,22 @@ marshal(flow, ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)) ->
         <<"type">>                  => <<"hold">>,
         <<"on_hold_expiration">>    => marshal(on_hold_expiration, OnHoldExpiration),
         <<"held_until">>            => marshal(str, HeldUntil)
+    };
+
+%% Recurrent intention
+
+marshal(recurrent_intention, undefined) ->
+    undefined;
+marshal(recurrent_intention, ?recurrent_intention(TokenSource)) ->
+    #{
+        <<"token_source">> => marshal(recurrent_token_source, TokenSource)
+    };
+
+marshal(recurrent_token_source, ?payment_token_source(InvoiceID, PaymentID)) ->
+    #{
+        <<"type">>       => <<"payment">>,
+        <<"invoice_id">> => marshal(str, InvoiceID),
+        <<"payment_id">> => marshal(str, PaymentID)
     };
 
 %% Payment status
@@ -2437,6 +2620,11 @@ unmarshal(change, [2, #{
     <<"payload">>   := Payload
 }]) ->
     [?refund_ev(unmarshal(str, RefundID), unmarshal(refund_change, Payload))];
+unmarshal(change, [2, #{
+    <<"change">>    := <<"token_acquired">>,
+    <<"token">>     := Token
+}]) ->
+    [?rec_token_acquired(unmarshal(str, Token))];
 
 %% deprecated v2 changes
 unmarshal(change, [2, #{
@@ -2481,17 +2669,21 @@ unmarshal(payment, #{
     Context = maps:get(<<"context">>, Payment, undefined),
     OwnerID = maps:get(<<"owner_id">>, Payment, undefined),
     ShopID = maps:get(<<"shop_id">>, Payment, undefined),
+    RecurrentIntention = maps:get(<<"recurrent_intention">>, Payment, undefined),
+    IsRecurring = maps:get(<<"is_recurring">>, Payment, undefined),
     #domain_InvoicePayment{
-        id              = unmarshal(str, ID),
-        created_at      = unmarshal(str, CreatedAt),
-        domain_revision = unmarshal(int, Revision),
-        shop_id         = unmarshal(str, ShopID),
-        owner_id        = unmarshal(str, OwnerID),
-        cost            = hg_cash:unmarshal(Cash),
-        payer           = unmarshal(payer, MarshalledPayer),
-        status          = ?pending(),
-        flow            = unmarshal(flow, Flow),
-        context         = hg_content:unmarshal(Context)
+        id                  = unmarshal(str, ID),
+        created_at          = unmarshal(str, CreatedAt),
+        domain_revision     = unmarshal(int, Revision),
+        shop_id             = unmarshal(str, ShopID),
+        owner_id            = unmarshal(str, OwnerID),
+        cost                = hg_cash:unmarshal(Cash),
+        payer               = unmarshal(payer, MarshalledPayer),
+        status              = ?pending(),
+        flow                = unmarshal(flow, Flow),
+        context             = hg_content:unmarshal(Context),
+        recurrent_intention = unmarshal(recurrent_intention, RecurrentIntention),
+        is_recurring        = unmarshal(bool, IsRecurring)
     };
 
 unmarshal(payment,
@@ -2522,6 +2714,20 @@ unmarshal(flow, #{
         unmarshal(on_hold_expiration, OnHoldExpiration),
         unmarshal(str, HeldUntil)
     );
+
+%% Recerrent intention
+
+unmarshal(recurrent_intention, undefined) ->
+    undefined;
+unmarshal(recurrent_intention, #{<<"token_source">> := TokenSource}) ->
+    ?recurrent_intention(unmarshal(recurrent_token_source, TokenSource));
+
+unmarshal(recurrent_token_source, #{
+    <<"type">>       := <<"payment">>,
+    <<"invoice_id">> := InvoiceID,
+    <<"payment_id">> := PaymentID
+}) ->
+    ?payment_token_source(unmarshal(str, InvoiceID), unmarshal(str, PaymentID));
 
 %% Payment status
 
