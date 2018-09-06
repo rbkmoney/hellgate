@@ -378,12 +378,12 @@ reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, HeldUntil
     VS#{flow => {hold, ?hold_lifetime(Seconds)}}.
 
 -spec get_predefined_route(payer(), recurrent_intention()) -> {ok, route()} | undefined.
-get_predefined_route(?payment_resource_payer(_, _), undefined) ->
+get_predefined_route(?payment_resource_payer(_, _), undefined = _RecurrentIntention) ->
     undefined;
-get_predefined_route(?customer_payer(_, _, _, _, _) = Payer, undefined) ->
-    get_predefined_customer_route(Payer);
 get_predefined_route(?payment_resource_payer(_, _), ?recurrent_intention(TokenSource)) ->
-    get_predefined_recurrent_route(TokenSource).
+    get_predefined_recurrent_route(TokenSource);
+get_predefined_route(?customer_payer(_, _, _, _, _) = Payer, undefined = _RecurrentIntention) ->
+    get_predefined_customer_route(Payer).
 
 -spec get_predefined_customer_route(payer()) -> {ok, route()} | undefined.
 get_predefined_customer_route(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
