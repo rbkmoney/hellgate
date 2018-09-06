@@ -5,6 +5,7 @@
 %%
 
 -export([get_system_account/4]).
+-export([get_realm/1]).
 -export([is_live/1]).
 %%
 
@@ -12,6 +13,7 @@
 -type varset()          :: hg_selector:varset().
 -type revision()        :: hg_domain:revision().
 -type payment_inst()    :: dmsl_domain_thrift:'PaymentInstitution'().
+-type realm()           :: dmsl_domain_thrift:'PaymentInstitutionRealm'().
 
 %%
 
@@ -27,6 +29,11 @@ get_system_account(Currency, VS, Revision, #domain_PaymentInstitution{system_acc
         error ->
             error({misconfiguration, {'No system account for a given currency', Currency}})
     end.
+
+-spec get_realm(payment_inst()) -> realm().
+
+get_realm(#domain_PaymentInstitution{realm = Realm}) ->
+    Realm.
 
 -spec is_live(payment_inst()) -> boolean().
 

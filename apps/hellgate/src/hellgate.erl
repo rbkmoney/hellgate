@@ -16,6 +16,8 @@
 -export([start/2]).
 -export([stop/1]).
 
+-define(DEFAULT_HANDLING_TIMEOUT, 30000).  % 30 seconds
+
 %%
 %% API
 %%
@@ -43,7 +45,11 @@ init([]) ->
         hg_recurrent_paytool
     ],
     PartyClient = party_client:create_client(),
-    Opts = #{party_client => PartyClient},
+    DefaultTimeout = genlib_app:env(hellgate, default_woody_handling_timeout, ?DEFAULT_HANDLING_TIMEOUT),
+    Opts = #{
+        party_client => PartyClient,
+        default_handling_timeout => DefaultTimeout
+    },
     {ok, {
         #{strategy => one_for_all, intensity => 6, period => 30},
         [

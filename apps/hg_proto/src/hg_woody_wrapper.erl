@@ -11,6 +11,7 @@
 -type handler_opts() :: #{
     handler := module(),
     party_client => party_client:client(),
+    default_handling_timeout => timeout(),
     user_identity => undefined | woody_user_identity:user_identity()
 }.
 
@@ -18,6 +19,8 @@
     url            := woody:url(),
     transport_opts => [{_, _}]
 }.
+
+-define(DEFAULT_HANDLING_TIMEOUT, 30000).  % 30 seconds
 
 %% Callbacks
 
@@ -34,8 +37,9 @@
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), handler_opts()) ->
     {ok, term()} | no_return().
 
-handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
-    ok = hg_context:save(create_context(Context, Opts)),
+handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
+    WoodyContext = ensure_woody_deadline_set(WoodyContext0, Opts),
+    ok = hg_context:save(create_context(WoodyContext, Opts)),
     try
         Result = Handler:handle_function(
             Func,
@@ -115,3 +119,16 @@ set_default_party_user_identity(UserInfo, Context) ->
             PartyClientContext0
     end,
     hg_context:set_party_client_context(PartyClientContext1, Context).
+
+-spec ensure_woody_deadline_set(woody_context:ctx(), handler_opts()) ->
+    woody_context:ctx().
+
+ensure_woody_deadline_set(WoodyContext, Opts) ->
+    case woody_context:get_deadline(WoodyContext) of
+        undefined ->
+            DefaultTimeout = maps:get(default_handling_timeout, Opts, ?DEFAULT_HANDLING_TIMEOUT),
+            Deadline = woody_deadline:from_timeout(DefaultTimeout),
+            woody_context:set_deadline(Deadline, WoodyContext);
+        _Other ->
+            WoodyContext
+    end.
