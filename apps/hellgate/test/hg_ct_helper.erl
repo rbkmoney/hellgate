@@ -154,7 +154,7 @@ start_app(party_client = AppName) ->
             aggressive_caching_timeout => 30000,
             options => #{
                 woody_client => #{
-                    % event_handler => scoper_woody_event_handler
+                    event_handler => scoper_woody_event_handler
                 }
             }
         }}
