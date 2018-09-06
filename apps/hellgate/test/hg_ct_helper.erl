@@ -151,7 +151,6 @@ start_app(party_client = AppName) ->
         }},
         {woody, #{
             cache_mode => safe,  % disabled | safe | aggressive
-            aggressive_caching_timeout => 30000,
             options => #{
                 woody_client => #{
                     event_handler => scoper_woody_event_handler
