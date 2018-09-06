@@ -416,7 +416,7 @@ validate_hold_lifetime(undefined, _VS, _Revision) ->
 
 -spec validate_recurrent_intention(payer(), shop(), party(), is_recurring(), recurrent_intention()) ->
     ok | no_return().
-validate_recurrent_intention(_Payer, _Shop, _Party, IsRecurring, undefined)
+validate_recurrent_intention(_Payer, _Shop, _Party, IsRecurring, undefined = _RecurrentIntention)
     when IsRecurring =:= false orelse IsRecurring =:= undefined
 ->
     ok;
@@ -435,7 +435,13 @@ validate_recurrent_terms(Shop, Party) ->
 
 -spec validate_recurrent_token_source(shop(), recurrent_intention()) -> ok | no_return().
 validate_recurrent_token_source(Shop, ?recurrent_intention(?payment_token_source(InvoiceID, PaymentID))) ->
-    PreviousPayment = get_payment_state(InvoiceID, PaymentID),
+    PreviousPayment = try get_payment_state(InvoiceID, PaymentID)
+    catch
+        throw:#payproc_InvoiceNotFound{} ->
+            throw_invalid_recurrent_intention(<<"Previous invoice not found">>);
+        throw:#payproc_InvoicePaymentNotFound{} ->
+            throw_invalid_recurrent_intention(<<"Previous payment not found">>)
+    end,
     ok = validate_recurrent_token_presents(PreviousPayment),
     ok = validate_recurrent_token_source_shop(Shop, PreviousPayment),
     ok = validate_recurrent_token_source_payment_status(PreviousPayment).
@@ -446,7 +452,7 @@ validate_recurrent_token_presents(PaymentState) ->
         Token when Token =/= undefined ->
             ok;
         undefined ->
-            throw_invalid_request(<<"Previous payment has no recurrent token">>)
+            throw_invalid_recurrent_intention(<<"Previous payment has no recurrent token">>)
     end.
 
 -spec validate_recurrent_token_source_shop(shop(), st()) -> ok | no_return().
@@ -456,7 +462,7 @@ validate_recurrent_token_source_shop(Shop, PaymentState) ->
         #domain_Shop{id = ShopID} when ShopID =:= PaymentShopID ->
             ok;
         _Other ->
-            throw_invalid_request(<<"Previous payment refer to another shop">>)
+            throw_invalid_recurrent_intention(<<"Previous payment refer to another shop">>)
     end.
 
 -spec validate_recurrent_token_source_payment_status(st()) -> ok | no_return().
@@ -465,7 +471,7 @@ validate_recurrent_token_source_payment_status(PaymentState) ->
         #domain_InvoicePayment{status = {captured, _}} ->
             ok;
         _Other ->
-            throw_invalid_request(<<"Invalid previous payment status">>)
+            throw_invalid_recurrent_intention(<<"Invalid previous payment status">>)
     end.
 
 -spec validate_recurrent_payer(payer()) -> ok | no_return().
@@ -1754,6 +1760,11 @@ get_resource_payment_tool(#domain_DisposablePaymentResource{payment_tool = Payme
 throw_invalid_request(Why) ->
     throw(#'InvalidRequest'{errors = [Why]}).
 
+
+-spec throw_invalid_recurrent_intention(binary()) -> no_return().
+
+throw_invalid_recurrent_intention(Details) ->
+    throw(#payproc_InvalidRecurrentIntention{details = Details}).
 %%
 
 -spec merge_change(change(), st() | undefined) -> st().

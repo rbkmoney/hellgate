@@ -23,7 +23,9 @@
 -export([not_recurring_first_test/1]).
 -export([customer_paytools_as_first_test/1]).
 -export([cancelled_first_payment_test/1]).
-% -export([not_permitted_recurrent_test/1]).
+-export([not_permitted_recurrent_test/1]).
+-export([not_exists_invoice_test/1]).
+-export([not_exists_payment_test/1]).
 
 %% Internal types
 
@@ -63,8 +65,8 @@ init([]) ->
 -spec all() -> [test_case_name()].
 all() ->
     [
-        {group, basic_operations}
-        % {group, domain_affecting_operations}
+        {group, basic_operations},
+        {group, domain_affecting_operations}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -76,7 +78,9 @@ groups() ->
             another_shop_test,
             not_recurring_first_test,
             customer_paytools_as_first_test,
-            cancelled_first_payment_test
+            cancelled_first_payment_test,
+            not_exists_invoice_test,
+            not_exists_payment_test
         ]},
         {domain_affecting_operations, [], [
             not_permitted_recurrent_test
@@ -187,7 +191,7 @@ another_shop_test(C) ->
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
     Payment2Params = make_payment_params(true, RecurrentIntention),
-    ExpectedError = #'InvalidRequest'{errors = [<<"Previous payment refer to another shop">>]},
+    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous payment refer to another shop">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
 -spec not_recurring_first_test(config()) -> test_result().
@@ -202,7 +206,7 @@ not_recurring_first_test(C) ->
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
     Payment2Params = make_payment_params(true, RecurrentIntention),
-    ExpectedError = #'InvalidRequest'{errors = [<<"Previous payment has no recurrent token">>]},
+    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous payment has no recurrent token">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
 -spec customer_paytools_as_first_test(config()) -> test_result().
@@ -227,17 +231,35 @@ cancelled_first_payment_test(C) ->
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
     Payment2Params = make_payment_params(true, RecurrentIntention),
-    ExpectedError = #'InvalidRequest'{errors = [<<"Invalid previous payment status">>]},
+    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Invalid previous payment status">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
-% -spec not_permitted_recurrent_test(config()) -> test_result().
-% not_permitted_recurrent_test(C) ->
-%     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
-%     Client = cfg(client, C),
-%     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-%     PaymentParams = make_payment_params(),
-%     ExpectedError = #payproc_OperationNotPermitted{},
-%     {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
+-spec not_permitted_recurrent_test(config()) -> test_result().
+not_permitted_recurrent_test(C) ->
+    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    ExpectedError = #payproc_OperationNotPermitted{},
+    {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
+
+-spec not_exists_invoice_test(config()) -> test_result().
+not_exists_invoice_test(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    RecurrentIntention = ?recurrent_intention(?payment_token_source(<<"not_exists">>, <<"not_exists">>)),
+    PaymentParams = make_payment_params(true, RecurrentIntention),
+    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous invoice not found">>},
+    {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
+
+-spec not_exists_payment_test(config()) -> test_result().
+not_exists_payment_test(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    RecurrentIntention = ?recurrent_intention(?payment_token_source(InvoiceID, <<"not_exists">>)),
+    PaymentParams = make_payment_params(true, RecurrentIntention),
+    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous payment not found">>},
+    {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
 
 %% Internal functions
 
