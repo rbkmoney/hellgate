@@ -81,29 +81,15 @@
     party() | no_return().
 
 get_party(PartyID) ->
-    HgContext = hg_context:load(),
-    Client = hg_context:get_party_client(HgContext),
-    Context = hg_context:get_party_client_context(HgContext),
-    case party_client_thrift:get(PartyID, Client, Context) of
-        {ok, Party} ->
-            Party;
-        {error, Error} ->
-            erlang:throw(Error)
-    end.
+    {Client, Context} = get_party_client(),
+    unwrap_party_result(party_client_thrift:get(PartyID, Client, Context)).
 
 -spec checkout(party_id(), party_client_thrift:party_revision_param()) ->
     party() | no_return().
 
 checkout(PartyID, RevisionParam) ->
-    HgContext = hg_context:load(),
-    Client = hg_context:get_party_client(HgContext),
-    Context = hg_context:get_party_client_context(HgContext),
-    case party_client_thrift:checkout(PartyID, RevisionParam, Client, Context) of
-        {ok, Party} ->
-            Party;
-        {error, Error} ->
-            erlang:throw(Error)
-    end.
+    {Client, Context} = get_party_client(),
+    unwrap_party_result(party_client_thrift:checkout(PartyID, RevisionParam, Client, Context)).
 
 -spec create_party(party_id(), dmsl_domain_thrift:'PartyContactInfo'(), timestamp()) ->
     party().
@@ -280,6 +266,17 @@ wallet_suspension(ID, Suspension, Party) ->
     set_wallet(Wallet#domain_Wallet{suspension = Suspension}, Party).
 
 %% Internals
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.
+
+unwrap_party_result({ok, Result}) ->
+    Result;
+unwrap_party_result({error, Error}) ->
+    erlang:throw(Error).
 
 get_contract_id(#domain_Contract{id = ContractID}) ->
     ContractID.
