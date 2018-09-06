@@ -16,6 +16,8 @@
 -export([start/2]).
 -export([stop/1]).
 
+-define(DEFAULT_HANDLING_TIMEOUT, 30000).  % 30 seconds
+
 %%
 %% API
 %%
@@ -75,7 +77,12 @@ get_api_child_spec(MachineHandlers) ->
     ).
 
 construct_service_handler(Name, Module) ->
-    construct_service_handler(Name, hg_woody_wrapper, #{handler => Module}).
+    Timeout = genlib_app:env(hellgate, default_woody_handling_timeout, ?DEFAULT_HANDLING_TIMEOUT),
+    Opts = #{
+        handler => Module,
+        default_handling_timeout => Timeout
+    },
+    construct_service_handler(Name, hg_woody_wrapper, Opts).
 
 construct_service_handler(Name, Module, Opts) ->
     {Path, Service} = hg_proto:get_service_spec(Name),
