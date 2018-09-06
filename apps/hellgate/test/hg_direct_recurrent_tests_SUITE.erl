@@ -171,7 +171,7 @@ second_recurrent_payment_success_test(C) ->
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
-    Payment2Params = make_payment_params(true, RecurrentIntention),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentIntention),
     {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
@@ -190,7 +190,7 @@ another_shop_test(C) ->
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
-    Payment2Params = make_payment_params(true, RecurrentIntention),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentIntention),
     ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous payment refer to another shop">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
@@ -205,7 +205,7 @@ not_recurring_first_test(C) ->
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
-    Payment2Params = make_payment_params(true, RecurrentIntention),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentIntention),
     ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous payment has no recurrent token">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
@@ -230,7 +230,7 @@ cancelled_first_payment_test(C) ->
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
-    Payment2Params = make_payment_params(true, RecurrentIntention),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentIntention),
     {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
@@ -339,6 +339,13 @@ make_payment_params(PaymentTool, Session, FlowType, IsRecurring, RecurrentIntent
         recurrent_intention = RecurrentIntention,
         is_recurring = IsRecurring
     }.
+
+make_recurrent_payment_params(IsRecurring, RecurrentIntention) ->
+    make_recurrent_payment_params(instant, IsRecurring, RecurrentIntention).
+
+make_recurrent_payment_params(FlowType, IsRecurring, RecurrentIntention) ->
+    {PaymentTool, _Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    make_payment_params(PaymentTool, undefined, FlowType, IsRecurring, RecurrentIntention).
 
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
