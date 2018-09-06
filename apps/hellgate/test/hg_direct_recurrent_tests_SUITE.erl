@@ -231,8 +231,12 @@ cancelled_first_payment_test(C) ->
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
     Payment2Params = make_payment_params(true, RecurrentIntention),
-    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Invalid previous payment status">>},
-    {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
+    {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
+    Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(Payment2ID, ?captured()))]
+    ) = hg_client_invoicing:get(Invoice2ID, Client).
 
 -spec not_permitted_recurrent_test(config()) -> test_result().
 not_permitted_recurrent_test(C) ->

@@ -468,10 +468,10 @@ validate_recurrent_token_source_shop(Shop, PaymentState) ->
 -spec validate_recurrent_token_source_payment_status(st()) -> ok | no_return().
 validate_recurrent_token_source_payment_status(PaymentState) ->
     case get_payment(PaymentState) of
-        #domain_InvoicePayment{status = {captured, _}} ->
-            ok;
+        #domain_InvoicePayment{status = {failed, _}} ->
+            throw_invalid_recurrent_intention(<<"Invalid previous payment status">>);
         _Other ->
-            throw_invalid_recurrent_intention(<<"Invalid previous payment status">>)
+            ok
     end.
 
 -spec validate_recurrent_payer(payer()) -> ok | no_return().
