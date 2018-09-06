@@ -283,6 +283,8 @@ get_flow_params(#payproc_InvoicePaymentParams{flow = FlowParams}) ->
 get_recurrent_intention_params(#payproc_InvoicePaymentParams{recurrent_intention = RecurrentIntention}) ->
     RecurrentIntention.
 
+get_is_recurring_params(#payproc_InvoicePaymentParams{is_recurring = undefined}) ->
+    false;
 get_is_recurring_params(#payproc_InvoicePaymentParams{is_recurring = IsRecurring}) ->
     IsRecurring.
 
@@ -416,14 +418,12 @@ validate_hold_lifetime(undefined, _VS, _Revision) ->
 
 -spec validate_recurrent_intention(payer(), shop(), party(), is_recurring(), recurrent_intention()) ->
     ok | no_return().
-validate_recurrent_intention(_Payer, _Shop, _Party, IsRecurring, undefined = _RecurrentIntention)
-    when IsRecurring =:= false orelse IsRecurring =:= undefined
-->
+validate_recurrent_intention(_Payer, _Shop, _Party, false = _IsRecurring, undefined = _RecurrentIntention) ->
     ok;
 validate_recurrent_intention(Payer, Shop, Party, true = _IsRecurring, undefined = _RecurrentIntention) ->
     ok = validate_recurrent_terms(Shop, Party),
     ok = validate_recurrent_payer(Payer);
-validate_recurrent_intention(Payer, Shop, Party, true = _IsRecurring, RecurrentIntention) ->
+validate_recurrent_intention(Payer, Shop, Party, _IsRecurring, RecurrentIntention) ->
     ok = validate_recurrent_terms(Shop, Party),
     ok = validate_recurrent_token_source(Shop, RecurrentIntention),
     ok = validate_recurrent_payer(Payer).
