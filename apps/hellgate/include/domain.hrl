@@ -43,10 +43,7 @@
     }}
 ).
 
--define(recurrent_intention(TokenSource),
-    #domain_RecurrentIntention{token_source = TokenSource}).
-
--define(payment_token_source(InvoiceID, PaymentID),
-    {payment, #domain_PaymentRecurrentTokenSource{invoice_id = InvoiceID, payment_id = PaymentID}}).
+-define(recurrent_parent(InvoiceID, PaymentID),
+    #domain_RecurrentParentPayment{invoice_id = InvoiceID, payment_id = PaymentID}).
 
 -endif.

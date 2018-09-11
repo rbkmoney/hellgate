@@ -170,8 +170,8 @@ second_recurrent_payment_success_test(C) ->
     Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentIntention),
+    RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
     {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
@@ -189,9 +189,9 @@ another_shop_test(C) ->
     Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentIntention),
-    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous payment refer to another shop">>},
+    RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
+    ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent payment refer to another shop">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
 -spec not_recurring_first_test(config()) -> test_result().
@@ -204,9 +204,9 @@ not_recurring_first_test(C) ->
     Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentIntention),
-    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous payment has no recurrent token">>},
+    RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
+    ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent payment has no recurrent token">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
 -spec customer_paytools_as_first_test(config()) -> test_result().
@@ -229,8 +229,8 @@ cancelled_first_payment_test(C) ->
     Payment1ID = await_payment_cancel(Invoice1ID, Payment1ID, undefined, Client),
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    RecurrentIntention = ?recurrent_intention(?payment_token_source(Invoice1ID, Payment1ID)),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentIntention),
+    RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
     {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
@@ -251,18 +251,18 @@ not_permitted_recurrent_test(C) ->
 not_exists_invoice_test(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    RecurrentIntention = ?recurrent_intention(?payment_token_source(<<"not_exists">>, <<"not_exists">>)),
-    PaymentParams = make_payment_params(true, RecurrentIntention),
-    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous invoice not found">>},
+    RecurrentParent = ?recurrent_parent(<<"not_exists">>, <<"not_exists">>),
+    PaymentParams = make_payment_params(true, RecurrentParent),
+    ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent invoice not found">>},
     {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
 
 -spec not_exists_payment_test(config()) -> test_result().
 not_exists_payment_test(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    RecurrentIntention = ?recurrent_intention(?payment_token_source(InvoiceID, <<"not_exists">>)),
-    PaymentParams = make_payment_params(true, RecurrentIntention),
-    ExpectedError = #payproc_InvalidRecurrentIntention{details = <<"Previous payment not found">>},
+    RecurrentParent = ?recurrent_parent(InvoiceID, <<"not_exists">>),
+    PaymentParams = make_payment_params(true, RecurrentParent),
+    ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent payment not found">>},
     {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
 
 %% Internal functions
@@ -312,14 +312,14 @@ construct_proxy(ID, Url, Options) ->
 make_payment_params() ->
     make_payment_params(true, undefined).
 
-make_payment_params(IsRecurring, RecurrentIntention) ->
-    make_payment_params(instant, IsRecurring, RecurrentIntention).
+make_payment_params(MakeRecurrent, RecurrentParent) ->
+    make_payment_params(instant, MakeRecurrent, RecurrentParent).
 
-make_payment_params(FlowType, IsRecurring, RecurrentIntention) ->
+make_payment_params(FlowType, MakeRecurrent, RecurrentParent) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
-    make_payment_params(PaymentTool, Session, FlowType, IsRecurring, RecurrentIntention).
+    make_payment_params(PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent).
 
-make_payment_params(PaymentTool, Session, FlowType, IsRecurring, RecurrentIntention) ->
+make_payment_params(PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent) ->
     Flow = case FlowType of
         instant ->
             {instant, #payproc_InvoicePaymentParamsFlowInstant{}};
@@ -336,16 +336,16 @@ make_payment_params(PaymentTool, Session, FlowType, IsRecurring, RecurrentIntent
             contact_info = #domain_ContactInfo{}
         }},
         flow = Flow,
-        recurrent_intention = RecurrentIntention,
-        is_recurring = IsRecurring
+        recurrent_parent = RecurrentParent,
+        make_recurrent = MakeRecurrent
     }.
 
-make_recurrent_payment_params(IsRecurring, RecurrentIntention) ->
-    make_recurrent_payment_params(instant, IsRecurring, RecurrentIntention).
+make_recurrent_payment_params(MakeRecurrent, RecurrentParent) ->
+    make_recurrent_payment_params(instant, MakeRecurrent, RecurrentParent).
 
-make_recurrent_payment_params(FlowType, IsRecurring, RecurrentIntention) ->
+make_recurrent_payment_params(FlowType, MakeRecurrent, RecurrentParent) ->
     {PaymentTool, _Session} = hg_dummy_provider:make_payment_tool(no_preauth),
-    make_payment_params(PaymentTool, undefined, FlowType, IsRecurring, RecurrentIntention).
+    make_payment_params(PaymentTool, undefined, FlowType, MakeRecurrent, RecurrentParent).
 
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
@@ -434,14 +434,14 @@ wait_for_binding_success(_, _, _, _) ->
 make_customer_payment_params(CustomerID) ->
     make_customer_payment_params(CustomerID, true, undefined).
 
-make_customer_payment_params(CustomerID, IsRecurring, RecurrentIntention) ->
+make_customer_payment_params(CustomerID, MakeRecurrent, RecurrentParent) ->
     #payproc_InvoicePaymentParams{
         payer = {customer, #payproc_CustomerPayerParams{
             customer_id = CustomerID
         }},
         flow = {instant, #payproc_InvoicePaymentParamsFlowInstant{}},
-        is_recurring = IsRecurring,
-        recurrent_intention = RecurrentIntention
+        make_recurrent = MakeRecurrent,
+        recurrent_parent = RecurrentParent
     }.
 
 %% Event helpers
