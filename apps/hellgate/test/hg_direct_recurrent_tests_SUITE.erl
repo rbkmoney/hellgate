@@ -320,6 +320,9 @@ make_payment_params(FlowType, MakeRecurrent, RecurrentParent) ->
     make_payment_params(PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent).
 
 make_payment_params(PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent) ->
+    make_payment_params(#domain_ClientInfo{}, PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent).
+
+make_payment_params(ClientInfo, PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent) ->
     Flow = case FlowType of
         instant ->
             {instant, #payproc_InvoicePaymentParamsFlowInstant{}};
@@ -331,7 +334,7 @@ make_payment_params(PaymentTool, Session, FlowType, MakeRecurrent, RecurrentPare
             resource = #domain_DisposablePaymentResource{
                 payment_tool = PaymentTool,
                 payment_session_id = Session,
-                client_info = #domain_ClientInfo{}
+                client_info = ClientInfo
             },
             contact_info = #domain_ContactInfo{}
         }},
@@ -345,7 +348,7 @@ make_recurrent_payment_params(MakeRecurrent, RecurrentParent) ->
 
 make_recurrent_payment_params(FlowType, MakeRecurrent, RecurrentParent) ->
     {PaymentTool, _Session} = hg_dummy_provider:make_payment_tool(no_preauth),
-    make_payment_params(PaymentTool, undefined, FlowType, MakeRecurrent, RecurrentParent).
+    make_payment_params(undefined, PaymentTool, undefined, FlowType, MakeRecurrent, RecurrentParent).
 
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.

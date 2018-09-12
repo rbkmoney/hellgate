@@ -2485,6 +2485,8 @@ marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = Payme
         <<"client_info">> => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
     };
 
+marshal(client_info, undefined) ->
+    undefined;
 marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
     genlib_map:compact(#{
         <<"ip_address">>    => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
@@ -2975,12 +2977,13 @@ unmarshal(disposable_payment_resource, #{
 
 %% Client info
 
+unmarshal(client_info, undefined) ->
+    undefined;
 unmarshal(client_info, ?legacy_client_info(IpAddress, Fingerprint)) ->
     #domain_ClientInfo{
         ip_address      = unmarshal(str, IpAddress),
         fingerprint     = unmarshal(str, Fingerprint)
     };
-
 unmarshal(client_info, ClientInfo) ->
     IpAddress = maps:get(<<"ip_address">>, ClientInfo, undefined),
     Fingerprint = maps:get(<<"fingerprint">>, ClientInfo, undefined),
