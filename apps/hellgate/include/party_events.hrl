@@ -67,6 +67,12 @@
         modification = {creation, Params}
     }}).
 
+-define(payout_tool_info_modification(ID, Info),
+    {payout_tool_modification, #payproc_PayoutToolModificationUnit{
+        payout_tool_id = ID,
+        modification = {info_modification, Info}
+    }}).
+
 -define(shop_modification(ID, Modification),
     {shop_modification, #payproc_ShopModificationUnit{id = ID, modification = Modification}}).
 

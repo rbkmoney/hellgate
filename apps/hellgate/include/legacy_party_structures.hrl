@@ -102,6 +102,16 @@
         Bic
     }).
 
+-define(legacy_international_bank_account_v3_4_5(AccountHolder, BankName, BankAddress, Iban, Bic, LocalBankCode),
+    {domain_InternationalBankAccount,
+        AccountHolder,
+        BankName,
+        BankAddress,
+        Iban,
+        Bic,
+        LocalBankCode
+    }).
+
 -define(legacy_shop_modification(ID, Modification),
     {shop_modification, {payproc_ShopModificationUnit, ID, Modification}}).
 

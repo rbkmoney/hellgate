@@ -370,6 +370,17 @@ update_contract({adjustment_created, Adjustment}, Contract) ->
 update_contract({payout_tool_created, PayoutTool}, Contract) ->
     PayoutTools = Contract#domain_Contract.payout_tools ++ [PayoutTool],
     Contract#domain_Contract{payout_tools = PayoutTools};
+update_contract(
+    {payout_tool_info_changed, #payproc_PayoutToolInfoChanged{payout_tool_id = PayoutToolID, info = Info}},
+    Contract
+) ->
+    PayoutTool = hg_contract:get_payout_tool(PayoutToolID, Contract),
+    Contract#domain_Contract{payout_tools = lists:keyreplace(
+        PayoutToolID,
+        #domain_PayoutTool.id,
+        Contract#domain_Contract.payout_tools,
+        PayoutTool#domain_PayoutTool{payout_tool_info = Info}
+    )};
 update_contract({legal_agreement_bound, LegalAgreement}, Contract) ->
     Contract#domain_Contract{legal_agreement = LegalAgreement};
 update_contract({report_preferences_changed, ReportPreferences}, Contract) ->
@@ -479,6 +490,13 @@ assert_contract_change_applicable(ID, ?payout_tool_creation(PayoutToolID, _), Co
             ok;
         _ ->
             raise_invalid_changeset(?invalid_contract(ID, {payout_tool_already_exists, PayoutToolID}))
+    end;
+assert_contract_change_applicable(ID, ?payout_tool_info_modification(PayoutToolID, _), Contract) ->
+    case hg_contract:get_payout_tool(PayoutToolID, Contract) of
+        undefined ->
+            raise_invalid_changeset(?invalid_contract(ID, {payout_tool_not_exists, PayoutToolID}));
+        _ ->
+            ok
     end;
 assert_contract_change_applicable(_, _, _) ->
     ok.

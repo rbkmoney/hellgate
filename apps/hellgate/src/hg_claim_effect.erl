@@ -75,6 +75,11 @@ make_contract_effect(_, ?adjustment_creation(AdjustmentID, Params), Timestamp, R
     {adjustment_created, hg_contract:create_adjustment(AdjustmentID, Params, Timestamp, Revision)};
 make_contract_effect(_, ?payout_tool_creation(PayoutToolID, Params), Timestamp, _) ->
     {payout_tool_created, hg_payout_tool:create(PayoutToolID, Params, Timestamp)};
+make_contract_effect(_, ?payout_tool_info_modification(PayoutToolID, Info), _, _) ->
+    {payout_tool_info_changed, #payproc_PayoutToolInfoChanged{
+        payout_tool_id = PayoutToolID,
+        info = Info
+    }};
 make_contract_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
     {legal_agreement_bound, LegalAgreement};
 make_contract_effect(ID, {report_preferences_modification, ReportPreferences}, _, Revision) ->
