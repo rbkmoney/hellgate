@@ -1731,6 +1731,21 @@ merge_change(?session_ev(Target, ?session_started()), #st{activity = {payment, S
             finalizing
     end,
     St2#st{activity = {payment, NextStep}};
+merge_change(
+    ?session_ev(Target, ?session_started()) = Event,
+    #st{activity = idle, payment = #domain_InvoicePayment{status = {failed, _}}} = St
+) ->
+    % Looks like we are in adhoc repaired machine, see HG-418 for details
+    % Lets try to guess expected activity.
+    Activity = case Target of
+        ?processed() ->
+            {payment, processing};
+        ?cancelled() ->
+            {payment, finalizing};
+        ?captured() ->
+            {payment, finalizing}
+    end,
+    merge_change(Event, St#st{activity = Activity});
 merge_change(?session_ev(Target, Event), St) ->
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
