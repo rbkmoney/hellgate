@@ -1735,8 +1735,9 @@ merge_change(
     ?session_ev(Target, ?session_started()) = Event,
     #st{activity = idle, payment = #domain_InvoicePayment{status = {failed, _}}} = St
 ) ->
-    % Looks like we are in adhoc repaired machine, see HG-418 for details
+    % Looks like we are in adhoc repaired machine, see HG-418 for details.
     % Lets try to guess expected activity.
+    % TODO: Remove this clause as soon as machines will have been migrated.
     Activity = case Target of
         ?processed() ->
             {payment, processing};
