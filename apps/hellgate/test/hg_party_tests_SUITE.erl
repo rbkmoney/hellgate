@@ -667,7 +667,7 @@ contract_payout_tool_modification(C) ->
         id = ContractID,
         payout_tools = PayoutTools
     } = hg_client_party:get_contract(ContractID, Client),
-    {value, #domain_PayoutTool{payout_tool_info = ToolInfo}} = lists:keysearch(
+    #domain_PayoutTool{payout_tool_info = ToolInfo} = lists:keyfind(
         PayoutToolID, #domain_PayoutTool.id, PayoutTools
     ).
 
