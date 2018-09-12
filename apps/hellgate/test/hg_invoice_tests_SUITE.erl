@@ -1745,7 +1745,7 @@ construct_proxy(ID, Url, Options) ->
 
 force_fail_invoice_machine(InvoiceID) ->
     ok = hg_context:save(hg_context:create()),
-    {error,failed} = hg_machine:call(<<"invoice">>, InvoiceID, [<<"some unexsists call">>]),
+    {error, failed} = hg_machine:call(<<"invoice">>, InvoiceID, [<<"some unexsists call">>]),
     ok.
 
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
