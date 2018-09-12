@@ -1182,8 +1182,8 @@ process_routing(Action, St) ->
     Events0 = [?risk_score_changed(RiskScore)],
     Payer = get_payment_payer(St),
     VS1 = VS0#{risk_score => RiskScore},
-    RecurrentIntention = get_recurrent_parent(St),
-    case choose_route(Payer, RecurrentIntention, PaymentInstitution, VS1, Revision) of
+    RecurrentParent = get_recurrent_parent(St),
+    case choose_route(Payer, RecurrentParent, PaymentInstitution, VS1, Revision) of
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, _Details}} ->
@@ -1571,7 +1571,7 @@ construct_proxy_payment(
         payment_resource = construct_payment_resource(Payer, RecurrentParent),
         cost = construct_proxy_cash(Cost),
         contact_info = ContactInfo,
-        recurrent_intention = MakeRecurrent
+        make_recurrent = MakeRecurrent
     }.
 
 construct_payment_resource(Payer, undefined) ->
