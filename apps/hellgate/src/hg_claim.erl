@@ -375,7 +375,7 @@ update_contract(
     Contract
 ) ->
     PayoutTool = hg_contract:get_payout_tool(PayoutToolID, Contract),
-    hg_contract:set_payout_tool(PayoutToolID, PayoutTool#domain_PayoutTool{payout_tool_info = Info}, Contract);
+    hg_contract:set_payout_tool(PayoutTool#domain_PayoutTool{payout_tool_info = Info}, Contract);
 update_contract({legal_agreement_bound, LegalAgreement}, Contract) ->
     Contract#domain_Contract{legal_agreement = LegalAgreement};
 update_contract({report_preferences_changed, ReportPreferences}, Contract) ->
