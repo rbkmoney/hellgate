@@ -1719,7 +1719,8 @@ merge_change(
         payment    = Payment#domain_InvoicePayment{status = Status}
     };
 
-merge_change(Event = ?refund_ev(_, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))), #st{activity = {refund, ID}} = St) ->
+merge_change(Event = ?refund_ev(_, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))),
+                #st{activity = {refund, ID}} = St) ->
     merge_change(Event, St#st{activity = {refunding, ID}});
 merge_change(?refund_ev(ID, Event), #st{activity = Activity} = St) ->
     St1 = case Activity of
@@ -1766,7 +1767,8 @@ merge_change(?session_ev(Target, ?session_started()), #st{activity = {payment, S
     end,
     St2#st{activity = {payment, NextStep}};
 
-merge_change(Event = ?session_ev(_Target, ?session_finished(?session_succeeded())), #st{activity = {payment, Step}} = St) when
+merge_change(Event = ?session_ev(_Target, ?session_finished(?session_succeeded())),
+                #st{activity = {payment, Step}} = St) when
     Step =:= processing_proxy orelse
     Step =:= finalizing_proxy
 ->
