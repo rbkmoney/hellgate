@@ -43,7 +43,6 @@ handle_function(
     }],
     _Options
 ) ->
-    lager:warning("Handle _LinkState - ~p", [_LinkState]),
     erlang:error(test_error).
 
 

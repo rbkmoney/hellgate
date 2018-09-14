@@ -1949,8 +1949,6 @@ inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentIns
     InspectorSelector = PaymentInstitution#domain_PaymentInstitution.inspector,
     InspectorRef = reduce_selector(inspector, InspectorSelector, VS, Revision),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
-    lager:warning("InspectorSelector - ~p, InspectorRef - ~p, Inspector - ~p",
-        [InspectorSelector, InspectorRef, Inspector]),
     hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector).
 
 get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
