@@ -69,7 +69,7 @@ get_http_cowboy_spec() ->
 construct_silent_callback(Form) ->
     Form#{<<"payload">> => ?LAY_LOW_BUDDY}.
 
--type failure_scenario_step() :: good | fail.
+-type failure_scenario_step() :: good | temp | fail | error.
 -type failure_scenario() :: [failure_scenario_step()].
 %%
 
@@ -333,10 +333,16 @@ process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
     case do_failure_scenario_step(Scenario, Key) of
         good ->
             finish(?success(), PaymentId);
-        fail ->
+        temp ->
             Failure = payproc_errors:construct('PaymentFailure',
                 {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}),
-            finish(?failure(Failure))
+            finish(?failure(Failure));
+        fail ->
+            Failure = payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}),
+            finish(?failure(Failure));
+        error ->
+            error(planned_scenario_error)
     end.
 
 finish(Status, TrxID) ->
@@ -412,7 +418,7 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>
     forbidden;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_failure">>}}) ->
     unexpected_failure;
-get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"temporary_unavailability_",
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_",
                                                                    BinScenario/binary>>}}) ->
     Scenario = decode_failure_scenario(BinScenario),
     {temporary_unavailability, Scenario};
@@ -435,9 +441,9 @@ make_payment_tool(forbidden) ->
     make_simple_payment_tool(<<"forbidden">>, visa);
 make_payment_tool(unexpected_failure) ->
     make_simple_payment_tool(<<"unexpected_failure">>, visa);
-make_payment_tool({temporary_unavailability, Scenario}) ->
+make_payment_tool({scenario, Scenario}) ->
     BinScenario = encode_failure_scenario(Scenario),
-    make_simple_payment_tool(<<"temporary_unavailability_", BinScenario/binary>>, visa);
+    make_simple_payment_tool(<<"scenario_", BinScenario/binary>>, visa);
 make_payment_tool(terminal) ->
     {
         {payment_terminal, #domain_PaymentTerminal{
@@ -497,15 +503,23 @@ decode_failure_scenario(BinScenario) ->
 
 encode_failure_scenario_step(good) ->
     $g;
+encode_failure_scenario_step(temp) ->
+    $t;
 encode_failure_scenario_step(fail) ->
-    $f.
+    $f;
+encode_failure_scenario_step(error) ->
+    $e.
 
 -spec decode_failure_scenario_step(byte()) -> failure_scenario_step().
 
 decode_failure_scenario_step($g) ->
     good;
+decode_failure_scenario_step($t) ->
+    temp;
 decode_failure_scenario_step($f) ->
-    fail.
+    fail;
+decode_failure_scenario_step($e) ->
+    error.
 
 %%
 

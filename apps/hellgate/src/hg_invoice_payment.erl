@@ -1766,6 +1766,22 @@ merge_change(?session_ev(Target, ?session_started()), #st{activity = {payment, S
             finalizing_proxy
     end,
     St2#st{activity = {payment, NextStep}};
+merge_change(
+    ?session_ev(Target, ?session_started()) = Event,
+    #st{activity = idle, payment = #domain_InvoicePayment{status = {failed, _}}} = St
+) ->
+    % Looks like we are in adhoc repaired machine, see HG-418 for details.
+    % Lets try to guess expected activity.
+    % TODO: Remove this clause as soon as machines will have been migrated.
+    Activity = case Target of
+        ?processed() ->
+            {payment, processing_proxy};
+        ?cancelled() ->
+            {payment, finalizing_proxy};
+        ?captured() ->
+            {payment, finalizing_proxy}
+    end,
+    merge_change(Event, St#st{activity = Activity});
 
 merge_change(Event = ?session_ev(_Target, ?session_finished(?session_succeeded())),
                 #st{activity = {payment, Step}} = St) when
