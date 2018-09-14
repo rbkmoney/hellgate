@@ -809,7 +809,7 @@ get_template(TemplateRef, Revision) ->
 -define(TOP_VERSION, 5).
 
 wrap_events(Events) ->
-    [hg_party_marshalling:marshal([?TOP_VERSION, E]) || E <- Events].
+    [hg_party_marshalling:marshal([?TOP_VERSION, binary_encoded, {bin, term_to_binary(E)}]) || E <- Events].
 
 unwrap_events(History) ->
     lists:map(
@@ -820,7 +820,12 @@ unwrap_events(History) ->
     ).
 
 unwrap_event(Event) when is_list(Event) ->
-    transmute(hg_party_marshalling:unmarshal(Event));
+    case hg_party_marshalling:unmarshal(Event) of
+        [_Version, _DecodedEvent] = E ->
+            transmute(E);
+        [Version, binary_encoded, {bin, BinEvent}] when is_binary(BinEvent) ->
+            transmute([Version, binary_to_term(BinEvent)])
+    end;
 unwrap_event({bin, Bin}) when is_binary(Bin) ->
     transmute([1, binary_to_term(Bin)]).
 
