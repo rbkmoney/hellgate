@@ -11,6 +11,7 @@
 -export([get_categories/3]).
 -export([get_adjustment/2]).
 -export([get_payout_tool/2]).
+-export([set_payout_tool/2]).
 
 -export([is_active/1]).
 -export([is_live/2]).
@@ -145,6 +146,14 @@ get_payout_tool(PayoutToolID, #domain_Contract{payout_tools = PayoutTools}) ->
         false ->
             undefined
     end.
+
+-spec set_payout_tool(payout_tool(), contract()) ->
+    contract().
+
+set_payout_tool(PayoutTool, Contract = #domain_Contract{payout_tools = PayoutTools}) ->
+    Contract#domain_Contract{
+        payout_tools = lists:keystore(PayoutTool#domain_PayoutTool.id, #domain_PayoutTool.id, PayoutTools, PayoutTool)
+    }.
 
 -spec is_active(contract()) ->
     boolean().
