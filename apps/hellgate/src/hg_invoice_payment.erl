@@ -473,7 +473,7 @@ validate_recurrent_terms(VS) ->
 -spec validate_recurrent_parent(map()) -> ok | no_return().
 validate_recurrent_parent(#{parent_payment := ParentPayment} = VS) ->
     % ok = validate_recurrent_parent_lifetime(VS, ParentPayment),
-    ok = validate_recurrent_token_presents(ParentPayment),
+    ok = validate_recurrent_token_present(ParentPayment),
     ok = validate_recurrent_parent_shop(VS, ParentPayment),
     ok = validate_recurrent_parent_status(ParentPayment).
 
@@ -491,14 +491,14 @@ validate_recurrent_parent(#{parent_payment := ParentPayment} = VS) ->
 %             #domain_InvoicePayment{created_at = ParentStart} = get_payment(ParentPayment),
 %             case hg_datetime:compare(CreatedAt, hg_datetime:add_time_span(Lifetime, ParentStart)) of
 %                 later ->
-%                     throw_invalid_recurrent_parent(<<"Parent lifetime is exceed terms">>);
+%                     throw_invalid_recurrent_parent(<<"Parent lifetime exceeds terms">>);
 %                 _Other ->
 %                     ok
 %             end
 %     end.
 
--spec validate_recurrent_token_presents(st()) -> ok | no_return().
-validate_recurrent_token_presents(PaymentState) ->
+-spec validate_recurrent_token_present(st()) -> ok | no_return().
+validate_recurrent_token_present(PaymentState) ->
     case get_recurrent_token(PaymentState) of
         Token when Token =/= undefined ->
             ok;

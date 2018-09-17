@@ -305,7 +305,7 @@ parent_lifetime_exceed_test(C) ->
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
     Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
-    ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent lifetime is exceed terms">>},
+    ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent lifetime exceeds terms">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
 %% Internal functions
