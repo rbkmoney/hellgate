@@ -123,7 +123,6 @@
 -type session_result()      :: dmsl_payment_processing_thrift:'SessionResult'().
 -type proxy_state()         :: dmsl_proxy_provider_thrift:'ProxyState'().
 -type tag()                 :: dmsl_proxy_provider_thrift:'CallbackTag'().
--type recurrent_parent()    :: dmsl_domain_thrift:'RecurrentParentPayment'() | undefined.
 -type make_recurrent()      :: true | false.
 -type recurrent_token()     :: dmsl_domain_thrift:'Token'().
 -type retry_strategy()      :: hg_retry:strategy().
@@ -237,16 +236,15 @@ init_(PaymentID, Params, Opts) ->
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Cost = get_invoice_cost(Invoice),
-    Payer = construct_payer(get_payer_params(Params), Shop),
+    {ok, Payer, VS0} = construct_payer(get_payer_params(Params), Shop),
     Flow = get_flow_params(Params),
-    RecurrentParent = get_recurrent_parent_params(Params),
     MakeRecurrent = get_make_recurrent_params(Params),
     CreatedAt = hg_datetime:format_now(),
     MerchantTerms = get_merchant_terms(Opts, Revision),
-    VS0 = collect_validation_varset(Party, Shop, #{}),
+    VS1 = collect_validation_varset(Party, Shop, VS0),
     Payment = construct_payment(
         PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, Party, Shop,
-        VS0, Revision, RecurrentParent, MakeRecurrent
+        VS1, Revision, MakeRecurrent
     ),
     Events = [?payment_started(Payment)],
     {collapse_changes(Events), {Events, hg_machine_action:instant()}}.
@@ -283,9 +281,6 @@ get_payer_params(#payproc_InvoicePaymentParams{payer = PayerParams}) ->
 get_flow_params(#payproc_InvoicePaymentParams{flow = FlowParams}) ->
     FlowParams.
 
-get_recurrent_parent_params(#payproc_InvoicePaymentParams{recurrent_parent = RecurrentParent}) ->
-    RecurrentParent.
-
 get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = undefined}) ->
     false;
 get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = MakeRecurrent}) ->
@@ -295,7 +290,22 @@ construct_payer({payment_resource, #payproc_PaymentResourcePayerParams{
     resource = Resource,
     contact_info = ContactInfo
 }}, _) ->
-    ?payment_resource_payer(Resource, ContactInfo);
+    {ok, ?payment_resource_payer(Resource, ContactInfo), #{}};
+construct_payer({recurrent, #payproc_RecurrentPayerParams{
+    recurrent_parent = Parent,
+    contact_info = ContactInfo
+}}, _) ->
+    ?recurrent_parent(InvoiceID, PaymentID) = Parent,
+    ParentPayment = try get_payment_state(InvoiceID, PaymentID)
+    catch
+        throw:#payproc_InvoiceNotFound{} ->
+            throw_invalid_recurrent_parent(<<"Parent invoice not found">>);
+        throw:#payproc_InvoicePaymentNotFound{} ->
+            throw_invalid_recurrent_parent(<<"Parent payment not found">>)
+    end,
+    #domain_InvoicePayment{payer = ParentPayer} = get_payment(ParentPayment),
+    ParentPaymentTool = get_payer_payment_tool(ParentPayer),
+    {ok, ?recurrent_payer(ParentPaymentTool, Parent, ContactInfo), #{parent_payment => ParentPayment}};
 construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID}}, Shop) ->
     Customer = get_customer(CustomerID),
     ok = validate_customer_shop(Customer, Shop),
@@ -306,13 +316,14 @@ construct_payer({customer, #payproc_CustomerPayerParams{customer_id = CustomerID
     %      to fetch this token during deeper payment flow stages
     % by antibi0tic
     % we dont need it for refund, so I think - no
-    ?customer_payer(
+    Payer = ?customer_payer(
         CustomerID,
         ActiveBinding#payproc_CustomerBinding.id,
         ActiveBinding#payproc_CustomerBinding.rec_payment_tool_id,
         get_resource_payment_tool(ActiveBinding#payproc_CustomerBinding.payment_resource),
         get_customer_contact_info(Customer)
-    ).
+    ),
+    {ok, Payer, #{}}.
 
 validate_customer_shop(#payproc_Customer{shop_id = ShopID}, #domain_Shop{id = ShopID}) ->
     ok;
@@ -331,7 +342,7 @@ get_customer_contact_info(#payproc_Customer{contact_info = ContactInfo}) ->
     ContactInfo.
 
 construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
-                  Party, Shop, VS0, Revision, RecurrentParent, MakeRecurrent) ->
+                  Party, Shop, VS0, Revision, MakeRecurrent) ->
     #domain_TermSet{payments = PaymentTerms, recurrent_paytools = RecurrentTerms} = Terms,
     PaymentTool = get_payer_payment_tool(Payer),
     VS1 = validate_payment_tool(
@@ -361,9 +372,10 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
         revision => Revision,
         created_at => CreatedAt,
         recurrent_terms => RecurrentTerms,
-        payment_tool => PaymentTool
+        payment_tool => PaymentTool,
+        parent_payment => maps:get(parent_payment, VS2, undefined)
     },
-    ok = validate_recurrent_intention(RecurrentValidationVarset, MakeRecurrent, RecurrentParent),
+    ok = validate_recurrent_intention(RecurrentValidationVarset, MakeRecurrent),
     #domain_InvoicePayment{
         id                  = PaymentID,
         created_at          = CreatedAt,
@@ -374,7 +386,6 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
         cost                = Cost,
         payer               = Payer,
         flow                = Flow,
-        recurrent_parent    = RecurrentParent,
         make_recurrent      = MakeRecurrent
     }.
 
@@ -392,12 +403,12 @@ reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, HeldUntil
     Seconds = hg_datetime:parse_ts(HeldUntil) - hg_datetime:parse_ts(CreatedAt),
     VS#{flow => {hold, ?hold_lifetime(Seconds)}}.
 
--spec get_predefined_route(payer(), recurrent_parent()) -> {ok, route()} | undefined.
-get_predefined_route(?payment_resource_payer(_, _), undefined = _RecurrentParent) ->
+-spec get_predefined_route(payer()) -> {ok, route()} | undefined.
+get_predefined_route(?payment_resource_payer()) ->
     undefined;
-get_predefined_route(?payment_resource_payer(_, _), RecurrentParent) ->
-    get_predefined_recurrent_route(RecurrentParent);
-get_predefined_route(?customer_payer(_, _, _, _, _) = Payer, undefined = _RecurrentParent) ->
+get_predefined_route(?recurrent_payer() = Payer) ->
+    get_predefined_recurrent_route(Payer);
+get_predefined_route(?customer_payer() = Payer) ->
     get_predefined_customer_route(Payer).
 
 -spec get_predefined_customer_route(payer()) -> {ok, route()} | undefined.
@@ -412,8 +423,8 @@ get_predefined_customer_route(?customer_payer(_, _, RecPaymentToolID, _, _) = Pa
             error({'Can\'t get route for customer payer', Payer})
     end.
 
--spec get_predefined_recurrent_route(recurrent_parent()) -> {ok, route()}.
-get_predefined_recurrent_route(?recurrent_parent(InvoiceID, PaymentID)) ->
+-spec get_predefined_recurrent_route(payer()) -> {ok, route()}.
+get_predefined_recurrent_route(?recurrent_payer(_, ?recurrent_parent(InvoiceID, PaymentID), _)) ->
     PreviousPayment = get_payment_state(InvoiceID, PaymentID),
     {ok, get_route(PreviousPayment)}.
 
@@ -431,25 +442,17 @@ validate_hold_lifetime(
 validate_hold_lifetime(undefined, _VS, _Revision) ->
     throw_invalid_request(<<"Holds are not available">>).
 
--spec validate_recurrent_intention(map(), make_recurrent(), recurrent_parent()) ->
+-spec validate_recurrent_intention(map(), make_recurrent()) ->
     ok | no_return().
-validate_recurrent_intention(_VS, false = _IsRecurring, undefined = _Parent) ->
-    ok;
-validate_recurrent_intention(VS, true = _IsRecurring, undefined = _Parent) ->
+validate_recurrent_intention(#{payer := ?recurrent_payer()} = VS, MakeRecurrent) ->
     ok = validate_recurrent_terms(VS),
-    ok = validate_recurrent_payer(VS);
-validate_recurrent_intention(VS, _IsRecurring, Parent) ->
-    ?recurrent_parent(InvoiceID, PaymentID) = Parent,
-    ParentPayment = try get_payment_state(InvoiceID, PaymentID)
-    catch
-        throw:#payproc_InvoiceNotFound{} ->
-            throw_invalid_recurrent_parent(<<"Parent invoice not found">>);
-        throw:#payproc_InvoicePaymentNotFound{} ->
-            throw_invalid_recurrent_parent(<<"Parent payment not found">>)
-    end,
+    ok = validate_recurrent_payer(VS, MakeRecurrent),
+    ok = validate_recurrent_parent(VS);
+validate_recurrent_intention(VS, true = MakeRecurrent) ->
     ok = validate_recurrent_terms(VS),
-    ok = validate_recurrent_payer(VS),
-    ok = validate_recurrent_parent(VS, ParentPayment).
+    ok = validate_recurrent_payer(VS, MakeRecurrent);
+validate_recurrent_intention(_VS, false = _MakeRecurrent) ->
+    ok.
 
 -spec validate_recurrent_terms(map()) -> ok | no_return().
 validate_recurrent_terms(#{recurrent_terms := undefined}) ->
@@ -467,8 +470,8 @@ validate_recurrent_terms(VS) ->
         throw_invalid_request(<<"Invalid payment method">>),
     ok.
 
--spec validate_recurrent_parent(map(), st()) -> ok | no_return().
-validate_recurrent_parent(VS, ParentPayment) ->
+-spec validate_recurrent_parent(map()) -> ok | no_return().
+validate_recurrent_parent(#{parent_payment := ParentPayment} = VS) ->
     % ok = validate_recurrent_parent_lifetime(VS, ParentPayment),
     ok = validate_recurrent_token_presents(ParentPayment),
     ok = validate_recurrent_parent_shop(VS, ParentPayment),
@@ -522,14 +525,13 @@ validate_recurrent_parent_status(PaymentState) ->
             ok
     end.
 
--spec validate_recurrent_payer(map()) -> ok | no_return().
-validate_recurrent_payer(#{payer := Payer}) ->
-    case Payer of
-        ?payment_resource_payer(_, _) ->
-            ok;
-        _OtherPayer ->
-            throw_invalid_request(<<"Invalid payer">>)
-    end.
+-spec validate_recurrent_payer(map(), make_recurrent()) -> ok | no_return().
+validate_recurrent_payer(#{payer := ?recurrent_payer()}, _MakeRecurrent) ->
+    ok;
+validate_recurrent_payer(#{payer := ?payment_resource_payer()}, true) ->
+    ok;
+validate_recurrent_payer(#{payer := _Other}, true) ->
+    throw_invalid_request(<<"Invalid payer">>).
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
@@ -559,8 +561,8 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-choose_route(Payer, RecurrentParent, PaymentInstitution, VS, Revision) ->
-    case get_predefined_route(Payer, RecurrentParent) of
+choose_route(Payer, PaymentInstitution, VS, Revision) ->
+    case get_predefined_route(Payer) of
         {ok, _Route} = Result ->
             Result;
         undefined ->
@@ -1234,8 +1236,7 @@ process_routing(Action, St) ->
     Events0 = [?risk_score_changed(RiskScore)],
     Payer = get_payment_payer(St),
     VS1 = VS0#{risk_score => RiskScore},
-    RecurrentParent = get_recurrent_parent(St),
-    case choose_route(Payer, RecurrentParent, PaymentInstitution, VS1, Revision) of
+    case choose_route(Payer, PaymentInstitution, VS1, Revision) of
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, _Details}} ->
@@ -1610,7 +1611,6 @@ construct_proxy_payment(
         created_at = CreatedAt,
         payer = Payer,
         cost = Cost,
-        recurrent_parent = RecurrentParent,
         make_recurrent = MakeRecurrent
     },
     Trx
@@ -1620,27 +1620,22 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         trx = Trx,
-        payment_resource = construct_payment_resource(Payer, RecurrentParent),
+        payment_resource = construct_payment_resource(Payer),
         cost = construct_proxy_cash(Cost),
         contact_info = ContactInfo,
         make_recurrent = MakeRecurrent
     }.
 
-construct_payment_resource(Payer, undefined) ->
-    get_payment_resource(Payer);
-construct_payment_resource(Payer, ?recurrent_parent(InvoiceID, PaymentID)) ->
-    ?payment_resource_payer(Resource, _) = Payer,
-    #domain_DisposablePaymentResource{payment_tool = PaymentTool} = Resource,
+construct_payment_resource(?payment_resource_payer(Resource, _)) ->
+    {disposable_payment_resource, Resource};
+construct_payment_resource(?recurrent_payer(PaymentTool, ?recurrent_parent(InvoiceID, PaymentID), _)) ->
     PreviousPayment = get_payment_state(InvoiceID, PaymentID),
     RecToken = get_recurrent_token(PreviousPayment),
     {recurrent_payment_resource, #prxprv_RecurrentPaymentResource{
         payment_tool = PaymentTool,
         rec_token = RecToken
-    }}.
-
-get_payment_resource(?payment_resource_payer(Resource, _)) ->
-    {disposable_payment_resource, Resource};
-get_payment_resource(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
+    }};
+construct_payment_resource(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
     case get_rec_payment_tool(RecPaymentToolID) of
         {ok, #payproc_RecurrentPaymentTool{
             payment_resource = #domain_DisposablePaymentResource{
@@ -1658,6 +1653,8 @@ get_payment_resource(?customer_payer(_, _, RecPaymentToolID, _, _) = Payer) ->
     end.
 
 get_contact_info(?payment_resource_payer(_, ContactInfo)) ->
+    ContactInfo;
+get_contact_info(?recurrent_payer(_, _, ContactInfo)) ->
     ContactInfo;
 get_contact_info(?customer_payer(_, _, _, _, ContactInfo)) ->
     ContactInfo.
@@ -1797,6 +1794,8 @@ get_payment_created_at(#domain_InvoicePayment{created_at = CreatedAt}) ->
 get_payer_payment_tool(?payment_resource_payer(PaymentResource, _ContactInfo)) ->
     get_resource_payment_tool(PaymentResource);
 get_payer_payment_tool(?customer_payer(_CustomerID, _, _, PaymentTool, _)) ->
+    PaymentTool;
+get_payer_payment_tool(?recurrent_payer(PaymentTool, _, _)) ->
     PaymentTool.
 
 get_currency(#domain_Cash{currency = Currency}) ->
@@ -2087,9 +2086,6 @@ get_opts(#st{opts = Opts}) ->
 get_recurrent_token(#st{recurrent_token = Token}) ->
     Token.
 
-get_recurrent_parent(#st{payment = #domain_InvoicePayment{recurrent_parent = Parent}}) ->
-    Parent.
-
 get_payment_revision(#st{payment = #domain_InvoicePayment{domain_revision = Revision}}) ->
     Revision.
 
@@ -2375,8 +2371,7 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         <<"payer">>               => marshal(payer, Payment#domain_InvoicePayment.payer),
         <<"flow">>                => marshal(flow, Payment#domain_InvoicePayment.flow),
         <<"context">>             => hg_content:marshal(Payment#domain_InvoicePayment.context),
-        <<"make_recurrent">>      => marshal(bool, Payment#domain_InvoicePayment.make_recurrent),
-        <<"recurrent_parent">>    => marshal(recurrent_parent_payment, Payment#domain_InvoicePayment.recurrent_parent)
+        <<"make_recurrent">>      => marshal(bool, Payment#domain_InvoicePayment.make_recurrent)
     });
 
 %% Flow
@@ -2518,6 +2513,14 @@ marshal(payer, ?payment_resource_payer(Resource, ContactInfo)) ->
         <<"type">>           => <<"payment_resource_payer">>,
         <<"resource">>       => marshal(disposable_payment_resource, Resource),
         <<"contact_info">>   => marshal(contact_info, ContactInfo)
+    }];
+
+marshal(payer, ?recurrent_payer(PaymentTool, Parent, ContactInfo)) ->
+    [2, #{
+        <<"type">>             => <<"recurrent_payer">>,
+        <<"payment_tool">>     => hg_payment_tool:marshal(PaymentTool),
+        <<"recurrent_parent">> => marshal(recurrent_parent_payment, Parent),
+        <<"contact_info">>     => marshal(contact_info, ContactInfo)
     }];
 
 marshal(payer, ?customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool, ContactInfo)) ->
@@ -2716,7 +2719,6 @@ unmarshal(payment, #{
     Context = maps:get(<<"context">>, Payment, undefined),
     OwnerID = maps:get(<<"owner_id">>, Payment, undefined),
     ShopID = maps:get(<<"shop_id">>, Payment, undefined),
-    RecurrentParent = maps:get(<<"recurrent_parent">>, Payment, undefined),
     MakeRecurrent = maps:get(<<"make_recurrent">>, Payment, undefined),
     #domain_InvoicePayment{
         id                  = unmarshal(str, ID),
@@ -2729,7 +2731,6 @@ unmarshal(payment, #{
         status              = ?pending(),
         flow                = unmarshal(flow, Flow),
         context             = hg_content:unmarshal(Context),
-        recurrent_parent    = unmarshal(recurrent_parent_payment, RecurrentParent),
         make_recurrent      = unmarshal(bool, MakeRecurrent)
     };
 
@@ -2970,6 +2971,18 @@ unmarshal(payer, [2, #{
 }]) ->
     ?payment_resource_payer(
         unmarshal(disposable_payment_resource, Resource),
+        unmarshal(contact_info, ContactInfo)
+    );
+
+unmarshal(payer, [2, #{
+    <<"type">>             := <<"recurrent_payer">>,
+    <<"payment_tool">>     := PaymentTool,
+    <<"recurrent_parent">> := RecurrentParent,
+    <<"contact_info">>     := ContactInfo
+}]) ->
+    ?recurrent_payer(
+        hg_payment_tool:unmarshal(PaymentTool),
+        unmarshal(recurrent_parent_payment, RecurrentParent),
         unmarshal(contact_info, ContactInfo)
     );
 

@@ -372,19 +372,27 @@ make_payment_params(ClientInfo, PaymentTool, Session, FlowType, MakeRecurrent, R
         {hold, OnHoldExpiration} ->
             {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
     end,
+    Payer = make_payer_params(PaymentTool, Session, ClientInfo, RecurrentParent),
     #payproc_InvoicePaymentParams{
-        payer = {payment_resource, #payproc_PaymentResourcePayerParams{
-            resource = #domain_DisposablePaymentResource{
-                payment_tool = PaymentTool,
-                payment_session_id = Session,
-                client_info = ClientInfo
-            },
-            contact_info = #domain_ContactInfo{}
-        }},
+        payer = Payer,
         flow = Flow,
-        recurrent_parent = RecurrentParent,
         make_recurrent = MakeRecurrent
     }.
+
+make_payer_params(PaymentTool, Session, ClientInfo, undefined = _RecurrentParent) ->
+    {payment_resource, #payproc_PaymentResourcePayerParams{
+        resource = #domain_DisposablePaymentResource{
+            payment_tool = PaymentTool,
+            payment_session_id = Session,
+            client_info = ClientInfo
+        },
+        contact_info = #domain_ContactInfo{}
+    }};
+make_payer_params(_PaymentTool, _Session, _ClientInfo, RecurrentParent) ->
+    {recurrent, #payproc_RecurrentPayerParams{
+        recurrent_parent = RecurrentParent,
+        contact_info = #domain_ContactInfo{}
+    }}.
 
 make_recurrent_payment_params(MakeRecurrent, RecurrentParent) ->
     make_recurrent_payment_params(instant, MakeRecurrent, RecurrentParent).
@@ -478,16 +486,15 @@ wait_for_binding_success(_, _, _, _) ->
     timeout.
 
 make_customer_payment_params(CustomerID) ->
-    make_customer_payment_params(CustomerID, true, undefined).
+    make_customer_payment_params(CustomerID, true).
 
-make_customer_payment_params(CustomerID, MakeRecurrent, RecurrentParent) ->
+make_customer_payment_params(CustomerID, MakeRecurrent) ->
     #payproc_InvoicePaymentParams{
         payer = {customer, #payproc_CustomerPayerParams{
             customer_id = CustomerID
         }},
         flow = {instant, #payproc_InvoicePaymentParamsFlowInstant{}},
-        make_recurrent = MakeRecurrent,
-        recurrent_parent = RecurrentParent
+        make_recurrent = MakeRecurrent
     }.
 
 %% Event helpers
