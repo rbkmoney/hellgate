@@ -31,7 +31,7 @@ inspect(
         payment = get_payment_info(Shop, Invoice, Payment),
         options = maps:merge(ProxyDef#domain_ProxyDefinition.options, ProxyAdditional)
     },
-    Result = issue_call(FallBackRiskScore, 'InspectPayment', [Context], hg_proxy:get_call_options(Proxy, Revision)),
+    Result = issue_call('InspectPayment', [Context], hg_proxy:get_call_options(Proxy, Revision), FallBackRiskScore),
     case Result of
         {ok, RiskScore} when is_atom(RiskScore) ->
             RiskScore;
@@ -93,18 +93,18 @@ get_payment_info(
         payment = ProxyPayment
     }.
 
-issue_call(undefined, Func, Args, CallOpts) ->
+issue_call(Func, Args, CallOpts, undefined) ->
     hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts);
-issue_call(Default, Func, Args, CallOpts) ->
+issue_call(Func, Args, CallOpts, Default) ->
     try hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts) of
         {ok, _} = RiskScore ->
             RiskScore;
         {exception, Error} ->
-            lager:warning("Fail to get RiskScore with error ~p", [Error]),
+            _ = lager:warning("Fail to get RiskScore with error ~p", [Error]),
             {ok, Default}
     catch
         Class:Reason ->
-            lager:warning("Fail to get RiskScore with error ~p:~p", [Class, Reason]),
+            _ = lager:warning("Fail to get RiskScore with error ~p:~p", [Class, Reason]),
             {ok, Default}
     end.
 

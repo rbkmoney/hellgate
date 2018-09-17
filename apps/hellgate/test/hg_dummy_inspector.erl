@@ -44,15 +44,3 @@ handle_function(
     _Options
 ) ->
     erlang:error(test_error).
-
-
-
-
-
-
-
-
-
-
-
-

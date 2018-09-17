@@ -810,8 +810,7 @@ payment_risk_score_check_fail(C) ->
         ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID1, Client),
     [
-        ?payment_ev(PaymentID1, ?risk_score_changed(low)), % low risk score...
-        % ...covered with high risk coverage terminal
+        ?payment_ev(PaymentID1, ?risk_score_changed(low)), % default low risk score...
         ?payment_ev(PaymentID1, ?route_changed(?route(?prv(2), ?trm(7)))),
         ?payment_ev(PaymentID1, ?cash_flow_changed(_))
     ] = next_event(InvoiceID1, Client),
