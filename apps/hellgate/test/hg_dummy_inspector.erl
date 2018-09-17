@@ -31,4 +31,16 @@ handle_function(
     }],
     _Options
 ) ->
-    binary_to_atom(RiskScore, utf8).
+    binary_to_atom(RiskScore, utf8);
+
+handle_function(
+    'InspectPayment',
+    [#proxy_inspector_Context{
+        payment = _PaymentInfo,
+        options = #{
+            <<"link_state">> := _LinkState
+        }
+    }],
+    _Options
+) ->
+    erlang:error(test_error).

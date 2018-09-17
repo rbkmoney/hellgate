@@ -42,6 +42,7 @@
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([payment_risk_score_check/1]).
+-export([payment_risk_score_check_fail/1]).
 -export([invalid_payment_adjustment/1]).
 -export([payment_adjustment_success/1]).
 -export([invalid_payment_w_deprived_party/1]).
@@ -122,6 +123,7 @@ groups() ->
             {group, base_payments},
 
             payment_risk_score_check,
+            payment_risk_score_check_fail,
 
             invalid_payment_w_deprived_party,
             external_account_posting,
@@ -793,6 +795,30 @@ payment_risk_score_check(C) ->
         Failure,
         fun({no_route_found, _}) -> ok end
     ).
+
+-spec payment_risk_score_check_fail(config()) -> test_return().
+
+payment_risk_score_check_fail(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID1 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    % Invoice
+    PaymentParams = make_payment_params(),
+    ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID1, Client),
+    [
+        ?payment_ev(PaymentID1, ?risk_score_changed(low)), % default low risk score...
+        ?payment_ev(PaymentID1, ?route_changed(?route(?prv(2), ?trm(7)))),
+        ?payment_ev(PaymentID1, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID1, Client),
+    [
+        ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID1, Client),
+    PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
+    PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client).
 
 -spec invalid_payment_adjustment(config()) -> test_return().
 
@@ -2200,7 +2226,8 @@ construct_domain_fixture() ->
             ])},
             categories = {value, ?ordset([
                 ?cat(2),
-                ?cat(3)
+                ?cat(3),
+                ?cat(4)
             ])},
             payment_methods = {value, ?ordset([
                 ?pmt(bank_card, visa),
@@ -2280,6 +2307,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
         hg_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
         hg_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
+        hg_ct_fixture:construct_category(?cat(4), <<"Offliner">>, live),
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
@@ -2294,6 +2322,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_inspector(?insp(1), <<"Rejector">>, ?prx(2), #{<<"risk_score">> => <<"low">>}),
         hg_ct_fixture:construct_inspector(?insp(2), <<"Skipper">>, ?prx(2), #{<<"risk_score">> => <<"high">>}),
         hg_ct_fixture:construct_inspector(?insp(3), <<"Fatalist">>, ?prx(2), #{<<"risk_score">> => <<"fatal">>}),
+        hg_ct_fixture:construct_inspector(?insp(4), <<"Offliner">>, ?prx(2), #{<<"link_state">> => <<"offline">>}, low),
 
         hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
         hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
@@ -2324,6 +2353,10 @@ construct_domain_fixture() ->
                             #domain_InspectorDecision{
                                 if_ = {condition, {category_is, ?cat(3)}},
                                 then_ = {value, ?insp(2)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {category_is, ?cat(4)}},
+                                then_ = {value, ?insp(4)}
                             },
                             #domain_InspectorDecision{
                                 if_ = {condition, {cost_in, ?cashrng(
@@ -2372,6 +2405,10 @@ construct_domain_fixture() ->
                             #domain_InspectorDecision{
                                 if_ = {condition, {category_is, ?cat(3)}},
                                 then_ = {value, ?insp(2)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {category_is, ?cat(4)}},
+                                then_ = {value, ?insp(4)}
                             },
                             #domain_InspectorDecision{
                                 if_ = {condition, {cost_in, ?cashrng(
@@ -2616,7 +2653,8 @@ construct_domain_fixture() ->
                         ?cur(<<"RUB">>)
                     ])},
                     categories = {value, ?ordset([
-                        ?cat(2)
+                        ?cat(2),
+                        ?cat(4)
                     ])},
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa),
