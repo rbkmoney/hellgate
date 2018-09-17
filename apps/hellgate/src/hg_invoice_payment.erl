@@ -1138,16 +1138,16 @@ process_session(Session, Action, Events, St) ->
 
 -spec process_session(session_status(), session(), action(), events(), st()) -> machine_result().
 process_session(active, Session, Action, Events, St) ->
-    process_active_proxy_session(Action, Session, Events, St);
+    process_active_session(Action, Session, Events, St);
 process_session(suspended, Session, Action, Events, St) ->
     process_callback_timeout(Action, Session, Events, St).
 
--spec process_active_proxy_session(action(), session(), events(), st()) -> machine_result().
-process_active_proxy_session(Action, Session, Events, St) ->
+-spec process_active_session(action(), session(), events(), st()) -> machine_result().
+process_active_session(Action, Session, Events, St) ->
     ProxyContext = construct_proxy_context(St),
     {ok, ProxyResult} = issue_process_call(ProxyContext, St),
     Result = handle_proxy_result(ProxyResult, Action, Events, Session),
-    finish_proxy_processing(Result, St).
+    finish_session_processing(Result, St).
 
 -spec finalize_payment(action(), st()) -> machine_result().
 finalize_payment(Action, St) ->
@@ -1168,19 +1168,19 @@ finalize_payment(Action, St) ->
 -spec process_callback_timeout(action(), session(), events(), st()) -> machine_result().
 process_callback_timeout(Action, Session, Events, St) ->
     Result = handle_proxy_callback_timeout(Action, Events, Session),
-    finish_proxy_processing(Result, St).
+    finish_session_processing(Result, St).
 
 handle_callback(Payload, Action, St) ->
     ProxyContext = construct_proxy_context(St),
     {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St),
     {Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
-    {Response, finish_proxy_processing(Result, St)}.
+    {Response, finish_session_processing(Result, St)}.
 
--spec finish_proxy_processing(result(), st()) -> machine_result().
-finish_proxy_processing(Result, St) ->
-    finish_proxy_processing(get_activity(St), Result, St).
+-spec finish_session_processing(result(), st()) -> machine_result().
+finish_session_processing(Result, St) ->
+    finish_session_processing(get_activity(St), Result, St).
 
-finish_proxy_processing({payment, Step} = Activity, {Events, Action}, St) when
+finish_session_processing({payment, Step} = Activity, {Events, Action}, St) when
     Step =:= processing_session orelse
     Step =:= finalizing_session
 ->
@@ -1196,7 +1196,7 @@ finish_proxy_processing({payment, Step} = Activity, {Events, Action}, St) when
             {next, {Events, Action}}
     end;
 
-finish_proxy_processing({refund_session, ID} = Activity, {Events, Action}, St) ->
+finish_session_processing({refund_session, ID} = Activity, {Events, Action}, St) ->
     Events1 = [?refund_ev(ID, Ev) || Ev <- Events],
     St1 = collapse_changes(Events1, St),
     RefundSt1 = try_get_refund_state(ID, St1),
@@ -1726,7 +1726,6 @@ merge_change(Event = ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?
                 #st{activity = {refund_session, ID}} = St) ->
     merge_change(Event, St#st{activity = {refund_accounter, ID}});
 merge_change(?refund_ev(ID, Event), St) ->
-    %lager:warning("Refund state - ~p", [St]),
     RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St)),
     St2 = set_refund_state(ID, RefundSt, St),
     case get_refund_status(get_refund(RefundSt)) of
