@@ -379,8 +379,8 @@ respond(Response, CallbackResult) ->
     }.
 
 success(PaymentInfo) ->
-    #prxprv_PaymentInfo{payment = #prxprv_InvoicePayment{recurrent_intention = Intention}} = PaymentInfo,
-    Token = case Intention of
+    #prxprv_PaymentInfo{payment = #prxprv_InvoicePayment{make_recurrent = MakeRecurrent}} = PaymentInfo,
+    Token = case MakeRecurrent of
         true ->
             ?REC_TOKEN;
         Other when Other =:= false orelse Other =:= undefined ->

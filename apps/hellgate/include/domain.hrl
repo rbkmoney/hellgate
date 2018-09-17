@@ -32,6 +32,8 @@
 
 -define(payment_resource_payer(Resource, ContactInfo),
     {payment_resource, #domain_PaymentResourcePayer{resource = Resource, contact_info = ContactInfo}}).
+-define(payment_resource_payer(),
+    {payment_resource, #domain_PaymentResourcePayer{}}).
 
 -define(customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool, ContactInfo),
     {customer, #domain_CustomerPayer{
@@ -42,11 +44,18 @@
         contact_info = ContactInfo
     }}
 ).
+-define(customer_payer(), {customer, #domain_CustomerPayer{}}).
 
--define(recurrent_intention(TokenSource),
-    #domain_RecurrentIntention{token_source = TokenSource}).
+-define(recurrent_payer(PaymentTool, Parent, ContactInfo),
+    {recurrent, #domain_RecurrentPayer{
+        payment_tool = PaymentTool,
+        recurrent_parent = Parent,
+        contact_info = ContactInfo
+    }}
+).
+-define(recurrent_payer(), {recurrent, #domain_RecurrentPayer{}}).
 
--define(payment_token_source(InvoiceID, PaymentID),
-    {payment, #domain_PaymentRecurrentTokenSource{invoice_id = InvoiceID, payment_id = PaymentID}}).
+-define(recurrent_parent(InvoiceID, PaymentID),
+    #domain_RecurrentParentPayment{invoice_id = InvoiceID, payment_id = PaymentID}).
 
 -endif.
