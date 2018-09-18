@@ -224,7 +224,7 @@ detect_binding_status(St) ->
         [] ->
             all_ready;
         _Pending ->
-            case get_outdate_binding_set(St) of
+            case get_outdated_binding_set(St) of
                 [] ->
                     waiting;
                 Outdated ->
@@ -540,10 +540,10 @@ get_pending_binding_set(St) ->
         Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_pending()
     ].
 
-get_outdate_binding_set(St) ->
+get_outdated_binding_set(St) ->
     Bindings = get_bindings(get_customer(St)),
     [Binding ||
-        Binding <- Bindings, is_binding_outdated(get_binding_id(Binding), St) =:= outdated
+        Binding <- Bindings, is_binding_outdated(get_binding_id(Binding), St) =:= true
     ].
 
 is_binding_outdated(BindingId, #st{binding_starts = Starts}) ->
@@ -560,9 +560,9 @@ is_binding_outdated(BindingId, #st{binding_starts = Starts}) ->
     Deadline = hg_datetime:add_time_span(?MAX_BINDING_DURATION, BindingStart),
     case hg_datetime:compare(Now, Deadline) of
         later ->
-            outdated;
+            true;
         _Other ->
-            active
+            false
     end.
 
 get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->
