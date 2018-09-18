@@ -16,6 +16,9 @@
 
 %% Party support functions
 
+-export([get_party/1]).
+-export([checkout/2]).
+
 -export([create_party/3]).
 -export([blocking/2]).
 -export([suspension/2]).
@@ -73,6 +76,20 @@
 
 
 %% Interface
+
+-spec get_party(party_id()) ->
+    party() | no_return().
+
+get_party(PartyID) ->
+    {Client, Context} = get_party_client(),
+    unwrap_party_result(party_client_thrift:get(PartyID, Client, Context)).
+
+-spec checkout(party_id(), party_client_thrift:party_revision_param()) ->
+    party() | no_return().
+
+checkout(PartyID, RevisionParam) ->
+    {Client, Context} = get_party_client(),
+    unwrap_party_result(party_client_thrift:checkout(PartyID, RevisionParam, Client, Context)).
 
 -spec create_party(party_id(), dmsl_domain_thrift:'PartyContactInfo'(), timestamp()) ->
     party().
@@ -249,6 +266,17 @@ wallet_suspension(ID, Suspension, Party) ->
     set_wallet(Wallet#domain_Wallet{suspension = Suspension}, Party).
 
 %% Internals
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.
+
+unwrap_party_result({ok, Result}) ->
+    Result;
+unwrap_party_result({error, Error}) ->
+    erlang:throw(Error).
 
 get_contract_id(#domain_Contract{id = ContractID}) ->
     ContractID.

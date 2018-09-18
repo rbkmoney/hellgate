@@ -13,8 +13,8 @@
 
 get_user_identity() ->
     try
-        Context = hg_context:get(),
-        woody_user_identity:get(Context)
+        Context = hg_context:load(),
+        woody_user_identity:get(hg_context:get_woody_context(Context))
     catch
         throw:{missing_required, _Key} ->
             undefined
@@ -33,7 +33,7 @@ collect_user_identity(UserInfo) ->
 -spec set_user_identity(user_identity()) -> ok.
 
 set_user_identity(UserIdentity) ->
-    hg_context:update(woody_user_identity:put(UserIdentity, hg_context:get())).
+    hg_context:save(hg_context:set_user_identity(UserIdentity, hg_context:load())).
 
 -spec assume_user_identity(user_info()) -> ok.
 

@@ -62,7 +62,7 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     PartyID = CustomerParams#payproc_CustomerParams.party_id,
     ShopID = CustomerParams#payproc_CustomerParams.shop_id,
     ok = assert_party_accessible(PartyID),
-    Party = get_party(PartyID),
+    Party = hg_party:get_party(PartyID),
     Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
     ok = assert_party_shop_operable(Shop, Party),
     _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party),
@@ -100,9 +100,6 @@ handle_function_('GetEvents', [CustomerID, Range], _Opts) ->
     get_public_history(CustomerID, Range).
 
 %%
-
-get_party(PartyID) ->
-    hg_party_machine:get_party(PartyID).
 
 set_meta(ID) ->
     scoper:add_meta(#{customer_id => ID}).
@@ -566,7 +563,7 @@ assert_party_accessible(PartyID) ->
 
 assert_customer_operable(St = #st{}) ->
     ok    = assert_customer_accessible(St),
-    Party = get_party(get_party_id(St)),
+    Party = hg_party:get_party(get_party_id(St)),
     Shop  = hg_party:get_shop(get_shop_id(St), Party),
     ok    = assert_party_shop_operable(Shop, Party),
     ok.

@@ -144,6 +144,21 @@ start_app(hellgate = AppName) ->
         hellgate_root_url => get_hellgate_url()
     }};
 
+start_app(party_client = AppName) ->
+    {start_app(AppName, [
+        {services, #{
+            party_management => "http://hellgate:8022/v1/processing/partymgmt"
+        }},
+        {woody, #{
+            cache_mode => safe,  % disabled | safe | aggressive
+            options => #{
+                woody_client => #{
+                    event_handler => scoper_woody_event_handler
+                }
+            }
+        }}
+    ]), #{}};
+
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
 
@@ -362,9 +377,9 @@ ensure_claim_accepted(#payproc_Claim{id = ClaimID, revision = ClaimRevision, sta
 
 get_account(AccountID) ->
     % TODO we sure need to proxy this through the hellgate interfaces
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     Account = hg_accounting:get_account(AccountID),
-    _ = hg_context:cleanup(),
+    ok = hg_context:cleanup(),
     Account.
 
 -spec get_first_payout_tool_id(contract_id(), Client :: pid()) ->

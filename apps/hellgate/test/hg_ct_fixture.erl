@@ -15,6 +15,7 @@
 -export([construct_proxy/3]).
 -export([construct_inspector/3]).
 -export([construct_inspector/4]).
+-export([construct_inspector/5]).
 -export([construct_contract_template/2]).
 -export([construct_contract_template/4]).
 -export([construct_provider_account_set/1]).
@@ -31,6 +32,7 @@
 -type currency()    :: dmsl_domain_thrift:'CurrencyRef'().
 -type proxy()       :: dmsl_domain_thrift:'ProxyRef'().
 -type inspector()   :: dmsl_domain_thrift:'InspectorRef'().
+-type risk_score()  :: dmsl_domain_thrift:'RiskScore'().
 -type template()    :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms()       :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime()    :: dmsl_domain_thrift:'Lifetime'() | undefined.
@@ -146,6 +148,12 @@ construct_inspector(Ref, Name, ProxyRef) ->
     {inspector, dmsl_domain_thrift:'InspectorObject'()}.
 
 construct_inspector(Ref, Name, ProxyRef, Additional) ->
+    construct_inspector(Ref, Name, ProxyRef, Additional, undefined).
+
+-spec construct_inspector(inspector(), name(), proxy(), Additional :: map(), risk_score()) ->
+    {inspector, dmsl_domain_thrift:'InspectorObject'()}.
+
+construct_inspector(Ref, Name, ProxyRef, Additional, FallBackScore) ->
     {inspector, #domain_InspectorObject{
         ref = Ref,
         data = #domain_Inspector{
@@ -154,7 +162,8 @@ construct_inspector(Ref, Name, ProxyRef, Additional) ->
             proxy = #domain_Proxy{
                 ref = ProxyRef,
                 additional = Additional
-            }
+            },
+            fallback_risk_score = FallBackScore
         }
     }}.
 
@@ -180,7 +189,7 @@ construct_contract_template(Ref, TermsRef, ValidSince, ValidUntil) ->
 -spec construct_provider_account_set([currency()]) -> dmsl_domain_thrift:'ProviderAccountSet'().
 
 construct_provider_account_set(Currencies) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountSet = lists:foldl(
         fun (Cur = ?cur(Code), Acc) ->
             Acc#{Cur => ?prvacc(hg_accounting:create_account(Code))}
@@ -201,7 +210,7 @@ construct_system_account_set(Ref) ->
     {system_account_set, dmsl_domain_thrift:'SystemAccountSetObject'()}.
 
 construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountID = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
     {system_account_set, #domain_SystemAccountSetObject{
@@ -225,7 +234,7 @@ construct_external_account_set(Ref) ->
     {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 
 construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountID1 = hg_accounting:create_account(CurrencyCode),
     AccountID2 = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
