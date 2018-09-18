@@ -32,9 +32,9 @@
     {customer_binding_changed,
         #payproc_CustomerBindingChanged{id = CustomerBindingID, payload = Payload}}).
 
--define(customer_binding_started(CustomerBinding),
+-define(customer_binding_started(CustomerBinding, Timestamp),
     {started,
-        #payproc_CustomerBindingStarted{binding = CustomerBinding}}).
+        #payproc_CustomerBindingStarted{binding = CustomerBinding, timestamp = Timestamp}}).
 
 -define(customer_binding_status_changed(CustomerBindingStatus),
     {status_changed,
