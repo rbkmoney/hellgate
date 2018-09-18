@@ -335,6 +335,7 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, Party, S
         owner_id        = Party#domain_Party.id,
         shop_id         = Shop#domain_Shop.id,
         domain_revision = Revision,
+        party_revision  = Party#domain_Party.revision,
         status          = ?pending(),
         cost            = Cost,
         payer           = Payer,
@@ -660,6 +661,7 @@ refund(Params, St0, Opts) ->
     _ = assert_payment_status(captured, Payment),
     Route = get_route(St),
     Shop = get_shop(Opts),
+    PartyRevision = get_party_revision(Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     _ = assert_previous_refunds_finished(St),
@@ -671,6 +673,7 @@ refund(Params, St0, Opts) ->
         id              = ID,
         created_at      = hg_datetime:format_now(),
         domain_revision = Revision,
+        party_revision  = PartyRevision,
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason,
         cash            = Cash
@@ -894,6 +897,7 @@ create_adjustment(Timestamp, Params, St, Opts) ->
     Shop = get_shop(Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp),
+    PartyRevision = get_party_revision(Opts),
     Route = get_route(St),
     Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
@@ -906,6 +910,7 @@ create_adjustment(Timestamp, Params, St, Opts) ->
         status                = ?adjustment_pending(),
         created_at            = Timestamp,
         domain_revision       = Revision,
+        party_revision        = PartyRevision,
         reason                = Params#payproc_InvoicePaymentAdjustmentParams.reason,
         old_cash_flow_inverse = hg_cashflow:revert(get_cashflow(St)),
         new_cash_flow         = FinalCashflow
@@ -1608,6 +1613,9 @@ get_payment_institution(Opts, Revision) ->
     Contract = get_contract(Opts),
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+
+get_party_revision(#{party := Party}) ->
+    Party#domain_Party.revision.
 
 get_invoice(#{invoice := Invoice}) ->
     Invoice.
