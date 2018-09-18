@@ -818,7 +818,7 @@ wrap_event(Event) ->
         <<"vsn">> => ?TOP_VERSION,
         <<"ct">>  => ContentType
     },
-    Data = {bin, encode_event(ContentType, Event)},
+    Data = encode_event(ContentType, Event),
     [Meta, Data].
 
 unwrap_events(History) ->
@@ -834,7 +834,7 @@ unwrap_event([
         <<"vsn">> := Version,
         <<"ct">>  := ContentType
     },
-    {bin, EncodedEvent}
+    EncodedEvent
 ]) ->
     transmute([Version, decode_event(ContentType, EncodedEvent)]);
 %% TODO legacy support, will be removed after migration
@@ -844,9 +844,9 @@ unwrap_event({bin, Bin}) when is_binary(Bin) ->
     transmute([1, binary_to_term(Bin)]).
 
 encode_event(?CT_ERLANG_BINARY, Event) ->
-    term_to_binary(Event).
+    {bin, term_to_binary(Event)}.
 
-decode_event(?CT_ERLANG_BINARY, EncodedEvent) ->
+decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
 
 transmute([Version, Event]) ->
