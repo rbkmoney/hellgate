@@ -807,9 +807,19 @@ get_template(TemplateRef, Revision) ->
 %% TODO add transmutations for new international legal entities and bank accounts
 
 -define(TOP_VERSION, 5).
+-define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
 
 wrap_events(Events) ->
-    [hg_party_marshalling:marshal([?TOP_VERSION, binary_encoded, {bin, term_to_binary(E)}]) || E <- Events].
+    lists:map(fun wrap_event/1, Events).
+
+wrap_event(Event) ->
+    ContentType = ?CT_ERLANG_BINARY,
+    Meta = #{
+        <<"vsn">> => ?TOP_VERSION,
+        <<"ct">>  => ContentType
+    },
+    Data = {bin, encode_event(ContentType, Event)},
+    [Meta, Data].
 
 unwrap_events(History) ->
     lists:map(
@@ -819,15 +829,25 @@ unwrap_events(History) ->
         History
     ).
 
+unwrap_event([
+    #{
+        <<"vsn">> := Version,
+        <<"ct">>  := ContentType
+    },
+    {bin, EncodedEvent}
+]) ->
+    transmute([Version, decode_event(ContentType, EncodedEvent)]);
+%% TODO legacy support, will be removed after migration
 unwrap_event(Event) when is_list(Event) ->
-    case hg_party_marshalling:unmarshal(Event) of
-        [_Version, _DecodedEvent] = E ->
-            transmute(E);
-        [Version, binary_encoded, {bin, BinEvent}] when is_binary(BinEvent) ->
-            transmute([Version, binary_to_term(BinEvent)])
-    end;
+    transmute(hg_party_marshalling:unmarshal(Event));
 unwrap_event({bin, Bin}) when is_binary(Bin) ->
     transmute([1, binary_to_term(Bin)]).
+
+encode_event(?CT_ERLANG_BINARY, Event) ->
+    term_to_binary(Event).
+
+decode_event(?CT_ERLANG_BINARY, EncodedEvent) ->
+    binary_to_term(EncodedEvent).
 
 transmute([Version, Event]) ->
     transmute_event(Version, ?TOP_VERSION, Event).
