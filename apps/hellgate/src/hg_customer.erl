@@ -463,8 +463,7 @@ merge_change(?customer_binding_changed(BindingID, Payload), St) ->
     BindingStatus = get_binding_status(Binding1),
     St1 = set_customer(set_binding(Binding1, Customer), St),
     St2 = update_active_binding(BindingID, BindingStatus, St1),
-    St3 = update_bindigs_start(BindingID, Payload, St2),
-    St3.
+    update_bindigs_start(BindingID, Payload, St2).
 
 update_active_binding(BindingID, ?customer_binding_succeeded(), St) ->
     set_active_binding_id(BindingID, St);
