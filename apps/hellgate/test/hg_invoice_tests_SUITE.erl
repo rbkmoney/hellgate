@@ -36,7 +36,8 @@
 -export([payment_w_terminal_success/1]).
 -export([payment_w_wallet_success/1]).
 -export([payment_w_customer_success/1]).
--export([payment_w_incorrect_customer/1]).
+-export([payment_w_another_shop_customer/1]).
+-export([payment_w_another_party_customer/1]).
 -export([payment_w_deleted_customer/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
@@ -153,7 +154,8 @@ groups() ->
             payment_w_terminal_success,
             payment_w_wallet_success,
             payment_w_customer_success,
-            payment_w_incorrect_customer,
+            payment_w_another_shop_customer,
+            payment_w_another_party_customer,
             payment_w_deleted_customer,
             payment_success_on_second_try,
             payment_fail_after_silent_callback,
@@ -213,15 +215,23 @@ init_per_suite(C) ->
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
+    AnotherPartyID = hg_utils:unique_id(),
+    AnotherPartyClient = hg_client_party:start(AnotherPartyID, hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
+    AnotherCustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
     NewC = [
         {party_id, PartyID},
         {party_client, PartyClient},
-        {customer_client, CustomerClient},
         {shop_id, ShopID},
+        {customer_client, CustomerClient},
+        {another_party_id, AnotherPartyID},
+        {another_party_client, AnotherPartyClient},
+        {another_shop_id, AnotherShopID},
+        {another_customer_client, AnotherCustomerClient},
         {root_url, RootUrl},
         {apps, Apps},
         {test_sup, SupPid}
@@ -659,9 +669,9 @@ payment_w_customer_success(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
--spec payment_w_incorrect_customer(config()) -> test_return().
+-spec payment_w_another_shop_customer(config()) -> test_return().
 
-payment_w_incorrect_customer(C) ->
+payment_w_another_shop_customer(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
@@ -669,6 +679,18 @@ payment_w_incorrect_customer(C) ->
     AnotherShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
+    PaymentParams = make_customer_payment_params(CustomerID),
+    {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
+
+-spec payment_w_another_party_customer(config()) -> test_return().
+
+payment_w_another_party_customer(C) ->
+    Client = cfg(client, C),
+    AnotherPartyID = cfg(another_party_id, C),
+    ShopID = cfg(shop_id, C),
+    AnotherShopID = cfg(another_shop_id, C),
+    CustomerID = make_customer_w_rec_tool(AnotherPartyID, AnotherShopID, cfg(another_customer_client, C)),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
 
