@@ -35,6 +35,7 @@
 %%
 
 -define(NS, <<"party">>).
+-define(STEP, 10).
 
 -record(st, {
     party                :: undefined | party(),
@@ -75,7 +76,7 @@
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
--type party_revision() :: dmsl_domain_thrift:'PartyRevision'().
+-type party_revision()  :: dmsl_domain_thrift:'PartyRevision'().
 
 -export_type([party_revision/0]).
 
@@ -258,7 +259,7 @@ checkout(PartyID, RevisionParam) ->
     party_revision() | no_return().
 
 get_last_revision(PartyID) ->
-    get_history_last_revision(get_history(PartyID)).
+    get_history_part(PartyID).
 
 -spec call(party_id(), call()) ->
     term() | no_return().
@@ -315,6 +316,35 @@ get_state(PartyID) ->
 
 get_history(PartyID) ->
     map_history_error(hg_machine:get_history(?NS, PartyID)).
+
+-spec get_history_part(party_id()) -> party_revision().
+
+get_history_part(PartyID) ->
+    History = map_history_error(hg_machine:get_history_backward(?NS, PartyID, undefined, ?STEP)),
+    {Last, _, _} = lists:last(History),
+    get_history_part(PartyID, History, Last).
+
+get_history_part(PartyID, History, Last) ->
+    case find_revision_in_history(History) of
+        revision_not_found when Last == 0 ->
+            0;
+        revision_not_found ->
+            History1 = map_history_error(hg_machine:get_history_backward(?NS, PartyID, Last, ?STEP)),
+            {Last, _, _} = lists:last(History1),
+            get_history_part(PartyID, History1, Last);
+        Revision ->
+            Revision
+    end.
+
+find_revision_in_history([]) ->
+    revision_not_found;
+find_revision_in_history([{_, _, Event} | Rest]) ->
+    case Event of
+        ?revision_changed(_, Revision) when Revision =/= undefined ->
+            Revision;
+        _ ->
+            find_revision_in_history(Rest)
+    end.
 
 get_history(PartyID, AfterID, Limit) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
@@ -482,12 +512,12 @@ respond_w_exception(Exception) ->
 
 %%
 
--spec get_history_last_revision(hg_machine:history()) -> party_revision().
-
-get_history_last_revision(History) ->
-    % Speed this up someway
-    #st{party = Party} = collapse_history(History),
-    Party#domain_Party.revision.
+%-spec get_history_last_revision(hg_machine:history()) -> party_revision().
+%
+%get_history_last_revision(PartyID) ->
+%    % Speed this up someway
+%    #st{party = Party} = collapse_history(History),
+%    Party#domain_Party.revision.
 
 -spec collapse_history(hg_machine:history()) -> st().
 
