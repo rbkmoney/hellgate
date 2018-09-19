@@ -551,7 +551,7 @@ is_binding_outdated(BindingId, #st{binding_starts = Starts}) ->
     % Old customers will failed after `hardcoded timestamp + ?MAX_BINDING_DURATION`
     BindingStart = case BindingStart0 of
         undefined ->
-            <<"2018-09-20T10:00:00Z">>;
+            genlib_app:env(hellgate, legacy_customer_start, <<"2018-09-20T10:00:00Z">>);
         _ ->
             BindingStart0
     end,
