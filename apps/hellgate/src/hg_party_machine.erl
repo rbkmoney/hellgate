@@ -30,6 +30,7 @@
 -export([get_public_history/3]).
 -export([get_meta/1]).
 -export([get_metadata/2]).
+-export([get_last_revision/1]).
 
 %%
 
@@ -74,6 +75,9 @@
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type party_revision() :: dmsl_domain_thrift:'PartyRevision'().
+
+-export_type([party_revision/0]).
 
 -spec namespace() ->
     hg_machine:ns().
@@ -249,6 +253,12 @@ checkout(PartyID, RevisionParam) ->
         {error, Reason} ->
             error(Reason)
     end.
+
+-spec get_last_revision(party_id()) ->
+    party_revision() | no_return().
+
+get_last_revision(PartyID) ->
+    get_history_last_revision(get_history(PartyID)).
 
 -spec call(party_id(), call()) ->
     term() | no_return().
@@ -471,6 +481,13 @@ respond_w_exception(Exception) ->
     {{exception, Exception}, #{}}.
 
 %%
+
+-spec get_history_last_revision(hg_machine:history()) -> party_revision().
+
+get_history_last_revision(History) ->
+    % Speed this up someway
+    #st{party = Party} = collapse_history(History),
+    Party#domain_Party.revision.
 
 -spec collapse_history(hg_machine:history()) -> st().
 
