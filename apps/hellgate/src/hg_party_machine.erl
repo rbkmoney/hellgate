@@ -806,7 +806,7 @@ get_template(TemplateRef, Revision) ->
 
 %% TODO add transmutations for new international legal entities and bank accounts
 
--define(TOP_VERSION, 5).
+-define(TOP_VERSION, 6).
 -define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
 
 wrap_events(Events) ->
@@ -874,7 +874,7 @@ transmute_change(V1, V2,
         CreatedAt,
         UpdatedAt
     ))
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_created(#payproc_Claim{
         id = ID,
@@ -886,15 +886,15 @@ transmute_change(V1, V2,
     });
 transmute_change(V1, V2,
     ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
 transmute_change(V1, V2,
     ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
     NewEffects = [transmute_claim_effect(V1, V2, E) || E <- Effects],
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
-transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
+transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
     C.
 transmute_party_modification(1, 2,
     ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v1(Contractor, TemplateRef)})
@@ -967,7 +967,7 @@ transmute_party_modification(3, 4,
             schedule = transmute_payout_schedule_ref(3, 4, PayoutScheduleRef)
         }}
     );
-transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
+transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
     C.
 
 transmute_claim_effect(1, 2, ?legacy_contract_effect(
@@ -1092,10 +1092,17 @@ transmute_claim_effect(4, 5, ?legacy_contract_effect(
         report_preferences = ReportPreferences
     },
     ?contract_effect(ID, {created, Contract});
+transmute_claim_effect(5, 6, ?contract_effect(
+    ID,
+    {created, Contract = #domain_Contract{payout_tools = PayoutTools}})
+) ->
+    ?contract_effect(ID, {created, Contract#domain_Contract{
+        payout_tools = [transmute_payout_tool(5, 6, P) || P <- PayoutTools]
+    }});
 transmute_claim_effect(V1, V2, ?legacy_contract_effect(
     ContractID,
     {payout_tool_created, PayoutTool}
-)) when V1 =:= 1; V1 =:= 2 ->
+)) when V1 =:= 1; V1 =:= 2 ; V1 =:= 5 ->
     ?contract_effect(
         ContractID,
         {payout_tool_created, transmute_payout_tool(V1, V2, PayoutTool)}
@@ -1161,7 +1168,7 @@ transmute_claim_effect(3, 4, ?legacy_shop_effect(
     ?shop_effect(ID, {payout_schedule_changed, #payproc_ScheduleChanged{
         schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
     }});
-transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ->
+transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
     C.
 
 transmute_contractor(1, 2,
@@ -1218,7 +1225,9 @@ transmute_payout_tool(V1, V2, ?legacy_payout_tool(
         payout_tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
     };
 transmute_payout_tool(V1, _, PayoutTool) when V1 =:= 1; V1 =:= 2 ->
-    PayoutTool.
+    PayoutTool;
+transmute_payout_tool(V1, V2, PayoutTool = #domain_PayoutTool{payout_tool_info = ToolInfo}) when V1 =:= 5 ->
+    PayoutTool#domain_PayoutTool{payout_tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)}.
 
 transmute_payout_tool_info(1, 2, {bank_account, BankAccount}) ->
     {russian_bank_account, transmute_bank_account(1, 2, BankAccount)};
@@ -1229,14 +1238,32 @@ transmute_payout_tool_info(2, 3, {international_bank_account, ?legacy_internatio
     Iban,
     Bic
 )}) ->
+    {international_bank_account, ?legacy_international_bank_account_v3_4_5(
+        AccountHolder,
+        BankName,
+        BankAddress,
+        Iban,
+        Bic,
+        undefined
+    )};
+transmute_payout_tool_info(5, 6, {international_bank_account, ?legacy_international_bank_account_v3_4_5(
+    AccountHolder,
+    BankName,
+    BankAddress,
+    Iban,
+    Bic,
+    _LocalBankCode
+)}) ->
     {international_bank_account, #domain_InternationalBankAccount{
-        account_holder = AccountHolder,
-        bank_name = BankName,
-        bank_address = BankAddress,
+        bank = #domain_InternationalBankDetails{
+            bic = Bic,
+            name = BankName,
+            address = BankAddress
+        },
         iban = Iban,
-        bic = Bic
+        account_holder = AccountHolder
     }};
-transmute_payout_tool_info(V1, _, ToolInfo) when V1 =:= 1; V1 =:= 2 ->
+transmute_payout_tool_info(V1, _, ToolInfo) when V1 =:= 1; V1 =:= 2 ; V1 =:= 5 ->
     ToolInfo.
 
 transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAccount, BankBik)) ->

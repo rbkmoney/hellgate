@@ -69,7 +69,7 @@ get_http_cowboy_spec() ->
 construct_silent_callback(Form) ->
     Form#{<<"payload">> => ?LAY_LOW_BUDDY}.
 
--type failure_scenario_step() :: good | fail.
+-type failure_scenario_step() :: good | temp | fail | error.
 -type failure_scenario() :: [failure_scenario_step()].
 %%
 
@@ -151,7 +151,7 @@ generate_token(undefined, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPay
     end;
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPaytool}, _Opts) ->
     case get_recurrent_paytool_scenario(RecurrentPaytool) of
-        preauth_3ds ->
+        {preauth_3ds, Timeout} ->
             Tag = generate_recurent_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
@@ -161,7 +161,7 @@ generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = Recurre
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
                 }
             },
-            token_suspend(Tag, 3, <<"suspended">>, UserInteraction);
+            token_suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
         no_preauth ->
             token_sleep(1, <<"finishing">>)
     end;
@@ -203,7 +203,7 @@ token_respond(Response, CallbackResult) ->
 
 process_payment(?processed(), undefined, PaymentInfo, _) ->
     case get_payment_info_scenario(PaymentInfo) of
-        preauth_3ds ->
+        {preauth_3ds, Timeout} ->
             Tag = generate_payment_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
@@ -213,7 +213,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
                 }
             },
-            suspend(Tag, 2, <<"suspended">>, UserInteraction);
+            suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
         no_preauth ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>);
@@ -333,10 +333,16 @@ process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
     case do_failure_scenario_step(Scenario, Key) of
         good ->
             finish(?success(), PaymentId);
-        fail ->
+        temp ->
             Failure = payproc_errors:construct('PaymentFailure',
                 {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}),
-            finish(?failure(Failure))
+            finish(?failure(Failure));
+        fail ->
+            Failure = payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}),
+            finish(?failure(Failure));
+        error ->
+            error(planned_scenario_error)
     end.
 
 finish(Status, TrxID) ->
@@ -404,15 +410,15 @@ get_recurrent_paytool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = P
 
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"no_preauth">>}}) ->
     no_preauth;
-get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds">>}}) ->
-    preauth_3ds;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds:timeout=", Timeout/binary>>}}) ->
+    {preauth_3ds, erlang:binary_to_integer(Timeout)};
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_offsite">>}}) ->
     preauth_3ds_offsite;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>}}) ->
     forbidden;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_failure">>}}) ->
     unexpected_failure;
-get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"temporary_unavailability_",
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_",
                                                                    BinScenario/binary>>}}) ->
     Scenario = decode_failure_scenario(BinScenario),
     {temporary_unavailability, Scenario};
@@ -428,16 +434,19 @@ get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qi
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
 make_payment_tool(preauth_3ds) ->
-    make_simple_payment_tool(<<"preauth_3ds">>, visa);
+    make_payment_tool({preauth_3ds, 3});
+make_payment_tool({preauth_3ds, Timeout}) ->
+    TimeoutBin = erlang:integer_to_binary(Timeout),
+    make_simple_payment_tool(<<"preauth_3ds:timeout=", TimeoutBin/binary>>, visa);
 make_payment_tool(preauth_3ds_offsite) ->
     make_simple_payment_tool(<<"preauth_3ds_offsite">>, jcb);
 make_payment_tool(forbidden) ->
     make_simple_payment_tool(<<"forbidden">>, visa);
 make_payment_tool(unexpected_failure) ->
     make_simple_payment_tool(<<"unexpected_failure">>, visa);
-make_payment_tool({temporary_unavailability, Scenario}) ->
+make_payment_tool({scenario, Scenario}) ->
     BinScenario = encode_failure_scenario(Scenario),
-    make_simple_payment_tool(<<"temporary_unavailability_", BinScenario/binary>>, visa);
+    make_simple_payment_tool(<<"scenario_", BinScenario/binary>>, visa);
 make_payment_tool(terminal) ->
     {
         {payment_terminal, #domain_PaymentTerminal{
@@ -497,15 +506,23 @@ decode_failure_scenario(BinScenario) ->
 
 encode_failure_scenario_step(good) ->
     $g;
+encode_failure_scenario_step(temp) ->
+    $t;
 encode_failure_scenario_step(fail) ->
-    $f.
+    $f;
+encode_failure_scenario_step(error) ->
+    $e.
 
 -spec decode_failure_scenario_step(byte()) -> failure_scenario_step().
 
 decode_failure_scenario_step($g) ->
     good;
+decode_failure_scenario_step($t) ->
+    temp;
 decode_failure_scenario_step($f) ->
-    fail.
+    fail;
+decode_failure_scenario_step($e) ->
+    error.
 
 %%
 

@@ -79,6 +79,7 @@
 -export([contract_legal_agreement_binding/1]).
 -export([contract_report_preferences_modification/1]).
 -export([contract_payout_tool_creation/1]).
+-export([contract_payout_tool_modification/1]).
 -export([contract_adjustment_creation/1]).
 -export([contract_adjustment_expiration/1]).
 
@@ -168,6 +169,7 @@ groups() ->
             contract_legal_agreement_binding,
             contract_report_preferences_modification,
             contract_payout_tool_creation,
+            contract_payout_tool_modification,
             contract_adjustment_creation,
             contract_adjustment_expiration,
             compute_payment_institution_terms
@@ -418,6 +420,7 @@ end_per_testcase(_Name, _C) ->
 -spec contract_legal_agreement_binding(config()) -> _ | no_return().
 -spec contract_report_preferences_modification(config()) -> _ | no_return().
 -spec contract_payout_tool_creation(config()) -> _ | no_return().
+-spec contract_payout_tool_modification(config()) -> _ | no_return().
 -spec contract_adjustment_creation(config()) -> _ | no_return().
 -spec contract_adjustment_expiration(config()) -> _ | no_return().
 -spec compute_payment_institution_terms(config()) -> _ | no_return().
@@ -616,11 +619,12 @@ contract_payout_tool_creation(C) ->
     PayoutToolParams2 = #payproc_PayoutToolParams{
         currency = ?cur(<<"USD">>),
         tool_info  = {international_bank_account, #domain_InternationalBankAccount{
-            account_holder = <<"Jhon Doe">>,
-            bank_name = <<"SomeBank">>,
-            bank_address = <<"Bahamas">>,
-            iban = <<"DC6664266612312312">>,
-            bic = <<"66642666">>
+            bank = #domain_InternationalBankDetails{
+                name = <<"SomeBank">>,
+                address = <<"Bahamas">>,
+                bic = <<"66642666">>
+            },
+            iban = <<"DC6664266612312312">>
         }}
     },
     Changeset = [
@@ -635,6 +639,35 @@ contract_payout_tool_creation(C) ->
     } = hg_client_party:get_contract(ContractID, Client),
     true = lists:keymember(PayoutToolID1, #domain_PayoutTool.id, PayoutTools),
     true = lists:keymember(PayoutToolID2, #domain_PayoutTool.id, PayoutTools).
+
+contract_payout_tool_modification(C) ->
+    Client = cfg(client, C),
+    ContractID = ?REAL_CONTRACT_ID,
+    PayoutToolID = <<"3">>,
+    ToolInfo = {international_bank_account, #domain_InternationalBankAccount{
+        number = <<"123456789">>,
+        bank = #domain_InternationalBankDetails{
+            name = <<"ABetterBank">>,
+            address = <<"Burkina Faso">>,
+            bic = <<"BCAOBFBFBOB">>
+        },
+        correspondent_account = #domain_InternationalBankAccount{
+            number = <<"1111222233334444">>
+        },
+        iban = <<"BF42BF0840101300463574000390">>
+    }},
+    Changeset = [
+        ?contract_modification(ContractID, ?payout_tool_info_modification(PayoutToolID, ToolInfo))
+    ],
+    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
+    ok = accept_claim(Claim, Client),
+    #domain_Contract{
+        id = ContractID,
+        payout_tools = PayoutTools
+    } = hg_client_party:get_contract(ContractID, Client),
+    #domain_PayoutTool{payout_tool_info = ToolInfo} = lists:keyfind(
+        PayoutToolID, #domain_PayoutTool.id, PayoutTools
+    ).
 
 contract_adjustment_creation(C) ->
     Client = cfg(client, C),
