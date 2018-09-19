@@ -17,6 +17,7 @@
 %% Party support functions
 
 -export([get_party/1]).
+-export([get_party/2]).
 -export([get_party_revision/1]).
 -export([checkout/2]).
 
@@ -84,8 +85,18 @@
     party() | no_return().
 
 get_party(PartyID) ->
-    Revision = get_party_revision(PartyID),
-    checkout(PartyID, {revision, Revision}).
+    get_party(PartyID, hg_datetime:format_now()).
+
+-spec get_party(party_id(), timestamp()) ->
+    party() | no_return().
+
+get_party(PartyID, Timestamp) ->
+    case get_party_revision(PartyID) of
+        undefined ->
+            checkout(PartyID, {timestamp, Timestamp});
+        Revision ->
+            checkout(PartyID, {revision, Revision})
+    end.
 
 -spec get_party_revision(party_id()) ->
     party_revision() | no_return().

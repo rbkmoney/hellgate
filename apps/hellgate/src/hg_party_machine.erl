@@ -258,12 +258,7 @@ checkout(PartyID, RevisionParam) ->
     party_revision() | no_return().
 
 get_last_revision(PartyID) ->
-    case get_history_last_revision(get_history(PartyID)) of
-        {ok, St} ->
-            get_st_party(St);
-        {error, Reason} ->
-            error(Reason)
-    end.
+    get_history_last_revision(get_history(PartyID)).
 
 -spec call(party_id(), call()) ->
     term() | no_return().
@@ -491,8 +486,8 @@ respond_w_exception(Exception) ->
 
 get_history_last_revision(History) ->
     % Speed this up someway
-    St = collapse_history(History),
-    St#st.revision.
+    #st{party = Party} = collapse_history(History),
+    Party#domain_Party.revision.
 
 -spec collapse_history(hg_machine:history()) -> st().
 
