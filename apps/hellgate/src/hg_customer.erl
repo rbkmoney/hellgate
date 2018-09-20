@@ -546,7 +546,7 @@ get_outdated_binding_set(St) ->
     ].
 
 is_binding_outdated(
-    #payproc_CustomerBinding{id = BindingId, status = {?customer_binding_pending(), _}},
+    #payproc_CustomerBinding{id = BindingId, status = ?customer_binding_pending()},
     #st{binding_starts = Starts}
 ) ->
     BindingStart0 = maps:get(BindingId, Starts),
