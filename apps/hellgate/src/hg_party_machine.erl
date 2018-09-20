@@ -964,7 +964,7 @@ transmute_party_modification(V1, V2,
         ID,
         ?legacy_payout_tool_params(Currency, ToolInfo)
     ))
-) when V1 =:= 1; V1 =:= 2 ->
+) when V1 =:= 1; V1 =:= 2 ; V1 =:= 5 ->
     PayoutToolParams = #payproc_PayoutToolParams{
         currency = Currency,
         tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
