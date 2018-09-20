@@ -426,11 +426,11 @@ issue_recurrent_paytools_call(Function, Args) ->
     hg_woody_wrapper:call(recurrent_paytool, Function, Args).
 
 set_event_poll_timer(Type) ->
-    hg_machine_action:set_timeout(get_event_pool_timeout(Type)).
+    hg_machine_action:set_timeout(get_event_pol_timeout(Type)).
 
-get_event_pool_timeout(actual) ->
+get_event_pol_timeout(actual) ->
     ?SYNC_INTERVAL;
-get_event_pool_timeout(outdated) ->
+get_event_pol_timeout(outdated) ->
     ?SYNC_OUTDATED_INTERVAL - rand:uniform(?SYNC_OUTDATED_INTERVAL div 10).
 
 %%
@@ -1078,10 +1078,10 @@ unmarshal(_, Other) ->
 
 -spec test() -> _.
 
--spec event_pool_timer_test() -> _.
-event_pool_timer_test() ->
-    ?assertEqual(get_event_pool_timeout(actual), ?SYNC_INTERVAL),
-    ?assert(get_event_pool_timeout(outdated) =< ?SYNC_OUTDATED_INTERVAL),
-    ?assert(get_event_pool_timeout(outdated) > ?SYNC_OUTDATED_INTERVAL div 2).
+-spec event_pol_timer_test() -> _.
+event_pol_timer_test() ->
+    ?assertEqual(get_event_pol_timeout(actual), ?SYNC_INTERVAL),
+    ?assert(get_event_pol_timeout(outdated) =< ?SYNC_OUTDATED_INTERVAL),
+    ?assert(get_event_pol_timeout(outdated) >= ?SYNC_OUTDATED_INTERVAL * 0.9).
 
 -endif.
