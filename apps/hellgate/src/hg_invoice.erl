@@ -85,16 +85,23 @@ get_payment_tags(PaymentSession) ->
 -spec get_payment_opts(st()) ->
     hg_invoice_payment:opts().
 
-get_payment_opts(St) ->
-    get_payment_opts(get_created_at(St), St).
+get_payment_opts(St = #st{invoice = Invoice}) ->
+    #{
+        party => hg_party:get_party(get_party_id(St)),
+        invoice => Invoice
+    }.
 
--spec get_payment_opts(hg_datetime:timestamp(), st()) ->
+-spec get_payment_opts(hg_party:party_revision(), hg_datetime:timestamp(), st()) ->
     hg_invoice_payment:opts().
 
-get_payment_opts(Timestamp, St = #st{invoice = Invoice}) ->
+get_payment_opts(undefined, Timestamp, St = #st{invoice = Invoice}) ->
     #{
-        % TODO repalce with checkout by revision
         party => hg_party:checkout(get_party_id(St), {timestamp, Timestamp}),
+        invoice => Invoice
+    };
+get_payment_opts(Revision, _, St = #st{invoice = Invoice}) ->
+    #{
+        party => hg_party:checkout(get_party_id(St), {revision, Revision}),
         invoice => Invoice
     }.
 
@@ -519,7 +526,7 @@ handle_call({create_payment_adjustment, PaymentID, Params}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Timestamp = hg_datetime:format_now(),
-    PaymentOpts = get_payment_opts(Timestamp, St),
+    PaymentOpts = get_payment_opts(St),
     wrap_payment_impact(
         PaymentID,
         hg_invoice_payment:create_adjustment(Timestamp, Params, PaymentSession, PaymentOpts),
@@ -530,7 +537,11 @@ handle_call({capture_payment_adjustment, PaymentID, ID}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Adjustment = hg_invoice_payment:get_adjustment(ID, PaymentSession),
-    PaymentOpts = get_payment_opts(Adjustment#domain_InvoicePaymentAdjustment.created_at, St),
+    PaymentOpts = get_payment_opts(
+        Adjustment#domain_InvoicePaymentAdjustment.party_revision,
+        Adjustment#domain_InvoicePaymentAdjustment.created_at,
+        St
+    ),
     wrap_payment_impact(
         PaymentID,
         hg_invoice_payment:capture_adjustment(ID, PaymentSession, PaymentOpts),
@@ -541,7 +552,11 @@ handle_call({cancel_payment_adjustment, PaymentID, ID}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Adjustment = hg_invoice_payment:get_adjustment(ID, PaymentSession),
-    PaymentOpts = get_payment_opts(Adjustment#domain_InvoicePaymentAdjustment.created_at, St),
+    PaymentOpts = get_payment_opts(
+        Adjustment#domain_InvoicePaymentAdjustment.party_revision,
+        Adjustment#domain_InvoicePaymentAdjustment.created_at,
+        St
+    ),
     wrap_payment_impact(
         PaymentID,
         hg_invoice_payment:cancel_adjustment(ID, PaymentSession, PaymentOpts),
@@ -589,12 +604,22 @@ start_payment(PaymentParams, St) ->
     }.
 
 process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
-    Opts = get_payment_opts(St),
+    Payment = hg_invoice_payment:get_payment(PaymentSession),
+    Opts = get_payment_opts(
+        Payment#domain_InvoicePayment.party_revision,
+        Payment#domain_InvoicePayment.created_at,
+        St
+    ),
     PaymentResult = hg_invoice_payment:process_signal(Signal, PaymentSession, Opts),
     handle_payment_result(PaymentResult, PaymentID, PaymentSession, St).
 
 process_payment_call(Call, PaymentID, PaymentSession, St) ->
-    Opts = get_payment_opts(St),
+    Payment = hg_invoice_payment:get_payment(PaymentSession),
+    Opts = get_payment_opts(
+        Payment#domain_InvoicePayment.party_revision,
+        Payment#domain_InvoicePayment.created_at,
+        St
+    ),
     {Response, PaymentResult} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
     maps:merge(#{response => Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, St)).
 

@@ -335,6 +335,7 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms, Party, S
         owner_id        = Party#domain_Party.id,
         shop_id         = Shop#domain_Shop.id,
         domain_revision = Revision,
+        party_revision  = Party#domain_Party.revision,
         status          = ?pending(),
         cost            = Cost,
         payer           = Payer,
@@ -660,6 +661,7 @@ refund(Params, St0, Opts) ->
     _ = assert_payment_status(captured, Payment),
     Route = get_route(St),
     Shop = get_shop(Opts),
+    PartyRevision = get_party_revision(Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     _ = assert_previous_refunds_finished(St),
@@ -671,6 +673,7 @@ refund(Params, St0, Opts) ->
         id              = ID,
         created_at      = hg_datetime:format_now(),
         domain_revision = Revision,
+        party_revision  = PartyRevision,
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason,
         cash            = Cash
@@ -894,6 +897,7 @@ create_adjustment(Timestamp, Params, St, Opts) ->
     Shop = get_shop(Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp),
+    PartyRevision = get_party_revision(Opts),
     Route = get_route(St),
     Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
@@ -906,6 +910,7 @@ create_adjustment(Timestamp, Params, St, Opts) ->
         status                = ?adjustment_pending(),
         created_at            = Timestamp,
         domain_revision       = Revision,
+        party_revision        = PartyRevision,
         reason                = Params#payproc_InvoicePaymentAdjustmentParams.reason,
         old_cash_flow_inverse = hg_cashflow:revert(get_cashflow(St)),
         new_cash_flow         = FinalCashflow
@@ -1609,6 +1614,9 @@ get_payment_institution(Opts, Revision) ->
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
 
+get_party_revision(#{party := Party}) ->
+    Party#domain_Party.revision.
+
 get_invoice(#{invoice := Invoice}) ->
     Invoice.
 
@@ -2216,7 +2224,8 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
     genlib_map:compact(#{
         <<"id">>                => marshal(str, Payment#domain_InvoicePayment.id),
         <<"created_at">>        => marshal(str, Payment#domain_InvoicePayment.created_at),
-        <<"domain_revision">>   => marshal(str, Payment#domain_InvoicePayment.domain_revision),
+        <<"domain_revision">>   => marshal(int, Payment#domain_InvoicePayment.domain_revision),
+        <<"party_revision">>    => marshal(int, Payment#domain_InvoicePayment.party_revision),
         <<"owner_id">>          => marshal(str, Payment#domain_InvoicePayment.owner_id),
         <<"shop_id">>           => marshal(str, Payment#domain_InvoicePayment.shop_id),
         <<"cost">>              => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
@@ -2314,6 +2323,7 @@ marshal(adjustment, #domain_InvoicePaymentAdjustment{} = Adjustment) ->
         <<"id">>                    => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.id),
         <<"created_at">>            => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.created_at),
         <<"domain_revision">>       => marshal(int, Adjustment#domain_InvoicePaymentAdjustment.domain_revision),
+        <<"party_revision">>        => marshal(int, Adjustment#domain_InvoicePaymentAdjustment.party_revision),
         <<"reason">>                => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.reason),
         % FIXME
         <<"old_cash_flow_inverse">> => hg_cashflow:marshal(
@@ -2336,6 +2346,7 @@ marshal(refund, #domain_InvoicePaymentRefund{} = Refund) ->
         <<"id">>         => marshal(str, Refund#domain_InvoicePaymentRefund.id),
         <<"created_at">> => marshal(str, Refund#domain_InvoicePaymentRefund.created_at),
         <<"rev">>        => marshal(int, Refund#domain_InvoicePaymentRefund.domain_revision),
+        <<"party_revision">> => marshal(int, Refund#domain_InvoicePaymentRefund.party_revision),
         <<"reason">>     => marshal(str, Refund#domain_InvoicePaymentRefund.reason),
         <<"cash">>       => hg_cash:marshal(Refund#domain_InvoicePaymentRefund.cash)
     });
@@ -2538,6 +2549,7 @@ unmarshal(payment, #{
     <<"id">>                := ID,
     <<"created_at">>        := CreatedAt,
     <<"domain_revision">>   := Revision,
+    <<"party_revision">>    := PartyRevision,
     <<"cost">>              := Cash,
     <<"payer">>             := MarshalledPayer,
     <<"flow">>              := Flow
@@ -2549,6 +2561,7 @@ unmarshal(payment, #{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Revision),
+        party_revision  = unmarshal(int, PartyRevision),
         shop_id         = unmarshal(str, ShopID),
         owner_id        = unmarshal(str, OwnerID),
         cost            = hg_cash:unmarshal(Cash),
@@ -2693,6 +2706,7 @@ unmarshal(adjustment, #{
     <<"id">>                    := ID,
     <<"created_at">>            := CreatedAt,
     <<"domain_revision">>       := Revision,
+    <<"party_revision">>        := PartyRevision,
     <<"reason">>                := Reason,
     <<"old_cash_flow_inverse">> := OldCashFlowInverse,
     <<"new_cash_flow">>         := NewCashFlow
@@ -2702,6 +2716,7 @@ unmarshal(adjustment, #{
         status                = ?adjustment_pending(),
         created_at            = unmarshal(str, CreatedAt),
         domain_revision       = unmarshal(int, Revision),
+        party_revision        = unmarshal(int, PartyRevision),
         reason                = unmarshal(str, Reason),
         old_cash_flow_inverse = hg_cashflow:unmarshal(OldCashFlowInverse),
         new_cash_flow         = hg_cashflow:unmarshal(NewCashFlow)
@@ -2741,7 +2756,8 @@ unmarshal(adjustment_status, ?legacy_adjustment_cancelled(At)) ->
 unmarshal(refund, #{
     <<"id">>         := ID,
     <<"created_at">> := CreatedAt,
-    <<"rev">>        := Rev
+    <<"rev">>        := Rev,
+    <<"party_revision">>        := PartyRevision
 } = V) ->
     Cash = genlib_map:get(<<"cash">>, V),
     #domain_InvoicePaymentRefund{
@@ -2749,6 +2765,7 @@ unmarshal(refund, #{
         status          = ?refund_pending(),
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Rev),
+        party_revision  = unmarshal(int, PartyRevision),
         reason          = genlib_map:get(<<"reason">>, V),
         cash            = hg_cash:unmarshal(Cash)
     };
