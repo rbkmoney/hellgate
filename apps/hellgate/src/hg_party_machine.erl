@@ -259,7 +259,8 @@ checkout(PartyID, RevisionParam) ->
     party_revision() | no_return().
 
 get_last_revision(PartyID) ->
-    check_history_part(PartyID).
+    {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
+    check_history_part(PartyID, History, Last, Step).
 
 -spec call(party_id(), call()) ->
     term() | no_return().
@@ -320,12 +321,6 @@ get_history(PartyID) ->
 get_history(PartyID, AfterID, Limit) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
 
--spec check_history_part(party_id()) -> party_revision() | revision_not_found.
-
-check_history_part(PartyID) ->
-    {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
-    check_history_part(PartyID, History, Last, Step).
-
 check_history_part(PartyID, History, Last, Step) ->
     case find_revision_in_history(History) of
         revision_not_found when Last == 0 ->
@@ -342,8 +337,8 @@ get_history_part(PartyID, Last, Step) ->
         [] ->
             {[], 0, 0};
         History ->
-            {Last1, _, _} = lists:last(History),
-            {History, Last1, Step*2}
+            {LastID, _, _} = lists:last(History),
+            {History, LastID, Step*2}
     end.
 
 find_revision_in_history([]) ->

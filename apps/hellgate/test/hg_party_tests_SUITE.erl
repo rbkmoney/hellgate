@@ -30,6 +30,7 @@
 -export([complex_claim_acceptance/1]).
 
 -export([party_revisioning/1]).
+-export([party_get_revision/1]).
 -export([party_blocking/1]).
 -export([party_unblocking/1]).
 -export([party_already_blocked/1]).
@@ -134,7 +135,8 @@ groups() ->
         ]},
         {party_revisioning, [sequence], [
             party_creation,
-            party_revisioning
+            party_revisioning,
+            party_get_revision
         ]},
         {party_blocking_suspension, [sequence], [
             party_creation,
@@ -372,6 +374,7 @@ end_per_testcase(_Name, _C) ->
 -spec shop_update_with_bad_params(config()) -> _ | no_return().
 
 -spec party_revisioning(config()) -> _ | no_return().
+-spec party_get_revision(config()) -> _ | no_return().
 
 -spec claim_already_accepted_on_revoke(config()) -> _ | no_return().
 -spec claim_already_accepted_on_accept(config()) -> _ | no_return().
@@ -481,6 +484,37 @@ party_revisioning(C) ->
     Party3 = hg_client_party:checkout({timestamp, T3}, Client),
     Party3 = hg_client_party:checkout({revision, R3}, Client),
     ?invalid_party_revision() = hg_client_party:checkout({revision, R3 + 1}, Client).
+
+party_get_revision(C) ->
+    Client = cfg(client, C),
+    Party1 = hg_client_party:get(Client),
+    R1 = Party1#domain_Party.revision,
+    R1 = hg_client_party:get_revision(Client),
+    Changeset = create_change_set(0),
+    Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
+    R1 = hg_client_party:get_revision(Client),
+    ok = accept_claim(Claim, Client),
+    R2 = hg_client_party:get_revision(Client),
+    R2 = R1 + 1,
+    % some more
+    Max = 5,
+    Claims = [assert_claim_pending(hg_client_party:create_claim(create_change_set(Num), Client), Client)
+        || Num <- lists:seq(1, Max)],
+    R2 = hg_client_party:get_revision(Client),
+    _Oks = [accept_claim(Cl, Client) || Cl <- Claims],
+    R3 = hg_client_party:get_revision(Client),
+    R3 = R2 + Max.
+
+create_change_set(ID) ->
+    ContractParams = make_contract_params(),
+    PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
+    BinaryID = erlang:integer_to_binary(ID),
+    ContractID = <<?REAL_CONTRACT_ID/binary, BinaryID/binary>>,
+    PayoutToolID = <<"1">>,
+    [
+        ?contract_modification(ContractID, {creation, ContractParams}),
+        ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID, PayoutToolParams))
+    ].
 
 contract_not_found(C) ->
     Client = cfg(client, C),
