@@ -542,10 +542,13 @@ get_pending_binding_set(St) ->
 get_outdated_binding_set(St) ->
     Bindings = get_bindings(get_customer(St)),
     [Binding ||
-        Binding <- Bindings, is_binding_outdated(get_binding_id(Binding), St) =:= true
+        Binding <- Bindings, is_binding_outdated(Binding, St) =:= true
     ].
 
-is_binding_outdated(BindingId, #st{binding_starts = Starts}) ->
+is_binding_outdated(
+    #payproc_CustomerBinding{id = BindingId, status = ?customer_binding_pending()},
+    #st{binding_starts = Starts}
+) ->
     BindingStart0 = maps:get(BindingId, Starts),
     % TODO: Remove this case as soon as all old customers will failed
     % Old customers will failed after `hardcoded timestamp + ?MAX_BINDING_DURATION`
@@ -562,7 +565,9 @@ is_binding_outdated(BindingId, #st{binding_starts = Starts}) ->
             true;
         _Other ->
             false
-    end.
+    end;
+is_binding_outdated(_Bindinf, _St) ->
+    false.
 
 get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->
     BindingID.
