@@ -67,6 +67,7 @@
 -export([repair/3]).
 -export([get_history/2]).
 -export([get_history/4]).
+-export([get_history_backward/4]).
 
 %% Dispatch
 
@@ -127,6 +128,12 @@ get_history(Ns, Ref) ->
 
 get_history(Ns, Ref, AfterID, Limit) ->
     get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit}).
+
+-spec get_history_backward(ns(), ref(), undefined | event_id(), undefined | non_neg_integer()) ->
+    {ok, history()} | {error, notfound} | no_return().
+
+get_history_backward(Ns, Ref, AfterID, Limit) ->
+    get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit, direction = backward}).
 
 get_history(Ns, Ref, Range) ->
     Descriptor = prepare_descriptor(Ns, Ref, Range),
