@@ -497,7 +497,7 @@ party_get_revision(C) ->
     R2 = hg_client_party:get_revision(Client),
     R2 = R1 + 1,
     % some more
-    Max = 5,
+    Max = 7,
     Claims = [assert_claim_pending(hg_client_party:create_claim(create_change_set(Num), Client), Client)
         || Num <- lists:seq(1, Max)],
     R2 = hg_client_party:get_revision(Client),

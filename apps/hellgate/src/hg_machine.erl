@@ -14,6 +14,7 @@
 -type event_id() :: mg_proto_base_thrift:'EventID'().
 -type event_payload() :: msgp().
 -type timestamp() :: mg_proto_base_thrift:'Timestamp'().
+-type direction() :: mg_proto_base_thrift:'Direction'().
 -type history() :: [event()].
 -type auxst() :: msgp().
 
@@ -67,7 +68,7 @@
 -export([repair/3]).
 -export([get_history/2]).
 -export([get_history/4]).
--export([get_history_backward/4]).
+-export([get_history/5]).
 
 %% Dispatch
 
@@ -129,11 +130,11 @@ get_history(Ns, Ref) ->
 get_history(Ns, Ref, AfterID, Limit) ->
     get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit}).
 
--spec get_history_backward(ns(), ref(), undefined | event_id(), undefined | non_neg_integer()) ->
+-spec get_history(ns(), ref(), undefined | event_id(), undefined | non_neg_integer(), undefined | direction()) ->
     {ok, history()} | {error, notfound} | no_return().
 
-get_history_backward(Ns, Ref, AfterID, Limit) ->
-    get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit, direction = backward}).
+get_history(Ns, Ref, AfterID, Limit, Direction) ->
+    get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit, direction = Direction}).
 
 get_history(Ns, Ref, Range) ->
     Descriptor = prepare_descriptor(Ns, Ref, Range),
