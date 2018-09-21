@@ -14,11 +14,11 @@
 -type event_id() :: mg_proto_base_thrift:'EventID'().
 -type event_payload() :: msgp().
 -type timestamp() :: mg_proto_base_thrift:'Timestamp'().
--type direction() :: mg_proto_base_thrift:'Direction'().
 -type history() :: [event()].
 -type auxst() :: msgp().
 
 -type history_range() :: mg_proto_state_processing_thrift:'HistoryRange'().
+-type direction()     :: mg_proto_state_processing_thrift:'Direction'().
 -type descriptor()    :: mg_proto_state_processing_thrift:'MachineDescriptor'().
 
 -type result() :: #{
