@@ -259,7 +259,8 @@ checkout(PartyID, RevisionParam) ->
     party_revision() | no_return().
 
 get_last_revision(PartyID) ->
-    check_history_part(PartyID).
+    {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
+    get_revision_of_part(PartyID, History, Last, Step).
 
 -spec call(party_id(), call()) ->
     term() | no_return().
@@ -320,40 +321,44 @@ get_history(PartyID) ->
 get_history(PartyID, AfterID, Limit) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
 
--spec check_history_part(party_id()) -> party_revision() | revision_not_found.
-
-check_history_part(PartyID) ->
-    {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
-    check_history_part(PartyID, History, Last, Step).
-
-check_history_part(PartyID, History, Last, Step) ->
+get_revision_of_part(PartyID, History, Last, Step) ->
     case find_revision_in_history(History) of
         revision_not_found when Last == 0 ->
             0;
         revision_not_found ->
-            {History1, Last1, Step1} = get_history_part(PartyID, Last, Step),
-            check_history_part(PartyID, History1, Last1, Step1);
+            {History1, Last1, Step1} = get_history_part(PartyID, Last, Step*2),
+            get_revision_of_part(PartyID, History1, Last1, Step1);
         Revision ->
             Revision
     end.
 
 get_history_part(PartyID, Last, Step) ->
-    case map_history_error(hg_machine:get_history_backward(?NS, PartyID, Last, Step)) of
+    case map_history_error(hg_machine:get_history(?NS, PartyID, Last, Step, backward)) of
         [] ->
             {[], 0, 0};
         History ->
-            {Last1, _, _} = lists:last(History),
-            {History, Last1, Step*2}
+            {LastID, _, _} = lists:last(History),
+            {History, LastID, Step}
     end.
 
 find_revision_in_history([]) ->
     revision_not_found;
 find_revision_in_history([{_, _, ?party_ev(PartyChanges)} | Rest]) when is_list(PartyChanges) ->
-    case lists:keyfind(revision_changed, 1, PartyChanges) of
+    case find_revision_in_changes(PartyChanges) of
+        revision_not_found ->
+            find_revision_in_history(Rest);
+        Revision ->
+            Revision
+    end.
+
+find_revision_in_changes([]) ->
+    revision_not_found;
+find_revision_in_changes([Event | Rest]) ->
+    case Event of
         ?revision_changed(_, Revision) when Revision =/= undefined ->
             Revision;
         _ ->
-            find_revision_in_history(Rest)
+            find_revision_in_changes(Rest)
     end.
 
 map_history_error({ok, Result}) ->
@@ -964,7 +969,7 @@ transmute_party_modification(V1, V2,
         ID,
         ?legacy_payout_tool_params(Currency, ToolInfo)
     ))
-) when V1 =:= 1; V1 =:= 2 ->
+) when V1 =:= 1; V1 =:= 2 ; V1 =:= 5 ->
     PayoutToolParams = #payproc_PayoutToolParams{
         currency = Currency,
         tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
