@@ -2779,8 +2779,8 @@ unmarshal(refund, #{
     <<"created_at">> := CreatedAt,
     <<"rev">>        := Rev
 } = V) ->
-    Cash = genlib_map:get(<<"cash">>, V),
-    PartyRevision = genlib_map:get(<<"party_revision">>, V),
+    Cash = genlib_map:get(<<"cash">>, V, undefined),
+    PartyRevision = genlib_map:get(<<"party_revision">>, V, undefined),
     #domain_InvoicePaymentRefund{
         id              = unmarshal(str, ID),
         status          = ?refund_pending(),

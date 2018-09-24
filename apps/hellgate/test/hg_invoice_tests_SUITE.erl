@@ -102,19 +102,19 @@ cfg(Key, C) ->
 
 all() ->
     [
-        %invalid_party_status,
-        %invalid_shop_status,
+        invalid_party_status,
+        invalid_shop_status,
 
         % With constant domain config
-        {group, all_non_destructive_tests}
+        {group, all_non_destructive_tests},
 
         % With variable domain config
-        %{group, adjustments},
-        %{group, refunds},
-        %rounding_cashflow_volume,
-        %terms_retrieval,
+        {group, adjustments},
+        {group, refunds},
+        rounding_cashflow_volume,
+        terms_retrieval,
 
-        %consistent_history
+        consistent_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -122,7 +122,7 @@ all() ->
 groups() ->
     [
         {all_non_destructive_tests, [parallel], [
-            %{group, base_payments},
+            {group, base_payments},
 
             payment_risk_score_check,
             payment_risk_score_check_fail,
@@ -131,11 +131,11 @@ groups() ->
             invalid_payment_w_deprived_party,
             external_account_posting,
 
-            %{group, holds_management},
+            {group, holds_management},
 
-            %{group, offsite_preauth_payment},
+            {group, offsite_preauth_payment},
 
-            %payment_with_tokenized_bank_card,
+            payment_with_tokenized_bank_card,
 
             {group, adhoc_repairs}
         ]},
@@ -851,11 +851,18 @@ payment_risk_score_check_fail(C) ->
 -spec payment_revision_check(config()) -> test_return().
 
 payment_revision_check(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PartyClient = cfg(party_client, C),
-    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
-    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
+    PartyID = <<"RevChecker">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, make_due_date(10), 5000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+
+    Shop = hg_client_party:get_shop(ShopID, PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
+
     PaymentParams = make_payment_params(),
     ?payment_state(
         ?payment(PaymentID, PaymentRev)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
@@ -874,12 +881,11 @@ payment_revision_check(C) ->
         ?invoice_w_revision(InvoiceRev),
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client),
-    PaymentRev = InvoiceRev + 2,
+    PaymentRev = InvoiceRev + 1,
 
     % new party revision
-    PartyClient = cfg(party_client, C),
-    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
-    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
+    Shop = hg_client_party:get_shop(ShopID, PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
 
     % make adjustment
     Params = make_adjustment_params(Reason = <<"imdrunk">>),
@@ -898,9 +904,14 @@ payment_revision_check(C) ->
     AdjustmentRev = PaymentRev + 1,
 
     % new party revision
-    PartyClient = cfg(party_client, C),
-    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
-    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
+    Shop = hg_client_party:get_shop(ShopID, PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
+
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 200000),
+    InvoiceID2 = create_invoice(InvoiceParams2, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
 
     % create a refund finally
     RefundParams = make_refund_params(),
