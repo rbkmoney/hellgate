@@ -604,22 +604,14 @@ start_payment(PaymentParams, St) ->
     }.
 
 process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
-    Payment = hg_invoice_payment:get_payment(PaymentSession),
-    Opts = get_payment_opts(
-        Payment#domain_InvoicePayment.party_revision,
-        Payment#domain_InvoicePayment.created_at,
-        St
-    ),
+    {Revision, Timestamp} = hg_invoice_payment:get_party_revision(PaymentSession),
+    Opts = get_payment_opts(Revision, Timestamp, St),
     PaymentResult = hg_invoice_payment:process_signal(Signal, PaymentSession, Opts),
     handle_payment_result(PaymentResult, PaymentID, PaymentSession, St).
 
 process_payment_call(Call, PaymentID, PaymentSession, St) ->
-    Payment = hg_invoice_payment:get_payment(PaymentSession),
-    Opts = get_payment_opts(
-        Payment#domain_InvoicePayment.party_revision,
-        Payment#domain_InvoicePayment.created_at,
-        St
-    ),
+    {Revision, Timestamp} = hg_invoice_payment:get_party_revision(PaymentSession),
+    Opts = get_payment_opts(Revision, Timestamp, St),
     {Response, PaymentResult} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
     maps:merge(#{response => Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, St)).
 

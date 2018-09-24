@@ -42,6 +42,7 @@
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
+-export([payment_revision_check/1]).
 -export([payment_risk_score_check/1]).
 -export([payment_risk_score_check_fail/1]).
 -export([invalid_payment_adjustment/1]).
@@ -101,19 +102,19 @@ cfg(Key, C) ->
 
 all() ->
     [
-        invalid_party_status,
-        invalid_shop_status,
+        %invalid_party_status,
+        %invalid_shop_status,
 
         % With constant domain config
-        {group, all_non_destructive_tests},
+        {group, all_non_destructive_tests}
 
         % With variable domain config
-        {group, adjustments},
-        {group, refunds},
-        rounding_cashflow_volume,
-        terms_retrieval,
+        %{group, adjustments},
+        %{group, refunds},
+        %rounding_cashflow_volume,
+        %terms_retrieval,
 
-        consistent_history
+        %consistent_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -121,19 +122,20 @@ all() ->
 groups() ->
     [
         {all_non_destructive_tests, [parallel], [
-            {group, base_payments},
+            %{group, base_payments},
 
             payment_risk_score_check,
             payment_risk_score_check_fail,
+            payment_revision_check,
 
             invalid_payment_w_deprived_party,
             external_account_posting,
 
-            {group, holds_management},
+            %{group, holds_management},
 
-            {group, offsite_preauth_payment},
+            %{group, offsite_preauth_payment},
 
-            payment_with_tokenized_bank_card,
+            %payment_with_tokenized_bank_card,
 
             {group, adhoc_repairs}
         ]},
@@ -255,17 +257,21 @@ end_per_suite(C) ->
 
 -define(invoice(ID), #domain_Invoice{id = ID}).
 -define(payment(ID), #domain_InvoicePayment{id = ID}).
+-define(payment(ID, Revision), #domain_InvoicePayment{id = ID, party_revision = Revision}).
 -define(customer(ID), #payproc_Customer{id = ID}).
 -define(adjustment(ID), #domain_InvoicePaymentAdjustment{id = ID}).
 -define(adjustment(ID, Status), #domain_InvoicePaymentAdjustment{id = ID, status = Status}).
+-define(adjustment_revision(Revision), #domain_InvoicePaymentAdjustment{party_revision = Revision}).
 -define(invoice_state(Invoice), #payproc_Invoice{invoice = Invoice}).
 -define(invoice_state(Invoice, Payments), #payproc_Invoice{invoice = Invoice, payments = Payments}).
 -define(payment_state(Payment), #payproc_InvoicePayment{payment = Payment}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
+-define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 -define(trx_info(ID, Extra), #domain_TransactionInfo{id = ID, extra = Extra}).
+
 
 -define(invalid_invoice_status(Status),
     {exception, #payproc_InvalidInvoiceStatus{status = Status}}).
@@ -841,6 +847,79 @@ payment_risk_score_check_fail(C) ->
     ] = next_event(InvoiceID1, Client),
     PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client).
+
+-spec payment_revision_check(config()) -> test_return().
+
+payment_revision_check(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PartyClient = cfg(party_client, C),
+    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
+    PaymentParams = make_payment_params(),
+    ?payment_state(
+        ?payment(PaymentID, PaymentRev)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client, 0),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_revision(InvoiceRev),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    PaymentRev = InvoiceRev + 2,
+
+    % new party revision
+    PartyClient = cfg(party_client, C),
+    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
+
+    % make adjustment
+    Params = make_adjustment_params(Reason = <<"imdrunk">>),
+    ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment = ?adjustment_revision(AdjustmentRev) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, Params, Client),
+    Adjustment = #domain_InvoicePaymentAdjustment{id = AdjustmentID, reason = Reason} =
+        hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
+    ] = next_event(InvoiceID, Client),
+    ok =
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+    ] = next_event(InvoiceID, Client),
+    AdjustmentRev = PaymentRev + 1,
+
+    % new party revision
+    PartyClient = cfg(party_client, C),
+    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
+
+    % create a refund finally
+    RefundParams = make_refund_params(),
+    Refund = #domain_InvoicePaymentRefund{id = RefundID, party_revision = RefundRev} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
+    ] = next_event(InvoiceID, Client),
+    #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    RefundRev = AdjustmentRev + 1.
 
 -spec invalid_payment_adjustment(config()) -> test_return().
 

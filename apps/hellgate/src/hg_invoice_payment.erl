@@ -30,6 +30,8 @@
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
 
+
+-export([get_party_revision/1]).
 -export([get_activity/1]).
 -export([get_tags/1]).
 
@@ -150,6 +152,24 @@
     dmsl_payment_processing_thrift:'InvoicePaymentChangePayload'().
 
 %%
+
+-spec get_party_revision(st()) -> {hg_party:party_revision(), hg_datetime:timestamp()}.
+
+get_party_revision(#st{activity = Activity} = St) ->
+    case Activity of
+        idle ->
+            #domain_InvoicePayment{party_revision = Revision, created_at = Timestamp} = get_payment(St),
+            {Revision, Timestamp};
+        {payment, _}->
+            #domain_InvoicePayment{party_revision = Revision, created_at = Timestamp} = get_payment(St),
+            {Revision, Timestamp};
+        {refund_session, ID} ->
+            #domain_InvoicePaymentRefund{party_revision = Revision, created_at = Timestamp} = get_refund(ID, St),
+            {Revision, Timestamp};
+        {refund_accounter, ID} ->
+            #domain_InvoicePaymentRefund{party_revision = Revision, created_at = Timestamp} = get_refund(ID, St),
+            {Revision, Timestamp}
+    end.
 
 -spec get_payment(st()) -> payment().
 
@@ -661,7 +681,7 @@ refund(Params, St0, Opts) ->
     _ = assert_payment_status(captured, Payment),
     Route = get_route(St),
     Shop = get_shop(Opts),
-    PartyRevision = get_party_revision(Opts),
+    PartyRevision = get_opts_party_revision(Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     _ = assert_previous_refunds_finished(St),
@@ -897,7 +917,7 @@ create_adjustment(Timestamp, Params, St, Opts) ->
     Shop = get_shop(Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp),
-    PartyRevision = get_party_revision(Opts),
+    PartyRevision = get_opts_party_revision(Opts),
     Route = get_route(St),
     Provider = get_route_provider(Route, Revision),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
@@ -1614,7 +1634,7 @@ get_payment_institution(Opts, Revision) ->
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
 
-get_party_revision(#{party := Party}) ->
+get_opts_party_revision(#{party := Party}) ->
     Party#domain_Party.revision.
 
 get_invoice(#{invoice := Invoice}) ->
@@ -2549,7 +2569,6 @@ unmarshal(payment, #{
     <<"id">>                := ID,
     <<"created_at">>        := CreatedAt,
     <<"domain_revision">>   := Revision,
-    <<"party_revision">>    := PartyRevision,
     <<"cost">>              := Cash,
     <<"payer">>             := MarshalledPayer,
     <<"flow">>              := Flow
@@ -2557,6 +2576,8 @@ unmarshal(payment, #{
     Context = maps:get(<<"context">>, Payment, undefined),
     OwnerID = maps:get(<<"owner_id">>, Payment, undefined),
     ShopID = maps:get(<<"shop_id">>, Payment, undefined),
+    PartyRevision = maps:get(<<"party_revision">>, Payment, undefined),
+
     #domain_InvoicePayment{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
@@ -2706,11 +2727,11 @@ unmarshal(adjustment, #{
     <<"id">>                    := ID,
     <<"created_at">>            := CreatedAt,
     <<"domain_revision">>       := Revision,
-    <<"party_revision">>        := PartyRevision,
     <<"reason">>                := Reason,
     <<"old_cash_flow_inverse">> := OldCashFlowInverse,
     <<"new_cash_flow">>         := NewCashFlow
-}) ->
+} = Payment) ->
+    PartyRevision = maps:get(<<"party_revision">>, Payment, undefined),
     #domain_InvoicePaymentAdjustment{
         id                    = unmarshal(str, ID),
         status                = ?adjustment_pending(),
@@ -2756,10 +2777,10 @@ unmarshal(adjustment_status, ?legacy_adjustment_cancelled(At)) ->
 unmarshal(refund, #{
     <<"id">>         := ID,
     <<"created_at">> := CreatedAt,
-    <<"rev">>        := Rev,
-    <<"party_revision">>        := PartyRevision
+    <<"rev">>        := Rev
 } = V) ->
     Cash = genlib_map:get(<<"cash">>, V),
+    PartyRevision = genlib_map:get(<<"party_revision">>, V),
     #domain_InvoicePaymentRefund{
         id              = unmarshal(str, ID),
         status          = ?refund_pending(),
