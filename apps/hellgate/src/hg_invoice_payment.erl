@@ -155,21 +155,16 @@
 
 -spec get_party_revision(st()) -> {hg_party:party_revision(), hg_datetime:timestamp()}.
 
-get_party_revision(#st{activity = Activity} = St) ->
-    case Activity of
-        idle ->
-            #domain_InvoicePayment{party_revision = Revision, created_at = Timestamp} = get_payment(St),
-            {Revision, Timestamp};
-        {payment, _}->
-            #domain_InvoicePayment{party_revision = Revision, created_at = Timestamp} = get_payment(St),
-            {Revision, Timestamp};
-        {refund_session, ID} ->
-            #domain_InvoicePaymentRefund{party_revision = Revision, created_at = Timestamp} = get_refund(ID, St),
-            {Revision, Timestamp};
-        {refund_accounter, ID} ->
-            #domain_InvoicePaymentRefund{party_revision = Revision, created_at = Timestamp} = get_refund(ID, St),
-            {Revision, Timestamp}
-    end.
+get_party_revision(#st{activity = idle}) ->
+    {undefined, undefined};
+get_party_revision(#st{activity = {payment, _}} = St) ->
+    #domain_InvoicePayment{party_revision = Revision, created_at = Timestamp} = get_payment(St),
+    {Revision, Timestamp};
+get_party_revision(#st{activity = {_, ID} = Activity} = St) when
+    Activity =:= {refund_session, ID} orelse
+    Activity =:= {refund_accounter, ID} ->
+        #domain_InvoicePaymentRefund{party_revision = Revision, created_at = Timestamp} = get_refund(ID, St),
+        {Revision, Timestamp}.
 
 -spec get_payment(st()) -> payment().
 
@@ -2778,16 +2773,16 @@ unmarshal(refund, #{
     <<"id">>         := ID,
     <<"created_at">> := CreatedAt,
     <<"rev">>        := Rev
-} = V) ->
-    Cash = genlib_map:get(<<"cash">>, V, undefined),
-    PartyRevision = genlib_map:get(<<"party_revision">>, V, undefined),
+} = Refund) ->
+    Cash = maps:get(<<"cash">>, Refund, undefined),
+    PartyRevision = maps:get(<<"party_revision">>, Refund, undefined),
     #domain_InvoicePaymentRefund{
         id              = unmarshal(str, ID),
         status          = ?refund_pending(),
         created_at      = unmarshal(str, CreatedAt),
         domain_revision = unmarshal(int, Rev),
         party_revision  = unmarshal(int, PartyRevision),
-        reason          = genlib_map:get(<<"reason">>, V),
+        reason          = genlib_map:get(<<"reason">>, Refund),
         cash            = hg_cash:unmarshal(Cash)
     };
 

@@ -42,7 +42,7 @@
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
--export([payment_revision_check/1]).
+-export([revision_check/1]).
 -export([payment_risk_score_check/1]).
 -export([payment_risk_score_check_fail/1]).
 -export([invalid_payment_adjustment/1]).
@@ -126,7 +126,7 @@ groups() ->
 
             payment_risk_score_check,
             payment_risk_score_check_fail,
-            payment_revision_check,
+            revision_check,
 
             invalid_payment_w_deprived_party,
             external_account_posting,
@@ -848,21 +848,54 @@ payment_risk_score_check_fail(C) ->
     PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client).
 
--spec payment_revision_check(config()) -> test_return().
+-spec revision_check(config()) -> test_return().
 
-payment_revision_check(C) ->
+revision_check(C) ->
+    {PartyID, PartyClient, Client, ShopID} = revision_check_init_params(C),
+    {InvoiceRev, InvoiceID} = invoice_get_revision(PartyID, Client, ShopID),
+
+    revision_increment(ShopID, PartyClient),
+
+    {PaymentRev, PaymentID} = payment_get_revision(InvoiceID, Client),
+    PaymentRev = InvoiceRev + 1,
+
+    revision_increment(ShopID, PartyClient),
+
+    AdjustmentRev = payment_adjustment_get_revision(PaymentID, InvoiceID, Client),
+    AdjustmentRev = PaymentRev + 1,
+
+    revision_increment(ShopID, PartyClient),
+
+    % add some cash to make smooth refund after
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 200000),
+    InvoiceID2 = create_invoice(InvoiceParams2, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+
+    RefundRev = payment_refund_get_revision(PaymentID, InvoiceID, Client),
+    RefundRev = AdjustmentRev + 1.
+
+revision_check_init_params(C) ->
     PartyID = <<"RevChecker">>,
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    {PartyID, PartyClient, Client, ShopID}.
+
+invoice_get_revision(PartyID, Client, ShopID) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, make_due_date(10), 5000),
     InvoiceID = create_invoice(InvoiceParams, Client),
-    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()) = ?invoice_w_revision(InvoiceRev))] =
+        next_event(InvoiceID, Client),
+    {InvoiceRev, InvoiceID}.
 
-    Shop = hg_client_party:get_shop(ShopID, PartyClient),
-    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
-
+payment_get_revision(InvoiceID, Client) ->
     PaymentParams = make_payment_params(),
     ?payment_state(
         ?payment(PaymentID, PaymentRev)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
@@ -878,15 +911,12 @@ payment_revision_check(C) ->
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client, 0),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
-        ?invoice_w_revision(InvoiceRev),
+        ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client),
-    PaymentRev = InvoiceRev + 1,
+    {PaymentRev, PaymentID}.
 
-    % new party revision
-    Shop = hg_client_party:get_shop(ShopID, PartyClient),
-    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
-
+payment_adjustment_get_revision(PaymentID, InvoiceID, Client) ->
     % make adjustment
     Params = make_adjustment_params(Reason = <<"imdrunk">>),
     ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment = ?adjustment_revision(AdjustmentRev) =
@@ -901,18 +931,9 @@ payment_revision_check(C) ->
     [
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
-    AdjustmentRev = PaymentRev + 1,
+    AdjustmentRev.
 
-    % new party revision
-    Shop = hg_client_party:get_shop(ShopID, PartyClient),
-    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
-
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 200000),
-    InvoiceID2 = create_invoice(InvoiceParams2, Client),
-    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
-    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
-    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
-
+payment_refund_get_revision(PaymentID, InvoiceID, Client) ->
     % create a refund finally
     RefundParams = make_refund_params(),
     Refund = #domain_InvoicePaymentRefund{id = RefundID, party_revision = RefundRev} =
@@ -930,7 +951,11 @@ payment_revision_check(C) ->
     ] = next_event(InvoiceID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
-    RefundRev = AdjustmentRev + 1.
+    RefundRev.
+
+revision_increment(ShopID, PartyClient) ->
+    Shop = hg_client_party:get_shop(ShopID, PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient).
 
 -spec invalid_payment_adjustment(config()) -> test_return().
 
