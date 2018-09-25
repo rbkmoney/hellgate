@@ -1,6 +1,6 @@
 -module(hg_machine).
 
--type msgp() :: hg_msgpack_marshalling:value().
+-type msgp() :: hg_msgpack_marshalling:msgpack_value().
 
 -type id() :: mg_proto_base_thrift:'ID'().
 -type tag() :: {tag, mg_proto_base_thrift:'Tag'()}.
@@ -96,11 +96,17 @@
 start(Ns, ID, Args) ->
     call_automaton('Start', [Ns, ID, wrap_args(Args)]).
 
--spec call(ns(), ref(), term()) ->
+-spec call(ns(), ref(), Args :: term()) ->
     {ok, term()} | {error, notfound | failed} | no_return().
 
 call(Ns, Ref, Args) ->
-    Descriptor = prepare_descriptor(Ns, Ref, #'HistoryRange'{}),
+    call(Ns, Ref, Args, #'HistoryRange'{}).
+
+-spec call(ns(), ref(), Args :: term(), history_range()) ->
+    {ok, term()} | {error, notfound | failed} | no_return().
+
+call(Ns, Ref, Args, HistoryRange) ->
+    Descriptor = prepare_descriptor(Ns, Ref, HistoryRange),
     case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
         {ok, Response} ->
             % should be specific to a processing interface already

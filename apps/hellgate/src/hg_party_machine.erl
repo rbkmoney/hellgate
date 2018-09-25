@@ -41,7 +41,8 @@
     revision             :: hg_domain:revision(),
     claims   = #{}       :: #{claim_id() => claim()},
     meta = #{}           :: meta(),
-    migration_data = #{} :: #{any() => any()}
+    migration_data = #{} :: #{any() => any()},
+    event_count = 0      :: non_neg_integer()
 }).
 
 -type st() :: #st{}.
@@ -96,7 +97,7 @@ init(ID, PartyParams) ->
 
 process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = hg_datetime:format_now(),
-    ok([?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)]).
+    ok([?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)], #st{}).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
@@ -136,56 +137,76 @@ handle_call({block, Target, Reason}, {St, _}) ->
     ok = assert_unblocked(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
-    respond(ok, [
-        block(Target, Reason, Timestamp),
-        ?revision_changed(Timestamp, Revision)
-    ]);
+    respond(
+        ok,
+        [block(Target, Reason, Timestamp), ?revision_changed(Timestamp, Revision)],
+        St
+    );
 
 handle_call({unblock, Target, Reason}, {St, _}) ->
     ok = assert_blocked(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
-    respond(ok, [
-        unblock(Target, Reason, Timestamp),
-        ?revision_changed(Timestamp, Revision)
-    ]);
+    respond(
+        ok,
+        [unblock(Target, Reason, Timestamp), ?revision_changed(Timestamp, Revision)],
+        St
+    );
 
 handle_call({suspend, Target}, {St, _}) ->
     ok = assert_unblocked(Target, St),
     ok = assert_active(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
-    respond(ok, [
-        suspend(Target, Timestamp),
-        ?revision_changed(Timestamp, Revision)
-    ]);
+    respond(
+        ok,
+        [suspend(Target, Timestamp), ?revision_changed(Timestamp, Revision)],
+        St
+    );
 
 handle_call({activate, Target}, {St, _}) ->
     ok = assert_unblocked(Target, St),
     ok = assert_suspended(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
-    respond(ok, [
-        activate(Target, Timestamp),
-        ?revision_changed(Timestamp, Revision)
-    ]);
+    respond(
+        ok,
+        [activate(Target, Timestamp), ?revision_changed(Timestamp, Revision)],
+        St
+    );
 
-handle_call({set_metadata, NS, Data}, _) ->
-    respond(ok, [?party_meta_set(NS, Data)]);
+handle_call({set_metadata, NS, Data}, {St, _}) ->
+    respond(
+        ok,
+        [?party_meta_set(NS, Data)],
+        St
+    );
 
 handle_call({remove_metadata, NS}, {St, _}) ->
     _ = get_st_metadata(NS, St),
-    respond(ok, [?party_meta_removed(NS)]);
+    respond(
+        ok,
+        [?party_meta_removed(NS)],
+        St
+    );
 
 handle_call({create_claim, Changeset}, {St, _}) ->
     ok = assert_party_operable(St),
     {Claim, Changes} = create_claim(Changeset, St),
-    respond(Claim, Changes);
+    respond(
+        Claim,
+        Changes,
+        St
+    );
 
 handle_call({update_claim, ID, ClaimRevision, Changeset}, {St, _}) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
-    respond(ok, update_claim(ID, Changeset, St));
+    respond(
+        ok,
+        update_claim(ID, Changeset, St),
+        St
+    );
 
 handle_call({accept_claim, ID, ClaimRevision}, {St, _}) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
@@ -197,18 +218,30 @@ handle_call({accept_claim, ID, ClaimRevision}, {St, _}) ->
         get_st_party(St),
         get_st_claim(ID, St)
     ),
-    respond(ok, [finalize_claim(Claim, Timestamp), ?revision_changed(Timestamp, Revision)]);
+    respond(
+        ok,
+        [finalize_claim(Claim, Timestamp), ?revision_changed(Timestamp, Revision)],
+        St
+    );
 
 handle_call({deny_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:deny(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
-    respond(ok, [finalize_claim(Claim, get_st_timestamp(St))]);
+    respond(
+        ok,
+        [finalize_claim(Claim, get_st_timestamp(St))],
+        St
+    );
 
 handle_call({revoke_claim, ID, ClaimRevision, Reason}, {St, _}) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:revoke(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
-    respond(ok, [finalize_claim(Claim, get_st_timestamp(St))]).
+    respond(
+        ok,
+        [finalize_claim(Claim, get_st_timestamp(St))],
+        St
+    ).
 
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
@@ -461,11 +494,11 @@ apply_accepted_claim(Claim, St) ->
             St
     end.
 
-ok(Changes) ->
-    #{events => wrap_events([?party_ev(Changes)])}.
+ok(Changes, St) ->
+    #{events => [wrap_event(?party_ev(Changes), St)]}.
 
-respond(Response, Changes) ->
-    {{ok, Response}, #{events => wrap_events([?party_ev(Changes)])}}.
+respond(Response, Changes, St) ->
+    {{ok, Response}, #{events => [wrap_event(?party_ev(Changes), St)]}}.
 
 respond_w_exception(Exception) ->
     {{exception, Exception}, #{}}.
@@ -808,18 +841,22 @@ get_template(TemplateRef, Revision) ->
 
 -define(TOP_VERSION, 6).
 -define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
+-define(SNAPSHOT_STEP, 10).
 
-wrap_events(Events) ->
-    lists:map(fun wrap_event/1, Events).
-
-wrap_event(Event) ->
+wrap_event(Event, #st{event_count = EventCount} = St) ->
     ContentType = ?CT_ERLANG_BINARY,
-    Meta = #{
+    Meta0 = #{
         <<"vsn">> => ?TOP_VERSION,
         <<"ct">>  => ContentType
     },
+    Meta1 = case (EventCount rem ?SNAPSHOT_STEP) of
+        0 when EventCount > 0 ->
+            Meta0#{<<"state_snapshot">> => encode_state(ContentType, St)};
+        _ ->
+            Meta0
+    end,
     Data = encode_event(ContentType, Event),
-    [Meta, Data].
+    [Meta1, Data].
 
 unwrap_events(History) ->
     lists:map(
@@ -842,6 +879,12 @@ unwrap_event(Event) when is_list(Event) ->
     transmute(hg_party_marshalling:unmarshal(Event));
 unwrap_event({bin, Bin}) when is_binary(Bin) ->
     transmute([1, binary_to_term(Bin)]).
+
+encode_state(?CT_ERLANG_BINARY, St) ->
+    {bin, term_to_binary(St)}.
+
+% decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
+%     binary_to_term(EncodedSt).
 
 encode_event(?CT_ERLANG_BINARY, Event) ->
     {bin, term_to_binary(Event)}.
