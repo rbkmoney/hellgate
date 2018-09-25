@@ -70,7 +70,7 @@ distclean:
 
 # CALL_W_CONTAINER
 test: submodules
-	$(REBAR) ct
+	$(REBAR) do eunit, ct
 
 test.%: apps/hellgate/test/hg_%_tests_SUITE.erl
 	$(REBAR) ct --suite=$^

@@ -35,6 +35,10 @@ handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:get_party(PartyID);
 
+handle_function_('GetRevision', [UserInfo, PartyID], _Opts) ->
+    ok = set_meta_and_check_access(UserInfo, PartyID),
+    hg_party_machine:get_last_revision(PartyID);
+
 handle_function_('Block', [UserInfo, PartyID, Reason], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:call(PartyID, {block, party, Reason});

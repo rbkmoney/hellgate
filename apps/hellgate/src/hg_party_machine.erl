@@ -30,10 +30,12 @@
 -export([get_public_history/3]).
 -export([get_meta/1]).
 -export([get_metadata/2]).
+-export([get_last_revision/1]).
 
 %%
 
 -define(NS, <<"party">>).
+-define(STEP, 5).
 
 -record(st, {
     party                :: undefined | party(),
@@ -75,6 +77,9 @@
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type party_revision()  :: dmsl_domain_thrift:'PartyRevision'().
+
+-export_type([party_revision/0]).
 
 -spec namespace() ->
     hg_machine:ns().
@@ -283,6 +288,13 @@ checkout(PartyID, RevisionParam) ->
             error(Reason)
     end.
 
+-spec get_last_revision(party_id()) ->
+    party_revision() | no_return().
+
+get_last_revision(PartyID) ->
+    {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
+    get_revision_of_part(PartyID, History, Last, Step).
+
 -spec call(party_id(), call()) ->
     term() | no_return().
 
@@ -341,6 +353,46 @@ get_history(PartyID) ->
 
 get_history(PartyID, AfterID, Limit) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
+
+get_revision_of_part(PartyID, History, Last, Step) ->
+    case find_revision_in_history(History) of
+        revision_not_found when Last == 0 ->
+            0;
+        revision_not_found ->
+            {History1, Last1, Step1} = get_history_part(PartyID, Last, Step*2),
+            get_revision_of_part(PartyID, History1, Last1, Step1);
+        Revision ->
+            Revision
+    end.
+
+get_history_part(PartyID, Last, Step) ->
+    case map_history_error(hg_machine:get_history(?NS, PartyID, Last, Step, backward)) of
+        [] ->
+            {[], 0, 0};
+        History ->
+            {LastID, _, _} = lists:last(History),
+            {History, LastID, Step}
+    end.
+
+find_revision_in_history([]) ->
+    revision_not_found;
+find_revision_in_history([{_, _, ?party_ev(PartyChanges)} | Rest]) when is_list(PartyChanges) ->
+    case find_revision_in_changes(PartyChanges) of
+        revision_not_found ->
+            find_revision_in_history(Rest);
+        Revision ->
+            Revision
+    end.
+
+find_revision_in_changes([]) ->
+    revision_not_found;
+find_revision_in_changes([Event | Rest]) ->
+    case Event of
+        ?revision_changed(_, Revision) when Revision =/= undefined ->
+            Revision;
+        _ ->
+            find_revision_in_changes(Rest)
+    end.
 
 map_history_error({ok, Result}) ->
     unwrap_events(Result);
@@ -985,7 +1037,7 @@ transmute_party_modification(V1, V2,
         ID,
         ?legacy_payout_tool_params(Currency, ToolInfo)
     ))
-) when V1 =:= 1; V1 =:= 2 ->
+) when V1 =:= 1; V1 =:= 2 ; V1 =:= 5 ->
     PayoutToolParams = #payproc_PayoutToolParams{
         currency = Currency,
         tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
