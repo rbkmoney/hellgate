@@ -156,7 +156,7 @@
 -spec get_party_revision(st()) -> {hg_party:party_revision(), hg_datetime:timestamp()}.
 
 get_party_revision(#st{activity = idle}) ->
-    {undefined, undefined};
+    erlang:error({"No party revision for IDLE activity!"});
 get_party_revision(#st{activity = {payment, _}} = St) ->
     #domain_InvoicePayment{party_revision = Revision, created_at = Timestamp} = get_payment(St),
     {Revision, Timestamp};
