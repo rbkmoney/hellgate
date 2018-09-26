@@ -28,6 +28,7 @@
 -export([not_exists_payment_test/1]).
 -export([parent_lifetime_success_test/1]).
 -export([parent_lifetime_exceed_test/1]).
+-export([recurrent_risk_score_always_high/1]).
 
 %% Internal types
 
@@ -82,7 +83,8 @@ groups() ->
             customer_paytools_as_first_test,
             cancelled_first_payment_test,
             not_exists_invoice_test,
-            not_exists_payment_test
+            not_exists_payment_test,
+            recurrent_risk_score_always_high
         ]},
         {domain_affecting_operations, [], [
             not_permitted_recurrent_test
@@ -269,6 +271,18 @@ not_exists_payment_test(C) ->
     PaymentParams = make_payment_params(true, RecurrentParent),
     ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent payment not found">>},
     {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
+
+-spec recurrent_risk_score_always_high(config()) -> test_result().
+recurrent_risk_score_always_high(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    {ok, PaymentID} = start_payment(InvoiceID, PaymentParams, Client),
+    Pattern = [
+        ?evp(?payment_ev(PaymentID, ?risk_score_changed(_)))
+    ],
+    {ok, [?payment_ev(PaymentID, ?risk_score_changed(Score))]} = await_events(InvoiceID, Pattern, Client),
+    high = Score.
 
 -spec parent_lifetime_success_test(config()) -> test_result().
 parent_lifetime_success_test(C) ->

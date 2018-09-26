@@ -2243,7 +2243,16 @@ inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentIns
     InspectorSelector = PaymentInstitution#domain_PaymentInstitution.inspector,
     InspectorRef = reduce_selector(inspector, InspectorSelector, VS, Revision),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
-    hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector).
+    RiskScore = hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector),
+    % FIXME: move this logic to inspector
+    check_payment_type_risk(RiskScore, Payment).
+
+check_payment_type_risk(low, #domain_InvoicePayment{make_recurrent = true}) ->
+    high;
+check_payment_type_risk(low, #domain_InvoicePayment{payer = ?recurrent_payer()}) ->
+    high;
+check_payment_type_risk(Score, _Payment) ->
+    Score.
 
 get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
     #{
