@@ -563,12 +563,15 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-choose_route(Payer, PaymentInstitution, VS, Revision) ->
+choose_route(PaymentInstitution, VS, Revision, St) ->
+    Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
         {ok, _Route} = Result ->
             Result;
         undefined ->
-            case hg_routing:choose(payment, PaymentInstitution, VS, Revision) of
+            Payment = get_payment(St),
+            Predestination = choose_routing_predestination(Payment, Payer),
+            case hg_routing:choose(Predestination, PaymentInstitution, VS, Revision) of
                 {ok, _Route} = Result ->
                     Result;
                 {error, {no_route_found, RejectContext}} = Error ->
@@ -576,6 +579,26 @@ choose_route(Payer, PaymentInstitution, VS, Revision) ->
                     Error
             end
     end.
+
+-spec choose_routing_predestination(payment(), payer()) -> hg_routing:route_predestination().
+choose_routing_predestination(Payment, Payer) ->
+    MakeRecurrent = case Payment of
+        #domain_InvoicePayment{make_recurrent = true} ->
+            true;
+        #domain_InvoicePayment{make_recurrent = Other} when Other =:= false orelse Other =:= undefined ->
+            false
+    end,
+    do_choose_routing_predestination(MakeRecurrent, Payer).
+
+-spec do_choose_routing_predestination(make_recurrent(), payer()) -> hg_routing:route_predestination().
+do_choose_routing_predestination(true, _Payer) ->
+    recurrent_payment;
+do_choose_routing_predestination(false, ?recurrent_payer()) ->
+    recurrent_payment;
+do_choose_routing_predestination(false, ?payment_resource_payer()) ->
+    payment;
+do_choose_routing_predestination(false, ?customer_payer()) ->
+    payment.
 
 log_reject_context(RejectContext) ->
     _ = lager:warning("No route found, varset: ~p", [maps:get(varset, RejectContext)]),
@@ -1243,9 +1266,8 @@ process_routing(Action, St) ->
     VS0 = collect_routing_varset(Payment, Opts, #{}),
     RiskScore = inspect(Payment, PaymentInstitution, VS0, Opts),
     Events0 = [?risk_score_changed(RiskScore)],
-    Payer = get_payment_payer(St),
     VS1 = VS0#{risk_score => RiskScore},
-    case choose_route(Payer, PaymentInstitution, VS1, Revision) of
+    case choose_route(PaymentInstitution, VS1, Revision, St) of
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, _Details}} ->
