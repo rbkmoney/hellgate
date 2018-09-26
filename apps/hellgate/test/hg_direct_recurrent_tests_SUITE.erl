@@ -432,7 +432,7 @@ make_customer_w_rec_tool(PartyID, ShopID, Client) ->
     CustomerID.
 
 wait_for_binding_success(CustomerID, BindingID, Client) ->
-    wait_for_binding_success(CustomerID, BindingID, 5000, Client).
+    wait_for_binding_success(CustomerID, BindingID, 15000, Client).
 
 wait_for_binding_success(CustomerID, BindingID, TimeLeft, Client) when TimeLeft > 0 ->
     Target = ?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_succeeded())),
