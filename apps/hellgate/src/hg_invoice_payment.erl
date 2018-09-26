@@ -474,30 +474,9 @@ validate_recurrent_terms(VS) ->
 
 -spec validate_recurrent_parent(map()) -> ok | no_return().
 validate_recurrent_parent(#{parent_payment := ParentPayment} = VS) ->
-    % ok = validate_recurrent_parent_lifetime(VS, ParentPayment),
     ok = validate_recurrent_token_present(ParentPayment),
     ok = validate_recurrent_parent_shop(VS, ParentPayment),
     ok = validate_recurrent_parent_status(ParentPayment).
-
-% TODO: Add lifetime to service terms and uncomment
-% -spec validate_recurrent_parent_lifetime(map(), st()) -> ok | no_return().
-% validate_recurrent_parent_lifetime(VS, ParentPayment) ->
-%     #{recurrent_terms := Terms} = VS,
-%     #domain_RecurrentPaytoolsServiceTerms{parent_lifetime = LifetimeSelector} = Terms,
-%     case LifetimeSelector of
-%         undefined ->
-%             ok;
-%         Selector ->
-%             #{varset := Varset, revision := Revision, created_at := CreatedAt} = VS,
-%             Lifetime = reduce_selector(parent_lifetime, Selector, Varset, Revision),
-%             #domain_InvoicePayment{created_at = ParentStart} = get_payment(ParentPayment),
-%             case hg_datetime:compare(CreatedAt, hg_datetime:add_time_span(Lifetime, ParentStart)) of
-%                 later ->
-%                     throw_invalid_recurrent_parent(<<"Parent lifetime exceeds terms">>);
-%                 _Other ->
-%                     ok
-%             end
-%     end.
 
 -spec validate_recurrent_token_present(st()) -> ok | no_return().
 validate_recurrent_token_present(PaymentState) ->

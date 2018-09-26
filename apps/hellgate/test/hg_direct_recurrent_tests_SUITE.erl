@@ -26,8 +26,6 @@
 -export([not_permitted_recurrent_test/1]).
 -export([not_exists_invoice_test/1]).
 -export([not_exists_payment_test/1]).
--export([parent_lifetime_success_test/1]).
--export([parent_lifetime_exceed_test/1]).
 
 %% Internal types
 
@@ -86,9 +84,6 @@ groups() ->
         ]},
         {domain_affecting_operations, [], [
             not_permitted_recurrent_test
-            % TODO: Add parent lifetime to service terms and uncomment
-            % parent_lifetime_success_test,
-            % parent_lifetime_exceed_test
         ]}
     ].
 
@@ -269,44 +264,6 @@ not_exists_payment_test(C) ->
     PaymentParams = make_payment_params(true, RecurrentParent),
     ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent payment not found">>},
     {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
-
--spec parent_lifetime_success_test(config()) -> test_result().
-parent_lifetime_success_test(C) ->
-    Lifetime = {value, #'TimeSpan'{years = 1}},
-    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set(), Lifetime)),
-    Client = cfg(client, C),
-    Invoice1ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    %% first payment in recurrent session
-    Payment1Params = make_payment_params(),
-    {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),
-    Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
-    %% second recurrent payment
-    Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
-    {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
-    Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
-    ?invoice_state(
-        ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(Payment2ID, ?captured()))]
-    ) = hg_client_invoicing:get(Invoice2ID, Client).
-
--spec parent_lifetime_exceed_test(config()) -> test_result().
-parent_lifetime_exceed_test(C) ->
-    Lifetime = {value, #'TimeSpan'{}},
-    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set(), Lifetime)),
-    Client = cfg(client, C),
-    Invoice1ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    %% first payment in recurrent session
-    Payment1Params = make_payment_params(),
-    {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),
-    Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
-    %% second recurrent payment
-    Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
-    ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent lifetime exceeds terms">>},
-    {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
 %% Internal functions
 
@@ -587,10 +544,6 @@ construct_simple_term_set() ->
 
 -spec construct_domain_fixture(term()) -> [hg_domain:object()].
 construct_domain_fixture(TermSet) ->
-    construct_domain_fixture(TermSet, undefined).
-
--spec construct_domain_fixture(term(), term()) -> [hg_domain:object()].
-construct_domain_fixture(TermSet, ParentLifetime) ->
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
 
@@ -694,8 +647,7 @@ construct_domain_fixture(TermSet, ParentLifetime) ->
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa)
                     ])},
-                    cash_value = {value, ?cash(1000, <<"RUB">>)},
-                    parent_lifetime = ParentLifetime
+                    cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
             }
         }},
