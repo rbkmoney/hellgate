@@ -3,19 +3,20 @@
 
 -define(currency(SymCode),
     #domain_CurrencyRef{symbolic_code = SymCode}).
+
 -define(cash(Amount, SymCode),
     #domain_Cash{amount = Amount, currency = ?currency(SymCode)}).
 
 -define(route(ProviderRef, TerminalRef),
-    #domain_InvoicePaymentRoute{
+    #domain_PaymentRoute{
         provider = ProviderRef,
         terminal = TerminalRef
     }).
 
--define(external_failure(Code),
-    ?external_failure(Code, undefined)).
--define(external_failure(Code, Description),
-    {external_failure, #domain_ExternalFailure{code = Code, description = Description}}).
+-define(failure(Code),
+    ?failure(Code, undefined)).
+-define(failure(Code, Reason),
+    {failure, #domain_Failure{code = Code, reason = Reason}}).
 
 -define(operation_timeout(),
     {operation_timeout, #domain_OperationTimeout{}}).
@@ -28,5 +29,18 @@
 
 -define(hold_lifetime(HoldLifetime),
     #domain_HoldLifetime{seconds = HoldLifetime}).
+
+-define(payment_resource_payer(Resource, ContactInfo),
+    {payment_resource, #domain_PaymentResourcePayer{resource = Resource, contact_info = ContactInfo}}).
+
+-define(customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool, ContactInfo),
+    {customer, #domain_CustomerPayer{
+        customer_id = CustomerID,
+        customer_binding_id = CustomerBindingID,
+        rec_payment_tool_id = RecurrentPaytoolID,
+        payment_tool = PaymentTool,
+        contact_info = ContactInfo
+    }}
+).
 
 -endif.

@@ -1,12 +1,14 @@
 -module(hg_client_party).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
+-export([start/2]).
 -export([start/3]).
--export([start_link/3]).
+-export([start_link/2]).
 -export([stop/1]).
 
 -export([create/2]).
 -export([get/1]).
+-export([get_revision/1]).
 -export([checkout/2]).
 -export([block/2]).
 -export([unblock/2]).
@@ -22,6 +24,8 @@
 -export([compute_contract_terms/3]).
 -export([get_shop/2]).
 -export([compute_shop_terms/3]).
+-export([compute_payment_institution_terms/3]).
+-export([compute_payout_cash_flow/2]).
 
 -export([block_shop/3]).
 -export([unblock_shop/3]).
@@ -68,16 +72,24 @@
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
 -type timestamp()       :: dmsl_base_thrift:'Timestamp'().
 
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type payment_intitution_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
+-type varset() :: dmsl_payment_processing_thrift:'Varset'().
+
+-spec start(party_id(), hg_client_api:t()) -> pid().
+
+start(PartyID, ApiClient) ->
+    start(start, undefined, PartyID, ApiClient).
 
 -spec start(user_info(), party_id(), hg_client_api:t()) -> pid().
 
 start(UserInfo, PartyID, ApiClient) ->
     start(start, UserInfo, PartyID, ApiClient).
 
--spec start_link(user_info(), party_id(), hg_client_api:t()) -> pid().
+-spec start_link(party_id(), hg_client_api:t()) -> pid().
 
-start_link(UserInfo, PartyID, ApiClient) ->
-    start(start_link, UserInfo, PartyID, ApiClient).
+start_link(PartyID, ApiClient) ->
+    start(start_link, undefined, PartyID, ApiClient).
 
 start(Mode, UserInfo, PartyID, ApiClient) ->
     {ok, Pid} = gen_server:Mode(?MODULE, {UserInfo, PartyID, ApiClient}, []),
@@ -103,11 +115,18 @@ create(PartyParams, Client) ->
 get(Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', []})).
 
--spec checkout(timestamp(), pid()) ->
+-spec get_revision(pid()) ->
     dmsl_domain_thrift:'Party'() | woody_error:business_error().
 
-checkout(Timestamp, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'Checkout', [Timestamp]})).
+get_revision(Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetRevision', []})).
+
+
+-spec checkout(party_revision_param(), pid()) ->
+    dmsl_domain_thrift:'Party'() | woody_error:business_error().
+
+checkout(PartyRevisionParam, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'Checkout', [PartyRevisionParam]})).
 
 -spec block(binary(), pid()) ->
     ok | woody_error:business_error().
@@ -168,6 +187,18 @@ get_contract(ID, Client) ->
 
 compute_contract_terms(ID, Timestamp, Client) ->
     map_result_error(gen_server:call(Client, {call, 'ComputeContractTerms', [ID, Timestamp]})).
+
+-spec compute_payment_institution_terms(payment_intitution_ref(), varset(), pid()) ->
+    dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
+
+compute_payment_institution_terms(Ref, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputePaymentInstitutionTerms', [Ref, Varset]})).
+
+-spec compute_payout_cash_flow(dmsl_payment_processing_thrift:'PayoutParams'(), pid()) ->
+    dmsl_domain_thrift:'FinalCashFlow'() | woody_error:business_error().
+
+compute_payout_cash_flow(Params, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputePayoutCashFlow', [Params]})).
 
 -spec get_shop(shop_id(), pid()) ->
     dmsl_domain_thrift:'Shop'() | woody_error:business_error().
@@ -282,10 +313,12 @@ map_result_error({error, Error}) ->
 
 %%
 
+-type event() :: dmsl_payment_processing_thrift:'Event'().
+
 -record(st, {
     user_info :: user_info(),
     party_id  :: party_id(),
-    poller    :: hg_client_event_poller:t(),
+    poller    :: hg_client_event_poller:st(event()),
     client    :: hg_client_api:t()
 }).
 
@@ -300,7 +333,10 @@ init({UserInfo, PartyID, ApiClient}) ->
         user_info = UserInfo,
         party_id = PartyID,
         client = ApiClient,
-        poller = hg_client_event_poller:new(party_management, 'GetEvents', [UserInfo, PartyID])
+        poller = hg_client_event_poller:new(
+            {party_management, 'GetEvents', [UserInfo, PartyID]},
+            fun (Event) -> Event#payproc_Event.id end
+        )
     }}.
 
 -spec handle_call(term(), callref(), st()) ->

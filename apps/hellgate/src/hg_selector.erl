@@ -21,20 +21,26 @@
     dmsl_domain_thrift:'TerminalSelector'() |
     dmsl_domain_thrift:'SystemAccountSetSelector'() |
     dmsl_domain_thrift:'ExternalAccountSetSelector'() |
-    dmsl_domain_thrift:'HoldLifetimeSelector'().
+    dmsl_domain_thrift:'HoldLifetimeSelector'() |
+    dmsl_domain_thrift:'CashValueSelector'() |
+    dmsl_domain_thrift:'CumulativeLimitSelector'() |
+    dmsl_domain_thrift:'TimeSpanSelector'().
 
 -type value() ::
     _. %% FIXME
 
 -type varset() :: #{
-    category    => dmsl_domain_thrift:'CategoryRef'(),
-    currency    => dmsl_domain_thrift:'CurrencyRef'(),
-    cost        => dmsl_domain_thrift:'Cash'(),
-    payment_tool=> dmsl_domain_thrift:'PaymentTool'(),
-    party       => dmsl_domain_thrift:'Party'(),
-    shop        => dmsl_domain_thrift:'Shop'(),
-    risk_score  => dmsl_domain_thrift:'RiskScore'(),
-    flow        => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()}
+    category        => dmsl_domain_thrift:'CategoryRef'(),
+    currency        => dmsl_domain_thrift:'CurrencyRef'(),
+    cost            => dmsl_domain_thrift:'Cash'(),
+    payment_tool    => dmsl_domain_thrift:'PaymentTool'(),
+    party_id        => dmsl_domain_thrift:'PartyID'(),
+    shop_id         => dmsl_domain_thrift:'ShopID'(),
+    risk_score      => dmsl_domain_thrift:'RiskScore'(),
+    flow            => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
+    payout_method   => dmsl_domain_thrift:'PayoutMethodRef'(),
+    wallet_id       => dmsl_domain_thrift:'WalletID'(),
+    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'()
 }.
 
 -export_type([varset/0]).
@@ -42,6 +48,7 @@
 -export([fold/3]).
 -export([collect/1]).
 -export([reduce/3]).
+-export([reduce_to_value/3]).
 
 -define(const(Bool), {constant, Bool}).
 
@@ -66,6 +73,17 @@ fold_decisions(_, Acc, []) ->
 
 collect(S) ->
     fold(fun (V, Acc) -> [V | Acc] end, [], S).
+
+
+-spec reduce_to_value(t(), varset(), hg_domain:revision()) -> value() | no_return().
+
+reduce_to_value(Selector, VS, Revision) ->
+    case reduce(Selector, VS, Revision) of
+        {value, Value} ->
+            Value;
+        _ ->
+            error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}})
+    end.
 
 -spec reduce(t(), varset(), hg_domain:revision()) ->
     t().

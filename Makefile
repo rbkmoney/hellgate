@@ -14,7 +14,7 @@ SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
 # Base image for the service
 BASE_IMAGE_NAME := service_erlang
-BASE_IMAGE_TAG := 13454a94990acb72f753623ec13599a9f6f4f852
+BASE_IMAGE_TAG := 16e2b3ef17e5fdefac8554ced9c2c74e5c6e9e11
 
 # Build image tag to be used
 BUILD_IMAGE_TAG := 4fa802d2f534208b9dc2ae203e2a5f07affbf385
@@ -49,7 +49,7 @@ xref: submodules
 lint:
 	elvis rock
 
-dialyze:
+dialyze: submodules
 	$(REBAR) dialyzer
 
 start: submodules
@@ -58,7 +58,7 @@ start: submodules
 devrel: submodules
 	$(REBAR) release
 
-release: distclean
+release: submodules
 	$(REBAR) as prod release
 
 clean:
@@ -70,4 +70,7 @@ distclean:
 
 # CALL_W_CONTAINER
 test: submodules
-	$(REBAR) ct
+	$(REBAR) do eunit, ct
+
+test.%: apps/hellgate/test/hg_%_tests_SUITE.erl
+	$(REBAR) ct --suite=$^

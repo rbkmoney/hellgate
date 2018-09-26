@@ -10,10 +10,12 @@
 -export([construct_category/2]).
 -export([construct_category/3]).
 -export([construct_payment_method/1]).
+-export([construct_payout_method/1]).
 -export([construct_proxy/2]).
 -export([construct_proxy/3]).
 -export([construct_inspector/3]).
 -export([construct_inspector/4]).
+-export([construct_inspector/5]).
 -export([construct_contract_template/2]).
 -export([construct_contract_template/4]).
 -export([construct_provider_account_set/1]).
@@ -21,6 +23,7 @@
 -export([construct_system_account_set/3]).
 -export([construct_external_account_set/1]).
 -export([construct_external_account_set/3]).
+-export([construct_business_schedule/1]).
 
 %%
 
@@ -29,12 +32,19 @@
 -type currency()    :: dmsl_domain_thrift:'CurrencyRef'().
 -type proxy()       :: dmsl_domain_thrift:'ProxyRef'().
 -type inspector()   :: dmsl_domain_thrift:'InspectorRef'().
+-type risk_score()  :: dmsl_domain_thrift:'RiskScore'().
 -type template()    :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms()       :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime()    :: dmsl_domain_thrift:'Lifetime'() | undefined.
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
+
+-type business_schedule() :: dmsl_domain_thrift:'BusinessScheduleRef'().
+
+%%
+
+-define(EVERY, {every, #'ScheduleEvery'{}}).
 
 %%
 
@@ -80,11 +90,29 @@ construct_category(Ref, Name, Type) ->
 -spec construct_payment_method(dmsl_domain_thrift:'PaymentMethodRef'()) ->
     {payment_method, dmsl_domain_thrift:'PaymentMethodObject'()}.
 
-construct_payment_method(?pmt(_Type, Name) = Ref) ->
+construct_payment_method(?pmt(_Type, ?tkz_bank_card(Name, _)) = Ref) when is_atom(Name) ->
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(_Type, Name) = Ref) when is_atom(Name) ->
+    construct_payment_method(Name, Ref).
+
+construct_payment_method(Name, Ref) ->
     Def = erlang:atom_to_binary(Name, unicode),
     {payment_method, #domain_PaymentMethodObject{
         ref = Ref,
         data = #domain_PaymentMethodDefinition{
+            name = Def,
+            description = Def
+        }
+    }}.
+
+-spec construct_payout_method(dmsl_domain_thrift:'PayoutMethodRef'()) ->
+    {payout_method, dmsl_domain_thrift:'PayoutMethodObject'()}.
+
+construct_payout_method(?pomt(M) = Ref) ->
+    Def = erlang:atom_to_binary(M, unicode),
+    {payout_method, #domain_PayoutMethodObject{
+        ref = Ref,
+        data = #domain_PayoutMethodDefinition{
             name = Def,
             description = Def
         }
@@ -120,6 +148,12 @@ construct_inspector(Ref, Name, ProxyRef) ->
     {inspector, dmsl_domain_thrift:'InspectorObject'()}.
 
 construct_inspector(Ref, Name, ProxyRef, Additional) ->
+    construct_inspector(Ref, Name, ProxyRef, Additional, undefined).
+
+-spec construct_inspector(inspector(), name(), proxy(), Additional :: map(), risk_score()) ->
+    {inspector, dmsl_domain_thrift:'InspectorObject'()}.
+
+construct_inspector(Ref, Name, ProxyRef, Additional, FallBackScore) ->
     {inspector, #domain_InspectorObject{
         ref = Ref,
         data = #domain_Inspector{
@@ -128,7 +162,8 @@ construct_inspector(Ref, Name, ProxyRef, Additional) ->
             proxy = #domain_Proxy{
                 ref = ProxyRef,
                 additional = Additional
-            }
+            },
+            fallback_risk_score = FallBackScore
         }
     }}.
 
@@ -154,7 +189,7 @@ construct_contract_template(Ref, TermsRef, ValidSince, ValidUntil) ->
 -spec construct_provider_account_set([currency()]) -> dmsl_domain_thrift:'ProviderAccountSet'().
 
 construct_provider_account_set(Currencies) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountSet = lists:foldl(
         fun (Cur = ?cur(Code), Acc) ->
             Acc#{Cur => ?prvacc(hg_accounting:create_account(Code))}
@@ -175,7 +210,7 @@ construct_system_account_set(Ref) ->
     {system_account_set, dmsl_domain_thrift:'SystemAccountSetObject'()}.
 
 construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountID = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
     {system_account_set, #domain_SystemAccountSetObject{
@@ -199,7 +234,7 @@ construct_external_account_set(Ref) ->
     {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 
 construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     AccountID1 = hg_accounting:create_account(CurrencyCode),
     AccountID2 = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
@@ -215,3 +250,22 @@ construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
         }
     }}.
 
+-spec construct_business_schedule(business_schedule()) ->
+    {business_schedule, dmsl_domain_thrift:'BusinessScheduleObject'()}.
+
+construct_business_schedule(Ref) ->
+    {business_schedule, #domain_BusinessScheduleObject{
+        ref = Ref,
+        data = #domain_BusinessSchedule{
+            name = <<"Every day at 7:40">>,
+            schedule = #'Schedule'{
+                year = ?EVERY,
+                month = ?EVERY,
+                day_of_month = ?EVERY,
+                day_of_week = ?EVERY,
+                hour = {on, [7]},
+                minute = {on, [40]},
+                second = {on, [0]}
+            }
+        }
+    }}.

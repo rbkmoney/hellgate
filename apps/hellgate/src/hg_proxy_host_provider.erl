@@ -14,29 +14,20 @@
 
 %%
 
--type tag()          :: dmsl_proxy_thrift:'CallbackTag'().
--type callback()     :: dmsl_proxy_thrift:'Callback'().
--type response()     :: dmsl_proxy_thrift:'CallbackResponse'().
--type payment_info() :: dmsl_proxy_provider_thrift:'PaymentInfo'().
+-type tag()           :: dmsl_base_thrift:'Tag'().
+-type callback()      :: dmsl_proxy_provider_thrift:'Callback'().
+-type callback_name() :: 'ProcessPaymentCallback'
+                       | 'ProcessRecurrentTokenCallback'
+                       | 'GetPayment'.
 
--spec handle_function
-    ('ProcessCallback', [tag() | callback()], hg_woody_wrapper:handler_opts()) ->
-        response() | no_return();
-    ('GetPayment', [tag()], hg_woody_wrapper:handler_opts()) ->
-        payment_info() | no_return().
+-spec handle_function(callback_name(), [Args], hg_woody_wrapper:handler_opts()) ->
+    term() | no_return()
+    when Args :: tag() | callback().
 
-handle_function('ProcessCallback', [Tag, Callback], _) ->
-    case hg_invoice:process_callback(Tag, {provider, Callback}) of
-        {ok, Response} ->
-            Response;
-        {error, invalid_callback} ->
-            hg_woody_wrapper:raise(#'InvalidRequest'{errors = [<<"Invalid callback">>]});
-        {error, notfound} ->
-            hg_woody_wrapper:raise(#'InvalidRequest'{errors = [<<"Not found">>]});
-        {error, Reason} ->
-            error(Reason)
-    end;
-
+handle_function('ProcessPaymentCallback', [Tag, Callback], _) ->
+    map_error(hg_invoice:process_callback(Tag, {provider, Callback}));
+handle_function('ProcessRecurrentTokenCallback', [Tag, Callback], _) ->
+    map_error(hg_recurrent_paytool:process_callback(Tag, {provider, Callback}));
 handle_function('GetPayment', [Tag], _) ->
     case hg_invoice:get({tag, Tag}) of
         {ok, InvoiceSt} ->
@@ -50,3 +41,12 @@ handle_function('GetPayment', [Tag], _) ->
         {error, notfound} ->
             hg_woody_wrapper:raise(#prxprv_PaymentNotFound{})
     end.
+
+map_error({ok, Response}) ->
+    Response;
+map_error({error, invalid_callback}) ->
+    hg_woody_wrapper:raise(#'InvalidRequest'{errors = [<<"Invalid callback">>]});
+map_error({error, notfound}) ->
+    hg_woody_wrapper:raise(#'InvalidRequest'{errors = [<<"Not found">>]});
+map_error({error, Reason}) ->
+    error(Reason).

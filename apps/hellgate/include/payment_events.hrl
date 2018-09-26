@@ -5,7 +5,12 @@
 
 -define(payment_started(Payment),
     {invoice_payment_started,
-        #payproc_InvoicePaymentStarted{payment = Payment}
+        #payproc_InvoicePaymentStarted{
+            payment = Payment,
+            risk_score = undefined,
+            route = undefined,
+            cash_flow = undefined
+        }
     }
 ).
 -define(payment_started(Payment, RiskScore, Route, CashFlow),
@@ -16,6 +21,21 @@
             route = Route,
             cash_flow = CashFlow
         }
+    }
+).
+-define(risk_score_changed(RiskScore),
+    {invoice_payment_risk_score_changed,
+        #payproc_InvoicePaymentRiskScoreChanged{risk_score = RiskScore}
+    }
+).
+-define(route_changed(Route),
+    {invoice_payment_route_changed,
+        #payproc_InvoicePaymentRouteChanged{route = Route}
+    }
+).
+-define(cash_flow_changed(CashFlow),
+    {invoice_payment_cash_flow_changed,
+        #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}
     }
 ).
 -define(payment_status_changed(Status),
@@ -51,38 +71,38 @@
 ).
 
 -define(session_started(),
-    {invoice_payment_session_started,
-        #payproc_InvoicePaymentSessionStarted{}
+    {session_started,
+        #payproc_SessionStarted{}
     }
 ).
 -define(session_finished(Result),
-    {invoice_payment_session_finished,
-        #payproc_InvoicePaymentSessionFinished{result = Result}
+    {session_finished,
+        #payproc_SessionFinished{result = Result}
     }
 ).
 -define(session_suspended(Tag),
-    {invoice_payment_session_suspended,
-        #payproc_InvoicePaymentSessionSuspended{tag = Tag}
+    {session_suspended,
+        #payproc_SessionSuspended{tag = Tag}
     }
 ).
 -define(session_activated(),
-    {invoice_payment_session_activated,
-        #payproc_InvoicePaymentSessionActivated{}
+    {session_activated,
+        #payproc_SessionActivated{}
     }
 ).
 -define(trx_bound(Trx),
-    {invoice_payment_session_transaction_bound,
-        #payproc_InvoicePaymentSessionTransactionBound{trx = Trx}
+    {session_transaction_bound,
+        #payproc_SessionTransactionBound{trx = Trx}
     }
 ).
 -define(proxy_st_changed(ProxySt),
-    {invoice_payment_session_proxy_state_changed,
-        #payproc_InvoicePaymentSessionProxyStateChanged{proxy_state = ProxySt}
+    {session_proxy_state_changed,
+        #payproc_SessionProxyStateChanged{proxy_state = ProxySt}
     }
 ).
 -define(interaction_requested(UserInteraction),
-    {invoice_payment_session_interaction_requested,
-        #payproc_InvoicePaymentSessionInteractionRequested{interaction = UserInteraction}
+    {session_interaction_requested,
+        #payproc_SessionInteractionRequested{interaction = UserInteraction}
     }
 ).
 

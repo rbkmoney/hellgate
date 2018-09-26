@@ -18,18 +18,24 @@
         event_id() | no_return().
 
 handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->
-    case hg_event_sink:get_events(After, Limit) of
+    case hg_event_sink:get_events(<<"payproc">>, After, Limit) of
         {ok, Events} ->
-            Events;
+            publish_events(Events);
         {error, event_not_found} ->
             throw(#payproc_EventNotFound{})
     end;
 
 handle_function('GetLastEventID', [], _Opts) ->
     % TODO handle thrift exceptions here
-    case hg_event_sink:get_last_event_id() of
+    case hg_event_sink:get_last_event_id(<<"payproc">>) of
         {ok, ID} ->
             ID;
         {error, no_last_event} ->
             throw(#payproc_NoLastEvent{})
     end.
+
+publish_events(Events) ->
+    [publish_event(Event) || Event <- Events].
+
+publish_event({ID, Ns, SourceID, {EventID, Dt, Payload}}) ->
+    hg_event_provider:publish_event(Ns, ID, SourceID, {EventID, Dt, hg_msgpack_marshalling:unmarshal(Payload)}).

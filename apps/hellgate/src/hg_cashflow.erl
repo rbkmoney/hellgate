@@ -94,8 +94,8 @@ revert_details(Details) ->
 
 -define(fixed(Cash),
     {fixed, #domain_CashVolumeFixed{cash = Cash}}).
--define(share(P, Q, Of),
-    {share, #domain_CashVolumeShare{'parts' = ?rational(P, Q), 'of' = Of}}).
+-define(share(P, Q, Of, RoundingMethod),
+    {share, #domain_CashVolumeShare{'parts' = ?rational(P, Q), 'of' = Of, 'rounding_method' = RoundingMethod}}).
 -define(product(Fun, CVs),
     {product, {Fun, CVs}}).
 -define(rational(P, Q),
@@ -103,8 +103,8 @@ revert_details(Details) ->
 
 compute_volume(?fixed(Cash), _Context) ->
     Cash;
-compute_volume(?share(P, Q, Of), Context) ->
-    compute_parts_of(P, Q, resolve_constant(Of, Context));
+compute_volume(?share(P, Q, Of, RoundingMethod), Context) ->
+    compute_parts_of(P, Q, resolve_constant(Of, Context), RoundingMethod);
 compute_volume(?product(Fun, CVs) = CV0, Context) ->
     case ordsets:size(CVs) of
         N when N > 0 ->
@@ -113,12 +113,13 @@ compute_volume(?product(Fun, CVs) = CV0, Context) ->
             error({misconfiguration, {'Cash volume product over empty set', CV0}})
     end.
 
-compute_parts_of(P, Q, Cash = #domain_Cash{amount = Amount}) ->
+compute_parts_of(P, Q, Cash = #domain_Cash{amount = Amount}, RoundingMethod) ->
     Cash#domain_Cash{amount = genlib_rational:round(
         genlib_rational:mul(
             genlib_rational:new(Amount),
             genlib_rational:new(P, Q)
-        )
+        ),
+        get_rounding_method(RoundingMethod)
     )}.
 
 compute_product(Fun, [CV | CVRest], CV0, Context) ->
@@ -148,6 +149,13 @@ resolve_constant(Constant, Context) ->
         #{} ->
             error({misconfiguration, {'Cash flow constant not found', {Constant, Context}}})
     end.
+
+get_rounding_method(undefined) ->
+    round_half_away_from_zero;
+get_rounding_method(round_half_towards_zero) ->
+    round_half_towards_zero;
+get_rounding_method(round_half_away_from_zero) ->
+    round_half_away_from_zero.
 
 %%
 

@@ -6,15 +6,19 @@
 
 -export([cfg/2]).
 
--export([create_party_and_shop/1]).
--export([create_battle_ready_shop/3]).
+-export([create_client/2]).
+-export([create_client/3]).
+
+-export([create_party_and_shop/5]).
+-export([create_battle_ready_shop/5]).
 -export([get_account/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
 -export([get_first_payout_tool_id/2]).
+-export([adjust_contract/3]).
 
--export([make_battle_ready_contract_params/0]).
--export([make_battle_ready_contract_params/1]).
+-export([make_battle_ready_contract_params/2]).
+-export([make_battle_ready_contractor/0]).
 -export([make_battle_ready_payout_tool_params/0]).
 
 -export([make_userinfo/1]).
@@ -26,10 +30,9 @@
 -export([make_invoice_params_tpl/2]).
 -export([make_invoice_params_tpl/3]).
 
--export([make_invoice_tpl_create_params/3]).
--export([make_invoice_tpl_create_params/4]).
 -export([make_invoice_tpl_create_params/5]).
 -export([make_invoice_tpl_create_params/6]).
+-export([make_invoice_tpl_details/2]).
 
 -export([make_invoice_tpl_update_params/1]).
 
@@ -46,18 +49,20 @@
 -export([make_invoice_details/1]).
 -export([make_invoice_details/2]).
 
--export([bank_card_tds_token/0]).
--export([bank_card_simple_token/0]).
--export([make_terminal_payment_tool/0]).
--export([make_tds_payment_tool/0]).
--export([make_simple_payment_tool/0]).
+-export([make_disposable_payment_resource/1]).
+-export([make_customer_params/3]).
+-export([make_customer_binding_params/1]).
+
 -export([make_meta_ns/0]).
 -export([make_meta_data/0]).
 -export([make_meta_data/1]).
 -export([get_hellgate_url/0]).
 
+-export([make_trace_id/1]).
+
 
 -include("hg_ct_domain.hrl").
+-include("hg_ct_json.hrl").
 -include_lib("hellgate/include/domain.hrl").
 -include_lib("dmsl/include/dmsl_base_thrift.hrl").
 -include_lib("dmsl/include/dmsl_domain_thrift.hrl").
@@ -83,8 +88,14 @@ start_app(lager = AppName) ->
         {error_logger_hwm, 600},
         {suppress_application_start_stop, true},
         {handlers, [
+            % {lager_common_test_backend, [debug, {lager_logstash_formatter, []}]}
             {lager_common_test_backend, warning}
         ]}
+    ]), #{}};
+
+start_app(scoper = AppName) ->
+    {start_app(AppName, [
+        {storage, scoper_storage_lager}
     ]), #{}};
 
 start_app(woody = AppName) ->
@@ -109,21 +120,44 @@ start_app(hellgate = AppName) ->
     {start_app(AppName, [
         {host, ?HELLGATE_HOST},
         {port, ?HELLGATE_PORT},
-        {service_urls, #{
-            'Automaton' => <<"http://machinegun:8022/v1/automaton">>,
-            'EventSink' => <<"http://machinegun:8022/v1/event_sink">>,
-            'Accounter' => <<"http://shumway:8022/accounter">>,
-            'PartyManagement' => <<"http://hellgate:8022/v1/processing/partymgmt">>
+        {services, #{
+            automaton           => <<"http://machinegun:8022/v1/automaton">>,
+            eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
+            accounter           => <<"http://shumway:8022/accounter">>,
+            party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+            customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
+            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>,
+            sequences           => <<"http://sequences:8022/v1/sequences">>
         }},
         {proxy_opts, #{
             transport_opts => #{
                 connect_timeout => 1000,
                 recv_timeout    => 1000
             }
+        }},
+        {payment_retry_policy, #{
+            processed => {intervals, [1, 1, 1]},
+            captured => {intervals, [1, 1, 1]},
+            refunded => {intervals, [1, 1, 1]}
         }}
     ]), #{
         hellgate_root_url => get_hellgate_url()
     }};
+
+start_app(party_client = AppName) ->
+    {start_app(AppName, [
+        {services, #{
+            party_management => "http://hellgate:8022/v1/processing/partymgmt"
+        }},
+        {woody, #{
+            cache_mode => safe,  % disabled | safe | aggressive
+            options => #{
+                woody_client => #{
+                    event_handler => scoper_woody_event_handler
+                }
+            }
+        }}
+    ]), #{}};
 
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
@@ -173,11 +207,32 @@ cfg(Key, Config) ->
 
 %%
 
+
+-spec create_client(woody:url(), woody_user_identity:id()) ->
+    hg_client_api:t().
+
+create_client(RootUrl, UserID) ->
+    create_client_w_context(RootUrl, UserID, woody_context:new()).
+
+-spec create_client(woody:url(), woody_user_identity:id(), woody:trace_id()) ->
+    hg_client_api:t().
+
+create_client(RootUrl, UserID, TraceID) ->
+    create_client_w_context(RootUrl, UserID, woody_context:new(TraceID)).
+
+create_client_w_context(RootUrl, UserID, WoodyCtx) ->
+    hg_client_api:new(RootUrl, woody_user_identity:put(make_user_identity(UserID), WoodyCtx)).
+
+make_user_identity(UserID) ->
+    #{id => genlib:to_binary(UserID), realm => <<"external">>}.
+
+%%
+
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/party_events.hrl").
 
--type user_info()                 :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_id()                  :: dmsl_domain_thrift:'PartyID'().
+-type user_info()                 :: dmsl_payment_processing_thrift:'UserInfo'().
 -type account_id()                :: dmsl_domain_thrift:'AccountID'().
 -type account()                   :: map().
 -type contract_id()               :: dmsl_domain_thrift:'ContractID'().
@@ -193,19 +248,25 @@ cfg(Key, Config) ->
 -type context()                   :: dmsl_base_thrift:'Content'().
 -type lifetime_interval()         :: dmsl_domain_thrift:'LifetimeInterval'().
 -type invoice_details()           :: dmsl_domain_thrift:'InvoiceDetails'().
+-type invoice_tpl_details()       :: dmsl_domain_thrift:'InvoiceTemplateDetails'().
 -type invoice_tpl_cost()          :: dmsl_domain_thrift:'InvoiceTemplateCost'().
 -type currency()                  :: dmsl_domain_thrift:'CurrencySymbolicCode'().
 -type invoice_tpl_create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
 -type invoice_tpl_update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
 
--spec create_party_and_shop(Client :: pid()) ->
+-spec create_party_and_shop(
+    category(),
+    currency(),
+    contract_tpl(),
+    dmsl_domain_thrift:'PaymentInstitutionRef'(),
+    Client :: pid()
+) ->
     shop_id().
 
-create_party_and_shop(Client) ->
+create_party_and_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client) ->
     _ = hg_client_party:create(make_party_params(), Client),
-    #domain_Party{shops = Shops} = hg_client_party:get(Client),
-    [{ShopID, _Shop} | _] = maps:to_list(Shops),
-    ShopID.
+    #domain_Party{} = hg_client_party:get(Client),
+    create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client).
 
 make_party_params() ->
     #payproc_PartyParams{
@@ -214,12 +275,18 @@ make_party_params() ->
         }
     }.
 
--spec create_battle_ready_shop(category(), contract_tpl(), Client :: pid()) ->
+-spec create_battle_ready_shop(
+    category(),
+    currency(),
+    contract_tpl(),
+    dmsl_domain_thrift:'PaymentInstitutionRef'(),
+    Client :: pid()
+) ->
     shop_id().
 
-create_battle_ready_shop(Category, TemplateRef, Client) ->
+create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client) ->
     ContractID = hg_utils:unique_id(),
-    ContractParams = make_battle_ready_contract_params(TemplateRef),
+    ContractParams = make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef),
     PayoutToolID = hg_utils:unique_id(),
     PayoutToolParams = make_battle_ready_payout_tool_params(),
     ShopID = hg_utils:unique_id(),
@@ -230,6 +297,7 @@ create_battle_ready_shop(Category, TemplateRef, Client) ->
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
     },
+    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(Currency)},
     Changeset = [
         {contract_modification, #payproc_ContractModificationUnit{
             id           = ContractID,
@@ -242,14 +310,10 @@ create_battle_ready_shop(Category, TemplateRef, Client) ->
                 modification   = {creation, PayoutToolParams}
             }}
         }},
-        {shop_modification, #payproc_ShopModificationUnit{
-            id           = ShopID,
-            modification = {creation, ShopParams}
-        }}
+        ?shop_modification(ShopID, {creation, ShopParams}),
+        ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
     ],
-    #payproc_Claim{id = ClaimID, revision = ClaimRevision} =
-        hg_client_party:create_claim(Changeset, Client),
-    ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client),
+    ok = ensure_claim_accepted(hg_client_party:create_claim(Changeset, Client), Client),
     _Shop = hg_client_party:get_shop(ShopID, Client),
     ShopID.
 
@@ -286,13 +350,36 @@ get_first_battle_ready_contract_id(Client) ->
             error(not_found)
     end.
 
+-spec adjust_contract(contract_id(), contract_tpl(), Client :: pid()) -> ok.
+
+adjust_contract(ContractID, TemplateRef, Client) ->
+    ensure_claim_accepted(hg_client_party:create_claim([
+        {contract_modification, #payproc_ContractModificationUnit{
+            id           = ContractID,
+            modification = {adjustment_modification, #payproc_ContractAdjustmentModificationUnit{
+                adjustment_id = hg_utils:unique_id(),
+                modification  = {creation, #payproc_ContractAdjustmentParams{
+                    template = TemplateRef
+                }}
+            }}
+        }}
+    ], Client), Client).
+
+ensure_claim_accepted(#payproc_Claim{id = ClaimID, revision = ClaimRevision, status = Status}, Client) ->
+    case Status of
+        {accepted, _} ->
+            ok;
+        _ ->
+            ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client)
+    end.
+
 -spec get_account(account_id()) -> account().
 
 get_account(AccountID) ->
     % TODO we sure need to proxy this through the hellgate interfaces
-    _ = hg_context:set(woody_context:new()),
+    ok = hg_context:save(hg_context:create()),
     Account = hg_accounting:get_account(AccountID),
-    _ = hg_context:cleanup(),
+    ok = hg_context:cleanup(),
     Account.
 
 -spec get_first_payout_tool_id(contract_id(), Client :: pid()) ->
@@ -307,23 +394,30 @@ get_first_payout_tool_id(ContractID, Client) ->
             error(not_found)
     end.
 
--spec make_battle_ready_contract_params() ->
+-spec make_battle_ready_contract_params(
+    dmsl_domain_thrift:'ContractTemplateRef'() | undefined,
+    dmsl_domain_thrift:'PaymentInstitutionRef'()
+) ->
     dmsl_payment_processing_thrift:'ContractParams'().
 
-make_battle_ready_contract_params() ->
-    make_battle_ready_contract_params(undefined).
+make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
+    #payproc_ContractParams{
+        contractor = make_battle_ready_contractor(),
+        template = TemplateRef,
+        payment_institution = PaymentInstitutionRef
+    }.
 
--spec make_battle_ready_contract_params(dmsl_domain_thrift:'ContractTemplateRef'()) ->
-    dmsl_payment_processing_thrift:'ContractParams'().
+-spec make_battle_ready_contractor() ->
+    dmsl_payment_processing_thrift:'Contractor'().
 
-make_battle_ready_contract_params(TemplateRef) ->
-    BankAccount = #domain_BankAccount{
+make_battle_ready_contractor() ->
+    BankAccount = #domain_RussianBankAccount{
         account = <<"4276300010908312893">>,
         bank_name = <<"SomeBank">>,
         bank_post_account = <<"123129876">>,
         bank_bik = <<"66642666">>
     },
-    Contractor = {legal_entity,
+    {legal_entity,
         {russian_legal_entity, #domain_RussianLegalEntity {
             registered_name = <<"Hoofs & Horns OJSC">>,
             registered_number = <<"1234509876">>,
@@ -333,12 +427,8 @@ make_battle_ready_contract_params(TemplateRef) ->
             representative_position = <<"Director">>,
             representative_full_name = <<"Someone">>,
             representative_document = <<"100$ banknote">>,
-            bank_account = BankAccount
+            russian_bank_account = BankAccount
         }}
-    },
-    #payproc_ContractParams{
-        contractor = Contractor,
-        template = TemplateRef
     }.
 
 -spec make_battle_ready_payout_tool_params() ->
@@ -347,7 +437,7 @@ make_battle_ready_contract_params(TemplateRef) ->
 make_battle_ready_payout_tool_params() ->
     #payproc_PayoutToolParams{
         currency = ?cur(<<"RUB">>),
-        tool_info = {bank_account, #domain_BankAccount{
+        tool_info = {russian_bank_account, #domain_RussianBankAccount{
             account = <<"4276300010908312893">>,
             bank_name = <<"SomeBank">>,
             bank_post_account = <<"123129876">>,
@@ -403,41 +493,41 @@ make_invoice_params_tpl(TplID, Cost, Context) ->
        context     = Context
     }.
 
--spec make_invoice_tpl_create_params(party_id(), shop_id(), binary()) ->
+-spec make_invoice_tpl_create_params(party_id(), shop_id(), lifetime_interval(), binary(), invoice_tpl_details()) ->
     invoice_tpl_create_params().
 
-make_invoice_tpl_create_params(PartyID, ShopID, Product) ->
-    make_invoice_tpl_create_params(PartyID, ShopID, Product, make_lifetime()).
+make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
+    make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, make_invoice_context()).
 
--spec make_invoice_tpl_create_params(party_id(), shop_id(), binary(),
-    lifetime_interval())
-->
+-spec make_invoice_tpl_create_params(
+    party_id(),
+    shop_id(),
+    lifetime_interval(),
+    binary(),
+    invoice_tpl_details(),
+    context()
+) ->
     invoice_tpl_create_params().
 
-make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime) ->
-    make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, make_invoice_tpl_cost()).
--spec make_invoice_tpl_create_params(party_id(), shop_id(), binary(),
-    lifetime_interval(), invoice_tpl_cost())
-->
-    invoice_tpl_create_params().
-
-make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost) ->
-    make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost, make_invoice_context()).
-
--spec make_invoice_tpl_create_params(party_id(), shop_id(), binary(),
-    lifetime_interval(), invoice_tpl_cost(), context())
-->
-    invoice_tpl_create_params().
-
-make_invoice_tpl_create_params(PartyID, ShopID, Product, Lifetime, Cost, Context) ->
+make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, Context) ->
     #payproc_InvoiceTemplateCreateParams{
         party_id         = PartyID,
         shop_id          = ShopID,
-        details          = make_invoice_details(Product),
         invoice_lifetime = Lifetime,
-        cost             = Cost,
+        product          = Product,
+        details          = Details,
         context          = Context
     }.
+
+-spec make_invoice_tpl_details(binary(), cost()) ->
+    invoice_tpl_details().
+
+make_invoice_tpl_details(Product, Price) ->
+    {product, #domain_InvoiceTemplateProduct{
+        product = Product,
+        price = Price,
+        metadata = #{}
+    }}.
 
 -spec make_invoice_tpl_update_params(map()) -> invoice_tpl_update_params().
 
@@ -448,15 +538,12 @@ update_field(details, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{details = V};
 update_field(invoice_lifetime, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{invoice_lifetime = V};
-update_field(cost, V, Params) ->
-    Params#payproc_InvoiceTemplateUpdateParams{cost = V};
+update_field(product, V, Params) ->
+    Params#payproc_InvoiceTemplateUpdateParams{product = V};
+update_field(description, V, Params) ->
+    Params#payproc_InvoiceTemplateUpdateParams{description = V};
 update_field(context, V, Params) ->
     Params#payproc_InvoiceTemplateUpdateParams{context = V}.
-
--spec make_lifetime() -> lifetime_interval().
-
-make_lifetime() ->
-    make_lifetime(0, 0, 1).
 
 -spec make_lifetime(non_neg_integer(), non_neg_integer(), non_neg_integer()) ->
     lifetime_interval().
@@ -480,11 +567,6 @@ make_invoice_details(Product, Description) ->
         product = Product,
         description = Description
     }.
-
--spec make_invoice_tpl_cost() -> invoice_tpl_cost().
-
-make_invoice_tpl_cost() ->
-    make_invoice_tpl_cost(fixed, 10000, <<"RUB">>).
 
 -type cash_bound() :: {inclusive | exclusive, non_neg_integer(), currency()}.
 
@@ -542,50 +624,14 @@ make_shop_details(Name, Description) ->
         description = Description
     }.
 
--spec bank_card_tds_token() -> string().
+-spec make_disposable_payment_resource({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'SessionID'()}) ->
+    hg_domain_thrift:'DisposablePaymentResource'().
 
-bank_card_tds_token() ->
-    <<"TOKEN666">>.
-
--spec bank_card_simple_token() -> string().
-
-bank_card_simple_token() ->
-    <<"TOKEN42">>.
-
--spec make_terminal_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
-
-make_terminal_payment_tool() ->
-    {
-        {payment_terminal, #domain_PaymentTerminal{
-            terminal_type = euroset
-        }},
-        <<"">>
-    }.
-
--spec make_tds_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
-
-make_tds_payment_tool() ->
-    {
-        {bank_card, #domain_BankCard{
-            token          = bank_card_tds_token(),
-            payment_system = visa,
-            bin            = <<"666666">>,
-            masked_pan     = <<"666">>
-        }},
-        <<"SESSION666">>
-    }.
-
--spec make_simple_payment_tool() -> {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
-
-make_simple_payment_tool() ->
-    {
-        {bank_card, #domain_BankCard{
-            token          = bank_card_simple_token(),
-            payment_system = visa,
-            bin            = <<"424242">>,
-            masked_pan     = <<"4242">>
-        }},
-        <<"SESSION42">>
+make_disposable_payment_resource({PaymentTool, SessionID}) ->
+    #domain_DisposablePaymentResource{
+        payment_tool = PaymentTool,
+        payment_session_id = SessionID,
+        client_info = #domain_ClientInfo{}
     }.
 
 -spec make_meta_ns() -> dmsl_domain_thrift:'PartyMetaNamespace'().
@@ -612,8 +658,36 @@ make_meta_data(NS) ->
 get_hellgate_url() ->
     "http://" ++ ?HELLGATE_HOST ++ ":" ++ integer_to_list(?HELLGATE_PORT).
 
+-spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
+
+make_customer_params(PartyID, ShopID, EMail) ->
+    #payproc_CustomerParams{
+        party_id     = PartyID,
+        shop_id      = ShopID,
+        contact_info = ?contact_info(EMail),
+        metadata     = ?null()
+    }.
+
+-spec make_customer_binding_params({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'SessionID'()}) ->
+    dmsl_payment_processing_thrift:'CustomerBindingParams'().
+
+make_customer_binding_params(PaymentToolSession) ->
+    #payproc_CustomerBindingParams{
+        payment_resource = make_disposable_payment_resource(PaymentToolSession)
+    }.
+
+%%
+
 make_due_date() ->
     make_due_date(24 * 60 * 60).
 
 make_due_date(LifetimeSeconds) ->
     genlib_time:unow() + LifetimeSeconds.
+
+%%
+
+-spec make_trace_id(term()) -> woody:trace_id().
+
+make_trace_id(Prefix) ->
+    B = genlib:to_binary(Prefix),
+    iolist_to_binary([binary:part(B, 0, min(byte_size(B), 20)), $., hg_utils:unique_id()]).

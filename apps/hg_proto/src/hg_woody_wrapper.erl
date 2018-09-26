@@ -9,7 +9,9 @@
 -export_type([client_opts/0]).
 
 -type handler_opts() :: #{
-    handler => module(),
+    handler := module(),
+    party_client => party_client:client(),
+    default_handling_timeout => timeout(),
     user_identity => undefined | woody_user_identity:user_identity()
 }.
 
@@ -18,12 +20,15 @@
     transport_opts => [{_, _}]
 }.
 
+-define(DEFAULT_HANDLING_TIMEOUT, 30000).  % 30 seconds
+
 %% Callbacks
 
 -callback(handle_function(woody:func(), woody:args(), handler_opts()) ->
     term() | no_return()).
 
 %% API
+
 -export([call/3]).
 -export([call/4]).
 -export([raise/1]).
@@ -32,8 +37,9 @@
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), handler_opts()) ->
     {ok, term()} | no_return().
 
-handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
-    hg_context:set(Context),
+handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
+    WoodyContext = ensure_woody_deadline_set(WoodyContext0, Opts),
+    ok = hg_context:save(create_context(WoodyContext, Opts)),
     try
         Result = Handler:handle_function(
             Func,
@@ -53,16 +59,20 @@ handle_function(Func, Args, Context, #{handler := Handler} = Opts) ->
     term().
 
 call(ServiceName, Function, Args) ->
-    Url = get_service_url(ServiceName),
-    call(ServiceName, Function, Args, #{url => Url}).
+    Opts = get_service(ServiceName),
+    call(ServiceName, Function, Args, Opts).
 
 -spec call(atom(), woody:func(), list(), client_opts()) ->
     term().
 
 call(ServiceName, Function, Args, Opts) ->
     Service = get_service_modname(ServiceName),
-    Context = hg_context:get(),
-    woody_client:call({Service, Function, Args}, Opts#{event_handler => {hg_woody_event_handler, undefined}}, Context).
+    Context = hg_context:get_woody_context(hg_context:load()),
+    woody_client:call(
+        {Service, Function, Args},
+        Opts#{event_handler => scoper_woody_event_handler},
+        Context
+    ).
 
 -spec raise(term()) ->
     no_return().
@@ -72,28 +82,53 @@ raise(Exception) ->
 
 %% Internal functions
 
-get_service_url(ServiceName) ->
-    maps:get(ServiceName, genlib_app:env(hellgate, service_urls)).
+get_service(ServiceName) ->
+    construct_opts(maps:get(ServiceName, genlib_app:env(hellgate, services))).
+
+construct_opts(Opts = #{url := Url}) ->
+    Opts#{url := genlib:to_binary(Url)};
+construct_opts(Url) ->
+    #{url => genlib:to_binary(Url)}.
 
 -spec get_service_modname(atom()) ->
     {module(), atom()}.
 
 get_service_modname(ServiceName) ->
-    {get_service_module(ServiceName), ServiceName}.
+    hg_proto:get_service(ServiceName).
 
-get_service_module('Automaton') ->
-    mg_proto_state_processing_thrift;
-get_service_module('Accounter') ->
-    dmsl_accounter_thrift;
-get_service_module('EventSink') ->
-    mg_proto_state_processing_thrift;
-get_service_module('ProviderProxy') ->
-    dmsl_proxy_provider_thrift;
-get_service_module('InspectorProxy') ->
-    dmsl_proxy_inspector_thrift;
-get_service_module('MerchantProxy') ->
-    dmsl_proxy_merchant_thrift;
-get_service_module('PartyManagement') ->
-    dmsl_payment_processing_thrift;
-get_service_module(ServiceName) ->
-    error({unknown_service, ServiceName}).
+create_context(WoodyContext, Opts) ->
+    ContextOptions = #{
+        woody_context => WoodyContext
+    },
+    Context = hg_context:create(ContextOptions),
+    configure_party_client(Context, Opts).
+
+configure_party_client(Context0, #{party_client := PartyClient}) ->
+    DefaultUserInfo = #{id => <<"hellgate">>, realm => <<"service">>},
+    Context1 = set_default_party_user_identity(DefaultUserInfo, Context0),
+    hg_context:set_party_client(PartyClient, Context1);
+configure_party_client(Context, _Opts) ->
+    Context.
+
+set_default_party_user_identity(UserInfo, Context) ->
+    PartyClientContext0 = hg_context:get_party_client_context(Context),
+    PartyClientContext1 = case party_client_context:get_user_info(PartyClientContext0) of
+        undefined ->
+            party_client_context:set_user_info(UserInfo, PartyClientContext0);
+        _UserInfo ->
+            PartyClientContext0
+    end,
+    hg_context:set_party_client_context(PartyClientContext1, Context).
+
+-spec ensure_woody_deadline_set(woody_context:ctx(), handler_opts()) ->
+    woody_context:ctx().
+
+ensure_woody_deadline_set(WoodyContext, Opts) ->
+    case woody_context:get_deadline(WoodyContext) of
+        undefined ->
+            DefaultTimeout = maps:get(default_handling_timeout, Opts, ?DEFAULT_HANDLING_TIMEOUT),
+            Deadline = woody_deadline:from_timeout(DefaultTimeout),
+            woody_context:set_deadline(Deadline, WoodyContext);
+        _Other ->
+            WoodyContext
+    end.

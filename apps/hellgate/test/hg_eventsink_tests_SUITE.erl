@@ -48,7 +48,7 @@ groups() ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
-    {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, dmt_client, hellgate]),
+    {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, scoper, dmt_client, party_client, hellgate]),
     ok = hg_domain:insert(construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
@@ -63,15 +63,14 @@ end_per_suite(C) ->
 init_per_testcase(_Name, C) ->
     RootUrl = ?c(root_url, C),
     PartyID = hg_utils:unique_id(),
-    UserInfo = #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}},
     [
         {party_id, PartyID},
-        {eventsink_client, hg_client_eventsink:start_link(create_api(RootUrl))},
-        {partymgmt_client, hg_client_party:start_link(UserInfo, PartyID, create_api(RootUrl))} | C
+        {eventsink_client, hg_client_eventsink:start_link(create_api(RootUrl, PartyID))},
+        {partymgmt_client, hg_client_party:start_link(PartyID, create_api(RootUrl, PartyID))} | C
     ].
 
-create_api(RootUrl) ->
-    hg_client_api:new(RootUrl).
+create_api(RootUrl, PartyID) ->
+    hg_ct_helper:create_client(RootUrl, PartyID).
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
@@ -82,18 +81,29 @@ end_per_testcase(_Name, _C) ->
 
 -include("party_events.hrl").
 
--define(event(ID, InvoiceID, Seq, Payload),
+-define(event(ID, Source, Seq, Payload),
     #payproc_Event{
         id = ID,
-        source = {party_id, InvoiceID},
+        source = Source,
         payload = Payload
     }
+).
+
+-define(party_event(ID, PartyID, Seq, Payload),
+    ?event(ID, {party_id, PartyID}, Seq, Payload)
 ).
 
 -spec no_events(config()) -> _ | no_return().
 
 no_events(C) ->
-    none = hg_client_eventsink:get_last_event_id(?c(eventsink_client, C)).
+    Client = ?c(eventsink_client, C),
+    case hg_client_eventsink:pull_history(Client) of
+        [] ->
+            none = hg_client_eventsink:get_last_event_id(Client);
+        Events = [_ | _] ->
+            ?event(EventID, _, _, _) = lists:last(Events),
+            EventID = hg_client_eventsink:get_last_event_id(Client)
+    end.
 
 -spec events_observed(config()) -> _ | no_return().
 
@@ -101,16 +111,17 @@ events_observed(C) ->
     EventsinkClient = ?c(eventsink_client, C),
     PartyMgmtClient = ?c(partymgmt_client, C),
     PartyID = ?c(party_id, C),
-    _ShopID = hg_ct_helper:create_party_and_shop(PartyMgmtClient),
-    Events = hg_client_eventsink:pull_events(10, 3000, EventsinkClient),
-    [?event(_ID, PartyID, 1, ?party_ev([?party_created(_) | _])) | _] = Events,
+    _History = hg_client_eventsink:pull_history(EventsinkClient),
+    _ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyMgmtClient),
+    Events = hg_client_eventsink:pull_events(10, EventsinkClient),
+    [?party_event(_ID, PartyID, 1, ?party_ev([?party_created(_, _, _) | _])) | _] = Events,
     IDs = [ID || ?event(ID, _, _, _) <- Events],
     IDs = lists:sort(IDs).
 
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
-    Events = hg_client_eventsink:pull_events(5000, 500, ?c(eventsink_client, C)),
+    Events = hg_client_eventsink:pull_history(?c(eventsink_client, C)),
     ok = hg_eventsink_history:assert_total_order(Events).
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
@@ -125,46 +136,27 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = #domain_PaymentInstitution{
+                name = <<"Test Inc.">>,
+                system_account_set = {value, ?sas(1)},
+                default_contract_template = {value, ?tmpl(1)},
+                providers = {value, ?ordset([])},
+                inspector = {value, ?insp(1)},
+                residences = [],
+                realm = test
+            }
+        }},
+
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
-                party_prototype = #domain_PartyPrototypeRef{id = 42},
-                providers = {value, ordsets:from_list([])},
-                system_account_set = {value, ?sas(1)},
                 external_account_set = {value, ?eas(1)},
-                default_contract_template = ?tmpl(1),
-                common_merchant_proxy = ?prx(1),
-                inspector = {value, ?insp(1)}
+                payment_institutions = ?ordset([?pinst(1)])
             }
         }},
-        {party_prototype, #domain_PartyPrototypeObject{
-            ref = #domain_PartyPrototypeRef{id = 42},
-            data = #domain_PartyPrototype{
-                shop = #domain_ShopPrototype{
-                    shop_id = <<"TESTSHOP">>,
-                    category = ?cat(1),
-                    currency = ?cur(<<"RUB">>),
-                    details  = #domain_ShopDetails{
-                        name = <<"SUPER DEFAULT SHOP">>
-                    },
-                    location = {url, <<"">>}
-                },
-                contract = #domain_ContractPrototype{
-                    contract_id = <<"TESTCONTRACT">>,
-                    test_contract_template = ?tmpl(1),
-                    payout_tool = #domain_PayoutToolPrototype{
-                        payout_tool_id = <<"TESTPAYOUTTOOL">>,
-                        payout_tool_info = {bank_account, #domain_BankAccount{
-                            account = <<"">>,
-                            bank_name = <<"">>,
-                            bank_post_account = <<"">>,
-                            bank_bik = <<"">>
-                        }},
-                        payout_tool_currency = ?cur(<<"RUB">>)
-                    }
-                }
-            }
-        }},
+
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
