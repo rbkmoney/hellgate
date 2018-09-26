@@ -1480,6 +1480,8 @@ construct_session(Session = #{target := Target}) ->
         state = get_session_proxy_state(Session)
     }.
 
+construct_payment_info(idle, _St, PaymentInfo) ->
+    PaymentInfo;
 construct_payment_info({payment, _Step}, _St, PaymentInfo) ->
     PaymentInfo;
 construct_payment_info({refund_session, ID}, St, PaymentInfo) ->
