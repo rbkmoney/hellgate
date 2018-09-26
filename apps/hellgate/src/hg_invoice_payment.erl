@@ -2215,8 +2215,6 @@ inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentIns
 
 check_payment_type_risk(low, #domain_InvoicePayment{make_recurrent = true}) ->
     high;
-check_payment_type_risk(low, #domain_InvoicePayment{payer = ?recurrent_payer()}) ->
-    high;
 check_payment_type_risk(Score, _Payment) ->
     Score.
 
