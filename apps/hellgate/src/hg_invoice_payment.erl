@@ -542,12 +542,15 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-choose_route(Payer, PaymentInstitution, VS, Revision) ->
+choose_route(PaymentInstitution, VS, Revision, St) ->
+    Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
         {ok, _Route} = Result ->
             Result;
         undefined ->
-            case hg_routing:choose(payment, PaymentInstitution, VS, Revision) of
+            Payment = get_payment(St),
+            Predestination = choose_routing_predestination(Payment),
+            case hg_routing:choose(Predestination, PaymentInstitution, VS, Revision) of
                 {ok, _Route} = Result ->
                     Result;
                 {error, {no_route_found, RejectContext}} = Error ->
@@ -555,6 +558,13 @@ choose_route(Payer, PaymentInstitution, VS, Revision) ->
                     Error
             end
     end.
+
+-spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().
+choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
+    recurrent_payment;
+choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
+    payment.
+% Other payers has predefined routes
 
 log_reject_context(RejectContext) ->
     _ = lager:warning("No route found, varset: ~p", [maps:get(varset, RejectContext)]),
@@ -1222,9 +1232,8 @@ process_routing(Action, St) ->
     VS0 = collect_routing_varset(Payment, Opts, #{}),
     RiskScore = inspect(Payment, PaymentInstitution, VS0, Opts),
     Events0 = [?risk_score_changed(RiskScore)],
-    Payer = get_payment_payer(St),
     VS1 = VS0#{risk_score => RiskScore},
-    case choose_route(Payer, PaymentInstitution, VS1, Revision) of
+    case choose_route(PaymentInstitution, VS1, Revision, St) of
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, _Details}} ->
@@ -2200,7 +2209,14 @@ inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentIns
     InspectorSelector = PaymentInstitution#domain_PaymentInstitution.inspector,
     InspectorRef = reduce_selector(inspector, InspectorSelector, VS, Revision),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
-    hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector).
+    RiskScore = hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector),
+    % FIXME: move this logic to inspector
+    check_payment_type_risk(RiskScore, Payment).
+
+check_payment_type_risk(low, #domain_InvoicePayment{make_recurrent = true}) ->
+    high;
+check_payment_type_risk(Score, _Payment) ->
+    Score.
 
 get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
     #{
