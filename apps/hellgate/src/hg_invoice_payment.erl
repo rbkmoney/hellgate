@@ -562,12 +562,9 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
 -spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().
 choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
     recurrent_payment;
-choose_routing_predestination(#domain_InvoicePayment{payer = ?recurrent_payer()}) ->
-    recurrent_payment;
 choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
-    payment;
-choose_routing_predestination(#domain_InvoicePayment{payer = ?customer_payer()}) ->
     payment.
+% Other payers has predefined routes
 
 log_reject_context(RejectContext) ->
     _ = lager:warning("No route found, varset: ~p", [maps:get(varset, RejectContext)]),
