@@ -549,7 +549,7 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
             Result;
         undefined ->
             Payment = get_payment(St),
-            Predestination = choose_routing_predestination(Payment, Payer),
+            Predestination = choose_routing_predestination(Payment),
             case hg_routing:choose(Predestination, PaymentInstitution, VS, Revision) of
                 {ok, _Route} = Result ->
                     Result;
@@ -559,24 +559,14 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
             end
     end.
 
--spec choose_routing_predestination(payment(), payer()) -> hg_routing:route_predestination().
-choose_routing_predestination(Payment, Payer) ->
-    MakeRecurrent = case Payment of
-        #domain_InvoicePayment{make_recurrent = true} ->
-            true;
-        #domain_InvoicePayment{make_recurrent = Other} when Other =:= false orelse Other =:= undefined ->
-            false
-    end,
-    do_choose_routing_predestination(MakeRecurrent, Payer).
-
--spec do_choose_routing_predestination(make_recurrent(), payer()) -> hg_routing:route_predestination().
-do_choose_routing_predestination(true, _Payer) ->
+-spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().
+choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
     recurrent_payment;
-do_choose_routing_predestination(false, ?recurrent_payer()) ->
+choose_routing_predestination(#domain_InvoicePayment{payer = ?recurrent_payer()}) ->
     recurrent_payment;
-do_choose_routing_predestination(false, ?payment_resource_payer()) ->
+choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
     payment;
-do_choose_routing_predestination(false, ?customer_payer()) ->
+choose_routing_predestination(#domain_InvoicePayment{payer = ?customer_payer()}) ->
     payment.
 
 log_reject_context(RejectContext) ->
