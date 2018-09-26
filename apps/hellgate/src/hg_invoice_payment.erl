@@ -2853,13 +2853,12 @@ unmarshal(payer, #{
     );
 
 unmarshal(payer, ?legacy_payer(PaymentTool, SessionId, ClientInfo, ContactInfo)) ->
-    Resource = #{
-        <<"payment_tool">>         => PaymentTool,
-        <<"payment_session_id">>   => SessionId,
-        <<"client_info">>          => ClientInfo
-    },
     ?payment_resource_payer(
-        unmarshal(disposable_payment_resource, Resource),
+        #domain_DisposablePaymentResource{
+            payment_tool = hg_payment_tool:unmarshal([1, PaymentTool]),
+            payment_session_id = unmarshal(str, SessionId),
+            client_info = unmarshal(client_info, ClientInfo)
+        },
         unmarshal(contact_info, ContactInfo)
     );
 
