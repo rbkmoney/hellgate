@@ -151,7 +151,7 @@ generate_token(undefined, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPay
     end;
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPaytool}, _Opts) ->
     case get_recurrent_paytool_scenario(RecurrentPaytool) of
-        preauth_3ds ->
+        {preauth_3ds, Timeout} ->
             Tag = generate_recurent_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
@@ -161,7 +161,7 @@ generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = Recurre
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
                 }
             },
-            token_suspend(Tag, 3, <<"suspended">>, UserInteraction);
+            token_suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
         no_preauth ->
             token_sleep(1, <<"finishing">>)
     end;
@@ -203,7 +203,7 @@ token_respond(Response, CallbackResult) ->
 
 process_payment(?processed(), undefined, PaymentInfo, _) ->
     case get_payment_info_scenario(PaymentInfo) of
-        preauth_3ds ->
+        {preauth_3ds, Timeout} ->
             Tag = generate_payment_tag(),
             Uri = get_callback_url(),
             UserInteraction = {
@@ -213,7 +213,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
                     #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
                 }
             },
-            suspend(Tag, 2, <<"suspended">>, UserInteraction);
+            suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
         no_preauth ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>);
@@ -420,8 +420,8 @@ get_recurrent_paytool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = P
 
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"no_preauth">>}}) ->
     no_preauth;
-get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds">>}}) ->
-    preauth_3ds;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds:timeout=", Timeout/binary>>}}) ->
+    {preauth_3ds, erlang:binary_to_integer(Timeout)};
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_offsite">>}}) ->
     preauth_3ds_offsite;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>}}) ->
@@ -444,7 +444,10 @@ get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qi
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
 make_payment_tool(preauth_3ds) ->
-    make_simple_payment_tool(<<"preauth_3ds">>, visa);
+    make_payment_tool({preauth_3ds, 3});
+make_payment_tool({preauth_3ds, Timeout}) ->
+    TimeoutBin = erlang:integer_to_binary(Timeout),
+    make_simple_payment_tool(<<"preauth_3ds:timeout=", TimeoutBin/binary>>, visa);
 make_payment_tool(preauth_3ds_offsite) ->
     make_simple_payment_tool(<<"preauth_3ds_offsite">>, jcb);
 make_payment_tool(forbidden) ->

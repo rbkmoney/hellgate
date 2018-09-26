@@ -29,12 +29,16 @@
 
 %% Types
 
--define(SYNC_INTERVAL, 1).
+-define(SYNC_INTERVAL, 5).
+-define(SYNC_OUTDATED_INTERVAL, 86400).  % 1 day
 -define(REC_PAYTOOL_EVENTS_LIMIT, 10).
+-define(MAX_BINDING_DURATION, #'TimeSpan'{hours = 3}).
 
 -record(st, {
     customer       :: undefined | customer(),
-    active_binding :: undefined | binding_id()
+    active_binding :: undefined | binding_id(),
+    binding_starts :: map(),
+    created_at     :: undefined | hg_datetime:timestamp()
 }).
 
 -type customer()         :: dmsl_payment_processing_thrift:'Customer'().
@@ -203,17 +207,32 @@ process_signal(Signal, History, AuxSt) ->
 handle_signal(timeout, St0, AuxSt0) ->
     {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
     St1 = merge_changes(Changes, St0),
-    Action = case get_pending_binding_set(St1) of
-        [_BindingID | _] ->
-            set_event_poll_timer();
-        [] ->
-            hg_machine_action:new()
+    Action = case detect_binding_status(St1) of
+        all_ready ->
+            hg_machine_action:new();
+        waiting ->
+            set_event_poll_timer(actual);
+        waiting_outdated ->
+            set_event_poll_timer(outdated)
     end,
     #{
         changes => Changes ++ get_ready_changes(St1),
         action  => Action,
         auxst   => AuxSt1
     }.
+
+detect_binding_status(St) ->
+    case get_pending_binding_set(St) of
+        [] ->
+            all_ready;
+        Pending ->
+            case get_outdated_binding_set(St) of
+                Outdated when Outdated =:= Pending ->
+                    waiting_outdated;
+                _Outdated ->
+                    waiting
+            end
+    end.
 
 get_ready_changes(#st{customer = #payproc_Customer{status = ?customer_unready()}} = St) ->
     case find_active_bindings(get_bindings(get_customer(St))) of
@@ -289,11 +308,11 @@ start_binding(BindingParams, St) ->
     PaymentResource = BindingParams#payproc_CustomerBindingParams.payment_resource,
     RecurrentPaytoolID = create_recurrent_paytool(PaymentResource, St),
     Binding = construct_binding(BindingID, RecurrentPaytoolID, PaymentResource),
-    Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding))],
+    Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
     #{
         response => Binding,
         changes  => Changes,
-        action   => set_event_poll_timer()
+        action   => set_event_poll_timer(actual)
     }.
 
 construct_binding(BindingID, RecPaymentToolID, PaymentResource) ->
@@ -406,9 +425,13 @@ gather_recurrent_paytool_changes(Events) ->
 issue_recurrent_paytools_call(Function, Args) ->
     hg_woody_wrapper:call(recurrent_paytool, Function, Args).
 
-set_event_poll_timer() ->
-    % TODO rather dumb
-    hg_machine_action:set_timeout(?SYNC_INTERVAL).
+set_event_poll_timer(Type) ->
+    hg_machine_action:set_timeout(get_event_pol_timeout(Type)).
+
+get_event_pol_timeout(actual) ->
+    ?SYNC_INTERVAL;
+get_event_pol_timeout(outdated) ->
+    ?SYNC_OUTDATED_INTERVAL - rand:uniform(?SYNC_OUTDATED_INTERVAL div 10).
 
 %%
 
@@ -423,7 +446,7 @@ get_customer_created_event(CustomerID, Params = #payproc_CustomerParams{}) ->
 %%
 
 collapse_history(History) ->
-    lists:foldl(fun merge_event/2, #st{}, History).
+    lists:foldl(fun merge_event/2, #st{binding_starts = #{}}, History).
 
 merge_event({_ID, _, Changes}, St) ->
     merge_changes(Changes, St).
@@ -431,9 +454,10 @@ merge_event({_ID, _, Changes}, St) ->
 merge_changes(Changes, St) ->
     lists:foldl(fun merge_change/2, St, Changes).
 
-merge_change(?customer_created(_, _, _, _, _, _) = CustomerCreatedChange, St) ->
+merge_change(?customer_created(_, _, _, _, _, CreatedAt) = CustomerCreatedChange, St) ->
     Customer = create_customer(CustomerCreatedChange),
-    set_customer(Customer, St);
+    St2 = set_customer(Customer, St),
+    set_create_customer_timestamp(CreatedAt, St2);
 merge_change(?customer_deleted(), St) ->
     set_customer(undefined, St);
 merge_change(?customer_status_changed(Status), St) ->
@@ -446,11 +470,17 @@ merge_change(?customer_binding_changed(BindingID, Payload), St) ->
     BindingStatus = get_binding_status(Binding1),
     St1 = set_customer(set_binding(Binding1, Customer), St),
     St2 = update_active_binding(BindingID, BindingStatus, St1),
-    St2.
+    update_bindigs_start(BindingID, Payload, St2).
 
 update_active_binding(BindingID, ?customer_binding_succeeded(), St) ->
     set_active_binding_id(BindingID, St);
 update_active_binding(_BindingID, _BindingStatus, St) ->
+    St.
+
+update_bindigs_start(BindingID, ?customer_binding_started(_Binding, Timestamp), St) ->
+    #st{binding_starts = Starts} = St,
+    St#st{binding_starts = Starts#{BindingID => Timestamp}};
+update_bindigs_start(_BindingID, _OtherChange, St) ->
     St.
 
 wrap_binding_changes(BindingID, Changes) ->
@@ -459,7 +489,7 @@ wrap_binding_changes(BindingID, Changes) ->
 merge_binding_changes(Changes, Binding) ->
     lists:foldl(fun merge_binding_change/2, Binding, Changes).
 
-merge_binding_change(?customer_binding_started(Binding), undefined) ->
+merge_binding_change(?customer_binding_started(Binding, _Timestamp), undefined) ->
     Binding;
 merge_binding_change(?customer_binding_status_changed(BindingStatus), Binding) ->
     Binding#payproc_CustomerBinding{status = BindingStatus};
@@ -490,6 +520,9 @@ create_customer(?customer_created(CustomerID, OwnerID, ShopID, Metadata, Contact
 set_customer(Customer, St = #st{}) ->
     St#st{customer = Customer}.
 
+set_create_customer_timestamp(CreatedAt, St = #st{}) ->
+    St#st{created_at = CreatedAt}.
+
 get_customer_status(#payproc_Customer{status = Status}) ->
     Status.
 
@@ -516,11 +549,41 @@ get_pending_binding_set(St) ->
         Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_pending()
     ].
 
+get_outdated_binding_set(St) ->
+    Bindings = get_bindings(get_customer(St)),
+    [get_binding_id(Binding) ||
+        Binding <- Bindings, is_binding_outdated(Binding, St) =:= true
+    ].
+
+is_binding_outdated(#payproc_CustomerBinding{id = BindingId, status = ?customer_binding_pending()}, St) ->
+    BindingStart = get_binding_start_timestamp(BindingId, St),
+    Now = hg_datetime:format_now(),
+    Deadline = hg_datetime:add_time_span(?MAX_BINDING_DURATION, BindingStart),
+    case hg_datetime:compare(Now, Deadline) of
+        later ->
+            true;
+        _Other ->
+            false
+    end;
+is_binding_outdated(_Bindinf, _St) ->
+    false.
+
 get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->
     BindingID.
 
 get_binding_status(#payproc_CustomerBinding{status = Status}) ->
     Status.
+
+get_binding_start_timestamp(BindingId, #st{binding_starts = Starts} = St) ->
+    BindingStart = maps:get(BindingId, Starts),
+    % Old bindings has `undefined` start timestamp.
+    % Using customer create timestamp instead.
+    case BindingStart of
+        undefined ->
+            St#st.created_at;
+        _ ->
+            BindingStart
+    end.
 
 assert_binding_status(StatusName, #payproc_CustomerBinding{status = {StatusName, _}}) ->
     ok;
@@ -732,10 +795,11 @@ marshal(binding_status, ?customer_binding_failed(Failure)) ->
         marshal(failure, Failure)
     ];
 
-marshal(binding_change_payload, ?customer_binding_started(CustomerBinding)) ->
+marshal(binding_change_payload, ?customer_binding_started(CustomerBinding, Timestamp)) ->
     [
         <<"started">>,
-        marshal(binding, CustomerBinding)
+        marshal(binding, CustomerBinding),
+        marshal(str, Timestamp)
     ];
 marshal(binding_change_payload, ?customer_binding_status_changed(CustomerBindingStatus)) ->
     [
@@ -945,7 +1009,9 @@ unmarshal(binding_status, [<<"failed">>, Failure]) ->
     ?customer_binding_failed(unmarshal(failure, Failure));
 
 unmarshal(binding_change_payload, [<<"started">>, Binding]) ->
-    ?customer_binding_started(unmarshal(binding, Binding));
+    ?customer_binding_started(unmarshal(binding, Binding), undefined);
+unmarshal(binding_change_payload, [<<"started">>, Binding, Timestamp]) ->
+    ?customer_binding_started(unmarshal(binding, Binding), Timestamp);
 unmarshal(binding_change_payload, [<<"status">>, BindingStatus]) ->
     ?customer_binding_status_changed(unmarshal(binding_status, BindingStatus));
 unmarshal(binding_change_payload, [<<"interaction">>, UserInteraction]) ->
@@ -1004,3 +1070,18 @@ unmarshal(metadata, Metadata) ->
 
 unmarshal(_, Other) ->
     Other.
+
+%%
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-spec test() -> _.
+
+-spec event_pol_timer_test() -> _.
+event_pol_timer_test() ->
+    ?assertEqual(get_event_pol_timeout(actual), ?SYNC_INTERVAL),
+    ?assert(get_event_pol_timeout(outdated) =< ?SYNC_OUTDATED_INTERVAL),
+    ?assert(get_event_pol_timeout(outdated) >= ?SYNC_OUTDATED_INTERVAL * 0.9).
+
+-endif.

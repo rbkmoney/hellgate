@@ -17,6 +17,7 @@
 %% Party support functions
 
 -export([get_party/1]).
+-export([get_party_revision/1]).
 -export([checkout/2]).
 
 -export([create_party/3]).
@@ -48,6 +49,7 @@
 -export([set_wallet/2]).
 
 -export_type([party/0]).
+-export_type([party_revision/0]).
 
 %% Asserts
 
@@ -57,6 +59,7 @@
 
 -type party()                 :: dmsl_domain_thrift:'Party'().
 -type party_id()              :: dmsl_domain_thrift:'PartyID'().
+-type party_revision()        :: dmsl_domain_thrift:'PartyRevision'().
 -type contract()              :: dmsl_domain_thrift:'Contract'().
 -type contract_id()           :: dmsl_domain_thrift:'ContractID'().
 -type contractor()            :: dmsl_domain_thrift:'PartyContractor'().
@@ -81,8 +84,15 @@
     party() | no_return().
 
 get_party(PartyID) ->
+    Revision = get_party_revision(PartyID),
+    checkout(PartyID, {revision, Revision}).
+
+-spec get_party_revision(party_id()) ->
+    party_revision() | no_return().
+
+get_party_revision(PartyID) ->
     {Client, Context} = get_party_client(),
-    unwrap_party_result(party_client_thrift:get(PartyID, Client, Context)).
+    unwrap_party_result(party_client_thrift:get_revision(PartyID, Client, Context)).
 
 -spec checkout(party_id(), party_client_thrift:party_revision_param()) ->
     party() | no_return().
