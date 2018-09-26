@@ -403,7 +403,7 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
         status          = ?pending(),
         cost            = Cost,
         payer           = Payer,
-        flow            = Flow
+        flow            = Flow,
         make_recurrent  = MakeRecurrent
     }.
 
