@@ -132,14 +132,20 @@ acceptable_provider(payment, ProviderRef, VS, Revision) ->
     } = hg_domain:get(Revision, {provider, ProviderRef}),
     _ = acceptable_payment_terms(Terms, VS, Revision),
     {ProviderRef, Provider};
-acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
-    % Use same provider check as for recurrent_paytool
-    acceptable_provider(recurrent_paytool, ProviderRef, VS, Revision);
 acceptable_provider(recurrent_paytool, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
         recurrent_paytool_terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
     _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
+    {ProviderRef, Provider};
+acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
+    % Use provider check combined from recurrent_paytool and payment check
+    Provider = #domain_Provider{
+        payment_terms = PaymentTerms,
+        recurrent_paytool_terms = RecurrentTerms
+    } = hg_domain:get(Revision, {provider, ProviderRef}),
+    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
+    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
     {ProviderRef, Provider}.
 
 %%
@@ -172,14 +178,26 @@ acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms
     _ = acceptable_payment_terms(Terms, VS, Revision),
     _ = acceptable_risk(RiskCoverage, VS),
     {TerminalRef, Terminal};
-acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
-    % Use same terminal check as for recurrent_paytool
-    acceptable_terminal(recurrent_paytool, TerminalRef, Provider, VS, Revision);
 acceptable_terminal(recurrent_paytool, TerminalRef, #domain_Provider{recurrent_paytool_terms = Terms}, VS, Revision) ->
     Terminal = #domain_Terminal{
         risk_coverage = RiskCoverage
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
+    _ = acceptable_risk(RiskCoverage, VS),
+    {TerminalRef, Terminal};
+acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
+    % Use provider check combined from recurrent_paytool and payment check
+    #domain_Provider{
+        payment_terms = PaymentTerms0,
+        recurrent_paytool_terms = RecurrentTerms
+    } = Provider,
+    Terminal = #domain_Terminal{
+        terms         = TerminalTerms,
+        risk_coverage = RiskCoverage
+    } = hg_domain:get(Revision, {terminal, TerminalRef}),
+    PaymentTerms = merge_payment_terms(PaymentTerms0, TerminalTerms),
+    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
+    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
     _ = acceptable_risk(RiskCoverage, VS),
     {TerminalRef, Terminal}.
 

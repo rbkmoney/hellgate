@@ -26,6 +26,7 @@
 -export([not_permitted_recurrent_test/1]).
 -export([not_exists_invoice_test/1]).
 -export([not_exists_payment_test/1]).
+-export([recurrent_risk_score_always_high/1]).
 
 %% Internal types
 
