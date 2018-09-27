@@ -68,7 +68,7 @@ get(Ref) ->
             Error
     end.
 
--spec get_payment(hg_machine:tag(), st()) ->
+-spec get_payment(hg_machine:tag() | payment_id(), st()) ->
     {ok, payment_st()} | {error, notfound}.
 
 get_payment({tag, Tag}, #st{payments = Ps}) ->
@@ -76,6 +76,13 @@ get_payment({tag, Tag}, #st{payments = Ps}) ->
         [{_ID, PaymentSession} | _] ->
             {ok, PaymentSession};
         [] ->
+            {error, notfound}
+    end;
+get_payment(PaymentID, St) ->
+    case try_get_payment_session(PaymentID, St) of
+        PaymentSession when PaymentSession /= undefined ->
+            {ok, PaymentSession};
+        undefined ->
             {error, notfound}
     end.
 

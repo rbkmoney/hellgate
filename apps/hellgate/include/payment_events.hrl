@@ -44,6 +44,12 @@
     }
 ).
 
+-define(rec_token_acquired(Token),
+    {invoice_payment_rec_token_acquired,
+        #payproc_InvoicePaymentRecTokenAcquired{token = Token}
+    }
+).
+
 -define(pending(),
     {pending, #domain_InvoicePaymentPending{}}).
 -define(processed(),
