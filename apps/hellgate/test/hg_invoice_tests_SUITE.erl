@@ -42,6 +42,7 @@
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
+-export([party_revision_check/1]).
 -export([payment_risk_score_check/1]).
 -export([payment_risk_score_check_fail/1]).
 -export([invalid_payment_adjustment/1]).
@@ -125,6 +126,7 @@ groups() ->
 
             payment_risk_score_check,
             payment_risk_score_check_fail,
+            party_revision_check,
 
             invalid_payment_w_deprived_party,
             external_account_posting,
@@ -255,17 +257,21 @@ end_per_suite(C) ->
 
 -define(invoice(ID), #domain_Invoice{id = ID}).
 -define(payment(ID), #domain_InvoicePayment{id = ID}).
+-define(payment(ID, Revision), #domain_InvoicePayment{id = ID, party_revision = Revision}).
 -define(customer(ID), #payproc_Customer{id = ID}).
 -define(adjustment(ID), #domain_InvoicePaymentAdjustment{id = ID}).
 -define(adjustment(ID, Status), #domain_InvoicePaymentAdjustment{id = ID, status = Status}).
+-define(adjustment_revision(Revision), #domain_InvoicePaymentAdjustment{party_revision = Revision}).
 -define(invoice_state(Invoice), #payproc_Invoice{invoice = Invoice}).
 -define(invoice_state(Invoice, Payments), #payproc_Invoice{invoice = Invoice, payments = Payments}).
 -define(payment_state(Payment), #payproc_InvoicePayment{payment = Payment}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
+-define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 -define(trx_info(ID, Extra), #domain_TransactionInfo{id = ID, extra = Extra}).
+
 
 -define(invalid_invoice_status(Status),
     {exception, #payproc_InvalidInvoiceStatus{status = Status}}).
@@ -841,6 +847,38 @@ payment_risk_score_check_fail(C) ->
     ] = next_event(InvoiceID1, Client),
     PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client).
+
+-spec party_revision_check(config()) -> test_return().
+
+party_revision_check(C) ->
+    {PartyID, PartyClient, Client, ShopID} = party_revision_check_init_params(C),
+    {InvoiceRev, InvoiceID} = invoice_create_and_get_revision(PartyID, Client, ShopID),
+
+    party_revision_increment(ShopID, PartyClient),
+
+    {PaymentRev, PaymentID} = make_payment_and_get_revision(InvoiceID, Client),
+    PaymentRev = InvoiceRev + 1,
+
+    party_revision_increment(ShopID, PartyClient),
+
+    AdjustmentRev = make_payment_adjustment_and_get_revision(PaymentID, InvoiceID, Client),
+    AdjustmentRev = PaymentRev + 1,
+
+    party_revision_increment(ShopID, PartyClient),
+
+    % add some cash to make smooth refund after
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 200000),
+    InvoiceID2 = create_invoice(InvoiceParams2, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+
+    RefundRev = make_payment_refund_and_get_revision(PaymentID, InvoiceID, Client),
+    RefundRev = AdjustmentRev + 1.
 
 -spec invalid_payment_adjustment(config()) -> test_return().
 
@@ -2156,6 +2194,83 @@ wait_for_binding_success(CustomerID, BindingID, TimeLeft, Client) when TimeLeft 
     end;
 wait_for_binding_success(_, _, _, _) ->
     timeout.
+
+party_revision_check_init_params(C) ->
+    PartyID = <<"RevChecker">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    {PartyID, PartyClient, Client, ShopID}.
+
+invoice_create_and_get_revision(PartyID, Client, ShopID) ->
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, make_due_date(10), 5000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()) = ?invoice_w_revision(InvoiceRev))] =
+        next_event(InvoiceID, Client),
+    {InvoiceRev, InvoiceID}.
+
+make_payment_and_get_revision(InvoiceID, Client) ->
+    PaymentParams = make_payment_params(),
+    ?payment_state(
+        ?payment(PaymentID, PaymentRev)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client, 0),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    {PaymentRev, PaymentID}.
+
+make_payment_adjustment_and_get_revision(PaymentID, InvoiceID, Client) ->
+    % make adjustment
+    Params = make_adjustment_params(Reason = <<"imdrunk">>),
+    ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment = ?adjustment_revision(AdjustmentRev) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, Params, Client),
+    Adjustment = #domain_InvoicePaymentAdjustment{id = AdjustmentID, reason = Reason} =
+        hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
+    ] = next_event(InvoiceID, Client),
+    ok =
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+    ] = next_event(InvoiceID, Client),
+    AdjustmentRev.
+
+make_payment_refund_and_get_revision(PaymentID, InvoiceID, Client) ->
+    % create a refund finally
+    RefundParams = make_refund_params(),
+    Refund = #domain_InvoicePaymentRefund{id = RefundID, party_revision = RefundRev} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
+    ] = next_event(InvoiceID, Client),
+    #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    RefundRev.
+
+party_revision_increment(ShopID, PartyClient) ->
+    Shop = hg_client_party:get_shop(ShopID, PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient).
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
