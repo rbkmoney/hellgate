@@ -18,7 +18,7 @@
 
 -export([init/2]).
 -export([process_signal/3]).
--export([process_call/3]).
+-export([process_call/4]).
 
 %% Event provider callbacks
 
@@ -244,10 +244,10 @@ process_signal(timeout, _History, _AuxSt) ->
 process_signal({repair, _}, _History, _AuxSt) ->
     #{}.
 
--spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_call(hg_machine:id(), call(), hg_machine:history(), hg_machine:auxst()) ->
     {hg_machine:response(), hg_machine:result()}.
 
-process_call(Call, History, _AuxSt) ->
+process_call(_ID, Call, History, _AuxSt) ->
     Tpl = collapse_history(unmarshal(History)),
     {Response, Changes} = handle_call(Call, Tpl),
     {{ok, Response}, #{events => [marshal(Changes)]}}.

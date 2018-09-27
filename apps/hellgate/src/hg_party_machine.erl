@@ -11,7 +11,7 @@
 -export([namespace/0]).
 -export([init/2]).
 -export([process_signal/3]).
--export([process_call/3]).
+-export([process_call/4]).
 
 %% Event provider callbacks
 
@@ -36,6 +36,7 @@
 
 -define(NS, <<"party">>).
 -define(STEP, 5).
+-define(SNAPSHOT_STEP, 10).
 
 -record(st, {
     party                :: undefined | party(),
@@ -44,7 +45,7 @@
     claims   = #{}       :: #{claim_id() => claim()},
     meta = #{}           :: meta(),
     migration_data = #{} :: #{any() => any()},
-    event_count = 0      :: non_neg_integer()
+    last_event = 0       :: non_neg_integer()
 }).
 
 -type st() :: #st{}.
@@ -113,20 +114,21 @@ process_signal(timeout, _History, _AuxSt) ->
 process_signal({repair, _}, _History, _AuxSt) ->
     #{}.
 
--spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_call(hg_machine:id(), call(), hg_machine:history(), hg_machine:auxst()) ->
     {hg_machine:response(), hg_machine:result()}.
 
-process_call(Call, History, _AuxSt) ->
-    St = collapse_history(unwrap_events(History)),
+process_call(PartyID, Call, History, _AuxSt) ->
     try
-        Party = get_st_party(St),
         scoper:scope(
             party,
             #{
-                id => Party#domain_Party.id,
+                id => PartyID,
                 activity => get_call_name(Call)
             },
-            fun() -> handle_call(Call, {St, []}) end
+            fun() ->
+                St = get_state(PartyID, History),
+                handle_call(Call, {St, []})
+            end
         )
     catch
         throw:Exception ->
@@ -257,7 +259,7 @@ publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     hg_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
-    {{party_id, PartyID}, unwrap_event(Ev)}.
+    {{party_id, PartyID}, unwrap_event_payload(Ev)}.
 
 %%
 -spec start(party_id(), Args :: term()) ->
@@ -277,11 +279,44 @@ start(PartyID, Args) ->
 get_party(PartyID) ->
     get_st_party(get_state(PartyID)).
 
+get_state(PartyID) ->
+    ReversedHistoryPart = get_history(PartyID, undefined, ?SNAPSHOT_STEP, backward),
+    get_state(PartyID, ReversedHistoryPart).
+
+get_state(PartyID, ReversedHistoryPart) ->
+    get_state(PartyID, ReversedHistoryPart, []).
+
+get_state(PartyID, ReversedHistoryPart, EventsAcc) ->
+    case parse_history(ReversedHistoryPart) of
+        {undefined, [{FirstID, _, _} | _] = Events} when FirstID > 1 ->
+            NewHistoryPart = get_history(PartyID, FirstID, ?SNAPSHOT_STEP, backward),
+            get_state(PartyID, NewHistoryPart, Events ++ EventsAcc);
+        {undefined, Events} ->
+            merge_events(Events ++ EventsAcc, #st{revision = hg_domain:head()});
+        {St, Events} ->
+            merge_events(Events ++ EventsAcc, St)
+    end.
+
+parse_history(ReversedHistoryPart) ->
+    parse_history(ReversedHistoryPart, []).
+
+parse_history([WrappedEvent | Others], EventsAcc) ->
+    Event = unwrap_event(WrappedEvent),
+    case unwrap_state(WrappedEvent) of
+        undefined ->
+            parse_history(Others, [Event | EventsAcc]);
+        #st{} = St ->
+            {St, [Event | EventsAcc]}
+    end;
+parse_history([], EventsAcc) ->
+    {undefined, EventsAcc}.
+
 -spec checkout(party_id(), party_revision_param()) ->
     dmsl_domain_thrift:'Party'() | no_return().
 
 checkout(PartyID, RevisionParam) ->
-    case checkout_history(get_history(PartyID), RevisionParam) of
+    Events = unwrap_events(get_history(PartyID, undefined, undefined)),
+    case checkout_history(Events, RevisionParam) of
         {ok, St} ->
             get_st_party(St);
         {error, Reason} ->
@@ -299,7 +334,14 @@ get_last_revision(PartyID) ->
     term() | no_return().
 
 call(PartyID, Call) ->
-    map_error(hg_machine:call(?NS, PartyID, Call)).
+    map_error(hg_machine:call(
+        ?NS,
+        PartyID,
+        Call,
+        undefined,
+        ?SNAPSHOT_STEP,
+        backward
+    )).
 
 map_error({ok, CallResult}) ->
     case CallResult of
@@ -343,16 +385,14 @@ get_metadata(NS, PartyID) ->
     [dmsl_payment_processing_thrift:'Event'()].
 
 get_public_history(PartyID, AfterID, Limit) ->
-    [publish_party_event({party_id, PartyID}, Ev) || Ev <- get_history(PartyID, AfterID, Limit)].
-
-get_state(PartyID) ->
-    collapse_history(get_history(PartyID)).
-
-get_history(PartyID) ->
-    map_history_error(hg_machine:get_history(?NS, PartyID)).
+    Events = unwrap_events(get_history(PartyID, AfterID, Limit)),
+    [publish_party_event({party_id, PartyID}, Ev) || Ev <- Events].
 
 get_history(PartyID, AfterID, Limit) ->
-    map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit)).
+    get_history(PartyID, AfterID, Limit, forward).
+
+get_history(PartyID, AfterID, Limit, Direction) ->
+    map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, Direction)).
 
 get_revision_of_part(PartyID, History, Last, Step) ->
     case find_revision_in_history(History) of
@@ -366,7 +406,7 @@ get_revision_of_part(PartyID, History, Last, Step) ->
     end.
 
 get_history_part(PartyID, Last, Step) ->
-    case map_history_error(hg_machine:get_history(?NS, PartyID, Last, Step, backward)) of
+    case unwrap_events(get_history(PartyID, Last, Step, backward)) of
         [] ->
             {[], 0, 0};
         History ->
@@ -395,7 +435,7 @@ find_revision_in_changes([Event | Rest]) ->
     end.
 
 map_history_error({ok, Result}) ->
-    unwrap_events(Result);
+    Result;
 map_history_error({error, notfound}) ->
     throw(#payproc_PartyNotFound{}).
 
@@ -547,21 +587,15 @@ apply_accepted_claim(Claim, St) ->
     end.
 
 ok(Changes, St) ->
-    #{events => [wrap_event(?party_ev(Changes), St)]}.
+    #{events => [wrap_event_payload(?party_ev(Changes), St)]}.
 
 respond(Response, Changes, St) ->
-    {{ok, Response}, #{events => [wrap_event(?party_ev(Changes), St)]}}.
+    {{ok, Response}, #{events => [wrap_event_payload(?party_ev(Changes), St)]}}.
 
 respond_w_exception(Exception) ->
     {{exception, Exception}, #{}}.
 
 %%
-
--spec collapse_history(hg_machine:history()) -> st().
-
-collapse_history(History) ->
-    {ok, St} = checkout_history(History, {timestamp, hg_datetime:format_now()}),
-    St.
 
 -spec checkout_history(hg_machine:history(), party_revision_param()) -> {ok, st()} | {error, revision_not_found}.
 
@@ -571,7 +605,7 @@ checkout_history(History, {timestamp, Timestamp}) ->
 checkout_history(History, {revision, Revision}) ->
     checkout_history_by_revision(History, Revision, #st{revision = hg_domain:head()}).
 
-checkout_history_by_timestamp([{_, _, Ev} | Rest], Timestamp, #st{timestamp = PrevTimestamp} = St) ->
+checkout_history_by_timestamp([Ev | Rest], Timestamp, #st{timestamp = PrevTimestamp} = St) ->
     St1 = merge_event(Ev, St),
     EventTimestamp = St1#st.timestamp,
     case hg_datetime:compare(EventTimestamp, Timestamp) of
@@ -585,7 +619,7 @@ checkout_history_by_timestamp([{_, _, Ev} | Rest], Timestamp, #st{timestamp = Pr
 checkout_history_by_timestamp([], Timestamp, St) ->
     {ok, St#st{timestamp = Timestamp}}.
 
-checkout_history_by_revision([{_, _, Ev} | Rest], Revision, St) ->
+checkout_history_by_revision([Ev | Rest], Revision, St) ->
     St1 = merge_event(Ev, St),
     case get_st_party(St1) of
         #domain_Party{revision = Revision1} when Revision1 > Revision ->
@@ -601,8 +635,13 @@ checkout_history_by_revision([], Revision, St) ->
             {error, revision_not_found}
     end.
 
-merge_event(?party_ev(PartyChanges), St) when is_list(PartyChanges) ->
-     lists:foldl(fun merge_party_change/2, St, PartyChanges).
+merge_events(Events, St) ->
+    lists:foldl(fun merge_event/2, St, Events).
+
+merge_event({ID, _Dt, ?party_ev(PartyChanges)}, #st{last_event = LastEventID} = St)
+    when is_list(PartyChanges) andalso ID =:= LastEventID + 1
+->
+     lists:foldl(fun merge_party_change/2, St#st{last_event = ID}, PartyChanges).
 
 merge_party_change(?party_created(PartyID, ContactInfo, Timestamp), St) ->
     St#st{
@@ -893,16 +932,15 @@ get_template(TemplateRef, Revision) ->
 
 -define(TOP_VERSION, 6).
 -define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
--define(SNAPSHOT_STEP, 10).
 
-wrap_event(Event, #st{event_count = EventCount} = St) ->
+wrap_event_payload(Event, #st{last_event = LastEventID} = St) ->
     ContentType = ?CT_ERLANG_BINARY,
     Meta0 = #{
         <<"vsn">> => ?TOP_VERSION,
         <<"ct">>  => ContentType
     },
-    Meta1 = case (EventCount rem ?SNAPSHOT_STEP) of
-        0 when EventCount > 0 ->
+    Meta1 = case (LastEventID rem ?SNAPSHOT_STEP) of
+        0 when LastEventID > 0 ->
             Meta0#{<<"state_snapshot">> => encode_state(ContentType, St)};
         _ ->
             Meta0
@@ -911,14 +949,12 @@ wrap_event(Event, #st{event_count = EventCount} = St) ->
     [Meta1, Data].
 
 unwrap_events(History) ->
-    lists:map(
-        fun({ID, Dt, Event}) ->
-            {ID, Dt, unwrap_event(Event)}
-        end,
-        History
-    ).
+    [unwrap_event(E) || E <- History].
 
-unwrap_event([
+unwrap_event({ID, Dt, Event}) ->
+    {ID, Dt, unwrap_event_payload(Event)}.
+
+unwrap_event_payload([
     #{
         <<"vsn">> := Version,
         <<"ct">>  := ContentType
@@ -927,16 +963,28 @@ unwrap_event([
 ]) ->
     transmute([Version, decode_event(ContentType, EncodedEvent)]);
 %% TODO legacy support, will be removed after migration
-unwrap_event(Event) when is_list(Event) ->
+unwrap_event_payload(Event) when is_list(Event) ->
     transmute(hg_party_marshalling:unmarshal(Event));
-unwrap_event({bin, Bin}) when is_binary(Bin) ->
+unwrap_event_payload({bin, Bin}) when is_binary(Bin) ->
     transmute([1, binary_to_term(Bin)]).
+
+unwrap_state({
+    _ID,
+    _Dt,
+    [
+        #{<<"ct">>  := ContentType, <<"state_snapshot">> := EncodedSt},
+        _EncodedEvent
+    ]
+}) ->
+    decode_state(ContentType, EncodedSt);
+unwrap_state(_) ->
+    undefined.
 
 encode_state(?CT_ERLANG_BINARY, St) ->
     {bin, term_to_binary(St)}.
 
-% decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
-%     binary_to_term(EncodedSt).
+decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
+    binary_to_term(EncodedSt).
 
 encode_event(?CT_ERLANG_BINARY, Event) ->
     {bin, term_to_binary(Event)}.

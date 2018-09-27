@@ -42,7 +42,7 @@
 -type call() :: _.
 -type response() :: ok | {ok, term()} | {exception, term()}.
 
--callback process_call(call(), history(), auxst()) ->
+-callback process_call(id(), call(), history(), auxst()) ->
     {response(), result()}.
 
 -type context() :: #{
@@ -65,6 +65,7 @@
 
 -export([start/3]).
 -export([call/3]).
+-export([call/6]).
 -export([repair/3]).
 -export([get_history/2]).
 -export([get_history/4]).
@@ -102,12 +103,24 @@ start(Ns, ID, Args) ->
     {ok, term()} | {error, notfound | failed} | no_return().
 
 call(Ns, Ref, Args) ->
-    call(Ns, Ref, Args, #'HistoryRange'{}).
+    call(Ns, Ref, Args, undefined, undefined, forward).
 
--spec call(ns(), ref(), Args :: term(), history_range()) ->
+-spec call(
+    ns(),
+    ref(),
+    Args :: term(),
+    After :: mg_proto_base_thrift:'EventID'() | undefined,
+    Limit :: integer() | undefined,
+    Direction :: forward | backward
+) ->
     {ok, term()} | {error, notfound | failed} | no_return().
 
-call(Ns, Ref, Args, HistoryRange) ->
+call(Ns, Ref, Args, After, Limit, Direction) ->
+    HistoryRange = #'HistoryRange'{
+        'after' = After,
+        'limit' = Limit,
+        'direction' = Direction
+    },
     Descriptor = prepare_descriptor(Ns, Ref, HistoryRange),
     case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
         {ok, Response} ->
@@ -251,13 +264,13 @@ marshal_signal_result(Result = #{}, AuxStWas) ->
         Call :: mg_proto_state_processing_thrift:'Args'(),
         Result :: mg_proto_state_processing_thrift:'CallResult'().
 
-dispatch_call(Ns, Payload, #'Machine'{history = History0, aux_state = AuxSt0}) ->
+dispatch_call(Ns, Payload, #'Machine'{id = ID, history = History0, aux_state = AuxSt0}) ->
     Args = unwrap_args(Payload),
     History = unmarshal_events(History0),
     AuxSt = unmarshal_aux_st(AuxSt0),
     _ = lager:debug("dispatch call with args = ~p, history = ~p, aux state = ~p", [Args, History, AuxSt]),
     Module = get_handler_module(Ns),
-    Result = Module:process_call(Args, History, AuxSt),
+    Result = Module:process_call(ID, Args, History, AuxSt),
     marshal_call_result(Result, AuxSt).
 
 marshal_call_result({Response, Result}, AuxStWas) ->

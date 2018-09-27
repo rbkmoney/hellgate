@@ -26,7 +26,7 @@
 -export([namespace     /0]).
 -export([init          /2]).
 -export([process_signal/3]).
--export([process_call  /3]).
+-export([process_call  /4]).
 
 %% Types
 -record(st, {
@@ -500,9 +500,9 @@ create_session() ->
 
 -type call() :: abandon.
 
--spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_call(hg_machine:id(), call(), hg_machine:history(), hg_machine:auxst()) ->
     {hg_machine:response(), hg_machine:result()}.
-process_call(Call, History, _AuxSt) ->
+process_call(_ID, Call, History, _AuxSt) ->
     St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
