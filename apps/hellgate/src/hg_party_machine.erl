@@ -103,7 +103,8 @@ init(ID, PartyParams) ->
 
 process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = hg_datetime:format_now(),
-    ok([?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)], #st{}).
+    St = #st{revision = hg_domain:head()},
+    ok([?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)], St).
 
 -spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
