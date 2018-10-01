@@ -109,7 +109,7 @@ call(Ns, Ref, Args) ->
     ns(),
     ref(),
     Args :: term(),
-    After :: mg_proto_base_thrift:'EventID'() | undefined,
+    After :: event_id() | undefined,
     Limit :: integer() | undefined,
     Direction :: forward | backward
 ) ->
