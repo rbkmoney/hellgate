@@ -1,3 +1,4 @@
+service_name: machinegun
 namespaces:
     invoice:
         event_sink: payproc
