@@ -8,8 +8,6 @@
 -type ns() :: mg_proto_base_thrift:'Namespace'().
 -type args() :: _.
 
--type machine() :: mg_proto_state_processing_thrift:'Machine'().
-
 -type event() :: {event_id(), timestamp(), event_payload()}.
 -type event_id() :: mg_proto_base_thrift:'EventID'().
 -type event_payload() :: msgp().
@@ -21,6 +19,12 @@
 -type direction()     :: mg_proto_state_processing_thrift:'Direction'().
 -type descriptor()    :: mg_proto_state_processing_thrift:'MachineDescriptor'().
 
+-type machine() :: #{
+    id          := id(),
+    history     := history(),
+    aux_state   := auxst()
+}.
+
 -type result() :: #{
     events    => [event_payload()],
     action    => hg_machine_action:t(),
@@ -30,19 +34,19 @@
 -callback namespace() ->
     ns().
 
--callback init(id(), args()) ->
+-callback init(args(), machine()) ->
     result().
 
 -type signal() ::
     timeout | {repair, args()}.
 
--callback process_signal(signal(), history(), auxst()) ->
+-callback process_signal(signal(), machine()) ->
     result().
 
 -type call() :: _.
 -type response() :: ok | {ok, term()} | {exception, term()}.
 
--callback process_call(id(), call(), history(), auxst()) ->
+-callback process_call(call(), machine()) ->
     {response(), result()}.
 
 -type context() :: #{
@@ -62,6 +66,7 @@
 -export_type([result/0]).
 -export_type([context/0]).
 -export_type([response/0]).
+-export_type([machine/0]).
 
 -export([start/3]).
 -export([call/3]).
@@ -202,7 +207,7 @@ handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
         activity => signal,
         signal => Type
     }),
-    dispatch_signal(Ns, Signal, Machine);
+    dispatch_signal(Ns, Signal, unmarshal_machine(Machine));
 
 handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
     #'CallArgs'{arg = Payload, machine = #'Machine'{id = ID} = Machine} = Args,
@@ -211,7 +216,7 @@ handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
         id => ID,
         activity => call
     }),
-    dispatch_call(Ns, Payload, Machine).
+    dispatch_call(Ns, Payload, unmarshal_machine(Machine)).
 
 %%
 
@@ -224,31 +229,27 @@ handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
         Result ::
             mg_proto_state_processing_thrift:'SignalResult'().
 
-dispatch_signal(Ns, #'InitSignal'{arg = Payload}, #'Machine'{id = ID}) ->
+dispatch_signal(Ns, #'InitSignal'{arg = Payload}, Machine) ->
     Args = unwrap_args(Payload),
-    _ = lager:debug("dispatch init with id = ~s and args = ~p", [ID, Args]),
+    _ = log_dispatch(init, Args, Machine),
     Module = get_handler_module(Ns),
-    Result = Module:init(ID, Args),
-    marshal_signal_result(Result, undefined);
+    Result = Module:init(Args, Machine),
+    marshal_signal_result(Result, Machine);
 
-dispatch_signal(Ns, #'TimeoutSignal'{}, #'Machine'{history = History0, aux_state = AuxSt0}) ->
-    History = unmarshal_events(History0),
-    AuxSt = unmarshal_aux_st(AuxSt0),
-    _ = lager:debug("dispatch timeout with history = ~p, aux state = ~p", [History, AuxSt]),
+dispatch_signal(Ns, #'TimeoutSignal'{}, Machine) ->
+    _ = log_dispatch(timeout, Machine),
     Module = get_handler_module(Ns),
-    Result = Module:process_signal(timeout, History, AuxSt),
-    marshal_signal_result(Result, AuxSt);
+    Result = Module:process_signal(timeout, Machine),
+    marshal_signal_result(Result, Machine);
 
-dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, #'Machine'{history = History0, aux_state = AuxSt0}) ->
+dispatch_signal(Ns, #'RepairSignal'{arg = Payload}, Machine) ->
     Args = unwrap_args(Payload),
-    History = unmarshal_events(History0),
-    AuxSt = unmarshal_aux_st(AuxSt0),
-    _ = lager:debug("dispatch repair with args = ~p, history = ~p, aux state = ~p", [Args, History, AuxSt]),
+    _ = log_dispatch(repair, Args, Machine),
     Module = get_handler_module(Ns),
-    Result = Module:process_signal({repair, Args}, History, AuxSt),
-    marshal_signal_result(Result, AuxSt).
+    Result = Module:process_signal({repair, Args}, Machine),
+    marshal_signal_result(Result, Machine).
 
-marshal_signal_result(Result = #{}, AuxStWas) ->
+marshal_signal_result(Result = #{}, #{aux_state := AuxStWas}) ->
     _ = lager:debug("signal result = ~p", [Result]),
     Change = #'MachineStateChange'{
         events = marshal_events(maps:get(events, Result, [])),
@@ -264,16 +265,14 @@ marshal_signal_result(Result = #{}, AuxStWas) ->
         Call :: mg_proto_state_processing_thrift:'Args'(),
         Result :: mg_proto_state_processing_thrift:'CallResult'().
 
-dispatch_call(Ns, Payload, #'Machine'{id = ID, history = History0, aux_state = AuxSt0}) ->
+dispatch_call(Ns, Payload, Machine) ->
     Args = unwrap_args(Payload),
-    History = unmarshal_events(History0),
-    AuxSt = unmarshal_aux_st(AuxSt0),
-    _ = lager:debug("dispatch call with args = ~p, history = ~p, aux state = ~p", [Args, History, AuxSt]),
+    _ = log_dispatch(call, Args, Machine),
     Module = get_handler_module(Ns),
-    Result = Module:process_call(ID, Args, History, AuxSt),
-    marshal_call_result(Result, AuxSt).
+    Result = Module:process_call(Args, Machine),
+    marshal_call_result(Result, Machine).
 
-marshal_call_result({Response, Result}, AuxStWas) ->
+marshal_call_result({Response, Result}, #{aux_state := AuxStWas}) ->
     _ = lager:debug("call response = ~p with result = ~p", [Response, Result]),
     Change = #'MachineStateChange'{
         events = marshal_events(maps:get(events, Result, [])),
@@ -336,6 +335,25 @@ init(MachineHandlers) ->
 
 get_handler_module(Ns) ->
     ets:lookup_element(?TABLE, Ns, 2).
+
+log_dispatch(Operation, #{id := ID, history := History, aux_state := AuxSt}) ->
+    lager:debug(
+        "dispatch ~p with id = ~p, history = ~p, aux state = ~p",
+        [Operation, ID, History, AuxSt]
+    ).
+
+log_dispatch(Operation, Args, #{id := ID, history := History, aux_state := AuxSt}) ->
+    lager:debug(
+        "dispatch ~p with id = ~p, args = ~p, history = ~p, aux state = ~p",
+        [Operation, ID, Args, History, AuxSt]
+    ).
+
+unmarshal_machine(#'Machine'{id = ID, history = History, aux_state = AuxSt}) ->
+    #{
+        id        => ID,
+        history   => unmarshal_events(History),
+        aux_state => unmarshal_aux_st(AuxSt)
+    }.
 
 marshal_events(Events) when is_list(Events) ->
     [hg_msgpack_marshalling:marshal(Event) || Event <- Events].

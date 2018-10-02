@@ -10,8 +10,8 @@
 
 -export([namespace/0]).
 -export([init/2]).
--export([process_signal/3]).
--export([process_call/4]).
+-export([process_signal/2]).
+-export([process_call/2]).
 
 %% Event provider callbacks
 
@@ -37,6 +37,7 @@
 -define(NS, <<"party">>).
 -define(STEP, 5).
 -define(SNAPSHOT_STEP, 10).
+-define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
 
 -record(st, {
     party                :: undefined | party(),
@@ -80,6 +81,11 @@
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 -type party_revision()  :: dmsl_domain_thrift:'PartyRevision'().
 
+-type content_type()    :: binary().
+-type partyAuxSt()      :: #{
+    snapshot_index := [{EventID :: non_neg_integer(), party_revision()}]
+}.
+
 -export_type([party_revision/0]).
 
 -spec namespace() ->
@@ -88,10 +94,10 @@
 namespace() ->
     ?NS.
 
--spec init(party_id(), dmsl_payment_processing_thrift:'PartyParams'()) ->
+-spec init(dmsl_payment_processing_thrift:'PartyParams'(), hg_machine:machine()) ->
     hg_machine:result().
 
-init(ID, PartyParams) ->
+init(PartyParams, #{id := ID}) ->
     scoper:scope(
         party,
         #{
@@ -103,22 +109,25 @@ init(ID, PartyParams) ->
 
 process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = hg_datetime:format_now(),
-    St = #st{revision = hg_domain:head()},
-    ok([?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)], St).
+    Changes = [?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)],
+    #{
+        events  => [wrap_event_payload(?party_ev(Changes))],
+        auxst   => wrap_aux_state(#{snapshot_index => []})
+    }.
 
--spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
 
-process_signal(timeout, _History, _AuxSt) ->
+process_signal(timeout, _Machine) ->
     #{};
 
-process_signal({repair, _}, _History, _AuxSt) ->
+process_signal({repair, _}, _Machine) ->
     #{}.
 
--spec process_call(hg_machine:id(), call(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
 
-process_call(PartyID, Call, History, _AuxSt) ->
+process_call(Call, #{id := PartyID, history := History, aux_state := WrappedAuxSt}) ->
     try
         scoper:scope(
             party,
@@ -127,8 +136,10 @@ process_call(PartyID, Call, History, _AuxSt) ->
                 activity => get_call_name(Call)
             },
             fun() ->
+                AuxSt = unwrap_aux_state(WrappedAuxSt),
+                _ = lager:warning("~nPartyID: ~p~nAuxSt: ~p", [PartyID, AuxSt]),
                 St = get_state(PartyID, History),
-                handle_call(Call, {St, []})
+                handle_call(Call, AuxSt, St)
             end
         )
     catch
@@ -141,27 +152,29 @@ get_call_name(Call) when is_tuple(Call) ->
 get_call_name(Call) when is_atom(Call) ->
     Call.
 
-handle_call({block, Target, Reason}, {St, _}) ->
+handle_call({block, Target, Reason}, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(
         ok,
         [block(Target, Reason, Timestamp), ?revision_changed(Timestamp, Revision)],
+        AuxSt,
         St
     );
 
-handle_call({unblock, Target, Reason}, {St, _}) ->
+handle_call({unblock, Target, Reason}, AuxSt, St) ->
     ok = assert_blocked(Target, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(
         ok,
         [unblock(Target, Reason, Timestamp), ?revision_changed(Timestamp, Revision)],
+        AuxSt,
         St
     );
 
-handle_call({suspend, Target}, {St, _}) ->
+handle_call({suspend, Target}, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
     ok = assert_active(Target, St),
     Timestamp = hg_datetime:format_now(),
@@ -169,10 +182,11 @@ handle_call({suspend, Target}, {St, _}) ->
     respond(
         ok,
         [suspend(Target, Timestamp), ?revision_changed(Timestamp, Revision)],
+        AuxSt,
         St
     );
 
-handle_call({activate, Target}, {St, _}) ->
+handle_call({activate, Target}, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
     ok = assert_suspended(Target, St),
     Timestamp = hg_datetime:format_now(),
@@ -180,43 +194,48 @@ handle_call({activate, Target}, {St, _}) ->
     respond(
         ok,
         [activate(Target, Timestamp), ?revision_changed(Timestamp, Revision)],
+        AuxSt,
         St
     );
 
-handle_call({set_metadata, NS, Data}, {St, _}) ->
+handle_call({set_metadata, NS, Data}, AuxSt, St) ->
     respond(
         ok,
         [?party_meta_set(NS, Data)],
+        AuxSt,
         St
     );
 
-handle_call({remove_metadata, NS}, {St, _}) ->
+handle_call({remove_metadata, NS}, AuxSt, St) ->
     _ = get_st_metadata(NS, St),
     respond(
         ok,
         [?party_meta_removed(NS)],
+        AuxSt,
         St
     );
 
-handle_call({create_claim, Changeset}, {St, _}) ->
+handle_call({create_claim, Changeset}, AuxSt, St) ->
     ok = assert_party_operable(St),
     {Claim, Changes} = create_claim(Changeset, St),
     respond(
         Claim,
         Changes,
+        AuxSt,
         St
     );
 
-handle_call({update_claim, ID, ClaimRevision, Changeset}, {St, _}) ->
+handle_call({update_claim, ID, ClaimRevision, Changeset}, AuxSt, St) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     respond(
         ok,
         update_claim(ID, Changeset, St),
+        AuxSt,
         St
     );
 
-handle_call({accept_claim, ID, ClaimRevision}, {St, _}) ->
+handle_call({accept_claim, ID, ClaimRevision}, AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
@@ -229,25 +248,28 @@ handle_call({accept_claim, ID, ClaimRevision}, {St, _}) ->
     respond(
         ok,
         [finalize_claim(Claim, Timestamp), ?revision_changed(Timestamp, Revision)],
+        AuxSt,
         St
     );
 
-handle_call({deny_claim, ID, ClaimRevision, Reason}, {St, _}) ->
+handle_call({deny_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:deny(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
     respond(
         ok,
         [finalize_claim(Claim, get_st_timestamp(St))],
+        AuxSt,
         St
     );
 
-handle_call({revoke_claim, ID, ClaimRevision, Reason}, {St, _}) ->
+handle_call({revoke_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Claim = hg_claim:revoke(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
     respond(
         ok,
         [finalize_claim(Claim, get_st_timestamp(St))],
+        AuxSt,
         St
     ).
 
@@ -587,14 +609,39 @@ apply_accepted_claim(Claim, St) ->
             St
     end.
 
-ok(Changes, St) ->
-    #{events => [wrap_event_payload(?party_ev(Changes), St)]}.
+respond(Response, Changes, AuxSt, St) ->
+    {Events, NewAuxSt} = prepare_respond(Changes, AuxSt, St),
+    {
+        {ok, Response},
+        #{
+            events  => Events,
+            auxst   => NewAuxSt
+        }
+    }.
 
-respond(Response, Changes, St) ->
-    {{ok, Response}, #{events => [wrap_event_payload(?party_ev(Changes), St)]}}.
+prepare_respond(Changes, AuxSt, St) ->
+    case is_the_right_moment_to_save_snapshot(St) of
+        true ->
+            #domain_Party{revision = PartyRevision} = get_st_party(St),
+            EventID = St#st.last_event + 1,
+            NewAuxSt = append_snapshot_index(EventID, PartyRevision, AuxSt),
+            {
+                [wrap_event_payload_w_snapshot(?party_ev(Changes), St)],
+                wrap_aux_state(NewAuxSt)
+            };
+        false ->
+            {
+                [wrap_event_payload(?party_ev(Changes))],
+                wrap_aux_state(AuxSt)
+            }
+    end.
 
 respond_w_exception(Exception) ->
     {{exception, Exception}, #{}}.
+
+append_snapshot_index(EventID, PartyRevision, AuxSt) ->
+    SnapshotIndex = maps:get(snapshot_index, AuxSt, []),
+    AuxSt#{snapshot_index => [{EventID, PartyRevision} | SnapshotIndex]}.
 
 %%
 
@@ -932,22 +979,30 @@ get_template(TemplateRef, Revision) ->
 %% TODO add transmutations for new international legal entities and bank accounts
 
 -define(TOP_VERSION, 6).
--define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
 
-wrap_event_payload(Event, #st{last_event = LastEventID} = St) ->
+wrap_event_payload(Event) ->
     ContentType = ?CT_ERLANG_BINARY,
-    Meta0 = #{
+    Meta = #{
         <<"vsn">> => ?TOP_VERSION,
         <<"ct">>  => ContentType
     },
-    Meta1 = case (LastEventID rem ?SNAPSHOT_STEP) of
-        0 when LastEventID > 0 ->
-            Meta0#{<<"state_snapshot">> => encode_state(ContentType, St)};
-        _ ->
-            Meta0
-    end,
     Data = encode_event(ContentType, Event),
-    [Meta1, Data].
+    [Meta, Data].
+
+wrap_event_payload_w_snapshot(Event, St) ->
+    ContentType = ?CT_ERLANG_BINARY,
+    Meta = #{
+        <<"vsn">> => ?TOP_VERSION,
+        <<"ct">>  => ContentType,
+        <<"state_snapshot">> => encode_state(ContentType, St)
+    },
+    Data = encode_event(ContentType, Event),
+    [Meta, Data].
+
+is_the_right_moment_to_save_snapshot(#st{last_event = LastEventID}) when LastEventID > 0 ->
+    LastEventID rem ?SNAPSHOT_STEP =:= 0;
+is_the_right_moment_to_save_snapshot(_) ->
+    false.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
@@ -992,6 +1047,30 @@ encode_event(?CT_ERLANG_BINARY, Event) ->
 
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
+
+-spec wrap_aux_state(partyAuxSt()) -> hg_msgpack_marshalling:msgpack_value().
+
+wrap_aux_state(AuxSt) ->
+    ContentType = ?CT_ERLANG_BINARY,
+    #{<<"ct">> => ContentType, <<"aux_state">> => encode_aux_state(ContentType, AuxSt)}.
+
+-spec unwrap_aux_state(hg_msgpack_marshalling:msgpack_value()) -> partyAuxSt().
+
+unwrap_aux_state(#{<<"ct">> := ContentType, <<"aux_state">> := AuxSt}) ->
+    decode_aux_state(ContentType, AuxSt);
+%% backward compatibility
+unwrap_aux_state(undefined) ->
+    #{}.
+
+-spec encode_aux_state(content_type(), partyAuxSt()) -> dmsl_msgpack_thrift:'Value'().
+
+encode_aux_state(?CT_ERLANG_BINARY, AuxSt) ->
+    {bin, term_to_binary(AuxSt)}.
+
+-spec decode_aux_state(content_type(), dmsl_msgpack_thrift:'Value'()) -> partyAuxSt().
+
+decode_aux_state(?CT_ERLANG_BINARY, {bin, AuxSt}) ->
+    binary_to_term(AuxSt).
 
 transmute([Version, Event]) ->
     transmute_event(Version, ?TOP_VERSION, Event).

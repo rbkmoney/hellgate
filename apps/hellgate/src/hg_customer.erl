@@ -19,8 +19,8 @@
 -behaviour(hg_machine).
 -export([namespace     /0]).
 -export([init          /2]).
--export([process_signal/3]).
--export([process_call  /4]).
+-export([process_signal/2]).
+-export([process_call  /2]).
 
 %% Event provider callbacks
 
@@ -189,9 +189,9 @@ publish_event(CustomerID, Changes) when is_list(Changes) ->
 namespace() ->
     ?NS.
 
--spec init(customer_id(), customer_params()) ->
+-spec init(customer_params(), hg_machine:machine()) ->
     hg_machine:result().
-init(CustomerID, CustomerParams) ->
+init(CustomerParams, #{id := CustomerID}) ->
     handle_result(#{
         changes => [
             get_customer_created_event(CustomerID, CustomerParams)
@@ -199,9 +199,9 @@ init(CustomerID, CustomerParams) ->
         auxst => #{}
     }).
 
--spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
-process_signal(Signal, History, AuxSt) ->
+process_signal(Signal, #{history := History,  aux_state := AuxSt}) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)), unmarshal(auxst, AuxSt))).
 
 handle_signal(timeout, St0, AuxSt0) ->
@@ -256,9 +256,9 @@ is_binding_succeeded(_) ->
     {start_binding, binding_params()} |
     delete.
 
--spec process_call(hg_machine:id(), call(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
-process_call(_ID, Call, History, _AuxSt) ->
+process_call(Call, #{history := History}) ->
     St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
