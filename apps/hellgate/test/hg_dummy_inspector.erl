@@ -54,5 +54,5 @@ handle_function(
     }],
     _Options
 ) ->
-    timer:sleep(1500),
+    timer:sleep(10000),
     high.
