@@ -31,6 +31,7 @@
 
 -export([call/3]).
 -export([call/4]).
+-export([call/5]).
 -export([raise/1]).
 
 
@@ -66,13 +67,26 @@ call(ServiceName, Function, Args) ->
     term().
 
 call(ServiceName, Function, Args, Opts) ->
+    call(ServiceName, Function, Args, Opts, undefined).
+
+-spec call(atom(), woody:func(), list(), client_opts(), woody_deadline:deadline()) ->
+    term().
+
+call(ServiceName, Function, Args, Opts, Deadline) ->
     Service = get_service_modname(ServiceName),
     Context = hg_context:get_woody_context(hg_context:load()),
     woody_client:call(
         {Service, Function, Args},
         Opts#{event_handler => scoper_woody_event_handler},
-        Context
+        attach_deadline(Deadline, Context)
     ).
+
+-spec attach_deadline(woody_deadline:deadline(), woody_context:ctx()) -> woody_context:ctx().
+
+attach_deadline(undefined, Context) ->
+    Context;
+attach_deadline(Deadline, Context) ->
+    woody_context:set_deadline(Deadline, Context).
 
 -spec raise(term()) ->
     no_return().

@@ -26,12 +26,14 @@ inspect(
         additional = ProxyAdditional
     }}
 ) ->
+    DeadLine = woody_deadline:from_timeout(genlib_app:env(hellgate, inspect_timeout, infinity)),
     ProxyDef = get_proxy_def(ProxyRef, Revision),
     Context = #proxy_inspector_Context{
         payment = get_payment_info(Shop, Invoice, Payment),
         options = maps:merge(ProxyDef#domain_ProxyDefinition.options, ProxyAdditional)
     },
-    Result = issue_call('InspectPayment', [Context], hg_proxy:get_call_options(Proxy, Revision), FallBackRiskScore),
+    Result = issue_call('InspectPayment', [Context], hg_proxy:get_call_options(Proxy,
+        Revision), FallBackRiskScore, DeadLine),
     case Result of
         {ok, RiskScore} when is_atom(RiskScore) ->
             RiskScore;
@@ -93,18 +95,23 @@ get_payment_info(
         payment = ProxyPayment
     }.
 
-issue_call(Func, Args, CallOpts, undefined) ->
-    hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts);
-issue_call(Func, Args, CallOpts, Default) ->
-    try hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts) of
+issue_call(Func, Args, CallOpts, undefined, DeadLine) ->
+    hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts, DeadLine);
+issue_call(Func, Args, CallOpts, Default, DeadLine) ->
+    try hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts, DeadLine) of
         {ok, _} = RiskScore ->
             RiskScore;
         {exception, Error} ->
-            _ = lager:warning("Fail to get RiskScore with error ~p", [Error]),
+            _ = lager:error("Fail to get RiskScore with error ~p", [Error]),
             {ok, Default}
     catch
-        Class:Reason ->
-            _ = lager:warning("Fail to get RiskScore with error ~p:~p", [Class, Reason]),
+        error:{woody_error, {_Source, Class, _Details}} = Reason
+            when Class =:= resource_unavailable orelse
+                 Class =:= result_unknown ->
+            _ = lager:warning("Fail to get RiskScore with error ~p:~p", [error, Reason]),
+            {ok, Default};
+        error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
+            _ = lager:error("Fail to get RiskScore with error ~p:~p", [error, Reason]),
             {ok, Default}
     end.
 

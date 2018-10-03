@@ -38,9 +38,21 @@ handle_function(
     [#proxy_inspector_Context{
         payment = _PaymentInfo,
         options = #{
+            <<"link_state">> := <<"unexpected_failure">>
+        }
+    }],
+    _Options
+) ->
+    erlang:error(test_error);
+handle_function(
+    'InspectPayment',
+    [#proxy_inspector_Context{
+        payment = _PaymentInfo,
+        options = #{
             <<"link_state">> := _LinkState
         }
     }],
     _Options
 ) ->
-    erlang:error(test_error).
+    timer:sleep(10000),
+    high.
