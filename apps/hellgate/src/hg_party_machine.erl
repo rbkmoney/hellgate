@@ -137,8 +137,7 @@ process_call(Call, #{id := PartyID, history := History, aux_state := WrappedAuxS
             },
             fun() ->
                 AuxSt = unwrap_aux_state(WrappedAuxSt),
-                _ = lager:warning("~nPartyID: ~p~nAuxSt: ~p", [PartyID, AuxSt]),
-                St = get_state(PartyID, History),
+                St = get_state(PartyID, History, AuxSt),
                 handle_call(Call, AuxSt, St)
             end
         )
@@ -303,22 +302,31 @@ get_party(PartyID) ->
     get_st_party(get_state(PartyID)).
 
 get_state(PartyID) ->
-    ReversedHistoryPart = get_history(PartyID, undefined, ?SNAPSHOT_STEP, backward),
-    get_state(PartyID, ReversedHistoryPart).
+    #{history := ReversedHistoryPart, aux_state := AuxSt} = get_machine(PartyID),
+    get_state(PartyID, ReversedHistoryPart, unwrap_aux_state(AuxSt)).
 
-get_state(PartyID, ReversedHistoryPart) ->
-    get_state(PartyID, ReversedHistoryPart, []).
+get_state(PartyID, ReversedHistoryPart, AuxSt) ->
+    SnapshotIndex = maps:get(snapshot_index, AuxSt, []),
+    get_state(PartyID, ReversedHistoryPart, [], SnapshotIndex).
 
-get_state(PartyID, ReversedHistoryPart, EventsAcc) ->
+get_state(PartyID, ReversedHistoryPart, EventsAcc, SnapshotIndex) ->
     case parse_history(ReversedHistoryPart) of
         {undefined, [{FirstID, _, _} | _] = Events} when FirstID > 1 ->
-            NewHistoryPart = get_history(PartyID, FirstID, ?SNAPSHOT_STEP, backward),
-            get_state(PartyID, NewHistoryPart, Events ++ EventsAcc);
+            Limit = get_limit(FirstID, SnapshotIndex),
+            NewHistoryPart = get_history(PartyID, FirstID, Limit, backward),
+            get_state(PartyID, NewHistoryPart, Events ++ EventsAcc, SnapshotIndex);
         {undefined, Events} ->
             merge_events(Events ++ EventsAcc, #st{revision = hg_domain:head()});
         {St, Events} ->
             merge_events(Events ++ EventsAcc, St)
     end.
+
+get_limit(ToEventID, [{SnapshotEventID, _} | _SnapshotIndex]) when SnapshotEventID < ToEventID ->
+    ToEventID - SnapshotEventID;
+get_limit(ToEventID, [_ | SnapshotIndex]) ->
+    get_limit(ToEventID, SnapshotIndex);
+get_limit(_ToEventID, []) ->
+    undefined.
 
 parse_history(ReversedHistoryPart) ->
     parse_history(ReversedHistoryPart, []).
@@ -416,6 +424,15 @@ get_history(PartyID, AfterID, Limit) ->
 
 get_history(PartyID, AfterID, Limit, Direction) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, Direction)).
+
+get_machine(PartyID) ->
+    map_history_error(hg_machine:get_machine(
+        ?NS,
+        PartyID,
+        undefined,
+        ?SNAPSHOT_STEP,
+        backward
+    )).
 
 get_revision_of_part(PartyID, History, Last, Step) ->
     case find_revision_in_history(History) of

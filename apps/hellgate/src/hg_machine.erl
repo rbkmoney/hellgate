@@ -75,6 +75,7 @@
 -export([get_history/2]).
 -export([get_history/4]).
 -export([get_history/5]).
+-export([get_machine/5]).
 
 %% Dispatch
 
@@ -146,25 +147,34 @@ repair(Ns, Ref, Args) ->
     {ok, history()} | {error, notfound} | no_return().
 
 get_history(Ns, Ref) ->
-    get_history(Ns, Ref, #'HistoryRange'{}).
+    get_history(Ns, Ref, undefined, undefined, forward).
 
 -spec get_history(ns(), ref(), undefined | event_id(), undefined | non_neg_integer()) ->
     {ok, history()} | {error, notfound} | no_return().
 
 get_history(Ns, Ref, AfterID, Limit) ->
-    get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit}).
+    get_history(Ns, Ref, AfterID, Limit, forward).
 
--spec get_history(ns(), ref(), undefined | event_id(), undefined | non_neg_integer(), undefined | direction()) ->
+-spec get_history(ns(), ref(), undefined | event_id(), undefined | non_neg_integer(), direction()) ->
     {ok, history()} | {error, notfound} | no_return().
 
 get_history(Ns, Ref, AfterID, Limit, Direction) ->
-    get_history(Ns, Ref, #'HistoryRange'{'after' = AfterID, limit = Limit, direction = Direction}).
+    case get_machine(Ns, Ref, AfterID, Limit, Direction) of
+        {ok, #{history := History}} ->
+            {ok, History};
+        Error ->
+            Error
+    end.
 
-get_history(Ns, Ref, Range) ->
+-spec get_machine(ns(), ref(), undefined | event_id(), undefined | non_neg_integer(), direction()) ->
+    {ok, machine()} | {error, notfound} | no_return().
+
+get_machine(Ns, Ref, AfterID, Limit, Direction) ->
+    Range = #'HistoryRange'{'after' = AfterID, limit = Limit, direction = Direction},
     Descriptor = prepare_descriptor(Ns, Ref, Range),
     case call_automaton('GetMachine', [Descriptor]) of
-        {ok, #'Machine'{history = History}} when is_list(History) ->
-            {ok, unmarshal_events(History)};
+        {ok, #'Machine'{} = Machine} ->
+            {ok, unmarshal_machine(Machine)};
         Error ->
             Error
     end.
