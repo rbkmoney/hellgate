@@ -395,7 +395,12 @@ create_recurrent_paytool(Params) ->
         {exception, Exception = #payproc_InvalidContractStatus{}} ->
             throw(Exception);
         {exception, Exception = #payproc_OperationNotPermitted{}} ->
-            throw(Exception)
+            throw(Exception);
+        % TODO
+        % These are essentially the same, we should probably decide on some kind
+        % of exception encompassing both.
+        {exception, #payproc_InvalidPaymentMethod{}} ->
+            throw(#payproc_OperationNotPermitted{})
     end.
 
 get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->

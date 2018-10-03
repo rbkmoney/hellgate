@@ -54,6 +54,8 @@
 -export([payment_hold_auto_cancellation/1]).
 -export([payment_hold_capturing/1]).
 -export([payment_hold_auto_capturing/1]).
+-export([invalid_refund_party_status/1]).
+-export([invalid_refund_shop_status/1]).
 -export([payment_refund_success/1]).
 -export([payment_partial_refunds_success/1]).
 -export([payment_temporary_unavailability_retry_success/1]).
@@ -175,6 +177,8 @@ groups() ->
         ]},
 
         {refunds, [], [
+            invalid_refund_party_status,
+            invalid_refund_shop_status,
             retry_temporary_unavailability_refund,
             payment_refund_success,
             payment_partial_refunds_success,
@@ -1176,6 +1180,45 @@ external_account_posting(C) ->
     hg_context:cleanup().
 
 %%
+
+-spec invalid_refund_party_status(config()) -> _ | no_return().
+
+invalid_refund_party_status(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ok = hg_client_party:suspend(PartyClient),
+    {exception, #payproc_InvalidPartyStatus{
+        status = {suspension, {suspended, _}}
+    }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
+    ok = hg_client_party:activate(PartyClient),
+    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    {exception, #payproc_InvalidPartyStatus{
+        status = {blocking, {blocked, _}}
+    }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
+    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+
+-spec invalid_refund_shop_status(config()) -> _ | no_return().
+
+invalid_refund_shop_status(C) ->
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyClient = cfg(party_client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    {exception, #payproc_InvalidShopStatus{
+        status = {suspension, {suspended, _}}
+    }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
+    ok = hg_client_party:activate_shop(ShopID, PartyClient),
+    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    {exception, #payproc_InvalidShopStatus{
+        status = {blocking, {blocked, _}}
+    }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
+    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec payment_refund_success(config()) -> _ | no_return().
 
