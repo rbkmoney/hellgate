@@ -239,7 +239,13 @@ handle_function_('Repair', [UserInfo, InvoiceID, Changes], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
-    repair(InvoiceID, {changes, Changes}).
+    repair(InvoiceID, {changes, Changes});
+
+handle_function_('RepairScenario', [UserInfo, InvoiceID, Scenario, ErrorType], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID),
+    _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
+    repair(InvoiceID, {scenario, Scenario, ErrorType}).
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
@@ -359,6 +365,9 @@ map_repair_error({error, notfound}) ->
 map_repair_error({error, working}) ->
     % TODO
     throw(#'InvalidRequest'{errors = [<<"No need to repair">>]});
+map_repair_error({error, not_permitted}) ->
+    % TODO
+    throw(#'InvalidRequest'{errors = [<<"Cant repair">>]});
 map_repair_error({error, Reason}) ->
     error(Reason).
 
@@ -433,7 +442,46 @@ handle_signal({repair, {changes, Changes}}, St) ->
     end,
     Result#{
         state => St
+    };
+
+handle_signal({repair, {scenario, Scenario, _}}, St = #st{activity = Activity})
+    when Activity =:= invoice orelse Activity =:= undefined ->
+    #{
+        changes => [?invoice_status_changed(?invoice_cancelled(hg_utils:format_reason(Scenario)))],
+        state => St
+    };
+handle_signal({repair, {scenario, Scenario, ErrorType}}, St = #st{activity = {payment, PaymentID}}) ->
+    PaymentSession = get_payment_session(PaymentID, St),
+    Activity = hg_invoice_payment:get_activity(PaymentSession),
+    Result = case {Scenario, Activity} of
+        {Scenario, idle} ->
+            #{};
+        {Scenario, Activity}
+            when Activity =:= {payment, new} orelse
+                 Activity =:= {payment, risk_scoring} orelse
+                 Activity =:= {payment, routing} orelse
+                 Activity =:= {payment, cash_flow_building} ->
+            #{
+                changes => [wrap_payment_changes(PaymentID,
+                    hg_invoice_payment:get_fail_event(get_repair_error(ErrorType)))]
+            };
+        {fail_safe, Activity} ->
+            throw({exception, cant_fail_safe});
+        {fail_someway, {payment, Step}} ->
+            #{
+                changes => [wrap_payment_changes(PaymentID,
+                    hg_invoice_payment:get_repair_event(Step))]
+            };
+        {fail_someway, {Step, _}} ->
+            #{
+                changes => [wrap_payment_changes(PaymentID,
+                    hg_invoice_payment:get_repair_event(Step))]
+            }
+    end,
+    Result#{
+        state => St
     }.
+
 
 handle_expiration(St) ->
     #{
@@ -982,6 +1030,10 @@ get_message(invoice_created) ->
     "Invoice is created";
 get_message(invoice_status_changed) ->
     "Invoice status is changed".
+
+get_repair_error(_) ->
+    payproc_errors:construct('PaymentFailure',
+        {authorization_failed, {unknown, {}}}).
 
 -include("legacy_structures.hrl").
 %% Marshalling

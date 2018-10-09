@@ -50,6 +50,11 @@
     }
 ).
 
+-define(payment_repair(Type),
+    {invoice_payment_status_changed, Type}
+).
+
+
 -define(pending(),
     {pending, #domain_InvoicePaymentPending{}}).
 -define(processed(),

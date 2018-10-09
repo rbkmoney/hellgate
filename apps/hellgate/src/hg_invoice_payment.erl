@@ -35,6 +35,9 @@
 -export([get_activity/1]).
 -export([get_tags/1]).
 
+-export([get_fail_event/1]).
+-export([get_repair_event/1]).
+
 -export([construct_payment_info/2]).
 
 %% Business logic
@@ -79,6 +82,8 @@
     finalizing_session |
     finalizing_accounter.
 
+-type repair_type()      :: simple.
+
 -record(st, {
     activity               :: activity(),
     payment                :: undefined | payment(),
@@ -92,7 +97,8 @@
     refunds        = #{}   :: #{refund_id() => refund_state()},
     adjustments    = []    :: [adjustment()],
     recurrent_token        :: undefined | recurrent_token(),
-    opts                   :: undefined | opts()
+    opts                   :: undefined | opts(),
+    repair_type            :: undefined | repair_type()
 }).
 
 -record(refund_st, {
@@ -223,6 +229,16 @@ get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
         [get_session_tags(S)                     || S <- maps:values(Sessions)] ++
         [get_session_tags(get_refund_session(R)) || R <- maps:values(Refunds) ]
     )).
+
+-spec get_fail_event(atom()) -> tuple().
+
+get_fail_event(ErrorType) ->
+    ?payment_status_changed(?failed(ErrorType)).
+
+-spec get_repair_event(atom()) -> tuple().
+
+get_repair_event(_) ->
+    ?payment_repair(simple).
 
 %%
 
@@ -1889,6 +1905,7 @@ merge_change(
     #st{payment = Payment, activity = {payment, _Step}} = St
 ) ->
     St#st{
+        repair_type = undefined,
         payment    = Payment#domain_InvoicePayment{status = Status},
         activity   = idle
     };
@@ -1997,7 +2014,13 @@ merge_change(?session_ev(Target, Event), St) ->
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
     % FIXME leaky transactions
-    set_trx(get_session_trx(Session), St1).
+    set_trx(get_session_trx(Session), St1);
+
+merge_change(?payment_repair(Type), St) ->
+    St#st{
+        repair_type = Type
+    }.
+
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
     St#st{retry_attempts = maps:update_with(Target, fun(N) -> N + 1 end, 0, Attempts)}.
