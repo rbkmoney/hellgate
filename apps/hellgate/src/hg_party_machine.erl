@@ -46,7 +46,7 @@
     claims   = #{}       :: #{claim_id() => claim()},
     meta = #{}           :: meta(),
     migration_data = #{} :: #{any() => any()},
-    last_event = 0       :: non_neg_integer()
+    last_event = 0       :: event_id()
 }).
 
 -type st() :: #st{}.
@@ -80,10 +80,20 @@
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 -type party_revision()  :: dmsl_domain_thrift:'PartyRevision'().
+-type event_id()        :: non_neg_integer().
 
 -type content_type()    :: binary().
--type partyAuxSt()      :: #{
-    snapshot_index := [{EventID :: non_neg_integer(), party_revision()}]
+-type party_aux_st()    :: #{
+    snapshot_index := snapshot_index(),
+    party_revision_index := party_revision_index()
+}.
+-type snapshot_index()  :: [event_id()].
+-type party_revision_index() :: #{
+    party_revision() => event_range()
+}.
+-type event_range()     :: {
+    FromEventID :: event_id() | undefined,
+    ToEventID   :: event_id() | undefined
 }.
 
 -export_type([party_revision/0]).
@@ -112,7 +122,10 @@ process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Changes = [?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)],
     #{
         events  => [wrap_event_payload(?party_ev(Changes))],
-        auxst   => wrap_aux_state(#{snapshot_index => []})
+        auxst   => wrap_aux_state(#{
+            snapshot_index => [],
+            party_revision_index => #{}
+        })
     }.
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
@@ -306,7 +319,7 @@ get_state(PartyID) ->
     get_state(PartyID, ReversedHistoryPart, unwrap_aux_state(AuxSt)).
 
 get_state(PartyID, ReversedHistoryPart, AuxSt) ->
-    SnapshotIndex = maps:get(snapshot_index, AuxSt, []),
+    SnapshotIndex = get_snapshot_index(AuxSt),
     get_state(PartyID, ReversedHistoryPart, [], SnapshotIndex).
 
 get_state(PartyID, ReversedHistoryPart, EventsAcc, SnapshotIndex) ->
@@ -320,13 +333,6 @@ get_state(PartyID, ReversedHistoryPart, EventsAcc, SnapshotIndex) ->
         {St, Events} ->
             merge_events(Events ++ EventsAcc, St)
     end.
-
-get_limit(ToEventID, [{SnapshotEventID, _} | _SnapshotIndex]) when SnapshotEventID < ToEventID ->
-    ToEventID - SnapshotEventID;
-get_limit(ToEventID, [_ | SnapshotIndex]) ->
-    get_limit(ToEventID, SnapshotIndex);
-get_limit(_ToEventID, []) ->
-    undefined.
 
 parse_history(ReversedHistoryPart) ->
     parse_history(ReversedHistoryPart, []).
@@ -626,39 +632,46 @@ apply_accepted_claim(Claim, St) ->
             St
     end.
 
-respond(Response, Changes, AuxSt, St) ->
-    {Events, NewAuxSt} = prepare_respond(Changes, AuxSt, St),
+respond(Response, Changes, AuxSt0, St) ->
+    AuxSt1 = append_party_revision_index(St, AuxSt0),
+    {Events, AuxSt2} = try_attach_snapshot(Changes, AuxSt1, St),
     {
         {ok, Response},
         #{
             events  => Events,
-            auxst   => NewAuxSt
+            auxst   => AuxSt2
         }
     }.
-
-prepare_respond(Changes, AuxSt, St) ->
-    case is_the_right_moment_to_save_snapshot(St) of
-        true ->
-            #domain_Party{revision = PartyRevision} = get_st_party(St),
-            EventID = St#st.last_event + 1,
-            NewAuxSt = append_snapshot_index(EventID, PartyRevision, AuxSt),
-            {
-                [wrap_event_payload_w_snapshot(?party_ev(Changes), St)],
-                wrap_aux_state(NewAuxSt)
-            };
-        false ->
-            {
-                [wrap_event_payload(?party_ev(Changes))],
-                wrap_aux_state(AuxSt)
-            }
-    end.
 
 respond_w_exception(Exception) ->
     {{exception, Exception}, #{}}.
 
-append_snapshot_index(EventID, PartyRevision, AuxSt) ->
-    SnapshotIndex = maps:get(snapshot_index, AuxSt, []),
-    AuxSt#{snapshot_index => [{EventID, PartyRevision} | SnapshotIndex]}.
+append_party_revision_index(St, AuxSt) ->
+    #domain_Party{revision = PartyRevision} = get_st_party(St),
+    EventID = St#st.last_event + 1,
+    PartyRevisionIndex0 = get_party_revision_index(AuxSt),
+    {FromEventID, _} = maps:get(PartyRevision, PartyRevisionIndex0, {undefined, undefined}),
+    PartyRevisionIndex1 = PartyRevisionIndex0#{
+        PartyRevision => {hg_utils:select_defined(FromEventID, EventID), EventID}
+    },
+    AuxSt#{party_revision_index => PartyRevisionIndex1}.
+
+get_party_revision_index(AuxSt) ->
+    maps:get(party_revision_index, AuxSt, #{}).
+
+append_snapshot_index(EventID, AuxSt) ->
+    SnapshotIndex = get_snapshot_index(AuxSt),
+    AuxSt#{snapshot_index => [EventID | SnapshotIndex]}.
+
+get_snapshot_index(AuxSt) ->
+    maps:get(snapshot_index, AuxSt, []).
+
+get_limit(ToEventID, [SnapshotEventID | _]) when SnapshotEventID < ToEventID ->
+    ToEventID - SnapshotEventID;
+get_limit(ToEventID, [_ | SnapshotIndex]) ->
+    get_limit(ToEventID, SnapshotIndex);
+get_limit(_ToEventID, []) ->
+    undefined.
 
 %%
 
@@ -993,6 +1006,22 @@ get_template(TemplateRef, Revision) ->
 
 %%
 
+try_attach_snapshot(Changes, AuxSt0, #st{last_event = LastEventID} = St)
+    when
+        LastEventID > 0 andalso
+        LastEventID rem ?SNAPSHOT_STEP =:= 0
+->
+    AuxSt1 = append_snapshot_index(LastEventID + 1, AuxSt0),
+    {
+        [wrap_event_payload_w_snapshot(?party_ev(Changes), St)],
+        wrap_aux_state(AuxSt1)
+    };
+try_attach_snapshot(Changes, AuxSt, _) ->
+    {
+        [wrap_event_payload(?party_ev(Changes))],
+        wrap_aux_state(AuxSt)
+    }.
+
 %% TODO add transmutations for new international legal entities and bank accounts
 
 -define(TOP_VERSION, 6).
@@ -1015,11 +1044,6 @@ wrap_event_payload_w_snapshot(Event, St) ->
     },
     Data = encode_event(ContentType, Event),
     [Meta, Data].
-
-is_the_right_moment_to_save_snapshot(#st{last_event = LastEventID}) when LastEventID > 0 ->
-    LastEventID rem ?SNAPSHOT_STEP =:= 0;
-is_the_right_moment_to_save_snapshot(_) ->
-    false.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
@@ -1065,13 +1089,13 @@ encode_event(?CT_ERLANG_BINARY, Event) ->
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
 
--spec wrap_aux_state(partyAuxSt()) -> hg_msgpack_marshalling:msgpack_value().
+-spec wrap_aux_state(party_aux_st()) -> hg_msgpack_marshalling:msgpack_value().
 
 wrap_aux_state(AuxSt) ->
     ContentType = ?CT_ERLANG_BINARY,
     #{<<"ct">> => ContentType, <<"aux_state">> => encode_aux_state(ContentType, AuxSt)}.
 
--spec unwrap_aux_state(hg_msgpack_marshalling:msgpack_value()) -> partyAuxSt().
+-spec unwrap_aux_state(hg_msgpack_marshalling:msgpack_value()) -> party_aux_st().
 
 unwrap_aux_state(#{<<"ct">> := ContentType, <<"aux_state">> := AuxSt}) ->
     decode_aux_state(ContentType, AuxSt);
@@ -1079,12 +1103,12 @@ unwrap_aux_state(#{<<"ct">> := ContentType, <<"aux_state">> := AuxSt}) ->
 unwrap_aux_state(undefined) ->
     #{}.
 
--spec encode_aux_state(content_type(), partyAuxSt()) -> dmsl_msgpack_thrift:'Value'().
+-spec encode_aux_state(content_type(), party_aux_st()) -> dmsl_msgpack_thrift:'Value'().
 
 encode_aux_state(?CT_ERLANG_BINARY, AuxSt) ->
     {bin, term_to_binary(AuxSt)}.
 
--spec decode_aux_state(content_type(), dmsl_msgpack_thrift:'Value'()) -> partyAuxSt().
+-spec decode_aux_state(content_type(), dmsl_msgpack_thrift:'Value'()) -> party_aux_st().
 
 decode_aux_state(?CT_ERLANG_BINARY, {bin, AuxSt}) ->
     binary_to_term(AuxSt).
