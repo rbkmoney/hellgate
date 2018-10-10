@@ -766,36 +766,36 @@ payment_w_bank_card_issuer_denied(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(1), <<"RUB">>, ?tmpl(4), ?pinst(1), PartyClient),
     %kaz success
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
+    FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
     {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
     KazBankCard = BankCard#domain_BankCard {
         issuer_country = kaz
     },
     KazPaymentParams = make_payment_params({bank_card, KazBankCard}, Session, instant),
-    PaymentID = process_payment(InvoiceID, KazPaymentParams, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    FirstPayment = process_payment(FirstInvoice, KazPaymentParams, Client),
+    FirstPayment = await_payment_capture(FirstInvoice, FirstPayment, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client),
+        [?payment_state(?payment_w_status(FirstPayment, ?captured()))]
+    ) = hg_client_invoicing:get(FirstInvoice, Client),
     %kaz fail
-    InvoiceID1 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    SecondInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
     {exception,
         {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
-    } = hg_client_invoicing:start_payment(InvoiceID1, KazPaymentParams, Client),
+    } = hg_client_invoicing:start_payment(SecondInvoice, KazPaymentParams, Client),
     %rus success
-    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
     {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
     RusBankCard = BankCard1#domain_BankCard {
         issuer_country = rus
     },
     RusPaymentParams = make_payment_params({bank_card, RusBankCard}, Session1, instant),
-    PaymentID2 = process_payment(InvoiceID2, RusPaymentParams, Client),
-    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    SecondPayment = process_payment(ThirdInvoice, RusPaymentParams, Client),
+    SecondPayment = await_payment_capture(ThirdInvoice, SecondPayment, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID2, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID2, Client).
+        [?payment_state(?payment_w_status(SecondPayment, ?captured()))]
+    ) = hg_client_invoicing:get(ThirdInvoice, Client).
 
 -spec invoice_success_on_third_payment(config()) -> test_return().
 
