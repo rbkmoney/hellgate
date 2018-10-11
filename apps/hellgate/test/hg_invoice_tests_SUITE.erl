@@ -815,15 +815,16 @@ payments_w_bank_conditions(C) ->
     {exception,
         {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
     } = hg_client_invoicing:start_payment(SecondInvoice, TestPaymentParams, Client),
-    %bank 1 /w different wildcard success
-    ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
+    %bank 1 /w different wildcard fail
+    ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
     {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
     WildBankCard = BankCard1#domain_BankCard {
         bank_name = <<"TESTBANK">>
     },
     WildPaymentParams = make_payment_params({bank_card, WildBankCard}, Session1, instant),
-    SecondPayment = process_payment(ThirdInvoice, WildPaymentParams, Client),
-    SecondPayment = await_payment_capture(ThirdInvoice, SecondPayment, Client),
+    {exception,
+        {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
+    } = hg_client_invoicing:start_payment(ThirdInvoice, WildPaymentParams, Client),
     %some other bank success
     FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 10000, C),
     {{bank_card, BankCard2}, Session2} = hg_dummy_provider:make_payment_tool(no_preauth),
