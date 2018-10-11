@@ -56,6 +56,8 @@ check_for_action(Type, Scenario) when is_list(Scenario) ->
 
 %% Story parts
 
+check_for_action(fail_pre_processing, {fail_pre_processing, Failure}) ->
+    {result, {done, {[?payment_status_changed(?failed(Failure))], hg_machine_action:instant()}}};
 check_for_action(skip_inspector, {skip_inspector, RiskScore}) ->
     {result, RiskScore};
 check_for_action(fail_adapter, {fail_adapter, ProxyResult}) ->

@@ -1196,7 +1196,7 @@ process_signal(timeout, St, Options) ->
 
 process_timeout(St) ->
     Action = hg_machine_action:new(),
-    process_timeout(get_activity(St), Action, St).
+    repair_process_timeout(get_activity(St), Action, St).
 
 -spec process_timeout(activity(), action(), st()) -> machine_result().
 process_timeout({payment, risk_scoring}, Action, St) ->
@@ -1218,6 +1218,14 @@ process_timeout({refund_accounter, _ID}, Action, St) ->
     process_result(Action, St);
 process_timeout({payment, flow_waiting}, Action, St) ->
     finalize_payment(Action, St).
+
+repair_process_timeout(Activity, Action, St = #st{repair_scenario = ScenarioData}) ->
+    case hg_invoice_repair:check_for_action(fail_pre_processing, ScenarioData) of
+        {result, Result} ->
+            Result;
+        call ->
+            process_timeout(Activity, Action, St)
+    end.
 
 -spec process_call({callback, tag(), _}, st(), opts()) ->
     {_, machine_result()}. % FIXME
