@@ -8,6 +8,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
+-include_lib("stdlib/include/assert.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -793,7 +794,16 @@ payments_w_bank_card_issuer_conditions(C) ->
     },
     RusPaymentParams = make_payment_params({bank_card, RusBankCard}, Session1, instant),
     SecondPayment = process_payment(ThirdInvoice, RusPaymentParams, Client),
-    SecondPayment = await_payment_capture(ThirdInvoice, SecondPayment, Client).
+    SecondPayment = await_payment_capture(ThirdInvoice, SecondPayment, Client),
+    %fail with undefined issuer_country
+    FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    {UndefBankCard, Session2} = hg_dummy_provider:make_payment_tool(no_preauth),
+    UndefPaymentParams = make_payment_params(UndefBankCard, Session2, instant),
+    ?assertException(%fix me
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(FourthInvoice, UndefPaymentParams, Client)
+    ).
 
 -spec payments_w_bank_conditions(config()) -> test_return().
 
@@ -833,7 +843,17 @@ payments_w_bank_conditions(C) ->
     },
     OthrPaymentParams = make_payment_params({bank_card, OthrBankCard}, Session2, instant),
     ThirdPayment = process_payment(FourthInvoice, OthrPaymentParams, Client),
-    ThirdPayment = await_payment_capture(FourthInvoice, ThirdPayment, Client).
+    ThirdPayment = await_payment_capture(FourthInvoice, ThirdPayment, Client),
+    %fail with undefined bank_name
+    FifthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    {UndefBankCard, Session3} = hg_dummy_provider:make_payment_tool(no_preauth),
+    UndefPaymentParams = make_payment_params(UndefBankCard, Session3, instant),
+    ?assertException(%fix me
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(FifthInvoice, UndefPaymentParams, Client)
+    ).
+
 
 -spec invoice_success_on_third_payment(config()) -> test_return().
 
