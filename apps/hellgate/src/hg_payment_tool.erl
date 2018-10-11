@@ -98,8 +98,8 @@ test_bank_card_condition_def({issuer_country_is, IssuerCountry}, V, Rev) ->
     test_issuer_country_condition(IssuerCountry, V, Rev);
 test_bank_card_condition_def({issuer_bank_is, BankRef}, #domain_BankCard{bank_name = BankName}, Rev) ->
     #domain_Bank{binbase_id_patterns = Patterns} = hg_domain:get(Rev, {bank, BankRef}),
-    Matches = ordsets:fiter(fun(E) -> genlib_wildcard:match(BankName, E) end, Patterns),
-    not ordsets:is_empty(Matches).
+    Matches = ordsets:filter(fun(E) -> genlib_wildcard:match(BankName, E) end, Patterns),
+    ordsets:size(Matches) > 0.
 
 test_payment_system_condition(
     #domain_PaymentSystemCondition{payment_system_is = Ps, token_provider_is = Tp},
