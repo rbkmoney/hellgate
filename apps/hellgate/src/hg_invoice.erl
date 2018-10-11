@@ -365,9 +365,6 @@ map_repair_error({error, notfound}) ->
 map_repair_error({error, working}) ->
     % TODO
     throw(#'InvalidRequest'{errors = [<<"No need to repair">>]});
-map_repair_error({error, not_permitted}) ->
-    % TODO
-    throw(#'InvalidRequest'{errors = [<<"Cant repair">>]});
 map_repair_error({error, Reason}) ->
     error(Reason).
 

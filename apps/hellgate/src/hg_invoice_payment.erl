@@ -63,11 +63,6 @@
 -export([marshal/1]).
 -export([unmarshal/1]).
 
-%% Repair callbacks
-
--export([process_active_session/4]).
--export([repair_active_session/4]).
-
 %%
 
 -type activity()      :: payment_activity() | refund_activity() | idle.
@@ -1904,7 +1899,6 @@ merge_change(
     #st{payment = Payment, activity = {payment, _Step}} = St
 ) ->
     St#st{
-        repair_type = undefined,
         payment    = Payment#domain_InvoicePayment{status = Status},
         activity   = idle
     };
@@ -2015,10 +2009,9 @@ merge_change(?session_ev(Target, Event), St) ->
     % FIXME leaky transactions
     set_trx(get_session_trx(Session), St1);
 
-merge_change(?payment_new_repair(Scenario, Type), St) ->
+merge_change(?payment_new_repair(Scenario), St) ->
     St#st{
-        repair_type = Scenario,
-        repair_error_type = Type
+        repair_scenario = Scenario
     }.
 
 
