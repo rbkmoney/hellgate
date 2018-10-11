@@ -50,8 +50,10 @@
     }
 ).
 
--define(payment_repair(Type),
-    {invoice_payment_status_changed, Type}
+-define(payment_new_repair(Scenario, ErrorType),
+    {invoice_payment_new_repair,
+        #payproc_InvoicePaymentNewRepair{scenario = Scenario, error_type = ErrorType}
+    }
 ).
 
 

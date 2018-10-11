@@ -444,38 +444,18 @@ handle_signal({repair, {changes, Changes}}, St) ->
         state => St
     };
 
-handle_signal({repair, {scenario, Scenario, _}}, St = #st{activity = Activity})
+handle_signal({repair, {scenario, _, _}}, #st{activity = Activity})
     when Activity =:= invoice orelse Activity =:= undefined ->
-    #{
-        changes => [?invoice_status_changed(?invoice_cancelled(hg_utils:format_reason(Scenario)))],
-        state => St
-    };
+    throw({exception, active_payment_not_found});
 handle_signal({repair, {scenario, Scenario, ErrorType}}, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
     Activity = hg_invoice_payment:get_activity(PaymentSession),
     Result = case {Scenario, Activity} of
-        {Scenario, idle} ->
-            #{};
-        {Scenario, Activity}
-            when Activity =:= {payment, new} orelse
-                 Activity =:= {payment, risk_scoring} orelse
-                 Activity =:= {payment, routing} orelse
-                 Activity =:= {payment, cash_flow_building} ->
+        {_, idle} ->
+            throw({exception, cant_fail_payment_in_idle_state});
+        {Scenario, Activity} ->
             #{
-                changes => [wrap_payment_changes(PaymentID,
-                    hg_invoice_payment:get_fail_event(get_repair_error(ErrorType)))]
-            };
-        {fail_safe, Activity} ->
-            throw({exception, cant_fail_safe});
-        {fail_someway, {payment, Step}} ->
-            #{
-                changes => [wrap_payment_changes(PaymentID,
-                    hg_invoice_payment:get_repair_event(Step))]
-            };
-        {fail_someway, {Step, _}} ->
-            #{
-                changes => [wrap_payment_changes(PaymentID,
-                    hg_invoice_payment:get_repair_event(Step))]
+                changes => get_repair_changes(PaymentID, Scenario, Activity, ErrorType)
             }
     end,
     Result#{
@@ -1034,6 +1014,35 @@ get_message(invoice_status_changed) ->
 get_repair_error(_) ->
     payproc_errors:construct('PaymentFailure',
         {authorization_failed, {unknown, {}}}).
+
+get_repair_changes(PaymentID, fail_safe, Activity, ErrorType)
+    when Activity =:= {payment, new} orelse
+         Activity =:= {payment, risk_scoring} orelse
+         Activity =:= {payment, routing} orelse
+         Activity =:= {payment, cash_flow_building} ->
+    wrap_payment_changes(PaymentID,hg_invoice_payment:get_fail_event(get_repair_error(ErrorType)));
+get_repair_changes(_, fail_safe, Activity, _) ->
+    throw({exception, {cant_fail_safe_with_activity, Activity}});
+get_repair_changes(PaymentID, fail_inspector, Activity, ErrorType)
+    when Activity =:= {payment, new} ->
+    wrap_payment_changes(PaymentID,hg_invoice_payment:get_repair_event(
+        #{
+            scenario => fail_inspector,
+            error_type => get_repair_error(ErrorType)
+        }));
+get_repair_changes(_, fail_inspector, Activity, _) ->
+    throw({exception, {cant_fail_inspector_with_activity, Activity}});
+get_repair_changes(PaymentID, fail_adapter, Activity, ErrorType)
+    when Activity =:= {payment, cash_flow_building} ->
+    wrap_payment_changes(PaymentID,hg_invoice_payment:get_repair_event(
+        #{
+            scenario => fail_adapter,
+            error_type => get_repair_error(ErrorType)
+        }));
+get_repair_changes(_, fail_adapter, Activity, _) ->
+    throw({exception, {cant_fail_adapter_with_activity, Activity}});
+get_repair_changes(_, Scenario, _, _) ->
+    throw({exception, {unknown_scenario, Scenario}}).
 
 -include("legacy_structures.hrl").
 %% Marshalling

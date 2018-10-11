@@ -66,6 +66,11 @@
 -export([marshal/1]).
 -export([unmarshal/1]).
 
+%% Repair callbacks
+
+-export([process_active_session/4]).
+-export([repair_active_session/4]).
+
 %%
 
 -type activity()      :: payment_activity() | refund_activity() | idle.
@@ -82,7 +87,7 @@
     finalizing_session |
     finalizing_accounter.
 
--type repair_type()      :: simple.
+-type repair_type()      :: fail_inspector | fail_adapter.
 
 -record(st, {
     activity               :: activity(),
@@ -98,7 +103,8 @@
     adjustments    = []    :: [adjustment()],
     recurrent_token        :: undefined | recurrent_token(),
     opts                   :: undefined | opts(),
-    repair_type            :: undefined | repair_type()
+    repair_type            :: undefined | repair_type(),
+    repair_error_type      :: undefined | dynamic_error()
 }).
 
 -record(refund_st, {
@@ -161,6 +167,8 @@
 
 -type change() ::
     dmsl_payment_processing_thrift:'InvoicePaymentChangePayload'().
+
+-type dynamic_error() :: dmsl_domain_thrift:'Failure'().
 
 %%
 
@@ -230,15 +238,25 @@ get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
         [get_session_tags(get_refund_session(R)) || R <- maps:values(Refunds) ]
     )).
 
--spec get_fail_event(atom()) -> tuple().
+-spec get_fail_event(dynamic_error()) -> change().
 
 get_fail_event(ErrorType) ->
     ?payment_status_changed(?failed(ErrorType)).
 
--spec get_repair_event(atom()) -> tuple().
+-spec get_repair_event(map()) -> change().
 
-get_repair_event(_) ->
-    ?payment_repair(simple).
+get_repair_event(#{scenario := Scenario, error_type := ErrorType}) ->
+    ?payment_new_repair(Scenario, ErrorType).
+
+repair_action(fail_adapter, _DefaultFun, RepairFun, #st{repair_type = fail_adapter}) ->
+    RepairFun;
+repair_action(_Scenario, DefaultFun, _RepairFun, _St) ->
+    DefaultFun.
+
+repair_action(fail_inspector, _DefaultFun, #st{repair_type = fail_inspector, repair_error_type = ErrorType}) ->
+    erlang:error(ErrorType);
+repair_action(_Scenario, DefaultFun, _St) ->
+    DefaultFun.
 
 %%
 
@@ -1266,7 +1284,8 @@ process_routing(Action, St) ->
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Payment = get_payment(St),
     VS0 = collect_routing_varset(Payment, Opts, #{}),
-    RiskScore = inspect(Payment, PaymentInstitution, VS0, Opts),
+    InspectFun = repair_action(fail_inspector, inspect, St),
+    RiskScore = InspectFun(Payment, PaymentInstitution, VS0, Opts),
     Events0 = [?risk_score_changed(RiskScore)],
     VS1 = VS0#{risk_score => RiskScore},
     case choose_route(PaymentInstitution, VS1, Revision, St) of
@@ -1315,7 +1334,8 @@ process_session(Session, Action, Events, St) ->
 
 -spec process_session(session_status(), session(), action(), events(), st()) -> machine_result().
 process_session(active, Session, Action, Events, St) ->
-    process_active_session(Action, Session, Events, St);
+    Fun = repair_action(fail_adapter, process_active_session, repair_active_session, St),
+    Fun(Action, Session, Events, St);
 process_session(suspended, Session, Action, Events, St) ->
     process_callback_timeout(Action, Session, Events, St).
 
@@ -1325,6 +1345,16 @@ process_active_session(Action, Session, Events, St) ->
     {ok, ProxyResult} = issue_process_call(ProxyContext, St),
     Result = handle_proxy_result(ProxyResult, Action, Events, Session),
     finish_session_processing(Result, St).
+
+-spec repair_active_session(action(), session(), events(), st()) -> machine_result().
+repair_active_session(Action, Session, Events0, St = #st{repair_error_type = ErrorType}) ->
+    Target = get_target(St),
+    RepairEvents = [
+        ?session_ev(Target, ?session_started()),
+        ?session_finished(?session_failed(ErrorType))
+    ],
+    Events = Events0 ++ wrap_session_events(RepairEvents, Session),
+    finish_session_processing({Events, Action}, St).
 
 -spec finalize_payment(action(), st()) -> machine_result().
 finalize_payment(Action, St) ->
@@ -2016,9 +2046,10 @@ merge_change(?session_ev(Target, Event), St) ->
     % FIXME leaky transactions
     set_trx(get_session_trx(Session), St1);
 
-merge_change(?payment_repair(Type), St) ->
+merge_change(?payment_new_repair(Scenario, Type), St) ->
     St#st{
-        repair_type = Type
+        repair_type = Scenario,
+        repair_error_type = Type
     }.
 
 
