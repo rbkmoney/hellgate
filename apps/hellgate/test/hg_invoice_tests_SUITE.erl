@@ -113,6 +113,9 @@ all() ->
         % With constant domain config
         {group, all_non_destructive_tests},
 
+        payments_w_bank_card_issuer_conditions,
+        payments_w_bank_conditions,
+
         % With variable domain config
         {group, adjustments},
         {group, refunds},
@@ -165,7 +168,6 @@ groups() ->
             payment_w_another_shop_customer,
             payment_w_another_party_customer,
             payment_w_deleted_customer,
-            payment_w_bank_card_issuer_denied,
             payment_success_on_second_try,
             payment_fail_after_silent_callback,
             payment_temporary_unavailability_retry_success,
@@ -812,7 +814,7 @@ payments_w_bank_conditions(C) ->
     SecondInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
     {exception,
         {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
-    } = hg_client_invoicing:start_payment(SecondInvoice, TestBankCard, Client),
+    } = hg_client_invoicing:start_payment(SecondInvoice, TestPaymentParams, Client),
     %bank 1 /w different wildcard success
     ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
     {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
