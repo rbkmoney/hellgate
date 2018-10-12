@@ -50,13 +50,6 @@
     }
 ).
 
--define(payment_new_repair(Scenario),
-    {invoice_payment_repair,
-        #payproc_InvoicePaymentRepair{scenario = Scenario}
-    }
-).
-
-
 -define(pending(),
     {pending, #domain_InvoicePaymentPending{}}).
 -define(processed(),

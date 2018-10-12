@@ -36,6 +36,7 @@
 -export([get_tags/1]).
 
 -export([construct_payment_info/2]).
+-export([set_repair_scenario/2]).
 
 %% Business logic
 
@@ -1220,8 +1221,8 @@ process_timeout({refund_accounter, _ID}, Action, St) ->
 process_timeout({payment, flow_waiting}, Action, St) ->
     finalize_payment(Action, St).
 
-repair_process_timeout(Activity, Action, St = #st{repair_scenario = ScenarioData}) ->
-    case hg_invoice_repair:check_for_action(fail_pre_processing, ScenarioData) of
+repair_process_timeout(Activity, Action, St = #st{repair_scenario = Scenario}) ->
+    case hg_invoice_repair:check_for_action(fail_pre_processing, Scenario) of
         {result, Result} ->
             Result;
         call ->
@@ -1320,8 +1321,8 @@ process_active_session(Action, Session, Events, St) ->
     Result = handle_proxy_result(ProxyResult, Action, Events, Session),
     finish_session_processing(Result, St).
 
-repair_session(St = #st{repair_scenario = ScenarioData}) ->
-    case hg_invoice_repair:check_for_action(fail_adapter, ScenarioData) of
+repair_session(St = #st{repair_scenario = Scenario}) ->
+    case hg_invoice_repair:check_for_action(fail_adapter, Scenario) of
         {result, Result} ->
             Result;
         call ->
@@ -1620,6 +1621,10 @@ rollback_payment_cashflow(St) ->
 get_cashflow_plan(St) ->
     [{1, get_cashflow(St)}].
 
+-spec set_repair_scenario(hg_invoice_repair:scenario(), st()) -> st().
+
+set_repair_scenario(Scenario, St) ->
+    St#st{repair_scenario = Scenario}.
 %%
 
 -type payment_info() :: dmsl_proxy_provider_thrift:'PaymentInfo'().
@@ -2016,13 +2021,7 @@ merge_change(?session_ev(Target, Event), St) ->
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
     % FIXME leaky transactions
-    set_trx(get_session_trx(Session), St1);
-
-merge_change(?payment_new_repair(Scenario), St) ->
-    St#st{
-        repair_scenario = Scenario
-    }.
-
+    set_trx(get_session_trx(Session), St1).
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
     St#st{retry_attempts = maps:update_with(Target, fun(N) -> N + 1 end, 0, Attempts)}.
@@ -2263,8 +2262,8 @@ inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentIns
     % FIXME: move this logic to inspector
     check_payment_type_risk(RiskScore, Payment).
 
-repair_inspect(Payment, PaymentInstitution, VS, Opts, #st{repair_scenario = ScenarioData}) ->
-    case hg_invoice_repair:check_for_action(skip_inspector, ScenarioData) of
+repair_inspect(Payment, PaymentInstitution, VS, Opts, #st{repair_scenario = Scenario}) ->
+    case hg_invoice_repair:check_for_action(skip_inspector, Scenario) of
         {result, Result} ->
             Result;
         call ->
@@ -2475,11 +2474,6 @@ marshal(change, ?rec_token_acquired(Token)) ->
         <<"change">>        => <<"token_acquired">>,
         <<"token">>         => marshal(str, Token)
     }];
-marshal(change, ?payment_new_repair(Scenario)) ->
-    [3, #{
-        <<"change">>        => <<"new_repair">>,
-        <<"scenario">>      => marshal(scenario, Scenario)
-    }];
 
 %% Payment
 
@@ -2631,27 +2625,6 @@ marshal(refund_status, ?refund_succeeded()) ->
     <<"succeeded">>;
 marshal(refund_status, ?refund_failed(Failure)) ->
     [<<"failed">>, marshal(failure, Failure)];
-
-%% Repair scenario
-
-marshal(scenario, Scenarios) when is_list(Scenarios) ->
-    [marshal(scenario, Scenario) || Scenario <- Scenarios];
-
-marshal(scenario, #payproc_InvoiceRepairFailPreProcessing{failure = Failure}) ->
-    #{
-        <<"type">>         => <<"repair_fail_pre_processing">>,
-        <<"failure">>      => marshal(failure, Failure)
-    };
-marshal(scenario, #payproc_InvoiceRepairSkipInspector{risk_score = RiskScore}) ->
-    #{
-        <<"type">>         => <<"repair_skip_inspector">>,
-        <<"risk_score">>   => marshal(risk_score, RiskScore)
-    };
-marshal(scenario, #payproc_InvoiceRepairFailAdapter{failure = Failure}) ->
-    #{
-        <<"type">>         => <<"repair_fail_adapter">>,
-        <<"failure">>      => marshal(failure, Failure)
-    };
 
 %%
 
@@ -2822,11 +2795,6 @@ unmarshal(change, [2, #{
     <<"token">>     := Token
 }]) ->
     [?rec_token_acquired(unmarshal(str, Token))];
-unmarshal(change, [3, #{
-    <<"change">>    := <<"new_repair">>,
-    <<"scenario">>  := Scenario
-}]) ->
-    [?payment_new_repair(unmarshal(scenario, Scenario))];
 
 %% deprecated v2 changes
 unmarshal(change, [2, #{
@@ -3103,27 +3071,6 @@ unmarshal(refund_status, <<"succeeded">>) ->
     ?refund_succeeded();
 unmarshal(refund_status, [<<"failed">>, Failure]) ->
     ?refund_failed(unmarshal(failure, Failure));
-
-%% Repair scenario
-
-unmarshal(scenario, Scenarios) when is_list(Scenarios) ->
-    [unmarshal(scenario, Scenario) || Scenario <- Scenarios];
-
-unmarshal(scenario, #{
-    <<"type">>                  := <<"repair_fail_pre_processing">>,
-    <<"failure">>               := Failure
-}) ->
-    #payproc_InvoiceRepairFailPreProcessing{failure = unmarshal(failure, Failure)};
-unmarshal(scenario, #{
-    <<"type">>                  := <<"repair_skip_inspector">>,
-    <<"risk_score">>            := RiskScore
-}) ->
-    #payproc_InvoiceRepairSkipInspector{risk_score = unmarshal(risk_score, RiskScore)};
-unmarshal(scenario, #{
-    <<"type">>                  := <<"repair_fail_adapter">>,
-    <<"failure">>               := Failure
-}) ->
-    #payproc_InvoiceRepairFailAdapter{failure = unmarshal(failure, Failure)};
 
 %% Payer
 

@@ -5,7 +5,7 @@
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([check_for_action/2]).
--export([get_repair_changes/2]).
+-export([get_repair_changes/3]).
 
 %% dmsl types
 
@@ -67,11 +67,12 @@ check_for_action(_Type, _Scenario) ->
 
 %% create repair event
 
--spec get_repair_changes(scenario(), hg_invoice_payment:activity()) -> change().
+-spec get_repair_changes(scenario(), hg_invoice_payment:activity(), hg_invoice_payment:st()) ->
+    hg_invoice_payment:st().
 
-get_repair_changes(Scenario, Activity) ->
+get_repair_changes(Scenario, Activity, St) ->
     check_activity_compatibility(Scenario, Activity),
-    ?payment_new_repair(Scenario).
+    hg_invoice_payment:set_repair_scenario(Scenario, St).
 
 check_activity_compatibility(Scenario, Activity) when is_list(Scenario) ->
     lists:foreach(fun (Sc) -> check_activity_compatibility(Sc, Activity) end, Scenario);

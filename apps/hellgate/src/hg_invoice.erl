@@ -447,17 +447,14 @@ handle_signal({repair, {scenario, _}}, #st{activity = Activity})
 handle_signal({repair, {scenario, Scenario}}, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
     Activity = hg_invoice_payment:get_activity(PaymentSession),
-    Result = case {Scenario, Activity} of
+    RepairState = case {Scenario, Activity} of
         {_, idle} ->
             throw({exception, cant_fail_payment_in_idle_state});
         {Scenario, Activity} ->
-            #{
-                changes => wrap_payment_changes(PaymentID, hg_invoice_repair:get_repair_changes(Activity, Scenario))
-            }
+            hg_invoice_repair:get_repair_changes(Activity, Scenario, St)
     end,
-    Result#{
-        state => St
-    }.
+    PaymentSession = get_payment_session(PaymentID, St),
+    process_payment_signal(timeout, PaymentID, PaymentSession, RepairState).
 
 
 handle_expiration(St) ->
