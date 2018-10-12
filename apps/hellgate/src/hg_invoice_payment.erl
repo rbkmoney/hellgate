@@ -2475,10 +2475,10 @@ marshal(change, ?rec_token_acquired(Token)) ->
         <<"change">>        => <<"token_acquired">>,
         <<"token">>         => marshal(str, Token)
     }];
-marshal(change, ?payment_new_repair(ScenarioData)) ->
+marshal(change, ?payment_new_repair(Scenario)) ->
     [3, #{
         <<"change">>        => <<"new_repair">>,
-        <<"scenario">>      => marshal(scenario, ScenarioData)
+        <<"scenario">>      => marshal(scenario, Scenario)
     }];
 
 %% Payment
@@ -2824,9 +2824,9 @@ unmarshal(change, [2, #{
     [?rec_token_acquired(unmarshal(str, Token))];
 unmarshal(change, [3, #{
     <<"change">>    := <<"new_repair">>,
-    <<"scenario">>  := Scenarios
+    <<"scenario">>  := Scenario
 }]) ->
-    [?payment_new_repair(unmarshal(scenario, Scenarios))];
+    [?payment_new_repair(unmarshal(scenario, Scenario))];
 
 %% deprecated v2 changes
 unmarshal(change, [2, #{
