@@ -11,7 +11,6 @@
 
 -type risk_score()      :: dmsl_domain_thrift:'RiskScore'().
 -type proxy_result()    :: dmsl_proxy_provider_thrift:'PaymentProxyResult'().
--type change()          :: dmsl_payment_processing_thrift:'InvoicePaymentChangePayload'().
 -type scenario()        :: dmsl_payment_processing_thrift:'InvoiceRepairScenario'().
 
 %% user types
