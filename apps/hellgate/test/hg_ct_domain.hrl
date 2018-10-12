@@ -19,7 +19,6 @@
 -define(eas(ID),        #domain_ExternalAccountSetRef{id = ID}).
 -define(insp(ID),       #domain_InspectorRef{id = ID}).
 -define(pinst(ID),      #domain_PaymentInstitutionRef{id = ID}).
--define(binrange(ID),   #domain_BankCardBINRangeRef{id = ID}).
 -define(bank(ID),       #domain_BankRef{id = ID}).
 -define(bussched(ID),   #domain_BusinessScheduleRef{id = ID}).
 

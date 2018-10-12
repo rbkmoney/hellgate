@@ -3267,6 +3267,7 @@ payments_w_bank_conditions_fixture(_Revision) ->
             data = #domain_Bank {
                 name = <<"TEST BANK">>,
                 description = <<"TEST BANK">>,
+                bins = ordsets:from_list([<<"1234">>, <<"4567">>]),
                 binbase_id_patterns = ordsets:from_list([<<"TEST*BANK">>])
             }
         }},

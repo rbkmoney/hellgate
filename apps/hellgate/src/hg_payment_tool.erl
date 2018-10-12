@@ -89,9 +89,6 @@ test_bank_card_condition_def(
 test_bank_card_condition_def({payment_system_is, _Ps}, #domain_BankCard{}, _Rev) ->
     false;
 
-test_bank_card_condition_def({bin_in, RangeRef}, #domain_BankCard{bin = BIN}, Rev) ->
-    #domain_BankCardBINRange{bins = BINs} = hg_domain:get(Rev, {bank_card_bin_range, RangeRef}),
-    ordsets:is_element(BIN, BINs);
 test_bank_card_condition_def({payment_system, PaymentSystem}, V, Rev) ->
     test_payment_system_condition(PaymentSystem, V, Rev);
 test_bank_card_condition_def({issuer_country_is, IssuerCountry}, V, Rev) ->
@@ -113,10 +110,19 @@ test_issuer_country_condition(_Country, #domain_BankCard{issuer_country = undefi
 test_issuer_country_condition(Country, #domain_BankCard{issuer_country = TargetCountry}, _Rev) ->
     Country == TargetCountry.
 
-test_issuer_bank_condition(_BankRef, #domain_BankCard{bank_name = undefined}, _Rev) ->
+test_issuer_bank_condition(BankRef, #domain_BankCard{bank_name = BankName, bin = BIN}, Rev) ->
+    #domain_Bank{binbase_id_patterns = Patterns, bins = BINs} = hg_domain:get(Rev, {bank, BankRef}),
+    case Patterns of
+        undefined -> test_bank_card_bins(BIN, BINs);
+        _ -> test_bank_card_patterns(Patterns, BankName)
+    end.
+
+test_bank_card_bins(BIN, BINs) ->
+    ordsets:is_element(BIN, BINs).
+
+test_bank_card_patterns(_Patterns, undefined) ->
     undefined;
-test_issuer_bank_condition(BankRef, #domain_BankCard{bank_name = BankName}, Rev) ->
-    #domain_Bank{binbase_id_patterns = Patterns} = hg_domain:get(Rev, {bank, BankRef}),
+test_bank_card_patterns(Patterns, BankName) ->
     Matches = ordsets:filter(fun(E) -> genlib_wildcard:match(BankName, E) end, Patterns),
     ordsets:size(Matches) > 0.
 
