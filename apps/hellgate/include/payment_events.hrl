@@ -51,7 +51,7 @@
 ).
 
 -define(payment_new_repair(Scenario),
-    {invoice_payment_new_repair,
+    {invoice_payment_repair,
         #payproc_InvoicePaymentRepair{scenario = Scenario}
     }
 ).

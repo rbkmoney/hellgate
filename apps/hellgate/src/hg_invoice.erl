@@ -241,11 +241,11 @@ handle_function_('Repair', [UserInfo, InvoiceID, Changes], _Opts) ->
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
     repair(InvoiceID, {changes, Changes});
 
-handle_function_('RepairScenario', [UserInfo, InvoiceID, ScenarioData], _Opts) ->
+handle_function_('RepairScenario', [UserInfo, InvoiceID, Scenario], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
-    repair(InvoiceID, {scenario, ScenarioData}).
+    repair(InvoiceID, {scenario, Scenario}).
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
@@ -444,15 +444,15 @@ handle_signal({repair, {changes, Changes}}, St) ->
 handle_signal({repair, {scenario, _}}, #st{activity = Activity})
     when Activity =:= invoice orelse Activity =:= undefined ->
     throw({exception, invoice_has_no_active_payment});
-handle_signal({repair, {scenario, ScenarioData}}, St = #st{activity = {payment, PaymentID}}) ->
+handle_signal({repair, {scenario, Scenario}}, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
     Activity = hg_invoice_payment:get_activity(PaymentSession),
-    Result = case {ScenarioData, Activity} of
+    Result = case {Scenario, Activity} of
         {_, idle} ->
             throw({exception, cant_fail_payment_in_idle_state});
-        {ScenarioData, Activity} ->
+        {Scenario, Activity} ->
             #{
-                changes => wrap_payment_changes(PaymentID, hg_invoice_repair:get_repair_changes(Activity, ScenarioData))
+                changes => wrap_payment_changes(PaymentID, hg_invoice_repair:get_repair_changes(Activity, Scenario))
             }
     end,
     Result#{

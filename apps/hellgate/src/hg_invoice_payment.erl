@@ -93,7 +93,7 @@
     adjustments    = []    :: [adjustment()],
     recurrent_token        :: undefined | recurrent_token(),
     opts                   :: undefined | opts(),
-    repair_scenario        :: undefined | [hg_invoice_repair:scenario()]
+    repair_scenario        :: undefined | hg_invoice_repair:scenario()
 }).
 
 -record(refund_st, {
@@ -108,6 +108,7 @@
 
 -export_type([st/0]).
 -export_type([activity/0]).
+-export_type([machine_result/0]).
 
 -type party()               :: dmsl_domain_thrift:'Party'().
 -type payer()               :: dmsl_domain_thrift:'Payer'().
@@ -2474,6 +2475,11 @@ marshal(change, ?rec_token_acquired(Token)) ->
         <<"change">>        => <<"token_acquired">>,
         <<"token">>         => marshal(str, Token)
     }];
+marshal(change, ?payment_new_repair(ScenarioData)) ->
+    [3, #{
+        <<"change">>        => <<"new_repair">>,
+        <<"scenario">>      => marshal(scenario, ScenarioData)
+    }];
 
 %% Payment
 
@@ -2625,6 +2631,27 @@ marshal(refund_status, ?refund_succeeded()) ->
     <<"succeeded">>;
 marshal(refund_status, ?refund_failed(Failure)) ->
     [<<"failed">>, marshal(failure, Failure)];
+
+%% Repair scenario
+
+marshal(scenario, Scenarios) when is_list(Scenarios) ->
+    [marshal(scenario, Scenario) || Scenario <- Scenarios];
+
+marshal(scenario, #payproc_InvoiceRepairFailPreProcessing{failure = Failure}) ->
+    #{
+        <<"type">>         => <<"repair_fail_pre_processing">>,
+        <<"failure">>      => marshal(failure, Failure)
+    };
+marshal(scenario, #payproc_InvoiceRepairSkipInspector{risk_score = RiskScore}) ->
+    #{
+        <<"type">>         => <<"repair_skip_inspector">>,
+        <<"risk_score">>   => marshal(risk_score, RiskScore)
+    };
+marshal(scenario, #payproc_InvoiceRepairFailAdapter{failure = Failure}) ->
+    #{
+        <<"type">>         => <<"repair_fail_adapter">>,
+        <<"failure">>      => marshal(failure, Failure)
+    };
 
 %%
 
@@ -2795,6 +2822,11 @@ unmarshal(change, [2, #{
     <<"token">>     := Token
 }]) ->
     [?rec_token_acquired(unmarshal(str, Token))];
+unmarshal(change, [3, #{
+    <<"change">>    := <<"new_repair">>,
+    <<"scenario">>  := Scenarios
+}]) ->
+    [?payment_new_repair(unmarshal(scenario, Scenarios))];
 
 %% deprecated v2 changes
 unmarshal(change, [2, #{
@@ -3071,6 +3103,27 @@ unmarshal(refund_status, <<"succeeded">>) ->
     ?refund_succeeded();
 unmarshal(refund_status, [<<"failed">>, Failure]) ->
     ?refund_failed(unmarshal(failure, Failure));
+
+%% Repair scenario
+
+unmarshal(scenario, Scenarios) when is_list(Scenarios) ->
+    [unmarshal(scenario, Scenario) || Scenario <- Scenarios];
+
+unmarshal(scenario, #{
+    <<"type">>                  := <<"repair_fail_pre_processing">>,
+    <<"failure">>               := Failure
+}) ->
+    #payproc_InvoiceRepairFailPreProcessing{failure = unmarshal(failure, Failure)};
+unmarshal(scenario, #{
+    <<"type">>                  := <<"repair_skip_inspector">>,
+    <<"risk_score">>            := RiskScore
+}) ->
+    #payproc_InvoiceRepairSkipInspector{risk_score = unmarshal(risk_score, RiskScore)};
+unmarshal(scenario, #{
+    <<"type">>                  := <<"repair_fail_adapter">>,
+    <<"failure">>               := Failure
+}) ->
+    #payproc_InvoiceRepairFailAdapter{failure = unmarshal(failure, Failure)};
 
 %% Payer
 
