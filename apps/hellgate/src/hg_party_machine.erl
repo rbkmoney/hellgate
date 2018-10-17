@@ -315,8 +315,19 @@ get_party(PartyID) ->
     get_st_party(get_state(PartyID)).
 
 get_state(PartyID) ->
-    #{history := ReversedHistoryPart, aux_state := AuxSt} = get_machine(PartyID),
-    get_state(PartyID, ReversedHistoryPart, AuxSt).
+    AuxSt = get_aux_state(PartyID),
+    get_state(PartyID, get_snapshot_index(AuxSt)).
+
+get_state(PartyID, []) ->
+    %% No snapshots, so we need entire history
+    Events = lists:map(fun unwrap_event/1, get_history(PartyID, undefined, undefined, forward)),
+    merge_events(Events, #st{revision = hg_domain:head()});
+get_state(PartyID, [FirstID | _]) ->
+    History = get_history(PartyID, FirstID - 1, undefined, forward),
+    Events = lists:map(fun unwrap_event/1, History),
+    [FirstEvent | _] = History,
+    St = unwrap_state(FirstEvent),
+    merge_events(Events, St).
 
 get_state(PartyID, ReversedHistoryPart, AuxSt) ->
     SnapshotIndex = get_snapshot_index(AuxSt),
@@ -429,14 +440,15 @@ get_history(PartyID, AfterID, Limit) ->
 get_history(PartyID, AfterID, Limit, Direction) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, Direction)).
 
-get_machine(PartyID) ->
-    map_history_error(hg_machine:get_machine(
+get_aux_state(PartyID) ->
+    #{aux_state := AuxSt} = map_history_error(hg_machine:get_machine(
         ?NS,
         PartyID,
         undefined,
-        ?SNAPSHOT_STEP,
+        0,
         backward
-    )).
+    )),
+    unwrap_aux_state(AuxSt).
 
 get_revision_of_part(PartyID, History, Last, Step) ->
     case find_revision_in_history(History) of
@@ -652,33 +664,30 @@ append_party_revision_index(St, AuxSt) ->
     PartyRevisionIndex1 = PartyRevisionIndex0#{
         PartyRevision => {hg_utils:select_defined(FromEventID, EventID), EventID}
     },
-    AuxSt#{party_revision_index => PartyRevisionIndex1}.
+    set_party_revision_index(PartyRevisionIndex1, AuxSt).
 
 get_party_revision_index(AuxSt) ->
     maps:get(party_revision_index, AuxSt, #{}).
+
+set_party_revision_index(PartyRevisionIndex, AuxSt) ->
+    AuxSt#{party_revision_index => PartyRevisionIndex}.
 
 get_party_revision_range(PartyRevision, PartyRevisionIndex) ->
     maps:get(PartyRevision, PartyRevisionIndex, {undefined, undefined}).
 
 append_snapshot_index(EventID, AuxSt) ->
     SnapshotIndex = get_snapshot_index(AuxSt),
-    AuxSt#{snapshot_index => [EventID | SnapshotIndex]}.
+    set_snapshot_index([EventID | SnapshotIndex], AuxSt).
 
 get_snapshot_index(AuxSt) ->
     maps:get(snapshot_index, AuxSt, []).
 
-get_last_revision_event_id(Revision, FirstID, AuxSt) ->
-    {_, ToEventID0} = get_party_revision_range(
-        Revision,
-        get_party_revision_index(AuxSt)
-    ),
-    case ToEventID0 of
-        undefined ->
-            FirstID;
-        _ ->
-            min(ToEventID0, FirstID)
-    end.
+set_snapshot_index(SnapshotIndex, AuxSt) ->
+    AuxSt#{snapshot_index => SnapshotIndex}.
 
+get_limit(undefined, _) ->
+    %% we can't get any reasonable limit in this case
+    undefined;
 get_limit(ToEventID, [SnapshotEventID | _]) when SnapshotEventID < ToEventID ->
     ToEventID - SnapshotEventID;
 get_limit(ToEventID, [_ | SnapshotIndex]) ->
@@ -711,22 +720,10 @@ checkout_history_by_timestamp([], Timestamp, St) ->
     {ok, St#st{timestamp = Timestamp}}.
 
 checkout_party_by_revision(PartyID, Revision) ->
-    #{history := ReversedHistoryPart, aux_state := AuxSt0} = get_machine(PartyID),
-    AuxSt = unwrap_aux_state(AuxSt0),
-    {FirstID, _, _} = lists:last(ReversedHistoryPart),
-    FromEventID = get_last_revision_event_id(Revision, FirstID, AuxSt),
-    SnapshotIndex = get_snapshot_index(AuxSt),
-    ReversedHistory = case FromEventID < FirstID of
-        true ->
-            Limit = get_limit(FromEventID, SnapshotIndex),
-            get_history(PartyID, FromEventID, Limit, backward);
-        false ->
-            Limit = get_limit(FirstID, SnapshotIndex),
-            ReversedHistoryPart ++ get_history(PartyID, FirstID, Limit, backward)
-    end,
-    checkout_history_by_revision(ReversedHistory, Revision).
-
-checkout_history_by_revision(ReversedHistory, Revision) ->
+    AuxSt = get_aux_state(PartyID),
+    {_, FromEventID} = get_party_revision_range(Revision, get_party_revision_index(AuxSt)),
+    Limit = get_limit(FromEventID, get_snapshot_index(AuxSt)),
+    ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
     case parse_history(ReversedHistory) of
         {undefined, Events} ->
             checkout_history_by_revision(Events, Revision, #st{revision = hg_domain:head()});
