@@ -335,20 +335,18 @@ get_state(PartyID, ReversedHistoryPart, EventsAcc, SnapshotIndex) ->
     end.
 
 parse_history(ReversedHistoryPart) ->
-    parse_history(ReversedHistoryPart, [], {undefined, []}).
+    parse_history(ReversedHistoryPart, []).
 
-parse_history([WrappedEvent | Others], EventsAcc, {OldSt, StEvents}) ->
+parse_history([WrappedEvent | Others], EventsAcc) ->
     Event = unwrap_event(WrappedEvent),
     case unwrap_state(WrappedEvent) of
         undefined ->
-            parse_history(Others, [Event | EventsAcc], {OldSt, StEvents});
+            parse_history(Others, [Event | EventsAcc]);
         #st{} = St ->
-            parse_history(Others, [], {St, [Event | EventsAcc] ++ StEvents})
+            {St, [Event | EventsAcc]}
     end;
-parse_history([], [], StAcc) ->
-    StAcc;
-parse_history([], EventsAcc, {_St, StEvents}) ->
-    {undefined, EventsAcc ++ StEvents}.
+parse_history([], EventsAcc) ->
+    {undefined, EventsAcc}.
 
 -spec checkout(party_id(), party_revision_param()) ->
     dmsl_domain_thrift:'Party'() | no_return().
