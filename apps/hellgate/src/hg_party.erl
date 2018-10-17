@@ -385,10 +385,19 @@ reduce_acts_terms(#domain_ServiceAcceptanceActsTerms{schedules = Schedules}, VS,
     }.
 
 reduce_wallets_terms(#domain_WalletServiceTerms{} = Terms, VS, Rev) ->
+    WithdrawalTerms = Terms#domain_WalletServiceTerms.withdrawals,
     #domain_WalletServiceTerms{
         currencies = reduce_if_defined(Terms#domain_WalletServiceTerms.currencies, VS, Rev),
         wallet_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.wallet_limit, VS, Rev),
-        turnover_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.turnover_limit, VS, Rev)
+        turnover_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.turnover_limit, VS, Rev),
+        withdrawals = hg_maybe:apply(fun(X) -> reduce_withdrawals_terms(X, VS, Rev) end, WithdrawalTerms)
+    }.
+
+reduce_withdrawals_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
+    #domain_WithdrawalServiceTerms{
+        currencies = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.currencies, VS, Rev),
+        cash_limit = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_limit, VS, Rev),
+        cash_flow = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_flow, VS, Rev)
     }.
 
 reduce_if_defined(Selector, VS, Rev) ->
