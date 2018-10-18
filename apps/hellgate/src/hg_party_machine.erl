@@ -149,9 +149,9 @@ process_call(Call, #{id := PartyID, history := History, aux_state := WrappedAuxS
                 activity => get_call_name(Call)
             },
             fun() ->
-                AuxSt = unwrap_aux_state(WrappedAuxSt),
-                St = get_state_for_call(PartyID, History, AuxSt),
-                handle_call(Call, AuxSt, St)
+                AuxSt0 = unwrap_aux_state(WrappedAuxSt),
+                {St, AuxSt1} = get_state_for_call(PartyID, History, AuxSt0),
+                handle_call(Call, AuxSt1, St)
             end
         )
     catch
@@ -330,23 +330,26 @@ get_state(PartyID, [FirstID | _]) ->
     merge_events(Events, St).
 
 get_state_for_call(PartyID, ReversedHistoryPart, AuxSt) ->
-    SnapshotIndex = get_snapshot_index(AuxSt),
     {St, History} = parse_history(ReversedHistoryPart),
-    get_state_for_call(PartyID, {St, History}, [], SnapshotIndex).
+    get_state_for_call(PartyID, {St, History}, [], AuxSt).
 
-get_state_for_call(PartyID, {undefined, [{FirstID, _, _} | _] = Events}, EventsAcc, SnapshotIndex)
+get_state_for_call(PartyID, {undefined, [{FirstID, _, _} | _] = Events}, EventsAcc, AuxSt)
     when FirstID > 1
 ->
-    Limit = get_limit(FirstID, SnapshotIndex),
+    Limit = get_limit(FirstID, get_snapshot_index(AuxSt)),
     NewHistoryPart = parse_history(get_history(PartyID, FirstID, Limit, backward)),
-    get_state_for_call(PartyID, NewHistoryPart, Events ++ EventsAcc, SnapshotIndex);
-get_state_for_call(_, {undefined, Events}, EventsAcc, _) ->
-    History = Events ++ EventsAcc,
-    %% here we got entire history.
+    get_state_for_call(PartyID, NewHistoryPart, Events ++ EventsAcc, AuxSt);
+get_state_for_call(_, {St0, Events}, EventsAcc, AuxSt0) ->
+    %% here we can get entire history.
     %% we can use it to create revision index for AuxSt
-    merge_events(History, #st{revision = hg_domain:head()});
-get_state_for_call(_, {St, Events}, EventsAcc, _) ->
-    merge_events(Events ++ EventsAcc, St).
+    PartyRevisionIndex0 = get_party_revision_index(AuxSt0),
+    {St1, PartyRevisionIndex1} = build_revision_index(
+        Events ++ EventsAcc,
+        PartyRevisionIndex0,
+        hg_utils:select_defined(St0, #st{revision = hg_domain:head()})
+    ),
+    AuxSt1 = set_party_revision_index(PartyRevisionIndex1, AuxSt0),
+    {St1, AuxSt1}.
 
 parse_history(ReversedHistoryPart) ->
     parse_history(ReversedHistoryPart, []).
@@ -660,14 +663,20 @@ respond_w_exception(Exception) ->
     {{exception, Exception}, #{}}.
 
 append_party_revision_index(St, AuxSt) ->
-    #domain_Party{revision = PartyRevision} = get_st_party(St),
-    EventID = St#st.last_event + 1,
     PartyRevisionIndex0 = get_party_revision_index(AuxSt),
-    {FromEventID, _} = get_party_revision_range(PartyRevision, PartyRevisionIndex0),
-    PartyRevisionIndex1 = PartyRevisionIndex0#{
-        PartyRevision => {hg_utils:select_defined(FromEventID, EventID), EventID}
-    },
+    PartyRevisionIndex1 = update_party_revision_index(St, PartyRevisionIndex0),
     set_party_revision_index(PartyRevisionIndex1, AuxSt).
+
+update_party_revision_index(St, PartyRevisionIndex) ->
+    #domain_Party{revision = PartyRevision} = get_st_party(St),
+    EventID = St#st.last_event,
+    {FromEventID, ToEventID} = get_party_revision_range(PartyRevision, PartyRevisionIndex),
+    PartyRevisionIndex#{
+        PartyRevision => {
+            hg_utils:select_defined(FromEventID, EventID),
+            max(hg_utils:select_defined(ToEventID, EventID), EventID)
+        }
+    }.
 
 get_party_revision_index(AuxSt) ->
     maps:get(party_revision_index, AuxSt, #{}).
@@ -677,6 +686,14 @@ set_party_revision_index(PartyRevisionIndex, AuxSt) ->
 
 get_party_revision_range(PartyRevision, PartyRevisionIndex) ->
     maps:get(PartyRevision, PartyRevisionIndex, {undefined, undefined}).
+
+%% TODO crunch func, will be removed after a short (or not so short) time
+build_revision_index([Event | History], PartyRevisionIndex0, St0) ->
+    St1 = merge_event(Event, St0),
+    PartyRevisionIndex1 = update_party_revision_index(St1, PartyRevisionIndex0),
+    build_revision_index(History, PartyRevisionIndex1, St1);
+build_revision_index([], PartyRevisionIndex, St) ->
+    {St, PartyRevisionIndex}.
 
 append_snapshot_index(EventID, AuxSt) ->
     SnapshotIndex = get_snapshot_index(AuxSt),
@@ -724,7 +741,12 @@ checkout_history_by_timestamp([], Timestamp, St) ->
 
 checkout_party_by_revision(PartyID, Revision) ->
     AuxSt = get_aux_state(PartyID),
-    {_, FromEventID} = get_party_revision_range(Revision, get_party_revision_index(AuxSt)),
+    FromEventID = case get_party_revision_range(Revision, get_party_revision_index(AuxSt)) of
+        {_, undefined} ->
+            undefined;
+        {_, EventID} ->
+            EventID + 1
+    end,
     Limit = get_limit(FromEventID, get_snapshot_index(AuxSt)),
     ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
     case parse_history(ReversedHistory) of
