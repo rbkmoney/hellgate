@@ -385,10 +385,19 @@ reduce_acts_terms(#domain_ServiceAcceptanceActsTerms{schedules = Schedules}, VS,
     }.
 
 reduce_wallets_terms(#domain_WalletServiceTerms{} = Terms, VS, Rev) ->
+    WithdrawalTerms = Terms#domain_WalletServiceTerms.withdrawals,
     #domain_WalletServiceTerms{
         currencies = reduce_if_defined(Terms#domain_WalletServiceTerms.currencies, VS, Rev),
-        cash_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.cash_limit, VS, Rev),
-        turnover_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.turnover_limit, VS, Rev)
+        wallet_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.wallet_limit, VS, Rev),
+        turnover_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.turnover_limit, VS, Rev),
+        withdrawals = hg_maybe:apply(fun(X) -> reduce_withdrawals_terms(X, VS, Rev) end, WithdrawalTerms)
+    }.
+
+reduce_withdrawals_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
+    #domain_WithdrawalServiceTerms{
+        currencies = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.currencies, VS, Rev),
+        cash_limit = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_limit, VS, Rev),
+        cash_flow = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_flow, VS, Rev)
     }.
 
 reduce_if_defined(Selector, VS, Rev) ->
@@ -618,18 +627,18 @@ merge_service_acceptance_acts_terms(Terms0, Terms1) ->
 merge_wallets_terms(
     #domain_WalletServiceTerms{
         currencies = Currencies0,
-        cash_limit = CashLimit0,
+        wallet_limit = CashLimit0,
         turnover_limit = TurnoverLimit0
     },
     #domain_WalletServiceTerms{
         currencies = Currencies1,
-        cash_limit = CashLimit1,
+        wallet_limit = CashLimit1,
         turnover_limit = TurnoverLimit1
     }
 ) ->
     #domain_WalletServiceTerms{
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
-        cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
+        wallet_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
         turnover_limit = hg_utils:select_defined(TurnoverLimit1, TurnoverLimit0)
     };
 merge_wallets_terms(Terms0, Terms1) ->
