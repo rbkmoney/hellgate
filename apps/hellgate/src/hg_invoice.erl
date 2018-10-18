@@ -241,7 +241,7 @@ handle_function_('Repair', [UserInfo, InvoiceID, Changes], _Opts) ->
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
     repair(InvoiceID, {changes, Changes});
 
-handle_function_('RepairScenario', [UserInfo, InvoiceID, Scenario], _Opts) ->
+handle_function_('RepairWithScenario', [UserInfo, InvoiceID, Scenario], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
@@ -447,14 +447,13 @@ handle_signal({repair, {scenario, _}}, #st{activity = Activity})
 handle_signal({repair, {scenario, Scenario}}, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
     Activity = hg_invoice_payment:get_activity(PaymentSession),
-    RepairState = case {Scenario, Activity} of
+    RepairSession = case {Scenario, Activity} of
         {_, idle} ->
             throw({exception, cant_fail_payment_in_idle_state});
         {Scenario, Activity} ->
-            hg_invoice_repair:get_repair_changes(Activity, Scenario, St)
+            hg_invoice_repair:get_repair_state(Activity, Scenario, PaymentSession)
     end,
-    PaymentSession = get_payment_session(PaymentID, St),
-    process_payment_signal(timeout, PaymentID, PaymentSession, RepairState).
+    process_payment_signal(timeout, PaymentID, RepairSession, St).
 
 
 handle_expiration(St) ->

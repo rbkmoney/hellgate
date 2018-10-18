@@ -1322,9 +1322,9 @@ process_active_session(Action, Session, Events, St) ->
     finish_session_processing(Result, St).
 
 repair_session(St = #st{repair_scenario = Scenario}) ->
-    case hg_invoice_repair:check_for_action(fail_adapter, Scenario) of
+    case hg_invoice_repair:check_for_action(fail_session, Scenario) of
         {result, Result} ->
-            Result;
+            {ok, Result};
         call ->
             ProxyContext = construct_proxy_context(St),
             issue_process_call(ProxyContext, St)

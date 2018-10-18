@@ -5,7 +5,7 @@
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -export([check_for_action/2]).
--export([get_repair_changes/3]).
+-export([get_repair_state/3]).
 
 %% dmsl types
 
@@ -18,7 +18,7 @@
 -type action_type() ::
     fail_pre_processing |
     skip_inspector |
-    fail_adapter.
+    fail_session.
 
 -type scenario_result() :: call |
     hg_invoice_payment:machine_result() |
@@ -33,32 +33,28 @@
 %% Repair
 
 -spec check_for_action(action_type(), scenario()) -> call | {result, scenario_result()}.
-check_for_action(Type, Scenario) when is_list(Scenario) ->
+check_for_action(ActionType, {complex, #payproc_InvoiceRepairComplex{scenarios = Scenarios}}) ->
     Map = lists:foldl(fun (Sc, Result) ->
-        case check_for_action(Type, Sc) of
+        case check_for_action(ActionType, Sc) of
             call ->
                 Result;
             SomeResult ->
                 Result#{result => SomeResult}
         end
-    end, #{}, Scenario),
+    end, #{}, Scenarios),
     case maps:is_key(result, Map) of
         true ->
             maps:get(result, Map);
         false ->
             call
     end;
-
-%% Story parts
-
-check_for_action(ActionType, #payproc_InvoiceRepairComplex{scenarios = Scenarios}) ->
-    check_for_action(ActionType, Scenarios);
-check_for_action(fail_pre_processing, #payproc_InvoiceRepairFailPreProcessing{failure = Failure}) ->
-    {result, {done, {[?payment_status_changed(?failed(Failure))], hg_machine_action:instant()}}};
-check_for_action(skip_inspector, #payproc_InvoiceRepairSkipInspector{risk_score = RiskScore}) ->
+check_for_action(fail_pre_processing,
+    {fail_pre_processing, #payproc_InvoiceRepairFailPreProcessing{failure = Failure}}) ->
+    {result, {done, {[?payment_status_changed(?failed({failure, Failure}))], hg_machine_action:instant()}}};
+check_for_action(skip_inspector, {skip_inspector, #payproc_InvoiceRepairSkipInspector{risk_score = RiskScore}}) ->
     {result, RiskScore};
-check_for_action(fail_adapter, #payproc_InvoiceRepairFailAdapter{failure = Failure}) ->
-    ProxyResult = #prxprv_PaymentProxyResult{intent = {mysteryIntent,
+check_for_action(fail_session, {fail_session, #payproc_InvoiceRepairFailSession{failure = Failure}}) ->
+    ProxyResult = #prxprv_PaymentProxyResult{intent = {finish,
         #'prxprv_FinishIntent'{status = {failure, Failure}}}},
     {result, ProxyResult};
 check_for_action(_Type, _Scenario) ->
@@ -66,35 +62,33 @@ check_for_action(_Type, _Scenario) ->
 
 %% create repair event
 
--spec get_repair_changes(scenario(), hg_invoice_payment:activity(), hg_invoice_payment:st()) ->
+-spec get_repair_state(hg_invoice_payment:activity(), scenario(), hg_invoice_payment:st()) ->
     hg_invoice_payment:st().
 
-get_repair_changes(Scenario, Activity, St) ->
+get_repair_state(Activity, Scenario, St) ->
     check_activity_compatibility(Scenario, Activity),
     hg_invoice_payment:set_repair_scenario(Scenario, St).
 
-check_activity_compatibility(Scenario, Activity) when is_list(Scenario) ->
-    lists:foreach(fun (Sc) -> check_activity_compatibility(Sc, Activity) end, Scenario);
-check_activity_compatibility(#payproc_InvoiceRepairComplex{scenarios = Scenarios}, Activity) ->
-    check_activity_compatibility(Scenarios, Activity);
-check_activity_compatibility(#payproc_InvoiceRepairFailPreProcessing{}, Activity)
+check_activity_compatibility({complex, #payproc_InvoiceRepairComplex{scenarios = Scenarios}}, Activity) ->
+    lists:foreach(fun (Sc) -> check_activity_compatibility(Sc, Activity) end, Scenarios);
+check_activity_compatibility({fail_pre_processing, #payproc_InvoiceRepairFailPreProcessing{}}, Activity)
     when Activity =:= {payment, new} orelse
          Activity =:= {payment, risk_scoring} orelse
          Activity =:= {payment, routing} orelse
          Activity =:= {payment, cash_flow_building} ->
     ok;
-check_activity_compatibility(#payproc_InvoiceRepairSkipInspector{}, Activity)
+check_activity_compatibility({skip_inspector, #payproc_InvoiceRepairSkipInspector{}}, Activity)
     when Activity =:= {payment, new} orelse
          Activity =:= {payment, risk_scoring} ->
     ok;
-check_activity_compatibility(#payproc_InvoiceRepairFailAdapter{}, Activity)
+check_activity_compatibility({fail_session, #payproc_InvoiceRepairFailSession{}}, Activity)
     when Activity =:= {payment, new} orelse
          Activity =:= {payment, risk_scoring} orelse
          Activity =:= {payment, routing} orelse
          Activity =:= {payment, cash_flow_building} orelse
          Activity =:= {payment, processing_session} ->
     ok;
-check_activity_compatibility(#payproc_InvoiceRepairFailAdapter{}, {refund_session, _}) ->
+check_activity_compatibility({fail_session, #payproc_InvoiceRepairFailSession{}}, {refund_session, _}) ->
     ok;
 check_activity_compatibility(Scenario, Activity) ->
     throw({exception, {activity_not_compatible_with_scenario, Activity, Scenario}}).
