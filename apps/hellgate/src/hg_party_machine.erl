@@ -150,7 +150,7 @@ process_call(Call, #{id := PartyID, history := History, aux_state := WrappedAuxS
             },
             fun() ->
                 AuxSt = unwrap_aux_state(WrappedAuxSt),
-                St = get_state(PartyID, History, AuxSt),
+                St = get_state_for_call(PartyID, History, AuxSt),
                 handle_call(Call, AuxSt, St)
             end
         )
@@ -329,21 +329,24 @@ get_state(PartyID, [FirstID | _]) ->
     St = unwrap_state(FirstEvent),
     merge_events(Events, St).
 
-get_state(PartyID, ReversedHistoryPart, AuxSt) ->
+get_state_for_call(PartyID, ReversedHistoryPart, AuxSt) ->
     SnapshotIndex = get_snapshot_index(AuxSt),
-    get_state(PartyID, ReversedHistoryPart, [], SnapshotIndex).
+    {St, History} = parse_history(ReversedHistoryPart),
+    get_state_for_call(PartyID, {St, History}, [], SnapshotIndex).
 
-get_state(PartyID, ReversedHistoryPart, EventsAcc, SnapshotIndex) ->
-    case parse_history(ReversedHistoryPart) of
-        {undefined, [{FirstID, _, _} | _] = Events} when FirstID > 1 ->
-            Limit = get_limit(FirstID, SnapshotIndex),
-            NewHistoryPart = get_history(PartyID, FirstID, Limit, backward),
-            get_state(PartyID, NewHistoryPart, Events ++ EventsAcc, SnapshotIndex);
-        {undefined, Events} ->
-            merge_events(Events ++ EventsAcc, #st{revision = hg_domain:head()});
-        {St, Events} ->
-            merge_events(Events ++ EventsAcc, St)
-    end.
+get_state_for_call(PartyID, {undefined, [{FirstID, _, _} | _] = Events}, EventsAcc, SnapshotIndex)
+    when FirstID > 1
+->
+    Limit = get_limit(FirstID, SnapshotIndex),
+    NewHistoryPart = parse_history(get_history(PartyID, FirstID, Limit, backward)),
+    get_state_for_call(PartyID, NewHistoryPart, Events ++ EventsAcc, SnapshotIndex);
+get_state_for_call(_, {undefined, Events}, EventsAcc, _) ->
+    History = Events ++ EventsAcc,
+    %% here we got entire history.
+    %% we can use it to create revision index for AuxSt
+    merge_events(History, #st{revision = hg_domain:head()});
+get_state_for_call(_, {St, Events}, EventsAcc, _) ->
+    merge_events(Events ++ EventsAcc, St).
 
 parse_history(ReversedHistoryPart) ->
     parse_history(ReversedHistoryPart, []).
