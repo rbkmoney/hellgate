@@ -128,6 +128,16 @@ handle_function_('ComputeWalletTerms', [UserInfo, PartyID, ContractID, WalletID,
         identification_level => get_identification_level(Contract, Party)
     },
     hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
+handle_function_('ComputeWalletTermsNew', [UserInfo, PartyID, ContractID, Timestamp, Varset], _Opts) ->
+    ok = set_meta_and_check_access(UserInfo, PartyID),
+    Party = checkout_party(PartyID, {timestamp, Timestamp}),
+    Contract = hg_party:get_contract(ContractID, Party),
+    Revision = hg_domain:head(),
+    VS0 = #{
+        identification_level => get_identification_level(Contract, Party)
+    },
+    VS1 = prepare_varset(PartyID, Varset, VS0),
+    hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS1, Revision);
 
 %% Claim
 
@@ -332,13 +342,17 @@ collect_payout_account_map(
     }.
 
 prepare_varset(PartyID, #payproc_Varset{} = V) ->
-    genlib_map:compact(#{
+    prepare_varset(PartyID, V, #{}).
+
+prepare_varset(PartyID, #payproc_Varset{} = V, VS0) ->
+    genlib_map:compact(VS0#{
         party_id => PartyID,
         category => V#payproc_Varset.category,
         currency => V#payproc_Varset.currency,
         cost => V#payproc_Varset.amount,
         payment_tool => prepare_payment_tool_var(V#payproc_Varset.payment_method),
-        payout_method => V#payproc_Varset.payout_method
+        payout_method => V#payproc_Varset.payout_method,
+        wallet_id => V#payproc_Varset.wallet_id
     }).
 
 prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->

@@ -8,6 +8,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
+-include_lib("stdlib/include/assert.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -39,6 +40,8 @@
 -export([payment_w_another_shop_customer/1]).
 -export([payment_w_another_party_customer/1]).
 -export([payment_w_deleted_customer/1]).
+-export([payments_w_bank_card_issuer_conditions/1]).
+-export([payments_w_bank_conditions/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
@@ -110,6 +113,9 @@ all() ->
 
         % With constant domain config
         {group, all_non_destructive_tests},
+
+        payments_w_bank_card_issuer_conditions,
+        payments_w_bank_conditions,
 
         % With variable domain config
         {group, adjustments},
@@ -309,13 +315,22 @@ end_per_group(_Group, _C) ->
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 
-init_per_testcase(Name, C) when Name == payment_adjustment_success; Name == rounding_cashflow_volume ->
+init_per_testcase(Name, C) when
+    Name == payment_adjustment_success;
+    Name == rounding_cashflow_volume;
+    Name == payments_w_bank_card_issuer_conditions;
+    Name == payments_w_bank_conditions
+->
     Revision = hg_domain:head(),
     Fixture = case Name of
         payment_adjustment_success ->
             get_adjustment_fixture(Revision);
         rounding_cashflow_volume ->
-            get_cashflow_rounding_fixture(Revision)
+            get_cashflow_rounding_fixture(Revision);
+        payments_w_bank_card_issuer_conditions ->
+            payments_w_bank_card_issuer_conditions_fixture(Revision);
+        payments_w_bank_conditions ->
+            payments_w_bank_conditions_fixture(Revision)
     end,
     ok = hg_domain:upsert(Fixture),
     [{original_domain_revision, Revision} | init_per_testcase(C)];
@@ -750,6 +765,95 @@ payment_fail_after_silent_callback(C) ->
     {URL, Form} = get_post_request(UserInteraction),
     _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(Form)}),
     PaymentID = await_payment_process_timeout(InvoiceID, PaymentID, Client).
+
+-spec payments_w_bank_card_issuer_conditions(config()) -> test_return().
+
+payments_w_bank_card_issuer_conditions(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(1), <<"RUB">>, ?tmpl(4), ?pinst(1), PartyClient),
+    %kaz success
+    FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
+    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    KazBankCard = BankCard#domain_BankCard {
+        issuer_country = kaz
+    },
+    KazPaymentParams = make_payment_params({bank_card, KazBankCard}, Session, instant),
+    FirstPayment = process_payment(FirstInvoice, KazPaymentParams, Client),
+    FirstPayment = await_payment_capture(FirstInvoice, FirstPayment, Client),
+    %kaz fail
+    SecondInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    {exception,
+        {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
+    } = hg_client_invoicing:start_payment(SecondInvoice, KazPaymentParams, Client),
+    %rus success
+    ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
+    RusBankCard = BankCard1#domain_BankCard {
+        issuer_country = rus
+    },
+    RusPaymentParams = make_payment_params({bank_card, RusBankCard}, Session1, instant),
+    SecondPayment = process_payment(ThirdInvoice, RusPaymentParams, Client),
+    SecondPayment = await_payment_capture(ThirdInvoice, SecondPayment, Client),
+    %fail with undefined issuer_country
+    FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    {UndefBankCard, Session2} = hg_dummy_provider:make_payment_tool(no_preauth),
+    UndefPaymentParams = make_payment_params(UndefBankCard, Session2, instant),
+    ?assertException(%fix me
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(FourthInvoice, UndefPaymentParams, Client)
+    ).
+
+-spec payments_w_bank_conditions(config()) -> test_return().
+
+payments_w_bank_conditions(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(1), <<"RUB">>, ?tmpl(4), ?pinst(1), PartyClient),
+    %bank 1 success
+    FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
+    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    TestBankCard = BankCard#domain_BankCard {
+        bank_name = <<"TEST BANK">>
+    },
+    TestPaymentParams = make_payment_params({bank_card, TestBankCard}, Session, instant),
+    FirstPayment = process_payment(FirstInvoice, TestPaymentParams, Client),
+    FirstPayment = await_payment_capture(FirstInvoice, FirstPayment, Client),
+    %bank 1 fail
+    SecondInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    {exception,
+        {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
+    } = hg_client_invoicing:start_payment(SecondInvoice, TestPaymentParams, Client),
+    %bank 1 /w different wildcard fail
+    ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
+    WildBankCard = BankCard1#domain_BankCard {
+        bank_name = <<"TESTBANK">>
+    },
+    WildPaymentParams = make_payment_params({bank_card, WildBankCard}, Session1, instant),
+    {exception,
+        {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
+    } = hg_client_invoicing:start_payment(ThirdInvoice, WildPaymentParams, Client),
+    %some other bank success
+    FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 10000, C),
+    {{bank_card, BankCard2}, Session2} = hg_dummy_provider:make_payment_tool(no_preauth),
+    OthrBankCard = BankCard2#domain_BankCard {
+        bank_name = <<"SOME OTHER BANK">>
+    },
+    OthrPaymentParams = make_payment_params({bank_card, OthrBankCard}, Session2, instant),
+    ThirdPayment = process_payment(FourthInvoice, OthrPaymentParams, Client),
+    ThirdPayment = await_payment_capture(FourthInvoice, ThirdPayment, Client),
+    %fail with undefined bank_name
+    FifthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
+    {UndefBankCard, Session3} = hg_dummy_provider:make_payment_tool(no_preauth),
+    UndefPaymentParams = make_payment_params(UndefBankCard, Session3, instant),
+    ?assertException(%fix me
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(FifthInvoice, UndefPaymentParams, Client)
+    ).
+
 
 -spec invoice_success_on_third_payment(config()) -> test_return().
 
@@ -3072,3 +3176,100 @@ construct_term_set_for_refund_eligibility_time(Seconds) ->
     }}.
 
 %
+
+payments_w_bank_card_issuer_conditions_fixture(_Revision) ->
+    [
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(4),
+            data = #domain_TermSetHierarchy{
+                parent_terms = ?trms(1),
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = #domain_TermSet{
+                        payments = #domain_PaymentsServiceTerms{
+                            cash_limit = {decisions, [
+                                #domain_CashLimitDecision {
+                                    if_ = {condition,
+                                        {payment_tool,
+                                            {bank_card, #domain_BankCardCondition {
+                                                definition = {issuer_country_is, kaz}
+                                            }}
+                                        }
+                                    },
+                                    then_ = {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(1000, <<"RUB">>)},
+                                            {inclusive, ?cash(1000, <<"RUB">>)}
+                                        )
+                                    }
+                                },
+                                #domain_CashLimitDecision {
+                                    if_   = {constant, true},
+                                    then_ = {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(      1000, <<"RUB">>)},
+                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                        )
+                                    }
+                                }
+                            ]}
+                        }
+                    }
+                }]
+            }
+        }},
+        hg_ct_fixture:construct_contract_template(?tmpl(4), ?trms(4))
+    ].
+
+payments_w_bank_conditions_fixture(_Revision) ->
+    [
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(4),
+            data = #domain_TermSetHierarchy{
+                parent_terms = ?trms(1),
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = #domain_TermSet{
+                        payments = #domain_PaymentsServiceTerms{
+                            cash_limit = {decisions, [
+                                #domain_CashLimitDecision {
+                                    if_ = {condition,
+                                        {payment_tool,
+                                            {bank_card, #domain_BankCardCondition {
+                                                definition = {issuer_bank_is, ?bank(1)}
+                                            }}
+                                        }
+                                    },
+                                    then_ = {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(1000, <<"RUB">>)},
+                                            {inclusive, ?cash(1000, <<"RUB">>)}
+                                        )
+                                    }
+                                },
+                                #domain_CashLimitDecision {
+                                    if_   = {constant, true},
+                                    then_ = {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(      1000, <<"RUB">>)},
+                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                        )
+                                    }
+                                }
+                            ]}
+                        }
+                    }
+                }]
+            }
+        }},
+        {bank, #domain_BankObject {
+            ref = ?bank(1),
+            data = #domain_Bank {
+                name = <<"TEST BANK">>,
+                description = <<"TEST BANK">>,
+                bins = ordsets:from_list([<<"1234">>, <<"4567">>]),
+                binbase_id_patterns = ordsets:from_list([<<"TEST*BANK">>])
+            }
+        }},
+        hg_ct_fixture:construct_contract_template(?tmpl(4), ?trms(4))
+    ].

@@ -1493,7 +1493,7 @@ construct_domain_fixture() ->
                 #domain_PayoutMethodDecision{
                     if_   = {condition, {payment_tool,
                         {bank_card, #domain_BankCardCondition{
-                            definition = {bin_in, ?binrange(1)}
+                            definition = {issuer_bank_is, ?bank(1)}
                         }}
                     }},
                     then_ = {value, ordsets:from_list([?pomt(russian_bank_account), ?pomt(international_bank_account)])}
@@ -1674,9 +1674,9 @@ construct_domain_fixture() ->
                 }]
             }
         }},
-        {bank_card_bin_range, #domain_BankCardBINRangeObject{
-            ref = ?binrange(1),
-            data = #domain_BankCardBINRange{
+        {bank, #domain_BankObject{
+            ref = ?bank(1),
+            data = #domain_Bank {
                 name = <<"Test BIN range">>,
                 description = <<"Test BIN range">>,
                 bins = ordsets:from_list([<<"1234">>, <<"5678">>])
