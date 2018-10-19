@@ -42,7 +42,6 @@
 -record(st, {
     party                :: undefined | party(),
     timestamp            :: undefined | timestamp(),
-    revision             :: hg_domain:revision(),
     claims   = #{}       :: #{claim_id() => claim()},
     meta = #{}           :: meta(),
     migration_data = #{} :: #{any() => any()},
@@ -253,7 +252,7 @@ handle_call({accept_claim, ID, ClaimRevision}, AuxSt, St) ->
     Revision = get_next_party_revision(St),
     Claim = hg_claim:accept(
         Timestamp,
-        get_st_revision(St),
+        hg_domain:head(),
         get_st_party(St),
         get_st_claim(ID, St)
     ),
@@ -321,7 +320,7 @@ get_state(PartyID) ->
 get_state(PartyID, []) ->
     %% No snapshots, so we need entire history
     Events = lists:map(fun unwrap_event/1, get_history(PartyID, undefined, undefined, forward)),
-    merge_events(Events, #st{revision = hg_domain:head()});
+    merge_events(Events, #st{});
 get_state(PartyID, [FirstID | _]) ->
     History = get_history(PartyID, FirstID - 1, undefined, forward),
     Events = lists:map(fun unwrap_event/1, History),
@@ -346,7 +345,7 @@ get_state_for_call(_, {St0, Events}, EventsAcc, AuxSt0) ->
     {St1, PartyRevisionIndex1} = build_revision_index(
         Events ++ EventsAcc,
         PartyRevisionIndex0,
-        hg_utils:select_defined(St0, #st{revision = hg_domain:head()})
+        hg_utils:select_defined(St0, #st{})
     ),
     AuxSt1 = set_party_revision_index(PartyRevisionIndex1, AuxSt0),
     {St1, AuxSt1}.
@@ -529,12 +528,6 @@ get_st_pending_claims(#st{claims = Claims})->
 get_st_timestamp(#st{timestamp = Timestamp}) ->
     Timestamp.
 
--spec get_st_revision(st()) ->
-    hg_domain:revision().
-
-get_st_revision(#st{revision = Revision}) ->
-    Revision.
-
 -spec get_st_metadata(meta_ns(), st()) ->
     meta_data().
 
@@ -564,7 +557,7 @@ assert_claim_modification_allowed(ID, Revision, St) ->
 
 assert_claims_not_conflict(Claim, ClaimsPending, St) ->
     Timestamp = get_st_timestamp(St),
-    Revision = get_st_revision(St),
+    Revision = hg_domain:head(),
     Party = get_st_party(St),
     ConflictedClaims = lists:dropwhile(
         fun(PendingClaim) ->
@@ -584,7 +577,7 @@ assert_claims_not_conflict(Claim, ClaimsPending, St) ->
 
 create_claim(Changeset, St) ->
     Timestamp = get_st_timestamp(St),
-    Revision = get_st_revision(St),
+    Revision = hg_domain:head(),
     Party = get_st_party(St),
     Claim = hg_claim:create(get_next_claim_id(St), Changeset, Party, Timestamp, Revision),
     ClaimsPending = get_st_pending_claims(St),
@@ -621,7 +614,7 @@ update_claim(ID, Changeset, St) ->
         get_st_claim(ID, St),
         get_st_party(St),
         Timestamp,
-        get_st_revision(St)
+        hg_domain:head()
     ),
     ClaimsPending = get_st_pending_claims(St),
     ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
@@ -721,7 +714,7 @@ get_limit(_ToEventID, []) ->
 
 checkout_party(PartyID, {timestamp, Timestamp}) ->
     Events = unwrap_events(get_history(PartyID, undefined, undefined)),
-    checkout_history_by_timestamp(Events, Timestamp, #st{revision = hg_domain:head()});
+    checkout_history_by_timestamp(Events, Timestamp, #st{});
 checkout_party(PartyID, {revision, Revision}) ->
     checkout_party_by_revision(PartyID, Revision).
 
@@ -751,7 +744,7 @@ checkout_party_by_revision(PartyID, Revision) ->
     ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
     case parse_history(ReversedHistory) of
         {undefined, Events} ->
-            checkout_history_by_revision(Events, Revision, #st{revision = hg_domain:head()});
+            checkout_history_by_revision(Events, Revision, #st{});
         {St, Events} ->
             checkout_history_by_revision(Events, Revision, St)
     end.
