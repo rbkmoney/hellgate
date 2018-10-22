@@ -746,7 +746,7 @@ get_payment_status(#domain_InvoicePayment{status = Status}) ->
 try_to_get_repair_state({complex, #payproc_InvoiceRepairComplex{scenarios = Scenarios}}, St) ->
     repair_complex(Scenarios, St);
 try_to_get_repair_state(Scenario, St) ->
-    get_repair_state(Scenario, St).
+    process_repair(Scenario, St).
 
 repair_complex([], St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
@@ -754,13 +754,13 @@ repair_complex([], St = #st{activity = {payment, PaymentID}}) ->
     throw({exception, {activity_not_compatible_with_complex_scenario, Activity}});
 repair_complex([Scenario | Rest], St) ->
     try
-        get_repair_state(Scenario, St)
+        process_repair(Scenario, St)
     catch
         throw:{exception, {activity_not_compatible_with_scenario, _, _}} ->
             repair_complex(Rest, St)
     end.
 
-get_repair_state(Scenario, St = #st{activity = {payment, PaymentID}}) ->
+process_repair(Scenario, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
     Activity = hg_invoice_payment:get_activity(PaymentSession),
     RepairSession = hg_invoice_repair:get_repair_state(Activity, Scenario, PaymentSession),

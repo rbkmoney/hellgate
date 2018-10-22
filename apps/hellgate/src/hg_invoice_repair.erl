@@ -20,7 +20,7 @@
     skip_inspector |
     fail_session.
 
--type scenario_result() :: call |
+-type scenario_result() ::
     hg_invoice_payment:machine_result() |
     proxy_result() |
     risk_score().
@@ -34,20 +34,7 @@
 
 -spec check_for_action(action_type(), scenario()) -> call | {result, scenario_result()}.
 check_for_action(ActionType, {complex, #payproc_InvoiceRepairComplex{scenarios = Scenarios}}) ->
-    Map = lists:foldl(fun (Sc, Result) ->
-        case check_for_action(ActionType, Sc) of
-            call ->
-                Result;
-            SomeResult ->
-                Result#{result => SomeResult}
-        end
-    end, #{}, Scenarios),
-    case maps:is_key(result, Map) of
-        true ->
-            maps:get(result, Map);
-        false ->
-            call
-    end;
+    check_complex_list(ActionType, Scenarios);
 check_for_action(fail_pre_processing,
     {fail_pre_processing, #payproc_InvoiceRepairFailPreProcessing{failure = Failure}}) ->
     {result, {done, {[?payment_status_changed(?failed({failure, Failure}))], hg_machine_action:instant()}}};
@@ -59,6 +46,16 @@ check_for_action(fail_session, {fail_session, #payproc_InvoiceRepairFailSession{
     {result, ProxyResult};
 check_for_action(_Type, _Scenario) ->
     call.
+
+check_complex_list(_ActionType, []) ->
+    call;
+check_complex_list(ActionType, [Scenario | Rest]) ->
+    case check_for_action(ActionType, Scenario) of
+        {result, _Value} = Result ->
+            Result;
+        call ->
+            check_complex_list(ActionType, Rest)
+    end.
 
 %% create repair event
 
