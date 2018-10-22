@@ -265,10 +265,11 @@ handle_call({accept_claim, ID, ClaimRevision}, AuxSt, St) ->
 
 handle_call({deny_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
-    Claim = hg_claim:deny(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
+    Timestamp = hg_datetime:format_now(),
+    Claim = hg_claim:deny(Reason, Timestamp, get_st_claim(ID, St)),
     respond(
         ok,
-        [finalize_claim(Claim, get_st_timestamp(St))],
+        [finalize_claim(Claim, Timestamp)],
         AuxSt,
         St
     );
@@ -276,10 +277,11 @@ handle_call({deny_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
 handle_call({revoke_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
-    Claim = hg_claim:revoke(Reason, get_st_timestamp(St), get_st_claim(ID, St)),
+    Timestamp = hg_datetime:format_now(),
+    Claim = hg_claim:revoke(Reason, Timestamp, get_st_claim(ID, St)),
     respond(
         ok,
-        [finalize_claim(Claim, get_st_timestamp(St))],
+        [finalize_claim(Claim, Timestamp)],
         AuxSt,
         St
     ).
@@ -522,12 +524,6 @@ get_st_pending_claims(#st{claims = Claims})->
         Claims
     )).
 
--spec get_st_timestamp(st()) ->
-    timestamp().
-
-get_st_timestamp(#st{timestamp = Timestamp}) ->
-    Timestamp.
-
 -spec get_st_metadata(meta_ns(), st()) ->
     meta_data().
 
@@ -555,10 +551,7 @@ assert_claim_modification_allowed(ID, Revision, St) ->
     ok = hg_claim:assert_revision(Claim, Revision),
     ok = hg_claim:assert_pending(Claim).
 
-assert_claims_not_conflict(Claim, ClaimsPending, St) ->
-    Timestamp = get_st_timestamp(St),
-    Revision = hg_domain:head(),
-    Party = get_st_party(St),
+assert_claims_not_conflict(Claim, ClaimsPending, Timestamp, Revision, Party) ->
     ConflictedClaims = lists:dropwhile(
         fun(PendingClaim) ->
             hg_claim:get_id(Claim) =:= hg_claim:get_id(PendingClaim) orelse
@@ -576,13 +569,13 @@ assert_claims_not_conflict(Claim, ClaimsPending, St) ->
 %%
 
 create_claim(Changeset, St) ->
-    Timestamp = get_st_timestamp(St),
+    Timestamp = hg_datetime:format_now(),
     Revision = hg_domain:head(),
     Party = get_st_party(St),
     Claim = hg_claim:create(get_next_claim_id(St), Changeset, Party, Timestamp, Revision),
     ClaimsPending = get_st_pending_claims(St),
     % Check for conflicts with other pending claims
-    ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
+    ok = assert_claims_not_conflict(Claim, ClaimsPending, Timestamp, Revision, Party),
     % Test if we can safely accept proposed changes.
     case hg_claim:is_need_acceptance(Claim, Party, Revision) of
         false ->
@@ -608,16 +601,18 @@ create_claim(Changeset, St) ->
     end.
 
 update_claim(ID, Changeset, St) ->
-    Timestamp = get_st_timestamp(St),
+    Timestamp = hg_datetime:format_now(),
+    Revision = hg_domain:head(),
+    Party = get_st_party(St),
     Claim = hg_claim:update(
         Changeset,
         get_st_claim(ID, St),
-        get_st_party(St),
+        Party,
         Timestamp,
-        hg_domain:head()
+        Revision
     ),
     ClaimsPending = get_st_pending_claims(St),
-    ok = assert_claims_not_conflict(Claim, ClaimsPending, St),
+    ok = assert_claims_not_conflict(Claim, ClaimsPending, Timestamp, Revision, Party),
     [?claim_updated(ID, Changeset, hg_claim:get_revision(Claim), Timestamp)].
 
 finalize_claim(Claim, Timestamp) ->
@@ -635,7 +630,7 @@ get_next_claim_id(#st{claims = Claims}) ->
 apply_accepted_claim(Claim, St) ->
     case hg_claim:is_accepted(Claim) of
         true ->
-            Party = hg_claim:apply(Claim, get_st_timestamp(St), get_st_party(St)),
+            Party = hg_claim:apply(Claim, hg_datetime:format_now(), get_st_party(St)),
             St#st{party = Party};
         false ->
             St
