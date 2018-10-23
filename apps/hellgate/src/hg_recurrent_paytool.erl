@@ -25,8 +25,8 @@
 -behaviour(hg_machine).
 -export([namespace     /0]).
 -export([init          /2]).
--export([process_signal/3]).
--export([process_call  /3]).
+-export([process_signal/2]).
+-export([process_call  /2]).
 
 %% Types
 -record(st, {
@@ -39,7 +39,6 @@
 -type st() :: #st{}.
 -export_type([st/0]).
 
--type rec_payment_tool_id()     :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 
@@ -192,9 +191,9 @@ map_start_error({error, Reason}) ->
 namespace() ->
     ?NS.
 
--spec init(rec_payment_tool_id(), [payment_tool() | rec_payment_tool_params()]) ->
+-spec init([payment_tool() | rec_payment_tool_params()], hg_machine:machine()) ->
     hg_machine:result().
-init(RecPaymentToolID, [PaymentTool, Params]) ->
+init([PaymentTool, Params], #{id := RecPaymentToolID}) ->
     Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
     {Party, Shop} = get_party_shop(Params),
@@ -280,9 +279,9 @@ start_session() ->
     Action = hg_machine_action:instant(),
     {ok, {Events, Action}}.
 
--spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
-process_signal(Signal, History, _AuxSt) ->
+process_signal(Signal, #{history := History}) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
 handle_signal(timeout, St) ->
@@ -500,9 +499,9 @@ create_session() ->
 
 -type call() :: abandon.
 
--spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
+-spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
-process_call(Call, History, _AuxSt) ->
+process_call(Call, #{history := History}) ->
     St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
