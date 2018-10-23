@@ -36,6 +36,7 @@
 -export([get_tags/1]).
 
 -export([construct_payment_info/2]).
+-export([set_repair_scenario/2]).
 
 %% Business logic
 
@@ -92,7 +93,8 @@
     refunds        = #{}   :: #{refund_id() => refund_state()},
     adjustments    = []    :: [adjustment()],
     recurrent_token        :: undefined | recurrent_token(),
-    opts                   :: undefined | opts()
+    opts                   :: undefined | opts(),
+    repair_scenario        :: undefined | hg_invoice_repair:scenario()
 }).
 
 -record(refund_st, {
@@ -106,6 +108,8 @@
 -type st() :: #st{}.
 
 -export_type([st/0]).
+-export_type([activity/0]).
+-export_type([machine_result/0]).
 
 -type party()               :: dmsl_domain_thrift:'Party'().
 -type payer()               :: dmsl_domain_thrift:'Payer'().
@@ -1194,7 +1198,7 @@ process_signal(timeout, St, Options) ->
 
 process_timeout(St) ->
     Action = hg_machine_action:new(),
-    process_timeout(get_activity(St), Action, St).
+    repair_process_timeout(get_activity(St), Action, St).
 
 -spec process_timeout(activity(), action(), st()) -> machine_result().
 process_timeout({payment, risk_scoring}, Action, St) ->
@@ -1216,6 +1220,14 @@ process_timeout({refund_accounter, _ID}, Action, St) ->
     process_result(Action, St);
 process_timeout({payment, flow_waiting}, Action, St) ->
     finalize_payment(Action, St).
+
+repair_process_timeout(Activity, Action, St = #st{repair_scenario = Scenario}) ->
+    case hg_invoice_repair:check_for_action(fail_pre_processing, Scenario) of
+        {result, Result} ->
+            Result;
+        call ->
+            process_timeout(Activity, Action, St)
+    end.
 
 -spec process_call({callback, tag(), _}, st(), opts()) ->
     {_, machine_result()}. % FIXME
@@ -1250,7 +1262,7 @@ process_routing(Action, St) ->
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Payment = get_payment(St),
     VS0 = collect_routing_varset(Payment, Opts, #{}),
-    RiskScore = inspect(Payment, PaymentInstitution, VS0, Opts),
+    RiskScore = repair_inspect(Payment, PaymentInstitution, VS0, Opts, St),
     Events0 = [?risk_score_changed(RiskScore)],
     VS1 = VS0#{risk_score => RiskScore},
     case choose_route(PaymentInstitution, VS1, Revision, St) of
@@ -1305,10 +1317,18 @@ process_session(suspended, Session, Action, Events, St) ->
 
 -spec process_active_session(action(), session(), events(), st()) -> machine_result().
 process_active_session(Action, Session, Events, St) ->
-    ProxyContext = construct_proxy_context(St),
-    {ok, ProxyResult} = issue_process_call(ProxyContext, St),
+    {ok, ProxyResult} = repair_session(St),
     Result = handle_proxy_result(ProxyResult, Action, Events, Session),
     finish_session_processing(Result, St).
+
+repair_session(St = #st{repair_scenario = Scenario}) ->
+    case hg_invoice_repair:check_for_action(fail_session, Scenario) of
+        {result, Result} ->
+            {ok, Result};
+        call ->
+            ProxyContext = construct_proxy_context(St),
+            issue_process_call(ProxyContext, St)
+    end.
 
 -spec finalize_payment(action(), st()) -> machine_result().
 finalize_payment(Action, St) ->
@@ -1601,6 +1621,10 @@ rollback_payment_cashflow(St) ->
 get_cashflow_plan(St) ->
     [{1, get_cashflow(St)}].
 
+-spec set_repair_scenario(hg_invoice_repair:scenario(), st()) -> st().
+
+set_repair_scenario(Scenario, St) ->
+    St#st{repair_scenario = Scenario}.
 %%
 
 -type payment_info() :: dmsl_proxy_provider_thrift:'PaymentInfo'().
@@ -2237,6 +2261,14 @@ inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentIns
     RiskScore = hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector),
     % FIXME: move this logic to inspector
     check_payment_type_risk(RiskScore, Payment).
+
+repair_inspect(Payment, PaymentInstitution, VS, Opts, #st{repair_scenario = Scenario}) ->
+    case hg_invoice_repair:check_for_action(skip_inspector, Scenario) of
+        {result, Result} ->
+            Result;
+        call ->
+            inspect(Payment, PaymentInstitution, VS, Opts)
+    end.
 
 check_payment_type_risk(low, #domain_InvoicePayment{make_recurrent = true}) ->
     high;

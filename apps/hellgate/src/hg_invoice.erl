@@ -239,7 +239,13 @@ handle_function_('Repair', [UserInfo, InvoiceID, Changes], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
-    repair(InvoiceID, {changes, Changes}).
+    repair(InvoiceID, {changes, Changes});
+
+handle_function_('RepairWithScenario', [UserInfo, InvoiceID, Scenario], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID),
+    _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
+    repair(InvoiceID, {scenario, Scenario}).
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
@@ -433,7 +439,21 @@ handle_signal({repair, {changes, Changes}}, St) ->
     end,
     Result#{
         state => St
-    }.
+    };
+
+handle_signal({repair, {scenario, _}}, #st{activity = Activity})
+    when Activity =:= invoice orelse Activity =:= undefined ->
+    throw({exception, invoice_has_no_active_payment});
+handle_signal({repair, {scenario, Scenario}}, St = #st{activity = {payment, PaymentID}}) ->
+    PaymentSession = get_payment_session(PaymentID, St),
+    Activity = hg_invoice_payment:get_activity(PaymentSession),
+    case {Scenario, Activity} of
+        {_, idle} ->
+            throw({exception, cant_fail_payment_in_idle_state});
+        {Scenario, Activity} ->
+            try_to_get_repair_state(Scenario, St)
+    end.
+
 
 handle_expiration(St) ->
     #{
@@ -722,6 +742,29 @@ create_payment_id(#st{payments = Payments}) ->
 
 get_payment_status(#domain_InvoicePayment{status = Status}) ->
     Status.
+
+try_to_get_repair_state({complex, #payproc_InvoiceRepairComplex{scenarios = Scenarios}}, St) ->
+    repair_complex(Scenarios, St);
+try_to_get_repair_state(Scenario, St) ->
+    process_repair(Scenario, St).
+
+repair_complex([], St = #st{activity = {payment, PaymentID}}) ->
+    PaymentSession = get_payment_session(PaymentID, St),
+    Activity = hg_invoice_payment:get_activity(PaymentSession),
+    throw({exception, {activity_not_compatible_with_complex_scenario, Activity}});
+repair_complex([Scenario | Rest], St) ->
+    try
+        process_repair(Scenario, St)
+    catch
+        throw:{exception, {activity_not_compatible_with_scenario, _, _}} ->
+            repair_complex(Rest, St)
+    end.
+
+process_repair(Scenario, St = #st{activity = {payment, PaymentID}}) ->
+    PaymentSession = get_payment_session(PaymentID, St),
+    Activity = hg_invoice_payment:get_activity(PaymentSession),
+    RepairSession = hg_invoice_repair:get_repair_state(Activity, Scenario, PaymentSession),
+    process_payment_signal(timeout, PaymentID, RepairSession, St).
 
 %%
 

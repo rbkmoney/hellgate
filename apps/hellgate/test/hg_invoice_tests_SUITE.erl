@@ -80,6 +80,12 @@
 -export([adhoc_legacy_repair_capturing_succeeded/1]).
 -export([adhoc_legacy_repair_cancelling_succeeded/1]).
 
+-export([repair_fail_pre_processing_succeeded/1]).
+-export([repair_skip_inspector_succeeded/1]).
+-export([repair_fail_session_succeeded/1]).
+-export([repair_complex_succeeded_first/1]).
+-export([repair_complex_succeeded_second/1]).
+
 -export([consistent_history/1]).
 
 %%
@@ -147,7 +153,9 @@ groups() ->
 
             payment_with_tokenized_bank_card,
 
-            {group, adhoc_repairs}
+            {group, adhoc_repairs},
+
+            {group, repair_scenarios}
         ]},
 
         {base_payments, [parallel], [
@@ -209,6 +217,13 @@ groups() ->
             adhoc_repair_failed_succeeded,
             adhoc_legacy_repair_capturing_succeeded,
             adhoc_legacy_repair_cancelling_succeeded
+        ]},
+        {repair_scenarios, [parallel], [
+            repair_fail_pre_processing_succeeded,
+            repair_skip_inspector_succeeded,
+            repair_fail_session_succeeded,
+            repair_complex_succeeded_first,
+            repair_complex_succeeded_second
         ]}
     ].
 
@@ -1878,6 +1893,125 @@ payment_with_tokenized_bank_card(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
+-spec repair_fail_pre_processing_succeeded(config()) -> test_return().
+
+repair_fail_pre_processing_succeeded(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(6), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    % Invoice
+    PaymentParams = make_payment_params(),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
+
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
+    ] = next_event(InvoiceID, Client).
+
+-spec repair_skip_inspector_succeeded(config()) -> test_return().
+
+repair_skip_inspector_succeeded(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(6), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    % Invoice
+    PaymentParams = make_payment_params(),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = repair_invoice_with_scenario(InvoiceID, skip_inspector, Client),
+
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)), % we send low risk score in create repair...
+        ?payment_ev(PaymentID, ?route_changed(?route(?prv(2), ?trm(7)))),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec repair_fail_session_succeeded(config()) -> test_return().
+
+repair_fail_session_succeeded(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    PaymentParams = make_payment_params(PaymentTool, Session),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = repair_invoice_with_scenario(InvoiceID, fail_session, Client),
+
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
+    ] = next_event(InvoiceID, Client).
+
+-spec repair_complex_succeeded_first(config()) -> test_return().
+
+repair_complex_succeeded_first(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(6), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    % Invoice
+    PaymentParams = make_payment_params(),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = repair_invoice_with_scenario(InvoiceID, complex, Client),
+
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)), % we send low risk score in create repair...
+        ?payment_ev(PaymentID, ?route_changed(?route(?prv(2), ?trm(7)))),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec repair_complex_succeeded_second(config()) -> test_return().
+
+repair_complex_succeeded_second(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    PaymentParams = make_payment_params(PaymentTool, Session),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = repair_invoice_with_scenario(InvoiceID, complex, Client),
+
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
+    ] = next_event(InvoiceID, Client).
+
 %%
 
 next_event(InvoiceID, Client) ->
@@ -2123,6 +2257,28 @@ create_invoice(InvoiceParams, Client) ->
 
 repair_invoice(InvoiceID, Changes, Client) ->
     hg_client_invoicing:repair(InvoiceID, Changes, Client).
+
+create_repair_scenario(fail_pre_processing) ->
+    Failure = payproc_errors:construct('PaymentFailure',
+                {no_route_found, #payprocerr_GeneralFailure{}}
+            ),
+    {'fail_pre_processing', #'payproc_InvoiceRepairFailPreProcessing'{failure = Failure}};
+create_repair_scenario(skip_inspector) ->
+    {'skip_inspector', #'payproc_InvoiceRepairSkipInspector'{risk_score = low}};
+create_repair_scenario(fail_session) ->
+    Failure = payproc_errors:construct('PaymentFailure',
+                {no_route_found, #payprocerr_GeneralFailure{}}
+            ),
+    {'fail_session', #'payproc_InvoiceRepairFailSession'{failure = Failure}};
+create_repair_scenario(complex) ->
+    {'complex', #'payproc_InvoiceRepairComplex'{scenarios =
+    [
+        create_repair_scenario(skip_inspector),
+        create_repair_scenario(fail_session)
+    ]}}.
+
+repair_invoice_with_scenario(InvoiceID, Scenario, Client) ->
+    hg_client_invoicing:repair_scenario(InvoiceID, create_repair_scenario(Scenario), Client).
 
 start_invoice(Product, Due, Amount, C) ->
     start_invoice(cfg(shop_id, C), Product, Due, Amount, C).
@@ -2534,7 +2690,8 @@ construct_domain_fixture() ->
                 ?cat(2),
                 ?cat(3),
                 ?cat(4),
-                ?cat(5)
+                ?cat(5),
+                ?cat(6)
             ])},
             payment_methods = {value, ?ordset([
                 ?pmt(bank_card, visa),
@@ -2616,6 +2773,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
         hg_ct_fixture:construct_category(?cat(4), <<"Offliner">>, live),
         hg_ct_fixture:construct_category(?cat(5), <<"Timeouter">>, live),
+        hg_ct_fixture:construct_category(?cat(6), <<"MachineFailer">>, live),
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
@@ -2634,6 +2792,8 @@ construct_domain_fixture() ->
             #{<<"link_state">> => <<"unexpected_failure">>}, low),
         hg_ct_fixture:construct_inspector(?insp(5), <<"Offliner">>, ?prx(2),
             #{<<"link_state">> => <<"timeout">>}, low),
+        hg_ct_fixture:construct_inspector(?insp(6), <<"Offliner">>, ?prx(2),
+            #{<<"link_state">> => <<"unexpected_failure">>}),
 
         hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
         hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
@@ -2724,6 +2884,10 @@ construct_domain_fixture() ->
                             #domain_InspectorDecision{
                                 if_ = {condition, {category_is, ?cat(5)}},
                                 then_ = {value, ?insp(5)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {category_is, ?cat(6)}},
+                                then_ = {value, ?insp(6)}
                             },
                             #domain_InspectorDecision{
                                 if_ = {condition, {cost_in, ?cashrng(
@@ -2970,7 +3134,8 @@ construct_domain_fixture() ->
                     categories = {value, ?ordset([
                         ?cat(2),
                         ?cat(4),
-                        ?cat(5)
+                        ?cat(5),
+                        ?cat(6)
                     ])},
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa),
