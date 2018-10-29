@@ -628,20 +628,43 @@ merge_wallets_terms(
     #domain_WalletServiceTerms{
         currencies = Currencies0,
         wallet_limit = CashLimit0,
-        turnover_limit = TurnoverLimit0
+        turnover_limit = TurnoverLimit0,
+        withdrawals = Withdrawals0
     },
     #domain_WalletServiceTerms{
         currencies = Currencies1,
         wallet_limit = CashLimit1,
-        turnover_limit = TurnoverLimit1
+        turnover_limit = TurnoverLimit1,
+        withdrawals = Withdrawals1
     }
 ) ->
     #domain_WalletServiceTerms{
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
         wallet_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
-        turnover_limit = hg_utils:select_defined(TurnoverLimit1, TurnoverLimit0)
+        turnover_limit = hg_utils:select_defined(TurnoverLimit1, TurnoverLimit0),
+        withdrawals = merge_withdrawals_terms(Withdrawals0, Withdrawals1)
     };
 merge_wallets_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_withdrawals_terms(
+    #domain_WithdrawalServiceTerms{
+        currencies = Currencies0,
+        cash_limit = CashLimit0,
+        cash_flow = CashFlow0
+    },
+    #domain_WithdrawalServiceTerms{
+        currencies = Currencies1,
+        cash_limit = CashLimit1,
+        cash_flow = CashFlow1
+    }
+) ->
+    #domain_WithdrawalServiceTerms{
+        currencies = hg_utils:select_defined(Currencies1, Currencies0),
+        cash_limit = hg_utils:select_defined(CashLimit0, CashLimit1),
+        cash_flow = hg_utils:select_defined(CashFlow0, CashFlow1)
+    };
+merge_withdrawals_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
