@@ -661,8 +661,8 @@ merge_withdrawals_terms(
 ) ->
     #domain_WithdrawalServiceTerms{
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
-        cash_limit = hg_utils:select_defined(CashLimit0, CashLimit1),
-        cash_flow = hg_utils:select_defined(CashFlow0, CashFlow1)
+        cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
+        cash_flow = hg_utils:select_defined(CashFlow1, CashFlow0)
     };
 merge_withdrawals_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
