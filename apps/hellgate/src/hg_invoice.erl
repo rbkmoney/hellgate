@@ -38,8 +38,8 @@
 -export([namespace/0]).
 
 -export([init/2]).
--export([process_signal/2]).
--export([process_call/2]).
+-export([process_signal/3]).
+-export([process_call/3]).
 
 %% Event provider callbacks
 
@@ -402,10 +402,10 @@ publish_event(InvoiceID, Changes) ->
 namespace() ->
     ?NS.
 
--spec init([invoice_tpl_id() | invoice_params()], hg_machine:machine()) ->
+-spec init(invoice_id(), [invoice_tpl_id() | invoice_params()]) ->
     hg_machine:result().
 
-init([InvoiceTplID, PartyRevision, InvoiceParams], #{id := ID}) ->
+init(ID, [InvoiceTplID, PartyRevision, InvoiceParams]) ->
     Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
@@ -416,10 +416,10 @@ init([InvoiceTplID, PartyRevision, InvoiceParams], #{id := ID}) ->
 
 %%
 
--spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
+-spec process_signal(hg_machine:signal(), hg_machine:history(), hg_machine:auxst()) ->
     hg_machine:result().
 
-process_signal(Signal, #{history := History}) ->
+process_signal(Signal, History, _AuxSt) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
 
 handle_signal(timeout, St = #st{activity = {payment, PaymentID}}) ->
@@ -475,10 +475,10 @@ handle_expiration(St) ->
     {rescind, binary()} |
     {callback, callback()}.
 
--spec process_call(call(), hg_machine:machine()) ->
+-spec process_call(call(), hg_machine:history(), hg_machine:auxst()) ->
     {hg_machine:response(), hg_machine:result()}.
 
-process_call(Call, #{history := History}) ->
+process_call(Call, History, _AuxSt) ->
     St = collapse_history(unmarshal(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
