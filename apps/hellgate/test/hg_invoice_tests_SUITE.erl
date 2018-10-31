@@ -790,8 +790,9 @@ payments_w_bank_card_issuer_conditions(C) ->
     %kaz success
     FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
     {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
-    KazBankCard = BankCard#domain_BankCard {
-        issuer_country = kaz
+    KazBankCard = BankCard#domain_BankCard{
+        issuer_country = kaz,
+        metadata = #{<<?MODULE_STRING>> => {obj, #{{str, <<"vsn">>} => {i, 42}}}}
     },
     KazPaymentParams = make_payment_params({bank_card, KazBankCard}, Session, instant),
     FirstPayment = process_payment(FirstInvoice, KazPaymentParams, Client),
@@ -804,8 +805,9 @@ payments_w_bank_card_issuer_conditions(C) ->
     %rus success
     ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
     {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
-    RusBankCard = BankCard1#domain_BankCard {
-        issuer_country = rus
+    RusBankCard = BankCard1#domain_BankCard{
+        issuer_country = rus,
+        metadata = #{<<?MODULE_STRING>> => {obj, #{{str, <<"vsn">>} => {i, 42}}}}
     },
     RusPaymentParams = make_payment_params({bank_card, RusBankCard}, Session1, instant),
     SecondPayment = process_payment(ThirdInvoice, RusPaymentParams, Client),
