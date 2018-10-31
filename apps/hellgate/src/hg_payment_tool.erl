@@ -157,7 +157,10 @@ marshal(bank_card = T, #domain_BankCard{} = BankCard) ->
         <<"payment_system">>    => marshal({T, payment_system}, BankCard#domain_BankCard.payment_system),
         <<"bin">>               => marshal(str, BankCard#domain_BankCard.bin),
         <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.masked_pan),
-        <<"token_provider">>    => marshal({T, token_provider}, BankCard#domain_BankCard.token_provider)
+        <<"token_provider">>    => marshal({T, token_provider}, BankCard#domain_BankCard.token_provider),
+        <<"issuer_country">>    => marshal({T, issuer_country}, BankCard#domain_BankCard.issuer_country),
+        <<"bank_name">>         => marshal({T, bank_name}, BankCard#domain_BankCard.bank_name),
+        <<"metadata">>          => marshal({T, metadata}, BankCard#domain_BankCard.metadata)
     });
 marshal(payment_terminal = T, #domain_PaymentTerminal{terminal_type = TerminalType}) ->
     marshal({T, type}, TerminalType);
@@ -206,6 +209,15 @@ marshal({bank_card, token_provider}, googlepay) ->
 marshal({bank_card, token_provider}, samsungpay) ->
     <<"samsungpay">>;
 
+marshal({bank_card, issuer_country}, Residence) when is_atom(Residence), Residence /= undefined ->
+    marshal(str, atom_to_binary(Residence, utf8));
+
+marshal({bank_card, bank_name}, Name) when is_binary(Name) ->
+    marshal(str, Name);
+
+marshal({bank_card, metadata}, MD) when is_map(MD) ->
+    maps:map(fun (_, V) -> hg_msgpack_marshalling:unmarshal(V) end, MD);
+
 marshal({payment_terminal, type}, euroset) ->
     <<"euroset">>;
 
@@ -234,12 +246,18 @@ unmarshal(bank_card = T, #{
     <<"masked_pan">>     := MaskedPan
 } = V) ->
     TokenProvider = genlib_map:get(<<"token_provider">>, V),
+    IssuerCountry = genlib_map:get(<<"issuer_country">>, V),
+    BankName      = genlib_map:get(<<"bank_name">>, V),
+    MD            = genlib_map:get(<<"metadata">>, V),
     #domain_BankCard{
         token            = unmarshal(str, Token),
         payment_system   = unmarshal({T, payment_system}, PaymentSystem),
         bin              = unmarshal(str, Bin),
         masked_pan       = unmarshal(str, MaskedPan),
-        token_provider   = unmarshal({T, token_provider}, TokenProvider)
+        token_provider   = unmarshal({T, token_provider}, TokenProvider),
+        issuer_country   = unmarshal({T, issuer_country}, IssuerCountry),
+        bank_name        = unmarshal({T, bank_name}, BankName),
+        metadata         = unmarshal({T, metadata}, MD)
     };
 unmarshal(payment_terminal = T, TerminalType) ->
     #domain_PaymentTerminal{
@@ -307,6 +325,15 @@ unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
     googlepay;
 unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
     samsungpay;
+
+unmarshal({bank_card, issuer_country}, Residence) when is_binary(Residence) ->
+    binary_to_existing_atom(unmarshal(str, Residence), utf8);
+
+unmarshal({bank_card, bank_name}, Name) when is_binary(Name) ->
+    unmarshal(str, Name);
+
+unmarshal({bank_card, metadata}, MD) when is_map(MD) ->
+    maps:map(fun (_, V) -> hg_msgpack_marshalling:marshal(V) end, MD);
 
 unmarshal({payment_terminal, type}, <<"euroset">>) ->
     euroset;
