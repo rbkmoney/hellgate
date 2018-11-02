@@ -78,7 +78,8 @@
     processing_accounter |
     flow_waiting |
     finalizing_session |
-    finalizing_accounter.
+    finalizing_accounter |
+    finalizing_failure.
 
 -record(st, {
     activity               :: activity(),
@@ -1214,6 +1215,8 @@ process_timeout({payment, Step}, Action, St) when
     Step =:= finalizing_accounter
 ->
     process_result(Action, St);
+process_timeout(Activity = {payment, finalizing_failure}, Action, St) ->
+    finish_process_failure(Activity, Action, St);
 process_timeout({refund_session, _ID}, Action, St) ->
     process_session(Action, St);
 process_timeout({refund_accounter, _ID}, Action, St) ->
@@ -1446,8 +1449,8 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             {next, {Events ++ SessionEvents, SessionAction}};
         fatal ->
-            _AffectedAccounts = rollback_payment_cashflow(St),
-            {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}
+            NewAction = hg_machine_action:set_timeout(0, Action),
+            {next, {Events, NewAction}}
     end;
 process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
@@ -1464,6 +1467,12 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             ],
             {done, {Events ++ Events1, Action}}
     end.
+
+finish_process_failure({payment, finalizing_failure}, Action, St) ->
+    Target = get_target(St),
+    #{status := finished, result := ?session_failed(Failure)} = get_session(Target, St),
+    _AffectedAccounts = rollback_payment_cashflow(St),
+    {done, {[?payment_status_changed(?failed(Failure))], Action}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),
@@ -2003,7 +2012,17 @@ merge_change(
             {payment, finalizing_session}
     end,
     merge_change(Event, St#st{activity = Activity});
-
+merge_change(Event = ?session_ev(Target, SessionEvent = ?session_finished(?session_failed(Failure))),
+                #st{activity = {payment, Step}} = St) when
+    Step =:= processing_session orelse
+    Step =:= finalizing_session
+->
+    case check_retry_possibility(Target, Failure, St) of
+        {retry, _} ->
+            merge_session(Target, SessionEvent, St);
+        fatal ->
+            merge_change(Event, St#st{activity = {payment, finalizing_failure}})
+    end;
 merge_change(Event = ?session_ev(_Target, ?session_finished(?session_succeeded())),
                 #st{activity = {payment, Step}} = St) when
     Step =:= processing_session orelse
@@ -2018,6 +2037,9 @@ merge_change(Event = ?session_ev(_Target, ?session_finished(?session_succeeded()
     merge_change(Event, St#st{activity = {payment, NextStep}});
 
 merge_change(?session_ev(Target, Event), St) ->
+    merge_session(Target, Event, St).
+
+merge_session(Target, Event, St) ->
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
     % FIXME leaky transactions
