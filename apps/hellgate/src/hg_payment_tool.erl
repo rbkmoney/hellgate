@@ -112,9 +112,10 @@ test_issuer_country_condition(Country, #domain_BankCard{issuer_country = TargetC
 
 test_issuer_bank_condition(BankRef, #domain_BankCard{bank_name = BankName, bin = BIN}, Rev) ->
     #domain_Bank{binbase_id_patterns = Patterns, bins = BINs} = hg_domain:get(Rev, {bank, BankRef}),
-    case Patterns of
-        undefined -> test_bank_card_bins(BIN, BINs);
-        _ -> test_bank_card_patterns(Patterns, BankName)
+    case {Patterns, BankName} of
+        {undefined, _} -> test_bank_card_bins(BIN, BINs);
+        {_, undefined} -> test_bank_card_bins(BIN, BINs);
+        {_, _} -> test_bank_card_patterns(Patterns, BankName)
     end.
 
 test_bank_card_bins(BIN, BINs) ->
