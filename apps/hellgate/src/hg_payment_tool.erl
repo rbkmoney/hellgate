@@ -121,8 +121,6 @@ test_issuer_bank_condition(BankRef, #domain_BankCard{bank_name = BankName, bin =
 test_bank_card_bins(BIN, BINs) ->
     ordsets:is_element(BIN, BINs).
 
-test_bank_card_patterns(_Patterns, undefined) ->
-    undefined;
 test_bank_card_patterns(Patterns, BankName) ->
     Matches = ordsets:filter(fun(E) -> genlib_wildcard:match(BankName, E) end, Patterns),
     ordsets:size(Matches) > 0.
