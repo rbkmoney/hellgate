@@ -85,7 +85,8 @@ end_per_testcase(_Name, _C) ->
     #payproc_Event{
         id = ID,
         source = Source,
-        payload = Payload
+        payload = Payload,
+        sequence   = Seq
     }
 ).
 
@@ -115,6 +116,8 @@ events_observed(C) ->
     _ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyMgmtClient),
     Events = hg_client_eventsink:pull_events(10, EventsinkClient),
     [?party_event(_ID, PartyID, 1, ?party_ev([?party_created(_, _, _) | _])) | _] = Events,
+    Seqs = [Seq || ?event(_, _, Seq, _) <- Events],
+    Seqs = lists:sort(Seqs),
     IDs = [ID || ?event(ID, _, _, _) <- Events],
     IDs = lists:sort(IDs).
 

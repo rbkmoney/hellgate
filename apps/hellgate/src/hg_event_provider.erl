@@ -22,12 +22,13 @@
 -spec publish_event(hg_machine:ns(), event_id(), hg_machine:id(), hg_machine:event()) ->
     event().
 
-publish_event(Ns, EventID, MachineID, {_ID, Dt, Ev}) ->
+publish_event(Ns, EventID, MachineID, {ID, Dt, Ev}) ->
     Module = hg_machine:get_handler_module(Ns),
     {Source, Payload} = Module:publish_event(MachineID, Ev),
     #payproc_Event{
         id         = EventID,
         source     = Source,
         created_at = Dt,
-        payload    = Payload
+        payload    = Payload,
+        sequence   = ID
     }.
