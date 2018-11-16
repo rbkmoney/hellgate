@@ -1877,9 +1877,7 @@ payment_with_offsite_preauth_failed(C) ->
         ?payment_ev(
             PaymentID,
             ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
-        )
-    ] = next_event(InvoiceID, 8000, Client),
-    [
+        ),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, 8000, Client),
     ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
@@ -1964,9 +1962,7 @@ repair_fail_session_succeeded(C) ->
     ok = repair_invoice_with_scenario(InvoiceID, fail_session, Client),
 
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure}))))
-    ] = next_event(InvoiceID, Client),
-    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
@@ -2015,12 +2011,9 @@ repair_complex_succeeded_second(C) ->
     ok = repair_invoice_with_scenario(InvoiceID, complex, Client),
 
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure}))))
-    ] = next_event(InvoiceID, Client),
-    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
-
 
 %%
 
@@ -2399,9 +2392,7 @@ await_payment_process_failure(InvoiceID, PaymentID, Client, Restarts, Target) ->
         ?payment_ev(
             PaymentID,
             ?session_ev(Target, ?session_finished(?session_failed(Failure)))
-        )
-    ] = next_event(InvoiceID, Client),
-    [
+        ),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
     ] = next_event(InvoiceID, Client),
     {failed, PaymentID, Failure}.
