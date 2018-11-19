@@ -1361,71 +1361,74 @@ handle_callback(Payload, Action, St) ->
 finish_session_processing(Result, St) ->
     finish_session_processing(get_activity(St), Result, St).
 
-finish_session_processing({payment, Step} = Activity, {Events, Action}, St) when
+finish_session_processing({payment, Step}, {Events, Action}, _St) when
     Step =:= processing_session orelse
     Step =:= finalizing_session
 ->
-    Target = get_target(St),
-    St1 = collapse_changes(Events, St),
-    case get_session(Target, St1) of
-        #{status := finished, result := ?session_succeeded(), target := Target} ->
-            NewAction = hg_machine_action:set_timeout(0, Action),
-            {next, {Events, NewAction}};
-        #{status := finished, result := ?session_failed(Failure)} ->
-            process_failure(Activity, Events, Action, Failure, St);
-        #{} ->
-            {next, {Events, Action}}
-    end;
+    NewAction = hg_machine_action:set_timeout(0, Action),
+    {next, {Events, NewAction}};
 
-finish_session_processing({refund_session, ID} = Activity, {Events, Action}, St) ->
+finish_session_processing({refund_session, ID}, {Events, Action}, _St) ->
     Events1 = [?refund_ev(ID, Ev) || Ev <- Events],
-    St1 = collapse_changes(Events1, St),
-    RefundSt1 = try_get_refund_state(ID, St1),
-    case get_refund_session(RefundSt1) of
-        #{status := finished, result := ?session_succeeded()} ->
-            NewAction = hg_machine_action:set_timeout(0, Action),
-            {next, {Events1, NewAction}};
-        #{status := finished, result := ?session_failed(Failure)} ->
-            process_failure(Activity, Events1, Action, Failure, St1, RefundSt1);
-        #{} ->
-            {next, {Events1, Action}}
-    end.
+    NewAction = hg_machine_action:set_timeout(0, Action),
+    {next, {Events1, NewAction}}.
 
 -spec process_result(action(), st()) -> machine_result().
 process_result(Action, St) ->
     process_result(get_activity(St), Action, St).
 
-process_result({payment, processing_accounter}, Action, St) ->
+process_result({payment, processing_accounter} = Activity, Action, St) ->
     Target = get_target(St),
-    NewAction = get_action(Target, Action, St),
-    {done, {[?payment_status_changed(Target)], NewAction}};
+    case get_session(Target, St) of
+        #{status := finished, result := ?session_succeeded(), target := Target} ->
+            NewAction = get_action(Target, Action, St),
+            {done, {[?payment_status_changed(Target)], NewAction}};
+        #{status := finished, result := ?session_failed(Failure)} ->
+            process_failure(Activity, [], Action, Failure, St);
+        #{} ->
+            {next, {[], Action}}
+    end;
 
-process_result({payment, finalizing_accounter}, Action, St) ->
+process_result({payment, finalizing_accounter} = Activity, Action, St) ->
     Target = get_target(St),
-    _AffectedAccounts = case Target of
-        ?captured() ->
-            commit_payment_cashflow(St);
-        ?cancelled() ->
-            rollback_payment_cashflow(St)
-    end,
-    NewAction = get_action(Target, Action, St),
-    {done, {[?payment_status_changed(Target)], NewAction}};
+    case get_session(Target, St) of
+        #{status := finished, result := ?session_succeeded(), target := Target} ->
+            _AffectedAccounts = case Target of
+                ?captured() ->
+                    commit_payment_cashflow(St);
+                ?cancelled() ->
+                    rollback_payment_cashflow(St)
+            end,
+            NewAction = get_action(Target, Action, St),
+            {done, {[?payment_status_changed(Target)], NewAction}};
+        #{status := finished, result := ?session_failed(Failure)} ->
+            process_failure(Activity, [], Action, Failure, St);
+        #{} ->
+            {next, {[], Action}}
+    end;
 
-process_result({refund_accounter, ID}, Action, St) ->
+process_result({refund_accounter, ID} = Activity, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    _AffectedAccounts = commit_refund_cashflow(RefundSt, St),
-        Events2 = [
-            ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
-        ],
-        Events3 = case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
-            ?cash(Amount, _) when Amount =:= 0 ->
-                [
-                    ?payment_status_changed(?refunded())
-                ];
-            ?cash(Amount, _) when Amount > 0 ->
-                []
-        end,
-    {done, {Events2 ++ Events3, Action}}.
+    case get_refund_session(RefundSt) of
+        #{status := finished, result := ?session_succeeded()} ->
+            _AffectedAccounts = commit_refund_cashflow(RefundSt, St),
+                Events2 = [
+                    ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
+                ],
+                Events3 = case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
+                    ?cash(Amount, _) when Amount =:= 0 ->
+                        [
+                            ?payment_status_changed(?refunded())
+                        ];
+                    ?cash(Amount, _) when Amount > 0 ->
+                        []
+                end,
+            {done, {Events2 ++ Events3, Action}};
+        #{status := finished, result := ?session_failed(Failure)} ->
+            process_failure(Activity, [], Action, Failure, St, RefundSt);
+        #{} ->
+            {next, {[], Action}}
+    end.
 
 process_failure(Activity, Events, Action, Failure, St) ->
     process_failure(Activity, Events, Action, Failure, St, undefined).
@@ -1436,8 +1439,8 @@ process_failure({payment, Step}, Events, Action, Failure, _St, _RefundSt) when
 ->
     {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
 process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
-    Step =:= processing_session orelse
-    Step =:= finalizing_session
+    Step =:= processing_accounter orelse
+    Step =:= finalizing_accounter
 ->
     Target = get_target(St),
     case check_retry_possibility(Target, Failure, St) of
@@ -1449,7 +1452,7 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
             _AffectedAccounts = rollback_payment_cashflow(St),
             {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}
     end;
-process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
+process_failure({refund_accounter, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
@@ -1943,11 +1946,21 @@ merge_change(
         payment    = Payment#domain_InvoicePayment{status = Status}
     };
 
-merge_change(Event = ?refund_ev(ID, ?session_ev(_Target, ?session_started())),
-                #st{activity = idle} = St) ->
+merge_change(
+    Event = ?refund_ev(ID, ?session_ev(_Target, ?session_started())),
+    #st{activity = idle} = St
+) ->
     merge_change(Event, St#st{activity = {refund_session, ID}});
-merge_change(Event = ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))),
-                #st{activity = {refund_session, ID}} = St) ->
+merge_change(
+    Event = ?refund_ev(ID, ?session_ev(_Target, ?session_started())),
+    #st{activity = {refund_accounter, ID}} = St
+) ->
+    %% session retrying
+    merge_change(Event, St#st{activity = {refund_session, ID}});
+merge_change(
+    Event = ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(_Result))),
+    #st{activity = {refund_session, ID}} = St
+) ->
     merge_change(Event, St#st{activity = {refund_accounter, ID}});
 merge_change(?refund_ev(ID, Event), St) ->
     RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St)),
@@ -1969,21 +1982,27 @@ merge_change(?adjustment_ev(ID, Event), St) ->
             St1
     end;
 merge_change(?session_ev(Target, ?session_started()), #st{activity = {payment, Step}} = St) when
-    Step =:= processing_session orelse
-    Step =:= flow_waiting orelse
-    Step =:= finalizing_session
+    Step =:= processing_session   orelse
+    Step =:= processing_accounter orelse
+    Step =:= flow_waiting         orelse
+    Step =:= finalizing_session   orelse
+    Step =:= finalizing_accounter
 ->
     % FIXME why the hell dedicated handling
     St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
     St2 = save_retry_attempt(Target, St1),
     NextStep = case Step of
-        processing_session ->
+        processing_accounter ->
             %% session retrying
             processing_session;
-        flow_waiting ->
+        processing_session   ->
+            processing_session;
+        flow_waiting         ->
             finalizing_session;
-        finalizing_session ->
+        finalizing_accounter ->
             %% session retrying
+            finalizing_session;
+        finalizing_session   ->
             finalizing_session
     end,
     St2#st{activity = {payment, NextStep}};
@@ -2004,7 +2023,7 @@ merge_change(
     end,
     merge_change(Event, St#st{activity = Activity});
 
-merge_change(Event = ?session_ev(_Target, ?session_finished(?session_succeeded())),
+merge_change(Event = ?session_ev(_Target, ?session_finished(_Result)),
                 #st{activity = {payment, Step}} = St) when
     Step =:= processing_session orelse
     Step =:= finalizing_session
