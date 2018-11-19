@@ -112,16 +112,17 @@ test_issuer_country_condition(Country, #domain_BankCard{issuer_country = TargetC
 
 test_issuer_bank_condition(BankRef, #domain_BankCard{bank_name = BankName, bin = BIN}, Rev) ->
     #domain_Bank{binbase_id_patterns = Patterns, bins = BINs} = hg_domain:get(Rev, {bank, BankRef}),
-    case Patterns of
-        undefined -> test_bank_card_bins(BIN, BINs);
-        _ -> test_bank_card_patterns(Patterns, BankName)
+    case {Patterns, BankName} of
+        {P, B} when is_list(P) and is_binary(B) ->
+            test_bank_card_patterns(Patterns, BankName);
+        % TODO т.к. BinBase не обладает полным объемом данных, при их отсутствии мы возвращаемся к проверкам по бинам.
+        %      B будущем стоит избавиться от этого.
+        {_, _} -> test_bank_card_bins(BIN, BINs)
     end.
 
 test_bank_card_bins(BIN, BINs) ->
     ordsets:is_element(BIN, BINs).
 
-test_bank_card_patterns(_Patterns, undefined) ->
-    undefined;
 test_bank_card_patterns(Patterns, BankName) ->
     Matches = ordsets:filter(fun(E) -> genlib_wildcard:match(BankName, E) end, Patterns),
     ordsets:size(Matches) > 0.

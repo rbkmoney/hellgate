@@ -254,8 +254,6 @@ end_per_suite(C) ->
 
 init_per_group(shop_blocking_suspension, C) ->
     C;
-init_per_group(wallet_blocking_suspension, C) ->
-    C;
 init_per_group(Group, C) ->
     PartyID = list_to_binary(lists:concat([Group, ".", erlang:system_time()])),
     ApiClient = hg_ct_helper:create_client(cfg(root_url, C), PartyID),

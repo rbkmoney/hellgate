@@ -861,15 +861,16 @@ payments_w_bank_conditions(C) ->
     OthrPaymentParams = make_payment_params({bank_card, OthrBankCard}, Session2, instant),
     ThirdPayment = process_payment(FourthInvoice, OthrPaymentParams, Client),
     ThirdPayment = await_payment_capture(FourthInvoice, ThirdPayment, Client),
-    %fail with undefined bank_name
+    %test fallback to bins with undefined bank_name
     FifthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {UndefBankCard, Session3} = hg_dummy_provider:make_payment_tool(no_preauth),
-    UndefPaymentParams = make_payment_params(UndefBankCard, Session3, instant),
-    ?assertException(%fix me
-        error,
-        {{woody_error, _}, _},
-        hg_client_invoicing:start_payment(FifthInvoice, UndefPaymentParams, Client)
-    ).
+    {{bank_card, BankCard3}, Session3} = hg_dummy_provider:make_payment_tool(no_preauth),
+    FallbackBankCard = BankCard3#domain_BankCard {
+        bin = <<"42424242">>
+    },
+    FallbackPaymentParams = make_payment_params({bank_card, FallbackBankCard}, Session3, instant),
+    {exception,
+        {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
+    } = hg_client_invoicing:start_payment(FifthInvoice, FallbackPaymentParams, Client).
 
 
 -spec invoice_success_on_third_payment(config()) -> test_return().
@@ -3530,7 +3531,7 @@ payments_w_bank_conditions_fixture(_Revision) ->
             data = #domain_Bank {
                 name = <<"TEST BANK">>,
                 description = <<"TEST BANK">>,
-                bins = ordsets:from_list([<<"1234">>, <<"4567">>]),
+                bins = ordsets:from_list([<<"42424242">>]),
                 binbase_id_patterns = ordsets:from_list([<<"TEST*BANK">>])
             }
         }},
