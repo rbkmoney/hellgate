@@ -95,8 +95,9 @@ get_payment_info(
         payment = ProxyPayment
     }.
 
-issue_call(Func, Args, CallOpts, undefined, DeadLine) ->
-    hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts, DeadLine);
+issue_call(Func, Args, CallOpts, undefined, _DeadLine) ->
+    % Do not set custom deadline without fallback risk score
+    hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts);
 issue_call(Func, Args, CallOpts, Default, DeadLine) ->
     try hg_woody_wrapper:call(proxy_inspector, Func, Args, CallOpts, DeadLine) of
         {ok, _} = RiskScore ->
