@@ -1384,9 +1384,7 @@ process_result({payment, processing_accounter} = Activity, Action, St) ->
             NewAction = get_action(Target, Action, St),
             {done, {[?payment_status_changed(Target)], NewAction}};
         #{status := finished, result := ?session_failed(Failure)} ->
-            process_failure(Activity, [], Action, Failure, St);
-        #{} ->
-            {next, {[], Action}}
+            process_failure(Activity, [], Action, Failure, St)
     end;
 
 process_result({payment, finalizing_accounter} = Activity, Action, St) ->
@@ -1402,9 +1400,7 @@ process_result({payment, finalizing_accounter} = Activity, Action, St) ->
             NewAction = get_action(Target, Action, St),
             {done, {[?payment_status_changed(Target)], NewAction}};
         #{status := finished, result := ?session_failed(Failure)} ->
-            process_failure(Activity, [], Action, Failure, St);
-        #{} ->
-            {next, {[], Action}}
+            process_failure(Activity, [], Action, Failure, St)
     end;
 
 process_result({refund_accounter, ID} = Activity, Action, St) ->
@@ -1425,9 +1421,7 @@ process_result({refund_accounter, ID} = Activity, Action, St) ->
                 end,
             {done, {Events2 ++ Events3, Action}};
         #{status := finished, result := ?session_failed(Failure)} ->
-            process_failure(Activity, [], Action, Failure, St, RefundSt);
-        #{} ->
-            {next, {[], Action}}
+            process_failure(Activity, [], Action, Failure, St, RefundSt)
     end.
 
 process_failure(Activity, Events, Action, Failure, St) ->
