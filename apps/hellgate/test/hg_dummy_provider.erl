@@ -216,7 +216,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
         no_preauth ->
             %% simple workflow without 3DS
-            sleep(1, <<"sleeping">>);
+            sleep_strictly(2, <<"sleeping">>);
         preauth_3ds_offsite ->
             %% user interaction in sleep intent
             Uri = get_callback_url(),
@@ -233,7 +233,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
                     }
                 }
             },
-            sleep(1, <<"sleeping_with_user_interaction">>, UserInteraction);
+            sleep(1, <<"sleep_with_user_interaction">>, UserInteraction);
         terminal ->
             %% workflow for euroset terminal, similar to 3DS workflow
             SPID = get_short_payment_id(PaymentInfo),
@@ -253,6 +253,24 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         {temporary_unavailability, _Scenario} ->
             sleep(0, <<"sleeping">>)
     end;
+process_payment(?processed(), <<"sleeping", Data/binary>>, PaymentInfo, _) when
+    byte_size(Data) > 0
+->
+    {Timeout, TimeStamp} = case erlang:binary_to_term(Data) of
+        {TmpTimeout, TmpTS} when TmpTimeout >= 1 ->
+            {TmpTimeout - 0.5, TmpTS};
+        Result ->
+            Result
+    end,
+    RecvTS = hg_datetime:to_integer(TimeStamp),
+    TS = hg_datetime:to_integer(hg_datetime:format_now()),
+    TimeDiff = TS - RecvTS,
+    case TimeDiff < Timeout*1000000000 of
+        true ->
+            error({sleep_timeout_ignored, {TS, RecvTS, Timeout, TimeDiff}});
+        _ ->
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+    end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
     case get_payment_info_scenario(PaymentInfo) of
         unexpected_failure ->
@@ -262,7 +280,7 @@ process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
         _ ->
             finish(success(PaymentInfo), get_payment_id(PaymentInfo))
     end;
-process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo, _) ->
+process_payment(?processed(), <<"sleep_with_user_interaction">>, PaymentInfo, _) ->
     Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
     case get_transaction_state(Key) of
         processed ->
@@ -273,10 +291,10 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
             finish(?failure(Failure));
         {pending, Count} ->
             set_transaction_state(Key, {pending, Count + 1}),
-            sleep(1, <<"sleeping_with_user_interaction">>);
+            sleep(1, <<"sleep_with_user_interaction">>);
         undefined ->
             set_transaction_state(Key, {pending, 1}),
-            sleep(1, <<"sleeping_with_user_interaction">>)
+            sleep(1, <<"sleep_with_user_interaction">>)
     end;
 
 process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
@@ -355,6 +373,11 @@ finish(Status) ->
     #prxprv_PaymentProxyResult{
         intent = ?finish(Status)
     }.
+
+sleep_strictly(Timeout, State) when is_binary(State) ->
+    Data = erlang:term_to_binary({Timeout, hg_datetime:format_now()}),
+    NewState = <<State/binary, Data/binary>>,
+    sleep(Timeout, NewState).
 
 sleep(Timeout, State) ->
     sleep(Timeout, State, undefined).

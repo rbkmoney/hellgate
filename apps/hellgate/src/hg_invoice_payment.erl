@@ -1306,8 +1306,9 @@ process_session(Session, Action, St) ->
     process_session(Session, Action, [], St).
 
 process_session(Session, Action, Events, St) ->
+    NewAction = hg_machine_action:set_timeout(0, Action),
     Status = get_session_status(Session),
-    process_session(Status, Session, Action, Events, St).
+    process_session(Status, Session, NewAction, Events, St).
 
 -spec process_session(session_status(), session(), action(), events(), st()) -> machine_result().
 process_session(active, Session, Action, Events, St) ->
@@ -1352,9 +1353,10 @@ process_callback_timeout(Action, Session, Events, St) ->
     finish_session_processing(Result, St).
 
 handle_callback(Payload, Action, St) ->
+    NewAction = hg_machine_action:set_timeout(0, Action),
     ProxyContext = construct_proxy_context(St),
     {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St),
-    {Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
+    {Response, Result} = handle_callback_result(CallbackResult, NewAction, get_activity_session(St)),
     {Response, finish_session_processing(Result, St)}.
 
 -spec finish_session_processing(result(), st()) -> machine_result().
@@ -1365,13 +1367,11 @@ finish_session_processing({payment, Step}, {Events, Action}, _St) when
     Step =:= processing_session orelse
     Step =:= finalizing_session
 ->
-    NewAction = hg_machine_action:set_timeout(0, Action),
-    {next, {Events, NewAction}};
+    {next, {Events, Action}};
 
 finish_session_processing({refund_session, ID}, {Events, Action}, _St) ->
     Events1 = [?refund_ev(ID, Ev) || Ev <- Events],
-    NewAction = hg_machine_action:set_timeout(0, Action),
-    {next, {Events1, NewAction}}.
+    {next, {Events1, Action}}.
 
 -spec process_result(action(), st()) -> machine_result().
 process_result(Action, St) ->

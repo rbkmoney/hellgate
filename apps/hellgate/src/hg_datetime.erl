@@ -11,6 +11,7 @@
 -export([add_interval/2]).
 -export([parse_ts/1]).
 -export([add_time_span/2]).
+-export([to_integer/1]).
 
 -include_lib("dmsl/include/dmsl_base_thrift.hrl").
 
