@@ -380,6 +380,17 @@ checkout(PartyID, RevisionParam) ->
     party_revision() | no_return().
 
 get_last_revision(PartyID) ->
+    case get_party_revision_index(get_aux_state(PartyID)) of
+        #{} ->
+            get_last_revision_old_way(PartyID);
+        PartyRevisionIndex ->
+            lists:max(maps:keys(PartyRevisionIndex))
+    end.
+
+-spec get_last_revision_old_way(party_id()) ->
+    party_revision() | no_return().
+
+get_last_revision_old_way(PartyID) ->
     {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
     get_revision_of_part(PartyID, History, Last, Step).
 
