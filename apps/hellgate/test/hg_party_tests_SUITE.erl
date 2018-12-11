@@ -661,9 +661,17 @@ contract_payout_tool_creation(C) ->
             iban = <<"DC6664266612312312">>
         }}
     },
+    PayoutToolID3 = <<"4">>,
+    PayoutToolParams3 = #payproc_PayoutToolParams{
+        currency = ?cur(<<"USD">>),
+        tool_info  = {wallet_info, #domain_WalletInfo{
+            wallet_id = <<"123">>
+        }}
+    },
     Changeset = [
         ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID1, PayoutToolParams1)),
-        ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID2, PayoutToolParams2))
+        ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID2, PayoutToolParams2)),
+        ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID3, PayoutToolParams3))
     ],
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
@@ -672,7 +680,8 @@ contract_payout_tool_creation(C) ->
         payout_tools = PayoutTools
     } = hg_client_party:get_contract(ContractID, Client),
     true = lists:keymember(PayoutToolID1, #domain_PayoutTool.id, PayoutTools),
-    true = lists:keymember(PayoutToolID2, #domain_PayoutTool.id, PayoutTools).
+    true = lists:keymember(PayoutToolID2, #domain_PayoutTool.id, PayoutTools),
+    true = lists:keymember(PayoutToolID3, #domain_PayoutTool.id, PayoutTools).
 
 contract_payout_tool_modification(C) ->
     Client = cfg(client, C),

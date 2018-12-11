@@ -40,4 +40,6 @@ create(
 get_method(#domain_PayoutTool{payout_tool_info = {russian_bank_account, _}}) ->
     #domain_PayoutMethodRef{id = russian_bank_account};
 get_method(#domain_PayoutTool{payout_tool_info = {international_bank_account, _}}) ->
-    #domain_PayoutMethodRef{id = international_bank_account}.
+    #domain_PayoutMethodRef{id = international_bank_account};
+get_method(#domain_PayoutTool{payout_tool_info = {wallet_info, _}}) ->
+    #domain_PayoutMethodRef{id = wallet_info}.

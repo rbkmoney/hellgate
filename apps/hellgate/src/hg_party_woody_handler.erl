@@ -225,7 +225,7 @@ handle_function_(
 
 handle_function_(
     'ComputePayoutCashFlow',
-    [UserInfo, PartyID, #payproc_PayoutParams{id = ShopID, amount = Amount, timestamp = Timestamp} = _PayoutParams],
+    [UserInfo, PartyID, #payproc_PayoutParams{id = ShopID, amount = Amount, timestamp = Timestamp} = PayoutParams],
     _Opts
 ) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
@@ -234,7 +234,7 @@ handle_function_(
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Currency = Amount#domain_Cash.currency,
     ok = hg_invoice_utils:validate_currency(Currency, Shop),
-    PayoutTool = hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract),
+    PayoutTool = get_payout_tool(Shop, Contract, PayoutParams),
     VS = #{
         party_id => PartyID,
         shop_id  => ShopID,
@@ -252,6 +252,13 @@ handle_function_(
     end.
 
 %%
+
+get_payout_tool(_Shop, _Contract, #payproc_PayoutParams{payout_tool_id = ToolID})
+    when ToolID =/= undefined
+->
+    ToolID;
+get_payout_tool(Shop, Contract, _PayoutParams) ->
+    hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract).
 
 set_meta_and_check_access(UserInfo, PartyID) ->
     ok = assume_user_identity(UserInfo),
