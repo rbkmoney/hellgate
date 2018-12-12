@@ -253,10 +253,15 @@ handle_function_(
 
 %%
 
-get_payout_tool(_Shop, _Contract, #payproc_PayoutParams{payout_tool_id = ToolID})
+get_payout_tool(_Shop, Contract, #payproc_PayoutParams{payout_tool_id = ToolID})
     when ToolID =/= undefined
 ->
-    ToolID;
+    case hg_contract:get_payout_tool(ToolID, Contract) of
+        undefined ->
+            throw(#payproc_PayoutToolNotFound{});
+        PayoutTool ->
+            PayoutTool
+    end;
 get_payout_tool(Shop, Contract, _PayoutParams) ->
     hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract).
 
