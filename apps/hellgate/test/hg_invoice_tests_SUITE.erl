@@ -673,7 +673,7 @@ payment_capture_failed(C) ->
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     _ = process_payment(InvoiceID, PaymentParams, Client),
     _ = next_event(InvoiceID, Client),
-    _ = next_event(InvoiceID, 1000 ,Client),
+    _ = next_event(InvoiceID, 1000, Client),
     ?assertException(
         error,
         {{woody_error, _}, _},
