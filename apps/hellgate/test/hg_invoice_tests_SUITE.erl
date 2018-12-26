@@ -74,6 +74,7 @@
 -export([payment_with_tokenized_bank_card/1]).
 -export([terms_retrieval/1]).
 -export([payment_has_optional_fields/1]).
+-export([payment_capture_failed/1]).
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
@@ -182,7 +183,8 @@ groups() ->
             payment_temporary_unavailability_retry_success,
             payment_temporary_unavailability_too_many_retries,
             payment_has_optional_fields,
-            invoice_success_on_third_payment
+            invoice_success_on_third_payment,
+            payment_capture_failed
         ]},
 
         {adjustments, [parallel], [
@@ -661,6 +663,22 @@ payment_has_optional_fields(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment.
+
+-spec payment_capture_failed(config()) -> test_return().
+
+payment_capture_failed(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(fail_capture),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
+    _ = process_payment(InvoiceID, PaymentParams, Client),
+    _ = next_event(InvoiceID, Client),
+    _ = next_event(InvoiceID, 1000 ,Client),
+    ?assertException(
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
+    ).
 
 -spec payment_w_terminal_success(config()) -> _ | no_return().
 

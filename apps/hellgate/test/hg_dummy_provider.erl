@@ -251,6 +251,8 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         unexpected_failure ->
             sleep(1, <<"sleeping">>, undefined, get_payment_id(PaymentInfo));
         {temporary_unavailability, _Scenario} ->
+            sleep(0, <<"sleeping">>);
+        fail_capture ->
             sleep(0, <<"sleeping">>)
     end;
 process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
@@ -283,6 +285,9 @@ process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
     case get_payment_info_scenario(PaymentInfo) of
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
+        fail_capture ->
+            finish(?failure(payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}})));
         _ ->
             finish(success(PaymentInfo), get_payment_id(PaymentInfo))
     end;
@@ -432,6 +437,8 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_",
                                                                    BinScenario/binary>>}}) ->
     Scenario = decode_failure_scenario(BinScenario),
     {temporary_unavailability, Scenario};
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"fail_capture">>}}) ->
+    fail_capture;
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
     terminal;
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
@@ -457,6 +464,8 @@ make_payment_tool(unexpected_failure) ->
 make_payment_tool({scenario, Scenario}) ->
     BinScenario = encode_failure_scenario(Scenario),
     make_simple_payment_tool(<<"scenario_", BinScenario/binary>>, visa);
+make_payment_tool(fail_capture) ->
+    make_simple_payment_tool(<<"fail_capture">>, visa);
 make_payment_tool(terminal) ->
     {
         {payment_terminal, #domain_PaymentTerminal{
