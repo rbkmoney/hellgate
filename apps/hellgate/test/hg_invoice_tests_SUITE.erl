@@ -669,11 +669,12 @@ payment_has_optional_fields(C) ->
 payment_capture_failed(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(fail_capture),
-    PaymentParams = make_payment_params(PaymentTool, Session, instant),
-    _ = process_payment(InvoiceID, PaymentParams, Client),
-    _ = next_event(InvoiceID, Client),
-    _ = next_event(InvoiceID, 1000, Client),
+    PaymentParams = make_scenario_payment_params([good, fail]),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    timeout = next_event(InvoiceID, 1000, Client),
     ?assertException(
         error,
         {{woody_error, _}, _},
