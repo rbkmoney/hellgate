@@ -1588,14 +1588,11 @@ handle_proxy_intent(#prxprv_FinishIntent{status = {success, Success}}, Action, S
             [?rec_token_acquired(Token) | Events0]
     end,
     {Events1, Action};
+handle_proxy_intent(#prxprv_FinishIntent{status = {failure, Failure}}, Action, Session = #{target := {captured, _}}) ->
+    handle_proxy_capture_failure(Action, Failure, Session);
 handle_proxy_intent(#prxprv_FinishIntent{status = {failure, Failure}}, Action, Session) ->
-    case get_session_target(Session) of
-        {captured, _} ->
-            error(failed_on_capture);
-        _ ->
-            Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
-            {Events, Action}
-    end;
+    Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
+    {Events, Action};
 handle_proxy_intent(#prxprv_SleepIntent{timer = Timer, user_interaction = UserInteraction}, Action0, Session) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
     Events = wrap_session_events(try_request_interaction(UserInteraction), Session),
@@ -1608,6 +1605,15 @@ handle_proxy_intent(
     Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
     {wrap_session_events(Events, Session), Action}.
+
+handle_proxy_capture_failure(Action, Failure, Session) ->
+    case check_failure_type({failure, Failure}) of
+        transient ->
+            Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
+            {Events, Action};
+        _ ->
+            error({fatal_capture_error, Session})
+    end.
 
 set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).
@@ -2172,9 +2178,6 @@ set_session(Target, Session, St = #st{sessions = Sessions}) ->
 
 get_session_status(#{status := Status}) ->
     Status.
-
-get_session_target(#{target := Target}) ->
-    Target.
 
 get_session_trx(#{trx := Trx}) ->
     Trx.
