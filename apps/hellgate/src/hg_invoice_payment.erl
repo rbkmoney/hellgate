@@ -1612,7 +1612,7 @@ handle_proxy_capture_failure(Action, Failure, Session) ->
             Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
             {Events, Action};
         _ ->
-            error({fatal_capture_error, Session})
+            error({invalid_capture_failure, Failure})
     end.
 
 set_timer(Timer, Action) ->

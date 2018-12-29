@@ -1816,13 +1816,9 @@ adhoc_repair_failed_succeeded(C) ->
 adhoc_legacy_repair_capturing_succeeded(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    PaymentParams = make_scenario_payment_params([good, fail]),
+    PaymentParams = make_scenario_payment_params([good, temp]),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?captured()),
-    {failed, PaymentID, {failure, _Failure}} =
-        await_payment_process_failure(InvoiceID, PaymentID, Client, 0, ?captured()),
-    % assume no more events here since payment is failed already
-    timeout = next_event(InvoiceID, 2000, Client),
     ok = force_fail_invoice_machine(InvoiceID),
     Changes = [
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started())),
@@ -1843,13 +1839,9 @@ adhoc_legacy_repair_capturing_succeeded(C) ->
 adhoc_legacy_repair_cancelling_succeeded(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    PaymentParams = make_scenario_payment_params([good, fail]),
+    PaymentParams = make_scenario_payment_params([good, temp]),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?captured()),
-    {failed, PaymentID, {failure, _Failure}} =
-        await_payment_process_failure(InvoiceID, PaymentID, Client, 0, ?captured()),
-    % assume no more events here since payment is failed already
-    timeout = next_event(InvoiceID, 2000, Client),
     ok = force_fail_invoice_machine(InvoiceID),
     Changes = [
         ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_started())),
