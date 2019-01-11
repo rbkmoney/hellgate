@@ -1446,8 +1446,7 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             {next, {Events ++ SessionEvents, SessionAction}};
         fatal ->
-            _AffectedAccounts = rollback_payment_cashflow(St),
-            {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}
+            process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
 process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
@@ -1464,6 +1463,12 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             ],
             {done, {Events ++ Events1, Action}}
     end.
+
+process_fatal_payment_failure(Target, _Events, _Action, Failure, _St) when Target =:= ?captured() ->
+    error({capture_failure_retry_limit_exceeded, Failure});
+process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
+    _AffectedAccounts = rollback_payment_cashflow(St),
+    {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),

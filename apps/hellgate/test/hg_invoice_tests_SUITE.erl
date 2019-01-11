@@ -75,6 +75,7 @@
 -export([terms_retrieval/1]).
 -export([payment_has_optional_fields/1]).
 -export([payment_capture_failed/1]).
+-export([payment_capture_retries_exceeded/1]).
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
@@ -184,7 +185,8 @@ groups() ->
             payment_temporary_unavailability_too_many_retries,
             payment_has_optional_fields,
             invoice_success_on_third_payment,
-            payment_capture_failed
+            payment_capture_failed,
+            payment_capture_retries_exceeded
         ]},
 
         {adjustments, [parallel], [
@@ -674,6 +676,22 @@ payment_capture_failed(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
     ] = next_event(InvoiceID, Client),
+    timeout = next_event(InvoiceID, 1000, Client),
+    ?assertException(
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
+    ).
+
+-spec payment_capture_retries_exceeded(config()) -> test_return().
+
+payment_capture_retries_exceeded(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_scenario_payment_params([good, temp, temp, temp, temp]),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?captured()),
+    PaymentID = await_sessions_restarts(PaymentID, ?captured(), InvoiceID, Client, 3),
     timeout = next_event(InvoiceID, 1000, Client),
     ?assertException(
         error,
