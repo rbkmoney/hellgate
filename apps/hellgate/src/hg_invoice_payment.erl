@@ -1465,7 +1465,7 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     end.
 
 process_fatal_payment_failure(Target, _Events, _Action, Failure, _St) when Target =:= ?captured() ->
-    error({capture_failure_retry_limit_exceeded, Failure});
+    error({invalid_capture_failure, Failure});
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
     _AffectedAccounts = rollback_payment_cashflow(St),
     {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}.
