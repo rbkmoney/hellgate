@@ -1,5 +1,6 @@
 {"1.1.0",
-[{<<"cache">>,{pkg,<<"cache">>,<<"2.2.0">>},1},
+[{<<"bear">>,{pkg,<<"bear">>,<<"0.8.7">>},2},
+ {<<"cache">>,{pkg,<<"cache">>,<<"2.2.0">>},1},
  {<<"certifi">>,{pkg,<<"certifi">>,<<"2.3.1">>},2},
  {<<"cg_mon">>,
   {git,"https://github.com/rbkmoney/cg_mon.git",
@@ -23,6 +24,10 @@
   {git,"https://github.com/rbkmoney/erlang-health.git",
        {ref,"ab3ca1ccab6e77905810aa270eb936dbe70e02f8"}},
   0},
+ {<<"folsom">>,
+  {git,"git@github.com:folsom-project/folsom.git",
+       {ref,"9309bad9ffadeebbefe97521577c7480c7cfcd8a"}},
+  1},
  {<<"genlib">>,
   {git,"https://github.com/rbkmoney/genlib.git",
        {ref,"8501050c19e5a36063cf0ae0d181245662bdfa32"}},
@@ -30,6 +35,10 @@
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.8">>},1},
  {<<"gproc">>,{pkg,<<"gproc">>,<<"0.6.1">>},0},
  {<<"hackney">>,{pkg,<<"hackney">>,<<"1.13.0">>},1},
+ {<<"how_are_you">>,
+  {git,"https://github.com/rbkmoney/how_are_you.git",
+       {ref,"e97b43758f9c6ef3192c9abd5d7d1c3ddf337de8"}},
+  0},
  {<<"idna">>,{pkg,<<"idna">>,<<"5.1.2">>},2},
  {<<"jsx">>,{pkg,<<"jsx">>,<<"2.8.2">>},1},
  {<<"lager">>,{pkg,<<"lager">>,<<"3.2.1">>},0},
@@ -82,6 +91,7 @@
   0}]}.
 [
 {pkg_hash,[
+ {<<"bear">>, <<"16264309AE5D005D03718A5C82641FCC259C9E8F09ADEB6FD79CA4271168656F">>},
  {<<"cache">>, <<"3C11DBF4CD8FCD5787C95A5FB2A04038E3729CFCA0386016EEA8C953AB48A5AB">>},
  {<<"certifi">>, <<"D0F424232390BF47D82DA8478022301C561CF6445B5B5FB6A84D49A9E76D2639">>},
  {<<"cowboy">>, <<"A324A8DF9F2316C833A470D918AAF73AE894278B8AA6226CE7A9BF699388F878">>},
