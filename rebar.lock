@@ -37,7 +37,7 @@
  {<<"hackney">>,{pkg,<<"hackney">>,<<"1.13.0">>},1},
  {<<"how_are_you">>,
   {git,"https://github.com/rbkmoney/how_are_you.git",
-       {ref,"e97b43758f9c6ef3192c9abd5d7d1c3ddf337de8"}},
+       {ref,"e960df58c1e8a764894206623eaed0ec57878b91"}},
   0},
  {<<"idna">>,{pkg,<<"idna">>,<<"5.1.2">>},2},
  {<<"jsx">>,{pkg,<<"jsx">>,<<"2.8.2">>},1},
