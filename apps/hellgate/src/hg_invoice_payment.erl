@@ -1446,7 +1446,8 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             {next, {Events ++ SessionEvents, SessionAction}};
         fatal ->
-            process_fatal_payment_failure(Target, Events, Action, Failure, St)
+            _AffectedAccounts = rollback_payment_cashflow(St),
+            {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}
     end;
 process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
@@ -1463,12 +1464,6 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             ],
             {done, {Events ++ Events1, Action}}
     end.
-
-process_fatal_payment_failure(Target, _Events, _Action, Failure, _St) when Target =:= ?captured() ->
-    error({invalid_capture_failure, Failure});
-process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
-    _AffectedAccounts = rollback_payment_cashflow(St),
-    {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),
@@ -1593,8 +1588,6 @@ handle_proxy_intent(#prxprv_FinishIntent{status = {success, Success}}, Action, S
             [?rec_token_acquired(Token) | Events0]
     end,
     {Events1, Action};
-handle_proxy_intent(#prxprv_FinishIntent{status = {failure, Failure}}, Action, Session = #{target := {captured, _}}) ->
-    handle_proxy_capture_failure(Action, Failure, Session);
 handle_proxy_intent(#prxprv_FinishIntent{status = {failure, Failure}}, Action, Session) ->
     Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
     {Events, Action};
@@ -1610,15 +1603,6 @@ handle_proxy_intent(
     Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
     {wrap_session_events(Events, Session), Action}.
-
-handle_proxy_capture_failure(Action, Failure, Session) ->
-    case check_failure_type({failure, Failure}) of
-        transient ->
-            Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
-            {Events, Action};
-        _ ->
-            error({invalid_capture_failure, Failure})
-    end.
 
 set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).

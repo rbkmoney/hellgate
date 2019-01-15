@@ -74,11 +74,11 @@
 -export([payment_with_tokenized_bank_card/1]).
 -export([terms_retrieval/1]).
 -export([payment_has_optional_fields/1]).
--export([payment_capture_failed/1]).
--export([payment_capture_retries_exceeded/1]).
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
+-export([adhoc_legacy_repair_capturing_succeeded/1]).
+-export([adhoc_legacy_repair_cancelling_succeeded/1]).
 
 -export([repair_fail_pre_processing_succeeded/1]).
 -export([repair_skip_inspector_succeeded/1]).
@@ -182,9 +182,7 @@ groups() ->
             payment_temporary_unavailability_retry_success,
             payment_temporary_unavailability_too_many_retries,
             payment_has_optional_fields,
-            invoice_success_on_third_payment,
-            payment_capture_failed,
-            payment_capture_retries_exceeded
+            invoice_success_on_third_payment
         ]},
 
         {adjustments, [parallel], [
@@ -216,7 +214,9 @@ groups() ->
         ]},
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
-            adhoc_repair_failed_succeeded
+            adhoc_repair_failed_succeeded,
+            adhoc_legacy_repair_capturing_succeeded,
+            adhoc_legacy_repair_cancelling_succeeded
         ]},
         {repair_scenarios, [parallel], [
             repair_fail_pre_processing_succeeded,
@@ -661,39 +661,6 @@ payment_has_optional_fields(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment.
-
--spec payment_capture_failed(config()) -> test_return().
-
-payment_capture_failed(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_scenario_payment_params([good, fail]),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
-    ] = next_event(InvoiceID, Client),
-    timeout = next_event(InvoiceID, 1000, Client),
-    ?assertException(
-        error,
-        {{woody_error, _}, _},
-        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
-    ).
-
--spec payment_capture_retries_exceeded(config()) -> test_return().
-
-payment_capture_retries_exceeded(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_scenario_payment_params([good, temp, temp, temp, temp]),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?captured()),
-    PaymentID = await_sessions_restarts(PaymentID, ?captured(), InvoiceID, Client, 3),
-    timeout = next_event(InvoiceID, 1000, Client),
-    ?assertException(
-        error,
-        {{woody_error, _}, _},
-        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
-    ).
 
 -spec payment_w_terminal_success(config()) -> _ | no_return().
 
@@ -1825,6 +1792,59 @@ adhoc_repair_failed_succeeded(C) ->
     Changes = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
+-spec adhoc_legacy_repair_capturing_succeeded(config()) -> _ | no_return().
+
+adhoc_legacy_repair_capturing_succeeded(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    PaymentParams = make_scenario_payment_params([good, fail]),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?captured()),
+    {failed, PaymentID, {failure, _Failure}} =
+        await_payment_process_failure(InvoiceID, PaymentID, Client, 0, ?captured()),
+    % assume no more events here since payment is failed already
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = force_fail_invoice_machine(InvoiceID),
+    Changes = [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?trx_bound(?trx_info(PaymentID, #{})))),
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?captured())),
+        ?invoice_status_changed(?invoice_paid())
+    ],
+    ok = repair_invoice(InvoiceID, Changes, Client),
+    Changes = next_event(InvoiceID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec adhoc_legacy_repair_cancelling_succeeded(config()) -> _ | no_return().
+
+adhoc_legacy_repair_cancelling_succeeded(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    PaymentParams = make_scenario_payment_params([good, fail]),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?captured()),
+    {failed, PaymentID, {failure, _Failure}} =
+        await_payment_process_failure(InvoiceID, PaymentID, Client, 0, ?captured()),
+    % assume no more events here since payment is failed already
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = force_fail_invoice_machine(InvoiceID),
+    Changes = [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?trx_bound(?trx_info(PaymentID, #{})))),
+        ?payment_ev(PaymentID, ?session_ev(?cancelled(), ?session_finished(?session_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled()))
+    ],
+    ok = repair_invoice(InvoiceID, Changes, Client),
+    Changes = next_event(InvoiceID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_unpaid()),
+        [?payment_state(?payment_w_status(PaymentID, ?cancelled()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
 -spec payment_with_offsite_preauth_success(config()) -> test_return().
 
 payment_with_offsite_preauth_success(C) ->
@@ -2084,6 +2104,11 @@ construct_proxy(ID, Url, Options) ->
     }}.
 
 %%
+
+force_fail_invoice_machine(InvoiceID) ->
+    ok = hg_context:save(hg_context:create()),
+    {error, failed} = hg_machine:call(<<"invoice">>, InvoiceID, [<<"some unexsists call">>]),
+    ok.
 
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).
