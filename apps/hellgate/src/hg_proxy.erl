@@ -22,6 +22,7 @@ construct_transport_options(Opts) ->
     construct_transport_options(Opts, genlib_app:env(hellgate, proxy_opts, #{})).
 
 construct_transport_options(Opts, #{transport_opts := TransportOpts = #{}}) ->
-    Opts#{transport_opts => maps:to_list(maps:with([connect_timeout, recv_timeout], TransportOpts))};
+    Fields = [connect_timeout, recv_timeout, pool, max_connections],
+    Opts#{transport_opts => maps:to_list(maps:with(Fields, TransportOpts))};
 construct_transport_options(Opts, #{}) ->
     Opts.
