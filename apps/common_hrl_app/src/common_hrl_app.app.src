@@ -1,0 +1,11 @@
+{application, common_hrl_app, [
+    {description, "Common hrls"},
+    {vsn, "0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib
+    ]},
+    {env, []},
+    {modules, []}
+]}.

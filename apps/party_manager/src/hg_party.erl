@@ -10,7 +10,7 @@
 
 -module(hg_party).
 
--include("party_events.hrl").
+-include_lib("common_hrl_app/include/party_events.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
 

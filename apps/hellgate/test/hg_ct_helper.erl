@@ -228,7 +228,7 @@ make_user_identity(UserID) ->
 %%
 
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("hellgate/include/party_events.hrl").
+-include_lib("common_hrl_app/include/party_events.hrl").
 
 -type party_id()                  :: dmsl_domain_thrift:'PartyID'().
 -type user_info()                 :: dmsl_payment_processing_thrift:'UserInfo'().

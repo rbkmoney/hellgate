@@ -79,7 +79,7 @@ end_per_testcase(_Name, _C) ->
 
 %% tests
 
--include("party_events.hrl").
+-include("common_hrl_app/include/party_events.hrl").
 
 -define(event(ID, Source, Seq, Payload),
     #payproc_Event{

@@ -1,0 +1,12 @@
+{application, party_manager, [
+    {description, "Party manager"},
+    {vsn, "0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        thrift,
+        dmsl,
+        common_hrl_app
+    ]}
+]}.

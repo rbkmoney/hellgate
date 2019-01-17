@@ -1,7 +1,7 @@
 -module(hg_party_tests_SUITE).
 
 -include("hg_ct_domain.hrl").
--include("party_events.hrl").
+-include("common_hrl_app/include/party_events.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
