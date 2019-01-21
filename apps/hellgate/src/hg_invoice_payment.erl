@@ -88,8 +88,8 @@
     cash_flow              :: undefined | cash_flow(),
     trx                    :: undefined | trx_info(),
     target                 :: undefined | target(),
-    sessions       = #{}   :: #{target() => session()},
-    retry_attempts = #{}   :: #{target() => non_neg_integer()},
+    sessions       = #{}   :: #{target_type() => session()},
+    retry_attempts = #{}   :: #{target_type() => non_neg_integer()},
     refunds        = #{}   :: #{refund_id() => refund_state()},
     adjustments    = []    :: [adjustment()],
     recurrent_token        :: undefined | recurrent_token(),
@@ -124,6 +124,7 @@
 -type adjustment_id()       :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type adjustment_params()   :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 -type target()              :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
+-type target_type()         :: 'processed' | 'captured' | 'cancelled' | 'refunded'.
 -type risk_score()          :: dmsl_domain_thrift:'RiskScore'().
 -type route()               :: dmsl_domain_thrift:'PaymentRoute'().
 -type cash_flow()           :: dmsl_domain_thrift:'FinalCashFlow'().
@@ -1476,13 +1477,13 @@ retry_session(Action, Target, Timeout) ->
     {NewEvents, NewAction}.
 
 get_actual_retry_strategy(Target, #st{retry_attempts = Attempts}) ->
-    AttemptNum = maps:get(Target, Attempts, 0),
-    hg_retry:skip_steps(get_initial_retry_strategy(Target), AttemptNum).
+    AttemptNum = maps:get(get_target_type(Target), Attempts, 0),
+    hg_retry:skip_steps(get_initial_retry_strategy(get_target_type(Target)), AttemptNum).
 
--spec get_initial_retry_strategy(target()) -> retry_strategy().
-get_initial_retry_strategy({TargetCode, _DomainRecord}) ->
+-spec get_initial_retry_strategy(target_type()) -> retry_strategy().
+get_initial_retry_strategy(TargetType) ->
     PolicyConfig = genlib_app:env(hellgate, payment_retry_policy, #{}),
-    hg_retry:new_strategy(maps:get(TargetCode, PolicyConfig, no_retry)).
+    hg_retry:new_strategy(maps:get(TargetType, PolicyConfig, no_retry)).
 
 -spec check_retry_possibility(Target, Failure, St) -> {retry, Timeout} | fatal when
     Failure :: dmsl_domain_thrift:'OperationFailure'(),
@@ -2040,7 +2041,7 @@ merge_change(?session_ev(Target, Event), St) ->
     set_trx(get_session_trx(Session), St1).
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
-    St#st{retry_attempts = maps:update_with(Target, fun(N) -> N + 1 end, 0, Attempts)}.
+    St#st{retry_attempts = maps:update_with(get_target_type(Target), fun(N) -> N + 1 end, 0, Attempts)}.
 
 collapse_refund_changes(Changes) ->
     lists:foldl(fun merge_refund_change/2, undefined, Changes).
@@ -2176,10 +2177,10 @@ get_payment_state(InvoiceID, PaymentID) ->
     end.
 
 get_session(Target, #st{sessions = Sessions}) ->
-    maps:get(Target, Sessions, undefined).
+    maps:get(get_target_type(Target), Sessions, undefined).
 
 set_session(Target, Session, St = #st{sessions = Sessions}) ->
-    St#st{sessions = Sessions#{Target => Session}}.
+    St#st{sessions = Sessions#{get_target_type(Target) => Session}}.
 
 get_session_status(#{status := Status}) ->
     Status.
@@ -2195,6 +2196,14 @@ get_session_tags(#{tags := Tags}) ->
 
 get_target(#st{target = Target}) ->
     Target.
+
+get_target_type({Type, _}) when
+    Type == 'processed';
+    Type == 'captured';
+    Type == 'cancelled';
+    Type == 'refunded'
+->
+    Type.
 
 get_opts(#st{opts = Opts}) ->
     Opts.
