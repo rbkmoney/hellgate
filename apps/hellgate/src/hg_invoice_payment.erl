@@ -41,6 +41,7 @@
 %% Business logic
 
 -export([capture/2]).
+-export([capture/3]).
 -export([cancel/2]).
 -export([refund/3]).
 
@@ -111,6 +112,7 @@
 -export_type([activity/0]).
 -export_type([machine_result/0]).
 
+-type cash()                :: dmsl_domain_thrift:'Cash'().
 -type party()               :: dmsl_domain_thrift:'Party'().
 -type payer()               :: dmsl_domain_thrift:'Payer'().
 -type invoice()             :: dmsl_domain_thrift:'Invoice'().
@@ -802,6 +804,52 @@ start_session(Target) ->
 capture(St, Reason) ->
     do_payment(St, ?captured_with_reason(hg_utils:format_reason(Reason))).
 
+-spec capture(st(), atom(), cash()) -> {ok, result()}.
+
+capture(St, Reason, Cash) ->
+    Payment = get_payment(St),
+    _ = assert_activity({payment, flow_waiting}, St),
+    _ = assert_payment_flow(hold, Payment),
+    _ = assert_capture_cash_currency(Cash, Payment),
+    _ = assert_capture_cash_amount(Cash, Payment),
+    capture_(St, Reason, Cash).
+
+capture_(St, Reason, Cash) ->
+    Payment             = get_payment(St),
+    Opts                = get_opts(St),
+    Revision            = get_payment_revision(St),
+    Shop                = get_shop(Opts),
+    PaymentInstitution  = get_payment_institution(Opts, Revision),
+    Route               = get_route(St),
+    VS                  = collect_validation_varset(St, Opts),
+    MerchantTerms   = get_merchant_payments_terms(Opts, Revision),
+    ProviderTerms   = get_provider_payments_terms(Route, Revision),
+    Provider        = get_route_provider(Route, Revision),
+    Payment2        = Payment#domain_InvoicePayment{cost = Cash},
+    Cashflow        = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
+    FinalCashflow   = construct_final_cashflow(
+        Payment2,
+        Shop,
+        PaymentInstitution,
+        Provider,
+        Cashflow,
+        VS,
+        Revision
+    ),
+    Invoice             = get_invoice(Opts),
+    _AffectedAccounts   = hg_accounting:plan(
+        construct_payment_plan_id(Invoice, Payment2),
+        [
+            {2, hg_cashflow:revert(get_cashflow(St))},
+            {3, FinalCashflow}
+        ]
+    ),
+    Changes = [
+        ?cash_flow_changed(FinalCashflow),
+        start_session(?captured_with_reason_and_cash(hg_utils:format_reason(Reason), Cash))
+    ],
+    {ok, {Changes, hg_machine_action:instant()}}.
+
 -spec cancel(st(), atom()) -> {ok, result()}.
 
 cancel(St, Reason) ->
@@ -812,6 +860,24 @@ do_payment(St, Target) ->
     _ = assert_activity({payment, flow_waiting}, St),
     _ = assert_payment_flow(hold, Payment),
     {ok, {start_session(Target), hg_machine_action:instant()}}.
+
+assert_capture_cash_currency(?cash(_, SymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
+    ok;
+assert_capture_cash_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
+    throw(#payproc_InconsistentCaptureCurrency{
+        payment_currency = SymCode,
+        passed_currency = PassedSymCode
+    }).
+
+assert_capture_cash_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
+    when PassedAmount =< Amount
+->
+    ok;
+assert_capture_cash_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) ->
+    throw(#payproc_AmountExceededCaptureBalance{
+        payment_amount = Amount,
+        passed_amount = PassedAmount
+    }).
 
 -spec refund(refund_params(), st(), opts()) ->
     {refund(), result()}.
