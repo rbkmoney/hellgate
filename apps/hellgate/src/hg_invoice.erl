@@ -525,7 +525,8 @@ handle_call({capture_payment_new, PaymentID, #payproc_InvoicePaymentCaptureParam
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason, Cash),
+    Opts = get_payment_opts(St),
+    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason, Cash, Opts),
     #{
         response => ok,
         changes => wrap_payment_changes(PaymentID, Changes),

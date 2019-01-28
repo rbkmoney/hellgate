@@ -41,7 +41,7 @@
 %% Business logic
 
 -export([capture/2]).
--export([capture/3]).
+-export([capture/4]).
 -export([cancel/2]).
 -export([refund/3]).
 
@@ -805,19 +805,19 @@ capture(St, Reason) ->
     Cost = get_payment_cost(get_payment(St)),
     do_payment(St, ?captured_with_reason_and_cost(hg_utils:format_reason(Reason), Cost)).
 
--spec capture(st(), binary(), cash()) -> {ok, result()}.
+-spec capture(st(), binary(), cash(), opts()) -> {ok, result()}.
 
-capture(St, Reason, Cost) ->
+capture(St, Reason, Cost, Opts) ->
     Payment = get_payment(St),
     _ = assert_activity({payment, flow_waiting}, St),
     _ = assert_payment_flow(hold, Payment),
     _ = assert_capture_cost_currency(Cost, Payment),
     _ = assert_capture_cost_amount(Cost, Payment),
-    partial_capture(St, Reason, Cost).
+    partial_capture(St, Reason, Cost, Opts).
 
-partial_capture(St, Reason, Cost) ->
+partial_capture(St, Reason, Cost, Opts) ->
     Payment             = get_payment(St),
-    Opts                = get_opts(St),
+    % Opts                = get_opts(St),
     Revision            = get_payment_revision(St),
     Shop                = get_shop(Opts),
     PaymentInstitution  = get_payment_institution(Opts, Revision),
@@ -845,10 +845,9 @@ partial_capture(St, Reason, Cost) ->
             {3, FinalCashflow}
         ]
     ),
-    Changes = [
-        ?cash_flow_changed(FinalCashflow),
-        start_session(?captured_with_reason_and_cost(genlib:to_binary(Reason), Cost))
-    ],
+    Changes =
+        [?cash_flow_changed(FinalCashflow)] ++
+        start_session(?captured_with_reason_and_cost(genlib:to_binary(Reason), Cost)),
     {ok, {Changes, hg_machine_action:instant()}}.
 
 -spec cancel(st(), atom()) -> {ok, result()}.
@@ -1999,6 +1998,10 @@ merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, cash_flow_bu
     St#st{
         cash_flow  = Cashflow,
         activity   = {payment, processing_session}
+    };
+merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, flow_waiting}} = St) ->
+    St#st{
+        cash_flow  = Cashflow
     };
 merge_change(?rec_token_acquired(Token), St) ->
     St#st{recurrent_token = Token};
