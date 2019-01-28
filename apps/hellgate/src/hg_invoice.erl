@@ -381,6 +381,7 @@ map_repair_error({error, Reason}) ->
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type payment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentParams'().
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
+-type capture_params() :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
 -type adjustment_params() :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
 -type adjustment_id() :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type refund_params() :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
@@ -472,6 +473,7 @@ handle_expiration(St) ->
     {start_payment, payment_params()} |
     {refund_payment , payment_id(), refund_params()} |
     {capture_payment, payment_id(), binary()} |
+    {capture_payment_new, payment_id(), capture_params()} |
     {cancel_payment, payment_id(), binary()} |
     {create_payment_adjustment , payment_id(), adjustment_params()} |
     {capture_payment_adjustment, payment_id(), adjustment_id()} |

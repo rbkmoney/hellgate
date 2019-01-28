@@ -802,19 +802,20 @@ start_session(Target) ->
 -spec capture(st(), atom()) -> {ok, result()}.
 
 capture(St, Reason) ->
-    do_payment(St, ?captured_with_reason(hg_utils:format_reason(Reason))).
+    Cost = get_payment_cost(get_payment(St)),
+    do_payment(St, ?captured_with_reason_and_cost(hg_utils:format_reason(Reason), Cost)).
 
--spec capture(st(), atom(), cash()) -> {ok, result()}.
+-spec capture(st(), binary(), cash()) -> {ok, result()}.
 
-capture(St, Reason, Cash) ->
+capture(St, Reason, Cost) ->
     Payment = get_payment(St),
     _ = assert_activity({payment, flow_waiting}, St),
     _ = assert_payment_flow(hold, Payment),
-    _ = assert_capture_cash_currency(Cash, Payment),
-    _ = assert_capture_cash_amount(Cash, Payment),
-    capture_(St, Reason, Cash).
+    _ = assert_capture_cost_currency(Cost, Payment),
+    _ = assert_capture_cost_amount(Cost, Payment),
+    partial_capture(St, Reason, Cost).
 
-capture_(St, Reason, Cash) ->
+partial_capture(St, Reason, Cost) ->
     Payment             = get_payment(St),
     Opts                = get_opts(St),
     Revision            = get_payment_revision(St),
@@ -825,7 +826,7 @@ capture_(St, Reason, Cash) ->
     MerchantTerms   = get_merchant_payments_terms(Opts, Revision),
     ProviderTerms   = get_provider_payments_terms(Route, Revision),
     Provider        = get_route_provider(Route, Revision),
-    Payment2        = Payment#domain_InvoicePayment{cost = Cash},
+    Payment2        = Payment#domain_InvoicePayment{cost = Cost},
     Cashflow        = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
     FinalCashflow   = construct_final_cashflow(
         Payment2,
@@ -846,7 +847,7 @@ capture_(St, Reason, Cash) ->
     ),
     Changes = [
         ?cash_flow_changed(FinalCashflow),
-        start_session(?captured_with_reason_and_cash(hg_utils:format_reason(Reason), Cash))
+        start_session(?captured_with_reason_and_cost(genlib:to_binary(Reason), Cost))
     ],
     {ok, {Changes, hg_machine_action:instant()}}.
 
@@ -861,19 +862,19 @@ do_payment(St, Target) ->
     _ = assert_payment_flow(hold, Payment),
     {ok, {start_session(Target), hg_machine_action:instant()}}.
 
-assert_capture_cash_currency(?cash(_, SymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
+assert_capture_cost_currency(?cash(_, SymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
     ok;
-assert_capture_cash_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
+assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
     throw(#payproc_InconsistentCaptureCurrency{
         payment_currency = SymCode,
         passed_currency = PassedSymCode
     }).
 
-assert_capture_cash_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
+assert_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
     when PassedAmount =< Amount
 ->
     ok;
-assert_capture_cash_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) ->
+assert_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) ->
     throw(#payproc_AmountExceededCaptureBalance{
         payment_amount = Amount,
         passed_amount = PassedAmount
@@ -1722,7 +1723,10 @@ construct_payment_info(St, Opts) ->
         #prxprv_PaymentInfo{
             shop = construct_proxy_shop(get_shop(Opts)),
             invoice = construct_proxy_invoice(get_invoice(Opts)),
-            payment = construct_proxy_payment(get_payment(St), get_trx(St))
+            payment = mb_add_partial_cost(
+                get_target(St),
+                construct_proxy_payment(get_payment(St), get_trx(St))
+            )
         }
     ).
 
@@ -1747,6 +1751,13 @@ construct_payment_info({refund_session, ID}, St, PaymentInfo) ->
     PaymentInfo#prxprv_PaymentInfo{
         refund = construct_proxy_refund(try_get_refund_state(ID, St))
     }.
+
+mb_add_partial_cost(?captured_with_reason_and_cost(_, Cost), #prxprv_InvoicePayment{} = Payment)
+    when Cost =/= undefined
+->
+    Payment#prxprv_InvoicePayment{partial_cost = construct_proxy_cash(Cost)};
+mb_add_partial_cost(_, Payment) ->
+    Payment.
 
 construct_proxy_payment(
     #domain_InvoicePayment{
@@ -2614,10 +2625,18 @@ marshal(status, ?refunded()) ->
     <<"refunded">>;
 marshal(status, ?failed(Failure)) ->
     [<<"failed">>, marshal(failure, Failure)];
-marshal(status, ?captured_with_reason(Reason)) ->
-    [<<"captured">>, marshal(str, Reason)];
+marshal(status, ?captured_with_reason(_Reason) = Capture) ->
+    [<<"captured">>, marshal(capture, Capture)];
 marshal(status, ?cancelled_with_reason(Reason)) ->
     [<<"cancelled">>, marshal(str, Reason)];
+
+marshal(capture, ?captured_with_reason_and_cost(Reason, Cost)) when Cost =/= undefined ->
+    genlib_map:compact(#{
+        <<"reason">> => marshal(str, Reason),
+        <<"cost">>   => hg_cash:marshal(Cost)
+    });
+marshal(capture, ?captured_with_reason(Reason)) ->
+    marshal(str, Reason);
 
 %% Session change
 
@@ -2994,8 +3013,8 @@ unmarshal(status, <<"processed">>) ->
     ?processed();
 unmarshal(status, [<<"failed">>, Failure]) ->
     ?failed(unmarshal(failure, Failure));
-unmarshal(status, [<<"captured">>, Reason]) ->
-    ?captured_with_reason(unmarshal(str, Reason));
+unmarshal(status, [<<"captured">>, Capture]) ->
+    unmarshal(capture, Capture);
 unmarshal(status, [<<"cancelled">>, Reason]) ->
     ?cancelled_with_reason(unmarshal(str, Reason));
 unmarshal(status, <<"refunded">>) ->
@@ -3015,6 +3034,13 @@ unmarshal(status, ?legacy_captured(Reason)) ->
     ?captured_with_reason(unmarshal(str, Reason));
 unmarshal(status, ?legacy_cancelled(Reason)) ->
     ?cancelled_with_reason(unmarshal(str, Reason));
+
+unmarshal(capture, Capture) when is_map(Capture) ->
+    Reason = maps:get(<<"reason">>, Capture, undefined),
+    Cost = maps:get(<<"cost">>, Capture, undefined),
+    ?captured_with_reason_and_cost(unmarshal(str, Reason), hg_cash:unmarshal(Cost));
+unmarshal(capture, Reason) ->
+    ?captured_with_reason(unmarshal(str, Reason));
 
 %% Session change
 
