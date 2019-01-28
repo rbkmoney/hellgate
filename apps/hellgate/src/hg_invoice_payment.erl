@@ -87,6 +87,7 @@
     risk_score             :: undefined | risk_score(),
     route                  :: undefined | route(),
     cash_flow              :: undefined | cash_flow(),
+    partial_cash_flow      :: undefined | cash_flow(),
     trx                    :: undefined | trx_info(),
     target                 :: undefined | target(),
     sessions       = #{}   :: #{target_type() => session()},
@@ -1701,6 +1702,14 @@ commit_payment_cashflow(St) ->
 rollback_payment_cashflow(St) ->
     hg_accounting:rollback(construct_payment_plan_id(St), get_cashflow_plan(St)).
 
+get_cashflow_plan(St = #st{partial_cash_flow = PartialCashFlow})
+    when PartialCashFlow =/= undefined
+->
+    [
+        {1, get_cashflow(St)},
+        {2, hg_cashflow:revert(get_cashflow(St))},
+        {3, PartialCashFlow}
+    ];
 get_cashflow_plan(St) ->
     [{1, get_cashflow(St)}].
 
@@ -2001,7 +2010,7 @@ merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, cash_flow_bu
     };
 merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, flow_waiting}} = St) ->
     St#st{
-        cash_flow  = Cashflow
+        partial_cash_flow = Cashflow
     };
 merge_change(?rec_token_acquired(Token), St) ->
     St#st{recurrent_token = Token};
