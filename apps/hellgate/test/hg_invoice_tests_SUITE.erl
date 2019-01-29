@@ -1674,6 +1674,7 @@ rounding_cashflow_volume(C) ->
     ] = next_event(InvoiceID, Client),
     ?cash(0, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
     ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
+    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {system, subagent}, CF),
     ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {external, outcome}, CF).
 
 get_cashflow_rounding_fixture(Revision) ->
@@ -1719,6 +1720,11 @@ get_cashflow_rounding_fixture(Revision) ->
                         ?cfpost(
                             {system, settlement},
                             {provider, settlement},
+                            ?share_with_rounding_method(1, 200000, operation_amount, round_half_away_from_zero)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {system, subagent},
                             ?share_with_rounding_method(1, 200000, operation_amount, round_half_away_from_zero)
                         ),
                         ?cfpost(

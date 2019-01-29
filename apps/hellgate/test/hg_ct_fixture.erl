@@ -211,7 +211,8 @@ construct_system_account_set(Ref) ->
 
 construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
     ok = hg_context:save(hg_context:create()),
-    AccountID = hg_accounting:create_account(CurrencyCode),
+    SettlementAccountID = hg_accounting:create_account(CurrencyCode),
+    SubagentAccountID = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
     {system_account_set, #domain_SystemAccountSetObject{
         ref = Ref,
@@ -219,7 +220,8 @@ construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
             name = Name,
             description = Name,
             accounts = #{?cur(CurrencyCode) => #domain_SystemAccount{
-                settlement = AccountID
+                settlement = SettlementAccountID,
+                subagent = SubagentAccountID
             }}
         }
     }}.
