@@ -75,6 +75,7 @@
     risk_scoring |
     routing |
     cash_flow_building |
+    cash_flow_holding  |
     processing_session |
     processing_accounter |
     flow_waiting |
@@ -817,7 +818,7 @@ capture(St, Reason, Cost, Opts) ->
     _ = assert_capture_cost_amount(Cost, Payment),
     partial_capture(St, Reason, Cost, Opts).
 
-partial_capture(St, Reason, Cost, Opts) ->
+partial_capture(St, _Reason, Cost, Opts) ->
     Payment             = get_payment(St),
     Revision            = get_payment_revision(St),
     Shop                = get_shop(Opts),
@@ -838,18 +839,7 @@ partial_capture(St, Reason, Cost, Opts) ->
         VS,
         Revision
     ),
-    Invoice             = get_invoice(Opts),
-    _AffectedAccounts   = hg_accounting:plan(
-        construct_payment_plan_id(Invoice, Payment2),
-        [
-            {2, hg_cashflow:revert(get_cashflow(St))},
-            {3, FinalCashflow}
-        ]
-    ),
-    Changes =
-        [?cash_flow_changed(FinalCashflow)] ++
-        start_session(?captured_with_reason_and_cost(genlib:to_binary(Reason), Cost)),
-    {ok, {Changes, hg_machine_action:instant()}}.
+    {ok, {[?cash_flow_changed(FinalCashflow)], hg_machine_action:instant()}}.
 
 -spec cancel(st(), atom()) -> {ok, result()}.
 
@@ -879,6 +869,19 @@ assert_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost =
         payment_amount = Amount,
         passed_amount = PassedAmount
     }).
+
+process_holding(Action, St) ->
+    Opts                = get_opts(St),
+    Payment             = get_payment(St),
+    Invoice             = get_invoice(Opts),
+    _AffectedAccounts   = hg_accounting:plan(
+        construct_payment_plan_id(Invoice, Payment),
+        [
+            {2, hg_cashflow:revert(get_cashflow(St))},
+            {3, get_partial_cashflow(St)}
+        ]
+    ),
+    {ok, {start_session(get_target(St)), hg_machine_action:set_timeout(0, Action)}}.
 
 -spec refund(refund_params(), st(), opts()) ->
     {refund(), result()}.
@@ -1272,6 +1275,9 @@ process_timeout(St) ->
 process_timeout({payment, risk_scoring}, Action, St) ->
     %% There are three processing_accounter steps here (scoring, routing and cash flow building)
     process_routing(Action, St);
+process_timeout({payment, cash_flow_holding}, Action, St) ->
+    %% Hold new cashflow and start session
+    process_holding(Action, St);
 process_timeout({payment, Step}, Action, St) when
     Step =:= processing_session orelse
     Step =:= finalizing_session
@@ -1731,7 +1737,7 @@ construct_payment_info(St, Opts) ->
         #prxprv_PaymentInfo{
             shop = construct_proxy_shop(get_shop(Opts)),
             invoice = construct_proxy_invoice(get_invoice(Opts)),
-            payment = add_partial_cost(
+            payment = mb_add_partial_cost(
                 get_target(St),
                 construct_proxy_payment(get_payment(St), get_trx(St))
             )
@@ -1760,8 +1766,12 @@ construct_payment_info({refund_session, ID}, St, PaymentInfo) ->
         refund = construct_proxy_refund(try_get_refund_state(ID, St))
     }.
 
-add_partial_cost(?captured_with_reason_and_cost(_, Cost), #prxprv_InvoicePayment{} = Payment) ->
-    Payment#prxprv_InvoicePayment{partial_cost = construct_proxy_cash(Cost)}.
+mb_add_partial_cost(?captured_with_reason_and_cost(_, Cost), #prxprv_InvoicePayment{} = Payment)
+    when Cost =/= undefined
+->
+    Payment#prxprv_InvoicePayment{partial_cost = construct_proxy_cash(Cost)};
+mb_add_partial_cost(_, Payment) ->
+    Payment.
 
 construct_proxy_payment(
     #domain_InvoicePayment{
@@ -2006,7 +2016,8 @@ merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, cash_flow_bu
     };
 merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, flow_waiting}} = St) ->
     St#st{
-        partial_cash_flow = Cashflow
+        partial_cash_flow = Cashflow,
+        activity   = {payment, cash_flow_holding}
     };
 merge_change(?rec_token_acquired(Token), St) ->
     St#st{recurrent_token = Token};
@@ -2073,6 +2084,7 @@ merge_change(?adjustment_ev(ID, Event), St) ->
 merge_change(?session_ev(Target, ?session_started()), #st{activity = {payment, Step}} = St) when
     Step =:= processing_session orelse
     Step =:= flow_waiting orelse
+    Step =:= cash_flow_holding orelse
     Step =:= finalizing_session
 ->
     % FIXME why the hell dedicated handling
@@ -2083,6 +2095,8 @@ merge_change(?session_ev(Target, ?session_started()), #st{activity = {payment, S
             %% session retrying
             processing_session;
         flow_waiting ->
+            finalizing_session;
+        cash_flow_holding ->
             finalizing_session;
         finalizing_session ->
             %% session retrying
@@ -2146,6 +2160,9 @@ merge_adjustment_change(?adjustment_status_changed(Status), Adjustment) ->
     Adjustment#domain_InvoicePaymentAdjustment{status = Status}.
 
 get_cashflow(#st{cash_flow = FinalCashflow}) ->
+    FinalCashflow.
+
+get_partial_cashflow(#st{partial_cash_flow = FinalCashflow}) ->
     FinalCashflow.
 
 set_cashflow(Cashflow, St = #st{}) ->

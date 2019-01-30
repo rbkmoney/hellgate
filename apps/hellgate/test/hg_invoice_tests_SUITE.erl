@@ -1674,7 +1674,9 @@ payment_hold_partial_capturing(C) ->
     Reason = <<"ok">>,
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     [
-        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0).
