@@ -727,7 +727,8 @@ collect_account_map(
         {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
         {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
         {provider , settlement} => ProviderAccount#domain_ProviderAccount.settlement ,
-        {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
+        {system   , settlement} => SystemAccount#domain_SystemAccount.settlement     ,
+        {system   , subagent  } => SystemAccount#domain_SystemAccount.subagent
     },
     % External account probably can be optional for some payments
     case choose_external_account(Currency, VS, Revision) of

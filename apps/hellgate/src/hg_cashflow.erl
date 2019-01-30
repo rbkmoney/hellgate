@@ -230,6 +230,8 @@ marshal(account_type, {provider, settlement}) ->
     [<<"provider">>, <<"settlement">>];
 marshal(account_type, {system, settlement}) ->
     [<<"system">>, <<"settlement">>];
+marshal(account_type, {system, subagent}) ->
+    [<<"system">>, <<"subagent">>];
 marshal(account_type, {external, income}) ->
     [<<"external">>, <<"income">>];
 marshal(account_type, {external, outcome}) ->
@@ -296,6 +298,8 @@ unmarshal(account_type, [<<"provider">>, <<"settlement">>]) ->
     {provider, settlement};
 unmarshal(account_type, [<<"system">>, <<"settlement">>]) ->
     {system, settlement};
+unmarshal(account_type, [<<"system">>, <<"subagent">>]) ->
+    {system, subagent};
 unmarshal(account_type, [<<"external">>, <<"income">>]) ->
     {external, income};
 unmarshal(account_type, [<<"external">>, <<"outcome">>]) ->

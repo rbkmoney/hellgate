@@ -350,7 +350,8 @@ collect_payout_account_map(
         {merchant , settlement} => ShopAccount#domain_ShopAccount.settlement,
         {merchant , guarantee } => ShopAccount#domain_ShopAccount.guarantee,
         {merchant , payout    } => ShopAccount#domain_ShopAccount.payout,
-        {system   , settlement} => SystemAccount#domain_SystemAccount.settlement
+        {system   , settlement} => SystemAccount#domain_SystemAccount.settlement,
+        {system   , subagent  } => SystemAccount#domain_SystemAccount.subagent
     }.
 
 prepare_varset(PartyID, #payproc_Varset{} = V) ->
