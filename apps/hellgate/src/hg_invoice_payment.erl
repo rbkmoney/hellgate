@@ -819,7 +819,6 @@ capture(St, Reason, Cost, Opts) ->
 
 partial_capture(St, Reason, Cost, Opts) ->
     Payment             = get_payment(St),
-    % Opts                = get_opts(St),
     Revision            = get_payment_revision(St),
     Shop                = get_shop(Opts),
     PaymentInstitution  = get_payment_institution(Opts, Revision),
@@ -1732,7 +1731,7 @@ construct_payment_info(St, Opts) ->
         #prxprv_PaymentInfo{
             shop = construct_proxy_shop(get_shop(Opts)),
             invoice = construct_proxy_invoice(get_invoice(Opts)),
-            payment = mb_add_partial_cost(
+            payment = add_partial_cost(
                 get_target(St),
                 construct_proxy_payment(get_payment(St), get_trx(St))
             )
@@ -1761,12 +1760,8 @@ construct_payment_info({refund_session, ID}, St, PaymentInfo) ->
         refund = construct_proxy_refund(try_get_refund_state(ID, St))
     }.
 
-mb_add_partial_cost(?captured_with_reason_and_cost(_, Cost), #prxprv_InvoicePayment{} = Payment)
-    when Cost =/= undefined
-->
-    Payment#prxprv_InvoicePayment{partial_cost = construct_proxy_cash(Cost)};
-mb_add_partial_cost(_, Payment) ->
-    Payment.
+add_partial_cost(?captured_with_reason_and_cost(_, Cost), #prxprv_InvoicePayment{} = Payment) ->
+    Payment#prxprv_InvoicePayment{partial_cost = construct_proxy_cash(Cost)}.
 
 construct_proxy_payment(
     #domain_InvoicePayment{
@@ -3049,8 +3044,8 @@ unmarshal(status, ?legacy_cancelled(Reason)) ->
     ?cancelled_with_reason(unmarshal(str, Reason));
 
 unmarshal(capture, Capture) when is_map(Capture) ->
-    Reason = maps:get(<<"reason">>, Capture, undefined),
-    Cost = maps:get(<<"cost">>, Capture, undefined),
+    Reason = maps:get(<<"reason">>, Capture),
+    Cost = maps:get(<<"cost">>, Capture),
     ?captured_with_reason_and_cost(unmarshal(str, Reason), hg_cash:unmarshal(Cost));
 unmarshal(capture, Reason) ->
     ?captured_with_reason(unmarshal(str, Reason));
