@@ -1731,7 +1731,7 @@ construct_payment_info(St, Opts) ->
         #prxprv_PaymentInfo{
             shop = construct_proxy_shop(get_shop(Opts)),
             invoice = construct_proxy_invoice(get_invoice(Opts)),
-            payment = add_partial_cost(
+            payment = mb_add_partial_cost(
                 get_target(St),
                 construct_proxy_payment(get_payment(St), get_trx(St))
             )
@@ -1760,8 +1760,12 @@ construct_payment_info({refund_session, ID}, St, PaymentInfo) ->
         refund = construct_proxy_refund(try_get_refund_state(ID, St))
     }.
 
-add_partial_cost(?captured_with_reason_and_cost(_, Cost), #prxprv_InvoicePayment{} = Payment) ->
-    Payment#prxprv_InvoicePayment{partial_cost = construct_proxy_cash(Cost)}.
+mb_add_partial_cost(?captured_with_reason_and_cost(_, Cost), #prxprv_InvoicePayment{} = Payment)
+    when Cost =/= undefined
+->
+    Payment#prxprv_InvoicePayment{partial_cost = construct_proxy_cash(Cost)};
+mb_add_partial_cost(_, Payment) ->
+    Payment.
 
 construct_proxy_payment(
     #domain_InvoicePayment{
