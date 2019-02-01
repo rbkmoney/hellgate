@@ -1727,14 +1727,12 @@ set_repair_scenario(Scenario, St) ->
 construct_payment_info(St, Opts) ->
     construct_payment_info(
         get_activity(St),
+        get_target(St),
         St,
         #prxprv_PaymentInfo{
             shop = construct_proxy_shop(get_shop(Opts)),
             invoice = construct_proxy_invoice(get_invoice(Opts)),
-            payment = mb_add_partial_cost(
-                get_target(St),
-                construct_proxy_payment(get_payment(St), get_trx(St))
-            )
+            payment = construct_proxy_payment(get_payment(St), get_trx(St))
         }
     ).
 
@@ -1751,21 +1749,23 @@ construct_session(Session = #{target := Target}) ->
         state = get_session_proxy_state(Session)
     }.
 
-construct_payment_info(idle, _St, PaymentInfo) ->
+construct_payment_info(idle, _Target, _St, PaymentInfo) ->
     PaymentInfo;
-construct_payment_info({payment, _Step}, _St, PaymentInfo) ->
+construct_payment_info(
+    {payment, _Step},
+    Target = ?captured_with_reason_and_cost(_, Cost),
+    _St,
+    PaymentInfo
+) when Cost =/= undefined ->
+    PaymentInfo#prxprv_PaymentInfo{
+        capture = construct_proxy_capture(Target)
+    };
+construct_payment_info({payment, _Step}, _Target, _St, PaymentInfo) ->
     PaymentInfo;
-construct_payment_info({refund_session, ID}, St, PaymentInfo) ->
+construct_payment_info({refund_session, ID}, _Target, St, PaymentInfo) ->
     PaymentInfo#prxprv_PaymentInfo{
         refund = construct_proxy_refund(try_get_refund_state(ID, St))
     }.
-
-mb_add_partial_cost(?captured_with_reason_and_cost(_, Cost), #prxprv_InvoicePayment{} = Payment)
-    when Cost =/= undefined
-->
-    Payment#prxprv_InvoicePayment{partial_cost = construct_proxy_cash(Cost)};
-mb_add_partial_cost(_, Payment) ->
-    Payment.
 
 construct_proxy_payment(
     #domain_InvoicePayment{
@@ -1876,6 +1876,11 @@ construct_proxy_refund(#refund_st{
         created_at = get_refund_created_at(Refund),
         trx        = get_session_trx(Session),
         cash       = construct_proxy_cash(get_refund_cash(Refund))
+    }.
+
+construct_proxy_capture(?captured_with_reason_and_cost(_, Cost)) ->
+    #prxprv_InvoicePaymentCapture{
+        cost = construct_proxy_cash(Cost)
     }.
 
 collect_proxy_options(
