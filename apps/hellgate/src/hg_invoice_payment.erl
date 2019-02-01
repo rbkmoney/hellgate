@@ -1402,13 +1402,16 @@ repair_session(St = #st{repair_scenario = Scenario}) ->
 finalize_payment(Action, St) ->
     Target = case get_payment_flow(get_payment(St)) of
         ?invoice_payment_flow_instant() ->
-            ?captured();
+            ?captured_with_reason_and_cost(<<"Timeout">>, get_payment_cost(get_payment(St)));
         ?invoice_payment_flow_hold(OnHoldExpiration, _) ->
             case OnHoldExpiration of
                 cancel ->
                     ?cancelled();
                 capture ->
-                    ?captured()
+                    ?captured_with_reason_and_cost(
+                        <<"Timeout">>,
+                        get_payment_cost(get_payment(St))
+                    )
             end
     end,
     StartEvents = start_session(Target),
@@ -1532,7 +1535,7 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             {done, {Events ++ Events1, Action}}
     end.
 
-process_fatal_payment_failure(Target, _Events, _Action, Failure, _St) when Target =:= ?captured() ->
+process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
     error({invalid_capture_failure, Failure});
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
     _AffectedAccounts = rollback_payment_cashflow(St),
@@ -1753,10 +1756,10 @@ construct_payment_info(idle, _Target, _St, PaymentInfo) ->
     PaymentInfo;
 construct_payment_info(
     {payment, _Step},
-    Target = ?captured_with_reason_and_cost(_, Cost),
+    Target = ?captured_with_reason_and_cost(_, _),
     _St,
     PaymentInfo
-) when Cost =/= undefined ->
+) ->
     PaymentInfo#prxprv_PaymentInfo{
         capture = construct_proxy_capture(Target)
     };

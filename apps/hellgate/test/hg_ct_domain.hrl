@@ -68,4 +68,6 @@
         token_provider = TokenProvider
     }).
 
+-define(timeout_reason(), <<"Timeout">>).
+
 -endif.

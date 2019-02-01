@@ -159,7 +159,7 @@ first_recurrent_payment_success_test(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+        [?payment_state(?payment_w_status(PaymentID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec second_recurrent_payment_success_test(config()) -> test_result().
@@ -178,7 +178,7 @@ second_recurrent_payment_success_test(C) ->
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(Payment2ID, ?captured()))]
+        [?payment_state(?payment_w_status(Payment2ID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
     ) = hg_client_invoicing:get(Invoice2ID, Client).
 
 -spec another_shop_test(config()) -> test_result().
@@ -237,7 +237,7 @@ cancelled_first_payment_test(C) ->
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(Payment2ID, ?captured()))]
+        [?payment_state(?payment_w_status(Payment2ID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
     ) = hg_client_invoicing:get(Invoice2ID, Client).
 
 -spec not_permitted_recurrent_test(config()) -> test_result().
@@ -401,12 +401,19 @@ create_invoice(InvoiceParams, Client) ->
     ?invoice_state(?invoice(InvoiceID)) = hg_client_invoicing:create(InvoiceParams, Client),
     InvoiceID.
 
+get_payment_cost(InvoiceID, PaymentID, Client) ->
+    #payproc_InvoicePayment{
+        payment = #domain_InvoicePayment{cost = Cost}
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    Cost.
+
 await_payment_capture(InvoiceID, PaymentID, Client) ->
-    await_payment_capture(InvoiceID, PaymentID, undefined, Client).
+    await_payment_capture(InvoiceID, PaymentID, ?timeout_reason(), Client).
 
 await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
+    Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     Pattern = [
-        ?evp(?payment_ev(PaymentID, ?payment_status_changed(?captured_with_reason(Reason))))
+        ?evp(?payment_ev(PaymentID, ?payment_status_changed(?captured_with_reason_and_cost(Reason, Cost))))
     ],
     {ok, _Events} = await_events(InvoiceID, Pattern, Client),
     PaymentID.

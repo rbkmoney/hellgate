@@ -279,7 +279,14 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
             sleep(1, <<"sleeping_with_user_interaction">>)
     end;
 
-process_payment(?captured(), undefined, PaymentInfo, _Opts) ->
+process_payment(
+    ?captured(),
+    undefined,
+    PaymentInfo = #prxprv_PaymentInfo{capture = Capture},
+    _Opts
+)
+    when Capture =/= undefined
+->
     case get_payment_info_scenario(PaymentInfo) of
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
