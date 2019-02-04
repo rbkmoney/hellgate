@@ -159,7 +159,7 @@ first_recurrent_payment_success_test(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec second_recurrent_payment_success_test(config()) -> test_result().
@@ -178,7 +178,7 @@ second_recurrent_payment_success_test(C) ->
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(Payment2ID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
+        [?payment_state(?payment_w_status(Payment2ID, ?captured()))]
     ) = hg_client_invoicing:get(Invoice2ID, Client).
 
 -spec another_shop_test(config()) -> test_result().
@@ -237,7 +237,7 @@ cancelled_first_payment_test(C) ->
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(Payment2ID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
+        [?payment_state(?payment_w_status(Payment2ID, ?captured()))]
     ) = hg_client_invoicing:get(Invoice2ID, Client).
 
 -spec not_permitted_recurrent_test(config()) -> test_result().
