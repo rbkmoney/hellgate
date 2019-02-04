@@ -1760,6 +1760,7 @@ construct_payment_info(
     St,
     PaymentInfo
 ) when Cost =:= undefined ->
+    %% Для обратной совместимости и legacy capture
     PaymentInfo#prxprv_PaymentInfo{
         capture = construct_proxy_capture(?captured_with_reason_and_cost(
             Reason,
