@@ -3057,6 +3057,23 @@ construct_domain_fixture() ->
                     cash_flow = {decisions, [
                         #domain_CashFlowDecision{
                             if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                definition = {empty_cvv_is, true}
+                            }}}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(0, 0, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(0, 0, operation_amount)
+                                )
+                            ]} % проверяем, что условие никогда не отрабатывает
+                        },
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
                                 definition = {payment_system_is, visa}
                             }}}},
                             then_ = {value, [

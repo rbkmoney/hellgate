@@ -20,6 +20,8 @@
 
 -spec get_method(t()) -> method().
 
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
+    #domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSystem}};
 get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
     #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}};
 get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider}}) ->
@@ -94,7 +96,15 @@ test_bank_card_condition_def({payment_system, PaymentSystem}, V, Rev) ->
 test_bank_card_condition_def({issuer_country_is, IssuerCountry}, V, Rev) ->
     test_issuer_country_condition(IssuerCountry, V, Rev);
 test_bank_card_condition_def({issuer_bank_is, BankRef}, V, Rev) ->
-    test_issuer_bank_condition(BankRef, V, Rev).
+    test_issuer_bank_condition(BankRef, V, Rev);
+test_bank_card_condition_def(
+    {empty_cvv_is, Val},
+    #domain_BankCard{is_cvv_empty = Val},
+    _Rev
+) ->
+    true;
+test_bank_card_condition_def({empty_cvv_is, _Val}, #domain_BankCard{}, _Rev) ->
+    false.
 
 test_payment_system_condition(
     #domain_PaymentSystemCondition{payment_system_is = Ps, token_provider_is = Tp},
@@ -161,7 +171,8 @@ marshal(bank_card = T, #domain_BankCard{} = BankCard) ->
         <<"token_provider">>    => marshal({T, token_provider}, BankCard#domain_BankCard.token_provider),
         <<"issuer_country">>    => marshal({T, issuer_country}, BankCard#domain_BankCard.issuer_country),
         <<"bank_name">>         => marshal({T, bank_name}, BankCard#domain_BankCard.bank_name),
-        <<"metadata">>          => marshal({T, metadata}, BankCard#domain_BankCard.metadata)
+        <<"metadata">>          => marshal({T, metadata}, BankCard#domain_BankCard.metadata),
+        <<"is_cvv_empty">>      => marshal({T, boolean}, BankCard#domain_BankCard.is_cvv_empty)
     });
 marshal(payment_terminal = T, #domain_PaymentTerminal{terminal_type = TerminalType}) ->
     marshal({T, type}, TerminalType);
@@ -225,6 +236,11 @@ marshal({payment_terminal, type}, euroset) ->
 marshal({digital_wallet, provider}, qiwi) ->
     <<"qiwi">>;
 
+marshal({bank_card, boolean}, true) ->
+    <<"true">>;
+marshal({bank_card, boolean}, false) ->
+    <<"false">>;
+
 marshal(_, Other) ->
     Other.
 
@@ -250,6 +266,7 @@ unmarshal(bank_card = T, #{
     IssuerCountry = genlib_map:get(<<"issuer_country">>, V),
     BankName      = genlib_map:get(<<"bank_name">>, V),
     MD            = genlib_map:get(<<"metadata">>, V),
+    IsCVVEmpty    = genlib_map:get(<<"is_cvv_empty">>, V),
     #domain_BankCard{
         token            = unmarshal(str, Token),
         payment_system   = unmarshal({T, payment_system}, PaymentSystem),
@@ -258,7 +275,8 @@ unmarshal(bank_card = T, #{
         token_provider   = unmarshal({T, token_provider}, TokenProvider),
         issuer_country   = unmarshal({T, issuer_country}, IssuerCountry),
         bank_name        = unmarshal({T, bank_name}, BankName),
-        metadata         = unmarshal({T, metadata}, MD)
+        metadata         = unmarshal({T, metadata}, MD),
+        is_cvv_empty     = unmarshal({T, boolean}, IsCVVEmpty)
     };
 unmarshal(payment_terminal = T, TerminalType) ->
     #domain_PaymentTerminal{
@@ -341,6 +359,11 @@ unmarshal({payment_terminal, type}, <<"euroset">>) ->
 
 unmarshal({digital_wallet, provider}, <<"qiwi">>) ->
     qiwi;
+
+unmarshal({bank_card, boolean}, <<"true">>) ->
+    true;
+unmarshal({bank_card, boolean}, <<"false">>) ->
+    false;
 
 unmarshal(_, Other) ->
     Other.
