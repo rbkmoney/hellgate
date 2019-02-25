@@ -436,7 +436,9 @@ handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
 
-handle_signal({repair, {changes, Changes}}, St) ->
+handle_signal({repair, {changes, Changes}}, St0) ->
+    % Validating that these changes are at least applicable
+    St1 = lists:foldl(fun merge_change/2, St0, Changes),
     Result = case Changes of
         [_ | _] ->
             #{changes => Changes};
@@ -444,7 +446,7 @@ handle_signal({repair, {changes, Changes}}, St) ->
             #{}
     end,
     Result#{
-        state => St
+        state => St1
     };
 
 handle_signal({repair, {scenario, _}}, #st{activity = Activity})
