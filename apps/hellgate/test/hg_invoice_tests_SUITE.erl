@@ -2793,7 +2793,7 @@ construct_domain_fixture() ->
                 % проверяем, что условие никогда не отрабатывает
                 #domain_CashLimitDecision {
                     if_ = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                        definition = {empty_cvv_is, false}
+                        definition = {empty_cvv_is, true}
                     }}}},
                     then_ = {value,
                         ?cashrng(
