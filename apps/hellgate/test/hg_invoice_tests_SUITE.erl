@@ -84,6 +84,7 @@
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
+-export([adhoc_repair_invalid_changes_failed/1]).
 
 -export([repair_fail_pre_processing_succeeded/1]).
 -export([repair_skip_inspector_succeeded/1]).
@@ -226,7 +227,8 @@ groups() ->
         ]},
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
-            adhoc_repair_failed_succeeded
+            adhoc_repair_failed_succeeded,
+            adhoc_repair_invalid_changes_failed
         ]},
         {repair_scenarios, [parallel], [
             repair_fail_pre_processing_succeeded,
@@ -1935,6 +1937,37 @@ adhoc_repair_failed_succeeded(C) ->
     ok = repair_invoice(InvoiceID, Changes, Client),
     Changes = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec adhoc_repair_invalid_changes_failed(config()) -> _ | no_return().
+
+adhoc_repair_invalid_changes_failed(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    PaymentParams = make_payment_params(PaymentTool, Session),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
+    ] = next_event(InvoiceID, Client),
+    timeout = next_event(InvoiceID, 1000, Client),
+    InvalidChanges1 = [
+        ?payment_ev(PaymentID, ?refund_ev(<<"42">>, ?refund_status_changed(?refund_succeeded())))
+    ],
+    ?assertException(
+        error,
+        {{woody_error, {external, result_unexpected, _}}, _},
+        repair_invoice(InvoiceID, InvalidChanges1, Client)
+    ),
+    InvalidChanges2 = [
+        ?payment_ev(PaymentID, ?payment_status_changed(?captured())),
+        ?invoice_status_changed(?invoice_paid())
+    ],
+    ?assertException(
+        error,
+        {{woody_error, {external, result_unexpected, _}}, _},
+        repair_invoice(InvoiceID, InvalidChanges2, Client)
+    ).
 
 -spec payment_with_offsite_preauth_success(config()) -> test_return().
 
