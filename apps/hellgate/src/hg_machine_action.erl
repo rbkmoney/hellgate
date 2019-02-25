@@ -12,6 +12,7 @@
 -export([unset_timer/1]).
 -export([set_tag/1]).
 -export([set_tag/2]).
+-export([mark_removal/1]).
 
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
@@ -89,6 +90,11 @@ set_tag(Tag) ->
 
 set_tag(Tag, Action = #'ComplexAction'{}) when is_binary(Tag) andalso byte_size(Tag) > 0 ->
     Action#'ComplexAction'{tag = #'TagAction'{tag = Tag}}.
+
+-spec mark_removal(t()) -> t().
+
+mark_removal(Action = #'ComplexAction'{}) ->
+    Action#'ComplexAction'{remove = #'RemoveAction'{}}.
 
 %%
 
