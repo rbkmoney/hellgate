@@ -1440,7 +1440,11 @@ payment_manual_refund(C) ->
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
-    RefundParams = make_refund_params(),
+    TrxInfo = ?trx_info(<<"test">>, #{}),
+    RefundParams = #payproc_InvoicePaymentRefundParams {
+        reason = <<"manual">>,
+        transaction_info = TrxInfo
+    },
     % not finished yet
     ?invalid_payment_status(?processed()) =
         hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
@@ -1452,25 +1456,31 @@ payment_manual_refund(C) ->
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
-    % create a refund finally
+    % fix proxy
+    OriginalRevision = hg_domain:head(),
+    Fixture = payment_manual_refund_fixture(OriginalRevision),
+    ok = hg_domain:upsert(Fixture),
+    % create refund
     Refund = #domain_InvoicePaymentRefund{id = RefundID} =
         hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
     Refund =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
-    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started()))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?trx_bound(TrxInfo)))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
-    % no more refunds for you
     ?invalid_payment_status(?refunded()) =
-        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client).
+        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
+    % reset fix
+    ok = hg_domain:reset(OriginalRevision).
 
 -spec payment_partial_refunds_success(config()) -> _ | no_return().
 
@@ -3667,4 +3677,17 @@ payments_w_bank_conditions_fixture(_Revision) ->
             }
         }},
         hg_ct_fixture:construct_contract_template(?tmpl(4), ?trms(4))
+    ].
+
+payment_manual_refund_fixture(_Revision) ->
+    [
+        {proxy, #domain_ProxyObject{
+            ref = ?prx(1),
+            data = #domain_ProxyDefinition{
+                name        = <<"undefined">>,
+                description = <<"undefined">>,
+                url         = <<"undefined">>,
+                options     = #{}
+            }
+        }}
     ].
