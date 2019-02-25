@@ -22,6 +22,7 @@
 -export([new_capture_payment/4]).
 
 -export([refund_payment/4]).
+-export([refund_payment_manual/4]).
 -export([get_payment_refund/4]).
 
 -export([create_adjustment/4]).
@@ -197,6 +198,12 @@ capture_payment(InvoiceID, PaymentID, Reason, Cash, Client) ->
 
 refund_payment(InvoiceID, PaymentID, Params, Client) ->
     map_result_error(gen_server:call(Client, {call, 'RefundPayment', [InvoiceID, PaymentID, Params]})).
+
+-spec refund_payment_manual(invoice_id(), payment_id(), refund_params(), pid()) ->
+    refund() | woody_error:business_error().
+
+refund_payment_manual(InvoiceID, PaymentID, Params, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'CreateManualRefund', [InvoiceID, PaymentID, Params]})).
 
 -spec get_payment_refund(invoice_id(), payment_id(), refund_id(), pid()) ->
     refund() | woody_error:business_error().

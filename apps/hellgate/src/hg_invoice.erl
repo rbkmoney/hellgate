@@ -191,6 +191,11 @@ handle_function_('RefundPayment', [UserInfo, InvoiceID, PaymentID, Params], _Opt
     _ = set_invoicing_meta(InvoiceID, PaymentID),
     call(InvoiceID, {refund_payment, PaymentID, Params});
 
+handle_function_('CreateManualRefund', [UserInfo, InvoiceID, PaymentID, Params], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {manual_refund, PaymentID, Params});
+
 handle_function_('GetPaymentRefund', [UserInfo, InvoiceID, PaymentID, ID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
@@ -575,6 +580,16 @@ handle_call({refund_payment, PaymentID, Params}, St) ->
     wrap_payment_impact(
         PaymentID,
         hg_invoice_payment:refund(Params, PaymentSession, get_payment_opts(St)),
+        St
+    );
+
+handle_call({manual_refund, PaymentID, Params}, St) ->
+    _ = assert_invoice_accessible(St),
+    _ = assert_invoice_operable(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    wrap_payment_impact(
+        PaymentID,
+        hg_invoice_payment:manual_refund(Params, PaymentSession, get_payment_opts(St)),
         St
     );
 
