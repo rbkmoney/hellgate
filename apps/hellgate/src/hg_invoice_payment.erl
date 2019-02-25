@@ -892,21 +892,25 @@ check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{c
 
 validate_merchant_hold_terms(#domain_PaymentsServiceTerms{holds = Terms}) when Terms /= undefined ->
     case Terms of
+        %% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
         #domain_PaymentHoldsServiceTerms{partial_captures = undefined} ->
             ok;
         #domain_PaymentHoldsServiceTerms{} ->
             throw(#payproc_OperationNotPermitted{})
     end;
+%% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
 validate_merchant_hold_terms(#domain_PaymentsServiceTerms{holds = undefined}) ->
     ok.
 
 validate_provider_holds_terms(#domain_PaymentsProvisionTerms{holds = Terms}) when Terms /= undefined ->
     case Terms of
+        %% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
         #domain_PaymentHoldsProvisionTerms{partial_captures = undefined} ->
             ok;
         #domain_PaymentHoldsProvisionTerms{} ->
             throw(#payproc_OperationNotPermitted{})
     end;
+%% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
 validate_provider_holds_terms(#domain_PaymentsProvisionTerms{holds = undefined}) ->
     ok.
 
