@@ -103,6 +103,13 @@ test_bank_card_condition_def(
     _Rev
 ) ->
     true;
+%% Для обратной совместимости с картами, у которых нет is_cvv_empty
+test_bank_card_condition_def(
+    {empty_cvv_is, false},
+    #domain_BankCard{is_cvv_empty = undefined},
+    _Rev
+) ->
+    true;
 test_bank_card_condition_def({empty_cvv_is, _Val}, #domain_BankCard{}, _Rev) ->
     false.
 
