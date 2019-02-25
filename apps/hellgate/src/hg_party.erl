@@ -346,8 +346,9 @@ reduce_recurrent_paytools_terms(#domain_RecurrentPaytoolsServiceTerms{} = Terms,
 
 reduce_holds_terms(#domain_PaymentHoldsServiceTerms{} = Terms, VS, Rev) ->
     #domain_PaymentHoldsServiceTerms{
-        payment_methods = reduce_if_defined(Terms#domain_PaymentHoldsServiceTerms.payment_methods, VS, Rev),
-        lifetime        = reduce_if_defined(Terms#domain_PaymentHoldsServiceTerms.lifetime, VS, Rev)
+        payment_methods  = reduce_if_defined(Terms#domain_PaymentHoldsServiceTerms.payment_methods, VS, Rev),
+        lifetime         = reduce_if_defined(Terms#domain_PaymentHoldsServiceTerms.lifetime, VS, Rev),
+        partial_captures = Terms#domain_PaymentHoldsServiceTerms.partial_captures
     }.
 
 reduce_refunds_terms(#domain_PaymentRefundsServiceTerms{} = Terms, VS, Rev) ->
@@ -522,16 +523,19 @@ merge_recurrent_paytools_terms(Terms0, Terms1) ->
 merge_holds_terms(
     #domain_PaymentHoldsServiceTerms{
         payment_methods = Pm0,
-        lifetime = Lft0
+        lifetime = Lft0,
+        partial_captures = Ptcp0
     },
     #domain_PaymentHoldsServiceTerms{
         payment_methods = Pm1,
-        lifetime = Lft1
+        lifetime = Lft1,
+        partial_captures = Ptcp1
     }
 ) ->
     #domain_PaymentHoldsServiceTerms{
-        payment_methods = hg_utils:select_defined(Pm1, Pm0),
-        lifetime        = hg_utils:select_defined(Lft1, Lft0)
+        payment_methods  = hg_utils:select_defined(Pm1, Pm0),
+        lifetime         = hg_utils:select_defined(Lft1, Lft0),
+        partial_captures = hg_utils:select_defined(Ptcp1, Ptcp0)
     };
 merge_holds_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
