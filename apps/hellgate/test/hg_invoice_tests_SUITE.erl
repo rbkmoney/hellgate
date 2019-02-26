@@ -219,11 +219,16 @@ groups() ->
             payment_hold_new_capturing,
             invalid_currency_partial_capture,
             invalid_amount_partial_capture,
-            invalid_permit_partial_capture_in_service,
-            invalid_permit_partial_capture_in_provider,
             payment_hold_partial_capturing,
-            payment_hold_auto_capturing
+            payment_hold_auto_capturing,
+            {group, holds_management_with_custom_config}
         ]},
+
+        {holds_management_with_custom_config, [], [
+            invalid_permit_partial_capture_in_service,
+            invalid_permit_partial_capture_in_provider
+        ]},
+
         {offsite_preauth_payment, [parallel], [
             payment_with_offsite_preauth_success,
             payment_with_offsite_preauth_failed
@@ -3753,10 +3758,7 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                         ?cat(1)
                     ])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard),
-                        ?pmt(bank_card, jcb),
-                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
+                        ?pmt(bank_card, visa)
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -3777,60 +3779,6 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                                     {system, settlement},
                                     {provider, settlement},
                                     ?share(18, 1000, operation_amount)
-                                )
-                            ]}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system_is, mastercard}
-                            }}}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(19, 1000, operation_amount)
-                                )
-                            ]}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system_is, jcb}
-                            }}}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(20, 1000, operation_amount)
-                                )
-                            ]}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system, #domain_PaymentSystemCondition{
-                                    payment_system_is = visa,
-                                    token_provider_is = applepay
-                                }}
-                            }}}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(20, 1000, operation_amount)
                                 )
                             ]}
                         }
