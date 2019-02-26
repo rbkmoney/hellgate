@@ -211,7 +211,7 @@ groups() ->
             invalid_time_payment_partial_refund
         ]},
 
-        {holds_management, [], [
+        {holds_management, [parallel], [
             payment_hold_cancellation,
             payment_hold_auto_cancellation,
             payment_hold_capturing,
