@@ -2853,6 +2853,18 @@ construct_domain_fixture() ->
                 ?pmt(bank_card, mastercard)
             ])},
             cash_limit = {decisions, [
+                % проверяем, что условие никогда не отрабатывает
+                #domain_CashLimitDecision {
+                    if_ = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                        definition = {empty_cvv_is, true}
+                    }}}},
+                    then_ = {value,
+                        ?cashrng(
+                            {inclusive, ?cash(0, <<"RUB">>)},
+                            {inclusive, ?cash(0, <<"RUB">>)}
+                        )
+                    }
+                },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, ?cashrng(
