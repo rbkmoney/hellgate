@@ -85,6 +85,7 @@
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
+-export([adhoc_repair_force_removal/1]).
 -export([adhoc_repair_invalid_changes_failed/1]).
 
 -export([repair_fail_pre_processing_succeeded/1]).
@@ -230,6 +231,7 @@ groups() ->
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
             adhoc_repair_failed_succeeded,
+            adhoc_repair_force_removal,
             adhoc_repair_invalid_changes_failed
         ]},
         {repair_scenarios, [parallel], [
@@ -1896,6 +1898,11 @@ terms_retrieval(C) ->
 
 %%
 
+-define(repair_set_timer(T),
+    #repair_ComplexAction{timer = {set_timer, #repair_SetTimerAction{timer = T}}}).
+-define(repair_mark_removal(),
+    #repair_ComplexAction{remove = #repair_RemoveAction{}}).
+
 -spec adhoc_repair_working_failed(config()) -> _ | no_return().
 
 adhoc_repair_working_failed(C) ->
@@ -1926,9 +1933,25 @@ adhoc_repair_failed_succeeded(C) ->
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
     ],
-    ok = repair_invoice(InvoiceID, Changes, Client),
+    ok = repair_invoice(InvoiceID, Changes, ?repair_set_timer({timeout, 0}), Client),
     Changes = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec adhoc_repair_force_removal(config()) -> _ | no_return().
+
+adhoc_repair_force_removal(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    PaymentParams = make_payment_params(PaymentTool, Session),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
+    ] = next_event(InvoiceID, Client),
+    timeout = next_event(InvoiceID, 1000, Client),
+    ok = repair_invoice(InvoiceID, [], ?repair_mark_removal(), Client),
+    {exception, #payproc_InvoiceNotFound{}} = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec adhoc_repair_invalid_changes_failed(config()) -> _ | no_return().
 
@@ -2372,10 +2395,11 @@ create_invoice(InvoiceParams, Client) ->
 repair_invoice(InvoiceID, Changes, Client) ->
     hg_client_invoicing:repair(InvoiceID, Changes, Client).
 
+repair_invoice(InvoiceID, Changes, Action, Client) ->
+    hg_client_invoicing:repair(InvoiceID, Changes, Action, Client).
+
 create_repair_scenario(fail_pre_processing) ->
-    Failure = payproc_errors:construct('PaymentFailure',
-                {no_route_found, #payprocerr_GeneralFailure{}}
-            ),
+    Failure = payproc_errors:construct('PaymentFailure', {no_route_found, #payprocerr_GeneralFailure{}}),
     {'fail_pre_processing', #'payproc_InvoiceRepairFailPreProcessing'{failure = Failure}};
 create_repair_scenario(skip_inspector) ->
     {'skip_inspector', #'payproc_InvoiceRepairSkipInspector'{risk_score = low}};
