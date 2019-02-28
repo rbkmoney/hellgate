@@ -12,6 +12,7 @@
 -export([fulfill/3]).
 -export([rescind/3]).
 -export([repair/3]).
+-export([repair/4]).
 -export([repair_scenario/3]).
 
 -export([start_payment/3]).
@@ -125,7 +126,13 @@ rescind(InvoiceID, Reason, Client) ->
     ok | woody_error:business_error().
 
 repair(InvoiceID, Changes, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'Repair', [InvoiceID, Changes]})).
+    repair(InvoiceID, Changes, undefined, Client).
+
+-spec repair(invoice_id(), [tuple()], tuple() | undefined, pid()) ->
+    ok | woody_error:business_error().
+
+repair(InvoiceID, Changes, Action, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'Repair', [InvoiceID, Changes, Action]})).
 
 -spec repair_scenario(invoice_id(), hg_invoice_repair:scenario(), pid()) ->
     ok | woody_error:business_error().

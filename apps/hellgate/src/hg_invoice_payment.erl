@@ -813,11 +813,15 @@ capture(St, Reason) ->
 
 capture(St, Reason, Cost, Opts) ->
     Payment = get_payment(St),
-    _ = assert_activity({payment, flow_waiting}, St),
-    _ = assert_payment_flow(hold, Payment),
     _ = assert_capture_cost_currency(Cost, Payment),
-    _ = assert_capture_cost_amount(Cost, Payment),
-    partial_capture(St, Reason, Cost, Opts).
+    case check_equal_capture_cost_amount(Cost, Payment) of
+        true ->
+            capture(St, Reason);
+        false ->
+            _ = assert_activity({payment, flow_waiting}, St),
+            _ = assert_payment_flow(hold, Payment),
+            partial_capture(St, Reason, Cost, Opts)
+    end.
 
 partial_capture(St, Reason, Cost, Opts) ->
     Payment             = get_payment(St),
@@ -827,7 +831,9 @@ partial_capture(St, Reason, Cost, Opts) ->
     Route               = get_route(St),
     VS                  = collect_validation_varset(St, Opts),
     MerchantTerms   = get_merchant_payments_terms(Opts, Revision),
+    ok              = validate_merchant_hold_terms(MerchantTerms),
     ProviderTerms   = get_provider_payments_terms(Route, Revision),
+    ok              = validate_provider_holds_terms(ProviderTerms),
     Provider        = get_route_provider(Route, Revision),
     Payment2        = Payment#domain_InvoicePayment{cost = Cost},
     Cashflow        = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
@@ -872,15 +878,43 @@ assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cos
         passed_currency = PassedSymCode
     }).
 
-assert_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
-    when PassedAmount =< Amount
+check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
+    when PassedAmount =:= Amount
 ->
-    ok;
-assert_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) ->
+    true;
+check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
+    when PassedAmount < Amount
+->
+    false;
+check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) ->
     throw(#payproc_AmountExceededCaptureBalance{
         payment_amount = Amount,
         passed_amount = PassedAmount
     }).
+
+validate_merchant_hold_terms(#domain_PaymentsServiceTerms{holds = Terms}) when Terms /= undefined ->
+    case Terms of
+        %% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
+        #domain_PaymentHoldsServiceTerms{partial_captures = undefined} ->
+            ok;
+        #domain_PaymentHoldsServiceTerms{} ->
+            throw(#payproc_OperationNotPermitted{})
+    end;
+%% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
+validate_merchant_hold_terms(#domain_PaymentsServiceTerms{holds = undefined}) ->
+    ok.
+
+validate_provider_holds_terms(#domain_PaymentsProvisionTerms{holds = Terms}) when Terms /= undefined ->
+    case Terms of
+        %% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
+        #domain_PaymentHoldsProvisionTerms{partial_captures = undefined} ->
+            ok;
+        #domain_PaymentHoldsProvisionTerms{} ->
+            throw(#payproc_OperationNotPermitted{})
+    end;
+%% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
+validate_provider_holds_terms(#domain_PaymentsProvisionTerms{holds = undefined}) ->
+    ok.
 
 -spec refund(refund_params(), st(), opts()) ->
     {refund(), result()}.
