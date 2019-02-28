@@ -982,7 +982,7 @@ assert_refund_cash(Cash, St) ->
 assert_remaining_payment_amount(?cash(Amount, _), _St) when Amount >= 0 ->
     ok;
 assert_remaining_payment_amount(?cash(Amount, _), St) when Amount < 0 ->
-    Maximum = get_payment_cost(get_payment(St)),
+    Maximum = get_remaining_payment_balance(St),
     throw(#payproc_InvoicePaymentAmountExceeded{maximum = Maximum}).
 
 assert_previous_refunds_finished(St) ->
@@ -1001,9 +1001,9 @@ assert_previous_refunds_finished(St) ->
             throw(#payproc_OperationNotPermitted{})
     end.
 
-get_remaining_payment_amount(RefundCash, St) ->
+get_remaining_payment_balance(St) ->
     PaymentAmount = get_payment_cost(get_payment(St)),
-    InterimPaymentAmount = lists:foldl(
+    lists:foldl(
         fun(R, Acc) ->
             case get_refund_status(R) of
                 {S, _} when S == succeeded ->
@@ -1014,7 +1014,10 @@ get_remaining_payment_amount(RefundCash, St) ->
         end,
         PaymentAmount,
         get_refunds(St)
-    ),
+    ).
+
+get_remaining_payment_amount(RefundCash, St) ->
+    InterimPaymentAmount = get_remaining_payment_balance(St),
     hg_cash:sub(InterimPaymentAmount, RefundCash).
 
 get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = Terms}) when Terms /= undefined ->
