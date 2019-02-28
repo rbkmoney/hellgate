@@ -1462,9 +1462,6 @@ payment_manual_refund(C) ->
         reason = <<"manual">>,
         transaction_info = TrxInfo
     },
-    % not finished yet
-    ?invalid_payment_status(?processed()) =
-        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     % not enough funds on the merchant account
     ?insufficient_account_balance() =
@@ -1473,7 +1470,7 @@ payment_manual_refund(C) ->
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
-    % fix proxy
+    % prevent proxy access
     OriginalRevision = hg_domain:head(),
     Fixture = payment_manual_refund_fixture(OriginalRevision),
     ok = hg_domain:upsert(Fixture),
@@ -1496,7 +1493,7 @@ payment_manual_refund(C) ->
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
-    % reset fix
+    % reenable proxy
     ok = hg_domain:reset(OriginalRevision).
 
 -spec payment_partial_refunds_success(config()) -> _ | no_return().
