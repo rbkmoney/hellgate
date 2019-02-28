@@ -947,11 +947,18 @@ manual_refund(Params, St0, Opts) ->
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
     Changes = [
         ?refund_created(Refund, FinalCashflow),
-        ?session_ev(?refunded(), ?session_started()),
-        ?session_ev(?refunded(), ?trx_bound(TransactionInfo)),
+        ?session_ev(?refunded(), ?session_started())
+    ]
+    ++ make_transaction_event(TransactionInfo) ++
+    [
         ?session_ev(?refunded(), ?session_finished(?session_succeeded()))
     ],
     try_commit_refund(Refund, Changes, AccountMap, St).
+
+make_transaction_event(undefined) ->
+    [];
+make_transaction_event(TransactionInfo) ->
+    [?session_ev(?refunded(), ?trx_bound(TransactionInfo))].
 
 prepare_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_payment_status(captured, Payment),
