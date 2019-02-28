@@ -381,10 +381,10 @@ checkout(PartyID, RevisionParam) ->
 
 get_last_revision(PartyID) ->
     case get_party_revision_index(get_aux_state(PartyID)) of
-        #{} ->
-            get_last_revision_old_way(PartyID);
-        PartyRevisionIndex ->
-            lists:max(maps:keys(PartyRevisionIndex))
+        RevisionIndex when map_size(RevisionIndex) > 0 ->
+            lists:max(maps:keys(RevisionIndex));
+        _ ->
+            get_last_revision_old_way(PartyID)
     end.
 
 -spec get_last_revision_old_way(party_id()) ->
