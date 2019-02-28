@@ -1521,7 +1521,7 @@ payment_partial_refunds_success(C) ->
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
     % refund amount exceeds payment amount
     RefundParams2 = make_refund_params(33000, <<"RUB">>),
-    ?invoice_payment_amount_exceeded(_) =
+    ?invoice_payment_amount_exceeded(?cash(32000, _)) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
     % second refund
     RefundParams3 = make_refund_params(30000, <<"RUB">>),
