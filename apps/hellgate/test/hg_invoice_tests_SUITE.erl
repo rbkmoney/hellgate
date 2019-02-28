@@ -3756,9 +3756,9 @@ payment_manual_refund_fixture(_Revision) ->
         {proxy, #domain_ProxyObject{
             ref = ?prx(1),
             data = #domain_ProxyDefinition{
-                name        = undefined,
-                description = undefined,
-                url         = undefined,
+                name        = <<"undefined">>,
+                description = <<"undefined">>,
+                url         = <<"undefined">>,
                 options     = #{}
             }
         }}
