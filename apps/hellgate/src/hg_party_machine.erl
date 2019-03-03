@@ -648,7 +648,7 @@ apply_accepted_claim(Claim, St) ->
     end.
 
 respond(Response, Changes, AuxSt0, St) ->
-    AuxSt1 = append_party_revision_index(St, AuxSt0),
+    AuxSt1 = append_party_revision_index(Changes, St, AuxSt0),
     {Events, AuxSt2} = try_attach_snapshot(Changes, AuxSt1, St),
     {
         {ok, Response},
@@ -661,9 +661,12 @@ respond(Response, Changes, AuxSt0, St) ->
 respond_w_exception(Exception) ->
     {{exception, Exception}, #{}}.
 
-append_party_revision_index(St, AuxSt) ->
+append_party_revision_index(Changes, St0, AuxSt) ->
     PartyRevisionIndex0 = get_party_revision_index(AuxSt),
-    PartyRevisionIndex1 = update_party_revision_index(St, PartyRevisionIndex0),
+    LastEventID = St0#st.last_event,
+    % Brave prediction of next EventID ))
+    St1 = merge_party_changes(Changes, St0#st{last_event = LastEventID + 1}),
+    PartyRevisionIndex1 = update_party_revision_index(St1, PartyRevisionIndex0),
     set_party_revision_index(PartyRevisionIndex1, AuxSt).
 
 update_party_revision_index(St, PartyRevisionIndex) ->
@@ -777,7 +780,10 @@ merge_events(Events, St) ->
 merge_event({ID, _Dt, ?party_ev(PartyChanges)}, #st{last_event = LastEventID} = St)
     when is_list(PartyChanges) andalso ID =:= LastEventID + 1
 ->
-     lists:foldl(fun merge_party_change/2, St#st{last_event = ID}, PartyChanges).
+    merge_party_changes(PartyChanges, St#st{last_event = ID}).
+
+merge_party_changes(Changes, St) ->
+     lists:foldl(fun merge_party_change/2, St, Changes).
 
 merge_party_change(?party_created(PartyID, ContactInfo, Timestamp), St) ->
     St#st{
