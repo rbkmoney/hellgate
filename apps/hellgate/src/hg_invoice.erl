@@ -191,6 +191,11 @@ handle_function_('RefundPayment', [UserInfo, InvoiceID, PaymentID, Params], _Opt
     _ = set_invoicing_meta(InvoiceID, PaymentID),
     call(InvoiceID, {refund_payment, PaymentID, Params});
 
+handle_function_('CreateManualRefund', [UserInfo, InvoiceID, PaymentID, Params], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID, PaymentID),
+    call(InvoiceID, {manual_refund, PaymentID, Params});
+
 handle_function_('GetPaymentRefund', [UserInfo, InvoiceID, PaymentID, ID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
@@ -240,11 +245,11 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
     Cash = get_cost(St),
     hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
 
-handle_function_('Repair', [UserInfo, InvoiceID, Changes], _Opts) ->
+handle_function_('Repair', [UserInfo, InvoiceID, Changes, Action], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
-    repair(InvoiceID, {changes, Changes});
+    repair(InvoiceID, {changes, Changes, Action});
 
 handle_function_('RepairWithScenario', [UserInfo, InvoiceID, Scenario], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -436,7 +441,7 @@ handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
 
-handle_signal({repair, {changes, Changes}}, St0) ->
+handle_signal({repair, {changes, Changes, RepairAction}}, St0) ->
     % Validating that these changes are at least applicable
     St1 = lists:foldl(fun merge_change/2, St0, Changes),
     Result = case Changes of
@@ -445,8 +450,10 @@ handle_signal({repair, {changes, Changes}}, St0) ->
         [] ->
             #{}
     end,
+    Action = construct_repair_action(RepairAction),
     Result#{
-        state => St1
+        state  => St1,
+        action => Action
     };
 
 handle_signal({repair, {scenario, _}}, #st{activity = Activity})
@@ -462,6 +469,23 @@ handle_signal({repair, {scenario, Scenario}}, St = #st{activity = {payment, Paym
             try_to_get_repair_state(Scenario, St)
     end.
 
+construct_repair_action(CA) when CA /= undefined ->
+    lists:foldl(
+        fun merge_repair_action/2,
+        hg_machine_action:new(),
+        [{timer, CA#repair_ComplexAction.timer}, {remove, CA#repair_ComplexAction.remove}]
+    );
+construct_repair_action(undefined) ->
+    hg_machine_action:new().
+
+merge_repair_action({timer, {set_timer, #repair_SetTimerAction{timer = Timer}}}, Action) ->
+    hg_machine_action:set_timer(Timer, Action);
+merge_repair_action({timer, {unset_timer, #repair_UnsetTimerAction{}}}, Action) ->
+    hg_machine_action:unset_timer(Action);
+merge_repair_action({remove, #repair_RemoveAction{}}, Action) ->
+    hg_machine_action:mark_removal(Action);
+merge_repair_action({_, undefined}, Action) ->
+    Action.
 
 handle_expiration(St) ->
     #{
@@ -577,6 +601,16 @@ handle_call({refund_payment, PaymentID, Params}, St) ->
     wrap_payment_impact(
         PaymentID,
         hg_invoice_payment:refund(Params, PaymentSession, get_payment_opts(St)),
+        St
+    );
+
+handle_call({manual_refund, PaymentID, Params}, St) ->
+    _ = assert_invoice_accessible(St),
+    _ = assert_invoice_operable(St),
+    PaymentSession = get_payment_session(PaymentID, St),
+    wrap_payment_impact(
+        PaymentID,
+        hg_invoice_payment:manual_refund(Params, PaymentSession, get_payment_opts(St)),
         St
     );
 

@@ -12,6 +12,7 @@
 -export([fulfill/3]).
 -export([rescind/3]).
 -export([repair/3]).
+-export([repair/4]).
 -export([repair_scenario/3]).
 
 -export([start_payment/3]).
@@ -22,6 +23,7 @@
 -export([new_capture_payment/4]).
 
 -export([refund_payment/4]).
+-export([refund_payment_manual/4]).
 -export([get_payment_refund/4]).
 
 -export([create_adjustment/4]).
@@ -124,7 +126,13 @@ rescind(InvoiceID, Reason, Client) ->
     ok | woody_error:business_error().
 
 repair(InvoiceID, Changes, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'Repair', [InvoiceID, Changes]})).
+    repair(InvoiceID, Changes, undefined, Client).
+
+-spec repair(invoice_id(), [tuple()], tuple() | undefined, pid()) ->
+    ok | woody_error:business_error().
+
+repair(InvoiceID, Changes, Action, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'Repair', [InvoiceID, Changes, Action]})).
 
 -spec repair_scenario(invoice_id(), hg_invoice_repair:scenario(), pid()) ->
     ok | woody_error:business_error().
@@ -197,6 +205,12 @@ capture_payment(InvoiceID, PaymentID, Reason, Cash, Client) ->
 
 refund_payment(InvoiceID, PaymentID, Params, Client) ->
     map_result_error(gen_server:call(Client, {call, 'RefundPayment', [InvoiceID, PaymentID, Params]})).
+
+-spec refund_payment_manual(invoice_id(), payment_id(), refund_params(), pid()) ->
+    refund() | woody_error:business_error().
+
+refund_payment_manual(InvoiceID, PaymentID, Params, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'CreateManualRefund', [InvoiceID, PaymentID, Params]})).
 
 -spec get_payment_refund(invoice_id(), payment_id(), refund_id(), pid()) ->
     refund() | woody_error:business_error().

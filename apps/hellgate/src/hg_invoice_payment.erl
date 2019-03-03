@@ -45,6 +45,8 @@
 -export([cancel/2]).
 -export([refund/3]).
 
+-export([manual_refund/3]).
+
 -export([create_adjustment/4]).
 -export([capture_adjustment/3]).
 -export([cancel_adjustment/3]).
@@ -811,11 +813,15 @@ capture(St, Reason) ->
 
 capture(St, Reason, Cost, Opts) ->
     Payment = get_payment(St),
-    _ = assert_activity({payment, flow_waiting}, St),
-    _ = assert_payment_flow(hold, Payment),
     _ = assert_capture_cost_currency(Cost, Payment),
-    _ = assert_capture_cost_amount(Cost, Payment),
-    partial_capture(St, Reason, Cost, Opts).
+    case check_equal_capture_cost_amount(Cost, Payment) of
+        true ->
+            capture(St, Reason);
+        false ->
+            _ = assert_activity({payment, flow_waiting}, St),
+            _ = assert_payment_flow(hold, Payment),
+            partial_capture(St, Reason, Cost, Opts)
+    end.
 
 partial_capture(St, Reason, Cost, Opts) ->
     Payment             = get_payment(St),
@@ -825,7 +831,9 @@ partial_capture(St, Reason, Cost, Opts) ->
     Route               = get_route(St),
     VS                  = collect_validation_varset(St, Opts),
     MerchantTerms   = get_merchant_payments_terms(Opts, Revision),
+    ok              = validate_merchant_hold_terms(MerchantTerms),
     ProviderTerms   = get_provider_payments_terms(Route, Revision),
+    ok              = validate_provider_holds_terms(ProviderTerms),
     Provider        = get_route_provider(Route, Revision),
     Payment2        = Payment#domain_InvoicePayment{cost = Cost},
     Cashflow        = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
@@ -870,15 +878,43 @@ assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cos
         passed_currency = PassedSymCode
     }).
 
-assert_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
-    when PassedAmount =< Amount
+check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
+    when PassedAmount =:= Amount
 ->
-    ok;
-assert_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) ->
+    true;
+check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
+    when PassedAmount < Amount
+->
+    false;
+check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) ->
     throw(#payproc_AmountExceededCaptureBalance{
         payment_amount = Amount,
         passed_amount = PassedAmount
     }).
+
+validate_merchant_hold_terms(#domain_PaymentsServiceTerms{holds = Terms}) when Terms /= undefined ->
+    case Terms of
+        %% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
+        #domain_PaymentHoldsServiceTerms{partial_captures = undefined} ->
+            ok;
+        #domain_PaymentHoldsServiceTerms{} ->
+            throw(#payproc_OperationNotPermitted{})
+    end;
+%% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
+validate_merchant_hold_terms(#domain_PaymentsServiceTerms{holds = undefined}) ->
+    ok.
+
+validate_provider_holds_terms(#domain_PaymentsProvisionTerms{holds = Terms}) when Terms /= undefined ->
+    case Terms of
+        %% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
+        #domain_PaymentHoldsProvisionTerms{partial_captures = undefined} ->
+            ok;
+        #domain_PaymentHoldsProvisionTerms{} ->
+            throw(#payproc_OperationNotPermitted{})
+    end;
+%% Чтобы упростить интеграцию, по умолчанию разрешили частичные подтверждения
+validate_provider_holds_terms(#domain_PaymentsProvisionTerms{holds = undefined}) ->
+    ok.
 
 -spec refund(refund_params(), st(), opts()) ->
     {refund(), result()}.
@@ -887,18 +923,51 @@ refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
     Payment = get_payment(St),
+    Refund =
+        prepare_refund(Params, Payment, Revision, St, Opts),
+    {AccountMap, FinalCashflow} =
+        prepare_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    Changes = [
+        ?refund_created(Refund, FinalCashflow),
+        ?session_ev(?refunded(), ?session_started())
+    ],
+    try_commit_refund(Refund, Changes, AccountMap, St).
+
+-spec manual_refund(refund_params(), st(), opts()) ->
+    {refund(), result()}.
+
+manual_refund(Params, St0, Opts) ->
+    St = St0#st{opts = Opts},
+    Revision = hg_domain:head(),
+    Payment = get_payment(St),
+    Refund =
+        prepare_refund(Params, Payment, Revision, St, Opts),
+    {AccountMap, FinalCashflow} =
+        prepare_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
+    Changes = [
+        ?refund_created(Refund, FinalCashflow),
+        ?session_ev(?refunded(), ?session_started())
+    ]
+    ++ make_transaction_event(TransactionInfo) ++
+    [
+        ?session_ev(?refunded(), ?session_finished(?session_succeeded()))
+    ],
+    try_commit_refund(Refund, Changes, AccountMap, St).
+
+make_transaction_event(undefined) ->
+    [];
+make_transaction_event(TransactionInfo) ->
+    [?session_ev(?refunded(), ?trx_bound(TransactionInfo))].
+
+prepare_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_payment_status(captured, Payment),
-    Route = get_route(St),
-    Shop = get_shop(Opts),
     PartyRevision = get_opts_party_revision(Opts),
-    PaymentInstitution = get_payment_institution(Opts, Revision),
-    Provider = get_route_provider(Route, Revision),
     _ = assert_previous_refunds_finished(St),
-    VS0 = collect_validation_varset(St, Opts),
     Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
     _ = assert_refund_cash(Cash, St),
     ID = construct_refund_id(St),
-    Refund = #domain_InvoicePaymentRefund{
+    #domain_InvoicePaymentRefund {
         id              = ID,
         created_at      = hg_datetime:format_now(),
         domain_revision = Revision,
@@ -906,18 +975,25 @@ refund(Params, St0, Opts) ->
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason,
         cash            = Cash
-    },
+    }.
+
+prepare_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
+    Route = get_route(St),
+    Shop = get_shop(Opts),
     MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision)),
+    VS0 = collect_validation_varset(St, Opts),
     VS1 = validate_refund(MerchantTerms, Refund, Payment, VS0, Revision),
     ProviderPaymentsTerms = get_provider_payments_terms(Route, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment, VS1, Revision),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
+    PaymentInstitution = get_payment_institution(Opts, Revision),
+    Provider = get_route_provider(Route, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
     FinalCashflow = construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap),
-    Changes = [
-        ?refund_created(Refund, FinalCashflow),
-        ?session_ev(?refunded(), ?session_started())
-    ],
+    {AccountMap, FinalCashflow}.
+
+try_commit_refund(Refund, Changes, AccountMap, St) ->
+    ID = Refund#domain_InvoicePaymentRefund.id,
     RefundSt = collapse_refund_changes(Changes),
     AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
@@ -948,7 +1024,7 @@ assert_refund_cash(Cash, St) ->
 assert_remaining_payment_amount(?cash(Amount, _), _St) when Amount >= 0 ->
     ok;
 assert_remaining_payment_amount(?cash(Amount, _), St) when Amount < 0 ->
-    Maximum = get_payment_cost(get_payment(St)),
+    Maximum = get_remaining_payment_balance(St),
     throw(#payproc_InvoicePaymentAmountExceeded{maximum = Maximum}).
 
 assert_previous_refunds_finished(St) ->
@@ -967,9 +1043,9 @@ assert_previous_refunds_finished(St) ->
             throw(#payproc_OperationNotPermitted{})
     end.
 
-get_remaining_payment_amount(RefundCash, St) ->
+get_remaining_payment_balance(St) ->
     PaymentAmount = get_payment_cost(get_payment(St)),
-    InterimPaymentAmount = lists:foldl(
+    lists:foldl(
         fun(R, Acc) ->
             case get_refund_status(R) of
                 {S, _} when S == succeeded ->
@@ -980,7 +1056,10 @@ get_remaining_payment_amount(RefundCash, St) ->
         end,
         PaymentAmount,
         get_refunds(St)
-    ),
+    ).
+
+get_remaining_payment_amount(RefundCash, St) ->
+    InterimPaymentAmount = get_remaining_payment_balance(St),
     hg_cash:sub(InterimPaymentAmount, RefundCash).
 
 get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = Terms}) when Terms /= undefined ->
