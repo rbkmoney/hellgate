@@ -381,10 +381,10 @@ checkout(PartyID, RevisionParam) ->
 
 get_last_revision(PartyID) ->
     case get_party_revision_index(get_aux_state(PartyID)) of
-        RevisionIndex when map_size(RevisionIndex) > 0 ->
-            lists:max(maps:keys(RevisionIndex));
-        _ ->
-            get_last_revision_old_way(PartyID)
+        #{} ->
+            get_last_revision_old_way(PartyID);
+        PartyRevisionIndex ->
+            lists:max(maps:keys(PartyRevisionIndex))
     end.
 
 -spec get_last_revision_old_way(party_id()) ->
@@ -648,7 +648,7 @@ apply_accepted_claim(Claim, St) ->
     end.
 
 respond(Response, Changes, AuxSt0, St) ->
-    AuxSt1 = append_party_revision_index(Changes, St, AuxSt0),
+    AuxSt1 = append_party_revision_index(St, AuxSt0),
     {Events, AuxSt2} = try_attach_snapshot(Changes, AuxSt1, St),
     {
         {ok, Response},
@@ -661,12 +661,9 @@ respond(Response, Changes, AuxSt0, St) ->
 respond_w_exception(Exception) ->
     {{exception, Exception}, #{}}.
 
-append_party_revision_index(Changes, St0, AuxSt) ->
+append_party_revision_index(St, AuxSt) ->
     PartyRevisionIndex0 = get_party_revision_index(AuxSt),
-    LastEventID = St0#st.last_event,
-    % Brave prediction of next EventID ))
-    St1 = merge_party_changes(Changes, St0#st{last_event = LastEventID + 1}),
-    PartyRevisionIndex1 = update_party_revision_index(St1, PartyRevisionIndex0),
+    PartyRevisionIndex1 = update_party_revision_index(St, PartyRevisionIndex0),
     set_party_revision_index(PartyRevisionIndex1, AuxSt).
 
 update_party_revision_index(St, PartyRevisionIndex) ->
@@ -780,10 +777,7 @@ merge_events(Events, St) ->
 merge_event({ID, _Dt, ?party_ev(PartyChanges)}, #st{last_event = LastEventID} = St)
     when is_list(PartyChanges) andalso ID =:= LastEventID + 1
 ->
-    merge_party_changes(PartyChanges, St#st{last_event = ID}).
-
-merge_party_changes(Changes, St) ->
-     lists:foldl(fun merge_party_change/2, St, Changes).
+     lists:foldl(fun merge_party_change/2, St#st{last_event = ID}, PartyChanges).
 
 merge_party_change(?party_created(PartyID, ContactInfo, Timestamp), St) ->
     St#st{
