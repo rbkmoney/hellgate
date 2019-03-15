@@ -37,6 +37,14 @@ get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
 -spec create_from_method(method()) -> t().
 
 %% TODO empty strings - ugly hack for dialyzar
+create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSystem}}) ->
+    {bank_card, #domain_BankCard{
+        payment_system = PaymentSystem,
+        token = <<"">>,
+        bin = <<"">>,
+        masked_pan = <<"">>,
+        is_cvv_empty = true
+    }};
 create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,

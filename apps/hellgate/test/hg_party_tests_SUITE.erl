@@ -777,8 +777,16 @@ compute_payment_institution_terms(C) ->
         #payproc_Varset{payment_method = ?pmt(payment_terminal, euroset)},
         Client
     ),
+    #domain_TermSet{} = T4 = hg_client_party:compute_payment_institution_terms(
+        ?pinst(2),
+        #payproc_Varset{payment_method = ?pmt(empty_cvv_bank_card, visa)},
+        Client
+    ),
     T1 /= T3 orelse error({equal_term_sets, T1, T3}),
-    T2 /= T3 orelse error({equal_term_sets, T2, T3}).
+    T2 /= T3 orelse error({equal_term_sets, T2, T3}),
+    T1 /= T4 orelse error({equal_term_sets, T1, T4}),
+    T2 /= T4 orelse error({equal_term_sets, T2, T4}),
+    T3 /= T4 orelse error({equal_term_sets, T3, T4}).
 
 compute_payout_cash_flow(C) ->
     Client = cfg(client, C),
@@ -1508,6 +1516,12 @@ construct_domain_fixture() ->
                     then_ = {value, ordsets:from_list([?pomt(russian_bank_account), ?pomt(international_bank_account)])}
                 },
                 #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                        definition = {empty_cvv_is, true}
+                    }}}},
+                    then_ = {value, ordsets:from_list([])}
+                },
+                #domain_PayoutMethodDecision{
                     if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{}}}},
                     then_ = {value, ordsets:from_list([?pomt(russian_bank_account)])}
                 },
@@ -1549,6 +1563,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
 
         hg_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
         hg_ct_fixture:construct_payout_method(?pomt(international_bank_account)),

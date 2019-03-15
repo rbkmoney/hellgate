@@ -217,6 +217,9 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         no_preauth ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>);
+        empty_cvv ->
+            %% simple workflow without 3DS
+            sleep(1, <<"sleeping">>);
         preauth_3ds_offsite ->
             %% user interaction in sleep intent
             Uri = get_callback_url(),
@@ -427,6 +430,8 @@ get_recurrent_paytool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = P
 
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"no_preauth">>}}) ->
     no_preauth;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"empty_cvv">>}}) ->
+    empty_cvv;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds:timeout=", Timeout/binary>>}}) ->
     {preauth_3ds, erlang:binary_to_integer(Timeout)};
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_offsite">>}}) ->
@@ -450,6 +455,18 @@ get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qi
 
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
+make_payment_tool(empty_cvv) ->
+    {
+        {bank_card, #domain_BankCard{
+            token          = <<"empty_cvv">>,
+            payment_system = visa,
+            bin            = <<"424242">>,
+            masked_pan     = <<"4242">>,
+            token_provider = undefined,
+            is_cvv_empty   = true
+        }},
+        <<"SESSION42">>
+    };
 make_payment_tool(preauth_3ds) ->
     make_payment_tool({preauth_3ds, 3});
 make_payment_tool({preauth_3ds, Timeout}) ->

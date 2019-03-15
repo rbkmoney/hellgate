@@ -34,6 +34,7 @@
 -export([no_route_found_for_payment/1]).
 
 -export([payment_success/1]).
+-export([payment_success_empty_cvv/1]).
 -export([payment_w_terminal_success/1]).
 -export([payment_w_wallet_success/1]).
 -export([payment_w_customer_success/1]).
@@ -180,6 +181,7 @@ groups() ->
             invalid_payment_amount,
             no_route_found_for_payment,
             payment_success,
+            payment_success_empty_cvv,
             payment_w_terminal_success,
             payment_w_wallet_success,
             payment_w_customer_success,
@@ -677,6 +679,20 @@ payment_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_success_empty_cvv(config()) -> test_return().
+
+payment_success_empty_cvv(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
@@ -1938,6 +1954,7 @@ terms_retrieval(C) ->
             ?pmt(bank_card, mastercard),
             ?pmt(bank_card, visa),
             ?pmt(digital_wallet, qiwi),
+            ?pmt(empty_cvv_bank_card, visa),
             ?pmt(payment_terminal, euroset),
             ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
         ]}
@@ -2813,6 +2830,7 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, jcb),
                         ?pmt(payment_terminal, euroset),
                         ?pmt(digital_wallet, qiwi),
+                        ?pmt(empty_cvv_bank_card, visa),
                         ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
                     ])}
                 }
@@ -2996,6 +3014,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, jcb)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
+        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
@@ -3205,6 +3224,7 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, visa),
                         ?pmt(bank_card, mastercard),
                         ?pmt(bank_card, jcb),
+                        ?pmt(empty_cvv_bank_card, visa),
                         ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
                     ])},
                     cash_limit = {value, ?cashrng(
