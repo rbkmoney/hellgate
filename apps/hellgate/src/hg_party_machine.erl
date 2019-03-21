@@ -84,7 +84,8 @@
 -type content_type()    :: binary().
 -type party_aux_st()    :: #{
     snapshot_index := snapshot_index(),
-    party_revision_index := party_revision_index()
+    party_revision_index := party_revision_index(),
+    last_event_id => event_id()
 }.
 -type snapshot_index()  :: [event_id()].
 -type party_revision_index() :: #{
@@ -380,9 +381,24 @@ checkout(PartyID, RevisionParam) ->
     party_revision() | no_return().
 
 get_last_revision(PartyID) ->
-    case get_party_revision_index(get_aux_state(PartyID)) of
+    AuxState = get_aux_state(PartyID),
+    LastEventID = maps:get(last_event_id, AuxState),
+    case get_party_revision_index(AuxState) of
         RevisionIndex when map_size(RevisionIndex) > 0 ->
-            lists:max(maps:keys(RevisionIndex));
+            MaxRevision = lists:max(maps:keys(RevisionIndex)),
+            % we should check if this is the last revision for real
+            {_, ToEventID} = get_party_revision_range(MaxRevision, RevisionIndex),
+            case ToEventID < LastEventID of
+                true ->
+                    % there are events after MaxRevision, so it can be a bug
+                    _ = lager:warning(
+                        "Max revision EventID (~p) and LastEventID (~p) missmatch",
+                        [ToEventID, LastEventID]
+                    ),
+                    get_last_revision_old_way(PartyID);
+                false ->
+                    MaxRevision
+            end;
         _ ->
             get_last_revision_old_way(PartyID)
     end.
@@ -458,15 +474,24 @@ get_history(PartyID, AfterID, Limit) ->
 get_history(PartyID, AfterID, Limit, Direction) ->
     map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, Direction)).
 
+-spec get_aux_state(party_id()) ->
+    party_aux_st().
+
 get_aux_state(PartyID) ->
-    #{aux_state := AuxSt} = map_history_error(hg_machine:get_machine(
+    #{aux_state := AuxSt, history := History} = map_history_error(hg_machine:get_machine(
         ?NS,
         PartyID,
         undefined,
-        0,
+        1,
         backward
     )),
-    unwrap_aux_state(AuxSt).
+    AuxState = unwrap_aux_state(AuxSt),
+    case History of
+        [] ->
+            AuxState#{last_event_id => 0};
+        [{EventID, _, _} | _] ->
+            AuxState#{last_event_id => EventID}
+    end.
 
 get_revision_of_part(PartyID, History, Last, Step) ->
     case find_revision_in_history(History) of
