@@ -25,6 +25,14 @@
 -export([get_payment/2]).
 -export([get_payment_opts/1]).
 
+%% hg_external callbacks
+
+-export([create_invoice/1]).
+-export([get_invoice/1]).
+
+-export([start_invoice_payment/1]).
+-export([get_invoice_payment/1]).
+
 %% Woody handler called by hg_woody_wrapper
 
 -behaviour(hg_woody_wrapper).
@@ -112,6 +120,64 @@ get_payment_opts(Revision, _, St = #st{invoice = Invoice}) ->
         invoice => Invoice
     }.
 
+%% hg_external callbacks
+
+-spec create_invoice({hg_party:party(), #payproc_InvoiceParams{}}) ->
+    hg_external:reply(invoice_id()).
+
+create_invoice({Party, InvoiceParams}) ->
+    InvoiceID = hg_utils:unique_id(),
+    _ = set_invoicing_meta(InvoiceID),
+    ok = start(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
+    {reply, InvoiceID, InvoiceID}.
+
+-spec get_invoice(invoice_id()) ->
+    hg_external:reply(invoice_id()).
+
+get_invoice(InvoiceID) ->
+    {reply, InvoiceID, InvoiceID}.
+
+-spec do_create_invoice(hg_party:party(), #payproc_InvoiceParams{}) ->
+    dmsl_base_thrift:'ID'().
+    
+do_create_invoice(Party, #payproc_InvoiceParams{external_id = undefined} = InvoiceParams) ->
+    InvoiceID = hg_utils:unique_id(),
+    _ = set_invoicing_meta(InvoiceID),
+    ok = start(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
+    InvoiceID;
+do_create_invoice(Party, InvoiceParams) ->
+    PartyID = Party#domain_Party.id,
+    ExternalID = InvoiceParams#payproc_InvoiceParams.external_id,
+    ID = hg_external:make_id(PartyID, <<"invoice">>, ExternalID),
+    hg_external:do(ID, ?MODULE, create_invoice, get_invoice, {Party, InvoiceParams}).
+
+-spec start_invoice_payment({invoice_id(), PaymentParams :: #payproc_InvoicePaymentParams{}}) ->
+    hg_external:reply(hg_invoice_payment:st()).
+
+start_invoice_payment({InvoiceID, PaymentParams}) ->
+    PaymentSession = call(InvoiceID, {start_payment, PaymentParams}),
+    Payment = hg_invoice_payment:get_payment(PaymentSession),
+    PaymentID = hg_invoice_payment:get_payment_id(Payment),
+    {reply, PaymentSession, #{<<"invoice_id">> => InvoiceID, <<"payment_id">> => PaymentID}}.
+
+-spec get_invoice_payment(hg_external:state()) ->
+    hg_external:reply(hg_invoice_payment:st()).
+
+get_invoice_payment(#{<<"invoice_id">> := InvoiceID, <<"payment_id">> := PaymentID} = AuxSt) ->
+    St = assert_invoice_accessible(get_state(InvoiceID)),
+    PaymentSession = get_payment_session(PaymentID, St),
+    {reply, PaymentSession, AuxSt}.
+
+-spec do_start_payment(invoice_id(), #payproc_InvoicePaymentParams{}) ->
+    hg_invoice_payment:st().
+
+do_start_payment(InvoiceID, #payproc_InvoicePaymentParams{external_id = undefined} = PaymentParams) ->
+    call(InvoiceID, {start_payment, PaymentParams});
+do_start_payment(InvoiceID, #payproc_InvoicePaymentParams{external_id = ExternalID} = PaymentParams) ->
+    #{id := PartyID} = hg_woody_handler_utils:get_user_identity(),
+    ID = hg_external:make_id(PartyID, <<"payment">>, ExternalID),
+    hg_external:do(ID, ?MODULE, start_invoice_payment, get_invoice_payment, {InvoiceID, PaymentParams}).
+
 %%
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
@@ -126,9 +192,7 @@ handle_function(Func, Args, Opts) ->
     term() | no_return().
 
 handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
-    InvoiceID = hg_utils:unique_id(),
     ok = assume_user_identity(UserInfo),
-    _ = set_invoicing_meta(InvoiceID),
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
     ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
     _ = assert_party_accessible(PartyID),
@@ -136,7 +200,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
+    InvoiceID = do_create_invoice(Party, InvoiceParams),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
@@ -163,7 +227,8 @@ handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
 handle_function_('StartPayment', [UserInfo, InvoiceID, PaymentParams], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
-    get_payment_state(call(InvoiceID, {start_payment, PaymentParams}));
+    PaymentSession = do_start_payment(InvoiceID, PaymentParams),
+    get_payment_state(PaymentSession);
 
 handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     ok = assume_user_identity(UserInfo),

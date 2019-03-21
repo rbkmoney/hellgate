@@ -1,5 +1,9 @@
 service_name: machinegun
 namespaces:
+    hg/external:
+        event_sink: payproc
+        processor:
+            url: http://hellgate:8022/v1/stateproc/hg/external
     invoice:
         event_sink: payproc
         processor:

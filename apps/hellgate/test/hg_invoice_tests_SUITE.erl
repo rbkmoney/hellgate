@@ -19,6 +19,7 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
+-export([invoice_creation_idempotency/1]).
 -export([invalid_invoice_shop/1]).
 -export([invalid_invoice_amount/1]).
 -export([invalid_invoice_currency/1]).
@@ -33,6 +34,7 @@
 -export([invalid_payment_amount/1]).
 -export([no_route_found_for_payment/1]).
 
+-export([payment_start_idempotency/1]).
 -export([payment_success/1]).
 -export([payment_success_empty_cvv/1]).
 -export([payment_w_terminal_success/1]).
@@ -169,6 +171,7 @@ groups() ->
         ]},
 
         {base_payments, [parallel], [
+            invoice_creation_idempotency,
             invalid_invoice_shop,
             invalid_invoice_amount,
             invalid_invoice_currency,
@@ -180,6 +183,7 @@ groups() ->
             invoice_cancellation_after_payment_timeout,
             invalid_payment_amount,
             no_route_found_for_payment,
+            payment_start_idempotency,
             payment_success,
             payment_success_empty_cvv,
             payment_w_terminal_success,
@@ -402,6 +406,21 @@ end_per_testcase(_Name, C) ->
         undefined ->
             ok
     end.
+
+-spec invoice_creation_idempotency(config()) -> _ | no_return().
+
+invoice_creation_idempotency(C) ->
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{external_id = <<"123">>},
+    Invoice1 = #payproc_Invoice{} = hg_client_invoicing:create(InvoiceParams1, Client),
+    Invoice2 = hg_client_invoicing:create(InvoiceParams1, Client),
+    Invoice1 = Invoice2,
+    InvoiceParams3 = InvoiceParams0#payproc_InvoiceParams{external_id = <<"1234">>},
+    Invoice3 = #payproc_Invoice{} = hg_client_invoicing:create(InvoiceParams3, Client),
+    true = Invoice3 /= Invoice1.
 
 -spec invalid_invoice_shop(config()) -> _ | no_return().
 
@@ -672,6 +691,25 @@ no_route_found_for_payment(_C) ->
         provider = ?prv(3),
         terminal = ?trm(10)
     }} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
+
+-spec payment_start_idempotency(config()) -> test_return().
+
+payment_start_idempotency(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams0 = make_payment_params(),
+    PaymentParams1 = PaymentParams0#payproc_InvoicePaymentParams{external_id = <<"1">>},
+    ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client),
+    ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client),
+    PaymentParams2 = PaymentParams0#payproc_InvoicePaymentParams{external_id = <<"2">>},
+    {exception, #payproc_InvoicePaymentPending{id = PaymentID1}} = 
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams2, Client),
+    PaymentID1 = process_payment(InvoiceID, PaymentParams1, Client),
+    PaymentID1 = await_payment_capture(InvoiceID, PaymentID1, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID1, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_success(config()) -> test_return().
 

@@ -38,6 +38,7 @@ stop() ->
 
 init([]) ->
     MachineHandlers = [
+        hg_external,
         hg_party_machine,
         hg_invoice,
         hg_invoice_template,

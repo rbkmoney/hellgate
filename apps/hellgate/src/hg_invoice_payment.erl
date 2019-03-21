@@ -25,6 +25,7 @@
 %% St accessors
 
 -export([get_payment/1]).
+-export([get_payment_id/1]).
 -export([get_refunds/1]).
 -export([get_refund/2]).
 -export([get_adjustments/1]).
@@ -2037,6 +2038,9 @@ get_invoice_shop_id(#domain_Invoice{shop_id = ShopID}) ->
 
 get_invoice_created_at(#domain_Invoice{created_at = Dt}) ->
     Dt.
+
+-spec get_payment_id(payment()) ->
+    payment_id().
 
 get_payment_id(#domain_InvoicePayment{id = ID}) ->
     ID.
