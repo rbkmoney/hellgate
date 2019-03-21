@@ -122,7 +122,7 @@ get_payment_opts(Revision, _, St = #st{invoice = Invoice}) ->
 
 %% hg_external callbacks
 
--spec create_invoice({hg_party:party(), #payproc_InvoiceParams{}}) ->
+-spec create_invoice({hg_party:party(), invoice_params()}) ->
     hg_external:reply(invoice_id()).
 
 create_invoice({Party, InvoiceParams}) ->
@@ -137,9 +137,9 @@ create_invoice({Party, InvoiceParams}) ->
 get_invoice(InvoiceID) ->
     {reply, InvoiceID, InvoiceID}.
 
--spec do_create_invoice(hg_party:party(), #payproc_InvoiceParams{}) ->
+-spec do_create_invoice(hg_party:party(), invoice_params()) ->
     dmsl_base_thrift:'ID'().
-    
+
 do_create_invoice(Party, #payproc_InvoiceParams{external_id = undefined} = InvoiceParams) ->
     InvoiceID = hg_utils:unique_id(),
     _ = set_invoicing_meta(InvoiceID),
@@ -151,7 +151,7 @@ do_create_invoice(Party, InvoiceParams) ->
     ID = hg_external:make_id(PartyID, <<"invoice">>, ExternalID),
     hg_external:do(ID, ?MODULE, create_invoice, get_invoice, {Party, InvoiceParams}).
 
--spec start_invoice_payment({invoice_id(), PaymentParams :: #payproc_InvoicePaymentParams{}}) ->
+-spec start_invoice_payment({invoice_id(), payment_params()}) ->
     hg_external:reply(hg_invoice_payment:st()).
 
 start_invoice_payment({InvoiceID, PaymentParams}) ->
@@ -168,7 +168,7 @@ get_invoice_payment(#{<<"invoice_id">> := InvoiceID, <<"payment_id">> := Payment
     PaymentSession = get_payment_session(PaymentID, St),
     {reply, PaymentSession, AuxSt}.
 
--spec do_start_payment(invoice_id(), #payproc_InvoicePaymentParams{}) ->
+-spec do_start_payment(invoice_id(), payment_params()) ->
     hg_invoice_payment:st().
 
 do_start_payment(InvoiceID, #payproc_InvoicePaymentParams{external_id = undefined} = PaymentParams) ->

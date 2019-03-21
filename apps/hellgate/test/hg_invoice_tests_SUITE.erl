@@ -702,7 +702,7 @@ payment_start_idempotency(C) ->
     ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client),
     ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client),
     PaymentParams2 = PaymentParams0#payproc_InvoicePaymentParams{external_id = <<"2">>},
-    {exception, #payproc_InvoicePaymentPending{id = PaymentID1}} = 
+    {exception, #payproc_InvoicePaymentPending{id = PaymentID1}} =
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams2, Client),
     PaymentID1 = process_payment(InvoiceID, PaymentParams1, Client),
     PaymentID1 = await_payment_capture(InvoiceID, PaymentID1, Client),

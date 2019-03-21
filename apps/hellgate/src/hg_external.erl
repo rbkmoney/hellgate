@@ -29,7 +29,7 @@
 
 %%% API
 
--spec do(id(), atom(), atom(), atom(), any()) -> 
+-spec do(id(), atom(), atom(), atom(), any()) ->
     any().
 
 do(ID, Module, CreateFun, GetFun, Args) ->
@@ -47,10 +47,10 @@ make_id(PartyID, Type, ExternalID) ->
 -spec namespace() ->
     hg_machine:ns().
 
-namespace() -> 
+namespace() ->
     ?NS.
 
--spec init([], hg_machine:machine()) -> 
+-spec init([], hg_machine:machine()) ->
     hg_machine:result().
 
 init([], _Machine) ->
@@ -75,7 +75,7 @@ process_signal(_Signal, _Machine) ->
 
 %%% Internal functions
 
--spec start(id()) -> 
+-spec start(id()) ->
     ok | no_return().
 
 start(ID) ->
