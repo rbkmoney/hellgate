@@ -489,7 +489,7 @@ get_aux_state(PartyID) ->
     case History of
         [] ->
             AuxState#{last_event_id => 0};
-        [{EventID, _, _} | _] ->
+        [{EventID, _, _}] ->
             AuxState#{last_event_id => EventID}
     end.
 
