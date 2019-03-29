@@ -2123,14 +2123,22 @@ merge_change(
         activity   = idle
     };
 merge_change(
-    ?payment_status_changed({StatusTag, _} = Status),
+    ?payment_status_changed({cancelled, _} = Status),
     #st{payment = Payment, activity = {payment, finalizing_accounter}} = St
-) when
-    StatusTag =:= cancelled orelse
-    StatusTag =:= captured
-->
+) ->
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
+        activity   = idle
+    };
+merge_change(
+    ?payment_status_changed({captured, _} = Status),
+    #st{payment = Payment, activity = {payment, finalizing_accounter}} = St
+) ->
+    St#st{
+        payment    = Payment#domain_InvoicePayment{
+            status = Status,
+            cost   = get_captured_cost(Status, Payment)
+        },
         activity   = idle
     };
 merge_change(
@@ -2271,6 +2279,11 @@ try_get_refund_state(ID, #st{refunds = Rs}) ->
 
 set_refund_state(ID, RefundSt, St = #st{refunds = Rs}) ->
     St#st{refunds = Rs#{ID => RefundSt}}.
+
+get_captured_cost({captured, #domain_InvoicePaymentCaptured{cost = Cost}}, _) ->
+    Cost;
+get_captured_cost(_, #domain_InvoicePayment{cost = Cost}) ->
+    Cost.
 
 get_refund_session(#refund_st{session = Session}) ->
     Session.
