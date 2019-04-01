@@ -1524,14 +1524,14 @@ payment_partial_refunds_success(C) ->
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     RefundParams0 = make_refund_params(43000, <<"RUB">>),
-    % refund amount exceeds payment amount
-    ?invoice_payment_amount_exceeded(_) =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams0, Client),
-    % first refund
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 3000, C),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    % refund amount exceeds payment amount
+    ?invoice_payment_amount_exceeded(_) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams0, Client),
+    % first refund
     RefundParams1 = make_refund_params(10000, <<"RUB">>),
     Refund1 = #domain_InvoicePaymentRefund{id = RefundID1} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
