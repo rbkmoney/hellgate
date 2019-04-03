@@ -1092,17 +1092,6 @@ get_message(invoice_created) ->
 get_message(invoice_status_changed) ->
     "Invoice status is changed".
 
-%% WRAP IN THRIFT BINARY
-
-wrap_event_payload(Payload) ->
-    Meta = #{
-        <<"ct">> => ?CT_THRIFT_BINARY
-    },
-    Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
-    {ok, {ok, Bin}} = hg_proto_utils:serialize(Type, Payload),
-    [Meta, {bin, Bin}].
-
-
 -include("legacy_structures.hrl").
 
 %% Marshalling
@@ -1276,3 +1265,13 @@ unmarshal(metadata, Metadata) ->
 
 unmarshal(_, Other) ->
     Other.
+
+%% WRAP IN THRIFT BINARY
+
+wrap_event_payload(Payload) ->
+    Meta = #{
+        <<"ct">> => ?CT_THRIFT_BINARY
+    },
+    Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
+    {ok, {ok, Bin}} = hg_proto_utils:serialize(Type, Payload),
+    [Meta, {bin, Bin}].
