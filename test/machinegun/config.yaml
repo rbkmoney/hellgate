@@ -1,23 +1,38 @@
 service_name: machinegun
 namespaces:
     invoice:
-        event_sink: payproc
+        event_sinks:
+            machine:
+                type: machine
+                machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/invoice
     invoice_template:
-        event_sink: payproc
+        event_sinks:
+            machine:
+                type: machine
+                machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/invoice_template
     customer:
-        event_sink: payproc
+        event_sinks:
+            machine:
+                type: machine
+                machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/customer
     recurrent_paytools:
-        event_sink: recurrent_paytools
+        event_sinks:
+            machine:
+                type: machine
+                machine_id: recurrent_paytools
         processor:
             url: http://hellgate:8022/v1/stateproc/recurrent_paytools
     party:
-        event_sink: payproc
+        event_sinks:
+            machine:
+                type: machine
+                machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/party
     domain-config:
