@@ -124,23 +124,23 @@ cfg(Key, C) ->
 
 all() ->
     [
-        payment_success
-        % invalid_party_status,
-        % invalid_shop_status,
+        % payment_success
+        invalid_party_status,
+        invalid_shop_status,
 
-        % % With constant domain config
-        % {group, all_non_destructive_tests},
+        % With constant domain config
+        {group, all_non_destructive_tests},
 
-        % payments_w_bank_card_issuer_conditions,
-        % payments_w_bank_conditions,
+        payments_w_bank_card_issuer_conditions,
+        payments_w_bank_conditions,
 
-        % % With variable domain config
-        % {group, adjustments},
-        % {group, refunds},
-        % rounding_cashflow_volume,
-        % terms_retrieval,
+        % With variable domain config
+        {group, adjustments},
+        {group, refunds},
+        rounding_cashflow_volume,
+        terms_retrieval,
 
-        % consistent_history
+        consistent_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
