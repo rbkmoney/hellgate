@@ -16,6 +16,7 @@
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
 
 -define(NS, <<"invoice">>).
+-define(CT_THRIFT_BINARY, <<"application/x-thrift-binary">>).
 
 -export([process_callback/2]).
 
@@ -1091,91 +1092,23 @@ get_message(invoice_created) ->
 get_message(invoice_status_changed) ->
     "Invoice status is changed".
 
+%% WRAP IN THRIFT BINARY
+
+wrap_event_payload(Payload) ->
+    Meta = #{
+        <<"ct">> => ?CT_THRIFT_BINARY
+    },
+    Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
+    {ok, {ok, Bin}} = hg_proto_utils:serialize(Type, Payload),
+    [Meta, {bin, Bin}].
+
+
 -include("legacy_structures.hrl").
+
 %% Marshalling
 
 marshal(Changes) when is_list(Changes) ->
-    [marshal(change, Change) || Change <- Changes].
-
-%% Changes
-
-marshal(change, ?invoice_created(Invoice)) ->
-    [2, #{
-        <<"change">>    => <<"created">>,
-        <<"invoice">>   => marshal(invoice, Invoice)
-    }];
-marshal(change, ?invoice_status_changed(Status)) ->
-    [2, #{
-        <<"change">>    => <<"status_changed">>,
-        <<"status">>    => marshal(status, Status)
-    }];
-marshal(change, ?payment_ev(PaymentID, Payload)) ->
-    [2, #{
-        <<"change">>    => <<"payment_change">>,
-        <<"id">>        => marshal(str, PaymentID),
-        <<"payload">>   => hg_invoice_payment:marshal(Payload)
-    }];
-
-%% Change components
-
-marshal(invoice, #domain_Invoice{} = Invoice) ->
-    genlib_map:compact(#{
-        <<"id">>            => marshal(str, Invoice#domain_Invoice.id),
-        <<"shop_id">>       => marshal(str, Invoice#domain_Invoice.shop_id),
-        <<"owner_id">>      => marshal(str, Invoice#domain_Invoice.owner_id),
-        <<"party_revision">>=> Invoice#domain_Invoice.party_revision,
-        <<"created_at">>    => marshal(str, Invoice#domain_Invoice.created_at),
-        <<"cost">>          => hg_cash:marshal(Invoice#domain_Invoice.cost),
-        <<"due">>           => marshal(str, Invoice#domain_Invoice.due),
-        <<"details">>       => marshal(details, Invoice#domain_Invoice.details),
-        <<"context">>       => hg_content:marshal(Invoice#domain_Invoice.context),
-        <<"template_id">>   => marshal(str, Invoice#domain_Invoice.template_id)
-    });
-
-marshal(details, #domain_InvoiceDetails{} = Details) ->
-    genlib_map:compact(#{
-        <<"product">> => marshal(str, Details#domain_InvoiceDetails.product),
-        <<"description">> => marshal(str, Details#domain_InvoiceDetails.description),
-        <<"cart">> => marshal(cart, Details#domain_InvoiceDetails.cart)
-    });
-
-marshal(status, ?invoice_paid()) ->
-    <<"paid">>;
-marshal(status, ?invoice_unpaid()) ->
-    <<"unpaid">>;
-marshal(status, ?invoice_cancelled(Reason)) ->
-    [
-        <<"cancelled">>,
-        marshal(str, Reason)
-    ];
-marshal(status, ?invoice_fulfilled(Reason)) ->
-    [
-        <<"fulfilled">>,
-        marshal(str, Reason)
-    ];
-
-marshal(cart, #domain_InvoiceCart{lines = Lines}) ->
-    [marshal(line, Line) || Line <- Lines];
-
-marshal(line, #domain_InvoiceLine{} = InvoiceLine) ->
-    #{
-        <<"product">> => marshal(str, InvoiceLine#domain_InvoiceLine.product),
-        <<"quantity">> => marshal(int, InvoiceLine#domain_InvoiceLine.quantity),
-        <<"price">> => hg_cash:marshal(InvoiceLine#domain_InvoiceLine.price),
-        <<"metadata">> => marshal(metadata, InvoiceLine#domain_InvoiceLine.metadata)
-    };
-
-marshal(metadata, Metadata) ->
-    maps:fold(
-        fun(K, V, Acc) ->
-            maps:put(marshal(str, K), hg_msgpack_marshalling:unmarshal(V), Acc)
-        end,
-        #{},
-        Metadata
-    );
-
-marshal(_, Other) ->
-    Other.
+    wrap_event_payload({invoice_changes, Changes}).
 
 %% Unmarshalling
 
@@ -1184,6 +1117,14 @@ unmarshal(Events) when is_list(Events) ->
 
 unmarshal({ID, Dt, Payload}) ->
     {ID, Dt, unmarshal({list, changes}, Payload)}.
+
+%% Version Thirft Binary
+
+unmarshal({list, changes}, [#{<<"ct">> := ?CT_THRIFT_BINARY}, {bin, Bin}])
+when is_binary(Bin) ->
+    Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
+    {ok, {invoice_changes, Buf}} = hg_proto_utils:deserialize(Type, Bin),
+    Buf;
 
 %% Version > 1
 
@@ -1195,6 +1136,7 @@ unmarshal({list, changes}, Changes) when is_list(Changes) ->
 unmarshal({list, changes}, {bin, Bin}) when is_binary(Bin) ->
     Changes = binary_to_term(Bin),
     lists:flatten([unmarshal(change, [1, Change]) || Change <- Changes]);
+
 
 %% Changes
 
