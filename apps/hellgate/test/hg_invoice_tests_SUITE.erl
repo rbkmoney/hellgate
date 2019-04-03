@@ -124,6 +124,7 @@ cfg(Key, C) ->
 
 all() ->
     [
+        %  payment_risk_score_check
         % payment_success
         invalid_party_status,
         invalid_shop_status,
@@ -1011,7 +1012,7 @@ payment_risk_score_check(C) ->
     [
         ?payment_ev(PaymentID2, ?risk_score_changed(high)), % high risk score...
         % ...covered with the same terminal
-        ?payment_ev(PaymentID2, ?route_changed(?route(?prv(1), ?trm(1)))),
+        ?payment_ev(PaymentID2, ?route_changed(?route(?prv(101), ?trm(1)))),
         ?payment_ev(PaymentID2, ?cash_flow_changed(_))
     ] = next_event(InvoiceID2, Client),
     [

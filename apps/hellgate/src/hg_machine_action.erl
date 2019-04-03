@@ -24,7 +24,7 @@
 -type datetime() :: calendar:datetime() | datetime_rfc3339().
 
 -type timer() :: mg_proto_base_thrift:'Timer'().
--type t() :: mg_proto_state_processing_thrift:'ComplexAction'().
+-type t() :: mg_proto_state_processing_thrift:'mg_stateproc_ComplexAction'().
 
 -export_type([t/0]).
 
@@ -33,7 +33,7 @@
 -spec new() -> t().
 
 new() ->
-    #'ComplexAction'{}.
+    #'mg_stateproc_ComplexAction'{}.
 
 -spec instant() -> t().
 
@@ -67,9 +67,9 @@ set_timer(Timer) ->
 
 -spec set_timer(timer(), t()) -> t().
 
-set_timer(Timer, Action = #'ComplexAction'{}) ->
+set_timer(Timer, Action = #'mg_stateproc_ComplexAction'{}) ->
     % TODO pass range and processing timeout explicitly too
-    Action#'ComplexAction'{timer = {set_timer, #'SetTimerAction'{timer = Timer}}}.
+    Action#'mg_stateproc_ComplexAction'{timer = {set_timer, #'mg_stateproc_SetTimerAction'{timer = Timer}}}.
 
 -spec unset_timer() -> t().
 
@@ -78,8 +78,8 @@ unset_timer() ->
 
 -spec unset_timer(t()) -> t().
 
-unset_timer(Action = #'ComplexAction'{}) ->
-    Action#'ComplexAction'{timer = {unset_timer, #'UnsetTimerAction'{}}}.
+unset_timer(Action = #'mg_stateproc_ComplexAction'{}) ->
+    Action#'mg_stateproc_ComplexAction'{timer = {unset_timer, #'mg_stateproc_UnsetTimerAction'{}}}.
 
 -spec set_tag(tag()) -> t().
 
@@ -88,13 +88,13 @@ set_tag(Tag) ->
 
 -spec set_tag(tag(), t()) -> t().
 
-set_tag(Tag, Action = #'ComplexAction'{}) when is_binary(Tag) andalso byte_size(Tag) > 0 ->
-    Action#'ComplexAction'{tag = #'TagAction'{tag = Tag}}.
+set_tag(Tag, Action = #'mg_stateproc_ComplexAction'{}) when is_binary(Tag) andalso byte_size(Tag) > 0 ->
+    Action#'mg_stateproc_ComplexAction'{tag = #'mg_stateproc_TagAction'{tag = Tag}}.
 
 -spec mark_removal(t()) -> t().
 
-mark_removal(Action = #'ComplexAction'{}) ->
-    Action#'ComplexAction'{remove = #'RemoveAction'{}}.
+mark_removal(Action = #'mg_stateproc_ComplexAction'{}) ->
+    Action#'mg_stateproc_ComplexAction'{remove = #'mg_stateproc_RemoveAction'{}}.
 
 %%
 
