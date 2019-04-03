@@ -1273,5 +1273,5 @@ wrap_event_payload(Payload) ->
         <<"ct">> => ?CT_THRIFT_BINARY
     },
     Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
-    {ok, {ok, Bin}} = hg_proto_utils:serialize(Type, Payload),
+    {ok, Bin} = hg_proto_utils:serialize(Type, Payload),
     [Meta, {bin, Bin}].

@@ -41,7 +41,7 @@
 
 %%
 
--spec serialize(thrift_type(), term()) -> {ok, binary() | {ok, binary()}}  | {error, any()}.
+-spec serialize(thrift_type(), term()) -> {ok, binary()}  | {error, any()}.
 
 serialize(Type, Data) ->
     {ok, Trans} = thrift_membuffer_transport:new(),
@@ -49,7 +49,7 @@ serialize(Type, Data) ->
     case thrift_protocol:write(Proto, {Type, Data}) of
         {NewProto, ok} ->
             {_, Result} = thrift_protocol:close_transport(NewProto),
-            {ok, Result};
+            Result;
         {_NewProto, {error, _Reason} = Error} ->
             Error
     end.
