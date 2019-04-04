@@ -24,7 +24,7 @@
 -type datetime() :: calendar:datetime() | datetime_rfc3339().
 
 -type timer() :: mg_proto_base_thrift:'Timer'().
--type t() :: mg_proto_state_processing_thrift:'mg_stateproc_ComplexAction'().
+-type t() :: mg_proto_state_processing_thrift:'ComplexAction'().
 
 -export_type([t/0]).
 

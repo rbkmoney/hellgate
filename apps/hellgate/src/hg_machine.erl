@@ -1,5 +1,8 @@
 -module(hg_machine).
 
+-include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
+-include("format_version.hrl").
+
 -type msgp() :: hg_msgpack_marshalling:msgpack_value().
 
 -type id() :: mg_proto_base_thrift:'ID'().
@@ -15,9 +18,9 @@
 -type history() :: [event()].
 -type auxst() :: msgp().
 
--type history_range() :: mg_proto_state_processing_thrift:'mg_stateproc_HistoryRange'().
--type direction()     :: mg_proto_state_processing_thrift:'mg_stateproc_Direction'().
--type descriptor()    :: mg_proto_state_processing_thrift:'mg_stateproc_MachineDescriptor'().
+-type history_range() :: mg_proto_state_processing_thrift:'HistoryRange'().
+-type direction()     :: mg_proto_state_processing_thrift:'Direction'().
+-type descriptor()    :: mg_proto_state_processing_thrift:'MachineDescriptor'().
 
 -type machine() :: #{
     id          := id(),
@@ -93,9 +96,6 @@
 -export([handle_function/3]).
 
 %%
-
--include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
--include("format_version.hrl").
 
 %%
 
@@ -372,17 +372,17 @@ marshal_events(Events) when is_list(Events) ->
 marshal_event([#{<<"ct">> := ?CT_THRIFT_BINARY}, Ev]) ->
     #'mg_stateproc_Content'{
         format_version = 1,
-        data = hg_msgpack_marshalling:marshal_mg(Ev)
+        data = mg_msgpack_marshalling:marshal(Ev)
     };
 marshal_event(Ev) ->
     #'mg_stateproc_Content'{
-        data = hg_msgpack_marshalling:marshal_mg(Ev)
+        data = mg_msgpack_marshalling:marshal(Ev)
     }.
 
 marshal_aux_st_format(AuxSt) ->
     #'mg_stateproc_Content'{
         format_version = 1,
-        data = hg_msgpack_marshalling:marshal_mg(AuxSt)
+        data = mg_msgpack_marshalling:marshal(AuxSt)
     }.
 
 unmarshal_events(Events) when is_list(Events) ->

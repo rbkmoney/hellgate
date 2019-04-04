@@ -41,7 +41,7 @@
 
 %%
 
--spec serialize(thrift_type(), term()) -> {ok, binary()}  | {error, any()}.
+-spec serialize(thrift_type(), term()) -> {ok, binary()} | {error, any()}.
 
 serialize(Type, Data) ->
     {ok, Trans} = thrift_membuffer_transport:new(),

@@ -124,8 +124,6 @@ cfg(Key, C) ->
 
 all() ->
     [
-        %  payment_risk_score_check
-        % payment_success
         invalid_party_status,
         invalid_shop_status,
 

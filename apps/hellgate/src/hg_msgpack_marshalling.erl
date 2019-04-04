@@ -9,8 +9,6 @@
 -export([marshal/2]).
 -export([unmarshal/2]).
 
--export([marshal_mg/1]).
-
 -export_type([value/0]).
 -export_type([msgpack_value/0]).
 
@@ -27,21 +25,6 @@
     float().
 
 %%
--spec marshal_mg(msgpack_value()) ->
-    mg_msgpack_thrift:'Value'().
-
-marshal_mg(undefined) -> {nl, #mg_msgpack_Nil{}};
-marshal_mg(Array) when is_list(Array) ->
-    {arr, lists:map(fun marshal_mg/1, Array)};
-marshal_mg(Object) when is_map(Object) ->
-    {obj, maps:fold(
-        fun(K, V, Acc) ->
-            maps:put(marshal_mg(K), marshal_mg(V), Acc)
-        end,
-        #{},
-        Object
-    )};
-marshal_mg(Value) -> marshal(Value).
 
 -spec marshal(msgpack_value()) ->
     dmsl_msgpack_thrift:'Value'().
@@ -68,9 +51,8 @@ marshal(Object) when is_map(Object) ->
 marshal(Array) when is_list(Array) ->
     {arr, lists:map(fun marshal/1, Array)}.
 
--spec unmarshal
-    (dmsl_msgpack_thrift:'Value'()) -> msgpack_value();
-    (mg_msgpack_thrift:'Value'())   -> msgpack_value().
+-spec unmarshal(dmsl_msgpack_thrift:'Value'() | mg_proto_msgpack_thrift:'Value'()) ->
+        msgpack_value().
 
 unmarshal({nl, #mg_msgpack_Nil{}}) ->
     undefined;
