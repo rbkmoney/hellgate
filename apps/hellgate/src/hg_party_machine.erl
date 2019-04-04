@@ -285,7 +285,16 @@ handle_call({revoke_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
         [finalize_claim(Claim, Timestamp)],
         AuxSt,
         St
-    ).
+    );
+
+handle_call(rebuild_index, AuxSt, _St) ->
+    {
+        {ok, ok},
+        #{
+            events  => [],
+            auxst   => wrap_aux_state(AuxSt)
+        }
+    }.
 
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
