@@ -14,9 +14,10 @@
 
 -module(hg_invoice).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include("format_version.hrl").
 
 -define(NS, <<"invoice">>).
--define(CT_THRIFT_BINARY, <<"application/x-thrift-binary">>).
+
 
 -export([process_callback/2]).
 

@@ -95,7 +95,7 @@
 %%
 
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
-
+-include("format_version.hrl").
 
 %%
 
@@ -218,8 +218,6 @@ handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
         signal => Type
     }),
     dispatch_signal(Ns, Signal, unmarshal_machine(Machine));
-    % #mg_stateproc_SignalResult{ change = #mg_stateproc_MachineStateChange{ events = Ev, events_legacy = EvL}} = Ans,
-    % Ans;
 
 handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
     #'mg_stateproc_CallArgs'{arg = Payload, machine = #'mg_stateproc_Machine'{id = ID} = Machine} = Args,
@@ -264,8 +262,8 @@ dispatch_signal(Ns, #'mg_stateproc_RepairSignal'{arg = Payload}, Machine) ->
 marshal_signal_result(Result = #{}, #{aux_state := AuxStWas}) ->
     _ = lager:debug("signal result = ~p", [Result]),
     Change = #'mg_stateproc_MachineStateChange'{
-        events_legacy = marshal_events(maps:get(events, Result, [])),
-        aux_state_legacy = marshal_aux_st(maps:get(auxst, Result, AuxStWas))
+        events = marshal_events(maps:get(events, Result, [])),
+        aux_state = marshal_aux_st_format(maps:get(auxst, Result, AuxStWas))
     },
     #'mg_stateproc_SignalResult'{
         change = Change,
@@ -287,8 +285,8 @@ dispatch_call(Ns, Payload, Machine) ->
 marshal_call_result({Response, Result}, #{aux_state := AuxStWas}) ->
     _ = lager:debug("call response = ~p with result = ~p", [Response, Result]),
     Change = #'mg_stateproc_MachineStateChange'{
-        events_legacy = marshal_events(maps:get(events, Result, [])),
-        aux_state_legacy = marshal_aux_st(maps:get(auxst, Result, AuxStWas))
+        events = marshal_events(maps:get(events, Result, [])),
+        aux_state = marshal_aux_st_format(maps:get(auxst, Result, AuxStWas))
     },
     #'mg_stateproc_CallResult'{
         change = Change,
@@ -369,42 +367,46 @@ unmarshal_machine(#'mg_stateproc_Machine'{id = ID, history = History} = Machine)
     }.
 
 marshal_events(Events) when is_list(Events) ->
-    [hg_msgpack_marshalling:marshal_mg(Event) || Event <- Events].
+    [marshal_event(Event) || Event <- Events].
+
+marshal_event([#{<<"ct">> := ?CT_THRIFT_BINARY}, Ev]) ->
+    #'mg_stateproc_Content'{
+        format_version = 1,
+        data = hg_msgpack_marshalling:marshal_mg(Ev)
+    };
+marshal_event(Ev) ->
+    #'mg_stateproc_Content'{
+        data = hg_msgpack_marshalling:marshal_mg(Ev)
+    }.
+
+marshal_aux_st_format(AuxSt) ->
+    #'mg_stateproc_Content'{
+        format_version = 1,
+        data = hg_msgpack_marshalling:marshal_mg(AuxSt)
+    }.
 
 unmarshal_events(Events) when is_list(Events) ->
     [unmarshal_event(Event) || Event <- Events].
 
-unmarshal_event(#'mg_stateproc_Event'{id = ID, created_at = Dt, format_version = _Ver, data = Payload}) ->
+unmarshal_event(#'mg_stateproc_Event'{id = ID, created_at = Dt, format_version = 1, data = Payload}) ->
+    {ID, Dt, [#{<<"ct">> => ?CT_THRIFT_BINARY}, hg_msgpack_marshalling:unmarshal(Payload)]};
+unmarshal_event(#'mg_stateproc_Event'{id = ID, created_at = Dt, data = Payload}) ->
     {ID, Dt, hg_msgpack_marshalling:unmarshal(Payload)}.
 
-unmarshal_aux_st(AuxSt) ->
-    hg_msgpack_marshalling:unmarshal(AuxSt).
+unmarshal_aux_st(Data) ->
+    hg_msgpack_marshalling:unmarshal(Data).
 
-% marshal_aux_st_new(AuxSt) ->
-%     #'mg_stateproc_Content'{
-%         format_version = 2,
-%         data = hg_msgpack_marshalling:marshal(AuxSt)
-%     }.
-
-marshal_aux_st(AuxSt) ->
-    hg_msgpack_marshalling:marshal_mg(AuxSt).
-
-
-% marshal_events_new(Events) when is_list(Events) ->
-%     [marshal_event_new(Event) || Event <- Events].
-
-% marshal_event_new(Ev) ->
-%     #'mg_stateproc_Content'{
-%         format_version = 2,
-%         data = hg_msgpack_marshalling:marshal(Ev)
-%     }.
+unmarshal_aux_st_format(#'mg_stateproc_Content'{ data = Data}) ->
+    hg_msgpack_marshalling:unmarshal(Data).
 
 %%
 %% Legacy code compatible
 
 get_aux_state(#'mg_stateproc_Machine'{aux_state = undefined, aux_state_legacy = AuxSt}) ->
     unmarshal_aux_st(AuxSt);
-get_aux_state(#'mg_stateproc_Machine'{aux_state = #'mg_stateproc_Content'{ format_version = _Ver, data = Data}}) ->
+get_aux_state(#'mg_stateproc_Machine'{aux_state = #'mg_stateproc_Content'{ format_version = 1} = AuxSt}) ->
+    unmarshal_aux_st_format(AuxSt);
+get_aux_state(#'mg_stateproc_Machine'{aux_state = #'mg_stateproc_Content'{ format_version = undefined, data = Data}}) ->
     unmarshal_aux_st(Data).
 
 wrap_args(Args) ->

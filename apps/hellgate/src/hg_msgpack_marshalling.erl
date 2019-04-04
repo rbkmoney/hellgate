@@ -31,12 +31,22 @@
     mg_msgpack_thrift:'Value'().
 
 marshal_mg(undefined) -> {nl, #mg_msgpack_Nil{}};
-marshal_mg(Value)     -> marshal(Value).
+marshal_mg(Array) when is_list(Array) ->
+    {arr, lists:map(fun marshal_mg/1, Array)};
+marshal_mg(Object) when is_map(Object) ->
+    {obj, maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(marshal_mg(K), marshal_mg(V), Acc)
+        end,
+        #{},
+        Object
+    )};
+marshal_mg(Value) -> marshal(Value).
 
 -spec marshal(msgpack_value()) ->
     dmsl_msgpack_thrift:'Value'().
 marshal(undefined) ->
-    {nl, #mg_msgpack_Nil{}};
+    {nl, #msgpack_Nil{}};
 marshal(Boolean) when is_boolean(Boolean) ->
     {b, Boolean};
 marshal(Integer) when is_integer(Integer) ->
