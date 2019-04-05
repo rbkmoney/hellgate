@@ -1041,5 +1041,5 @@ unmarshal(_, Other) ->
 publish_events(Events) ->
     [publish_event(Event) || Event <- Events].
 
-publish_event({ID, Ns, SourceID, {EventID, Dt, Payload}}) ->
-    hg_event_provider:publish_event(Ns, ID, SourceID, {EventID, Dt, hg_msgpack_marshalling:unmarshal(Payload)}).
+publish_event({ID, Ns, SourceID, {EventID, Dt, undefined, Payload}}) ->
+    hg_event_provider:publish_event(Ns, ID, SourceID, {EventID, Dt, mg_msgpack_marshalling:unmarshal(Payload)}).

@@ -1,9 +1,9 @@
 -module(hg_machine).
 
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
--include("format_version.hrl").
 
--type msgp() :: hg_msgpack_marshalling:msgpack_value().
+-type msgp()    :: hg_msgpack_marshalling:msgpack_value().
+-type mg_msgp() :: mg_msgpack_marshalling:msgpack_value().
 
 -type id() :: mg_proto_base_thrift:'ID'().
 -type tag() :: {tag, mg_proto_base_thrift:'Tag'()}.
@@ -32,6 +32,11 @@
     events    => [event_payload()],
     action    => hg_machine_action:t(),
     auxst     => auxst()
+}.
+
+-type content() :: #{
+    data := mg_msgp(),
+    format_version => integer()
 }.
 
 -callback namespace() ->
@@ -70,6 +75,7 @@
 -export_type([context/0]).
 -export_type([response/0]).
 -export_type([machine/0]).
+-export_type([content/0]).
 
 -export([start/3]).
 -export([call/3]).
@@ -122,7 +128,7 @@ call(Ns, Ref, Args) ->
     {ok, term()} | {error, notfound | failed} | no_return().
 
 call(Ns, Ref, Args, After, Limit, Direction) ->
-    HistoryRange = #'mg_stateproc_HistoryRange'{
+    HistoryRange = #mg_stateproc_HistoryRange{
         'after' = After,
         'limit' = Limit,
         'direction' = Direction
@@ -140,7 +146,7 @@ call(Ns, Ref, Args, After, Limit, Direction) ->
     {ok, term()} | {error, notfound | failed | working} | no_return().
 
 repair(Ns, Ref, Args) ->
-    Descriptor = prepare_descriptor(Ns, Ref, #'mg_stateproc_HistoryRange'{}),
+    Descriptor = prepare_descriptor(Ns, Ref, #mg_stateproc_HistoryRange{}),
     call_automaton('Repair', [Descriptor, wrap_args(Args)]).
 
 -spec get_history(ns(), ref()) ->
@@ -170,10 +176,10 @@ get_history(Ns, Ref, AfterID, Limit, Direction) ->
     {ok, machine()} | {error, notfound} | no_return().
 
 get_machine(Ns, Ref, AfterID, Limit, Direction) ->
-    Range = #'mg_stateproc_HistoryRange'{'after' = AfterID, limit = Limit, direction = Direction},
+    Range = #mg_stateproc_HistoryRange{'after' = AfterID, limit = Limit, direction = Direction},
     Descriptor = prepare_descriptor(Ns, Ref, Range),
     case call_automaton('GetMachine', [Descriptor]) of
-        {ok, #'mg_stateproc_Machine'{} = Machine} ->
+        {ok, #mg_stateproc_Machine{} = Machine} ->
             {ok, unmarshal_machine(Machine)};
         Error ->
             Error
@@ -185,13 +191,13 @@ call_automaton(Function, Args) ->
     case hg_woody_wrapper:call(automaton, Function, Args) of
         {ok, _} = Result ->
             Result;
-        {exception, #'mg_stateproc_MachineAlreadyExists'{}} ->
+        {exception, #mg_stateproc_MachineAlreadyExists{}} ->
             {error, exists};
-        {exception, #'mg_stateproc_MachineNotFound'{}} ->
+        {exception, #mg_stateproc_MachineNotFound{}} ->
             {error, notfound};
-        {exception, #'mg_stateproc_MachineFailed'{}} ->
+        {exception, #mg_stateproc_MachineFailed{}} ->
             {error, failed};
-        {exception, #'mg_stateproc_MachineAlreadyWorking'{}} ->
+        {exception, #mg_stateproc_MachineAlreadyWorking{}} ->
             {error, working}
     end.
 
@@ -210,7 +216,7 @@ handle_function(Func, Args, Opts) ->
 -spec handle_function_(func(), woody:args(), #{ns := ns()}) -> term() | no_return().
 
 handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
-    #'mg_stateproc_SignalArgs'{signal = {Type, Signal}, machine = #'mg_stateproc_Machine'{id = ID} = Machine} = Args,
+    #mg_stateproc_SignalArgs{signal = {Type, Signal}, machine = #mg_stateproc_Machine{id = ID} = Machine} = Args,
     scoper:add_meta(#{
         namespace => Ns,
         id => ID,
@@ -220,7 +226,7 @@ handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
     dispatch_signal(Ns, Signal, unmarshal_machine(Machine));
 
 handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
-    #'mg_stateproc_CallArgs'{arg = Payload, machine = #'mg_stateproc_Machine'{id = ID} = Machine} = Args,
+    #mg_stateproc_CallArgs{arg = Payload, machine = #mg_stateproc_Machine{id = ID} = Machine} = Args,
     scoper:add_meta(#{
         namespace => Ns,
         id => ID,
@@ -239,20 +245,20 @@ handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
         Result ::
             mg_proto_state_processing_thrift:'SignalResult'().
 
-dispatch_signal(Ns, #'mg_stateproc_InitSignal'{arg = Payload}, Machine) ->
+dispatch_signal(Ns, #mg_stateproc_InitSignal{arg = Payload}, Machine) ->
     Args = unwrap_args(Payload),
     _ = log_dispatch(init, Args, Machine),
     Module = get_handler_module(Ns),
     Result = Module:init(Args, Machine),
     marshal_signal_result(Result, Machine);
 
-dispatch_signal(Ns, #'mg_stateproc_TimeoutSignal'{}, Machine) ->
+dispatch_signal(Ns, #mg_stateproc_TimeoutSignal{}, Machine) ->
     _ = log_dispatch(timeout, Machine),
     Module = get_handler_module(Ns),
     Result = Module:process_signal(timeout, Machine),
     marshal_signal_result(Result, Machine);
 
-dispatch_signal(Ns, #'mg_stateproc_RepairSignal'{arg = Payload}, Machine) ->
+dispatch_signal(Ns, #mg_stateproc_RepairSignal{arg = Payload}, Machine) ->
     Args = unwrap_args(Payload),
     _ = log_dispatch(repair, Args, Machine),
     Module = get_handler_module(Ns),
@@ -261,11 +267,11 @@ dispatch_signal(Ns, #'mg_stateproc_RepairSignal'{arg = Payload}, Machine) ->
 
 marshal_signal_result(Result = #{}, #{aux_state := AuxStWas}) ->
     _ = lager:debug("signal result = ~p", [Result]),
-    Change = #'mg_stateproc_MachineStateChange'{
+    Change = #mg_stateproc_MachineStateChange{
         events = marshal_events(maps:get(events, Result, [])),
         aux_state = marshal_aux_st_format(maps:get(auxst, Result, AuxStWas))
     },
-    #'mg_stateproc_SignalResult'{
+    #mg_stateproc_SignalResult{
         change = Change,
         action = maps:get(action, Result, hg_machine_action:new())
     }.
@@ -284,11 +290,11 @@ dispatch_call(Ns, Payload, Machine) ->
 
 marshal_call_result({Response, Result}, #{aux_state := AuxStWas}) ->
     _ = lager:debug("call response = ~p with result = ~p", [Response, Result]),
-    Change = #'mg_stateproc_MachineStateChange'{
+    Change = #mg_stateproc_MachineStateChange{
         events = marshal_events(maps:get(events, Result, [])),
         aux_state = marshal_aux_st_format(maps:get(auxst, Result, AuxStWas))
     },
-    #'mg_stateproc_CallResult'{
+    #mg_stateproc_CallResult{
         change = Change,
         action = maps:get(action, Result, hg_machine_action:new()),
         response = marshal_term(Response)
@@ -358,7 +364,7 @@ log_dispatch(Operation, Args, #{id := ID, history := History, aux_state := AuxSt
         [Operation, ID, Args, History, AuxSt]
     ).
 
-unmarshal_machine(#'mg_stateproc_Machine'{id = ID, history = History} = Machine) ->
+unmarshal_machine(#mg_stateproc_Machine{id = ID, history = History} = Machine) ->
     AuxState = get_aux_state(Machine),
     #{
         id        => ID,
@@ -369,18 +375,18 @@ unmarshal_machine(#'mg_stateproc_Machine'{id = ID, history = History} = Machine)
 marshal_events(Events) when is_list(Events) ->
     [marshal_event(Event) || Event <- Events].
 
-marshal_event([#{<<"ct">> := ?CT_THRIFT_BINARY}, Ev]) ->
-    #'mg_stateproc_Content'{
+marshal_event(#{format_version := 1, data := Data}) ->
+    #mg_stateproc_Content{
         format_version = 1,
-        data = mg_msgpack_marshalling:marshal(Ev)
+        data = mg_msgpack_marshalling:marshal(Data)
     };
 marshal_event(Ev) ->
-    #'mg_stateproc_Content'{
+    #mg_stateproc_Content{
         data = mg_msgpack_marshalling:marshal(Ev)
     }.
 
 marshal_aux_st_format(AuxSt) ->
-    #'mg_stateproc_Content'{
+    #mg_stateproc_Content{
         format_version = 1,
         data = mg_msgpack_marshalling:marshal(AuxSt)
     }.
@@ -388,25 +394,25 @@ marshal_aux_st_format(AuxSt) ->
 unmarshal_events(Events) when is_list(Events) ->
     [unmarshal_event(Event) || Event <- Events].
 
-unmarshal_event(#'mg_stateproc_Event'{id = ID, created_at = Dt, format_version = 1, data = Payload}) ->
-    {ID, Dt, [#{<<"ct">> => ?CT_THRIFT_BINARY}, hg_msgpack_marshalling:unmarshal(Payload)]};
-unmarshal_event(#'mg_stateproc_Event'{id = ID, created_at = Dt, data = Payload}) ->
-    {ID, Dt, hg_msgpack_marshalling:unmarshal(Payload)}.
+unmarshal_event(#mg_stateproc_Event{id = ID, created_at = Dt, format_version = 1, data = Payload}) ->
+    {ID, Dt, #{format_version => 1, data => mg_msgpack_marshalling:unmarshal(Payload)}};
+unmarshal_event(#mg_stateproc_Event{id = ID, created_at = Dt, format_version = undefined, data = Payload}) ->
+    {ID, Dt, mg_msgpack_marshalling:unmarshal(Payload)}.
 
 unmarshal_aux_st(Data) ->
-    hg_msgpack_marshalling:unmarshal(Data).
+    mg_msgpack_marshalling:unmarshal(Data).
 
-unmarshal_aux_st_format(#'mg_stateproc_Content'{ data = Data}) ->
-    hg_msgpack_marshalling:unmarshal(Data).
+unmarshal_aux_st_format(#mg_stateproc_Content{ data = Data}) ->
+    mg_msgpack_marshalling:unmarshal(Data).
 
 %%
 %% Legacy code compatible
 
-get_aux_state(#'mg_stateproc_Machine'{aux_state = undefined, aux_state_legacy = AuxSt}) ->
+get_aux_state(#mg_stateproc_Machine{aux_state = undefined, aux_state_legacy = AuxSt}) ->
     unmarshal_aux_st(AuxSt);
-get_aux_state(#'mg_stateproc_Machine'{aux_state = #'mg_stateproc_Content'{ format_version = 1} = AuxSt}) ->
+get_aux_state(#mg_stateproc_Machine{aux_state = #mg_stateproc_Content{ format_version = 1} = AuxSt}) ->
     unmarshal_aux_st_format(AuxSt);
-get_aux_state(#'mg_stateproc_Machine'{aux_state = #'mg_stateproc_Content'{ format_version = undefined, data = Data}}) ->
+get_aux_state(#mg_stateproc_Machine{aux_state = #mg_stateproc_Content{ format_version = undefined, data = Data}}) ->
     unmarshal_aux_st(Data).
 
 wrap_args(Args) ->
@@ -423,7 +429,7 @@ unmarshal_term({bin, B}) ->
 
 -spec prepare_descriptor(ns(), ref(), history_range()) -> descriptor().
 prepare_descriptor(NS, Ref, Range) ->
-    #'mg_stateproc_MachineDescriptor'{
+    #mg_stateproc_MachineDescriptor{
         ns = NS,
         ref = prepare_ref(Ref),
         range = Range

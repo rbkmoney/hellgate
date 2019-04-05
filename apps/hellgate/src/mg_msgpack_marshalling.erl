@@ -3,6 +3,7 @@
 -include_lib("mg_proto/include/mg_proto_msgpack_thrift.hrl").
 
 -export([marshal/1]).
+-export([unmarshal/1]).
 
 -export_type([value/0]).
 -export_type([msgpack_value/0]).
@@ -44,3 +45,24 @@ marshal(Object) when is_map(Object) ->
         #{},
         Object
     )}.
+
+-spec unmarshal(mg_proto_msgpack_thrift:'Value'()) ->
+    msgpack_value().
+
+unmarshal({nl, #mg_msgpack_Nil{}}) ->
+    undefined;
+unmarshal({b, Boolean}) ->
+    Boolean;
+unmarshal({i, Integer}) ->
+    Integer;
+unmarshal({flt, Float}) ->
+    Float;
+unmarshal({str, String}) ->
+    String;
+unmarshal({bin, Binary}) ->
+    {bin, Binary};
+unmarshal({obj, Object}) ->
+    maps:fold(fun(K, V, Acc) -> maps:put(unmarshal(K), unmarshal(V), Acc) end, #{}, Object);
+unmarshal({arr, Array}) ->
+    lists:map(fun unmarshal/1, Array).
+

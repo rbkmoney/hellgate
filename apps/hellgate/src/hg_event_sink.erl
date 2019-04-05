@@ -4,7 +4,6 @@
 -export([get_last_event_id/1]).
 
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
--include("format_version.hrl").
 
 -type event_sink_id() :: dmsl_base_thrift:'ID'().
 -type event_id()      :: dmsl_base_thrift:'EventID'().
@@ -15,7 +14,7 @@ get_events(EventSinkID, After, Limit) ->
     try
         {ok, get_history_range(EventSinkID, After, Limit)}
     catch
-        {exception, #'mg_stateproc_EventNotFound'{}} ->
+        {exception, #mg_stateproc_EventNotFound{}} ->
             {error, event_not_found}
     end.
 
@@ -33,7 +32,7 @@ get_history_range(EventSinkID, After, Limit) ->
     get_history_range(EventSinkID, After, Limit, forward).
 
 get_history_range(EventSinkID, After, Limit, Direction) ->
-    HistoryRange = #'mg_stateproc_HistoryRange'{'after' = After, limit = Limit, direction = Direction},
+    HistoryRange = #mg_stateproc_HistoryRange{'after' = After, limit = Limit, direction = Direction},
     {ok, History} = call_event_sink('GetHistory', EventSinkID, [HistoryRange]),
     map_sink_events(History).
 
@@ -43,10 +42,12 @@ call_event_sink(Function, EventSinkID, Args) ->
 map_sink_events(History) ->
     [map_sink_event(Ev) || Ev <- History].
 
-map_sink_event(#'mg_stateproc_SinkEvent'{id = ID, source_ns = Ns, source_id = SourceID, event = Event}) ->
-    #'mg_stateproc_Event'{id = EventID, created_at = Dt, format_version = FormatVer, data = Payload} = Event,
-    Meta = #{<<"ct">> => ?CT_THRIFT_BINARY},
-    case FormatVer of
-        1 -> {ID, Ns, SourceID, {EventID, Dt, hg_msgpack_marshalling:marshal([Meta, Payload])}};
-        undefined -> {ID, Ns, SourceID, {EventID, Dt, Payload}}
-    end.
+map_sink_event(#mg_stateproc_SinkEvent{id = ID, source_ns = Ns, source_id = SourceID, event = Event}) ->
+    #mg_stateproc_Event{
+        id             = EventID,
+        created_at     = Dt,
+        format_version = FormatVer,
+        data           = Payload
+    } = Event,
+    {ID, Ns, SourceID, {EventID, Dt, FormatVer, Payload}}.
+

@@ -51,11 +51,12 @@ marshal(Object) when is_map(Object) ->
 marshal(Array) when is_list(Array) ->
     {arr, lists:map(fun marshal/1, Array)}.
 
--spec unmarshal(dmsl_msgpack_thrift:'Value'() | mg_proto_msgpack_thrift:'Value'()) ->
+-spec unmarshal(dmsl_msgpack_thrift:'Value'() ) ->
         msgpack_value().
 
-unmarshal({nl, #mg_msgpack_Nil{}}) ->
-    undefined;
+% | mg_proto_msgpack_thrift:'Value'()
+% unmarshal({nl, #mg_msgpack_Nil{}}) ->
+%     undefined;
 unmarshal({nl, #msgpack_Nil{}}) ->
     undefined;
 unmarshal({b, Boolean}) ->

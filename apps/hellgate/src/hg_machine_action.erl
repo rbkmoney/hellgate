@@ -33,7 +33,7 @@
 -spec new() -> t().
 
 new() ->
-    #'mg_stateproc_ComplexAction'{}.
+    #mg_stateproc_ComplexAction{}.
 
 -spec instant() -> t().
 
@@ -67,9 +67,9 @@ set_timer(Timer) ->
 
 -spec set_timer(timer(), t()) -> t().
 
-set_timer(Timer, Action = #'mg_stateproc_ComplexAction'{}) ->
+set_timer(Timer, Action = #mg_stateproc_ComplexAction{}) ->
     % TODO pass range and processing timeout explicitly too
-    Action#'mg_stateproc_ComplexAction'{timer = {set_timer, #'mg_stateproc_SetTimerAction'{timer = Timer}}}.
+    Action#mg_stateproc_ComplexAction{timer = {set_timer, #mg_stateproc_SetTimerAction{timer = Timer}}}.
 
 -spec unset_timer() -> t().
 
@@ -78,8 +78,8 @@ unset_timer() ->
 
 -spec unset_timer(t()) -> t().
 
-unset_timer(Action = #'mg_stateproc_ComplexAction'{}) ->
-    Action#'mg_stateproc_ComplexAction'{timer = {unset_timer, #'mg_stateproc_UnsetTimerAction'{}}}.
+unset_timer(Action = #mg_stateproc_ComplexAction{}) ->
+    Action#mg_stateproc_ComplexAction{timer = {unset_timer, #mg_stateproc_UnsetTimerAction{}}}.
 
 -spec set_tag(tag()) -> t().
 
@@ -88,13 +88,13 @@ set_tag(Tag) ->
 
 -spec set_tag(tag(), t()) -> t().
 
-set_tag(Tag, Action = #'mg_stateproc_ComplexAction'{}) when is_binary(Tag) andalso byte_size(Tag) > 0 ->
-    Action#'mg_stateproc_ComplexAction'{tag = #'mg_stateproc_TagAction'{tag = Tag}}.
+set_tag(Tag, Action = #mg_stateproc_ComplexAction{}) when is_binary(Tag) andalso byte_size(Tag) > 0 ->
+    Action#mg_stateproc_ComplexAction{tag = #mg_stateproc_TagAction{tag = Tag}}.
 
 -spec mark_removal(t()) -> t().
 
-mark_removal(Action = #'mg_stateproc_ComplexAction'{}) ->
-    Action#'mg_stateproc_ComplexAction'{remove = #'mg_stateproc_RemoveAction'{}}.
+mark_removal(Action = #mg_stateproc_ComplexAction{}) ->
+    Action#mg_stateproc_ComplexAction{remove = #mg_stateproc_RemoveAction{}}.
 
 %%
 

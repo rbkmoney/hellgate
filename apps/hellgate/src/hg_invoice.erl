@@ -14,7 +14,6 @@
 
 -module(hg_invoice).
 -include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include("format_version.hrl").
 
 -define(NS, <<"invoice">>).
 
@@ -1110,7 +1109,7 @@ unmarshal({ID, Dt, Payload}) ->
 
 %% Version Thirft Binary
 
-unmarshal({list, changes}, [#{<<"ct">> := ?CT_THRIFT_BINARY}, {bin, Bin}])
+unmarshal({list, changes}, #{format_version := 1, data := {bin, Bin}})
 when is_binary(Bin) ->
     Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
     {ok, {invoice_changes, Buf}} = hg_proto_utils:deserialize(Type, Bin),
@@ -1270,9 +1269,9 @@ unmarshal(_, Other) ->
 %% WRAP IN THRIFT BINARY
 
 wrap_event_payload(Payload) ->
-    Meta = #{
-        <<"ct">> => ?CT_THRIFT_BINARY
-    },
     Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
     {ok, Bin} = hg_proto_utils:serialize(Type, Payload),
-    [Meta, {bin, Bin}].
+    #{
+        format_version => 1,
+        data => {bin, Bin}
+    }.
