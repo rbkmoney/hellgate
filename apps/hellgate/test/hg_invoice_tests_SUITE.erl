@@ -19,6 +19,7 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
+-export([invoice_creation_idempotency/1]).
 -export([invalid_invoice_shop/1]).
 -export([invalid_invoice_amount/1]).
 -export([invalid_invoice_currency/1]).
@@ -170,6 +171,7 @@ groups() ->
         ]},
 
         {base_payments, [parallel], [
+            invoice_creation_idempotency,
             invalid_invoice_shop,
             invalid_invoice_amount,
             invalid_invoice_currency,
@@ -404,6 +406,30 @@ end_per_testcase(_Name, C) ->
         undefined ->
             ok
     end.
+
+-spec invoice_creation_idempotency(config()) -> _ | no_return().
+
+invoice_creation_idempotency(C) ->
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
+    InvoiceID = hg_utils:unique_id(),
+    ExternalID = <<"123">>,
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
+        id = InvoiceID,
+        external_id = ExternalID
+    },
+    Invoice1 = hg_client_invoicing:create(InvoiceParams1, Client),
+    #payproc_Invoice{
+        invoice = DomainInvoice
+    } = Invoice1,
+    #domain_Invoice{
+        id = InvoiceID,
+        external_id = ExternalID
+    } = DomainInvoice,
+    Invoice2 = hg_client_invoicing:create(InvoiceParams1, Client),
+    Invoice1 = Invoice2.
 
 -spec invalid_invoice_shop(config()) -> _ | no_return().
 

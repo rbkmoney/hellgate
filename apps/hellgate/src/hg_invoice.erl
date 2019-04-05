@@ -126,7 +126,7 @@ handle_function(Func, Args, Opts) ->
     term() | no_return().
 
 handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
-    InvoiceID = hg_utils:unique_id(),
+    InvoiceID = hg_utils:uid(InvoiceParams#payproc_InvoiceParams.id),
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
@@ -136,7 +136,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
+    ok = ensure_started(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
@@ -338,7 +338,17 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
     }.
 
 start(ID, Args) ->
-    map_start_error(hg_machine:start(?NS, ID, Args)).
+    map_start_error(do_start(ID, Args)).
+
+ensure_started(ID, Args) ->
+    case do_start(ID, Args) of
+        {ok, _}         -> ok;
+        {error, exists} -> ok;
+        {error, Reason} -> error(Reason)
+    end.
+
+do_start(ID, Args) ->
+    hg_machine:start(?NS, ID, Args).
 
 call(ID, Args) ->
     map_error(hg_machine:call(?NS, ID, Args)).
@@ -799,7 +809,8 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
         due             = V#payproc_InvoiceParams.due,
         details         = V#payproc_InvoiceParams.details,
         context         = V#payproc_InvoiceParams.context,
-        template_id     = InvoiceTplID
+        template_id     = InvoiceTplID,
+        external_id     = V#payproc_InvoiceParams.external_id
     }.
 
 create_payment_id(#st{payments = Payments}) ->
@@ -1129,7 +1140,8 @@ marshal(invoice, #domain_Invoice{} = Invoice) ->
         <<"due">>           => marshal(str, Invoice#domain_Invoice.due),
         <<"details">>       => marshal(details, Invoice#domain_Invoice.details),
         <<"context">>       => hg_content:marshal(Invoice#domain_Invoice.context),
-        <<"template_id">>   => marshal(str, Invoice#domain_Invoice.template_id)
+        <<"template_id">>   => marshal(str, Invoice#domain_Invoice.template_id),
+        <<"external_id">>   => marshal(str, Invoice#domain_Invoice.external_id)
     });
 
 marshal(details, #domain_InvoiceDetails{} = Details) ->
@@ -1237,6 +1249,7 @@ unmarshal(invoice, #{
 } = Invoice) ->
     Context = maps:get(<<"context">>, Invoice, undefined),
     TemplateID = maps:get(<<"template_id">>, Invoice, undefined),
+    ExternalID = maps:get(<<"external_id">>, Invoice, undefined),
     #domain_Invoice{
         id              = unmarshal(str, ID),
         shop_id         = unmarshal(str, ShopID),
@@ -1248,7 +1261,8 @@ unmarshal(invoice, #{
         details         = unmarshal(details, Details),
         status          = ?invoice_unpaid(),
         context         = hg_content:unmarshal(Context),
-        template_id     = unmarshal(str, TemplateID)
+        template_id     = unmarshal(str, TemplateID),
+        external_id     = unmarshal(str, ExternalID)
     };
 
 unmarshal(invoice,

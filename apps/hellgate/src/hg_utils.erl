@@ -1,6 +1,7 @@
 -module(hg_utils).
 
 -export([unique_id/0]).
+-export([uid/1]).
 -export([logtag_process/2]).
 -export([unwrap_result/1]).
 -export([construct_complex_id/1]).
@@ -17,6 +18,13 @@
 unique_id() ->
     <<ID:64>> = snowflake:new(),
     genlib_format:format_int_base(ID, 62).
+
+-spec uid(undefined | dmsl_base_thrift:'ID'()) -> dmsl_base_thrift:'ID'().
+
+uid(undefined) ->
+    unique_id();
+uid(ID) when is_binary(ID) ->
+    ID.
 
 %%
 
