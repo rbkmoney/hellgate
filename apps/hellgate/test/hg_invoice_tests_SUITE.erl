@@ -830,7 +830,7 @@ payment_capture_failed(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    timeout = next_event(InvoiceID, 1000, Client),
+    timeout = next_event(InvoiceID, 3000, Client),
     ?assertException(
         error,
         {{woody_error, _}, _},
