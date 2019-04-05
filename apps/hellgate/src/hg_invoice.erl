@@ -528,7 +528,6 @@ handle_call({start_payment, PaymentParams}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(unpaid, St),
-    _ = assert_no_pending_payment(St),
     start_payment(PaymentParams, St);
 
 handle_call({capture_payment, PaymentID, Reason}, St) ->
@@ -688,8 +687,23 @@ set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
 
 -include("payment_events.hrl").
 
-start_payment(PaymentParams, St) ->
+start_payment(#payproc_InvoicePaymentParams{id = undefined} = PaymentParams, St) ->
+    _ = assert_no_pending_payment(St),
     PaymentID = create_payment_id(St),
+    do_start_payment(PaymentID, PaymentParams, St);
+start_payment(#payproc_InvoicePaymentParams{id = PaymentID} = PaymentParams, St) ->
+    case try_get_payment_session(PaymentID, St) of
+        undefined ->
+            _ = assert_no_pending_payment(St),
+            do_start_payment(PaymentID, PaymentParams, St);
+        PaymentSession ->
+            #{
+                response => PaymentSession,
+                state    => St
+            }
+    end.
+
+do_start_payment(PaymentID, PaymentParams, St) ->
     Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
     {PaymentSession, {Changes, Action}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),

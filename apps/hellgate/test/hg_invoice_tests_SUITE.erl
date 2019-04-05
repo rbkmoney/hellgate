@@ -35,6 +35,7 @@
 -export([invalid_payment_amount/1]).
 -export([no_route_found_for_payment/1]).
 
+-export([payment_start_idempotency/1]).
 -export([payment_success/1]).
 -export([payment_success_empty_cvv/1]).
 -export([payment_w_terminal_success/1]).
@@ -185,6 +186,7 @@ groups() ->
             invoice_cancellation_after_payment_timeout,
             invalid_payment_amount,
             no_route_found_for_payment,
+            payment_start_idempotency,
             payment_success,
             payment_success_empty_cvv,
             payment_w_terminal_success,
@@ -749,6 +751,36 @@ no_route_found_for_payment(_C) ->
         provider = ?prv(3),
         terminal = ?trm(10)
     }} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
+
+-spec payment_start_idempotency(config()) -> test_return().
+
+payment_start_idempotency(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams0 = make_payment_params(),
+    PaymentID1 = <<"1">>,
+    ExternalID = <<"42">>,
+    PaymentParams1 = PaymentParams0#payproc_InvoicePaymentParams{
+        id = PaymentID1,
+        external_id = ExternalID
+    },
+    ?payment_state(#domain_InvoicePayment{
+        id = PaymentID1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client),
+    ?payment_state(#domain_InvoicePayment{
+        id = PaymentID1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client),
+    PaymentParams2 = PaymentParams0#payproc_InvoicePaymentParams{id = <<"2">>},
+    {exception, #payproc_InvoicePaymentPending{id = PaymentID1}} =
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams2, Client),
+    PaymentID1 = process_payment(InvoiceID, PaymentParams1, Client),
+    PaymentID1 = await_payment_capture(InvoiceID, PaymentID1, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID1, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_success(config()) -> test_return().
 
