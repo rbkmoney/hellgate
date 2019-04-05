@@ -27,6 +27,7 @@
 -export([invalid_shop_status/1]).
 -export([invalid_invoice_template_cost/1]).
 -export([invalid_invoice_template_id/1]).
+-export([invoive_w_template_idempotency/1]).
 -export([invoice_w_template/1]).
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancellation/1]).
@@ -177,6 +178,7 @@ groups() ->
             invalid_invoice_currency,
             invalid_invoice_template_cost,
             invalid_invoice_template_id,
+            invoive_w_template_idempotency,
             invoice_w_template,
             invoice_cancellation,
             overdue_invoice_cancellation,
@@ -572,6 +574,53 @@ invalid_invoice_template_id(C) ->
     _ = delete_invoice_tpl(TplID2, C),
     Params2 = make_invoice_params_tpl(TplID2),
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoicing:create_with_tpl(Params2, Client).
+
+-spec invoive_w_template_idempotency(config()) -> _ | no_return().
+
+invoive_w_template_idempotency(C) ->
+    Client = cfg(client, C),
+    TplCost1 = {_, FixedCost} = make_tpl_cost(fixed, 10000, <<"RUB">>),
+    TplContext1 = make_invoice_context(<<"default context">>),
+    TplID = create_invoice_tpl(C, TplCost1, TplContext1),
+    #domain_InvoiceTemplate{
+        owner_id = TplPartyID,
+        shop_id  = TplShopID,
+        context  = TplContext1
+    } = get_invoice_tpl(TplID, C),
+    InvoiceCost1 = FixedCost,
+    InvoiceContext1 = make_invoice_context(),
+    InvoiceID = hg_utils:unique_id(),
+    ExternalID = hg_utils:unique_id(),
+
+    Params = make_invoice_params_tpl(TplID, InvoiceCost1, InvoiceContext1),
+    Params1 = Params#payproc_InvoiceWithTemplateParams{
+        id = InvoiceID,
+        external_id = ExternalID
+    },
+    ?invoice_state(#domain_Invoice{
+        id          = InvoiceID,
+        owner_id    = TplPartyID,
+        shop_id     = TplShopID,
+        template_id = TplID,
+        cost        = InvoiceCost1,
+        context     = InvoiceContext1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:create_with_tpl(Params1, Client),
+
+    OtherParams = make_invoice_params_tpl(TplID),
+    Params2 = OtherParams#payproc_InvoiceWithTemplateParams{
+        id = InvoiceID,
+        external_id = hg_utils:unique_id()
+    },
+    ?invoice_state(#domain_Invoice{
+        id          = InvoiceID,
+        owner_id    = TplPartyID,
+        shop_id     = TplShopID,
+        template_id = TplID,
+        cost        = InvoiceCost1,
+        context     = InvoiceContext1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:create_with_tpl(Params2, Client).
 
 -spec invoice_w_template(config()) -> _ | no_return().
 

@@ -140,12 +140,12 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
-    InvoiceID = hg_utils:unique_id(),
+    InvoiceID = hg_utils:uid(Params#payproc_InvoiceWithTemplateParams.id),
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
     InvoiceParams = make_invoice_params(Params),
-    ok = start(InvoiceID, [TplID | InvoiceParams]),
+    ok = ensure_started(InvoiceID, [TplID | InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
@@ -337,15 +337,8 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
         payload = ?invoice_ev(Event)
     }.
 
-start(ID, Args) ->
-    map_start_error(do_start(ID, Args)).
-
 ensure_started(ID, Args) ->
-    case do_start(ID, Args) of
-        {ok, _}         -> ok;
-        {error, exists} -> ok;
-        {error, Reason} -> error(Reason)
-    end.
+    map_start_error(do_start(ID, Args)).
 
 do_start(ID, Args) ->
     hg_machine:start(?NS, ID, Args).
@@ -374,6 +367,8 @@ map_history_error({error, notfound}) ->
     throw(#payproc_InvoiceNotFound{}).
 
 map_start_error({ok, _}) ->
+    ok;
+map_start_error({error, exists}) ->
     ok;
 map_start_error({error, Reason}) ->
     error(Reason).
@@ -932,7 +927,8 @@ make_invoice_params(Params) ->
     #payproc_InvoiceWithTemplateParams{
         template_id = TplID,
         cost = Cost,
-        context = Context
+        context = Context,
+        external_id = ExternalID
     } = Params,
     #domain_InvoiceTemplate{
         owner_id = PartyID,
@@ -964,7 +960,8 @@ make_invoice_params(Params) ->
             details = InvoiceDetails,
             due = InvoiceDue,
             cost = InvoiceCost,
-            context = InvoiceContext
+            context = InvoiceContext,
+            external_id = ExternalID
         }
     ].
 
