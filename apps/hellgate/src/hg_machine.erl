@@ -405,16 +405,6 @@ unmarshal_event(#mg_stateproc_Event{id = ID, created_at = Dt, format_version = F
 unmarshal_aux_st(Data) ->
     mg_msgpack_marshalling:unmarshal(Data).
 
-unmarshal_aux_st_format(#mg_stateproc_Content{data = Data}) ->
-    mg_msgpack_marshalling:unmarshal(Data).
-
-%%
-%% Legacy code compatible
-
-% get_aux_state(#mg_stateproc_Machine{aux_state = undefined, aux_state_legacy = AuxSt}) ->
-%     unmarshal_aux_st(AuxSt);
-get_aux_state(#mg_stateproc_Machine{aux_state = #mg_stateproc_Content{format_version = 1} = AuxSt}) ->
-    unmarshal_aux_st_format(AuxSt);
 get_aux_state(#mg_stateproc_Machine{aux_state = #mg_stateproc_Content{format_version = undefined, data = Data}}) ->
     unmarshal_aux_st(Data).
 
