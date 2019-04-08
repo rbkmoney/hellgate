@@ -130,7 +130,7 @@ handle_function(Func, Args, Opts) ->
     term() | no_return().
 
 handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
-    InvoiceID = hg_utils:unique_id(),
+    InvoiceID = hg_utils:uid(InvoiceParams#payproc_InvoiceParams.id),
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
@@ -140,16 +140,16 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = start(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
+    ok = ensure_started(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
-    InvoiceID = hg_utils:unique_id(),
+    InvoiceID = hg_utils:uid(Params#payproc_InvoiceWithTemplateParams.id),
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
     InvoiceParams = make_invoice_params(Params),
-    ok = start(InvoiceID, [TplID | InvoiceParams]),
+    ok = ensure_started(InvoiceID, [TplID | InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
@@ -341,8 +341,11 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
         payload = ?invoice_ev(Event)
     }.
 
-start(ID, Args) ->
-    map_start_error(hg_machine:start(?NS, ID, Args)).
+ensure_started(ID, Args) ->
+    map_start_error(do_start(ID, Args)).
+
+do_start(ID, Args) ->
+    hg_machine:start(?NS, ID, Args).
 
 call(ID, Args) ->
     map_error(hg_machine:call(?NS, ID, Args)).
@@ -368,6 +371,8 @@ map_history_error({error, notfound}) ->
     throw(#payproc_InvoiceNotFound{}).
 
 map_start_error({ok, _}) ->
+    ok;
+map_start_error({error, exists}) ->
     ok;
 map_start_error({error, Reason}) ->
     error(Reason).
@@ -524,7 +529,6 @@ handle_call({start_payment, PaymentParams}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(unpaid, St),
-    _ = assert_no_pending_payment(St),
     start_payment(PaymentParams, St);
 
 handle_call({capture_payment, PaymentID, Reason}, St) ->
@@ -684,8 +688,22 @@ set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
 
 -include("payment_events.hrl").
 
-start_payment(PaymentParams, St) ->
+start_payment(#payproc_InvoicePaymentParams{id = undefined} = PaymentParams, St) ->
     PaymentID = create_payment_id(St),
+    do_start_payment(PaymentID, PaymentParams, St);
+start_payment(#payproc_InvoicePaymentParams{id = PaymentID} = PaymentParams, St) ->
+    case try_get_payment_session(PaymentID, St) of
+        undefined ->
+            do_start_payment(PaymentID, PaymentParams, St);
+        PaymentSession ->
+            #{
+                response => PaymentSession,
+                state    => St
+            }
+    end.
+
+do_start_payment(PaymentID, PaymentParams, St) ->
+    _ = assert_no_pending_payment(St),
     Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
     {PaymentSession, {Changes, Action}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
@@ -800,7 +818,8 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
         due             = V#payproc_InvoiceParams.due,
         details         = V#payproc_InvoiceParams.details,
         context         = V#payproc_InvoiceParams.context,
-        template_id     = InvoiceTplID
+        template_id     = InvoiceTplID,
+        external_id     = V#payproc_InvoiceParams.external_id
     }.
 
 create_payment_id(#st{payments = Payments}) ->
@@ -922,7 +941,8 @@ make_invoice_params(Params) ->
     #payproc_InvoiceWithTemplateParams{
         template_id = TplID,
         cost = Cost,
-        context = Context
+        context = Context,
+        external_id = ExternalID
     } = Params,
     #domain_InvoiceTemplate{
         owner_id = PartyID,
@@ -954,7 +974,8 @@ make_invoice_params(Params) ->
             details = InvoiceDetails,
             due = InvoiceDue,
             cost = InvoiceCost,
-            context = InvoiceContext
+            context = InvoiceContext,
+            external_id = ExternalID
         }
     ].
 
@@ -1177,6 +1198,7 @@ unmarshal(invoice, #{
 } = Invoice) ->
     Context = maps:get(<<"context">>, Invoice, undefined),
     TemplateID = maps:get(<<"template_id">>, Invoice, undefined),
+    ExternalID = maps:get(<<"external_id">>, Invoice, undefined),
     #domain_Invoice{
         id              = unmarshal(str, ID),
         shop_id         = unmarshal(str, ShopID),
@@ -1188,7 +1210,8 @@ unmarshal(invoice, #{
         details         = unmarshal(details, Details),
         status          = ?invoice_unpaid(),
         context         = hg_content:unmarshal(Context),
-        template_id     = unmarshal(str, TemplateID)
+        template_id     = unmarshal(str, TemplateID),
+        external_id     = unmarshal(str, ExternalID)
     };
 
 unmarshal(invoice,

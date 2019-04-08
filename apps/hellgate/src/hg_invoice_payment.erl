@@ -266,12 +266,13 @@ init_(PaymentID, Params, Opts) ->
     {ok, Payer, VS0} = construct_payer(get_payer_params(Params), Shop),
     Flow = get_flow_params(Params),
     MakeRecurrent = get_make_recurrent_params(Params),
+    ExternalID = get_external_id(Params),
     CreatedAt = hg_datetime:format_now(),
     MerchantTerms = get_merchant_terms(Opts, Revision),
     VS1 = collect_validation_varset(Party, Shop, VS0),
     Payment = construct_payment(
         PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, Party, Shop,
-        VS1, Revision, MakeRecurrent
+        VS1, Revision, MakeRecurrent, ExternalID
     ),
     Events = [?payment_started(Payment)],
     {collapse_changes(Events), {Events, hg_machine_action:instant()}}.
@@ -312,6 +313,9 @@ get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = undefin
     false;
 get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = MakeRecurrent}) ->
     MakeRecurrent.
+
+get_external_id(#payproc_InvoicePaymentParams{external_id = ExternalID}) ->
+    ExternalID.
 
 construct_payer({payment_resource, #payproc_PaymentResourcePayerParams{
     resource = Resource,
@@ -369,7 +373,7 @@ get_customer_contact_info(#payproc_Customer{contact_info = ContactInfo}) ->
     ContactInfo.
 
 construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
-                  Party, Shop, VS0, Revision, MakeRecurrent) ->
+                  Party, Shop, VS0, Revision, MakeRecurrent, ExternalID) ->
     #domain_TermSet{payments = PaymentTerms, recurrent_paytools = RecurrentTerms} = Terms,
     PaymentTool = get_payer_payment_tool(Payer),
     VS1 = validate_payment_tool(
@@ -414,7 +418,8 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
         cost            = Cost,
         payer           = Payer,
         flow            = Flow,
-        make_recurrent  = MakeRecurrent
+        make_recurrent  = MakeRecurrent,
+        external_id     = ExternalID
     }.
 
 construct_payment_flow({instant, _}, _CreatedAt, _Terms, _VS, _Revision) ->
@@ -2123,14 +2128,22 @@ merge_change(
         activity   = idle
     };
 merge_change(
-    ?payment_status_changed({StatusTag, _} = Status),
+    ?payment_status_changed({cancelled, _} = Status),
     #st{payment = Payment, activity = {payment, finalizing_accounter}} = St
-) when
-    StatusTag =:= cancelled orelse
-    StatusTag =:= captured
-->
+) ->
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
+        activity   = idle
+    };
+merge_change(
+    ?payment_status_changed({captured, PaymentCaptured} = Status),
+    #st{payment = Payment, activity = {payment, finalizing_accounter}} = St
+) ->
+    St#st{
+        payment    = Payment#domain_InvoicePayment{
+            status = Status,
+            cost   = get_captured_cost(PaymentCaptured, Payment)
+        },
         activity   = idle
     };
 merge_change(
@@ -2271,6 +2284,13 @@ try_get_refund_state(ID, #st{refunds = Rs}) ->
 
 set_refund_state(ID, RefundSt, St = #st{refunds = Rs}) ->
     St#st{refunds = Rs#{ID => RefundSt}}.
+
+get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when
+    Cost /= undefined
+->
+    Cost;
+get_captured_cost(_, #domain_InvoicePayment{cost = Cost}) ->
+    Cost.
 
 get_refund_session(#refund_st{session = Session}) ->
     Session.
@@ -2703,7 +2723,8 @@ marshal(payment, #domain_InvoicePayment{} = Payment) ->
         <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
         <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow),
         <<"make_recurrent">>    => marshal(bool, Payment#domain_InvoicePayment.make_recurrent),
-        <<"context">>           => hg_content:marshal(Payment#domain_InvoicePayment.context)
+        <<"context">>           => hg_content:marshal(Payment#domain_InvoicePayment.context),
+        <<"external_id">>       => marshal(str, Payment#domain_InvoicePayment.external_id)
     });
 
 %% Flow
@@ -3063,6 +3084,7 @@ unmarshal(payment, #{
     ShopID = maps:get(<<"shop_id">>, Payment, undefined),
     PartyRevision = maps:get(<<"party_revision">>, Payment, undefined),
     MakeRecurrent = maps:get(<<"make_recurrent">>, Payment, undefined),
+    ExternalID = maps:get(<<"external_id">>, Payment, undefined),
     #domain_InvoicePayment{
         id              = unmarshal(str, ID),
         created_at      = unmarshal(str, CreatedAt),
@@ -3075,7 +3097,8 @@ unmarshal(payment, #{
         status          = ?pending(),
         flow            = unmarshal(flow, Flow),
         make_recurrent  = unmarshal(bool, MakeRecurrent),
-        context         = hg_content:unmarshal(Context)
+        context         = hg_content:unmarshal(Context),
+        external_id     = unmarshal(str, ExternalID)
     };
 
 unmarshal(payment,

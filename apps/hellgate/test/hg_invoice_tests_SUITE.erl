@@ -19,6 +19,7 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
+-export([invoice_creation_idempotency/1]).
 -export([invalid_invoice_shop/1]).
 -export([invalid_invoice_amount/1]).
 -export([invalid_invoice_currency/1]).
@@ -26,6 +27,7 @@
 -export([invalid_shop_status/1]).
 -export([invalid_invoice_template_cost/1]).
 -export([invalid_invoice_template_id/1]).
+-export([invoive_w_template_idempotency/1]).
 -export([invoice_w_template/1]).
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancellation/1]).
@@ -33,6 +35,7 @@
 -export([invalid_payment_amount/1]).
 -export([no_route_found_for_payment/1]).
 
+-export([payment_start_idempotency/1]).
 -export([payment_success/1]).
 -export([payment_success_empty_cvv/1]).
 -export([payment_w_terminal_success/1]).
@@ -72,6 +75,7 @@
 -export([payment_temporary_unavailability_retry_success/1]).
 -export([payment_temporary_unavailability_too_many_retries/1]).
 -export([invalid_amount_payment_partial_refund/1]).
+-export([invalid_amount_partial_capture_and_refund/1]).
 -export([invalid_time_payment_partial_refund/1]).
 -export([invalid_currency_payment_partial_refund/1]).
 -export([cant_start_simultaneous_partial_refunds/1]).
@@ -169,17 +173,20 @@ groups() ->
         ]},
 
         {base_payments, [parallel], [
+            invoice_creation_idempotency,
             invalid_invoice_shop,
             invalid_invoice_amount,
             invalid_invoice_currency,
             invalid_invoice_template_cost,
             invalid_invoice_template_id,
+            invoive_w_template_idempotency,
             invoice_w_template,
             invoice_cancellation,
             overdue_invoice_cancellation,
             invoice_cancellation_after_payment_timeout,
             invalid_payment_amount,
             no_route_found_for_payment,
+            payment_start_idempotency,
             payment_success,
             payment_success_empty_cvv,
             payment_w_terminal_success,
@@ -211,6 +218,7 @@ groups() ->
             payment_refund_success,
             payment_partial_refunds_success,
             invalid_amount_payment_partial_refund,
+            invalid_amount_partial_capture_and_refund,
             invalid_currency_payment_partial_refund,
             cant_start_simultaneous_partial_refunds,
             invalid_time_payment_partial_refund
@@ -403,6 +411,30 @@ end_per_testcase(_Name, C) ->
             ok
     end.
 
+-spec invoice_creation_idempotency(config()) -> _ | no_return().
+
+invoice_creation_idempotency(C) ->
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
+    InvoiceID = hg_utils:unique_id(),
+    ExternalID = <<"123">>,
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
+        id = InvoiceID,
+        external_id = ExternalID
+    },
+    Invoice1 = hg_client_invoicing:create(InvoiceParams1, Client),
+    #payproc_Invoice{
+        invoice = DomainInvoice
+    } = Invoice1,
+    #domain_Invoice{
+        id = InvoiceID,
+        external_id = ExternalID
+    } = DomainInvoice,
+    Invoice2 = hg_client_invoicing:create(InvoiceParams1, Client),
+    Invoice1 = Invoice2.
+
 -spec invalid_invoice_shop(config()) -> _ | no_return().
 
 invalid_invoice_shop(C) ->
@@ -545,6 +577,53 @@ invalid_invoice_template_id(C) ->
     Params2 = make_invoice_params_tpl(TplID2),
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoicing:create_with_tpl(Params2, Client).
 
+-spec invoive_w_template_idempotency(config()) -> _ | no_return().
+
+invoive_w_template_idempotency(C) ->
+    Client = cfg(client, C),
+    TplCost1 = {_, FixedCost} = make_tpl_cost(fixed, 10000, <<"RUB">>),
+    TplContext1 = make_invoice_context(<<"default context">>),
+    TplID = create_invoice_tpl(C, TplCost1, TplContext1),
+    #domain_InvoiceTemplate{
+        owner_id = TplPartyID,
+        shop_id  = TplShopID,
+        context  = TplContext1
+    } = get_invoice_tpl(TplID, C),
+    InvoiceCost1 = FixedCost,
+    InvoiceContext1 = make_invoice_context(),
+    InvoiceID = hg_utils:unique_id(),
+    ExternalID = hg_utils:unique_id(),
+
+    Params = make_invoice_params_tpl(TplID, InvoiceCost1, InvoiceContext1),
+    Params1 = Params#payproc_InvoiceWithTemplateParams{
+        id = InvoiceID,
+        external_id = ExternalID
+    },
+    ?invoice_state(#domain_Invoice{
+        id          = InvoiceID,
+        owner_id    = TplPartyID,
+        shop_id     = TplShopID,
+        template_id = TplID,
+        cost        = InvoiceCost1,
+        context     = InvoiceContext1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:create_with_tpl(Params1, Client),
+
+    OtherParams = make_invoice_params_tpl(TplID),
+    Params2 = OtherParams#payproc_InvoiceWithTemplateParams{
+        id = InvoiceID,
+        external_id = hg_utils:unique_id()
+    },
+    ?invoice_state(#domain_Invoice{
+        id          = InvoiceID,
+        owner_id    = TplPartyID,
+        shop_id     = TplShopID,
+        template_id = TplID,
+        cost        = InvoiceCost1,
+        context     = InvoiceContext1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:create_with_tpl(Params2, Client).
+
 -spec invoice_w_template(config()) -> _ | no_return().
 
 invoice_w_template(C) ->
@@ -673,6 +752,36 @@ no_route_found_for_payment(_C) ->
         terminal = ?trm(10)
     }} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
 
+-spec payment_start_idempotency(config()) -> test_return().
+
+payment_start_idempotency(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams0 = make_payment_params(),
+    PaymentID1 = <<"1">>,
+    ExternalID = <<"42">>,
+    PaymentParams1 = PaymentParams0#payproc_InvoicePaymentParams{
+        id = PaymentID1,
+        external_id = ExternalID
+    },
+    ?payment_state(#domain_InvoicePayment{
+        id = PaymentID1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client),
+    ?payment_state(#domain_InvoicePayment{
+        id = PaymentID1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client),
+    PaymentParams2 = PaymentParams0#payproc_InvoicePaymentParams{id = <<"2">>},
+    {exception, #payproc_InvoicePaymentPending{id = PaymentID1}} =
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams2, Client),
+    PaymentID1 = process_payment(InvoiceID, PaymentParams1, Client),
+    PaymentID1 = await_payment_capture(InvoiceID, PaymentID1, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID1, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
 -spec payment_success(config()) -> test_return().
 
 payment_success(C) ->
@@ -721,7 +830,7 @@ payment_capture_failed(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    timeout = next_event(InvoiceID, 1000, Client),
+    timeout = next_event(InvoiceID, 3000, Client),
     ?assertException(
         error,
         {{woody_error, _}, _},
@@ -1617,6 +1726,23 @@ invalid_amount_payment_partial_refund(C) ->
         errors = [<<"Invalid amount, more than allowed maximum">>]
     }} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client).
+
+ -spec invalid_amount_partial_capture_and_refund(config()) -> _ | no_return().
+
+invalid_amount_partial_capture_and_refund(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    % do a partial capture
+    Cash = ?cash(21000, <<"RUB">>),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
+    PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
+    % try to refund an amount that exceeds capture amount
+    RefundParams = make_refund_params(42000, <<"RUB">>),
+    ?invoice_payment_amount_exceeded(?cash(21000, _)) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
 
 -spec cant_start_simultaneous_partial_refunds(config()) -> _ | no_return().
 
@@ -2565,6 +2691,16 @@ await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts) ->
         ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts).
+
+await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
+    await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, 0).
+
+await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cash).
 
 await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
