@@ -400,7 +400,6 @@ unmarshal_events(Events) when is_list(Events) ->
 -spec unmarshal_event(mg_event()) ->
     event().
 unmarshal_event(#mg_stateproc_Event{id = ID, created_at = Dt, format_version = Format, data = Payload}) ->
-    lager:error("unmarshal_Event: ->>>> ~p~n", [Payload]),
     {ID, Dt, #{format_version => Format, data => mg_msgpack_marshalling:unmarshal(Payload)}}.
 
 unmarshal_aux_st(Data) ->

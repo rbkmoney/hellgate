@@ -325,7 +325,7 @@ get_state(PartyID, []) ->
 get_state(PartyID, [FirstID | _]) ->
     History = get_history(PartyID, FirstID - 1, undefined, forward),
     Events = lists:map(fun unwrap_event/1, History),
-    [FirstEvent | _] = History,
+    [FirstEvent| _] = History,
     St = unwrap_state(FirstEvent),
     merge_events(Events, St).
 
@@ -1158,10 +1158,10 @@ unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
 unwrap_state({
     _ID,
     _Dt,
-    [
+    #{data := [
         #{<<"ct">>  := ContentType, <<"state_snapshot">> := EncodedSt},
         _EncodedEvent
-    ]
+    ]}
 }) ->
     decode_state(ContentType, EncodedSt);
 unwrap_state(_) ->

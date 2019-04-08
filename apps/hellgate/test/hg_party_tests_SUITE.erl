@@ -104,19 +104,19 @@ cfg(Key, C) ->
 
 all() ->
     [
-        % {group, party_access_control},
-        % {group, party_creation},
-        % {group, party_revisioning},
-        % {group, party_blocking_suspension},
-        % {group, party_meta},
-        {group, contract_management}
-        % {group, shop_management},
-        % {group, shop_account_lazy_creation},
-        % {group, contractor_management},
+        {group, party_access_control},
+        {group, party_creation},
+        {group, party_revisioning},
+        {group, party_blocking_suspension},
+        {group, party_meta},
+        {group, contract_management},
+        {group, shop_management},
+        {group, shop_account_lazy_creation},
+        {group, contractor_management},
 
-        % {group, claim_management},
+        {group, claim_management},
 
-        % {group, consistent_history}
+        {group, consistent_history}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -169,12 +169,12 @@ groups() ->
             contract_already_terminated,
             contract_expiration,
             contract_legal_agreement_binding,
-            contract_report_preferences_modification
-            % contract_payout_tool_creation,
-            % contract_payout_tool_modification,
-            % contract_adjustment_creation,
-            % contract_adjustment_expiration,
-            % compute_payment_institution_terms
+            contract_report_preferences_modification,
+            contract_payout_tool_creation,
+            contract_payout_tool_modification,
+            contract_adjustment_creation,
+            contract_adjustment_expiration,
+            compute_payment_institution_terms
         ]},
         {shop_management, [sequence], [
             party_creation,
