@@ -1275,7 +1275,7 @@ unmarshal(metadata, Metadata) ->
 unmarshal(_, Other) ->
     Other.
 
-%% WRAP IN THRIFT BINARY
+%% Wrap in thrift binary
 
 wrap_event_payload(Payload) ->
     Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},

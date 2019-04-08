@@ -1158,10 +1158,12 @@ unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
 unwrap_state({
     _ID,
     _Dt,
-    #{data := [
-        #{<<"ct">>  := ContentType, <<"state_snapshot">> := EncodedSt},
-        _EncodedEvent
-    ]}
+    #{
+        data := [
+            #{<<"ct">>  := ContentType, <<"state_snapshot">> := EncodedSt},
+            _EncodedEvent],
+        format_version := undefined
+    }
 }) ->
     decode_state(ContentType, EncodedSt);
 unwrap_state(_) ->
