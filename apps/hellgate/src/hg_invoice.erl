@@ -48,15 +48,18 @@
 
 -export([publish_event/2]).
 
-%%
+%% Internal types
 
 -record(st, {
     activity          :: undefined | invoice | {payment, payment_id()},
     invoice           :: undefined | invoice(),
     payments = []     :: [{payment_id(), payment_st()}]
 }).
-
 -type st() :: #st{}.
+
+-type invoice_change()  :: dmsl_payment_processing_thrift:'InvoiceChange'().
+
+%% API
 
 -spec get(hg_machine:ref()) ->
     {ok, st()} | {error, notfound}.
@@ -64,7 +67,7 @@
 get(Ref) ->
     case hg_machine:get_history(?NS, Ref) of
         {ok, History} ->
-            {ok, collapse_history(unmarshal(History))};
+            {ok, collapse_history(unmarshal_history(History))};
         Error ->
             Error
     end.
@@ -315,11 +318,11 @@ process_callback(Tag, Callback) ->
 
 get_history(Ref) ->
     History = hg_machine:get_history(?NS, Ref),
-    unmarshal(map_history_error(History)).
+    unmarshal_history(map_history_error(History)).
 
 get_history(Ref, AfterID, Limit) ->
     History = hg_machine:get_history(?NS, Ref, AfterID, Limit),
-    unmarshal(map_history_error(History)).
+    unmarshal_history(map_history_error(History)).
 
 get_state(Ref) ->
     collapse_history(get_history(Ref)).
@@ -393,18 +396,15 @@ map_repair_error({error, Reason}) ->
 -type refund_params() :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type payment_st() :: hg_invoice_payment:st().
 
--type msgpack_ev() :: hg_msgpack_marshalling:value().
-
 -define(invalid_invoice_status(Status),
     #payproc_InvalidInvoiceStatus{status = Status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
 
--spec publish_event(invoice_id(), msgpack_ev()) ->
+-spec publish_event(invoice_id(), hg_machine:event_payload()) ->
     hg_event_provider:public_event().
-
-publish_event(InvoiceID, Changes) ->
-    {{invoice_id, InvoiceID}, ?invoice_ev(unmarshal({list, changes}, Changes))}.
+publish_event(InvoiceID, Payload) ->
+    {{invoice_id, InvoiceID}, ?invoice_ev(unmarshal_event_payload(Payload))}.
 
 %%
 
@@ -432,7 +432,7 @@ init([InvoiceTplID, PartyRevision, InvoiceParams], #{id := ID}) ->
     hg_machine:result().
 
 process_signal(Signal, #{history := History}) ->
-    handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
+    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)))).
 
 handle_signal(timeout, St = #st{activity = {payment, PaymentID}}) ->
     % there's a payment pending
@@ -513,7 +513,7 @@ handle_expiration(St) ->
     {hg_machine:response(), hg_machine:result()}.
 
 process_call(Call, #{history := History}) ->
-    St = collapse_history(unmarshal(History)),
+    St = collapse_history(unmarshal_history(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
             {{exception, Exception}, #{}}
@@ -777,7 +777,7 @@ handle_result(#{state := St} = Params) ->
     end.
 
 handle_result_changes(#{changes := Changes = [_ | _]}, Acc) ->
-    Acc#{events => [marshal(Changes)]};
+    Acc#{events => [marshal_event_payload(Changes)]};
 handle_result_changes(#{}, Acc) ->
     Acc.
 
@@ -1096,24 +1096,33 @@ get_message(invoice_status_changed) ->
 
 %% Marshalling
 
-marshal(Changes) when is_list(Changes) ->
+-spec marshal_event_payload([invoice_change()]) ->
+    hg_machine:event_payload().
+marshal_event_payload(Changes) when is_list(Changes) ->
     wrap_event_payload({invoice_changes, Changes}).
 
 %% Unmarshalling
 
-unmarshal(Events) when is_list(Events) ->
-    [unmarshal(Event) || Event <- Events];
+-spec unmarshal_history([hg_machine:event()]) ->
+    [hg_machine:event([invoice_change()])].
+unmarshal_history(Events) ->
+    [unmarshal_event(Event) || Event <- Events].
 
-unmarshal({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal({list, changes}, Payload)}.
+-spec unmarshal_event(hg_machine:event()) ->
+    hg_machine:event([invoice_change()]).
+unmarshal_event({ID, Dt, Payload}) ->
+    {ID, Dt, unmarshal_event_payload(Payload)}.
 
-%% Version Thirft Binary
-
-unmarshal({list, changes}, #{format_version := 1, data := {bin, Bin}})
-when is_binary(Bin) ->
+-spec unmarshal_event_payload(hg_machine:event_payload()) ->
+    [invoice_change()].
+unmarshal_event_payload(#{format_version := 1, data := {bin, Changes}}) ->
     Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
-    {ok, {invoice_changes, Buf}} = hg_proto_utils:deserialize(Type, Bin),
+    {ok, {invoice_changes, Buf}} = hg_proto_utils:deserialize(Type, Changes),
     Buf;
+unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
+    unmarshal({list, changes}, Changes).
+
+%% Legacy formats unmarshal
 
 %% Version > 1
 

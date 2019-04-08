@@ -33,7 +33,11 @@
 -type tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type tpl()    :: dmsl_domain_thrift:'InvoiceTemplate'().
 
-%%
+%% Internal types
+
+-type invoice_template_change() :: dmsl_payment_processing_thrift:'InvoiceTemplateChange'().
+
+%% API
 
 -spec get(tpl_id()) -> tpl().
 
@@ -156,7 +160,7 @@ call(ID, Args) ->
     map_error(hg_machine:call(?NS, ID, Args)).
 
 get_history(TplID) ->
-    unmarshal(map_history_error(hg_machine:get_history(?NS, TplID))).
+    unmarshal_history(map_history_error(hg_machine:get_history(?NS, TplID))).
 
 map_error({ok, CallResult}) ->
     case CallResult of
@@ -221,7 +225,7 @@ namespace() ->
 
 init(Params, #{id := ID}) ->
     Tpl = create_invoice_template(ID, Params),
-    #{events => [marshal([?tpl_created(Tpl)])]}.
+    #{events => [marshal_event_payload([?tpl_created(Tpl)])]}.
 
 create_invoice_template(ID, P) ->
     #domain_InvoiceTemplate{
@@ -248,9 +252,9 @@ process_signal({repair, _}, _Machine) ->
     {hg_machine:response(), hg_machine:result()}.
 
 process_call(Call, #{history := History}) ->
-    Tpl = collapse_history(unmarshal(History)),
+    Tpl = collapse_history(unmarshal_history(History)),
     {Response, Changes} = handle_call(Call, Tpl),
-    {{ok, Response}, #{events => [marshal(Changes)]}}.
+    {{ok, Response}, #{events => [marshal_event_payload(Changes)]}}.
 
 handle_call({update, Params}, Tpl) ->
     Changes = [?tpl_updated(Params)],
@@ -298,20 +302,19 @@ update_field({context, V}, Tpl) ->
 
 %% Event provider
 
--type msgpack_value() :: dmsl_msgpack_thrift:'Value'().
-
--spec publish_event(tpl_id(), msgpack_value()) ->
+-spec publish_event(tpl_id(), hg_machine:event_payload()) ->
     hg_event_provider:public_event().
-
-publish_event(ID, Changes) ->
-    {{invoice_template_id, ID}, ?ev(unmarshal({list, change}, Changes))}.
+publish_event(ID, Payload) ->
+    {{invoice_template_id, ID}, ?ev(unmarshal_event_payload(Payload))}.
 
 %%
 
 -include("legacy_structures.hrl").
 
-marshal(Changes) when is_list(Changes) ->
-    [marshal(change, Change) || Change <- Changes].
+-spec marshal_event_payload([invoice_template_change()]) ->
+    hg_machine:event_payload().
+marshal_event_payload(Changes) when is_list(Changes) ->
+    #{format_version => undefined, data => [marshal(change, Change) || Change <- Changes]}.
 
 marshal(change, ?tpl_created(InvoiceTpl)) ->
     [3, #{
@@ -401,11 +404,20 @@ marshal(_, Other) ->
 
 %%
 
-unmarshal(Events) when is_list(Events) ->
-    [unmarshal(Event) || Event <- Events];
+-spec unmarshal_history([hg_machine:event()]) ->
+    [hg_machine:event([invoice_template_change()])].
+unmarshal_history(Events) ->
+    [unmarshal_event(Event) || Event <- Events].
 
-unmarshal({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal({list, change}, Payload)}.
+-spec unmarshal_event(hg_machine:event()) ->
+    hg_machine:event([invoice_template_change()]).
+unmarshal_event({ID, Dt, Payload}) ->
+    {ID, Dt, unmarshal_event_payload(Payload)}.
+
+-spec unmarshal_event_payload(hg_machine:event_payload()) ->
+    [invoice_template_change()].
+unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
+    unmarshal({list, change}, Changes).
 
 %% Version > 1
 

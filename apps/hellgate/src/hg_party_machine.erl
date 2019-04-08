@@ -290,9 +290,7 @@ handle_call({revoke_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
 
--type msgpack_value() :: dmsl_msgpack_thrift:'Value'().
-
--spec publish_event(party_id(), msgpack_value()) ->
+-spec publish_event(party_id(), hg_machine:event_payload()) ->
     hg_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
@@ -1122,7 +1120,7 @@ wrap_event_payload(Event) ->
         <<"ct">>  => ContentType
     },
     Data = encode_event(ContentType, Event),
-    [Meta, Data].
+    #{format_version => undefined, data => [Meta, Data]}.
 
 wrap_event_payload_w_snapshot(Event, St) ->
     ContentType = ?CT_ERLANG_BINARY,
@@ -1132,7 +1130,7 @@ wrap_event_payload_w_snapshot(Event, St) ->
         <<"state_snapshot">> => encode_state(ContentType, St)
     },
     Data = encode_event(ContentType, Event),
-    [Meta, Data].
+    #{format_version => undefined, data => [Meta, Data]}.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
@@ -1140,7 +1138,10 @@ unwrap_events(History) ->
 unwrap_event({ID, Dt, Event}) ->
     {ID, Dt, unwrap_event_payload(Event)}.
 
-unwrap_event_payload([
+unwrap_event_payload(#{format_version := Format, data := Changes}) ->
+    unwrap_event_payload(Format, Changes).
+
+unwrap_event_payload(undefined, [
     #{
         <<"vsn">> := Version,
         <<"ct">>  := ContentType
@@ -1149,9 +1150,9 @@ unwrap_event_payload([
 ]) ->
     transmute([Version, decode_event(ContentType, EncodedEvent)]);
 %% TODO legacy support, will be removed after migration
-unwrap_event_payload(Event) when is_list(Event) ->
+unwrap_event_payload(undefined, Event) when is_list(Event) ->
     transmute(hg_party_marshalling:unmarshal(Event));
-unwrap_event_payload({bin, Bin}) when is_binary(Bin) ->
+unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
     transmute([1, binary_to_term(Bin)]).
 
 unwrap_state({

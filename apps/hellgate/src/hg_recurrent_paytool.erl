@@ -41,6 +41,7 @@
 
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
+-type rec_payment_tool_change() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolChange'().
 
 -type route()      :: dmsl_domain_thrift:'PaymentRoute'().
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
@@ -114,7 +115,7 @@ get_public_history(RecPaymentToolID, #payproc_EventRange{'after' = AfterID, limi
     [publish_rec_payment_tool_event(RecPaymentToolID, Ev) || Ev <- get_history(RecPaymentToolID, AfterID, Limit)].
 
 publish_rec_payment_tool_event(RecPaymentToolID, Event) ->
-    {ID, Dt, Payload} = unmarshal(Event),
+    {ID, Dt, Payload} = Event,
     #payproc_RecurrentPaymentToolEvent{
         id = ID,
         created_at = Dt,
@@ -151,11 +152,11 @@ map_error({error, Reason}) ->
 
 get_history(RecPaymentToolID) ->
     History = hg_machine:get_history(?NS, RecPaymentToolID),
-    unmarshal(map_history_error(History)).
+    unmarshal_history(map_history_error(History)).
 
 get_history(RecPaymentToolID, AfterID, Limit) ->
     History = hg_machine:get_history(?NS, RecPaymentToolID, AfterID, Limit),
-    unmarshal(map_history_error(History)).
+    unmarshal_history(map_history_error(History)).
 
 get_state(RecPaymentToolID) ->
     collapse_history(get_history(RecPaymentToolID)).
@@ -282,7 +283,7 @@ start_session() ->
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
 process_signal(Signal, #{history := History}) ->
-    handle_result(handle_signal(Signal, collapse_history(unmarshal(History)))).
+    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)))).
 
 handle_signal(timeout, St) ->
     process_timeout(St).
@@ -502,7 +503,7 @@ create_session() ->
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
 process_call(Call, #{history := History}) ->
-    St = collapse_history(unmarshal(History)),
+    St = collapse_history(unmarshal_history(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
             {{exception, Exception}, #{}}
@@ -563,7 +564,7 @@ handle_result(Params) ->
     end.
 
 handle_result_changes(#{changes := Changes = [_ | _]}, Acc) ->
-    Acc#{events => [marshal(Changes)]};
+    Acc#{events => [marshal_event_payload(Changes)]};
 handle_result_changes(#{}, Acc) ->
     Acc.
 
@@ -671,8 +672,10 @@ get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) 
 %% Marshalling
 %%
 
-marshal(Changes) when is_list(Changes) ->
-    [marshal(change, Change) || Change <- Changes].
+-spec marshal_event_payload([rec_payment_tool_change()]) ->
+    hg_machine:event_payload().
+marshal_event_payload(Changes) ->
+    #{format_version => undefined, data => [marshal(change, Change) || Change <- Changes]}.
 
 %%
 
@@ -847,11 +850,21 @@ marshal(_, Other) ->
 %% Unmarshalling
 %%
 
-unmarshal(Events) when is_list(Events) ->
-    [unmarshal(Event) || Event <- Events];
 
-unmarshal({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal({list, changes}, Payload)}.
+-spec unmarshal_history([hg_machine:event()]) ->
+    [hg_machine:event([rec_payment_tool_change()])].
+unmarshal_history(Events) ->
+    [unmarshal_event(Event) || Event <- Events].
+
+-spec unmarshal_event(hg_machine:event()) ->
+    hg_machine:event([rec_payment_tool_change()]).
+unmarshal_event({ID, Dt, Payload}) ->
+    {ID, Dt, unmarshal_event_payload(Payload)}.
+
+-spec unmarshal_event_payload(hg_machine:event_payload()) ->
+    [rec_payment_tool_change()].
+unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
+    unmarshal({list, changes}, Changes).
 
 %%
 
@@ -1041,5 +1054,5 @@ unmarshal(_, Other) ->
 publish_events(Events) ->
     [publish_event(Event) || Event <- Events].
 
-publish_event({ID, Ns, SourceID, {EventID, Dt, undefined, Payload}}) ->
+publish_event({ID, Ns, SourceID, {EventID, Dt, Payload}}) ->
     hg_event_provider:publish_event(Ns, ID, SourceID, {EventID, Dt, mg_msgpack_marshalling:unmarshal(Payload)}).

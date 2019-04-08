@@ -3,7 +3,6 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 -type msgp()    :: hg_msgpack_marshalling:msgpack_value().
--type mg_msgp() :: mg_msgpack_marshalling:msgpack_value().
 
 -type id() :: mg_proto_base_thrift:'ID'().
 -type tag() :: {tag, mg_proto_base_thrift:'Tag'()}.
@@ -11,9 +10,13 @@
 -type ns() :: mg_proto_base_thrift:'Namespace'().
 -type args() :: _.
 
--type event() :: {event_id(), timestamp(), event_payload()}.
+-type event(T) :: {event_id(), timestamp(), T}.
+-type event() :: event(event_payload()).
 -type event_id() :: mg_proto_base_thrift:'EventID'().
--type event_payload() :: msgp().
+-type event_payload() :: #{
+    data := msgp(),
+    format_version := pos_integer() | undefined
+}.
 -type timestamp() :: mg_proto_base_thrift:'Timestamp'().
 -type history() :: [event()].
 -type auxst() :: msgp().
@@ -32,11 +35,6 @@
     events    => [event_payload()],
     action    => hg_machine_action:t(),
     auxst     => auxst()
-}.
-
--type content() :: #{
-    data := mg_msgp(),
-    format_version => integer()
 }.
 
 -callback namespace() ->
@@ -68,6 +66,7 @@
 -export_type([event_id/0]).
 -export_type([event_payload/0]).
 -export_type([event/0]).
+-export_type([event/1]).
 -export_type([history/0]).
 -export_type([auxst/0]).
 -export_type([signal/0]).
@@ -75,7 +74,6 @@
 -export_type([context/0]).
 -export_type([response/0]).
 -export_type([machine/0]).
--export_type([content/0]).
 
 -export([start/3]).
 -export([call/3]).
@@ -101,7 +99,10 @@
 
 -export([handle_function/3]).
 
-%%
+%% Internal types
+
+-type mg_event() :: mg_proto_state_processing_thrift:'Event'().
+-type mg_event_payload() :: mg_proto_state_processing_thrift:'EventBody'().
 
 %%
 
@@ -372,32 +373,35 @@ unmarshal_machine(#mg_stateproc_Machine{id = ID, history = History} = Machine) -
         aux_state => AuxState
     }.
 
+-spec marshal_events([event_payload()]) ->
+    [mg_event_payload()].
 marshal_events(Events) when is_list(Events) ->
     [marshal_event(Event) || Event <- Events].
 
-marshal_event(#{format_version := 1, data := Data}) ->
+-spec marshal_event(event_payload()) ->
+    mg_event_payload().
+marshal_event(#{format_version := Format, data := Data}) ->
     #mg_stateproc_Content{
-        format_version = 1,
+        format_version = Format,
         data = mg_msgpack_marshalling:marshal(Data)
-    };
-marshal_event(Ev) ->
-    #mg_stateproc_Content{
-        data = mg_msgpack_marshalling:marshal(Ev)
     }.
 
 marshal_aux_st_format(AuxSt) ->
     #mg_stateproc_Content{
-        format_version = 1,
+        format_version = undefined,
         data = mg_msgpack_marshalling:marshal(AuxSt)
     }.
 
+-spec unmarshal_events([mg_event()]) ->
+    [event()].
 unmarshal_events(Events) when is_list(Events) ->
     [unmarshal_event(Event) || Event <- Events].
 
-unmarshal_event(#mg_stateproc_Event{id = ID, created_at = Dt, format_version = 1, data = Payload}) ->
-    {ID, Dt, #{format_version => 1, data => mg_msgpack_marshalling:unmarshal(Payload)}};
-unmarshal_event(#mg_stateproc_Event{id = ID, created_at = Dt, format_version = undefined, data = Payload}) ->
-    {ID, Dt, mg_msgpack_marshalling:unmarshal(Payload)}.
+-spec unmarshal_event(mg_event()) ->
+    event().
+unmarshal_event(#mg_stateproc_Event{id = ID, created_at = Dt, format_version = Format, data = Payload}) ->
+    lager:error("unmarshal_Event: ->>>> ~p~n", [Payload]),
+    {ID, Dt, #{format_version => Format, data => mg_msgpack_marshalling:unmarshal(Payload)}}.
 
 unmarshal_aux_st(Data) ->
     mg_msgpack_marshalling:unmarshal(Data).

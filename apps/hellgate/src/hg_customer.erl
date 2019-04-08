@@ -110,11 +110,11 @@ set_meta(ID) ->
 
 get_history(Ref) ->
     History = hg_machine:get_history(?NS, Ref),
-    unmarshal(map_history_error(History)).
+    unmarshal_history(map_history_error(History)).
 
 get_history(Ref, AfterID, Limit) ->
     History = hg_machine:get_history(?NS, Ref, AfterID, Limit),
-    unmarshal(map_history_error(History)).
+    unmarshal_history(map_history_error(History)).
 
 get_state(Ref) ->
     collapse_history(get_history(Ref)).
@@ -175,10 +175,10 @@ map_start_error({error, Reason}) ->
 %% Event provider callbacks
 %%
 
--spec publish_event(customer_id(), [customer_change()]) ->
+-spec publish_event(customer_id(), hg_machine:event_payload()) ->
     hg_event_provider:public_event().
-publish_event(CustomerID, Changes) when is_list(Changes) ->
-    {{customer_id, CustomerID}, ?customer_event(unmarshal({list, change}, Changes))}.
+publish_event(CustomerID, Payload) ->
+    {{customer_id, CustomerID}, ?customer_event(unmarshal_event_payload(Payload))}.
 
 %%
 %% hg_machine callbacks
@@ -202,7 +202,7 @@ init(CustomerParams, #{id := CustomerID}) ->
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
 process_signal(Signal, #{history := History,  aux_state := AuxSt}) ->
-    handle_result(handle_signal(Signal, collapse_history(unmarshal(History)), unmarshal(auxst, AuxSt))).
+    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), unmarshal(auxst, AuxSt))).
 
 handle_signal(timeout, St0, AuxSt0) ->
     {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
@@ -259,7 +259,7 @@ is_binding_succeeded(_) ->
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
 process_call(Call, #{history := History}) ->
-    St = collapse_history(unmarshal(History)),
+    St = collapse_history(unmarshal_history(History)),
     try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
             {{exception, Exception}, #{}}
@@ -290,7 +290,7 @@ handle_aux_state(#{}, Acc) ->
     Acc.
 
 handle_result_changes(#{changes := Changes = [_ | _]}, Acc) ->
-    Acc#{events => [marshal(Changes)]};
+    Acc#{events => [marshal_event_payload(Changes)]};
 handle_result_changes(#{}, Acc) ->
     Acc.
 
@@ -657,8 +657,10 @@ assert_shop_operable(Shop) ->
 %% Marshalling
 %%
 
-marshal(Changes) ->
-    marshal({list, change}, Changes).
+-spec marshal_event_payload([customer_change()]) ->
+    hg_machine:event_payload().
+marshal_event_payload(Changes) ->
+    #{format_version => undefined, data => marshal({list, change}, Changes)}.
 
 marshal({list, T}, Vs) when is_list(Vs) ->
     [marshal(T, V) || V <- Vs];
@@ -864,11 +866,20 @@ marshal(_, Other) ->
 %% Unmarshalling
 %%
 
-unmarshal(Events) when is_list(Events) ->
-    [unmarshal(Event) || Event <- Events];
+-spec unmarshal_history([hg_machine:event()]) ->
+    [hg_machine:event([customer_change()])].
+unmarshal_history(Events) ->
+    [unmarshal_event(Event) || Event <- Events].
 
-unmarshal({ID, Dt, Payload}) ->
-    {ID, Dt, unmarshal({list, change}, Payload)}.
+-spec unmarshal_event(hg_machine:event()) ->
+    hg_machine:event([customer_change()]).
+unmarshal_event({ID, Dt, Payload}) ->
+    {ID, Dt, unmarshal_event_payload(Payload)}.
+
+-spec unmarshal_event_payload(hg_machine:event_payload()) ->
+    [customer_change()].
+unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
+    unmarshal({list, change}, Changes).
 
 unmarshal({list, T}, Vs) when is_list(Vs) ->
     [unmarshal(T, V) || V <- Vs];
