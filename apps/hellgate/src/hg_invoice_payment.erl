@@ -597,14 +597,22 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
     payment.
 % Other payers has predefined routes
 
+log_reject_context(risk_score_is_too_high = RejectReason, RejectContext) ->
+    log_reject_context(info, RejectReason, RejectContext);
 log_reject_context(RejectReason, RejectContext) ->
-    _ = lager:warning(
+    log_reject_context(warning, RejectReason, RejectContext).
+
+log_reject_context(Level, RejectReason, RejectContext) ->
+    _ = lager:log(
+        Level, [],
         "No route found, reason = ~p, varset: ~p",
         [RejectReason, maps:get(varset, RejectContext)]),
-    _ = lager:warning(
+    _ = lager:log(
+        Level, [],
         "No route found, reason = ~p, rejected providers: ~p",
         [RejectReason, maps:get(rejected_providers, RejectContext)]),
-    _ = lager:warning(
+    _ = lager:log(
+        Level, [],
         "No route found, reason = ~p, rejected terminals: ~p",
         [RejectReason, maps:get(rejected_terminals, RejectContext)]),
     ok.
