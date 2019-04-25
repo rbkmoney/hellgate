@@ -787,7 +787,7 @@ fatal_risk_score_for_route_found(_C) ->
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
         ],
-        rejected_terminals := [{?prv(3), ?trm(10), {'Terminal',risk_coverage}}]}
+        rejected_terminals := [{?prv(3), ?trm(10), {'Terminal', risk_coverage}}]}
     }}} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
 
 -spec payment_start_idempotency(config()) -> test_return().
