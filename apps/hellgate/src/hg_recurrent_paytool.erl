@@ -261,18 +261,24 @@ validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
 
 validate_route({ok, Route}, _RecPaymentTool) ->
     Route;
-validate_route({error, {no_route_found, RejectContext}}, RecPaymentTool) ->
+validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
+    Level =
+        case Reason of
+            risk_score_is_too_high -> info;
+            _ -> error
+        end,
+
     LogFun = fun(Msg, Param) ->
         _ = lager:log(
-                error,
+                Level,
                 lager:md(),
                 Msg,
-                [Param]
+                [Reason, Param]
             )
     end,
-    _ = LogFun("No route found, varset: ~p", maps:get(varset, RejectContext)),
-    _ = LogFun("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
-    _ = LogFun("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
+    _ = LogFun("No route found, reason = ~p, varset: ~p", maps:get(varset, RejectContext)),
+    _ = LogFun("No route found, reason = ~p, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
+    _ = LogFun("No route found, reason = ~p, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
     error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}).
 
 start_session() ->

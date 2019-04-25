@@ -604,15 +604,18 @@ log_reject_context(RejectReason, RejectContext) ->
 
 log_reject_context(Level, RejectReason, RejectContext) ->
     _ = lager:log(
-        Level, [],
+        Level,
+        lager:md(),
         "No route found, reason = ~p, varset: ~p",
         [RejectReason, maps:get(varset, RejectContext)]),
     _ = lager:log(
-        Level, [],
+        Level,
+        lager:md(),
         "No route found, reason = ~p, rejected providers: ~p",
         [RejectReason, maps:get(rejected_providers, RejectContext)]),
     _ = lager:log(
-        Level, [],
+        Level,
+        lager:md(),
         "No route found, reason = ~p, rejected terminals: ~p",
         [RejectReason, maps:get(rejected_terminals, RejectContext)]),
     ok.
