@@ -780,7 +780,11 @@ payment_start_idempotency(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID1, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    ?payment_state(#domain_InvoicePayment{
+        id = PaymentID1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client).
 
 -spec payment_success(config()) -> test_return().
 
