@@ -331,6 +331,7 @@ end_per_suite(C) ->
 -define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
+-define(payment_w_context(Context), #domain_InvoicePayment{context = Context}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 -define(trx_info(ID, Extra), #domain_TransactionInfo{id = ID, extra = Extra}).
 
@@ -829,13 +830,19 @@ payment_start_idempotency(C) ->
 payment_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(),
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+        [?payment_state(Payment)]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    ?payment_w_status(PaymentID, ?captured()) = Payment,
+    ?payment_w_context(Context) = Payment.
 
 -spec payment_success_empty_cvv(config()) -> test_return().
 
@@ -2600,6 +2607,9 @@ make_payment_params(PaymentTool, Session, FlowType) ->
         }},
         flow = Flow
     }.
+
+set_payment_context(Context, Params = #payproc_InvoicePaymentParams{}) ->
+    Params#payproc_InvoicePaymentParams{context = Context}.
 
 make_refund_params() ->
     #payproc_InvoicePaymentRefundParams{
