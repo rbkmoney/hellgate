@@ -52,8 +52,8 @@ get_http_cowboy_spec() ->
     #{
         listener_ref => ?MODULE,
         acceptors_count => 10,
-        transport_opts => [{port, ?COWBOY_PORT}],
-        proto_opts => [{env, [{dispatch, Dispatch}]}]
+        transport_opts => #{port => ?COWBOY_PORT},
+        proto_opts => #{env => #{dispatch => Dispatch}}
     }.
 
 %%
