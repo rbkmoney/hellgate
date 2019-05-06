@@ -170,7 +170,7 @@ start_app(cowboy = AppName, Env) ->
         transport_opts := TransOpt,
         proto_opts := ProtoOpt
     } = Env,
-    cowboy:start_clear(Ref, TransOpt#{num_acceptors => Count}, ProtoOpt),
+    cowboy:start_clear(Ref, [{num_acceptors, Count} | TransOpt], ProtoOpt),
     [AppName];
 
 start_app(AppName, Env) ->
