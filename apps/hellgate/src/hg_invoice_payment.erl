@@ -64,7 +64,6 @@
 
 %% Marshalling
 
--export([marshal/1]).
 -export([unmarshal/1]).
 
 %%
@@ -270,9 +269,10 @@ init_(PaymentID, Params, Opts) ->
     CreatedAt = hg_datetime:format_now(),
     MerchantTerms = get_merchant_terms(Opts, Revision),
     VS1 = collect_validation_varset(Party, Shop, VS0),
+    Context = get_context_params(Params),
     Payment = construct_payment(
         PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, Party, Shop,
-        VS1, Revision, MakeRecurrent, ExternalID
+        VS1, Revision, MakeRecurrent, Context, ExternalID
     ),
     Events = [?payment_started(Payment)],
     {collapse_changes(Events), {Events, hg_machine_action:instant()}}.
@@ -313,6 +313,9 @@ get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = undefin
     false;
 get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = MakeRecurrent}) ->
     MakeRecurrent.
+
+get_context_params(#payproc_InvoicePaymentParams{context = Context}) ->
+    Context.
 
 get_external_id(#payproc_InvoicePaymentParams{external_id = ExternalID}) ->
     ExternalID.
@@ -372,8 +375,21 @@ get_active_binding(#payproc_Customer{bindings = Bindings, active_binding_id = Bi
 get_customer_contact_info(#payproc_Customer{contact_info = ContactInfo}) ->
     ContactInfo.
 
-construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
-                  Party, Shop, VS0, Revision, MakeRecurrent, ExternalID) ->
+construct_payment(
+    PaymentID,
+    CreatedAt,
+    Cost,
+    Payer,
+    FlowParams,
+    Terms,
+    Party,
+    Shop,
+    VS0,
+    Revision,
+    MakeRecurrent,
+    Context,
+    ExternalID
+) ->
     #domain_TermSet{payments = PaymentTerms, recurrent_paytools = RecurrentTerms} = Terms,
     PaymentTool = get_payer_payment_tool(Payer),
     VS1 = validate_payment_tool(
@@ -419,6 +435,7 @@ construct_payment(PaymentID, CreatedAt, Cost, Payer, FlowParams, Terms,
         payer           = Payer,
         flow            = Flow,
         make_recurrent  = MakeRecurrent,
+        context         = Context,
         external_id     = ExternalID
     }.
 
@@ -2665,340 +2682,9 @@ get_message(invoice_payment_cash_flow_changed) ->
 get_message(invoice_payment_status_changed) ->
     "Invoice payment status is changed".
 
-%% Marshalling
+%% Unmarshalling
 
 -include("legacy_structures.hrl").
-
--spec marshal(change()) ->
-    hg_msgpack_marshalling:value().
-
-marshal(Change) ->
-    marshal(change, Change).
-
-%% Changes
-
-marshal(change, ?payment_started(Payment)) ->
-    [2, #{
-        <<"change">>        => <<"payment_created">>,
-        <<"payment">>       => marshal(payment, Payment)
-    }];
-marshal(change, ?risk_score_changed(RiskScore)) ->
-    [2, #{
-        <<"change">>        => <<"risk_score_changed">>,
-        <<"risk_score">>    => marshal(risk_score, RiskScore)
-    }];
-marshal(change, ?route_changed(Route)) ->
-    [2, #{
-        <<"change">>        => <<"route_changed">>,
-        <<"route">>         => hg_routing:marshal(Route)
-    }];
-marshal(change, ?cash_flow_changed(Cashflow)) ->
-    [2, #{
-        <<"change">>        => <<"cash_flow_changed">>,
-        <<"cash_flow">>     => hg_cashflow:marshal(Cashflow)
-    }];
-marshal(change, ?payment_status_changed(Status)) ->
-    [2, #{
-        <<"change">>        => <<"status_changed">>,
-        <<"status">>        => marshal(status, Status)
-    }];
-marshal(change, ?session_ev(Target, Payload)) ->
-    [2, #{
-        <<"change">>        => <<"session_change">>,
-        <<"target">>        => marshal(status, Target),
-        <<"payload">>       => marshal(session_change, Payload)
-    }];
-marshal(change, ?adjustment_ev(AdjustmentID, Payload)) ->
-    [2, #{
-        <<"change">>        => <<"adjustment_change">>,
-        <<"id">>            => marshal(str, AdjustmentID),
-        <<"payload">>       => marshal(adjustment_change, Payload)
-    }];
-marshal(change, ?refund_ev(RefundID, Payload)) ->
-    [2, #{
-        <<"change">>        => <<"refund">>,
-        <<"id">>            => marshal(str, RefundID),
-        <<"payload">>       => marshal(refund_change, Payload)
-    }];
-marshal(change, ?rec_token_acquired(Token)) ->
-    [2, #{
-        <<"change">>        => <<"token_acquired">>,
-        <<"token">>         => marshal(str, Token)
-    }];
-
-%% Payment
-
-marshal(payment, #domain_InvoicePayment{} = Payment) ->
-    genlib_map:compact(#{
-        <<"id">>                => marshal(str, Payment#domain_InvoicePayment.id),
-        <<"created_at">>        => marshal(str, Payment#domain_InvoicePayment.created_at),
-        <<"domain_revision">>   => marshal(int, Payment#domain_InvoicePayment.domain_revision),
-        <<"party_revision">>    => marshal(int, Payment#domain_InvoicePayment.party_revision),
-        <<"owner_id">>          => marshal(str, Payment#domain_InvoicePayment.owner_id),
-        <<"shop_id">>           => marshal(str, Payment#domain_InvoicePayment.shop_id),
-        <<"cost">>              => hg_cash:marshal(Payment#domain_InvoicePayment.cost),
-        <<"payer">>             => marshal(payer, Payment#domain_InvoicePayment.payer),
-        <<"flow">>              => marshal(flow, Payment#domain_InvoicePayment.flow),
-        <<"make_recurrent">>    => marshal(bool, Payment#domain_InvoicePayment.make_recurrent),
-        <<"context">>           => hg_content:marshal(Payment#domain_InvoicePayment.context),
-        <<"external_id">>       => marshal(str, Payment#domain_InvoicePayment.external_id)
-    });
-
-%% Flow
-
-marshal(flow, ?invoice_payment_flow_instant()) ->
-    #{<<"type">> => <<"instant">>};
-marshal(flow, ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil)) ->
-    #{
-        <<"type">>                  => <<"hold">>,
-        <<"on_hold_expiration">>    => marshal(on_hold_expiration, OnHoldExpiration),
-        <<"held_until">>            => marshal(str, HeldUntil)
-    };
-
-%% Recurrent intention
-
-marshal(recurrent_parent_payment, undefined) ->
-    undefined;
-marshal(recurrent_parent_payment, ?recurrent_parent(InvoiceID, PaymentID)) ->
-    #{
-        <<"invoice_id">> => marshal(str, InvoiceID),
-        <<"payment_id">> => marshal(str, PaymentID)
-    };
-
-%% Payment status
-
-marshal(status, ?pending()) ->
-    <<"pending">>;
-marshal(status, ?processed()) ->
-    <<"processed">>;
-marshal(status, ?refunded()) ->
-    <<"refunded">>;
-marshal(status, ?failed(Failure)) ->
-    [<<"failed">>, marshal(failure, Failure)];
-marshal(status, ?captured_with_reason(_Reason) = Capture) ->
-    [<<"captured">>, marshal(capture, Capture)];
-marshal(status, ?cancelled_with_reason(Reason)) ->
-    [<<"cancelled">>, marshal(str, Reason)];
-
-marshal(capture, ?captured_with_reason_and_cost(Reason, Cost)) when Cost =/= undefined ->
-    genlib_map:compact(#{
-        <<"reason">> => marshal(str, Reason),
-        <<"cost">>   => hg_cash:marshal(Cost)
-    });
-marshal(capture, ?captured_with_reason(Reason)) ->
-    marshal(str, Reason);
-
-%% Session change
-
-marshal(session_change, ?session_started()) ->
-    [3, <<"started">>];
-marshal(session_change, ?session_finished(Result)) ->
-    [3, [
-        <<"finished">>,
-        marshal(session_status, Result)
-    ]];
-marshal(session_change, ?session_suspended(Tag)) ->
-    [3, [
-        <<"suspended">>,
-        marshal(str, Tag)
-    ]];
-marshal(session_change, ?session_activated()) ->
-    [3, <<"activated">>];
-marshal(session_change, ?trx_bound(Trx)) ->
-    [3, [
-        <<"transaction_bound">>,
-        marshal(trx, Trx)
-    ]];
-marshal(session_change, ?proxy_st_changed(ProxySt)) ->
-    [3, [
-        <<"proxy_state_changed">>,
-        marshal(bin, {bin, ProxySt})
-    ]];
-marshal(session_change, ?interaction_requested(UserInteraction)) ->
-    [3, [
-        <<"interaction_requested">>,
-        marshal(interaction, UserInteraction)
-    ]];
-
-marshal(session_status, ?session_succeeded()) ->
-    <<"succeeded">>;
-marshal(session_status, ?session_failed(PayloadFailure)) ->
-    [
-        <<"failed">>,
-        marshal(failure, PayloadFailure)
-    ];
-
-%% Adjustment change
-
-marshal(adjustment_change, ?adjustment_created(Adjustment)) ->
-    [2, [<<"created">>, marshal(adjustment, Adjustment)]];
-marshal(adjustment_change, ?adjustment_status_changed(Status)) ->
-    [2, [<<"status_changed">>, marshal(adjustment_status, Status)]];
-
-%% Refund change
-
-marshal(refund_change, ?refund_created(Refund, Cashflow)) ->
-    [2, [<<"created">>, marshal(refund, Refund), hg_cashflow:marshal(Cashflow)]];
-marshal(refund_change, ?refund_status_changed(Status)) ->
-    [2, [<<"status">>, marshal(refund_status, Status)]];
-marshal(refund_change, ?session_ev(_Target, Payload)) ->
-    [2, [<<"session">>, marshal(session_change, Payload)]];
-
-%% Adjustment
-
-marshal(adjustment, #domain_InvoicePaymentAdjustment{} = Adjustment) ->
-    #{
-        <<"id">>                    => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.id),
-        <<"created_at">>            => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.created_at),
-        <<"domain_revision">>       => marshal(int, Adjustment#domain_InvoicePaymentAdjustment.domain_revision),
-        <<"party_revision">>        => marshal(int, Adjustment#domain_InvoicePaymentAdjustment.party_revision),
-        <<"reason">>                => marshal(str, Adjustment#domain_InvoicePaymentAdjustment.reason),
-        % FIXME
-        <<"old_cash_flow_inverse">> => hg_cashflow:marshal(
-            Adjustment#domain_InvoicePaymentAdjustment.old_cash_flow_inverse),
-        <<"new_cash_flow">>         => hg_cashflow:marshal(
-            Adjustment#domain_InvoicePaymentAdjustment.new_cash_flow)
-    };
-
-marshal(adjustment_status, ?adjustment_pending()) ->
-    <<"pending">>;
-marshal(adjustment_status, ?adjustment_captured(At)) ->
-    [<<"captured">>, marshal(str, At)];
-marshal(adjustment_status, ?adjustment_cancelled(At)) ->
-    [<<"cancelled">>, marshal(str, At)];
-
-%% Refund
-
-marshal(refund, #domain_InvoicePaymentRefund{} = Refund) ->
-    genlib_map:compact(#{
-        <<"id">>         => marshal(str, Refund#domain_InvoicePaymentRefund.id),
-        <<"created_at">> => marshal(str, Refund#domain_InvoicePaymentRefund.created_at),
-        <<"rev">>        => marshal(int, Refund#domain_InvoicePaymentRefund.domain_revision),
-        <<"party_revision">> => marshal(int, Refund#domain_InvoicePaymentRefund.party_revision),
-        <<"reason">>     => marshal(str, Refund#domain_InvoicePaymentRefund.reason),
-        <<"cash">>       => hg_cash:marshal(Refund#domain_InvoicePaymentRefund.cash)
-    });
-
-marshal(refund_status, ?refund_pending()) ->
-    <<"pending">>;
-marshal(refund_status, ?refund_succeeded()) ->
-    <<"succeeded">>;
-marshal(refund_status, ?refund_failed(Failure)) ->
-    [<<"failed">>, marshal(failure, Failure)];
-
-%%
-
-marshal(payer, ?payment_resource_payer(Resource, ContactInfo)) ->
-    [2, #{
-        <<"type">>           => <<"payment_resource_payer">>,
-        <<"resource">>       => marshal(disposable_payment_resource, Resource),
-        <<"contact_info">>   => marshal(contact_info, ContactInfo)
-    }];
-
-marshal(payer, ?recurrent_payer(PaymentTool, Parent, ContactInfo)) ->
-    [2, #{
-        <<"type">>             => <<"recurrent_payer">>,
-        <<"payment_tool">>     => hg_payment_tool:marshal(PaymentTool),
-        <<"recurrent_parent">> => marshal(recurrent_parent_payment, Parent),
-        <<"contact_info">>     => marshal(contact_info, ContactInfo)
-    }];
-
-marshal(payer, ?customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool, ContactInfo)) ->
-    [3, #{
-        <<"type">>                  => <<"customer_payer">>,
-        <<"customer_id">>           => marshal(str, CustomerID),
-        <<"customer_binding_id">>   => marshal(str, CustomerBindingID),
-        <<"rec_payment_tool_id">>   => marshal(str, RecurrentPaytoolID),
-        <<"payment_tool">>          => hg_payment_tool:marshal(PaymentTool),
-        <<"contact_info">>          => marshal(contact_info, ContactInfo)
-    }];
-
-marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = PaymentResource) ->
-    #{
-        <<"payment_tool">> => hg_payment_tool:marshal(PaymentResource#domain_DisposablePaymentResource.payment_tool),
-        <<"payment_session_id">> => marshal(str, PaymentResource#domain_DisposablePaymentResource.payment_session_id),
-        <<"client_info">> => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
-    };
-
-marshal(client_info, undefined) ->
-    undefined;
-marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
-    genlib_map:compact(#{
-        <<"ip_address">>    => marshal(str, ClientInfo#domain_ClientInfo.ip_address),
-        <<"fingerprint">>   => marshal(str, ClientInfo#domain_ClientInfo.fingerprint)
-    });
-
-marshal(contact_info, #domain_ContactInfo{} = ContactInfo) ->
-    genlib_map:compact(#{
-        <<"phone_number">>  => marshal(str, ContactInfo#domain_ContactInfo.phone_number),
-        <<"email">>         => marshal(str, ContactInfo#domain_ContactInfo.email)
-    });
-
-marshal(trx, #domain_TransactionInfo{} = TransactionInfo) ->
-    genlib_map:compact(#{
-        <<"id">>            => marshal(str, TransactionInfo#domain_TransactionInfo.id),
-        <<"timestamp">>     => marshal(str, TransactionInfo#domain_TransactionInfo.timestamp),
-        <<"extra">>         => marshal(map_str, TransactionInfo#domain_TransactionInfo.extra)
-    });
-
-marshal(interaction, {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}}) ->
-    #{<<"redirect">> =>
-        [
-            <<"get_request">>,
-            marshal(str, URI)
-        ]
-    };
-marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}}) ->
-    #{<<"redirect">> =>
-        [
-            <<"post_request">>,
-            #{
-                <<"uri">>   => marshal(str, URI),
-                <<"form">>  => marshal(map_str, Form)
-            }
-        ]
-    };
-marshal(interaction, {payment_terminal_reciept, #'PaymentTerminalReceipt'{short_payment_id = SPID, due = DueDate}}) ->
-    #{<<"payment_terminal_receipt">> =>
-        #{
-            <<"spid">>  => marshal(str, SPID),
-            <<"due">>   => marshal(str, DueDate)
-        }
-    };
-
-marshal(sub_failure, undefined) ->
-    undefined;
-marshal(sub_failure, #domain_SubFailure{} = SubFailure) ->
-    genlib_map:compact(#{
-        <<"code">> => marshal(str        , SubFailure#domain_SubFailure.code),
-        <<"sub" >> => marshal(sub_failure, SubFailure#domain_SubFailure.sub )
-    });
-
-marshal(failure, {operation_timeout, _}) ->
-    [3, <<"operation_timeout">>];
-marshal(failure, {failure, #domain_Failure{} = Failure}) ->
-    [3, [<<"failure">>, genlib_map:compact(#{
-        <<"code"  >> => marshal(str        , Failure#domain_Failure.code  ),
-        <<"reason">> => marshal(str        , Failure#domain_Failure.reason),
-        <<"sub"   >> => marshal(sub_failure, Failure#domain_Failure.sub   )
-    })]];
-
-marshal(on_hold_expiration, cancel) ->
-    <<"cancel">>;
-marshal(on_hold_expiration, capture) ->
-    <<"capture">>;
-
-marshal(risk_score, low) ->
-    <<"low">>;
-marshal(risk_score, high) ->
-    <<"high">>;
-marshal(risk_score, fatal) ->
-    <<"fatal">>;
-
-marshal(_, Other) ->
-    Other.
-
-%% Unmarshalling
 
 -spec unmarshal(hg_msgpack_marshalling:value()) -> [change()].
 
