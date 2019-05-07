@@ -306,7 +306,7 @@ start_service_handler(Name, Module, C, HandlerOpts) ->
     Port = get_random_port(),
     Opts = maps:merge(HandlerOpts, #{hellgate_root_url => cfg(root_url, C)}),
     ChildSpec = hg_test_proxy:get_child_spec(Name, Module, IP, Port, Opts),
-    _ = supervisor:start_child(cfg(test_sup, C), ChildSpec),
+    {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
 
 get_random_port() ->
