@@ -2404,7 +2404,7 @@ repair_complex_succeeded_second(C) ->
 
 next_event(InvoiceID, Client) ->
     %% timeout should be at least as large as hold expiration in construct_domain_fixture/0
-    next_event(InvoiceID, 12000, Client).
+    next_event(InvoiceID, 20000, Client).
 
 next_event(InvoiceID, Timeout, Client) ->
     case hg_client_invoicing:pull_event(InvoiceID, Timeout, Client) of
