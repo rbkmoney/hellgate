@@ -80,7 +80,8 @@ get_api_child_spec(MachineHandlers, Opts) ->
                 construct_service_handler(proxy_host_provider          , hg_proxy_host_provider, Opts),
                 construct_service_handler(payment_processing_eventsink , hg_event_sink_handler , Opts)
             ],
-            additional_routes => [erl_health_handle:get_route(HealthCheckers)]
+            additional_routes => [erl_health_handle:get_route(HealthCheckers)],
+            shutdown_timeout => genlib_app:env(?MODULE, shutdown_timeout, 0)
         }
     ).
 
