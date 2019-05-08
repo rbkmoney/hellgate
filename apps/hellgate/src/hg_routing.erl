@@ -41,7 +41,7 @@
     hg_selector:varset(),
     hg_domain:revision()
 ) ->
-    {ok, route()} | {error, {no_route_found | risk_score_is_too_high, reject_context()}}.
+    {ok, route()} | {error, {no_route_found, {unknown | risk_score_is_too_high, reject_context()}}}.
 
 choose(Predestination, PaymentInstitution, VS, Revision) ->
     % TODO not the optimal strategy
