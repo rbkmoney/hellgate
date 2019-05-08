@@ -3,8 +3,3 @@
 -setcookie hellgate_cookie
 
 +K true
-
-## +A useless for IO since 21.0, since
-## all internal drivers has been switched to
-## dirty IO schedules
-+SDio 100
