@@ -256,7 +256,8 @@ groups() ->
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
             adhoc_repair_failed_succeeded,
-            adhoc_repair_force_removal,
+            % TODO bring it back to life
+            % adhoc_repair_force_removal,
             adhoc_repair_invalid_changes_failed
         ]},
         {repair_scenarios, [parallel], [
