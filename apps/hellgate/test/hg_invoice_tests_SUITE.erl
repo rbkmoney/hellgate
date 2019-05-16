@@ -101,6 +101,7 @@
 -export([repair_complex_succeeded_first/1]).
 -export([repair_complex_succeeded_second/1]).
 
+-export([consistent_account_balances/1]).
 -export([consistent_history/1]).
 
 %%
@@ -144,6 +145,7 @@ all() ->
         rounding_cashflow_volume,
         terms_retrieval,
 
+        consistent_account_balances,
         consistent_history
     ].
 
@@ -216,14 +218,14 @@ groups() ->
             invalid_refund_party_status,
             invalid_refund_shop_status,
             {refunds_, [parallel], [
-            retry_temporary_unavailability_refund,
-            payment_refund_success,
-            payment_partial_refunds_success,
-            invalid_amount_payment_partial_refund,
-            invalid_amount_partial_capture_and_refund,
-            invalid_currency_payment_partial_refund,
+                retry_temporary_unavailability_refund,
+                payment_refund_success,
+                payment_partial_refunds_success,
+                invalid_amount_payment_partial_refund,
+                invalid_amount_partial_capture_and_refund,
+                invalid_currency_payment_partial_refund,
                 cant_start_simultaneous_partial_refunds
-        ]},
+            ]},
             ineligible_payment_partial_refund,
             payment_manual_refund
         ]},
@@ -252,7 +254,8 @@ groups() ->
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
             adhoc_repair_failed_succeeded,
-            adhoc_repair_force_removal,
+            % TODO bring it back to life
+            % adhoc_repair_force_removal,
             adhoc_repair_invalid_changes_failed
         ]},
         {repair_scenarios, [parallel], [
@@ -878,7 +881,9 @@ payment_has_optional_fields(C) ->
 
 payment_capture_failed(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    Amount = 42000,
+    Cost = ?cash(Amount, <<"RUB">>),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), Amount, C),
     PaymentParams = make_scenario_payment_params([good, fail]),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     [
@@ -889,16 +894,20 @@ payment_capture_failed(C) ->
         error,
         {{woody_error, _}, _},
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
-    ).
+    ),
+    PaymentID = repair_failed_capture(InvoiceID, PaymentID, ?timeout_reason(), Cost, Client).
 
 -spec payment_capture_retries_exceeded(config()) -> test_return().
 
 payment_capture_retries_exceeded(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    Amount = 42000,
+    Cost = ?cash(Amount, <<"RUB">>),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), Amount, C),
     PaymentParams = make_scenario_payment_params([good, temp, temp, temp, temp]),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    Target = ?captured_with_reason_and_cost(?timeout_reason(), ?cash(42000, <<"RUB">>)),
+    Reason = ?timeout_reason(),
+    Target = ?captured_with_reason_and_cost(Reason, Cost),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, Target),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, 3),
     timeout = next_event(InvoiceID, 1000, Client),
@@ -906,7 +915,16 @@ payment_capture_retries_exceeded(C) ->
         error,
         {{woody_error, _}, _},
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
-    ).
+    ),
+    PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
+
+repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
+    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    Changes = [
+        ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
+    ],
+    ok = repair_invoice(InvoiceID, Changes, Client),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0).
 
 -spec payment_w_terminal_success(config()) -> _ | no_return().
 
@@ -2018,13 +2036,13 @@ rounding_cashflow_volume(C) ->
         ?payment_ev(PaymentID, ?route_changed(_)),
         ?payment_ev(PaymentID, ?cash_flow_changed(CF))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
-    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     ?cash(0, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
     ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
     ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {system, subagent}, CF),
-    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {external, outcome}, CF).
+    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {external, outcome}, CF),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
 get_cashflow_rounding_fixture(Revision) ->
     PaymentInstituition = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -2179,11 +2197,13 @@ adhoc_repair_failed_succeeded(C) ->
     % assume no more events here since machine is FUBAR already
     timeout = next_event(InvoiceID, 2000, Client),
     Changes = [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
     ],
     ok = repair_invoice(InvoiceID, Changes, ?repair_set_timer({timeout, 0}), Client),
     Changes = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
 -spec adhoc_repair_force_removal(config()) -> _ | no_return().
@@ -2231,7 +2251,19 @@ adhoc_repair_invalid_changes_failed(C) ->
         error,
         {{woody_error, {external, result_unexpected, _}}, _},
         repair_invoice(InvoiceID, InvalidChanges2, Client)
-    ).
+    ),
+    Changes = [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+    ],
+    ?assertEqual(
+        ok,
+        repair_invoice(InvoiceID, Changes, Client)
+    ),
+    Changes = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
 -spec payment_with_offsite_preauth_success(config()) -> test_return().
 
@@ -2402,6 +2434,29 @@ repair_complex_succeeded_second(C) ->
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
+
+%%
+
+-spec consistent_account_balances(config()) -> test_return().
+
+consistent_account_balances(C) ->
+    PartyClient = cfg(party_client, C),
+    Party = hg_client_party:get(PartyClient),
+    Shops = maps:values(Party#domain_Party.shops),
+    _ = [
+        consistent_account_balance(AccountID, Shop) ||
+        #domain_Shop{account = ShopAccount} = Shop <- Shops,
+        #domain_ShopAccount{ settlement = AccountID1, guarantee = AccountID2} <- [ShopAccount],
+        AccountID <- [AccountID1, AccountID2]
+    ].
+
+consistent_account_balance(AccountID, Comment) ->
+    case hg_ct_helper:get_account(AccountID) of
+        #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
+            ok;
+        #{} = Account ->
+            erlang:error({"Inconsistent account balance", Account, Comment})
+    end.
 
 %%
 
@@ -3746,15 +3801,15 @@ construct_term_set_for_refund_eligibility_time(Seconds) ->
     },
     [
         hg_ct_fixture:construct_contract_template(?tmpl(100), ?trms(100)),
-    {term_set_hierarchy, #domain_TermSetHierarchyObject{
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(100),
-        data = #domain_TermSetHierarchy{
+            data = #domain_TermSetHierarchy{
                 parent_terms = ?trms(2),
-            term_sets = [#domain_TimedTermSet{
-                action_time = #'TimestampInterval'{},
-                terms = TermSet
-            }]
-        }
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TermSet
+                }]
+            }
         }}
     ].
 
