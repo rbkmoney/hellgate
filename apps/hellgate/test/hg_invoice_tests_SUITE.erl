@@ -77,7 +77,7 @@
 -export([payment_temporary_unavailability_too_many_retries/1]).
 -export([invalid_amount_payment_partial_refund/1]).
 -export([invalid_amount_partial_capture_and_refund/1]).
--export([invalid_time_payment_partial_refund/1]).
+-export([ineligible_payment_partial_refund/1]).
 -export([invalid_currency_payment_partial_refund/1]).
 -export([cant_start_simultaneous_partial_refunds/1]).
 -export([retry_temporary_unavailability_refund/1]).
@@ -215,15 +215,17 @@ groups() ->
         {refunds, [], [
             invalid_refund_party_status,
             invalid_refund_shop_status,
+            {refunds_, [parallel], [
             retry_temporary_unavailability_refund,
-            payment_manual_refund,
             payment_refund_success,
             payment_partial_refunds_success,
             invalid_amount_payment_partial_refund,
             invalid_amount_partial_capture_and_refund,
             invalid_currency_payment_partial_refund,
-            cant_start_simultaneous_partial_refunds,
-            invalid_time_payment_partial_refund
+                cant_start_simultaneous_partial_refunds
+        ]},
+            ineligible_payment_partial_refund,
+            payment_manual_refund
         ]},
 
         {holds_management, [parallel], [
@@ -375,6 +377,7 @@ init_per_testcase(Name, C) when
     Name == rounding_cashflow_volume;
     Name == payments_w_bank_card_issuer_conditions;
     Name == payments_w_bank_conditions;
+    Name == ineligible_payment_partial_refund;
     Name == invalid_permit_partial_capture_in_service;
     Name == invalid_permit_partial_capture_in_provider
 ->
@@ -388,6 +391,8 @@ init_per_testcase(Name, C) when
             payments_w_bank_card_issuer_conditions_fixture(Revision);
         payments_w_bank_conditions ->
             payments_w_bank_conditions_fixture(Revision);
+        ineligible_payment_partial_refund ->
+            construct_term_set_for_refund_eligibility_time(1);
         invalid_permit_partial_capture_in_service ->
             construct_term_set_for_partial_capture_service_permit();
         invalid_permit_partial_capture_in_provider ->
@@ -1742,7 +1747,6 @@ payment_partial_refunds_success(C) ->
     % Check sequence
     <<"1">> =:= RefundID1 andalso <<"2">> =:= RefundID3 andalso <<"3">> =:= RefundID4.
 
-
 -spec invalid_currency_payment_partial_refund(config()) -> _ | no_return().
 
 invalid_currency_payment_partial_refund(C) ->
@@ -1822,16 +1826,15 @@ cant_start_simultaneous_partial_refunds(C) ->
             ]
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client).
 
--spec invalid_time_payment_partial_refund(config()) -> _ | no_return().
+-spec ineligible_payment_partial_refund(config()) -> _ | no_return().
 
-invalid_time_payment_partial_refund(C) ->
+ineligible_payment_partial_refund(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(100), ?pinst(2), PartyClient),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ok = hg_domain:update(construct_term_set_for_refund_eligibility_time(1)),
     RefundParams = make_refund_params(5000, <<"RUB">>),
     ?operation_not_permitted() =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
@@ -3737,32 +3740,23 @@ construct_term_set_for_refund_eligibility_time(Seconds) ->
     TermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             refunds = #domain_PaymentRefundsServiceTerms{
-                payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
-                ])},
-                fees = {value, [
-                ]},
-                eligibility_time = {value, #'TimeSpan'{seconds = Seconds}},
-                partial_refunds = #domain_PartialRefundsServiceTerms{
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(      1000, <<"RUB">>)},
-                        {exclusive, ?cash(1000000000, <<"RUB">>)}
-                    )}
-                }
+                eligibility_time = {value, #'TimeSpan'{seconds = Seconds}}
             }
         }
     },
+    [
+        hg_ct_fixture:construct_contract_template(?tmpl(100), ?trms(100)),
     {term_set_hierarchy, #domain_TermSetHierarchyObject{
-        ref = ?trms(2),
+            ref = ?trms(100),
         data = #domain_TermSetHierarchy{
-            parent_terms = undefined,
+                parent_terms = ?trms(2),
             term_sets = [#domain_TimedTermSet{
                 action_time = #'TimestampInterval'{},
                 terms = TermSet
             }]
         }
-    }}.
+        }}
+    ].
 
 %
 
