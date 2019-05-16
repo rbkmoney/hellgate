@@ -253,7 +253,7 @@ handle_function_('Repair', [UserInfo, InvoiceID, Changes, Action], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
-    repair(InvoiceID, {changes, Changes, Action});
+    repair(InvoiceID, {changes, Changes, Action, true});
 
 handle_function_('RepairWithScenario', [UserInfo, InvoiceID, Scenario], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -447,9 +447,7 @@ handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
 
-handle_signal({repair, {changes, Changes, RepairAction}}, St0) ->
-    % Validating that these changes are at least applicable
-    St1 = lists:foldl(fun merge_change/2, St0, Changes),
+handle_signal({repair, {changes, Changes, RepairAction, Validate}}, St0) ->
     Result = case Changes of
         [_ | _] ->
             #{changes => Changes};
@@ -458,8 +456,10 @@ handle_signal({repair, {changes, Changes, RepairAction}}, St0) ->
     end,
     Action = construct_repair_action(RepairAction),
     Result#{
-        state  => St1,
-        action => Action
+        state  => St0,
+        action => Action,
+        % Validating that these changes are at least applicable
+        validate => Validate
     };
 
 handle_signal({repair, {scenario, _}}, #st{activity = Activity})
@@ -733,7 +733,7 @@ handle_payment_result({next, {Changes, Action}}, PaymentID, _PaymentSession, St)
         state   => St
     };
 handle_payment_result({done, {Changes1, Action}}, PaymentID, PaymentSession, #st{invoice = Invoice} = St) ->
-    PaymentSession1 = lists:foldl(fun hg_invoice_payment:merge_change/2, PaymentSession, Changes1),
+    PaymentSession1 = hg_invoice_payment:collapse_changes(Changes1, PaymentSession),
     Payment = hg_invoice_payment:get_payment(PaymentSession1),
     case get_payment_status(Payment) of
         ?processed() ->
@@ -784,14 +784,15 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St) ->
         state    => St
     }.
 
-handle_result(#{state := St} = Params) ->
-    _ = log_changes(maps:get(changes, Params, []), St),
-    Result = handle_result_changes(Params, handle_result_action(Params, #{})),
-    case maps:get(response, Params, undefined) of
+handle_result(#{state := St} = Result) ->
+    _ = validate_result(Result),
+    _ = log_changes(maps:get(changes, Result, []), St),
+    MachineResult = handle_result_changes(Result, handle_result_action(Result, #{})),
+    case maps:get(response, Result, undefined) of
         undefined ->
-            Result;
+            MachineResult;
         Response ->
-            {{ok, Response}, Result}
+            {{ok, Response}, MachineResult}
     end.
 
 handle_result_changes(#{changes := Changes = [_ | _]}, Acc) ->
@@ -803,6 +804,14 @@ handle_result_action(#{action := Action}, Acc) ->
     Acc#{action => Action};
 handle_result_action(#{}, Acc) ->
     Acc.
+
+validate_result(#{validate := false}) ->
+    ok;
+validate_result(#{changes := Changes = [_ | _], state := St}) ->
+    _St = collapse_changes(Changes, St, #{validation => strict}),
+    ok;
+validate_result(_Result) ->
+    ok.
 
 %%
 
@@ -858,19 +867,22 @@ process_repair(Scenario, St = #st{activity = {payment, PaymentID}}) ->
 collapse_history(History) ->
     lists:foldl(
         fun ({_ID, _, Changes}, St0) ->
-            lists:foldl(fun merge_change/2, St0, Changes)
+            collapse_changes(Changes, St0, #{})
         end,
         #st{},
         History
     ).
 
-merge_change(?invoice_created(Invoice), St) ->
+collapse_changes(Changes, St0, Opts) ->
+    lists:foldl(fun (C, St) -> merge_change(C, St, Opts) end, St0, Changes).
+
+merge_change(?invoice_created(Invoice), St, _Opts) ->
     St#st{activity = invoice, invoice = Invoice};
-merge_change(?invoice_status_changed(Status), St = #st{invoice = I}) ->
+merge_change(?invoice_status_changed(Status), St = #st{invoice = I}, _Opts) ->
     St#st{invoice = I#domain_Invoice{status = Status}};
-merge_change(?payment_ev(PaymentID, Event), St) ->
+merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
     PaymentSession = try_get_payment_session(PaymentID, St),
-    PaymentSession1 = hg_invoice_payment:merge_change(Event, PaymentSession),
+    PaymentSession1 = hg_invoice_payment:merge_change(Change, PaymentSession, Opts),
     St1 = set_payment_session(PaymentID, PaymentSession1, St),
     case hg_invoice_payment:get_activity(PaymentSession1) of
         A when A =/= idle ->
