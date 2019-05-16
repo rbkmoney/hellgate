@@ -12,6 +12,7 @@
 -define(cat(ID),        #domain_CategoryRef{id = ID}).
 -define(prx(ID),        #domain_ProxyRef{id = ID}).
 -define(prv(ID),        #domain_ProviderRef{id = ID}).
+-define(prvtrm(ID),     #domain_ProviderTerminalRef{id = ID}).
 -define(trm(ID),        #domain_TerminalRef{id = ID}).
 -define(tmpl(ID),       #domain_ContractTemplateRef{id = ID}).
 -define(trms(ID),       #domain_TermSetHierarchyRef{id = ID}).
