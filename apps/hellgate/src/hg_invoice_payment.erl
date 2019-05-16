@@ -2236,7 +2236,7 @@ merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
 
 merge_change(
     Change = ?session_ev(Target, ?session_started()),
-    #st{activity = {payment, Step}} = St,
+    #st{activity = Activity} = St,
     Opts
 ) ->
     _ = validate_transition([{payment, S} || S <- [
@@ -2247,19 +2247,31 @@ merge_change(
     % FIXME why the hell dedicated handling
     St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
     St2 = save_retry_attempt(Target, St1),
-    NextStep = case Step of
-        processing_session ->
+    NextStep = case Activity of
+        {payment, processing_session} ->
             %% session retrying
             processing_session;
-        flow_waiting ->
+        {payment, flow_waiting} ->
             finalizing_session;
-        finalizing_session ->
+        {payment, finalizing_session} ->
             %% session retrying
-            finalizing_session
+            finalizing_session;
+        idle ->
+            % Looks like we are in adhoc repaired machine, see HG-418 for details.
+            % Lets try to guess expected activity.
+            % TODO: Remove this clause as soon as machines will have been migrated.
+            case Target of
+                ?processed() ->
+                    processing_session;
+                ?cancelled() ->
+                    finalizing_session;
+                ?captured() ->
+                    finalizing_session
+            end
     end,
     St2#st{activity = {payment, NextStep}};
 
-merge_change(Change = ?session_ev(Target, Event), St, Opts) ->
+merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity}, Opts) ->
     _ = validate_transition([{payment, S} || S <- [processing_session, finalizing_session]], Change, St, Opts),
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
@@ -2267,10 +2279,10 @@ merge_change(Change = ?session_ev(Target, Event), St, Opts) ->
     St2 = set_trx(get_session_trx(Session), St1),
     case Session of
         #{status := finished, result := ?session_succeeded()} ->
-            NextStep = case St of
-                #st{activity = {payment, processing_session}} ->
+            NextStep = case Activity of
+                {payment, processing_session} ->
                     processing_accounter;
-                #st{activity = {payment, finalizing_session}} ->
+                {payment, finalizing_session} ->
                     finalizing_accounter
             end,
             St2#st{activity = {payment, NextStep}};
