@@ -216,9 +216,13 @@ init([PaymentTool, Params], #{id := RecPaymentToolID}) ->
     }).
 
 get_party_shop(Params) ->
-    PartyID = Params#payproc_RecurrentPaymentToolParams.party_id,
-    ShopID = Params#payproc_RecurrentPaymentToolParams.shop_id,
-    Party = hg_party:get_party(PartyID),
+    #payproc_RecurrentPaymentToolParams{
+        party_id = PartyID,
+        party_revision = ParamsPartyRevision,
+        shop_id = ShopID
+    } = Params,
+    PartyRevision = ensure_party_revision_defined(PartyID, ParamsPartyRevision),
+    Party = hg_party:checkout(PartyID, {revision, PartyRevision}),
     Shop = hg_party:get_shop(ShopID, Party),
     {Party, Shop}.
 
@@ -603,9 +607,10 @@ handle_result_action(#{}, Acc) ->
 
 %%
 
-ensure_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID}) ->
-    hg_invoice_utils:assert_party_accessible(PartyID),
-    Party = hg_party:get_party(PartyID),
+ensure_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID, party_revision = Revision0}) ->
+    _ = hg_invoice_utils:assert_party_accessible(PartyID),
+    Revision = ensure_party_revision_defined(PartyID, Revision0),
+    Party = hg_party:checkout(PartyID, {revision, Revision}),
     Party.
 
 ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID}, Party) ->
