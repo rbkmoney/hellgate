@@ -252,6 +252,21 @@ collect_varset(
         currency     => Currency
     }.
 
+-spec collect_rec_payment_tool_varset(rec_payment_tool()) ->
+    hg_selector:varset().
+collect_rec_payment_tool_varset(RecPaymentTool) ->
+    #payproc_RecurrentPaymentTool{
+        party_id = PartyID,
+        shop_id = ShopID,
+        payment_resource = PaymentResource
+    } = RecPaymentTool,
+    #domain_DisposablePaymentResource{
+        payment_tool = PaymentTool
+    } = PaymentResource,
+    Party = hg_party_machine:get_party(PartyID),
+    Shop = hg_party:get_shop(ShopID, Party),
+    collect_varset(Party, Shop, #{payment_tool => PaymentTool}).
+
 inspect(_RecPaymentTool, _VS) ->
     % FIXME please senpai
     high.
@@ -351,25 +366,27 @@ get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
 
 construct_proxy_payment_tool(St) ->
+    RecPaymentTool = get_rec_payment_tool(St),
     #payproc_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource
-    } = get_rec_payment_tool(St),
+    } = RecPaymentTool,
+    VS = collect_rec_payment_tool_varset(RecPaymentTool),
     #prxprv_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
-        minimal_payment_cost = construct_proxy_cash(get_route(St))
+        minimal_payment_cost = construct_proxy_cash(get_route(St), VS)
     }.
 
-construct_proxy_cash(Route) ->
+construct_proxy_cash(Route, VS) ->
     Revision = hg_domain:head(),
     ProviderTerms = hg_routing:get_rec_paytools_terms(Route, Revision),
     #domain_Cash{
         amount = Amount,
         currency = CurrencyRef
-    } = get_minimal_payment_cost(ProviderTerms, #{}, Revision),
+    } = get_minimal_payment_cost(ProviderTerms, VS, Revision),
     #prxprv_Cash{
         amount = Amount,
         currency = hg_domain:get(Revision, {currency, CurrencyRef})
