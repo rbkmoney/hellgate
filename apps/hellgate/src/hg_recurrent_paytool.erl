@@ -93,7 +93,7 @@ handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     RecPaymentToolID = hg_utils:unique_id(),
     ok = set_meta(RecPaymentToolID),
     Party = ensure_party_accessible(RecurrentPaymentToolParams),
-    Shop = ensure_shop_exists(RecurrentPaymentToolParams),
+    Shop = ensure_shop_exists(RecurrentPaymentToolParams, Party),
     ok = assert_party_shop_operable(Shop, Party),
     MerchantTerms = assert_operation_permitted(Shop, Party, DomainRevison),
     PaymentTool = validate_payment_tool(
@@ -218,7 +218,7 @@ init([PaymentTool, Params], #{id := RecPaymentToolID}) ->
 get_party_shop(Params) ->
     PartyID = Params#payproc_RecurrentPaymentToolParams.party_id,
     ShopID = Params#payproc_RecurrentPaymentToolParams.shop_id,
-    Party = hg_party_machine:get_party(PartyID),
+    Party = hg_party:get_party(PartyID),
     Shop = hg_party:get_shop(ShopID, Party),
     {Party, Shop}.
 
@@ -260,13 +260,15 @@ collect_varset(
 collect_rec_payment_tool_varset(RecPaymentTool) ->
     #payproc_RecurrentPaymentTool{
         party_id = PartyID,
+        party_revision = PreservedPartyRevision,
         shop_id = ShopID,
         payment_resource = PaymentResource
     } = RecPaymentTool,
+    PartyRevision = ensure_party_revision_defined(PartyID, PreservedPartyRevision),
     #domain_DisposablePaymentResource{
         payment_tool = PaymentTool
     } = PaymentResource,
-    Party = hg_party_machine:get_party(PartyID),
+    Party = hg_party:checkout(PartyID, {revision, PartyRevision}),
     Shop = hg_party:get_shop(ShopID, Party),
     collect_varset(Party, Shop, #{payment_tool => PaymentTool}).
 
@@ -603,11 +605,10 @@ handle_result_action(#{}, Acc) ->
 
 ensure_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID}) ->
     hg_invoice_utils:assert_party_accessible(PartyID),
-    Party = hg_party_machine:get_party(PartyID),
+    Party = hg_party:get_party(PartyID),
     Party.
 
-ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID, party_id = PartyID}) ->
-    Party = hg_party_machine:get_party(PartyID),
+ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID}, Party) ->
     Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     Shop.
 
@@ -692,6 +693,13 @@ reduce_selector(Name, Selector, VS, Revision) ->
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.
+
+-spec ensure_party_revision_defined(dmsl_domain_thrift:'PartyID'(), hg_party:party_revision() | undefined) ->
+    hg_party:party_revision().
+ensure_party_revision_defined(PartyID, undefined) ->
+    hg_party:get_party_revision(PartyID);
+ensure_party_revision_defined(_PartyID, Revision) ->
+    Revision.
 
 %%
 %% Marshalling
