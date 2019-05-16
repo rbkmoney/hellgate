@@ -11,7 +11,7 @@
 
 %% Public interface
 
--export([assert_operation_permitted/2]).
+-export([assert_operation_permitted/3]).
 
 -export([process_callback/2]).
 
@@ -51,6 +51,7 @@
 -type party()          :: dmsl_domain_thrift:'Party'().
 -type merchant_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
 -type payment_tool()   :: dmsl_domain_thrift:'PaymentTool'().
+-type domain_revision() :: hg_domain:revision().
 
 -type session() :: #{
     status      := active | suspended | finished,
@@ -88,16 +89,18 @@ handle_function(Func, Args, Opts) ->
     ).
 
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
+    DomainRevison = hg_domain:head(),
     RecPaymentToolID = hg_utils:unique_id(),
     ok = set_meta(RecPaymentToolID),
     Party = ensure_party_accessible(RecurrentPaymentToolParams),
     Shop = ensure_shop_exists(RecurrentPaymentToolParams),
     ok = assert_party_shop_operable(Shop, Party),
-    MerchantTerms = assert_operation_permitted(Shop, Party),
+    MerchantTerms = assert_operation_permitted(Shop, Party, DomainRevison),
     PaymentTool = validate_payment_tool(
         get_payment_tool(RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.payment_resource),
         MerchantTerms#domain_RecurrentPaytoolsServiceTerms.payment_methods,
-        collect_varset(Party, Shop, #{})
+        collect_varset(Party, Shop, #{}),
+        DomainRevison
     ),
     ok = start(RecPaymentToolID, [PaymentTool, RecurrentPaymentToolParams]),
     get_rec_payment_tool(get_state(RecPaymentToolID));
@@ -370,26 +373,26 @@ construct_proxy_payment_tool(St) ->
     #payproc_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
-        payment_resource = PaymentResource
+        payment_resource = PaymentResource,
+        domain_revision = DomainRevison
     } = RecPaymentTool,
     VS = collect_rec_payment_tool_varset(RecPaymentTool),
     #prxprv_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
-        minimal_payment_cost = construct_proxy_cash(get_route(St), VS)
+        minimal_payment_cost = construct_proxy_cash(get_route(St), VS, DomainRevison)
     }.
 
-construct_proxy_cash(Route, VS) ->
-    Revision = hg_domain:head(),
-    ProviderTerms = hg_routing:get_rec_paytools_terms(Route, Revision),
+construct_proxy_cash(Route, VS, DomainRevison) ->
+    ProviderTerms = hg_routing:get_rec_paytools_terms(Route, DomainRevison),
     #domain_Cash{
         amount = Amount,
         currency = CurrencyRef
-    } = get_minimal_payment_cost(ProviderTerms, VS, Revision),
+    } = get_minimal_payment_cost(ProviderTerms, VS, DomainRevison),
     #prxprv_Cash{
         amount = Amount,
-        currency = hg_domain:get(Revision, {currency, CurrencyRef})
+        currency = hg_domain:get(DomainRevison, {currency, CurrencyRef})
     }.
 
 %%
@@ -608,9 +611,8 @@ ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID, party_i
     Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     Shop.
 
-validate_payment_tool(PaymentTool, PaymentMethodSelector, VS) ->
-    Revision = hg_domain:head(),
-    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
+validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, DomainRevison) ->
+    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, DomainRevison),
     _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
         throw(#payproc_InvalidPaymentMethod{}),
     PaymentTool.
@@ -636,12 +638,11 @@ assert_rec_payment_tool_status_(StatusName, {StatusName, _}) ->
 assert_rec_payment_tool_status_(_StatusName, Status) ->
     throw(#payproc_InvalidRecurrentPaymentToolStatus{status = Status}).
 
--spec assert_operation_permitted(shop(), party()) -> merchant_terms().
+-spec assert_operation_permitted(shop(), party(), domain_revision()) -> merchant_terms().
 
-assert_operation_permitted(Shop, Party) ->
-    Revision = hg_domain:head(),
+assert_operation_permitted(Shop, Party, DomainRevison) ->
     CreatedAt = hg_datetime:format_now(),
-    Terms = get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision),
+    Terms = get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, DomainRevison),
     case Terms of
         undefined ->
             throw(#payproc_OperationNotPermitted{});
