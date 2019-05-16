@@ -199,7 +199,7 @@ init([PaymentTool, Params], #{id := RecPaymentToolID}) ->
     CreatedAt = hg_datetime:format_now(),
     {Party, Shop} = get_party_shop(Params),
     PaymentInstitution = get_payment_institution(Shop, Party, Revision),
-    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Revision),
+    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
     VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
     {RiskScore     ,  VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
     Route = validate_route(
@@ -637,12 +637,13 @@ get_rec_payment_tool_status(RecPaymentTool) ->
 
 %%
 
-create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Revision) ->
+create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision) ->
     PaymentResource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
     #payproc_RecurrentPaymentTool{
         id                   = RecPaymentToolID,
         shop_id              = Params#payproc_RecurrentPaymentToolParams.shop_id,
-        party_id             = Params#payproc_RecurrentPaymentToolParams.party_id,
+        party_id             = Party#domain_Party.id,
+        party_revision       = Party#domain_Party.revision,
         domain_revision      = Revision,
         status               = ?recurrent_payment_tool_created(),
         created_at           = CreatedAt,
