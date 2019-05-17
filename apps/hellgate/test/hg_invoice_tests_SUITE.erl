@@ -1560,11 +1560,9 @@ external_account_posting(C) ->
                 details = <<"Assist fee">>
             } <- CF
     ],
-    ok = hg_context:save(hg_context:create()),
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
-    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}),
-    hg_context:cleanup().
+    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
 
 %%
 
