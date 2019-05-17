@@ -17,7 +17,8 @@
 -export([make_payment_tool/1]).
 
 %% cowboy http callbacks
--export([init/2]).
+-export([init/3]).
+-export([handle/2]).
 -export([terminate/3]).
 %%
 
@@ -52,7 +53,7 @@ get_http_cowboy_spec() ->
         listener_ref => ?MODULE,
         acceptors_count => 10,
         transport_opts => [{port, ?COWBOY_PORT}],
-        proto_opts => #{env => #{dispatch => Dispatch}}
+        proto_opts => [{env, [{dispatch, Dispatch}]}]
     }.
 
 %%
@@ -559,12 +560,17 @@ decode_failure_scenario_step($e) ->
 
 %%
 
--spec init(cowboy_req:req(), list()) -> {ok, cowboy_req:req(), list()}.
+-spec init(atom(), cowboy_req:req(), list()) -> {ok, cowboy_req:req(), state}.
 
-init(Req, Opts) ->
-    Method = cowboy_req:method(Req),
-    Req2 = handle_user_interaction_response(Method, Req),
-    {ok, Req2, Opts}.
+init(_Transport, Req, []) ->
+    {ok, Req, undefined}.
+
+-spec handle(cowboy_req:req(), state) -> {ok, cowboy_req:req(), state}.
+
+handle(Req, State) ->
+    {Method, Req2} = cowboy_req:method(Req),
+    {ok, Req3} = handle_user_interaction_response(Method, Req2),
+    {ok, Req3, State}.
 
 -spec terminate(term(), cowboy_req:req(), state) -> ok.
 
@@ -577,7 +583,7 @@ get_callback_url() ->
     genlib:to_binary("http://127.0.0.1:" ++ integer_to_list(?COWBOY_PORT)).
 
 handle_user_interaction_response(<<"POST">>, Req) ->
-    {ok, Body, Req2} = cowboy_req:read_body(Req),
+    {ok, Body, Req2} = cowboy_req:body(Req),
     Form = maps:from_list(cow_qs:parse_qs(Body)),
     RespCode = case maps:get(<<"tag">>, Form, undefined) of
         %% sleep intent
@@ -591,7 +597,7 @@ handle_user_interaction_response(<<"POST">>, Req) ->
             Payload = maps:get(<<"payload">>, Form, Tag),
             callback_to_hell(Tag, Payload)
     end,
-    cowboy_req:reply(RespCode, #{<<"content-type">> => <<"text/plain; charset=utf-8">>}, <<>>, Req2);
+    cowboy_req:reply(RespCode, [{<<"content-type">>, <<"text/plain; charset=utf-8">>}], <<>>, Req2);
 handle_user_interaction_response(_, Req) ->
     %% Method not allowed.
     cowboy_req:reply(405, Req).
