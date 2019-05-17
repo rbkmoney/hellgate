@@ -23,6 +23,6 @@ construct_transport_options(Opts) ->
 
 construct_transport_options(Opts, #{transport_opts := TransportOpts = #{}}) ->
     Fields = [connect_timeout, recv_timeout, pool, max_connections],
-    Opts#{transport_opts => maps:with(Fields, TransportOpts)};
+    Opts#{transport_opts => maps:to_list(maps:with(Fields, TransportOpts))};
 construct_transport_options(Opts, #{}) ->
     Opts.
