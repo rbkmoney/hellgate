@@ -34,6 +34,7 @@
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 -export([no_route_found_for_payment/1]).
+-export([fatal_risk_score_for_route_found/1]).
 
 -export([payment_start_idempotency/1]).
 -export([payment_success/1]).
@@ -186,6 +187,7 @@ groups() ->
             invoice_cancellation_after_payment_timeout,
             invalid_payment_amount,
             no_route_found_for_payment,
+            fatal_risk_score_for_route_found,
             payment_start_idempotency,
             payment_success,
             payment_success_empty_cvv,
@@ -329,6 +331,7 @@ end_per_suite(C) ->
 -define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
+-define(payment_w_context(Context), #domain_InvoicePayment{context = Context}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 -define(trx_info(ID, Extra), #domain_TransactionInfo{id = ID, extra = Extra}).
 
@@ -735,7 +738,7 @@ no_route_found_for_payment(_C) ->
         risk_score      => low,
         flow            => instant
     },
-    {error, {no_route_found, #{
+    {error, {no_route_found, {unknown, #{
         varset := VS1,
         rejected_providers := [
             {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
@@ -743,7 +746,7 @@ no_route_found_for_payment(_C) ->
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
         ],
         rejected_terminals := []
-    }}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
+    }}}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
     VS2 = VS1#{
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
     },
@@ -751,6 +754,42 @@ no_route_found_for_payment(_C) ->
         provider = ?prv(3),
         terminal = ?trm(10)
     }} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
+
+-spec fatal_risk_score_for_route_found(config()) -> test_return().
+
+fatal_risk_score_for_route_found(_C) ->
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+    VS1 = #{
+        category        => ?cat(1),
+        currency        => ?cur(<<"RUB">>),
+        cost            => ?cash(1000, <<"RUB">>),
+        payment_tool    => {bank_card, #domain_BankCard{}},
+        party_id        => <<"12345">>,
+        risk_score      => fatal,
+        flow            => instant
+    },
+
+    {error, {no_route_found, {risk_score_is_too_high, #{
+        varset := VS1,
+        rejected_providers := [
+            {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
+            {?prv(2), {'PaymentsProvisionTerms', category}},
+            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
+        ],
+        rejected_terminals := []
+    }}}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
+    VS2 = VS1#{
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
+    },
+    {error, {no_route_found, {risk_score_is_too_high, #{
+        varset := VS2,
+        rejected_providers := [
+            {?prv(2), {'PaymentsProvisionTerms', category}},
+            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
+        ],
+        rejected_terminals := [{?prv(3), ?trm(10), {'Terminal', risk_coverage}}]}
+    }}} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
 
 -spec payment_start_idempotency(config()) -> test_return().
 
@@ -780,20 +819,30 @@ payment_start_idempotency(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID1, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    ?payment_state(#domain_InvoicePayment{
+        id = PaymentID1,
+        external_id = ExternalID
+    }) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams1, Client).
 
 -spec payment_success(config()) -> test_return().
 
 payment_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(),
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+        [?payment_state(Payment)]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    ?payment_w_status(PaymentID, ?captured()) = Payment,
+    ?payment_w_context(Context) = Payment.
 
 -spec payment_success_empty_cvv(config()) -> test_return().
 
@@ -2566,6 +2615,9 @@ make_payment_params(PaymentTool, Session, FlowType) ->
         flow = Flow
     }.
 
+set_payment_context(Context, Params = #payproc_InvoicePaymentParams{}) ->
+    Params#payproc_InvoicePaymentParams{context = Context}.
+
 make_refund_params() ->
     #payproc_InvoicePaymentRefundParams{
         reason = <<"ZANOZED">>
@@ -2603,13 +2655,13 @@ repair_invoice(InvoiceID, Changes, Action, Client) ->
     hg_client_invoicing:repair(InvoiceID, Changes, Action, Client).
 
 create_repair_scenario(fail_pre_processing) ->
-    Failure = payproc_errors:construct('PaymentFailure', {no_route_found, #payprocerr_GeneralFailure{}}),
+    Failure = payproc_errors:construct('PaymentFailure', {no_route_found, {unknown, #payprocerr_GeneralFailure{}}}),
     {'fail_pre_processing', #'payproc_InvoiceRepairFailPreProcessing'{failure = Failure}};
 create_repair_scenario(skip_inspector) ->
     {'skip_inspector', #'payproc_InvoiceRepairSkipInspector'{risk_score = low}};
 create_repair_scenario(fail_session) ->
     Failure = payproc_errors:construct('PaymentFailure',
-                {no_route_found, #payprocerr_GeneralFailure{}}
+                {no_route_found, {unknown, #payprocerr_GeneralFailure{}}}
             ),
     {'fail_session', #'payproc_InvoiceRepairFailSession'{failure = Failure}};
 create_repair_scenario(complex) ->

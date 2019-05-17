@@ -41,7 +41,7 @@
     hg_selector:varset(),
     hg_domain:revision()
 ) ->
-    {ok, route()} | {error, {no_route_found, reject_context()}}.
+    {ok, route()} | {error, {no_route_found | risk_score_is_too_high, reject_context()}}.
 
 choose(Predestination, PaymentInstitution, VS, Revision) ->
     % TODO not the optimal strategy
@@ -63,12 +63,14 @@ collect_routes(Predestination, Providers, VS, Revision, RejectContext) ->
     ),
     {Accepted, RejectContext#{rejected_terminals => Rejected}}.
 
-choose_route(Routes, VS, RejectContext) ->
+choose_route(Routes, VS = #{risk_score := RiskScore}, RejectContext) ->
     case lists:reverse(lists:keysort(1, score_routes(Routes, VS))) of
         [{_Score, Route} | _] ->
             {ok, export_route(Route)};
+        [] when RiskScore =:= fatal ->
+            {error, {no_route_found, {risk_score_is_too_high, RejectContext}}};
         [] ->
-            {error, {no_route_found, RejectContext}}
+            {error, {no_route_found, {unknown, RejectContext}}}
     end.
 
 score_routes(Routes, VS) ->

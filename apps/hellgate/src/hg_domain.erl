@@ -39,8 +39,7 @@
 -spec head() -> revision().
 
 head() ->
-    #'Snapshot'{version = Version} = dmt_client:checkout({head, #'Head'{}}),
-    Version.
+    dmt_client:get_last_version().
 
 -spec all(revision()) -> dmsl_domain_thrift:'Domain'().
 
@@ -54,7 +53,7 @@ get(Revision, Ref) ->
     try
         extract_data(dmt_client:checkout_object({version, Revision}, Ref))
     catch
-        throw:object_not_found ->
+        throw:#'ObjectNotFound'{} ->
             error({object_not_found, {Revision, Ref}})
     end.
 
@@ -64,7 +63,7 @@ find(Revision, Ref) ->
     try
         extract_data(dmt_client:checkout_object({version, Revision}, Ref))
     catch
-        throw:object_not_found ->
+        throw:#'ObjectNotFound'{} ->
             notfound
     end.
 
@@ -75,7 +74,7 @@ exists(Revision, Ref) ->
         _ = dmt_client:checkout_object({version, Revision}, Ref),
         true
     catch
-        throw:object_not_found ->
+        throw:#'ObjectNotFound'{} ->
             false
     end.
 

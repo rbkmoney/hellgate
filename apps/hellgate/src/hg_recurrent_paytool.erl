@@ -11,7 +11,7 @@
 
 %% Public interface
 
--export([assert_operation_permitted/2]).
+-export([assert_operation_permitted/3]).
 
 -export([process_callback/2]).
 
@@ -43,14 +43,14 @@
 -type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 -type rec_payment_tool_change() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolChange'().
 
--type route()      :: dmsl_domain_thrift:'PaymentRoute'().
--type risk_score() :: dmsl_domain_thrift:'RiskScore'().
--type cash()       :: dmsl_domain_thrift:'Cash'().
-
--type shop()           :: dmsl_domain_thrift:'Shop'().
--type party()          :: dmsl_domain_thrift:'Party'().
--type merchant_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
--type payment_tool()   :: dmsl_domain_thrift:'PaymentTool'().
+-type route()                   :: dmsl_domain_thrift:'PaymentRoute'().
+-type risk_score()              :: dmsl_domain_thrift:'RiskScore'().
+-type cash()                    :: dmsl_domain_thrift:'Cash'().
+-type shop()                    :: dmsl_domain_thrift:'Shop'().
+-type party()                   :: dmsl_domain_thrift:'Party'().
+-type merchant_terms()          :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
+-type payment_tool()            :: dmsl_domain_thrift:'PaymentTool'().
+-type domain_revision()         :: hg_domain:revision().
 
 -type session() :: #{
     status      := active | suspended | finished,
@@ -59,9 +59,9 @@
     proxy_state => proxy_state()
 }.
 
--type proxy_state()    :: dmsl_proxy_provider_thrift:'ProxyState'().
--type trx_info()       :: dmsl_domain_thrift:'TransactionInfo'().
--type session_result() :: dmsl_payment_processing_thrift:'SessionResult'().
+-type proxy_state()             :: dmsl_proxy_provider_thrift:'ProxyState'().
+-type trx_info()                :: dmsl_domain_thrift:'TransactionInfo'().
+-type session_result()          :: dmsl_payment_processing_thrift:'SessionResult'().
 
 
 %% Woody handler
@@ -88,16 +88,18 @@ handle_function(Func, Args, Opts) ->
     ).
 
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
+    DomainRevison = hg_domain:head(),
     RecPaymentToolID = hg_utils:unique_id(),
     ok = set_meta(RecPaymentToolID),
     Party = ensure_party_accessible(RecurrentPaymentToolParams),
-    Shop = ensure_shop_exists(RecurrentPaymentToolParams),
+    Shop = ensure_shop_exists(RecurrentPaymentToolParams, Party),
     ok = assert_party_shop_operable(Shop, Party),
-    MerchantTerms = assert_operation_permitted(Shop, Party),
+    MerchantTerms = assert_operation_permitted(Shop, Party, DomainRevison),
     PaymentTool = validate_payment_tool(
         get_payment_tool(RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.payment_resource),
         MerchantTerms#domain_RecurrentPaytoolsServiceTerms.payment_methods,
-        collect_varset(Party, Shop, #{})
+        collect_varset(Party, Shop, #{}),
+        DomainRevison
     ),
     ok = start(RecPaymentToolID, [PaymentTool, RecurrentPaymentToolParams]),
     get_rec_payment_tool(get_state(RecPaymentToolID));
@@ -199,7 +201,7 @@ init([PaymentTool, Params], #{id := RecPaymentToolID}) ->
     CreatedAt = hg_datetime:format_now(),
     {Party, Shop} = get_party_shop(Params),
     PaymentInstitution = get_payment_institution(Shop, Party, Revision),
-    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Revision),
+    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
     VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
     {RiskScore     ,  VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
     Route = validate_route(
@@ -213,9 +215,13 @@ init([PaymentTool, Params], #{id := RecPaymentToolID}) ->
     }).
 
 get_party_shop(Params) ->
-    PartyID = Params#payproc_RecurrentPaymentToolParams.party_id,
-    ShopID = Params#payproc_RecurrentPaymentToolParams.shop_id,
-    Party = hg_party_machine:get_party(PartyID),
+    #payproc_RecurrentPaymentToolParams{
+        party_id = PartyID,
+        party_revision = ParamsPartyRevision,
+        shop_id = ShopID
+    } = Params,
+    PartyRevision = ensure_party_revision_defined(PartyID, ParamsPartyRevision),
+    Party = hg_party:checkout(PartyID, {revision, PartyRevision}),
     Shop = hg_party:get_shop(ShopID, Party),
     {Party, Shop}.
 
@@ -252,6 +258,23 @@ collect_varset(
         currency     => Currency
     }.
 
+-spec collect_rec_payment_tool_varset(rec_payment_tool()) ->
+    hg_selector:varset().
+collect_rec_payment_tool_varset(RecPaymentTool) ->
+    #payproc_RecurrentPaymentTool{
+        party_id = PartyID,
+        party_revision = PreservedPartyRevision,
+        shop_id = ShopID,
+        payment_resource = PaymentResource
+    } = RecPaymentTool,
+    PartyRevision = ensure_party_revision_defined(PartyID, PreservedPartyRevision),
+    #domain_DisposablePaymentResource{
+        payment_tool = PaymentTool
+    } = PaymentResource,
+    Party = hg_party:checkout(PartyID, {revision, PartyRevision}),
+    Shop = hg_party:get_shop(ShopID, Party),
+    collect_varset(Party, Shop, #{payment_tool => PaymentTool}).
+
 inspect(_RecPaymentTool, _VS) ->
     % FIXME please senpai
     high.
@@ -261,18 +284,24 @@ validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
 
 validate_route({ok, Route}, _RecPaymentTool) ->
     Route;
-validate_route({error, {no_route_found, RejectContext}}, RecPaymentTool) ->
+validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
+    Level =
+        case Reason of
+            risk_score_is_too_high -> info;
+            _ -> error
+        end,
+
     LogFun = fun(Msg, Param) ->
         _ = lager:log(
-                error,
+                Level,
                 lager:md(),
                 Msg,
-                [Param]
+                [Reason, Param]
             )
     end,
-    _ = LogFun("No route found, varset: ~p", maps:get(varset, RejectContext)),
-    _ = LogFun("No route found, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
-    _ = LogFun("No route found, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
+    _ = LogFun("No route found, reason = ~p, varset: ~p", maps:get(varset, RejectContext)),
+    _ = LogFun("No route found, reason = ~p, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
+    _ = LogFun("No route found, reason = ~p, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
     error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}).
 
 start_session() ->
@@ -345,28 +374,30 @@ get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
 
 construct_proxy_payment_tool(St) ->
+    RecPaymentTool = get_rec_payment_tool(St),
     #payproc_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
-        payment_resource = PaymentResource
-    } = get_rec_payment_tool(St),
+        payment_resource = PaymentResource,
+        domain_revision = DomainRevison
+    } = RecPaymentTool,
+    VS = collect_rec_payment_tool_varset(RecPaymentTool),
     #prxprv_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
-        minimal_payment_cost = construct_proxy_cash(get_route(St))
+        minimal_payment_cost = construct_proxy_cash(get_route(St), VS, DomainRevison)
     }.
 
-construct_proxy_cash(Route) ->
-    Revision = hg_domain:head(),
-    ProviderTerms = hg_routing:get_rec_paytools_terms(Route, Revision),
+construct_proxy_cash(Route, VS, DomainRevison) ->
+    ProviderTerms = hg_routing:get_rec_paytools_terms(Route, DomainRevison),
     #domain_Cash{
         amount = Amount,
         currency = CurrencyRef
-    } = get_minimal_payment_cost(ProviderTerms, #{}, Revision),
+    } = get_minimal_payment_cost(ProviderTerms, VS, DomainRevison),
     #prxprv_Cash{
         amount = Amount,
-        currency = hg_domain:get(Revision, {currency, CurrencyRef})
+        currency = hg_domain:get(DomainRevison, {currency, CurrencyRef})
     }.
 
 %%
@@ -575,19 +606,18 @@ handle_result_action(#{}, Acc) ->
 
 %%
 
-ensure_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID}) ->
-    hg_invoice_utils:assert_party_accessible(PartyID),
-    Party = hg_party_machine:get_party(PartyID),
+ensure_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID, party_revision = Revision0}) ->
+    _ = hg_invoice_utils:assert_party_accessible(PartyID),
+    Revision = ensure_party_revision_defined(PartyID, Revision0),
+    Party = hg_party:checkout(PartyID, {revision, Revision}),
     Party.
 
-ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID, party_id = PartyID}) ->
-    Party = hg_party_machine:get_party(PartyID),
+ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID}, Party) ->
     Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     Shop.
 
-validate_payment_tool(PaymentTool, PaymentMethodSelector, VS) ->
-    Revision = hg_domain:head(),
-    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
+validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, DomainRevison) ->
+    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, DomainRevison),
     _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
         throw(#payproc_InvalidPaymentMethod{}),
     PaymentTool.
@@ -613,12 +643,11 @@ assert_rec_payment_tool_status_(StatusName, {StatusName, _}) ->
 assert_rec_payment_tool_status_(_StatusName, Status) ->
     throw(#payproc_InvalidRecurrentPaymentToolStatus{status = Status}).
 
--spec assert_operation_permitted(shop(), party()) -> merchant_terms().
+-spec assert_operation_permitted(shop(), party(), domain_revision()) -> merchant_terms().
 
-assert_operation_permitted(Shop, Party) ->
-    Revision = hg_domain:head(),
+assert_operation_permitted(Shop, Party, DomainRevison) ->
     CreatedAt = hg_datetime:format_now(),
-    Terms = get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision),
+    Terms = get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, DomainRevison),
     case Terms of
         undefined ->
             throw(#payproc_OperationNotPermitted{});
@@ -631,12 +660,13 @@ get_rec_payment_tool_status(RecPaymentTool) ->
 
 %%
 
-create_rec_payment_tool(RecPaymentToolID, CreatedAt, Params, Revision) ->
+create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision) ->
     PaymentResource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
     #payproc_RecurrentPaymentTool{
         id                   = RecPaymentToolID,
         shop_id              = Params#payproc_RecurrentPaymentToolParams.shop_id,
-        party_id             = Params#payproc_RecurrentPaymentToolParams.party_id,
+        party_id             = Party#domain_Party.id,
+        party_revision       = Party#domain_Party.revision,
         domain_revision      = Revision,
         status               = ?recurrent_payment_tool_created(),
         created_at           = CreatedAt,
@@ -667,6 +697,13 @@ reduce_selector(Name, Selector, VS, Revision) ->
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.
+
+-spec ensure_party_revision_defined(dmsl_domain_thrift:'PartyID'(), hg_party:party_revision() | undefined) ->
+    hg_party:party_revision().
+ensure_party_revision_defined(PartyID, undefined) ->
+    hg_party:get_party_revision(PartyID);
+ensure_party_revision_defined(_PartyID, Revision) ->
+    Revision.
 
 %%
 %% Marshalling

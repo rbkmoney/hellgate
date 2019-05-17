@@ -528,7 +528,6 @@ handle_call({start_payment, PaymentParams}, St) ->
     % TODO consolidate these assertions somehow
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
-    _ = assert_invoice_status(unpaid, St),
     start_payment(PaymentParams, St);
 
 handle_call({capture_payment, PaymentID, Params}, St) ->
@@ -720,6 +719,7 @@ start_payment(#payproc_InvoicePaymentParams{id = PaymentID} = PaymentParams, St)
     end.
 
 do_start_payment(PaymentID, PaymentParams, St) ->
+    _ = assert_invoice_status(unpaid, St),
     _ = assert_no_pending_payment(St),
     Opts = get_payment_opts(St),
     % TODO make timer reset explicit here
