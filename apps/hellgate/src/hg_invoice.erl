@@ -17,7 +17,6 @@
 
 -define(NS, <<"invoice">>).
 
-
 -export([process_callback/2]).
 
 %% Public interface
@@ -47,6 +46,10 @@
 -behaviour(hg_event_provider).
 
 -export([publish_event/2]).
+
+%% Internal
+
+-export([fail/1]).
 
 %% Internal types
 
@@ -310,6 +313,18 @@ process_callback(Tag, Callback) ->
             {error, invalid_callback};
         {error, _} = Error ->
             Error
+    end.
+
+%%
+
+-spec fail(hg_machine:ref()) ->
+    ok.
+
+fail(Ref) ->
+    try call(Ref, fail) of
+        Result -> erlang:error({unexpected, Result})
+    catch error:failed ->
+        ok
     end.
 
 %%

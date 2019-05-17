@@ -254,8 +254,7 @@ groups() ->
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
             adhoc_repair_failed_succeeded,
-            % TODO bring it back to life
-            % adhoc_repair_force_removal,
+            adhoc_repair_force_removal,
             adhoc_repair_invalid_changes_failed
         ]},
         {repair_scenarios, [parallel], [
@@ -410,11 +409,13 @@ init_per_testcase(C) ->
     ApiClient = hg_ct_helper:create_client(cfg(root_url, C), cfg(party_id, C)),
     Client = hg_client_invoicing:start_link(ApiClient),
     ClientTpl = hg_client_invoice_templating:start_link(ApiClient),
+    ok = hg_context:save(hg_context:create()),
     [{client, Client}, {client_tpl, ClientTpl} | C].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 
 end_per_testcase(_Name, C) ->
+    ok = hg_context:cleanup(),
     _ = case cfg(original_domain_revision, C) of
         Revision when is_integer(Revision) ->
             ok = hg_domain:reset(Revision);
@@ -2211,14 +2212,16 @@ adhoc_repair_failed_succeeded(C) ->
 adhoc_repair_force_removal(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
-    PaymentParams = make_payment_params(PaymentTool, Session),
-    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
-    ] = next_event(InvoiceID, Client),
+    PaymentParams = make_payment_params(),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     timeout = next_event(InvoiceID, 1000, Client),
+    _ = ?assertEqual(ok, hg_invoice:fail(InvoiceID)),
+    ?assertException(
+        error,
+        {{woody_error, {external, result_unexpected, _}}, _},
+        hg_client_invoicing:rescind(InvoiceID, <<"LOL NO">>, Client)
+    ),
     ok = repair_invoice(InvoiceID, [], ?repair_mark_removal(), Client),
     {exception, #payproc_InvoiceNotFound{}} = hg_client_invoicing:get(InvoiceID, Client).
 
