@@ -79,7 +79,7 @@ init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({'hg_client_party', '_', '_'}, x),
-    {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, scoper, dmt_client, party_client, hellgate]),
+    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate]),
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),

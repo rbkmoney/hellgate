@@ -278,7 +278,7 @@ init_per_suite(C) ->
     % _ = dbg:tpl({'hg_invoice_payment', 'merge_change', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([
-        lager, woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}
+        woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
