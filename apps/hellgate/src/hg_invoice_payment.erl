@@ -2146,16 +2146,19 @@ merge_change(Change = ?route_changed(Route), #st{} = St, Opts) ->
         route      = Route,
         activity   = {payment, cash_flow_building}
     };
-merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, cash_flow_building}} = St, _Opts) ->
-    St#st{
-        cash_flow  = Cashflow,
-        activity   = {payment, processing_session}
-    };
-merge_change(Change = ?cash_flow_changed(Cashflow), #st{} = St, Opts) ->
-    _ = validate_transition({payment, flow_waiting}, Change, St, Opts),
-    St#st{
-        partial_cash_flow = Cashflow
-    };
+merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St, Opts) ->
+    _ = validate_transition([{payment, S} || S <- [cash_flow_building, flow_waiting]], Change, St, Opts),
+    case Activity of
+        {payment, cash_flow_building} ->
+            St#st{
+                cash_flow  = Cashflow,
+                activity   = {payment, processing_session}
+            };
+        _ ->
+            St#st{
+                partial_cash_flow = Cashflow
+            }
+    end;
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
