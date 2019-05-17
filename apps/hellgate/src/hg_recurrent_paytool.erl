@@ -43,15 +43,14 @@
 -type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 -type rec_payment_tool_change() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolChange'().
 
--type route()      :: dmsl_domain_thrift:'PaymentRoute'().
--type risk_score() :: dmsl_domain_thrift:'RiskScore'().
--type cash()       :: dmsl_domain_thrift:'Cash'().
-
--type shop()           :: dmsl_domain_thrift:'Shop'().
--type party()          :: dmsl_domain_thrift:'Party'().
--type merchant_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
--type payment_tool()   :: dmsl_domain_thrift:'PaymentTool'().
--type domain_revision() :: hg_domain:revision().
+-type route()                   :: dmsl_domain_thrift:'PaymentRoute'().
+-type risk_score()              :: dmsl_domain_thrift:'RiskScore'().
+-type cash()                    :: dmsl_domain_thrift:'Cash'().
+-type shop()                    :: dmsl_domain_thrift:'Shop'().
+-type party()                   :: dmsl_domain_thrift:'Party'().
+-type merchant_terms()          :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
+-type payment_tool()            :: dmsl_domain_thrift:'PaymentTool'().
+-type domain_revision()         :: hg_domain:revision().
 
 -type session() :: #{
     status      := active | suspended | finished,
@@ -60,9 +59,9 @@
     proxy_state => proxy_state()
 }.
 
--type proxy_state()    :: dmsl_proxy_provider_thrift:'ProxyState'().
--type trx_info()       :: dmsl_domain_thrift:'TransactionInfo'().
--type session_result() :: dmsl_payment_processing_thrift:'SessionResult'().
+-type proxy_state()             :: dmsl_proxy_provider_thrift:'ProxyState'().
+-type trx_info()                :: dmsl_domain_thrift:'TransactionInfo'().
+-type session_result()          :: dmsl_payment_processing_thrift:'SessionResult'().
 
 
 %% Woody handler
