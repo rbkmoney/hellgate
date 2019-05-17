@@ -42,6 +42,7 @@
 
 -export([capture/2]).
 -export([capture/4]).
+-export([capture/5]).
 -export([cancel/2]).
 -export([refund/3]).
 
@@ -116,6 +117,7 @@
 -export_type([machine_result/0]).
 
 -type cash()                :: dmsl_domain_thrift:'Cash'().
+-type cart()                :: dmsl_domain_thrift:'InvoiceCart'().
 -type party()               :: dmsl_domain_thrift:'Party'().
 -type payer()               :: dmsl_domain_thrift:'Payer'().
 -type invoice()             :: dmsl_domain_thrift:'Invoice'().
@@ -808,15 +810,20 @@ reduce_selector(Name, Selector, VS, Revision) ->
 start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
--spec capture(st(), atom()) -> {ok, result()}.
+-spec capture(st(), binary()) -> {ok, result()}.
 
 capture(St, Reason) ->
     Cost = get_payment_cost(get_payment(St)),
-    do_payment(St, ?captured_with_reason_and_cost(hg_utils:format_reason(Reason), Cost)).
+    do_payment(St, ?captured_with_reason_and_cost(Reason, Cost)).
 
 -spec capture(st(), binary(), cash(), opts()) -> {ok, result()}.
 
 capture(St, Reason, Cost, Opts) ->
+    capture(St, Reason, Cost, undefined, Opts).
+
+-spec capture(st(), binary(), cash(), cart() | undefined, opts()) -> {ok, result()}.
+
+capture(St, Reason, Cost, Cart, Opts) ->
     Payment = get_payment(St),
     _ = assert_capture_cost_currency(Cost, Payment),
     case check_equal_capture_cost_amount(Cost, Payment) of
@@ -825,10 +832,10 @@ capture(St, Reason, Cost, Opts) ->
         false ->
             _ = assert_activity({payment, flow_waiting}, St),
             _ = assert_payment_flow(hold, Payment),
-            partial_capture(St, Reason, Cost, Opts)
+            partial_capture(St, Reason, Cost, Cart, Opts)
     end.
 
-partial_capture(St, Reason, Cost, Opts) ->
+partial_capture(St, Reason, Cost, Cart, Opts) ->
     Payment             = get_payment(St),
     Revision            = get_payment_revision(St),
     Shop                = get_shop(Opts),
@@ -861,13 +868,13 @@ partial_capture(St, Reason, Cost, Opts) ->
     ),
     Changes =
         [?cash_flow_changed(FinalCashflow)] ++
-        start_session(?captured_with_reason_and_cost(genlib:to_binary(Reason), Cost)),
+        start_session(?partial_captured(Reason, Cost, Cart)),
     {ok, {Changes, hg_machine_action:instant()}}.
 
--spec cancel(st(), atom()) -> {ok, result()}.
+-spec cancel(st(), binary()) -> {ok, result()}.
 
 cancel(St, Reason) ->
-    do_payment(St, ?cancelled_with_reason(hg_utils:format_reason(Reason))).
+    do_payment(St, ?cancelled_with_reason(Reason)).
 
 do_payment(St, Target) ->
     Payment = get_payment(St),
@@ -979,7 +986,8 @@ prepare_refund(Params, Payment, Revision, St, Opts) ->
         party_revision  = PartyRevision,
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason,
-        cash            = Cash
+        cash            = Cash,
+        cart            = Params#payproc_InvoicePaymentRefundParams.cart
     }.
 
 prepare_refund_cashflow(Refund, Payment, Revision, St, Opts) ->

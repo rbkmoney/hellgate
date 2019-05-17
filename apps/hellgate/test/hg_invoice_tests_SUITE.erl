@@ -60,8 +60,8 @@
 -export([payment_hold_cancellation/1]).
 -export([payment_hold_auto_cancellation/1]).
 -export([payment_hold_capturing/1]).
--export([payment_hold_new_capturing/1]).
 -export([payment_hold_partial_capturing/1]).
+-export([payment_hold_partial_capturing_with_cart/1]).
 -export([invalid_currency_partial_capture/1]).
 -export([invalid_amount_partial_capture/1]).
 -export([invalid_permit_partial_capture_in_service/1]).
@@ -228,10 +228,10 @@ groups() ->
             payment_hold_cancellation,
             payment_hold_auto_cancellation,
             payment_hold_capturing,
-            payment_hold_new_capturing,
             invalid_currency_partial_capture,
             invalid_amount_partial_capture,
             payment_hold_partial_capturing,
+            payment_hold_partial_capturing_with_cart,
             payment_hold_auto_capturing,
             {group, holds_management_with_custom_config}
         ]},
@@ -1864,16 +1864,6 @@ payment_hold_capturing(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
 
--spec payment_hold_new_capturing(config()) -> _ | no_return().
-
-payment_hold_new_capturing(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params({hold, cancel}),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    ok = hg_client_invoicing:new_capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
-
 -spec payment_hold_partial_capturing(config()) -> _ | no_return().
 
 payment_hold_partial_capturing(C) ->
@@ -1887,6 +1877,23 @@ payment_hold_partial_capturing(C) ->
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
         ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash).
+
+-spec payment_hold_partial_capturing_with_cart(config()) -> _ | no_return().
+
+payment_hold_partial_capturing_with_cart(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    Cash = ?cash(10000, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client),
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?session_ev(?partial_captured(Reason, Cash, Cart), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash).
 
