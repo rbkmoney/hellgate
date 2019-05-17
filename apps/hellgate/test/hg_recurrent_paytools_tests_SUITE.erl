@@ -596,7 +596,12 @@ construct_domain_fixture(TermSet) ->
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa)
                     ])},
-                    cash_value = {value, ?cash(1000, <<"RUB">>)}
+                    cash_value = {decisions, [
+                        #domain_CashValueDecision{
+                            if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ = {value, ?cash(1000, <<"RUB">>)}
+                        }
+                    ]}
                 }
             }
         }},
