@@ -1944,7 +1944,7 @@ payment_hold_partial_capturing_with_cart(C) ->
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
         ?payment_ev(PaymentID, ?session_ev(?partial_captured(Reason, Cash, Cart), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash).
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
 
 -spec invalid_currency_partial_capture(config()) -> _ | no_return().
 
@@ -2766,7 +2766,10 @@ await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost).
 
 await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost) ->
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, undefined).
+
+await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, Cart) ->
+    Target = ?partial_captured(Reason, Cost, Cart),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts),
     [
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
