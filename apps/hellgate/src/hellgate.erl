@@ -67,8 +67,8 @@ get_api_child_spec(MachineHandlers, Opts) ->
         #{
             ip            => Ip,
             port          => genlib_app:env(?MODULE, port, 8022),
-            transport_opts => genlib_app:env(?MODULE, transport_opts, #{}),
-            protocol_opts => genlib_app:env(?MODULE, protocol_opts, #{}),
+            transport_opts => genlib_app:env(?MODULE, transport_opts, []),
+            protocol_opts => genlib_app:env(?MODULE, protocol_opts, []),
             event_handler => scoper_woody_event_handler,
             handlers      => hg_machine:get_service_handlers(MachineHandlers, Opts) ++ [
                 construct_service_handler(party_management             , hg_party_woody_handler, Opts),
@@ -80,8 +80,7 @@ get_api_child_spec(MachineHandlers, Opts) ->
                 construct_service_handler(proxy_host_provider          , hg_proxy_host_provider, Opts),
                 construct_service_handler(payment_processing_eventsink , hg_event_sink_handler , Opts)
             ],
-            additional_routes => [erl_health_handle:get_route(HealthCheckers)],
-            shutdown_timeout => genlib_app:env(?MODULE, shutdown_timeout, 0)
+            additional_routes => [erl_health_handle:get_route(HealthCheckers)]
         }
     ).
 

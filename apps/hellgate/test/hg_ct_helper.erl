@@ -81,9 +81,21 @@
 
 -spec start_app(app_name()) -> [app_name()].
 
+start_app(lager = AppName) ->
+    {start_app(AppName, [
+        {async_threshold, 1},
+        {async_threshold_window, 0},
+        {error_logger_hwm, 600},
+        {suppress_application_start_stop, true},
+        {handlers, [
+            % {lager_common_test_backend, [debug, {lager_logstash_formatter, []}]}
+            {lager_common_test_backend, warning}
+        ]}
+    ]), #{}};
+
 start_app(scoper = AppName) ->
     {start_app(AppName, [
-        {storage, scoper_storage_logger}
+        {storage, scoper_storage_lager}
     ]), #{}};
 
 start_app(woody = AppName) ->
@@ -99,8 +111,8 @@ start_app(dmt_client = AppName) ->
             memory => 52428800 % 50Mb
         }},
         {service_urls, #{
-            'Repository' => <<"http://dominant:8022/v1/domain/repository">>,
-            'RepositoryClient' => <<"http://dominant:8022/v1/domain/repository_client">>
+            'Repository' => <<"dominant:8022/v1/domain/repository">>,
+            'RepositoryClient' => <<"dominant:8022/v1/domain/repository_client">>
         }}
     ]), #{}};
 
@@ -158,7 +170,7 @@ start_app(cowboy = AppName, Env) ->
         transport_opts := TransOpt,
         proto_opts := ProtoOpt
     } = Env,
-    cowboy:start_clear(Ref, [{num_acceptors, Count} | TransOpt], ProtoOpt),
+    cowboy:start_http(Ref, Count, TransOpt, ProtoOpt),
     [AppName];
 
 start_app(AppName, Env) ->

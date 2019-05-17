@@ -389,7 +389,7 @@ get_last_revision(PartyID) ->
             case ToEventID < LastEventID of
                 true ->
                     % there are events after MaxRevision, so it can be a bug
-                    _ = logger:warning(
+                    _ = lager:warning(
                         "Max revision EventID (~p) and LastEventID (~p) missmatch",
                         [ToEventID, LastEventID]
                     ),
