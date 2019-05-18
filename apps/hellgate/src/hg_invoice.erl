@@ -1094,8 +1094,7 @@ log_changes(Changes, St) ->
 log_change(Change, St) ->
     case get_log_params(Change, St) of
         {ok, #{type := Type, params := Params, message := Message}} ->
-            Meta = logger:get_process_metadata(),
-            _ = logger:log(info, Message, Meta#{Type => Params}),
+            _ = lager:log(info, [{Type, Params} | lager:md()], Message),
             ok;
         undefined ->
             ok
