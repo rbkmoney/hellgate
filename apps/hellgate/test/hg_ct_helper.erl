@@ -90,7 +90,7 @@ start_app(lager = AppName) ->
         {handlers, [
             % {lager_common_test_backend, [debug, {lager_logstash_formatter, []}]}
             {lager_common_test_backend, warning}
-            ]}
+        ]}
     ]), #{}};
 
 start_app(scoper = AppName) ->

@@ -292,11 +292,11 @@ validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentToo
         end,
 
     LogFun = fun(Msg, Param) ->
-        _ = logger:log(
+        _ = lager:log(
                 Level,
+                lager:md(),
                 Msg,
-                [Reason, Param],
-                logger:get_process_metadata()
+                [Reason, Param]
             )
     end,
     _ = LogFun("No route found, reason = ~p, varset: ~p", maps:get(varset, RejectContext)),
