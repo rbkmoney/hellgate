@@ -252,11 +252,11 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
     Cash = get_cost(St),
     hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
 
-handle_function_('Repair', [UserInfo, InvoiceID, Changes, Action], _Opts) ->
+handle_function_('Repair', [UserInfo, InvoiceID, Changes, Action, Params], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
-    repair(InvoiceID, {changes, Changes, Action, true});
+    repair(InvoiceID, {changes, Changes, Action, Params});
 
 handle_function_('RepairWithScenario', [UserInfo, InvoiceID, Scenario], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -462,7 +462,7 @@ handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
 
-handle_signal({repair, {changes, Changes, RepairAction, Validate}}, St0) ->
+handle_signal({repair, {changes, Changes, RepairAction, Params}}, St0) ->
     Result = case Changes of
         [_ | _] ->
             #{changes => Changes};
@@ -474,7 +474,7 @@ handle_signal({repair, {changes, Changes, RepairAction, Validate}}, St0) ->
         state  => St0,
         action => Action,
         % Validating that these changes are at least applicable
-        validate => Validate
+        validate => Params#payproc_InvoiceRepairParams.validate_transitions
     };
 
 handle_signal({repair, {scenario, _}}, #st{activity = Activity})
