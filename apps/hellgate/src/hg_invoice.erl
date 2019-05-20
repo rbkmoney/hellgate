@@ -474,7 +474,7 @@ handle_signal({repair, {changes, Changes, RepairAction, Params}}, St0) ->
         state  => St0,
         action => Action,
         % Validating that these changes are at least applicable
-        validate => Params#payproc_InvoiceRepairParams.validate_transitions
+        validate => should_validate_transitions(Params)
     };
 
 handle_signal({repair, {scenario, _}}, #st{activity = Activity})
@@ -507,6 +507,11 @@ merge_repair_action({remove, #repair_RemoveAction{}}, Action) ->
     hg_machine_action:mark_removal(Action);
 merge_repair_action({_, undefined}, Action) ->
     Action.
+
+should_validate_transitions(#payproc_InvoiceRepairParams{validate_transitions = V}) when is_boolean(V) ->
+    V;
+should_validate_transitions(undefined) ->
+    true.
 
 handle_expiration(St) ->
     #{
