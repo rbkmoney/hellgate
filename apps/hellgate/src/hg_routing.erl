@@ -76,7 +76,7 @@ choose_route(Routes, VS = #{risk_score := RiskScore}, RejectContext) ->
 score_routes(Routes, VS) ->
     [{score_route(R, VS), R} || R <- Routes].
 
-export_route({ProviderRef, {TerminalRef, _Terminal, _Priority}}) ->
+export_route({ProviderRef, {TerminalRef, _Terminal}}) ->
     % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
     %      `get_terminal_ref/1` instead?
     ?route(ProviderRef, TerminalRef).
@@ -103,10 +103,10 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
 score_route(Route, VS) ->
     score_risk_coverage(Route, VS).
 
-score_risk_coverage({_Provider, {_TerminalRef, Terminal, Priority}}, VS) ->
+score_risk_coverage({_Provider, {_TerminalRef, Terminal}}, VS) ->
     RiskScore = getv(risk_score, VS),
     RiskCoverage = Terminal#domain_Terminal.risk_coverage,
-    {Priority, math:exp(-hg_inspector:compare_risk_score(RiskCoverage, RiskScore))}.
+    math:exp(-hg_inspector:compare_risk_score(RiskCoverage, RiskScore)).
 
 %%
 
@@ -154,21 +154,19 @@ acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
 
 collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revision) ->
     TerminalSelector = Provider#domain_Provider.terminal,
-    ProviderTerminalRefs = reduce(terminal, TerminalSelector, VS, Revision),
+    TerminalRefs = reduce(terminal, TerminalSelector, VS, Revision),
     lists:foldl(
-        fun (ProviderTerminalRef, {Accepted, Rejected}) ->
-            TerminalRef = get_terminal_ref(ProviderTerminalRef),
-            Priority = get_terminal_priority(ProviderTerminalRef),
+        fun (TerminalRef, {Accepted, Rejected}) ->
             try
-                {TerminalRef, Terminal} = acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
-                {[{ProviderRef, {TerminalRef, Terminal, Priority}} | Accepted], Rejected}
+                Terminal = acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
+                {[{ProviderRef, Terminal} | Accepted], Rejected}
             catch
                 ?rejected(Reason) ->
                     {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]}
             end
         end,
         {[], []},
-        ordsets:to_list(ProviderTerminalRefs)
+        ordsets:to_list(TerminalRefs)
     ).
 
 acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms0}, VS, Revision) ->
@@ -209,14 +207,6 @@ acceptable_risk(RiskCoverage, VS) ->
     RiskScore = getv(risk_score, VS),
     hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0
         orelse throw(?rejected({'Terminal', risk_coverage})).
-
-get_terminal_ref(#domain_ProviderTerminalRef{id = ID}) ->
-    #domain_TerminalRef{id = ID}.
-
-get_terminal_priority(#domain_ProviderTerminalRef{priority = undefined}) ->
-    1.0;
-get_terminal_priority(#domain_ProviderTerminalRef{priority = Priority}) ->
-    Priority.
 
 %%
 
