@@ -2250,29 +2250,18 @@ merge_change(
     % FIXME why the hell dedicated handling
     St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
     St2 = save_retry_attempt(Target, St1),
-    NextStep = case Activity of
+    case Activity of
         {payment, processing_session} ->
             %% session retrying
-            processing_session;
+            St2#st{activity = {payment, processing_session}};
         {payment, flow_waiting} ->
-            finalizing_session;
+            St2#st{activity = {payment, finalizing_session}};
         {payment, finalizing_session} ->
             %% session retrying
-            finalizing_session;
-        idle ->
-            % Looks like we are in adhoc repaired machine, see HG-418 for details.
-            % Lets try to guess expected activity.
-            % TODO: Remove this clause as soon as machines will have been migrated.
-            case Target of
-                ?processed() ->
-                    processing_session;
-                ?cancelled() ->
-                    finalizing_session;
-                ?captured() ->
-                    finalizing_session
-            end
-    end,
-    St2#st{activity = {payment, NextStep}};
+            St2#st{activity = {payment, finalizing_session}};
+        _ ->
+            St2
+    end;
 
 merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity}, Opts) ->
     _ = validate_transition([{payment, S} || S <- [processing_session, finalizing_session]], Change, St, Opts),
