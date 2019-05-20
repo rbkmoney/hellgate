@@ -355,9 +355,10 @@ process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
     end.
 
 finish(Status, TrxID) ->
+    AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
     #prxprv_PaymentProxyResult{
         intent = ?finish(Status),
-        trx    = #domain_TransactionInfo{id = TrxID, extra = #{}}
+        trx    = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo}
     }.
 
 finish(Status) ->
@@ -375,9 +376,10 @@ sleep(Timeout, State, UserInteraction) ->
     }.
 
 sleep(Timeout, State, UserInteraction, TrxID) ->
+    AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
     #prxprv_PaymentProxyResult{
         intent     = ?sleep(Timeout, UserInteraction),
-        trx        = #domain_TransactionInfo{id = TrxID, extra = #{}},
+        trx        = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo},
         next_state = State
     }.
 

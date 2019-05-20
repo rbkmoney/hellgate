@@ -61,6 +61,7 @@ handle_function(Func, Args, Opts) ->
     ).
 
 handle_function_('Create', [CustomerParams], _Opts) ->
+    DomainRevison = hg_domain:head(),
     CustomerID = hg_utils:unique_id(),
     ok = set_meta(CustomerID),
     PartyID = CustomerParams#payproc_CustomerParams.party_id,
@@ -69,7 +70,7 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     Party = hg_party:get_party(PartyID),
     Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
     ok = assert_party_shop_operable(Shop, Party),
-    _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party),
+    _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party, DomainRevison),
     ok = start(CustomerID, CustomerParams),
     get_customer(get_state(CustomerID));
 

@@ -24,6 +24,7 @@
 -export([construct_external_account_set/1]).
 -export([construct_external_account_set/3]).
 -export([construct_business_schedule/1]).
+-export([construct_dummy_additional_info/0]).
 
 %%
 
@@ -271,3 +272,9 @@ construct_business_schedule(Ref) ->
             }
         }
     }}.
+
+-spec construct_dummy_additional_info() ->
+    dmsl_domain_thrift:'AdditionalTransactionInfo'().
+
+construct_dummy_additional_info() ->
+    #domain_AdditionalTransactionInfo{rrn = <<"rrn">>, approval_code = <<"code">>}.
