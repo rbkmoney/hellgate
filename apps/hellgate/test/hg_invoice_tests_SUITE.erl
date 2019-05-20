@@ -1762,7 +1762,8 @@ invalid_amount_payment_partial_refund(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceAmount = 42000,
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), InvoiceAmount, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     RefundParams1 = make_refund_params(50, <<"RUB">>),
@@ -1774,7 +1775,18 @@ invalid_amount_payment_partial_refund(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more than allowed maximum">>]
     }} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client).
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
+    RefundAmount = 10000,
+    %% make cart cost not equal to remaining invoice cost
+    Cash = ?cash(InvoiceAmount - RefundAmount - 1, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    RefundParams3 = make_refund_params(RefundAmount, <<"RUB">>, Cart),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Remaining payment amount not equal cart cost">>]
+    }} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams3, Client).
+
+
 
  -spec invalid_amount_partial_capture_and_refund(config()) -> _ | no_return().
 
@@ -2627,6 +2639,13 @@ make_refund_params(Amount, Currency) ->
     #payproc_InvoicePaymentRefundParams{
         reason = <<"ZANOZED">>,
         cash = make_cash(Amount, Currency)
+    }.
+
+make_refund_params(Amount, Currency, Cart) ->
+    #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>,
+        cash = make_cash(Amount, Currency),
+        cart = Cart
     }.
 
 make_adjustment_params() ->

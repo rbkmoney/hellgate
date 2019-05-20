@@ -1012,6 +1012,8 @@ prepare_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_previous_refunds_finished(St),
     Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
     _ = assert_refund_cash(Cash, St),
+    Cart = Params#payproc_InvoicePaymentRefundParams.cart,
+    _ = assert_refund_cart(Cash, Cart, St),
     ID = construct_refund_id(St),
     #domain_InvoicePaymentRefund {
         id              = ID,
@@ -1021,7 +1023,7 @@ prepare_refund(Params, Payment, Revision, St, Opts) ->
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason,
         cash            = Cash,
-        cart            = Params#payproc_InvoicePaymentRefundParams.cart
+        cart            = Cart
     }.
 
 prepare_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
@@ -1088,6 +1090,17 @@ assert_previous_refunds_finished(St) ->
             ok;
         [_R|_] ->
             throw(#payproc_OperationNotPermitted{})
+    end.
+
+assert_refund_cart(_RefundCash, undefined, _St) ->
+    ok;
+assert_refund_cart(RefundCash, Cart, St) ->
+    InterimPaymentAmount = get_remaining_payment_balance(St),
+    case hg_cash:sub(InterimPaymentAmount, RefundCash) =:= hg_invoice:get_cart_amount(Cart) of
+        true ->
+            ok;
+        _ ->
+            throw_invalid_request(<<"Remaining payment amount not equal cart cost">>)
     end.
 
 get_remaining_payment_balance(St) ->

@@ -26,6 +26,10 @@
 -export([get_payment/2]).
 -export([get_payment_opts/1]).
 
+%% Service
+
+-export([get_cart_amount/1]).
+
 %% Woody handler called by hg_woody_wrapper
 
 -behaviour(hg_woody_wrapper).
@@ -58,6 +62,8 @@
 -type st() :: #st{}.
 
 -type invoice_change()  :: dmsl_payment_processing_thrift:'InvoiceChange'().
+-type cash()  :: dmsl_domain_thrift:'Cash'().
+-type cart()  :: dmsl_domain_thrift:'InvoiceCart'().
 
 %% API
 
@@ -1030,6 +1036,9 @@ get_templated_price(Cost, {unlim, _}, Shop) ->
 get_cost(Cost, Shop) ->
     ok = hg_invoice_utils:validate_cost(Cost, Shop),
     Cost.
+
+-spec get_cart_amount(cart()) ->
+    cash().
 
 get_cart_amount(#domain_InvoiceCart{lines = [FirstLine | Cart]}) ->
     lists:foldl(
