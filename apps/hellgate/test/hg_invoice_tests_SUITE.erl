@@ -39,6 +39,7 @@
 -export([payment_start_idempotency/1]).
 -export([payment_success/1]).
 -export([payment_success_empty_cvv/1]).
+-export([payment_success_additional_info/1]).
 -export([payment_w_terminal_success/1]).
 -export([payment_w_wallet_success/1]).
 -export([payment_w_customer_success/1]).
@@ -191,6 +192,7 @@ groups() ->
             payment_start_idempotency,
             payment_success,
             payment_success_empty_cvv,
+            payment_success_additional_info,
             payment_w_terminal_success,
             payment_w_wallet_success,
             payment_w_customer_success,
@@ -852,6 +854,32 @@ payment_success_empty_cvv(C) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_success_additional_info(config()) -> test_return().
+
+payment_success_additional_info(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(Trx))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    #domain_TransactionInfo{additional_info = AdditionalInfo} = Trx,
+    AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client),
+
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
