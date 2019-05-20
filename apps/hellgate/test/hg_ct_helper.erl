@@ -111,8 +111,8 @@ start_app(dmt_client = AppName) ->
             memory => 52428800 % 50Mb
         }},
         {service_urls, #{
-            'Repository' => <<"dominant:8022/v1/domain/repository">>,
-            'RepositoryClient' => <<"dominant:8022/v1/domain/repository_client">>
+            'Repository' => <<"http://dominant:8022/v1/domain/repository">>,
+            'RepositoryClient' => <<"http://dominant:8022/v1/domain/repository_client">>
         }}
     ]), #{}};
 
@@ -170,7 +170,7 @@ start_app(cowboy = AppName, Env) ->
         transport_opts := TransOpt,
         proto_opts := ProtoOpt
     } = Env,
-    cowboy:start_http(Ref, Count, TransOpt, ProtoOpt),
+    cowboy:start_clear(Ref, [{num_acceptors, Count} | TransOpt], ProtoOpt),
     [AppName];
 
 start_app(AppName, Env) ->
