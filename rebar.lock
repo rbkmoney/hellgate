@@ -65,7 +65,7 @@
  {<<"rfc3339">>,{pkg,<<"rfc3339">>,<<"0.2.2">>},0},
  {<<"scoper">>,
   {git,"git@github.com:rbkmoney/scoper.git",
-       {ref,"206f76e006207f75828c1df3dde0deaa8554f332"}},
+       {ref,"810b7287579441c55ca041f884f3fd363666e3cd"}},
   0},
  {<<"seq_proto">>,
   {git,"git@github.com:rbkmoney/sequences-proto.git",
