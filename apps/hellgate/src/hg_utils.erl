@@ -31,7 +31,8 @@ uid(ID) when is_binary(ID) ->
 -spec logtag_process(atom(), any()) -> ok.
 
 logtag_process(Key, Value) when is_atom(Key) ->
-    logger:update_process_metadata(#{Key => Value}).
+    % TODO preformat into binary?
+    lager:md(orddict:store(Key, Value, lager:md())).
 
 %%
 

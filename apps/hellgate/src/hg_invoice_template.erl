@@ -116,7 +116,7 @@ assume_user_identity(UserInfo) ->
 
 get_party(PartyID) ->
     _     = hg_invoice_utils:assert_party_accessible(PartyID),
-    Party = hg_party_machine:get_party(PartyID),
+    Party = hg_party:get_party(PartyID),
     _     = hg_invoice_utils:assert_party_operable(Party),
     Party.
 
