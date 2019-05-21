@@ -76,7 +76,34 @@ handle_recurrent_token_callback(Payload, ProxyContext, St) ->
 -spec issue_call(woody:func(), list(), route()) ->
     term().
 issue_call(Func, Args, Route) ->
-    hg_woody_wrapper:call(proxy_provider, Func, Args, get_call_options(Route)).
+    ServiceType = adapter_availability,
+    ProviderRef = get_route_provider(Route),
+    ProviderID  = ProviderRef#domain_ProviderRef.id,
+    BinaryID    = erlang:integer_to_binary(ProviderID),
+    ServiceID   = hg_fault_detector_client:build_service_id(ServiceType, BinaryID),
+    OperationID = hg_fault_detector_client:build_operation_id(ServiceType),
+
+    _ = notify_fault_detector(start, ServiceID, OperationID),
+    try hg_woody_wrapper:call(proxy_provider, Func, Args, get_call_options(Route)) of
+        Result ->
+            _ = notify_fault_detector(finish, ServiceID, OperationID),
+            Result
+    catch
+        error:{woody_error, _ErrorType} = Reason ->
+            _ = notify_fault_detector(error, ServiceID, OperationID),
+            error(Reason)
+    end.
+
+notify_fault_detector(start, ServiceID, OperationID) ->
+    case hg_fault_detector_client:register_operation(start, ServiceID, OperationID) of
+        {error, not_found} ->
+            _ = hg_fault_detector_client:init_service(ServiceID),
+            _ = hg_fault_detector_client:register_operation(start, ServiceID, OperationID);
+        Result ->
+            Result
+    end;
+notify_fault_detector(Status, ServiceID, OperationID) ->
+    _ = hg_fault_detector_client:register_operation(Status, ServiceID, OperationID).
 
 get_call_options(Route) ->
     Revision = hg_domain:head(),
