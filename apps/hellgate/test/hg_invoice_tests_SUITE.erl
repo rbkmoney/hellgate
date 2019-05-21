@@ -1970,7 +1970,7 @@ payment_hold_new_capturing(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params({hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    ok = hg_client_invoicing:new_capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
 
 -spec payment_hold_partial_capturing(config()) -> _ | no_return().

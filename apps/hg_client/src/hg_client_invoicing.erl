@@ -19,7 +19,6 @@
 -export([cancel_payment/4]).
 -export([capture_payment/4]).
 -export([capture_payment/5]).
--export([new_capture_payment/4]).
 
 -export([refund_payment/4]).
 -export([refund_payment_manual/4]).
@@ -155,12 +154,6 @@ cancel_payment(InvoiceID, PaymentID, Reason, Client) ->
     ok | woody_error:business_error().
 
 capture_payment(InvoiceID, PaymentID, Reason, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'CapturePayment', [InvoiceID, PaymentID, Reason]})).
-
--spec new_capture_payment(invoice_id(), payment_id(), binary(), pid()) ->
-    ok | woody_error:business_error().
-
-new_capture_payment(InvoiceID, PaymentID, Reason, Client) ->
     Call = {
         call,
         'CapturePaymentNew',

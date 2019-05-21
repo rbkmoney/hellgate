@@ -550,7 +550,9 @@ handle_call({start_payment, PaymentParams}, St) ->
     _ = assert_invoice_operable(St),
     start_payment(PaymentParams, St);
 
-handle_call({capture_payment, PaymentID, Reason}, St) ->
+handle_call({capture_payment, PaymentID, #payproc_InvoicePaymentCaptureParams{
+    reason = Reason
+}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
@@ -562,8 +564,7 @@ handle_call({capture_payment, PaymentID, Reason}, St) ->
         state => St
     };
 
-handle_call({capture_payment_new, PaymentID, #payproc_InvoicePaymentCaptureParams{
-    reason = Reason,
+handle_call({capture_payment_new, PaymentID, Reason = #payproc_InvoicePaymentCaptureParams{
     cash = undefined
 }}, St) ->
     handle_call({capture_payment, PaymentID, Reason}, St);
