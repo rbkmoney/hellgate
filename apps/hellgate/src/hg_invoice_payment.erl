@@ -59,7 +59,8 @@
 -export([process_signal/3]).
 -export([process_call/3]).
 
--export([merge_change/2]).
+-export([merge_change/3]).
+-export([collapse_changes/2]).
 
 -export([get_log_params/2]).
 
@@ -277,7 +278,7 @@ init_(PaymentID, Params, Opts) ->
         VS1, Revision, MakeRecurrent, Context, ExternalID
     ),
     Events = [?payment_started(Payment)],
-    {collapse_changes(Events), {Events, hg_machine_action:instant()}}.
+    {collapse_changes(Events, undefined), {Events, hg_machine_action:instant()}}.
 
 get_merchant_payments_terms(Opts, Revision) ->
     get_merchant_payments_terms(Opts, Revision, get_invoice_created_at(get_invoice(Opts))).
@@ -2153,97 +2154,111 @@ throw_invalid_recurrent_parent(Details) ->
     throw(#payproc_InvalidRecurrentParentPayment{details = Details}).
 %%
 
--spec merge_change(change(), st() | undefined) -> st().
+-spec merge_change(change(), st() | undefined, Opts) -> st() when
+    Opts :: #{validation => strict}.
 
-merge_change(Event, undefined) ->
-    merge_change(Event, #st{activity = {payment, new}});
-
-merge_change(?payment_started(Payment), #st{activity = {payment, new}} = St) ->
+merge_change(Change, undefined, Opts) ->
+    merge_change(Change, #st{activity = {payment, new}}, Opts);
+merge_change(Change = ?payment_started(Payment), #st{} = St, Opts) ->
+    _ = validate_transition({payment, new}, Change, St, Opts),
     St#st{
         target     = ?processed(),
         payment    = Payment,
         activity   = {payment, risk_scoring}
     };
-merge_change(?risk_score_changed(RiskScore), #st{activity = {payment, risk_scoring}} = St) ->
+merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
+    _ = validate_transition({payment, risk_scoring}, Change, St, Opts),
     St#st{
         risk_score = RiskScore,
         activity   = {payment, routing}
     };
-merge_change(?route_changed(Route), #st{activity = {payment, routing}} = St) ->
+merge_change(Change = ?route_changed(Route), #st{} = St, Opts) ->
+    _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{
         route      = Route,
         activity   = {payment, cash_flow_building}
     };
-merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, cash_flow_building}} = St) ->
-    St#st{
-        cash_flow  = Cashflow,
-        activity   = {payment, processing_session}
-    };
-merge_change(?cash_flow_changed(Cashflow), #st{activity = {payment, flow_waiting}} = St) ->
-    St#st{
-        partial_cash_flow = Cashflow
-    };
-merge_change(?rec_token_acquired(Token), St) ->
+merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St, Opts) ->
+    _ = validate_transition([{payment, S} || S <- [cash_flow_building, flow_waiting]], Change, St, Opts),
+    case Activity of
+        {payment, cash_flow_building} ->
+            St#st{
+                cash_flow  = Cashflow,
+                activity   = {payment, processing_session}
+            };
+        _ ->
+            St#st{
+                partial_cash_flow = Cashflow
+            }
+    end;
+merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
+    _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
-merge_change(
-    ?payment_status_changed({failed, _} = Status),
-    #st{payment = Payment, activity = {payment, _Step}} = St
-) ->
+merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment = Payment} = St, Opts) ->
+    _ = validate_transition([{payment, S} || S <- [
+        risk_scoring,
+        routing,
+        processing_session
+    ]], Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
         activity   = idle
     };
-merge_change(
-    ?payment_status_changed({cancelled, _} = Status),
-    #st{payment = Payment, activity = {payment, finalizing_accounter}} = St
-) ->
+merge_change(Change = ?payment_status_changed({cancelled, _} = Status), #st{payment = Payment} = St, Opts) ->
+    _ = validate_transition({payment, finalizing_accounter}, Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
         activity   = idle
     };
-merge_change(
-    ?payment_status_changed({captured, PaymentCaptured} = Status),
-    #st{payment = Payment, activity = {payment, finalizing_accounter}} = St
-) ->
+merge_change(Change = ?payment_status_changed({captured, Captured} = Status), #st{payment = Payment} = St, Opts) ->
+    _ = validate_transition({payment, finalizing_accounter}, Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{
             status = Status,
-            cost   = get_captured_cost(PaymentCaptured, Payment)
+            cost   = get_captured_cost(Captured, Payment)
         },
         activity   = idle
     };
-merge_change(
-    ?payment_status_changed({processed, _} = Status),
-    #st{payment = Payment, activity = {payment, processing_accounter}} = St
-) ->
+merge_change(Change = ?payment_status_changed({processed, _} = Status), #st{payment = Payment} = St, Opts) ->
+    _ = validate_transition({payment, processing_accounter}, Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
         activity   = {payment, flow_waiting}
     };
-merge_change(
-    ?payment_status_changed({refunded, _} = Status),
-    #st{payment = Payment, activity = idle} = St
-) ->
+merge_change(Change = ?payment_status_changed({refunded, _} = Status), #st{payment = Payment} = St, Opts) ->
+    _ = validate_transition(idle, Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status}
     };
 
-merge_change(Event = ?refund_ev(ID, ?session_ev(_Target, ?session_started())),
-                #st{activity = idle} = St) ->
-    merge_change(Event, St#st{activity = {refund_session, ID}});
-merge_change(Event = ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))),
-                #st{activity = {refund_session, ID}} = St) ->
-    merge_change(Event, St#st{activity = {refund_accounter, ID}});
-merge_change(?refund_ev(ID, Event), St) ->
-    RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St)),
-    St2 = set_refund_state(ID, RefundSt, St),
+merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
+    St1 = case Event of
+        ?refund_created(_, _) ->
+            _ = validate_transition(idle, Change, St, Opts),
+            St;
+        ?session_ev(?refunded(), ?session_started()) ->
+            _ = validate_transition([idle, {refund_session, ID}], Change, St, Opts),
+            St#st{activity = {refund_session, ID}};
+        ?session_ev(?refunded(), ?session_finished(?session_succeeded())) ->
+            _ = validate_transition({refund_session, ID}, Change, St, Opts),
+            St#st{activity = {refund_accounter, ID}};
+        ?refund_status_changed(?refund_succeeded()) ->
+            _ = validate_transition([{refund_accounter, ID}], Change, St, Opts),
+            St;
+        _ ->
+            _ = validate_transition([{refund_session, ID}], Change, St, Opts),
+            St
+    end,
+    RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St1)),
+    St2 = set_refund_state(ID, RefundSt, St1),
     case get_refund_status(get_refund(RefundSt)) of
         {S, _} when S == succeeded; S == failed ->
             St2#st{activity = idle};
         _ ->
             St2
     end;
-merge_change(?adjustment_ev(ID, Event), St) ->
+merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
+    _ = validate_transition(idle, Change, St, Opts),
     Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St)),
     St1 = set_adjustment(ID, Adjustment, St),
     % TODO new cashflow imposed implicitly on the payment state? rough
@@ -2253,60 +2268,51 @@ merge_change(?adjustment_ev(ID, Event), St) ->
         _ ->
             St1
     end;
-merge_change(?session_ev(Target, ?session_started()), #st{activity = {payment, Step}} = St) when
-    Step =:= processing_session orelse
-    Step =:= flow_waiting orelse
-    Step =:= finalizing_session
-->
+
+merge_change(
+    Change = ?session_ev(Target, ?session_started()),
+    #st{activity = Activity} = St,
+    Opts
+) ->
+    _ = validate_transition([{payment, S} || S <- [
+        processing_session,
+        flow_waiting,
+        finalizing_session
+    ]], Change, St, Opts),
     % FIXME why the hell dedicated handling
     St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
     St2 = save_retry_attempt(Target, St1),
-    NextStep = case Step of
-        processing_session ->
+    case Activity of
+        {payment, processing_session} ->
             %% session retrying
-            processing_session;
-        flow_waiting ->
-            finalizing_session;
-        finalizing_session ->
+            St2#st{activity = {payment, processing_session}};
+        {payment, flow_waiting} ->
+            St2#st{activity = {payment, finalizing_session}};
+        {payment, finalizing_session} ->
             %% session retrying
-            finalizing_session
-    end,
-    St2#st{activity = {payment, NextStep}};
-merge_change(
-    ?session_ev(Target, ?session_started()) = Event,
-    #st{activity = idle, payment = #domain_InvoicePayment{status = {failed, _}}} = St
-) ->
-    % Looks like we are in adhoc repaired machine, see HG-418 for details.
-    % Lets try to guess expected activity.
-    % TODO: Remove this clause as soon as machines will have been migrated.
-    Activity = case Target of
-        ?processed() ->
-            {payment, processing_session};
-        ?cancelled() ->
-            {payment, finalizing_session};
-        ?captured() ->
-            {payment, finalizing_session}
-    end,
-    merge_change(Event, St#st{activity = Activity});
+            St2#st{activity = {payment, finalizing_session}};
+        _ ->
+            St2
+    end;
 
-merge_change(Event = ?session_ev(_Target, ?session_finished(?session_succeeded())),
-                #st{activity = {payment, Step}} = St) when
-    Step =:= processing_session orelse
-    Step =:= finalizing_session
-->
-    NextStep = case Step of
-        processing_session ->
-            processing_accounter;
-        finalizing_session ->
-            finalizing_accounter
-    end,
-    merge_change(Event, St#st{activity = {payment, NextStep}});
-
-merge_change(?session_ev(Target, Event), St) ->
+merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity}, Opts) ->
+    _ = validate_transition([{payment, S} || S <- [processing_session, finalizing_session]], Change, St, Opts),
     Session = merge_session_change(Event, get_session(Target, St)),
     St1 = set_session(Target, Session, St),
     % FIXME leaky transactions
-    set_trx(get_session_trx(Session), St1).
+    St2 = set_trx(get_session_trx(Session), St1),
+    case Session of
+        #{status := finished, result := ?session_succeeded()} ->
+            NextStep = case Activity of
+                {payment, processing_session} ->
+                    processing_accounter;
+                {payment, finalizing_session} ->
+                    finalizing_accounter
+            end,
+            St2#st{activity = {payment, NextStep}};
+        _ ->
+            St2
+    end.
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
     St#st{retry_attempts = maps:update_with(get_target_type(Target), fun(N) -> N + 1 end, 0, Attempts)}.
@@ -2327,6 +2333,25 @@ merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
     Adjustment;
 merge_adjustment_change(?adjustment_status_changed(Status), Adjustment) ->
     Adjustment#domain_InvoicePaymentAdjustment{status = Status}.
+
+validate_transition(Allowed, Change, St, Opts) ->
+    Valid = is_transition_valid(Allowed, St),
+    case Opts of
+        #{} when Valid ->
+            ok;
+        #{validation := strict} when not Valid ->
+            erlang:error({invalid_transition, Change, St, Allowed});
+        #{} when not Valid ->
+            lager:warning(
+                "Invalid transition for change ~p in state ~p, allowed ~p",
+                [Change, St, Allowed]
+            )
+    end.
+
+is_transition_valid(Allowed, St) when is_list(Allowed) ->
+    lists:any(fun (A) -> is_transition_valid(A, St) end, Allowed);
+is_transition_valid(Allowed, #st{activity = Activity}) ->
+    Activity =:= Allowed.
 
 get_cashflow(#st{cash_flow = FinalCashflow}) ->
     FinalCashflow.
@@ -2507,11 +2532,13 @@ get_activity_session({refund_session, ID}, St) ->
 
 %%
 
-collapse_changes(Changes) ->
-    collapse_changes(Changes, undefined).
+-spec collapse_changes([change()], st() | undefined) -> st() | undefined.
 
 collapse_changes(Changes, St) ->
-    lists:foldl(fun merge_change/2, St, Changes).
+    collapse_changes(Changes, St, #{}).
+
+collapse_changes(Changes, St, Opts) ->
+    lists:foldl(fun (C, St1) -> merge_change(C, St1, Opts) end, St, Changes).
 
 %%
 
