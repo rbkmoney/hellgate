@@ -860,6 +860,7 @@ capture(St, Reason, Cost, Opts) ->
 capture(St, Reason, Cost, Cart, Opts) ->
     Payment = get_payment(St),
     _ = assert_capture_cost_currency(Cost, Payment),
+    _ = assert_capture_cart(Cost, Cart),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
             capture(St, Reason);
@@ -923,6 +924,16 @@ assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cos
         payment_currency = SymCode,
         passed_currency = PassedSymCode
     }).
+
+assert_capture_cart(_Cost, undefined) ->
+    ok;
+assert_capture_cart(Cost, Cart) ->
+    case Cost =:= hg_invoice:get_cart_amount(Cart) of
+        true ->
+            ok;
+        _ ->
+            throw_invalid_request(<<"Capture amount not equal cart cost">>)
+    end.
 
 check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
     when PassedAmount =:= Amount

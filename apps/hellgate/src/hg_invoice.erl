@@ -62,8 +62,8 @@
 -type st() :: #st{}.
 
 -type invoice_change()  :: dmsl_payment_processing_thrift:'InvoiceChange'().
--type cash()  :: dmsl_domain_thrift:'Cash'().
--type cart()  :: dmsl_domain_thrift:'InvoiceCart'().
+-type cash() :: dmsl_domain_thrift:'Cash'().
+-type cart() :: dmsl_domain_thrift:'InvoiceCart'().
 
 %% API
 
@@ -541,37 +541,6 @@ handle_call({capture_payment, PaymentID, Params}, St) ->
 
 handle_call({capture_payment_new, PaymentID, #payproc_InvoicePaymentCaptureParams{
     reason = Reason,
-    cash = undefined,
-    cart = undefined
-}}, St) ->
-    _ = assert_invoice_accessible(St),
-    _ = assert_invoice_operable(St),
-    PaymentSession = get_payment_session(PaymentID, St),
-    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason),
-    #{
-        response => ok,
-        changes => wrap_payment_changes(PaymentID, Changes),
-        action => Action,
-        state => St
-    };
-handle_call({capture_payment_new, PaymentID, #payproc_InvoicePaymentCaptureParams{
-    reason = Reason,
-    cash = Cash,
-    cart = undefined
-}}, St) ->
-    _ = assert_invoice_accessible(St),
-    _ = assert_invoice_operable(St),
-    PaymentSession = get_payment_session(PaymentID, St),
-    Opts = get_payment_opts(St),
-    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason, Cash, Opts),
-    #{
-        response => ok,
-        changes => wrap_payment_changes(PaymentID, Changes),
-        action => Action,
-        state => St
-    };
-handle_call({capture_payment_new, PaymentID, #payproc_InvoicePaymentCaptureParams{
-    reason = Reason,
     cash = Cash,
     cart = Cart
 }}, St) ->
@@ -579,7 +548,7 @@ handle_call({capture_payment_new, PaymentID, #payproc_InvoicePaymentCaptureParam
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Opts = get_payment_opts(St),
-    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason, Cash, Cart, Opts),
+    {ok, {Changes, Action}} = capture_payment(PaymentSession, Reason, Cash, Cart, Opts),
     #{
         response => ok,
         changes => wrap_payment_changes(PaymentID, Changes),
@@ -705,6 +674,15 @@ assert_no_pending_payment(_) ->
 
 set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
     hg_machine_action:set_deadline(Due).
+
+capture_payment(PaymentSession, Reason, undefined, undefined, _Opts) ->
+    hg_invoice_payment:capture(PaymentSession, Reason);
+capture_payment(_PaymentSession, _Reason, undefined, _Cart, _Opts) ->
+    throw(#'InvalidRequest'{errors = [<<"Get capture cart without amount.">>]});
+capture_payment(PaymentSession, Reason, Cash, undefined, Opts) ->
+    hg_invoice_payment:capture(PaymentSession, Reason, Cash, Opts);
+capture_payment(PaymentSession, Reason, Cash, Cart, Opts) ->
+    hg_invoice_payment:capture(PaymentSession, Reason, Cash, Cart, Opts).
 
 %%
 
