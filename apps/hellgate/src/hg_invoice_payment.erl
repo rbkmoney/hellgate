@@ -1025,7 +1025,7 @@ prepare_refund(Params, Payment, Revision, St, Opts) ->
     Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
-    _ = assert_refund_cart(Cash, Cart, St),
+    _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
     ID = construct_refund_id(St),
     #domain_InvoicePaymentRefund {
         id              = ID,
@@ -1106,6 +1106,8 @@ assert_previous_refunds_finished(St) ->
 
 assert_refund_cart(_RefundCash, undefined, _St) ->
     ok;
+assert_refund_cart(undefined, _Cart, _St) ->
+    throw_invalid_request(<<"Invalid cash in partial refund params">>);
 assert_refund_cart(RefundCash, Cart, St) ->
     InterimPaymentAmount = get_remaining_payment_balance(St),
     case hg_cash:sub(InterimPaymentAmount, RefundCash) =:= hg_invoice:get_cart_amount(Cart) of

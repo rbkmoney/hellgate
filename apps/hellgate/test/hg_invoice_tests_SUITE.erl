@@ -64,6 +64,7 @@
 -export([payment_hold_capturing/1]).
 -export([payment_hold_partial_capturing/1]).
 -export([payment_hold_partial_capturing_with_cart/1]).
+-export([miss_cash_partial_capturing_with_cart/1]).
 -export([invalid_currency_partial_capture/1]).
 -export([invalid_amount_partial_capture/1]).
 -export([invalid_permit_partial_capture_in_service/1]).
@@ -240,6 +241,7 @@ groups() ->
             invalid_amount_partial_capture,
             payment_hold_partial_capturing,
             payment_hold_partial_capturing_with_cart,
+            miss_cash_partial_capturing_with_cart,
             payment_hold_auto_capturing,
             {group, holds_management_with_custom_config}
         ]},
@@ -1833,9 +1835,16 @@ invalid_amount_payment_partial_refund(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Remaining payment amount not equal cart cost">>]
     }} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams3, Client).
-
-
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams3, Client),
+    %% miss cash in refund params
+    RefundParams4 = #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>,
+        cart = Cart
+    },
+    {exception, #'InvalidRequest'{
+        errors = [<<"Invalid cash in partial refund params">>]
+    }} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams4, Client).
 
  -spec invalid_amount_partial_capture_and_refund(config()) -> _ | no_return().
 
@@ -2005,6 +2014,20 @@ payment_hold_partial_capturing_with_cart(C) ->
         ?payment_ev(PaymentID, ?session_ev(?partial_captured(Reason, Cash, Cart), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
+
+-spec miss_cash_partial_capturing_with_cart(config()) -> _ | no_return().
+
+miss_cash_partial_capturing_with_cart(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    Cash = ?cash(10000, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    Reason = <<"ok">>,
+    {exception, #'InvalidRequest'{
+        errors = [<<"Get capture cart without amount.">>]
+    }} = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, undefined, Cart, Client).
 
 -spec invalid_currency_partial_capture(config()) -> _ | no_return().
 

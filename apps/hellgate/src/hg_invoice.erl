@@ -64,7 +64,7 @@
 }).
 -type st() :: #st{}.
 
--type invoice_change()  :: dmsl_payment_processing_thrift:'InvoiceChange'().
+-type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cart() :: dmsl_domain_thrift:'InvoiceCart'().
 
