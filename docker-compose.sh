@@ -15,6 +15,7 @@ services:
         condition: service_healthy
       shumway:
         condition: service_healthy
+    mem_limit: 256M
 
   dominant:
     image: dr.rbkmoney.com/rbkmoney/dominant:410e9d8cd821b3b738eec2881e7737e021d9141b
