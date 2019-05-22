@@ -41,6 +41,7 @@
 -export([payment_success_empty_cvv/1]).
 -export([payment_success_additional_info/1]).
 -export([payment_w_terminal_success/1]).
+-export([payment_w_crypto_currency_success/1]).
 -export([payment_w_wallet_success/1]).
 -export([payment_w_customer_success/1]).
 -export([payment_w_another_shop_customer/1]).
@@ -196,6 +197,7 @@ groups() ->
             payment_success_empty_cvv,
             payment_success_additional_info,
             payment_w_terminal_success,
+            payment_w_crypto_currency_success,
             payment_w_wallet_success,
             payment_w_customer_success,
             payment_w_another_shop_customer,
@@ -969,6 +971,19 @@ payment_w_terminal_success(C) ->
     _ = assert_invalid_post_request({URL, BadForm}),
     _ = assert_success_post_request({URL, GoodForm}),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_w_crypto_currency_success(config()) -> _ | no_return().
+
+payment_w_crypto_currency_success(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_crypto_currency_payment_params(),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
@@ -2671,6 +2686,10 @@ make_terminal_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(terminal),
     make_payment_params(PaymentTool, Session, instant).
 
+make_crypto_currency_payment_params() ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency),
+    make_payment_params(PaymentTool, Session, instant).
+
 make_wallet_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet),
     make_payment_params(PaymentTool, Session, instant).
@@ -3322,6 +3341,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(crypto_currency, bitcoin)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),

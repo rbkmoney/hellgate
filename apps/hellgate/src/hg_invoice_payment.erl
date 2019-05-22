@@ -565,6 +565,7 @@ validate_recurrent_payer(#{payer := _Other}, true) ->
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
+    erlang:display({?MODULE,?LINE,hg_payment_tool:get_method(PaymentTool), PMs}),
     _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
         throw_invalid_request(<<"Invalid payment method">>),
     VS#{payment_tool => PaymentTool}.

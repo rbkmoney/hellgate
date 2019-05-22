@@ -33,7 +33,7 @@ get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalTy
     #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
 get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
     #domain_PaymentMethodRef{id = {digital_wallet, Provider}};
-get_method({crypto_currency, #domain_CryptoWallet{crypto_currency = CC}}) ->
+get_method({crypto_currency, CC}) ->
     #domain_PaymentMethodRef{id = {crypto_currency, CC}}.
 
 -spec create_from_method(method()) -> t().
@@ -73,10 +73,7 @@ create_from_method(#domain_PaymentMethodRef{id = {digital_wallet, Provider}}) ->
         id = <<"">>
     }};
 create_from_method(#domain_PaymentMethodRef{id = {crypto_currency, CC}}) ->
-    {crypto_currency, #domain_CryptoWallet{
-        crypto_currency = CC,
-        id = <<"">>
-    }}.
+    {crypto_currency, CC}.
 
 %%
 
@@ -88,7 +85,7 @@ test_condition({payment_terminal, C}, {payment_terminal, V = #domain_PaymentTerm
     test_payment_terminal_condition(C, V, Rev);
 test_condition({digital_wallet, C}, {digital_wallet, V = #domain_DigitalWallet{}}, Rev) ->
     test_digital_wallet_condition(C, V, Rev);
-test_condition({crypto_currency, C}, {crypto_currency, V = #domain_CryptoWallet{}}, Rev) ->
+test_condition({crypto_currency, C}, {crypto_currency, V}, Rev) ->
     test_crypto_currency_condition(C, V, Rev);
 test_condition(_PaymentTool, _Condition, _Rev) ->
     false.
@@ -176,7 +173,7 @@ test_digital_wallet_condition_def({provider_is, V1}, #domain_DigitalWallet{provi
 test_crypto_currency_condition(#domain_CryptoCurrencyCondition{definition = Def}, V, Rev) ->
     Def =:= undefined orelse test_crypto_currency_condition_def(Def, V, Rev).
 
-test_crypto_currency_condition_def({crypto_currency, C1}, #domain_CryptoWallet{crypto_currency =  C2}, _Rev) ->
+test_crypto_currency_condition_def({crypto_currency, C1}, {crypto_currency =  C2}, _Rev) ->
     C1 =:= C2.
 
 %% Marshalling
@@ -211,7 +208,7 @@ marshal(digital_wallet = T, #domain_DigitalWallet{} = DigitalWallet) ->
         <<"provider">> => marshal({T, provider}, DigitalWallet#domain_DigitalWallet.provider),
         <<"id">>       => marshal(str, DigitalWallet#domain_DigitalWallet.id)
     };
-marshal(crypto_currency = T, #domain_CryptoWallet{crypto_currency = CC}) ->
+marshal(crypto_currency = T, CC) ->
     marshal({T, currency}, CC);
 
 marshal(payment_method, bank_card) ->
@@ -337,10 +334,8 @@ unmarshal(digital_wallet = T, #{
         provider         = unmarshal({T, provider}, Provider),
         id               = unmarshal(str, ID)
     };
-unmarshal(crypto_currency = T, Currency) ->
-    #domain_CryptoWallet{
-        crypto_currency = unmarshal({T, currency}, Currency)
-    };
+unmarshal(crypto_currency = T, CC) ->
+    {crypto_currency, unmarshal({T, currency}, CC)};
 
 unmarshal(payment_tool, [2, #{<<"token">>:= _} = BankCard]) ->
     {bank_card, unmarshal(bank_card, BankCard)};
