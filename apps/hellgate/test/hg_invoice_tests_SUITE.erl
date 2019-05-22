@@ -2305,7 +2305,10 @@ adhoc_repair_force_invalid_transition(C) ->
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     _ = ?assertEqual(ok, hg_invoice:fail(InvoiceID)),
-    Failure = payproc_errors:construct('PaymentFailure', {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}),
+    Failure = payproc_errors:construct(
+        'PaymentFailure',
+        {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}
+    ),
     InvalidChanges = [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure}))),
         ?invoice_status_changed(?invoice_unpaid())
