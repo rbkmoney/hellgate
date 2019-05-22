@@ -22,8 +22,14 @@
 -export([prefer_better_risk_score/1]).
 -export([prefer_lower_fail_rate/1]).
 
+-export([terminal_priority_for_shop/1]).
+
 -behaviour(supervisor).
 -export([init/1]).
+
+-define(dummy_party_id,        <<"dummy_party_id">>).
+-define(dummy_shop_id,         <<"dummy_shop_id">>).
+-define(dummy_another_shop_id, <<"dummy_another_shop_id">>).
 
 -spec init([]) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
@@ -40,7 +46,8 @@ init([]) ->
 all() -> [
     fatal_risk_score_for_route_found,
     no_route_found_for_payment,
-    {group, routing_with_fail_rate}
+    {group, routing_with_fail_rate},
+    {group, terminal_priority}
 ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -50,6 +57,9 @@ groups() -> [
         prefer_alive,
         prefer_better_risk_score,
         prefer_lower_fail_rate
+    ]},
+    {terminal_priority, [], [
+        terminal_priority_for_shop
     ]}
 ].
 
@@ -76,21 +86,22 @@ end_per_suite(C) ->
 init_per_group(routing_with_fail_rate, C) ->
     Revision = hg_domain:head(),
     ok = hg_domain:upsert(routing_with_fail_rate_fixture(Revision)),
-    C;
+    [{original_domain_revision, Revision} | C];
+init_per_group(terminal_priority, C) ->
+    Revision = hg_domain:head(),
+    ok = hg_domain:upsert(terminal_priority_fixture(Revision, C)),
+    [{original_domain_revision, Revision} | C];
 init_per_group(_, C) ->
     C.
 
 -spec end_per_group(group_name(), config()) -> _.
-end_per_group(routing_with_fail_rate, C) ->
-    _ = case cfg(original_domain_revision, C) of
+end_per_group(_GroupName, C) ->
+    case cfg(original_domain_revision, C) of
         Revision when is_integer(Revision) ->
             ok = hg_domain:reset(Revision);
         undefined ->
             ok
-    end,
-    ok;
-end_per_group(_Group, _C) ->
-    ok.
+    end.
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 init_per_testcase(_, C) -> C.
@@ -360,6 +371,48 @@ prefer_lower_fail_rate(_C) ->
     {ok, #domain_PaymentRoute{provider = ?prv(200)}} = Result5,
 
     ok.
+
+%%% Terminal priority tests
+
+-spec terminal_priority_for_shop(config()) -> test_return().
+terminal_priority_for_shop(C) ->
+    ok = hg_context:save(hg_context:create()),
+    {ok, #domain_PaymentRoute{
+        provider = ?prv(300),
+        terminal = ?trm(111)
+    }} = terminal_priority_for_shop(?dummy_party_id, ?dummy_shop_id, C),
+    {ok, #domain_PaymentRoute{
+        provider = ?prv(300),
+        terminal = ?trm(222)
+    }} = terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C),
+    ok = hg_context:cleanup().
+
+terminal_priority_for_shop(PartyID, ShopID, _C) ->
+    VS = #{
+        category     => ?cat(1),
+        currency     => ?cur(<<"RUB">>),
+        cost         => ?cash(1000, <<"RUB">>),
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        party_id     => PartyID,
+        shop_id      => ShopID,
+        risk_score   => low,
+        flow         => instant
+    },
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+    {Providers, RejectContext0} = hg_routing:gather_providers(payment, PaymentInstitution, VS, Revision),
+    FailRatedProviders = hg_routing:gather_provider_fail_rates(Providers),
+    {FailRatedRoutes1, RejectContext1} = hg_routing:gather_routes(
+        payment,
+        FailRatedProviders,
+        RejectContext0,
+        VS,
+        Revision
+    ),
+    io:format(standard_error, "FailRatedRoutes1: ~p~n", [FailRatedRoutes1]),
+    hg_routing:choose_route(FailRatedRoutes1, RejectContext1, VS).
+
+%%% Domain config fixtures
 
 routing_with_fail_rate_fixture(Revision) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -1230,4 +1283,109 @@ construct_domain_fixture() ->
             }
         }}
 
+    ].
+
+terminal_priority_fixture(Revision, _C) ->
+    PartyID            = ?dummy_party_id,
+    ShopID             = ?dummy_shop_id,
+    AnotherShopID      = ?dummy_another_shop_id,
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+    [
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = PaymentInstitution#domain_PaymentInstitution{
+                providers = {value, ?ordset([
+                    ?prv(300)
+                ])}
+            }}
+        },
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(111),
+            data = #domain_Terminal{
+                name = <<"Payment Terminal Terminal">>,
+                description = <<"Euroset">>,
+                risk_coverage = low
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(222),
+            data = #domain_Terminal{
+                name = <<"Payment Terminal Terminal">>,
+                description = <<"Euroset">>,
+                risk_coverage = low
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(300),
+            data = #domain_Provider{
+                name = <<"Biba">>,
+                description = <<"Payment terminal provider">>,
+                terminal = {decisions, [
+                    #domain_TerminalDecision{
+                        if_ = {condition,
+                            {party, #domain_PartyCondition{
+                                id = PartyID,
+                                definition = {shop_is, ShopID}}
+                            }
+                        },
+                        then_ = {value, [
+                            #domain_ProviderTerminalRef{id = 111, priority = 1.0},
+                            #domain_ProviderTerminalRef{id = 222, priority = 0.5}
+                        ]}
+                    },
+                    #domain_TerminalDecision{
+                        if_ = {condition,
+                            {party, #domain_PartyCondition{
+                                id = PartyID,
+                                definition = {shop_is, AnotherShopID}}
+                            }
+                        },
+                        then_ = {value, [
+                            #domain_ProviderTerminalRef{id = 111, priority = 0.5},
+                            #domain_ProviderTerminalRef{id = 222, priority = 1.0}
+                        ]}
+                    },
+                    #domain_TerminalDecision{
+                        if_ = {constant, true},
+                        then_ = {value, []}
+                    }
+                ]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"biba">>
+                    }
+                },
+                abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                payment_terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(1)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(payment_terminal, euroset),
+                        ?pmt(digital_wallet, qiwi)
+                    ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(    1000, <<"RUB">>)},
+                        {exclusive, ?cash(10000000, <<"RUB">>)}
+                    )},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(21, 1000, operation_amount)
+                        )
+                    ]}
+                }
+            }
+        }}
     ].
