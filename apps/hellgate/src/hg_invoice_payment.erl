@@ -2310,7 +2310,7 @@ validate_transition(Allowed, Change, St, Opts) ->
         #{validation := strict} when not Valid ->
             erlang:error({invalid_transition, Change, St, Allowed});
         #{} when not Valid ->
-            lager:warning(
+            logger:warning(
                 "Invalid transition for change ~p in state ~p, allowed ~p",
                 [Change, St, Allowed]
             )

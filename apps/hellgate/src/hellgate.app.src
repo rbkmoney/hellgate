@@ -8,8 +8,7 @@
     {applications, [
         kernel,
         stdlib,
-        lager,
-        lager_logstash_formatter,
+        logger_logstash_formatter,
         genlib,
         rfc3339,
         cowboy,
