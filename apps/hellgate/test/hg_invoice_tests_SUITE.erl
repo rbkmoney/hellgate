@@ -62,7 +62,6 @@
 -export([payment_hold_cancellation/1]).
 -export([payment_hold_auto_cancellation/1]).
 -export([payment_hold_capturing/1]).
--export([payment_hold_new_capturing/1]).
 -export([payment_hold_partial_capturing/1]).
 -export([invalid_currency_partial_capture/1]).
 -export([invalid_amount_partial_capture/1]).
@@ -237,7 +236,6 @@ groups() ->
             payment_hold_cancellation,
             payment_hold_auto_cancellation,
             payment_hold_capturing,
-            payment_hold_new_capturing,
             invalid_currency_partial_capture,
             invalid_amount_partial_capture,
             payment_hold_partial_capturing,
@@ -1956,16 +1954,6 @@ payment_hold_auto_cancellation(C) ->
 -spec payment_hold_capturing(config()) -> _ | no_return().
 
 payment_hold_capturing(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params({hold, cancel}),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
-
--spec payment_hold_new_capturing(config()) -> _ | no_return().
-
-payment_hold_new_capturing(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params({hold, cancel}),
