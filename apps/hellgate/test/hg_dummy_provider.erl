@@ -452,7 +452,7 @@ get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_
     terminal;
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
     digital_wallet;
-get_payment_tool_scenario({'crypto_currency', #domain_CryptoWallet{crypto_currency = bitcoin}}) ->
+get_payment_tool_scenario({'crypto_currency', bitcoin}) ->
     crypto_currency.
 
 -spec make_payment_tool(PaymenToolCode) -> PaymenTool when

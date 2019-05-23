@@ -173,7 +173,7 @@ test_digital_wallet_condition_def({provider_is, V1}, #domain_DigitalWallet{provi
 test_crypto_currency_condition(#domain_CryptoCurrencyCondition{definition = Def}, V, Rev) ->
     Def =:= undefined orelse test_crypto_currency_condition_def(Def, V, Rev).
 
-test_crypto_currency_condition_def({crypto_currency, C1}, {crypto_currency =  C2}, _Rev) ->
+test_crypto_currency_condition_def({crypto_currency_is, C1}, C2, _Rev) ->
     C1 =:= C2.
 
 %% Marshalling

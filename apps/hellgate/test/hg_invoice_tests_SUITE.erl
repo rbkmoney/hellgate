@@ -2191,6 +2191,7 @@ terms_retrieval(C) ->
             ?pmt(bank_card, jcb),
             ?pmt(bank_card, mastercard),
             ?pmt(bank_card, visa),
+            ?pmt(crypto_currency, bitcoin),
             ?pmt(digital_wallet, qiwi),
             ?pmt(empty_cvv_bank_card, visa),
             ?pmt(payment_terminal, euroset),
@@ -3157,7 +3158,8 @@ construct_domain_fixture() ->
                         ?pmt(payment_terminal, euroset),
                         ?pmt(digital_wallet, qiwi),
                         ?pmt(empty_cvv_bank_card, visa),
-                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
+                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay)),
+                        ?pmt(crypto_currency, bitcoin)
                     ])}
                 }
             ]},
@@ -3552,6 +3554,7 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, mastercard),
                         ?pmt(bank_card, jcb),
                         ?pmt(empty_cvv_bank_card, visa),
+                        ?pmt(crypto_currency, bitcoin),
                         ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
                     ])},
                     cash_limit = {value, ?cashrng(
@@ -3616,6 +3619,23 @@ construct_domain_fixture() ->
                                     payment_system_is = visa,
                                     token_provider_is = applepay
                                 }}
+                            }}}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(20, 1000, operation_amount)
+                                )
+                            ]}
+                        },
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {payment_tool, {crypto_currency, #domain_CryptoCurrencyCondition{
+                                definition = {crypto_currency_is, bitcoin}
                             }}}},
                             then_ = {value, [
                                 ?cfpost(
