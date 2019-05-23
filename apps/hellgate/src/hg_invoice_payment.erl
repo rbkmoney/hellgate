@@ -843,11 +843,11 @@ reduce_selector(Name, Selector, VS, Revision) ->
 start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
--spec capture(st(), atom()) -> {ok, result()}.
+-spec capture(st(), binary()) -> {ok, result()}.
 
 capture(St, Reason) ->
     Cost = get_payment_cost(get_payment(St)),
-    do_payment(St, ?captured_with_reason_and_cost(hg_utils:format_reason(Reason), Cost)).
+    do_payment(St, ?captured_with_reason_and_cost(Reason, Cost)).
 
 -spec capture(st(), binary(), cash(), opts()) -> {ok, result()}.
 

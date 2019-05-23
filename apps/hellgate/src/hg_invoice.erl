@@ -178,15 +178,13 @@ handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     St = assert_invoice_accessible(get_state(InvoiceID)),
     get_payment_state(get_payment_session(PaymentID, St));
 
-handle_function_('CapturePayment', [UserInfo, InvoiceID, PaymentID, Reason], _Opts) ->
+handle_function_('CapturePayment', [UserInfo, InvoiceID, PaymentID, Params], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
-    call(InvoiceID, {capture_payment, PaymentID, Reason});
+    call(InvoiceID, {capture_payment, PaymentID, Params});
 
-handle_function_('CapturePaymentNew', [UserInfo, InvoiceID, PaymentID, Params], _Opts) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_invoicing_meta(InvoiceID, PaymentID),
-    call(InvoiceID, {capture_payment_new, PaymentID, Params});
+handle_function_('CapturePaymentNew', Args, Opts) ->
+    handle_function_('CapturePayment', Args, Opts);
 
 handle_function_('CancelPayment', [UserInfo, InvoiceID, PaymentID, Reason], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -524,8 +522,7 @@ handle_expiration(St) ->
 -type call() ::
     {start_payment, payment_params()} |
     {refund_payment , payment_id(), refund_params()} |
-    {capture_payment, payment_id(), binary()} |
-    {capture_payment_new, payment_id(), capture_params()} |
+    {capture_payment, payment_id(), capture_params()} |
     {cancel_payment, payment_id(), binary()} |
     {create_payment_adjustment , payment_id(), adjustment_params()} |
     {capture_payment_adjustment, payment_id(), adjustment_id()} |
@@ -551,33 +548,19 @@ handle_call({start_payment, PaymentParams}, St) ->
     start_payment(PaymentParams, St);
 
 handle_call({capture_payment, PaymentID, #payproc_InvoicePaymentCaptureParams{
-    reason = Reason
-}}, St) ->
-    _ = assert_invoice_accessible(St),
-    _ = assert_invoice_operable(St),
-    PaymentSession = get_payment_session(PaymentID, St),
-    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason),
-    #{
-        response => ok,
-        changes => wrap_payment_changes(PaymentID, Changes),
-        action => Action,
-        state => St
-    };
-
-handle_call({capture_payment_new, PaymentID, Reason = #payproc_InvoicePaymentCaptureParams{
-    cash = undefined
-}}, St) ->
-    handle_call({capture_payment, PaymentID, Reason}, St);
-
-handle_call({capture_payment_new, PaymentID, #payproc_InvoicePaymentCaptureParams{
     reason = Reason,
     cash = Cash
 }}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    Opts = get_payment_opts(St),
-    {ok, {Changes, Action}} = hg_invoice_payment:capture(PaymentSession, Reason, Cash, Opts),
+    {ok, {Changes, Action}} = case Cash of
+        #domain_Cash{} ->
+            Opts = get_payment_opts(St),
+            hg_invoice_payment:capture(PaymentSession, Reason, Cash, Opts);
+        undefined ->
+            hg_invoice_payment:capture(PaymentSession, Reason)
+    end,
     #{
         response => ok,
         changes => wrap_payment_changes(PaymentID, Changes),
