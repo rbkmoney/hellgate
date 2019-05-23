@@ -107,13 +107,7 @@ end_per_group(_GroupName, C) ->
 init_per_testcase(_, C) -> C.
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
-end_per_testcase(_Name, C) ->
-    _ = case cfg(original_domain_revision, C) of
-        Revision when is_integer(Revision) ->
-            ok = hg_domain:reset(Revision);
-        undefined ->
-            ok
-    end.
+end_per_testcase(_Name, _C) -> ok.
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).

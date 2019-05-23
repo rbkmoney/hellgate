@@ -32,6 +32,7 @@
     account_id => account_id(),
     own_amount => amount(),
     min_available_amount => amount(),
+    max_available_amount => amount(),
     currency_code => currency_code()
 }.
 
@@ -166,13 +167,15 @@ construct_account(
     #accounter_Account{
         own_amount = OwnAmount,
         currency_sym_code = CurrencyCode,
-        min_available_amount = MinAvailableAmount
+        min_available_amount = MinAvailableAmount,
+        max_available_amount = MaxAvailableAmount
     }
 ) ->
     #{
         account_id => AccountID,
         own_amount => OwnAmount,
         min_available_amount => MinAvailableAmount,
+        max_available_amount => MaxAvailableAmount,
         currency_code => CurrencyCode
     }.
 
