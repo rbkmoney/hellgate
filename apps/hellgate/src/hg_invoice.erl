@@ -693,7 +693,7 @@ set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
 capture_payment(PaymentSession, Reason, undefined, undefined, _Opts) ->
     hg_invoice_payment:capture(PaymentSession, Reason);
 capture_payment(_PaymentSession, _Reason, undefined, _Cart, _Opts) ->
-    throw(#'InvalidRequest'{errors = [<<"Get capture cart without amount.">>]});
+    throw(#'InvalidRequest'{errors = [<<"Got capture cart without amount.">>]});
 capture_payment(PaymentSession, Reason, Cash, undefined, Opts) ->
     hg_invoice_payment:capture(PaymentSession, Reason, Cash, Opts);
 capture_payment(PaymentSession, Reason, Cash, Cart, Opts) ->

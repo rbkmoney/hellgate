@@ -2026,7 +2026,7 @@ miss_cash_partial_capturing_with_cart(C) ->
     Cart = ?cart(Cash, #{}),
     Reason = <<"ok">>,
     {exception, #'InvalidRequest'{
-        errors = [<<"Get capture cart without amount.">>]
+        errors = [<<"Got capture cart without amount.">>]
     }} = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, undefined, Cart, Client).
 
 -spec invalid_currency_partial_capture(config()) -> _ | no_return().
