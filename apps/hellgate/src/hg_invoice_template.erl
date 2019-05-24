@@ -79,22 +79,22 @@ handle_function_('Get', [UserInfo, TplID], _Opts) ->
     _   = hg_invoice_utils:assert_party_accessible(Tpl#domain_InvoiceTemplate.owner_id),
     Tpl;
 
-handle_function_('Update', [UserInfo, TplID, Params], _Opts) ->
+handle_function_('Update' = Fun, [UserInfo, TplID, Params] = Args, _Opts) ->
     ok    = assume_user_identity(UserInfo),
     _     = set_meta(TplID),
     Tpl   = get_invoice_template(TplID),
     Party = get_party(Tpl#domain_InvoiceTemplate.owner_id),
     Shop  = get_shop(Tpl#domain_InvoiceTemplate.shop_id, Party),
     ok = validate_update_params(Params, Shop),
-    call(TplID, {update, Params});
+    call(TplID, Fun, Args);
 
-handle_function_('Delete', [UserInfo, TplID], _Opts) ->
+handle_function_('Delete' = Fun, [UserInfo, TplID] = Args, _Opts) ->
     ok    = assume_user_identity(UserInfo),
     Tpl   = get_invoice_template(TplID),
     Party = get_party(Tpl#domain_InvoiceTemplate.owner_id),
     _     = get_shop(Tpl#domain_InvoiceTemplate.shop_id, Party),
     _     = set_meta(TplID),
-    call(TplID, delete);
+    call(TplID, Fun, Args);
 
 handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp], _Opts) ->
     ok    = assume_user_identity(UserInfo),
@@ -153,25 +153,36 @@ validate_price({range, Range = #domain_CashRange{
 validate_price({unlim, _}, _Shop) ->
     ok.
 
-start(ID, Args) ->
-    map_start_error(hg_machine:start(?NS, ID, Args)).
+start(ID, Params) ->
+    EncodedParams = marchal_invoice_template_params(Params),
+    map_start_error(hg_machine:start(?NS, ID, EncodedParams)).
 
-call(ID, Args) ->
-    map_error(hg_machine:call(?NS, ID, Args)).
+call(ID, Function, Args) ->
+    call(ID, 'InvoiceTemplating', Function, Args).
+
+call(ID, Service, Function, Args) ->
+    FunRef = {dmsl_payment_processing_thrift, {Service, Function}},
+    EncodedArgs = hg_proto_utils:serialize_function_args(FunRef, Args),
+    Call = {thrift_call, {Service, Function}, EncodedArgs},
+    case hg_machine:call(?NS, ID, Call) of
+        {ok, void} ->
+            ok;
+        {ok, {reply, Reply}} ->
+            hg_proto_utils:deserialize_function_reply(FunRef, Reply);
+        {ok, {exception, Exception}} ->
+            erlang:throw(hg_proto_utils:deserialize_function_exception(FunRef, Exception));
+        {error, Error} ->
+            map_error(Error)
+    end.
 
 get_history(TplID) ->
     unmarshal_history(map_history_error(hg_machine:get_history(?NS, TplID))).
 
-map_error({ok, CallResult}) ->
-    case CallResult of
-        {ok, Result} ->
-            Result;
-        {exception, Reason} ->
-            throw(Reason)
-    end;
-map_error({error, notfound}) ->
+-spec map_error(notfound | any()) ->
+    no_return().
+map_error(notfound) ->
     throw(#payproc_InvoiceTemplateNotFound{});
-map_error({error, Reason}) ->
+map_error(Reason) ->
     error(Reason).
 
 map_start_error({ok, _}) ->
@@ -187,8 +198,7 @@ map_history_error({error, notfound}) ->
 %% Machine
 
 -type create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
--type update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
--type call()          :: {update, update_params()} | delete.
+-type call()          :: {thrift_call, hg_proto_utils:thrift_fun_ref(), Args :: binary()}.
 
 -define(ev(Body),
     {invoice_template_changes, Body}
@@ -220,10 +230,11 @@ assert_invoice_template_not_deleted(_) ->
 namespace() ->
     ?NS.
 
--spec init(create_params(), hg_machine:machine()) ->
+-spec init(binary(), hg_machine:machine()) ->
     hg_machine:result().
 
-init(Params, #{id := ID}) ->
+init(EncodedParams, #{id := ID}) ->
+    Params = unmarchal_invoice_template_params(EncodedParams),
     Tpl = create_invoice_template(ID, Params),
     #{events => [marshal_event_payload([?tpl_created(Tpl)])]}.
 
@@ -251,15 +262,26 @@ process_signal({repair, _}, _Machine) ->
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
 
-process_call(Call, #{history := History}) ->
-    Tpl = collapse_history(unmarshal_history(History)),
-    {Response, Changes} = handle_call(Call, Tpl),
-    {{ok, Response}, #{events => [marshal_event_payload(Changes)]}}.
+process_call({thrift_call, FunRef, EncodedArgs}, #{history := History}) ->
+    FullFunRef = {dmsl_payment_processing_thrift, FunRef},
+    Args = hg_proto_utils:deserialize_function_args(FullFunRef, EncodedArgs),
+    St = collapse_history(unmarshal_history(History)),
+    try handle_call(FunRef, Args, St) of
+        {ok, Changes} ->
+            {void, #{events => [marshal_event_payload(Changes)]}};
+        {Reply, Changes} ->
+            EncodedReply = hg_proto_utils:serialize_function_reply(FullFunRef, Reply),
+            {{reply, EncodedReply}, #{events => [marshal_event_payload(Changes)]}}
+    catch
+        throw:Exception ->
+            EncodedException = hg_proto_utils:serialize_function_exception(FullFunRef, Exception),
+            {{exception, EncodedException}, #{}}
+    end.
 
-handle_call({update, Params}, Tpl) ->
+handle_call({'InvoiceTemplating', 'Update'}, [_UserInfo, _TplID, Params], Tpl) ->
     Changes = [?tpl_updated(Params)],
     {merge_changes(Changes, Tpl), Changes};
-handle_call(delete, _Tpl) ->
+handle_call({'InvoiceTemplating', 'Delete'}, [_UserInfo, _TplID], _Tpl) ->
     {ok, [?tpl_deleted()]}.
 
 collapse_history(History) ->
@@ -307,9 +329,15 @@ update_field({context, V}, Tpl) ->
 publish_event(ID, Payload) ->
     {{invoice_template_id, ID}, ?ev(unmarshal_event_payload(Payload))}.
 
-%%
+%% Marshaling
 
 -include("legacy_structures.hrl").
+
+-spec marchal_invoice_template_params(create_params()) ->
+    binary().
+marchal_invoice_template_params(Params) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceTemplateCreateParams'}},
+    hg_proto_utils:serialize(Type, Params).
 
 -spec marshal_event_payload([invoice_template_change()]) ->
     hg_machine:event_payload().
@@ -402,7 +430,13 @@ marshal(metadata, Metadata) ->
 marshal(_, Other) ->
     Other.
 
-%%
+%% Unmashaling
+
+-spec unmarchal_invoice_template_params(binary()) ->
+    create_params().
+unmarchal_invoice_template_params(EncodedParams) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceTemplateCreateParams'}},
+    hg_proto_utils:deserialize(Type, EncodedParams).
 
 -spec unmarshal_history([hg_machine:event()]) ->
     [hg_machine:event([invoice_template_change()])].

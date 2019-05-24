@@ -45,9 +45,7 @@
 -type customer_id()      :: dmsl_payment_processing_thrift:'CustomerID'().
 -type customer_params()  :: dmsl_payment_processing_thrift:'CustomerParams'().
 -type customer_change()  :: dmsl_payment_processing_thrift:'CustomerChange'().
-
--type binding_id()     :: dmsl_payment_processing_thrift:'CustomerBindingID'().
--type binding_params() :: dmsl_payment_processing_thrift:'CustomerBindingParams'().
+-type binding_id()       :: dmsl_payment_processing_thrift:'CustomerBindingID'().
 
 %%
 %% Woody handler
@@ -80,14 +78,6 @@ handle_function_('Get', [CustomerID], _Opts) ->
     ok = assert_customer_accessible(St),
     get_customer(St);
 
-handle_function_('Delete', [CustomerID], _Opts) ->
-    ok = set_meta(CustomerID),
-    call(CustomerID, delete);
-
-handle_function_('StartBinding', [CustomerID, CustomerBindingParams], _Opts) ->
-    ok = set_meta(CustomerID),
-    call(CustomerID, {start_binding, CustomerBindingParams});
-
 handle_function_('GetActiveBinding', [CustomerID], _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
@@ -102,7 +92,14 @@ handle_function_('GetActiveBinding', [CustomerID], _Opts) ->
 handle_function_('GetEvents', [CustomerID, Range], _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_accessible(get_initial_state(CustomerID)),
-    get_public_history(CustomerID, Range).
+    get_public_history(CustomerID, Range);
+
+handle_function_(Fun, [CustomerID | _Tail] = Args, _Opts) when
+    Fun =:= 'Delete' orelse
+    Fun =:= 'StartBinding'
+->
+    ok = set_meta(CustomerID),
+    call(CustomerID, Fun, Args).
 
 %%
 
@@ -136,26 +133,34 @@ publish_customer_event(CustomerID, {ID, Dt, Payload}) ->
 
 -spec start(customer_id(), customer_params()) ->
     ok | no_return().
-start(ID, Args) ->
-    map_start_error(hg_machine:start(?NS, ID, Args)).
+start(ID, Params) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
+    EncodedParams = hg_proto_utils:serialize(Type, Params),
+    map_start_error(hg_machine:start(?NS, ID, EncodedParams)).
 
--spec call(customer_id(), _Args) ->
-    _Result | no_return().
-call(ID, Args) ->
-    map_error(hg_machine:call(?NS, ID, Args)).
+call(ID, Function, Args) ->
+    call(ID, 'CustomerManagement', Function, Args).
 
--spec map_error({ok, _Result} | {error, _Error}) ->
-    _Result | no_return().
-map_error({ok, CallResult}) ->
-    case CallResult of
-        {ok, Result} ->
-            Result;
-        {exception, Reason} ->
-            throw(Reason)
-    end;
-map_error({error, notfound}) ->
-    throw(#payproc_CustomerNotFound{});
-map_error({error, Reason}) ->
+call(ID, Service, Function, Args) ->
+    FunRef = {dmsl_payment_processing_thrift, {Service, Function}},
+    EncodedArgs = hg_proto_utils:serialize_function_args(FunRef, Args),
+    Call = {thrift_call, {Service, Function}, EncodedArgs},
+    case hg_machine:call(?NS, ID, Call) of
+        {ok, void} ->
+            ok;
+        {ok, {reply, Reply}} ->
+            hg_proto_utils:deserialize_function_reply(FunRef, Reply);
+        {ok, {exception, Exception}} ->
+            erlang:throw(hg_proto_utils:deserialize_function_exception(FunRef, Exception));
+        {error, Error} ->
+            map_error(Error)
+    end.
+
+-spec map_error(notfound | any()) ->
+    no_return().
+map_error(notfound) ->
+    throw(#payproc_InvoiceTemplateNotFound{});
+map_error(Reason) ->
     error(Reason).
 
 -spec map_history_error({ok, _Result} | {error, _Error}) ->
@@ -190,9 +195,11 @@ publish_event(CustomerID, Payload) ->
 namespace() ->
     ?NS.
 
--spec init(customer_params(), hg_machine:machine()) ->
+-spec init(binary(), hg_machine:machine()) ->
     hg_machine:result().
-init(CustomerParams, #{id := CustomerID}) ->
+init(EncodedParams, #{id := CustomerID}) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
+    CustomerParams = hg_proto_utils:deserialize(Type, EncodedParams),
     handle_result(#{
         changes => [
             get_customer_created_event(CustomerID, CustomerParams)
@@ -253,26 +260,33 @@ is_binding_succeeded(#payproc_CustomerBinding{status = ?customer_binding_succeed
 is_binding_succeeded(_) ->
     false.
 
--type call() ::
-    {start_binding, binding_params()} |
-    delete.
+-type call() :: {thrift_call, hg_proto_utils:thrift_fun_ref(), Args :: binary()}.
 
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
-process_call(Call, #{history := History}) ->
+process_call({thrift_call, FunRef, EncodedArgs}, #{history := History}) ->
+    FullFunRef = {dmsl_payment_processing_thrift, FunRef},
+    Args = hg_proto_utils:deserialize_function_args(FullFunRef, EncodedArgs),
     St = collapse_history(unmarshal_history(History)),
-    try handle_result(handle_call(Call, St)) catch
+    try handle_result(handle_call(FunRef, Args, St)) of
+        {{ok, ok}, Result} ->
+            {void, Result};
+        {{ok, Reply}, Result} ->
+            EncodedReply = hg_proto_utils:serialize_function_reply(FullFunRef, Reply),
+            {{reply, EncodedReply}, Result}
+    catch
         throw:Exception ->
-            {{exception, Exception}, #{}}
+            EncodedException = hg_proto_utils:serialize_function_exception(FullFunRef, Exception),
+            {{exception, EncodedException}, #{}}
     end.
 
-handle_call(delete, St) ->
+handle_call({'CustomerManagement', 'Delete'}, [_CustomerID], St) ->
     ok = assert_customer_operable(St),
     #{
         response => ok,
         changes  => [?customer_deleted()]
     };
-handle_call({start_binding, BindingParams}, St) ->
+handle_call({'CustomerManagement', 'StartBinding'}, [_CustomerID, BindingParams], St) ->
     ok = assert_customer_operable(St),
     start_binding(BindingParams, St).
 

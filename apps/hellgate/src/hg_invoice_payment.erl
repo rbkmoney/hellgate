@@ -245,7 +245,7 @@ get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
 -type machine_result() :: {next | done, result()}.
 
 -spec init(payment_id(), _, opts()) ->
-    {payment(), result()}.
+    {st(), result()}.
 
 init(PaymentID, PaymentParams, Opts) ->
     scoper:scope(
