@@ -103,16 +103,16 @@ issue_call(Func, Args, CallOpts, Default, DeadLine) ->
         {ok, _} = RiskScore ->
             RiskScore;
         {exception, Error} ->
-            _ = logger:error("Fail to get RiskScore with error ~p", [Error]),
+            _ = lager:error("Fail to get RiskScore with error ~p", [Error]),
             {ok, Default}
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason
             when Class =:= resource_unavailable orelse
                  Class =:= result_unknown ->
-            _ = logger:warning("Fail to get RiskScore with error ~p:~p", [error, Reason]),
+            _ = lager:warning("Fail to get RiskScore with error ~p:~p", [error, Reason]),
             {ok, Default};
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            _ = logger:error("Fail to get RiskScore with error ~p:~p", [error, Reason]),
+            _ = lager:error("Fail to get RiskScore with error ~p:~p", [error, Reason]),
             {ok, Default}
     end.
 

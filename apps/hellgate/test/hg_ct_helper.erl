@@ -81,9 +81,21 @@
 
 -spec start_app(app_name()) -> [app_name()].
 
+start_app(lager = AppName) ->
+    {start_app(AppName, [
+        {async_threshold, 1},
+        {async_threshold_window, 0},
+        {error_logger_hwm, 600},
+        {suppress_application_start_stop, true},
+        {handlers, [
+            % {lager_common_test_backend, [debug, {lager_logstash_formatter, []}]}
+            {lager_common_test_backend, warning}
+        ]}
+    ]), #{}};
+
 start_app(scoper = AppName) ->
     {start_app(AppName, [
-        {storage, scoper_storage_logger}
+        {storage, scoper_storage_lager}
     ]), #{}};
 
 start_app(woody = AppName) ->
@@ -115,7 +127,8 @@ start_app(hellgate = AppName) ->
             party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
             customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
             recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>,
-            sequences           => <<"http://sequences:8022/v1/sequences">>
+            sequences           => <<"http://sequences:8022/v1/sequences">>,
+            fault_detector      => <<"http://127.0.0.1:20001/">>
         }},
         {proxy_opts, #{
             transport_opts => #{
@@ -123,10 +136,17 @@ start_app(hellgate = AppName) ->
         }},
         {payment_retry_policy, #{
             processed => {intervals, [1, 1, 1]},
-            captured => {intervals, [1, 1, 1]},
-            refunded => {intervals, [1, 1, 1]}
+            captured  => {intervals, [1, 1, 1]},
+            refunded  => {intervals, [1, 1, 1]}
         }},
-        {inspect_timeout, 1000}
+        {inspect_timeout, 1000},
+        {fault_detector, #{
+            critical_fail_rate   => 0.7,
+            timeout              => 2000,
+            sliding_window       => 60000,
+            operation_time_limit => 10000,
+            pre_aggregation_size => 2
+        }}
     ]), #{
         hellgate_root_url => get_hellgate_url()
     }};
@@ -364,10 +384,7 @@ ensure_claim_accepted(#payproc_Claim{id = ClaimID, revision = ClaimRevision, sta
 
 get_account(AccountID) ->
     % TODO we sure need to proxy this through the hellgate interfaces
-    ok = hg_context:save(hg_context:create()),
-    Account = hg_accounting:get_account(AccountID),
-    ok = hg_context:cleanup(),
-    Account.
+    hg_accounting:get_account(AccountID).
 
 -spec get_first_payout_tool_id(contract_id(), Client :: pid()) ->
     dmsl_domain_thrift:'PayoutToolID'().

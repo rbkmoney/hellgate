@@ -247,6 +247,9 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         digital_wallet ->
             %% simple workflow
             sleep(1, <<"sleeping">>);
+        crypto_currency ->
+            %% simple workflow
+            sleep(1, <<"sleeping">>);
         recurrent ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>);
@@ -355,9 +358,10 @@ process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
     end.
 
 finish(Status, TrxID) ->
+    AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
     #prxprv_PaymentProxyResult{
         intent = ?finish(Status),
-        trx    = #domain_TransactionInfo{id = TrxID, extra = #{}}
+        trx    = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo}
     }.
 
 finish(Status) ->
@@ -375,9 +379,10 @@ sleep(Timeout, State, UserInteraction) ->
     }.
 
 sleep(Timeout, State, UserInteraction, TrxID) ->
+    AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
     #prxprv_PaymentProxyResult{
         intent     = ?sleep(Timeout, UserInteraction),
-        trx        = #domain_TransactionInfo{id = TrxID, extra = #{}},
+        trx        = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo},
         next_state = State
     }.
 
@@ -446,7 +451,9 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_",
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
     terminal;
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
-    digital_wallet.
+    digital_wallet;
+get_payment_tool_scenario({'crypto_currency', bitcoin}) ->
+    crypto_currency.
 
 -spec make_payment_tool(PaymenToolCode) -> PaymenTool when
     PaymenToolCode :: atom() | {temporary_unavailability, failure_scenario()},
@@ -496,7 +503,12 @@ make_payment_tool(digital_wallet) ->
         <<>>
     };
 make_payment_tool(tokenized_bank_card) ->
-    make_simple_payment_tool(<<"no_preauth">>, visa, applepay).
+    make_simple_payment_tool(<<"no_preauth">>, visa, applepay);
+make_payment_tool(crypto_currency) ->
+    {
+        {crypto_currency, bitcoin},
+        <<"">>
+    }.
 
 make_simple_payment_tool(Token, PaymentSystem) ->
     make_simple_payment_tool(Token, PaymentSystem, undefined).
