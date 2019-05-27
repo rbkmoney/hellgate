@@ -20,6 +20,8 @@
 -include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
 -include_lib("dmsl/include/dmsl_msgpack_thrift.hrl").
 
+-include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
+
 %% API
 
 %% St accessors
@@ -597,9 +599,23 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
         {ok, _Route} = Result ->
             Result;
         undefined ->
-            Payment = get_payment(St),
-            Predestination = choose_routing_predestination(Payment),
-            case hg_routing:choose(Predestination, PaymentInstitution, VS, Revision) of
+            Payment         = get_payment(St),
+            Predestination  = choose_routing_predestination(Payment),
+            {Providers, RejectContext0} = hg_routing:gather_providers(
+                Predestination,
+                PaymentInstitution,
+                VS,
+                Revision
+            ),
+            FailRatedProviders = hg_routing:gather_provider_fail_rates(Providers),
+            {FailRatedRoutes, RejectContext1} = hg_routing:gather_routes(
+                 Predestination,
+                 FailRatedProviders,
+                 RejectContext0,
+                 VS,
+                 Revision
+            ),
+            case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
                 {ok, _Route} = Result ->
                     Result;
                 {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
@@ -613,6 +629,7 @@ choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
     recurrent_payment;
 choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
     payment.
+
 % Other payers has predefined routes
 
 log_reject_context(risk_score_is_too_high = RejectReason, RejectContext) ->
@@ -1052,7 +1069,7 @@ construct_refund_id(St) ->
     InvoiceID = get_invoice_id(get_invoice(get_opts(St))),
     SequenceID = make_refund_squence_id(PaymentID, InvoiceID),
     IntRefundID = hg_sequences:get_next(SequenceID),
-    integer_to_binary(IntRefundID).
+    erlang:integer_to_binary(IntRefundID).
 
 make_refund_squence_id(PaymentID, InvoiceID) ->
     <<InvoiceID/binary, <<"_">>/binary, PaymentID/binary>>.
@@ -1274,7 +1291,7 @@ get_adjustment_revision(Params) ->
     ).
 
 construct_adjustment_id(#st{adjustments = As}) ->
-    integer_to_binary(length(As) + 1).
+    erlang:integer_to_binary(length(As) + 1).
 
 -spec assert_activity(activity(), st()) -> ok | no_return().
 assert_activity(Activity, #st{activity = Activity}) ->
@@ -1514,7 +1531,8 @@ repair_session(St = #st{repair_scenario = Scenario}) ->
             {ok, Result};
         call ->
             ProxyContext = construct_proxy_context(St),
-            issue_process_call(ProxyContext, St)
+            Route        = get_route(St),
+            hg_proxy_provider:process_payment(ProxyContext, Route)
     end.
 
 -spec finalize_payment(action(), st()) -> machine_result().
@@ -1543,7 +1561,8 @@ process_callback_timeout(Action, Session, Events, St) ->
 
 handle_callback(Payload, Action, St) ->
     ProxyContext = construct_proxy_context(St),
-    {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St),
+    Route        = get_route(St),
+    {ok, CallbackResult} = hg_proxy_provider:handle_payment_callback(Payload, ProxyContext, Route),
     {Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
     {Response, finish_session_processing(Result, St)}.
 
@@ -2524,21 +2543,6 @@ get_customer(CustomerID) ->
         {exception, Error} ->
             error({<<"Can't get customer">>, Error})
     end.
-
-issue_process_call(ProxyContext, St) ->
-    issue_proxy_call('ProcessPayment', [ProxyContext], St).
-
-issue_callback_call(Payload, ProxyContext, St) ->
-    issue_proxy_call('HandlePaymentCallback', [Payload, ProxyContext], St).
-
-issue_proxy_call(Func, Args, St) ->
-    CallOpts = get_call_options(St),
-    hg_woody_wrapper:call(proxy_provider, Func, Args, CallOpts).
-
-get_call_options(St) ->
-    Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, get_route_provider_ref(get_route(St))}),
-    hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
 
 get_route(#st{route = Route}) ->
     Route.

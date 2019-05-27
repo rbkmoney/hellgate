@@ -197,15 +197,31 @@ namespace() ->
 -spec init([payment_tool() | rec_payment_tool_params()], hg_machine:machine()) ->
     hg_machine:result().
 init([PaymentTool, Params], #{id := RecPaymentToolID}) ->
-    Revision = hg_domain:head(),
-    CreatedAt = hg_datetime:format_now(),
-    {Party, Shop} = get_party_shop(Params),
+    Revision           = hg_domain:head(),
+    CreatedAt          = hg_datetime:format_now(),
+    {Party, Shop}      = get_party_shop(Params),
     PaymentInstitution = get_payment_institution(Shop, Party, Revision),
-    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
-    VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
-    {RiskScore     ,  VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
+    RecPaymentTool     = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
+    VS0                = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
+    {RiskScore, VS1}   = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
+
+    {Providers, RejectContext0} = hg_routing:gather_providers(
+        recurrent_paytool,
+        PaymentInstitution,
+        VS1,
+        Revision
+    ),
+    FailRatedProviders = hg_routing:gather_provider_fail_rates(Providers),
+    {FailRatedRoutes, RejectContext1} = hg_routing:gather_routes(
+        recurrent_paytool,
+        FailRatedProviders,
+        RejectContext0,
+        VS1,
+        Revision
+    ),
+
     Route = validate_route(
-        hg_routing:choose(recurrent_paytool, PaymentInstitution, VS1, Revision),
+        hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS1),
         RecPaymentTool
     ),
     {ok, {Changes, Action}} = start_session(),
@@ -344,7 +360,6 @@ process_callback_timeout(Action, St) ->
 
 get_route(#st{route = Route}) ->
     Route.
-
 %%
 
 construct_proxy_context(St) ->
@@ -566,7 +581,6 @@ dispatch_callback({provider, Payload}, St) ->
         _ ->
             throw(invalid_callback)
     end.
-
 
 -type tag()               :: dmsl_base_thrift:'Tag'().
 -type callback()          :: _. %% FIXME

@@ -127,7 +127,8 @@ start_app(hellgate = AppName) ->
             party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
             customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
             recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>,
-            sequences           => <<"http://sequences:8022/v1/sequences">>
+            sequences           => <<"http://sequences:8022/v1/sequences">>,
+            fault_detector      => <<"http://127.0.0.1:20001/">>
         }},
         {proxy_opts, #{
             transport_opts => #{
@@ -135,10 +136,17 @@ start_app(hellgate = AppName) ->
         }},
         {payment_retry_policy, #{
             processed => {intervals, [1, 1, 1]},
-            captured => {intervals, [1, 1, 1]},
-            refunded => {intervals, [1, 1, 1]}
+            captured  => {intervals, [1, 1, 1]},
+            refunded  => {intervals, [1, 1, 1]}
         }},
-        {inspect_timeout, 1000}
+        {inspect_timeout, 1000},
+        {fault_detector, #{
+            critical_fail_rate   => 0.7,
+            timeout              => 2000,
+            sliding_window       => 60000,
+            operation_time_limit => 10000,
+            pre_aggregation_size => 2
+        }}
     ]), #{
         hellgate_root_url => get_hellgate_url()
     }};
