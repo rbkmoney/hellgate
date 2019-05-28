@@ -416,7 +416,7 @@ await_payment_capture(InvoiceID, PaymentID, Client) ->
 await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     Pattern = [
-        ?evp(?payment_ev(PaymentID, ?payment_status_changed(?partial_captured(Reason, Cost, undefined))))
+        ?evp(?payment_ev(PaymentID, ?payment_status_changed(?captured(Reason, Cost))))
     ],
     {ok, _Events} = await_events(InvoiceID, Pattern, Client),
     PaymentID.

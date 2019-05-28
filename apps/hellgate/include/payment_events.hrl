@@ -64,7 +64,9 @@
     {failed, #domain_InvoicePaymentFailed{failure = Failure}}).
 -define(captured_with_reason(Reason),
     {captured, #domain_InvoicePaymentCaptured{reason = Reason}}).
--define(partial_captured(Reason, Cost, Cart),
+-define(captured(Reason, Cost),
+    {captured, #domain_InvoicePaymentCaptured{reason = Reason, cost = Cost}}).
+-define(captured(Reason, Cost, Cart),
     {captured, #domain_InvoicePaymentCaptured{reason = Reason, cost = Cost, cart = Cart}}).
 -define(cancelled_with_reason(Reason),
     {cancelled, #domain_InvoicePaymentCancelled{reason = Reason}}).
