@@ -25,10 +25,6 @@
 -export([get_payment/2]).
 -export([get_payment_opts/1]).
 
-%% Service
-
--export([get_cart_amount/1]).
-
 %% Woody handler called by hg_woody_wrapper
 
 -behaviour(hg_woody_wrapper).
@@ -65,8 +61,6 @@
 -type st() :: #st{}.
 
 -type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
--type cash() :: dmsl_domain_thrift:'Cash'().
--type cart() :: dmsl_domain_thrift:'InvoiceCart'().
 
 %% API
 
@@ -689,12 +683,13 @@ assert_no_pending_payment(_) ->
 set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
     hg_machine_action:set_deadline(Due).
 
-capture_payment(PaymentSession, Reason, undefined, undefined, _Opts) ->
-    hg_invoice_payment:capture(PaymentSession, Reason);
-capture_payment(_PaymentSession, _Reason, undefined, _Cart, _Opts) ->
-    throw(#'InvalidRequest'{errors = [<<"Got capture cart without amount.">>]});
+capture_payment(PaymentSession, Reason, undefined, undefined, Opts) ->
+    hg_invoice_payment:capture(PaymentSession, Reason, undefined, undefined, Opts);
+capture_payment(PaymentSession, Reason, undefined, Cart, Opts) ->
+    Cash = hg_invoice_utils:get_cart_amount(Cart),
+    capture_payment(PaymentSession, Reason, Cash, Cart, Opts);
 capture_payment(PaymentSession, Reason, Cash, undefined, Opts) ->
-    hg_invoice_payment:capture(PaymentSession, Reason, Cash, Opts);
+    hg_invoice_payment:capture(PaymentSession, Reason, Cash, undefined, Opts);
 capture_payment(PaymentSession, Reason, Cash, Cart, Opts) ->
     hg_invoice_payment:capture(PaymentSession, Reason, Cash, Cart, Opts).
 
@@ -990,7 +985,7 @@ make_invoice_params(Params) ->
         description = Description,
         cart = Cart
     },
-    InvoiceCost = get_cart_amount(Cart),
+    InvoiceCost = hg_invoice_utils:get_cart_amount(Cart),
     InvoiceDue = make_invoice_due_date(Lifetime),
     InvoiceContext = make_invoice_context(Context, TplContext),
     [
@@ -1040,24 +1035,6 @@ get_templated_price(Cost, {unlim, _}, Shop) ->
 get_cost(Cost, Shop) ->
     ok = hg_invoice_utils:validate_cost(Cost, Shop),
     Cost.
-
--spec get_cart_amount(cart()) ->
-    cash().
-
-get_cart_amount(#domain_InvoiceCart{lines = [FirstLine | Cart]}) ->
-    lists:foldl(
-        fun (Line, CashAcc) ->
-            hg_cash:add(get_line_amount(Line), CashAcc)
-        end,
-        get_line_amount(FirstLine),
-        Cart
-    ).
-
-get_line_amount(#domain_InvoiceLine{
-    quantity = Quantity,
-    price = #domain_Cash{amount = Amount, currency = Currency}
-}) ->
-    #domain_Cash{amount = Amount * Quantity, currency = Currency}.
 
 assert_cost_in_range(
     #domain_Cash{amount = Amount, currency = Currency},

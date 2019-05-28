@@ -40,8 +40,6 @@
 
 %% Business logic
 
--export([capture/2]).
--export([capture/4]).
 -export([capture/5]).
 -export([cancel/2]).
 -export([refund/3]).
@@ -845,31 +843,24 @@ reduce_selector(Name, Selector, VS, Revision) ->
 start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
--spec capture(st(), binary()) -> {ok, result()}.
-
-capture(St, Reason) ->
-    Cost = get_payment_cost(get_payment(St)),
-    do_payment(St, ?captured_with_reason_and_cost(Reason, Cost)).
-
--spec capture(st(), binary(), cash(), opts()) -> {ok, result()}.
-
-capture(St, Reason, Cost, Opts) ->
-    capture(St, Reason, Cost, undefined, Opts).
-
--spec capture(st(), binary(), cash(), cart() | undefined, opts()) -> {ok, result()}.
+-spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
 
 capture(St, Reason, Cost, Cart, Opts) ->
     Payment = get_payment(St),
     _ = assert_capture_cost_currency(Cost, Payment),
     _ = assert_capture_cart(Cost, Cart),
-    case check_equal_capture_cost_amount(Cost, Payment) of
+    case check_equal_capture_cost_amount(Cost, Payment) and (Cart =:= undefined) of
         true ->
-            capture(St, Reason);
+            capture_(St, Reason);
         false ->
             _ = assert_activity({payment, flow_waiting}, St),
             _ = assert_payment_flow(hold, Payment),
             partial_capture(St, Reason, Cost, Cart, Opts)
     end.
+
+capture_(St, Reason) ->
+    Cost = get_payment_cost(get_payment(St)),
+    do_payment(St, ?partial_captured(Reason, Cost, undefined)).
 
 partial_capture(St, Reason, Cost, Cart, Opts) ->
     Payment             = get_payment(St),
@@ -918,6 +909,8 @@ do_payment(St, Target) ->
     _ = assert_payment_flow(hold, Payment),
     {ok, {start_session(Target), hg_machine_action:instant()}}.
 
+assert_capture_cost_currency(undefined, _) ->
+    ok;
 assert_capture_cost_currency(?cash(_, SymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
     ok;
 assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
@@ -929,13 +922,15 @@ assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cos
 assert_capture_cart(_Cost, undefined) ->
     ok;
 assert_capture_cart(Cost, Cart) ->
-    case Cost =:= hg_invoice:get_cart_amount(Cart) of
+    case Cost =:= hg_invoice_utils:get_cart_amount(Cart) of
         true ->
             ok;
         _ ->
             throw_invalid_request(<<"Capture amount not equal cart cost">>)
     end.
 
+check_equal_capture_cost_amount(undefined, _) ->
+    true;
 check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
     when PassedAmount =:= Amount
 ->
@@ -1110,7 +1105,7 @@ assert_refund_cart(undefined, _Cart, _St) ->
     throw_invalid_request(<<"Invalid cash in partial refund params">>);
 assert_refund_cart(RefundCash, Cart, St) ->
     InterimPaymentAmount = get_remaining_payment_balance(St),
-    case hg_cash:sub(InterimPaymentAmount, RefundCash) =:= hg_invoice:get_cart_amount(Cart) of
+    case hg_cash:sub(InterimPaymentAmount, RefundCash) =:= hg_invoice_utils:get_cart_amount(Cart) of
         true ->
             ok;
         _ ->
@@ -1555,15 +1550,16 @@ repair_session(St = #st{repair_scenario = Scenario}) ->
 finalize_payment(Action, St) ->
     Target = case get_payment_flow(get_payment(St)) of
         ?invoice_payment_flow_instant() ->
-            ?captured_with_reason_and_cost(<<"Timeout">>, get_payment_cost(get_payment(St)));
+            ?partial_captured(<<"Timeout">>, get_payment_cost(get_payment(St)), undefined);
         ?invoice_payment_flow_hold(OnHoldExpiration, _) ->
             case OnHoldExpiration of
                 cancel ->
                     ?cancelled();
                 capture ->
-                    ?captured_with_reason_and_cost(
+                    ?partial_captured(
                         <<"Timeout">>,
-                        get_payment_cost(get_payment(St))
+                        get_payment_cost(get_payment(St)),
+                        undefined
                     )
             end
     end,
@@ -1909,15 +1905,16 @@ construct_payment_info(idle, _Target, _St, PaymentInfo) ->
     PaymentInfo;
 construct_payment_info(
     {payment, _Step},
-    ?captured_with_reason_and_cost(Reason, Cost),
+    ?partial_captured(Reason, Cost, undefined),
     St,
     PaymentInfo
 ) when Cost =:= undefined ->
     %% Для обратной совместимости и legacy capture
     PaymentInfo#prxprv_PaymentInfo{
-        capture = construct_proxy_capture(?captured_with_reason_and_cost(
+        capture = construct_proxy_capture(?partial_captured(
             Reason,
-            get_payment_cost(get_payment(St))
+            get_payment_cost(get_payment(St)),
+            undefined
         ))
     };
 construct_payment_info(
@@ -2047,7 +2044,7 @@ construct_proxy_refund(#refund_st{
         cash       = construct_proxy_cash(get_refund_cash(Refund))
     }.
 
-construct_proxy_capture(?captured_with_reason_and_cost(_, Cost)) ->
+construct_proxy_capture(?partial_captured(_, Cost, _)) ->
     #prxprv_InvoicePaymentCapture{
         cost = construct_proxy_cash(Cost)
     }.
@@ -2937,7 +2934,7 @@ unmarshal(status, ?legacy_cancelled(Reason)) ->
 unmarshal(capture, Capture) when is_map(Capture) ->
     Reason = maps:get(<<"reason">>, Capture),
     Cost = maps:get(<<"cost">>, Capture),
-    ?captured_with_reason_and_cost(unmarshal(str, Reason), hg_cash:unmarshal(Cost));
+    ?partial_captured(unmarshal(str, Reason), hg_cash:unmarshal(Cost), undefined);
 unmarshal(capture, Reason) ->
     ?captured_with_reason(unmarshal(str, Reason));
 

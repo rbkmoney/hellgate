@@ -65,7 +65,7 @@
 -export([payment_hold_capturing/1]).
 -export([payment_hold_partial_capturing/1]).
 -export([payment_hold_partial_capturing_with_cart/1]).
--export([miss_cash_partial_capturing_with_cart/1]).
+-export([payment_hold_partial_capturing_with_cart_missing_cash/1]).
 -export([invalid_currency_partial_capture/1]).
 -export([invalid_amount_partial_capture/1]).
 -export([invalid_permit_partial_capture_in_service/1]).
@@ -244,7 +244,7 @@ groups() ->
             invalid_amount_partial_capture,
             payment_hold_partial_capturing,
             payment_hold_partial_capturing_with_cart,
-            miss_cash_partial_capturing_with_cart,
+            payment_hold_partial_capturing_with_cart_missing_cash,
             payment_hold_auto_capturing,
             {group, holds_management_with_custom_config}
         ]},
@@ -942,7 +942,7 @@ payment_capture_retries_exceeded(C) ->
     PaymentParams = make_scenario_payment_params([good, temp, temp, temp, temp]),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Reason = ?timeout_reason(),
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    Target = ?partial_captured(Reason, Cost, undefined),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, Target),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, 3),
     timeout = next_event(InvoiceID, 1000, Client),
@@ -954,7 +954,7 @@ payment_capture_retries_exceeded(C) ->
     PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
 
 repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    Target = ?partial_captured(Reason, Cost, undefined),
     Changes = [
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
     ],
@@ -1408,7 +1408,7 @@ payment_temporary_unavailability_retry_success(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, ?timeout_reason(), Client, 2),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
+        [?payment_state(?payment_w_status(PaymentID, ?partial_captured(_Reason, _Cost, undefined)))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_temporary_unavailability_too_many_retries(config()) -> test_return().
@@ -2011,7 +2011,7 @@ payment_hold_partial_capturing(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?partial_captured(Reason, Cash, undefined), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash).
 
@@ -2032,9 +2032,9 @@ payment_hold_partial_capturing_with_cart(C) ->
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
 
--spec miss_cash_partial_capturing_with_cart(config()) -> _ | no_return().
+-spec payment_hold_partial_capturing_with_cart_missing_cash(config()) -> _ | no_return().
 
-miss_cash_partial_capturing_with_cart(C) ->
+payment_hold_partial_capturing_with_cart_missing_cash(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params({hold, cancel}),
@@ -2042,9 +2042,12 @@ miss_cash_partial_capturing_with_cart(C) ->
     Cash = ?cash(10000, <<"RUB">>),
     Cart = ?cart(Cash, #{}),
     Reason = <<"ok">>,
-    {exception, #'InvalidRequest'{
-        errors = [<<"Got capture cart without amount.">>]
-    }} = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, undefined, Cart, Client).
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, undefined, Cart, Client),
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?session_ev(?partial_captured(Reason, Cash, Cart), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
 
 -spec invalid_currency_partial_capture(config()) -> _ | no_return().
 
@@ -2930,7 +2933,7 @@ await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
 await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cost), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?partial_captured(Reason, Cost, undefined), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts).
 
@@ -2940,7 +2943,7 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
 await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?partial_captured(Reason, Cash, undefined), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cash).
 
