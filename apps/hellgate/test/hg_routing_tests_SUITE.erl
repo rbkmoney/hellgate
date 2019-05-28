@@ -403,7 +403,6 @@ terminal_priority_for_shop(PartyID, ShopID, _C) ->
         VS,
         Revision
     ),
-    io:format(standard_error, "FailRatedRoutes1: ~p~n", [FailRatedRoutes1]),
     hg_routing:choose_route(FailRatedRoutes1, RejectContext1, VS).
 
 %%% Domain config fixtures

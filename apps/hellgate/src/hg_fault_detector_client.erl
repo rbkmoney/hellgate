@@ -205,12 +205,12 @@ do_call('InitService', Args, Opts, Deadline) ->
                  Class =:= result_unknown ->
             [ServiceId | _] = Args,
             ErrorText = "Unable to init service ~p in fault detector, ~p:~p",
-            _ = logger:warning(ErrorText, [ServiceId, error, Reason]),
+            _ = lager:warning(ErrorText, [ServiceId, error, Reason]),
             {error, Reason};
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
             [ServiceId | _] = Args,
             ErrorText = "Unable to init service ~p in fault detector, ~p:~p",
-            _ = logger:error(ErrorText, [ServiceId, error, Reason]),
+            _ = lager:error(ErrorText, [ServiceId, error, Reason]),
             {error, Reason}
     end;
 do_call('GetStatistics', Args, Opts, Deadline) ->
@@ -222,12 +222,12 @@ do_call('GetStatistics', Args, Opts, Deadline) ->
                  Class =:= result_unknown ->
             [ServiceIds | _] = Args,
             String = "Unable to get statistics for services ~p from fault detector, ~p:~p",
-            _ = logger:warning(String, [ServiceIds, error, Reason]),
+            _ = lager:warning(String, [ServiceIds, error, Reason]),
             [];
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
             [ServiceIds | _] = Args,
             String = "Unable to get statistics for services ~p from fault detector, ~p:~p",
-            _ = logger:error(String, [ServiceIds, error, Reason]),
+            _ = lager:error(String, [ServiceIds, error, Reason]),
             []
     end;
 do_call('RegisterOperation', Args, Opts, Deadline) ->
@@ -242,12 +242,12 @@ do_call('RegisterOperation', Args, Opts, Deadline) ->
                  Class =:= result_unknown ->
             [ServiceId, OperationId | _] = Args,
             ErrorText = "Unable to register operation ~p for service ~p in fault detector, ~p:~p",
-            _ = logger:warning(ErrorText, [OperationId, ServiceId, error, Reason]),
+            _ = lager:warning(ErrorText, [OperationId, ServiceId, error, Reason]),
             {error, Reason};
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
             [ServiceId, OperationId | _] = Args,
             ErrorText = "Unable to register operation ~p for service ~p in fault detector, ~p:~p",
-            _ = logger:error(ErrorText, [OperationId, ServiceId, error, Reason]),
+            _ = lager:error(ErrorText, [OperationId, ServiceId, error, Reason]),
             {error, Reason}
     end.
 

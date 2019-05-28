@@ -32,7 +32,9 @@ get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_pr
 get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
     #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
 get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
-    #domain_PaymentMethodRef{id = {digital_wallet, Provider}}.
+    #domain_PaymentMethodRef{id = {digital_wallet, Provider}};
+get_method({crypto_currency, CC}) ->
+    #domain_PaymentMethodRef{id = {crypto_currency, CC}}.
 
 -spec create_from_method(method()) -> t().
 
@@ -69,7 +71,9 @@ create_from_method(#domain_PaymentMethodRef{id = {digital_wallet, Provider}}) ->
     {digital_wallet, #domain_DigitalWallet{
         provider = Provider,
         id = <<"">>
-    }}.
+    }};
+create_from_method(#domain_PaymentMethodRef{id = {crypto_currency, CC}}) ->
+    {crypto_currency, CC}.
 
 %%
 
@@ -81,6 +85,8 @@ test_condition({payment_terminal, C}, {payment_terminal, V = #domain_PaymentTerm
     test_payment_terminal_condition(C, V, Rev);
 test_condition({digital_wallet, C}, {digital_wallet, V = #domain_DigitalWallet{}}, Rev) ->
     test_digital_wallet_condition(C, V, Rev);
+test_condition({crypto_currency, C}, {crypto_currency, V}, Rev) ->
+    test_crypto_currency_condition(C, V, Rev);
 test_condition(_PaymentTool, _Condition, _Rev) ->
     false.
 
@@ -164,6 +170,12 @@ test_digital_wallet_condition(#domain_DigitalWalletCondition{definition = Def}, 
 test_digital_wallet_condition_def({provider_is, V1}, #domain_DigitalWallet{provider = V2}, _Rev) ->
     V1 =:= V2.
 
+test_crypto_currency_condition(#domain_CryptoCurrencyCondition{definition = Def}, V, Rev) ->
+    Def =:= undefined orelse test_crypto_currency_condition_def(Def, V, Rev).
+
+test_crypto_currency_condition_def({crypto_currency_is, C1}, C2, _Rev) ->
+    C1 =:= C2.
+
 %% Marshalling
 
 -include("legacy_structures.hrl").
@@ -196,6 +208,8 @@ marshal(digital_wallet = T, #domain_DigitalWallet{} = DigitalWallet) ->
         <<"provider">> => marshal({T, provider}, DigitalWallet#domain_DigitalWallet.provider),
         <<"id">>       => marshal(str, DigitalWallet#domain_DigitalWallet.id)
     };
+marshal(crypto_currency = T, CC) ->
+    marshal({T, currency}, CC);
 
 marshal(payment_method, bank_card) ->
     <<"card">>;
@@ -203,6 +217,8 @@ marshal(payment_method, payment_terminal) ->
     <<"payterm">>;
 marshal(payment_method, digital_wallet) ->
     <<"wallet">>;
+marshal(payment_method, crypto_currency) ->
+    <<"crypto_currency">>;
 
 marshal({bank_card, payment_system}, visa) ->
     <<"visa">>;
@@ -256,6 +272,19 @@ marshal({bank_card, boolean}, true) ->
 marshal({bank_card, boolean}, false) ->
     <<"false">>;
 
+marshal({crypto_currency, currency}, bitcoin) ->
+    <<"bitcoin">>;
+marshal({crypto_currency, currency}, litecoin) ->
+    <<"litecoin">>;
+marshal({crypto_currency, currency}, bitcoin_cash) ->
+    <<"bitcoin_cash">>;
+marshal({crypto_currency, currency}, ripple) ->
+    <<"ripple">>;
+marshal({crypto_currency, currency}, ethereum) ->
+    <<"ethereum">>;
+marshal({crypto_currency, currency}, zcash) ->
+    <<"zcash">>;
+
 marshal(_, Other) ->
     Other.
 
@@ -305,6 +334,8 @@ unmarshal(digital_wallet = T, #{
         provider         = unmarshal({T, provider}, Provider),
         id               = unmarshal(str, ID)
     };
+unmarshal(crypto_currency = T, CC) ->
+    {crypto_currency, unmarshal({T, currency}, CC)};
 
 unmarshal(payment_tool, [2, #{<<"token">>:= _} = BankCard]) ->
     {bank_card, unmarshal(bank_card, BankCard)};
@@ -327,6 +358,8 @@ unmarshal(payment_method, <<"payterm">>) ->
     payment_terminal;
 unmarshal(payment_method, <<"wallet">>) ->
     digital_wallet;
+unmarshal(payment_method, <<"crypto_currency">>) ->
+    crypto_currency;
 
 unmarshal({bank_card, payment_system}, <<"visa">>) ->
     visa;
@@ -379,6 +412,19 @@ unmarshal({bank_card, boolean}, <<"true">>) ->
     true;
 unmarshal({bank_card, boolean}, <<"false">>) ->
     false;
+
+unmarshal({crypto_currency, currency}, <<"bitcoin">>) ->
+    bitcoin;
+unmarshal({crypto_currency, currency}, <<"litecoin">>) ->
+    litecoin;
+unmarshal({crypto_currency, currency}, <<"bitcoin_cash">>) ->
+    bitcoin_cash;
+unmarshal({crypto_currency, currency}, <<"ripple">>) ->
+    ripple;
+unmarshal({crypto_currency, currency}, <<"ethereum">>) ->
+    ethereum;
+unmarshal({crypto_currency, currency}, <<"zcash">>) ->
+    zcash;
 
 unmarshal(_, Other) ->
     Other.

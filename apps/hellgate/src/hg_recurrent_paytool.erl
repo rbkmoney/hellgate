@@ -360,7 +360,6 @@ process_callback_timeout(Action, St) ->
 
 get_route(#st{route = Route}) ->
     Route.
-
 %%
 
 construct_proxy_context(St) ->
@@ -582,7 +581,6 @@ dispatch_callback({provider, Payload}, St) ->
         _ ->
             throw(invalid_callback)
     end.
-
 
 -type tag()               :: dmsl_base_thrift:'Tag'().
 -type callback()          :: _. %% FIXME
