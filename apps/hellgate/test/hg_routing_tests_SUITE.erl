@@ -1126,40 +1126,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                risk_coverage = low,
-                terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(2)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, <<"RUB">>)},
-                        {exclusive, ?cash( 5000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(16, 1000, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {external, outcome},
-                            ?fixed(20, <<"RUB">>),
-                            <<"Assist fee">>
-                        )
-                    ]}
-                }
+                risk_coverage = low
             }
         }},
         {terminal, #domain_TerminalObject{
