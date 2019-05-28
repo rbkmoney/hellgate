@@ -683,7 +683,9 @@ assert_no_pending_payment(_) ->
 set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
     hg_machine_action:set_deadline(Due).
 
-capture_payment(PaymentSession, Reason, undefined, Cart, Opts) ->
+capture_payment(PaymentSession, Reason, undefined, Cart, Opts) when
+    Cart =/= undefined
+->
     Cash = hg_invoice_utils:get_cart_amount(Cart),
     capture_payment(PaymentSession, Reason, Cash, Cart, Opts);
 capture_payment(PaymentSession, Reason, Cash, Cart, Opts) ->
