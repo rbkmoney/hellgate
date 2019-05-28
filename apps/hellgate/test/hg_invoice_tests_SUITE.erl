@@ -916,14 +916,21 @@ payment_w_terminal_success(C) ->
 
 payment_w_crypto_currency_success(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), 42000, C),
+    PayCash = 2000,
+    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
     PaymentParams = make_crypto_currency_payment_params(),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ?invoice_state(
-        ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+    ] = next_event(InvoiceID, Client),
+    ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
+    ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
+    ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
 
