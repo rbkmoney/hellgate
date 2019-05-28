@@ -53,9 +53,9 @@ init([]) ->
     {ok, {
         #{strategy => one_for_all, intensity => 6, period => 30},
         [
+            party_client:child_spec(party_client, PartyClient),
             hg_machine:get_child_spec(MachineHandlers),
-            get_api_child_spec(MachineHandlers, Opts),
-            party_client:child_spec(party_client, PartyClient)
+            get_api_child_spec(MachineHandlers, Opts)
         ]
     }}.
 
