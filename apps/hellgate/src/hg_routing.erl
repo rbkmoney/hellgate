@@ -283,7 +283,7 @@ get_terminal_ref(#domain_ProviderTerminalRef{id = ID}) ->
     #domain_TerminalRef{id = ID}.
 
 get_terminal_priority(#domain_ProviderTerminalRef{priority = undefined}) ->
-    1.0;
+    1000;
 get_terminal_priority(#domain_ProviderTerminalRef{priority = Priority}) ->
     Priority.
 
