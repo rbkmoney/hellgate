@@ -18,6 +18,8 @@ test({category_is, V1}, #{category := V2}, _) ->
     V1 =:= V2;
 test({currency_is, V1}, #{currency := V2}, _) ->
     V1 =:= V2;
+test({terminal_is, V1}, #{terminal := V2}, _) ->
+    V1 =:= V2;
 test({cost_in, V}, #{cost := C}, _) ->
     hg_cash_range:is_inside(C, V) =:= within;
 test({payment_tool, C}, #{payment_tool := V}, Rev) ->
