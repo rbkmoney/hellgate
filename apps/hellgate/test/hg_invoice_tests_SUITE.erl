@@ -33,8 +33,6 @@
 -export([overdue_invoice_cancellation/1]).
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
--export([no_route_found_for_payment/1]).
--export([fatal_risk_score_for_route_found/1]).
 
 -export([payment_start_idempotency/1]).
 -export([payment_success/1]).
@@ -192,8 +190,7 @@ groups() ->
             overdue_invoice_cancellation,
             invoice_cancellation_after_payment_timeout,
             invalid_payment_amount,
-            no_route_found_for_payment,
-            fatal_risk_score_for_route_found,
+
             payment_start_idempotency,
             payment_success,
             payment_success_empty_cvv,
@@ -283,6 +280,7 @@ init_per_suite(C) ->
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({'hg_invoice_payment', 'merge_change', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
+
     {Apps, Ret} = hg_ct_helper:start_apps([
         lager, woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}
     ]),
@@ -297,6 +295,7 @@ init_per_suite(C) ->
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
     NewC = [
@@ -313,12 +312,15 @@ init_per_suite(C) ->
         {test_sup, SupPid}
         | C
     ],
+
     ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
     NewC.
 
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
+    SupPid = cfg(test_sup, C),
+    ok = supervisor:terminate_child(SupPid, hg_dummy_fault_detector),
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
@@ -741,73 +743,6 @@ invalid_payment_amount(C) ->
         errors = [<<"Invalid amount, more", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
 
--spec no_route_found_for_payment(config()) -> test_return().
-
-no_route_found_for_payment(_C) ->
-    Revision = hg_domain:head(),
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    VS1 = #{
-        category        => ?cat(1),
-        currency        => ?cur(<<"RUB">>),
-        cost            => ?cash(1000, <<"RUB">>),
-        payment_tool    => {bank_card, #domain_BankCard{}},
-        party_id        => <<"12345">>,
-        risk_score      => low,
-        flow            => instant
-    },
-    {error, {no_route_found, {unknown, #{
-        varset := VS1,
-        rejected_providers := [
-            {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
-            {?prv(2), {'PaymentsProvisionTerms', category}},
-            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
-        ],
-        rejected_terminals := []
-    }}}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
-    VS2 = VS1#{
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
-    },
-    {ok, #domain_PaymentRoute{
-        provider = ?prv(3),
-        terminal = ?trm(10)
-    }} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
-
--spec fatal_risk_score_for_route_found(config()) -> test_return().
-
-fatal_risk_score_for_route_found(_C) ->
-    Revision = hg_domain:head(),
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    VS1 = #{
-        category        => ?cat(1),
-        currency        => ?cur(<<"RUB">>),
-        cost            => ?cash(1000, <<"RUB">>),
-        payment_tool    => {bank_card, #domain_BankCard{}},
-        party_id        => <<"12345">>,
-        risk_score      => fatal,
-        flow            => instant
-    },
-
-    {error, {no_route_found, {risk_score_is_too_high, #{
-        varset := VS1,
-        rejected_providers := [
-            {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
-            {?prv(2), {'PaymentsProvisionTerms', category}},
-            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
-        ],
-        rejected_terminals := []
-    }}}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
-    VS2 = VS1#{
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
-    },
-    {error, {no_route_found, {risk_score_is_too_high, #{
-        varset := VS2,
-        rejected_providers := [
-            {?prv(2), {'PaymentsProvisionTerms', category}},
-            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
-        ],
-        rejected_terminals := [{?prv(3), ?trm(10), {'Terminal', risk_coverage}}]}
-    }}} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
-
 -spec payment_start_idempotency(config()) -> test_return().
 
 payment_start_idempotency(C) ->
@@ -985,14 +920,21 @@ payment_w_terminal_success(C) ->
 
 payment_w_crypto_currency_success(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), 42000, C),
+    PayCash = 2000,
+    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
     PaymentParams = make_crypto_currency_payment_params(),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ?invoice_state(
-        ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+    ] = next_event(InvoiceID, Client),
+    ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
+    ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
+    ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
 
