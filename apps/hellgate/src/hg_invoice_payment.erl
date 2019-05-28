@@ -71,7 +71,7 @@
 
 %%
 
--type activity()      :: payment_activity() | refund_activity() | idle.
+-type activity()          :: payment_activity() | refund_activity() | idle.
 -type payment_activity()  :: {payment, payment_step()}.
 -type refund_activity()   :: {refund_session | refund_accounter, refund_id()}.
 -type payment_step()      ::
@@ -708,6 +708,7 @@ collect_validation_varset(Party, Shop, VS) ->
         account = #domain_ShopAccount{currency = Currency}
     } = Shop,
     VS#{
+        terminal => undefined,
         party_id => PartyID,
         shop_id  => ShopID,
         category => Category,
@@ -717,6 +718,7 @@ collect_validation_varset(Party, Shop, VS) ->
 collect_validation_varset(Party, Shop, Payment, VS) ->
     VS0 = collect_validation_varset(Party, Shop, VS),
     VS0#{
+        terminal     => undefined,
         cost         => get_payment_cost(Payment),
         payment_tool => get_payment_tool(Payment)
     }.
@@ -1471,7 +1473,9 @@ process_routing(Action, St) ->
     VS1 = VS0#{risk_score => RiskScore},
     case choose_route(PaymentInstitution, VS1, Revision, St) of
         {ok, Route} ->
-            process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
+            TerminalRef = Route#domain_PaymentRoute.terminal,
+            VS2 = VS1#{terminal => TerminalRef},
+            process_cash_flow_building(Route, VS2, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, {Reason, _Details}}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',
                 {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}

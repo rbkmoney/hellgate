@@ -186,14 +186,13 @@ build_fd_service_id(#domain_ProviderRef{id = ID}) ->
 
 -spec get_payments_terms(route(), hg_domain:revision()) -> terms().
 
-get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
-    #domain_Provider{payment_terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
-    #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
-    merge_payment_terms(Terms0, Terms1).
+get_payments_terms(?route(ProviderRef, _TerminalRef), Revision) ->
+    #domain_Provider{payment_terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
+    Terms.
 
 -spec get_rec_paytools_terms(route(), hg_domain:revision()) -> terms().
 
-get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
+get_rec_paytools_terms(?route(ProviderRef, _TerminalRef), Revision) ->
     #domain_Provider{recurrent_paytool_terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
     Terms.
 
@@ -238,39 +237,38 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider, FailRate}, V
         ordsets:to_list(TerminalRefs)
     ).
 
-acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms0}, VS, Revision) ->
-    Terminal = #domain_Terminal{
-        terms         = Terms1,
-        risk_coverage = RiskCoverage
-    } = hg_domain:get(Revision, {terminal, TerminalRef}),
-    % TODO the ability to override any terms makes for uncommon sense
-    %      is it better to allow to override only cash flow / refunds terms?
-    Terms = merge_payment_terms(Terms0, Terms1),
-    _ = acceptable_payment_terms(Terms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
-    {TerminalRef, Terminal};
-acceptable_terminal(recurrent_paytool, TerminalRef, #domain_Provider{recurrent_paytool_terms = Terms}, VS, Revision) ->
+acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms}, VS0, Revision) ->
+    VS1 = VS0#{terminal => TerminalRef},
     Terminal = #domain_Terminal{
         risk_coverage = RiskCoverage
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
-    _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
+    _ = acceptable_payment_terms(Terms, VS1, Revision),
+    _ = acceptable_risk(RiskCoverage, VS1),
     {TerminalRef, Terminal};
-acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
+acceptable_terminal(recurrent_paytool, TerminalRef, #domain_Provider{recurrent_paytool_terms = Terms}, VS0, Revision) ->
+    VS1 = VS0#{terminal => TerminalRef},
+    Terminal = #domain_Terminal{
+        risk_coverage = RiskCoverage
+    } = hg_domain:get(Revision, {terminal, TerminalRef}),
+    _ = acceptable_recurrent_paytool_terms(Terms, VS1, Revision),
+    _ = acceptable_risk(RiskCoverage, VS1),
+    {TerminalRef, Terminal};
+acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS0, Revision) ->
+    VS1 = VS0#{terminal => TerminalRef},
     % Use provider check combined from recurrent_paytool and payment check
     #domain_Provider{
-        payment_terms = PaymentTerms0,
+        payment_terms = Terms,
         recurrent_paytool_terms = RecurrentTerms
     } = Provider,
     Terminal = #domain_Terminal{
-        terms         = TerminalTerms,
         risk_coverage = RiskCoverage
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
-    PaymentTerms = merge_payment_terms(PaymentTerms0, TerminalTerms),
-    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
-    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
+    _ = acceptable_payment_terms(Terms, VS1, Revision),
+    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS1, Revision),
+    _ = acceptable_risk(RiskCoverage, VS1),
     {TerminalRef, Terminal}.
+
+%%%
 
 acceptable_risk(RiskCoverage, VS) ->
     RiskScore = getv(risk_score, VS),
@@ -351,39 +349,6 @@ acceptable_partial_refunds_terms(
 
 acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
     throw(?rejected({'PartialRefundsProvisionTerms', undefined})).
-
-merge_payment_terms(
-    #domain_PaymentsProvisionTerms{
-        holds           = Holds0,
-        refunds         = Refunds0
-    },
-    #domain_PaymentsProvisionTerms{
-        currencies      = Currencies1,
-        categories      = Categories1,
-        payment_methods = PaymentMethods1,
-        cash_limit      = CashLimit1,
-        cash_flow       = Cashflow1,
-        holds           = Holds1,
-        refunds         = Refunds1
-    }
-) ->
-    #domain_PaymentsProvisionTerms{
-        currencies      = Currencies1,
-        categories      = Categories1,
-        payment_methods = PaymentMethods1,
-        cash_limit      = CashLimit1,
-        cash_flow       = Cashflow1,
-        holds           = merge_holds_terms(Holds1, Holds0),
-        refunds         = merge_refunds_terms(Refunds1, Refunds0)
-    };
-merge_payment_terms(Terms0, Terms1) ->
-    hg_utils:select_defined(Terms1, Terms0).
-
-merge_holds_terms(Terms0, Terms1) ->
-    hg_utils:select_defined(Terms1, Terms0).
-
-merge_refunds_terms(Terms0, Terms1) ->
-    hg_utils:select_defined(Terms1, Terms0).
 
 %%
 
