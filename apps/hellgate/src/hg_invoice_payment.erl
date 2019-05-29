@@ -866,18 +866,18 @@ capture(St, Reason, Cost, Cart, Opts) ->
     Payment = get_payment(St),
     _ = assert_capture_cost_currency(Cost, Payment),
     _ = assert_capture_cart(Cost, Cart),
-    case check_equal_capture_cost_amount(Cost, Payment) and (Cart =:= undefined) of
+    case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
-            total_capture(St, Reason);
+            total_capture(St, Reason, Cart);
         false ->
             _ = assert_activity({payment, flow_waiting}, St),
             _ = assert_payment_flow(hold, Payment),
             partial_capture(St, Reason, Cost, Cart, Opts)
     end.
 
-total_capture(St, Reason) ->
+total_capture(St, Reason, Cart) ->
     Cost = get_payment_cost(get_payment(St)),
-    do_payment(St, ?captured(Reason, Cost)).
+    do_payment(St, ?captured(Reason, Cost, Cart)).
 
 partial_capture(St, Reason, Cost, Cart, Opts) ->
     Payment             = get_payment(St),
