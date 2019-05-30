@@ -58,6 +58,7 @@
 -export([payment_adjustment_success/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
+-export([terminal_cashflow_overrides_provider/1]).
 -export([payment_hold_cancellation/1]).
 -export([payment_hold_auto_cancellation/1]).
 -export([payment_hold_capturing/1]).
@@ -163,6 +164,7 @@ groups() ->
 
             invalid_payment_w_deprived_party,
             external_account_posting,
+            terminal_cashflow_overrides_provider,
 
             {group, holds_management},
 
@@ -1543,6 +1545,38 @@ external_account_posting(C) ->
                     account_id = AccountID
                 },
                 details = <<"Assist fee">>
+            } <- CF
+    ],
+    #domain_ExternalAccountSet{
+        accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
+    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
+
+
+-spec terminal_cashflow_overrides_provider(config()) -> test_return().
+
+terminal_cashflow_overrides_provider(C) ->
+    PartyID = <<"LGBT">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    _ = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    [ _, _, ?payment_ev(PaymentID, ?cash_flow_changed(CF)) ] = next_event(InvoiceID, InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
+    [AssistAccountID] = [
+        AccountID ||
+            #domain_FinalCashFlowPosting{
+                destination = #domain_FinalCashFlowAccount{
+                    account_type = {external, outcome},
+                    account_id = AccountID
+                },
+                details = <<"Kek">>
             } <- CF
     ],
     #domain_ExternalAccountSet{
@@ -3753,7 +3787,7 @@ construct_domain_fixture() ->
                             {system, settlement},
                             {external, outcome},
                             ?fixed(20, <<"RUB">>),
-                            <<"Assist fee">>
+                            <<"Kek">>
                         )
                     ]}
                 }
