@@ -32,7 +32,6 @@
 -type varset() :: #{
     category        => dmsl_domain_thrift:'CategoryRef'(),
     currency        => dmsl_domain_thrift:'CurrencyRef'(),
-    terminal        => dmsl_domain_thrift:'TerminalRef'() | undefined,
     cost            => dmsl_domain_thrift:'Cash'(),
     payment_tool    => dmsl_domain_thrift:'PaymentTool'(),
     party_id        => dmsl_domain_thrift:'PartyID'(),

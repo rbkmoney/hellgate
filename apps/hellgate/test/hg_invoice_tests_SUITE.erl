@@ -3627,6 +3627,7 @@ construct_domain_fixture() ->
                 risk_coverage = high
             }
         }},
+
         {provider, #domain_ProviderObject{
             ref = ?prv(2),
             data = #domain_Provider{
@@ -3645,91 +3646,31 @@ construct_domain_fixture() ->
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},
-                    categories = {decisions, [
-                        #domain_CategoryDecision{
-                            if_   = {condition, {terminal_is, ?trm(6)}},
-                            then_ = {value, ?ordset([
-                                ?cat(2)
-                            ])}
-                        },
-                        #domain_CategoryDecision{
-                            if_   = {constant, true},
-                            then_ = {value, ?ordset([
-                                ?cat(2),
-                                ?cat(4),
-                                ?cat(5),
-                                ?cat(6)
-                            ])}
-                        }
-                    ]},
-                    payment_methods = {decisions, [
-                        #domain_PaymentMethodDecision{
-                            if_   = {condition, {terminal_is, ?trm(6)}},
-                            then_ = {value, ?ordset([
-                                ?pmt(bank_card, visa)
-                            ])}
-                        },
-                        #domain_PaymentMethodDecision{
-                            if_   = {constant, true},
-                            then_ = {value, ?ordset([
-                                ?pmt(bank_card, visa),
-                                ?pmt(bank_card, mastercard)
-                            ])}
-                        }
-                    ]},
-                    cash_limit = {decisions, [
-                        #domain_CashLimitDecision{
-                            if_   = {condition, {terminal_is, ?trm(6)}},
-                            then_ = {value, ?cashrng(
-                                {inclusive, ?cash(    1000, <<"RUB">>)},
-                                {exclusive, ?cash( 5000000, <<"RUB">>)}
-                            )}
-                        },
-                        #domain_CashLimitDecision{
-                            if_   = {constant, true},
-                            then_ = {value, ?cashrng(
-                                {inclusive, ?cash(    1000, <<"RUB">>)},
-                                {exclusive, ?cash(10000000, <<"RUB">>)}
-                            )}
-                        }
-                    ]},
-                    cash_flow = {decisions, [
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {terminal_is, ?trm(6)}},
-                            then_ = {value, ?ordset([
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(16, 1000, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {external, outcome},
-                                    ?fixed(20, <<"RUB">>),
-                                    <<"Assist fee">>
-                                )
-                            ])}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {constant, true},
-                            then_ = {value, ?ordset([
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(16, 1000, operation_amount)
-                                )
-                            ])}
-                        }
+                    categories = {value, ?ordset([
+                        ?cat(2),
+                        ?cat(4),
+                        ?cat(5),
+                        ?cat(6)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(    1000, <<"RUB">>)},
+                        {exclusive, ?cash(10000000, <<"RUB">>)}
+                    )},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(16, 1000, operation_amount)
+                        )
                     ]},
                     refunds = #domain_PaymentRefundsProvisionTerms{
                         cash_flow = {value, [
@@ -3754,7 +3695,40 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                risk_coverage = low
+                risk_coverage = low,
+                terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(2)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa)
+                    ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(    1000, <<"RUB">>)},
+                        {exclusive, ?cash( 5000000, <<"RUB">>)}
+                    )},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(16, 1000, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {external, outcome},
+                            ?fixed(20, <<"RUB">>),
+                            <<"Assist fee">>
+                        )
+                    ]}
+                }
             }
         }},
         {terminal, #domain_TerminalObject{
