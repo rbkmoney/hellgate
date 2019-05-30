@@ -3736,7 +3736,27 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
-                risk_coverage = high
+                risk_coverage = high,
+                terms = #domain_PaymentsProvisionTerms{
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(16, 1000, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {external, outcome},
+                            ?fixed(20, <<"RUB">>),
+                            <<"Assist fee">>
+                        )
+                    ]}
+                }
             }
         }},
 
