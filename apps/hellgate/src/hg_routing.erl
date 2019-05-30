@@ -354,32 +354,32 @@ acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
-        currencies      = Currencies0,
-        categories      = Categories0,
-        payment_methods = PaymentMethods0,
-        cash_limit      = CashLimit0,
-        cash_flow       = Cashflow0,
-        holds           = Holds0,
-        refunds         = Refunds0
+        currencies      = PCurrencies,
+        categories      = PCategories,
+        payment_methods = PPaymentMethods,
+        cash_limit      = PCashLimit,
+        cash_flow       = PCashflow,
+        holds           = PHolds,
+        refunds         = PRefunds
     },
     #domain_PaymentsProvisionTerms{
-        currencies      = Currencies1,
-        categories      = Categories1,
-        payment_methods = PaymentMethods1,
-        cash_limit      = CashLimit1,
-        cash_flow       = Cashflow1,
-        holds           = Holds1,
-        refunds         = Refunds1
+        currencies      = TCurrencies,
+        categories      = TCategories,
+        payment_methods = TPaymentMethods,
+        cash_limit      = TCashLimit,
+        cash_flow       = TCashflow,
+        holds           = THolds,
+        refunds         = TRefunds
     }
 ) ->
     #domain_PaymentsProvisionTerms{
-        currencies      = hg_utils:select_defined(Currencies1, Currencies0),
-        categories      = hg_utils:select_defined(Categories1, Categories0),
-        payment_methods = hg_utils:select_defined(PaymentMethods1, PaymentMethods0),
-        cash_limit      = hg_utils:select_defined(CashLimit1, CashLimit0),
-        cash_flow       = hg_utils:select_defined(Cashflow1, Cashflow0),
-        holds           = hg_utils:select_defined(Holds0, Holds1),
-        refunds         = hg_utils:select_defined(Refunds0, Refunds1)
+        currencies      = hg_utils:select_defined(TCurrencies,     PCurrencies),
+        categories      = hg_utils:select_defined(TCategories,     PCategories),
+        payment_methods = hg_utils:select_defined(TPaymentMethods, PPaymentMethods),
+        cash_limit      = hg_utils:select_defined(TCashLimit,      PCashLimit),
+        cash_flow       = hg_utils:select_defined(TCashflow,       PCashflow),
+        holds           = hg_utils:select_defined(PHolds,          THolds),
+        refunds         = hg_utils:select_defined(PRefunds,        TRefunds)
     };
 merge_payment_terms(ProviderTerms, TerminalTerms) ->
     hg_utils:select_defined(TerminalTerms, ProviderTerms).
