@@ -40,7 +40,6 @@
 -export_type([st/0]).
 
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
--type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 -type rec_payment_tool_change() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolChange'().
 
 -type route()                   :: dmsl_domain_thrift:'PaymentRoute'().
@@ -49,7 +48,6 @@
 -type shop()                    :: dmsl_domain_thrift:'Shop'().
 -type party()                   :: dmsl_domain_thrift:'Party'().
 -type merchant_terms()          :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
--type payment_tool()            :: dmsl_domain_thrift:'PaymentTool'().
 -type domain_revision()         :: hg_domain:revision().
 
 -type session() :: #{
@@ -95,13 +93,13 @@ handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     Shop = ensure_shop_exists(RecurrentPaymentToolParams, Party),
     ok = assert_party_shop_operable(Shop, Party),
     MerchantTerms = assert_operation_permitted(Shop, Party, DomainRevison),
-    PaymentTool = validate_payment_tool(
+    _PaymentTool = validate_payment_tool(
         get_payment_tool(RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.payment_resource),
         MerchantTerms#domain_RecurrentPaytoolsServiceTerms.payment_methods,
         collect_varset(Party, Shop, #{}),
         DomainRevison
     ),
-    ok = start(RecPaymentToolID, [PaymentTool, RecurrentPaymentToolParams]),
+    ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
@@ -130,8 +128,10 @@ publish_rec_payment_tool_event(RecPaymentToolID, Event) ->
 set_meta(ID) ->
     scoper:add_meta(#{id => ID}).
 
-start(ID, Args) ->
-    map_start_error(hg_machine:start(?NS, ID, Args)).
+start(ID, Params) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolParams'}},
+    EncodedParams = hg_proto_utils:serialize(Type, Params),
+    map_start_error(hg_machine:start(?NS, ID, EncodedParams)).
 
 call(ID, Args) ->
     map_error(hg_machine:call(?NS, ID, Args)).
@@ -194,9 +194,13 @@ map_start_error({error, Reason}) ->
 namespace() ->
     ?NS.
 
--spec init([payment_tool() | rec_payment_tool_params()], hg_machine:machine()) ->
+-spec init(binary(), hg_machine:machine()) ->
     hg_machine:result().
-init([PaymentTool, Params], #{id := RecPaymentToolID}) ->
+init(EncodedParams, #{id := RecPaymentToolID}) ->
+    Type        = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolParams'}},
+    Params      = hg_proto_utils:deserialize(Type, EncodedParams),
+    PaymentTool = get_payment_tool(Params#payproc_RecurrentPaymentToolParams.payment_resource),
+
     Revision           = hg_domain:head(),
     CreatedAt          = hg_datetime:format_now(),
     {Party, Shop}      = get_party_shop(Params),
