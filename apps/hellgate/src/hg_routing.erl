@@ -378,8 +378,8 @@ merge_payment_terms(
         payment_methods = hg_utils:select_defined(TPaymentMethods, PPaymentMethods),
         cash_limit      = hg_utils:select_defined(TCashLimit,      PCashLimit),
         cash_flow       = hg_utils:select_defined(TCashflow,       PCashflow),
-        holds           = hg_utils:select_defined(PHolds,          THolds),
-        refunds         = hg_utils:select_defined(PRefunds,        TRefunds)
+        holds           = hg_utils:select_defined(THolds,          PHolds),
+        refunds         = hg_utils:select_defined(TRefunds,        PRefunds)
     };
 merge_payment_terms(ProviderTerms, TerminalTerms) ->
     hg_utils:select_defined(TerminalTerms, ProviderTerms).
