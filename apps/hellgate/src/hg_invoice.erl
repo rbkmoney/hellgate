@@ -263,17 +263,17 @@ set_invoicing_meta(InvoiceID, PaymentID) ->
 %%
 
 -type tag()               :: dmsl_base_thrift:'Tag'().
--type callback()          :: _. %% FIXME
--type callback_response() :: _. %% FIXME
+-type callback()          :: {provider, dmsl_proxy_provider_thrift:'Callback'()}.
+-type callback_response() :: dmsl_proxy_provider_thrift:'CallbackResponse'().
 
 -spec process_callback(tag(), callback()) ->
     {ok, callback_response()} | {error, invalid_callback | notfound | failed} | no_return().
 
 process_callback(Tag, Callback) ->
     case hg_machine:call(?NS, {tag, Tag}, {callback, Tag, Callback}) of
-        {ok, {ok, _} = Ok} ->
-            Ok;
-        {ok, {exception, invalid_callback}} ->
+        {ok, _Reply} = Response ->
+            Response;
+        {exception, invalid_callback} ->
             {error, invalid_callback};
         {error, _} = Error ->
             Error
@@ -331,19 +331,13 @@ do_start(ID, Args) ->
     hg_machine:start(?NS, ID, Args).
 
 call(ID, Function, Args) ->
-    call(ID, 'Invoicing', Function, Args).
-
-call(ID, Service, Function, Args) ->
-    FunRef = {get_service_module(Service), {Service, Function}},
-    EncodedArgs = hg_proto_utils:serialize_function_args(FunRef, Args),
-    Call = {thrift_call, {Service, Function}, EncodedArgs},
-    case hg_machine:call(?NS, ID, Call) of
-        {ok, void} ->
+    case hg_machine:thrift_call(?NS, ID, invoicing, {'Invoicing', Function}, Args) of
+        ok ->
             ok;
-        {ok, {reply, Reply}} ->
-            hg_proto_utils:deserialize_function_reply(FunRef, Reply);
-        {ok, {exception, Exception}} ->
-            erlang:throw(hg_proto_utils:deserialize_function_exception(FunRef, Exception));
+        {ok, Reply} ->
+            Reply;
+        {exception, Exception} ->
+            erlang:throw(Exception);
         {error, Error} ->
             map_error(Error)
     end.
@@ -495,43 +489,37 @@ handle_expiration(St) ->
 
 %%
 
--type thrift_call() :: {thrift_call, hg_proto_utils:thrift_fun_ref(), Args :: binary()}.
+-type thrift_call()   :: {hg_proto_utils:thrift_fun_ref(), Args :: any()}.
 -type callback_call() :: {callback, tag(), callback()}.
+-type call()          :: thrift_call() | callback_call().
+-type call_result()   :: #{
+    changes   => [invoice_change()],
+    action    => hg_machine_action:t(),
+    response  => ok | term(),
+    state     => st()
+}.
 
--spec process_call(thrift_call() | callback_call(), hg_machine:machine()) ->
+-spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
-
-process_call({thrift_call, {Service, _Function} = FunRef, EncodedArgs}, #{history := History}) ->
-    FullFunRef = {get_service_module(Service), FunRef},
-    Args = hg_proto_utils:deserialize_function_args(FullFunRef, EncodedArgs),
-    St = collapse_history(unmarshal_history(History)),
-    try handle_result(handle_call(FunRef, Args, St)) of
-        {{ok, ok}, Result} ->
-            {void, Result};
-        {{ok, Reply}, Result} ->
-            EncodedReply = hg_proto_utils:serialize_function_reply(FullFunRef, Reply),
-            {{reply, EncodedReply}, Result}
-    catch
-        throw:Exception ->
-            EncodedException = hg_proto_utils:serialize_function_exception(FullFunRef, Exception),
-            {{exception, EncodedException}, #{}}
-    end;
-process_call({callback, Tag, Callback}, #{history := History}) ->
+process_call(Call, #{history := History}) ->
     St = collapse_history(unmarshal_history(History)),
     try
-        handle_result(handle_call(callback, [Tag, Callback], St))
+        handle_result(handle_call(Call, St))
     catch
         throw:Exception ->
             {{exception, Exception}, #{}}
     end.
 
-handle_call({'Invoicing', 'StartPayment'}, [_UserInfo, _InvoiceID, PaymentParams], St) ->
+-spec handle_call(call(), st()) ->
+    call_result().
+
+handle_call({{'Invoicing', 'StartPayment'}, [_UserInfo, _InvoiceID, PaymentParams]}, St) ->
     % TODO consolidate these assertions somehow
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     start_payment(PaymentParams, St);
 
-handle_call({'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID, Params], St) ->
+handle_call({{'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     #payproc_InvoicePaymentCaptureParams{
@@ -553,7 +541,7 @@ handle_call({'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID, 
         state => St
     };
 
-handle_call({'Invoicing', 'CancelPayment'}, [_UserInfo, _InvoiceID, PaymentID, Reason], St) ->
+handle_call({{'Invoicing', 'CancelPayment'}, [_UserInfo, _InvoiceID, PaymentID, Reason]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
@@ -565,7 +553,7 @@ handle_call({'Invoicing', 'CancelPayment'}, [_UserInfo, _InvoiceID, PaymentID, R
         state => St
     };
 
-handle_call({'Invoicing', 'Fulfill'}, [_UserInfo, _InvoiceID, Reason], St) ->
+handle_call({{'Invoicing', 'Fulfill'}, [_UserInfo, _InvoiceID, Reason]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(paid, St),
@@ -575,7 +563,7 @@ handle_call({'Invoicing', 'Fulfill'}, [_UserInfo, _InvoiceID, Reason], St) ->
         state    => St
     };
 
-handle_call({'Invoicing', 'Rescind'}, [_UserInfo, _InvoiceID, Reason], St) ->
+handle_call({{'Invoicing', 'Rescind'}, [_UserInfo, _InvoiceID, Reason]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(unpaid, St),
@@ -587,7 +575,7 @@ handle_call({'Invoicing', 'Rescind'}, [_UserInfo, _InvoiceID, Reason], St) ->
         state    => St
     };
 
-handle_call({'Invoicing', 'RefundPayment'}, [_UserInfo, _InvoiceID, PaymentID, Params], St) ->
+handle_call({{'Invoicing', 'RefundPayment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
@@ -597,7 +585,7 @@ handle_call({'Invoicing', 'RefundPayment'}, [_UserInfo, _InvoiceID, PaymentID, P
         St
     );
 
-handle_call({'Invoicing', 'CreateManualRefund'}, [_UserInfo, _InvoiceID, PaymentID, Params], St) ->
+handle_call({{'Invoicing', 'CreateManualRefund'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
@@ -607,7 +595,7 @@ handle_call({'Invoicing', 'CreateManualRefund'}, [_UserInfo, _InvoiceID, Payment
         St
     );
 
-handle_call({'Invoicing', 'CreatePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, Params], St) ->
+handle_call({{'Invoicing', 'CreatePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Timestamp = hg_datetime:format_now(),
@@ -618,7 +606,7 @@ handle_call({'Invoicing', 'CreatePaymentAdjustment'}, [_UserInfo, _InvoiceID, Pa
         St
     );
 
-handle_call({'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID], St) ->
+handle_call({{'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Adjustment = hg_invoice_payment:get_adjustment(ID, PaymentSession),
@@ -633,7 +621,7 @@ handle_call({'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, P
         St
     );
 
-handle_call({'Invoicing', 'CancelPaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID], St) ->
+handle_call({{'Invoicing', 'CancelPaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Adjustment = hg_invoice_payment:get_adjustment(ID, PaymentSession),
@@ -648,9 +636,11 @@ handle_call({'Invoicing', 'CancelPaymentAdjustment'}, [_UserInfo, _InvoiceID, Pa
         St
     );
 
-handle_call(callback, [Tag, Callback], St) ->
+handle_call({callback, Tag, Callback}, St) ->
     dispatch_callback(Tag, Callback, St).
 
+-spec dispatch_callback(tag(), callback(), st()) ->
+    call_result().
 dispatch_callback(Tag, {provider, Payload}, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
     process_payment_call({callback, Tag, Payload}, PaymentID, PaymentSession, St);
@@ -712,8 +702,9 @@ process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
 process_payment_call(Call, PaymentID, PaymentSession, St) ->
     {Revision, Timestamp} = hg_invoice_payment:get_party_revision(PaymentSession),
     Opts = get_payment_opts(Revision, Timestamp, St),
-    {Response, PaymentResult} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
-    maps:merge(#{response => Response}, handle_payment_result(PaymentResult, PaymentID, PaymentSession, St)).
+    {Response, PaymentResult0} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
+    PaymentResult1 = handle_payment_result(PaymentResult0, PaymentID, PaymentSession, St),
+    PaymentResult1#{response => Response}.
 
 handle_payment_result({next, {Changes, Action}}, PaymentID, _PaymentSession, St) ->
     #{
@@ -780,6 +771,8 @@ handle_result(#{state := St} = Result) ->
     case maps:get(response, Result, undefined) of
         undefined ->
             MachineResult;
+        ok ->
+            {ok, MachineResult};
         Response ->
             {{ok, Response}, MachineResult}
     end.
@@ -1113,13 +1106,6 @@ get_message(invoice_created) ->
     "Invoice is created";
 get_message(invoice_status_changed) ->
     "Invoice status is changed".
-
-%% Marcshaling helpers
-
--spec get_service_module(atom()) ->
-    module().
-get_service_module('Invoicing') ->
-    dmsl_payment_processing_thrift.
 
 -include("legacy_structures.hrl").
 

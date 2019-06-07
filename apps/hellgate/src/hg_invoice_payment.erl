@@ -139,6 +139,8 @@
 -type session_result()      :: dmsl_payment_processing_thrift:'SessionResult'().
 -type proxy_state()         :: dmsl_proxy_provider_thrift:'ProxyState'().
 -type tag()                 :: dmsl_proxy_provider_thrift:'CallbackTag'().
+-type callback()            :: dmsl_proxy_provider_thrift:'Callback'().
+-type callback_response()   :: dmsl_proxy_provider_thrift:'CallbackResponse'().
 -type make_recurrent()      :: true | false.
 -type recurrent_token()     :: dmsl_domain_thrift:'Token'().
 -type retry_strategy()      :: hg_retry:strategy().
@@ -1433,8 +1435,8 @@ repair_process_timeout(Activity, Action, St = #st{repair_scenario = Scenario}) -
             process_timeout(Activity, Action, St)
     end.
 
--spec process_call({callback, tag(), _}, st(), opts()) ->
-    {_, machine_result()}. % FIXME
+-spec process_call({callback, tag(), callback()}, st(), opts()) ->
+    {callback_response(), machine_result()}.
 process_call({callback, Tag, Payload}, St, Options) ->
     scoper:scope(
         payment,
@@ -1442,6 +1444,8 @@ process_call({callback, Tag, Payload}, St, Options) ->
         fun() -> process_callback(Tag, Payload, St#st{opts = Options}) end
     ).
 
+-spec process_callback(tag(), callback(), st()) ->
+    {callback_response(), machine_result()}.
 process_callback(Tag, Payload, St) ->
     Action = hg_machine_action:new(),
     Session = get_activity_session(St),
@@ -1559,6 +1563,8 @@ process_callback_timeout(Action, Session, Events, St) ->
     Result = handle_proxy_callback_timeout(Action, Events, Session),
     finish_session_processing(Result, St).
 
+-spec handle_callback(callback(), action(), st()) ->
+    {callback_response(), machine_result()}.
 handle_callback(Payload, Action, St) ->
     ProxyContext = construct_proxy_context(St),
     Route        = get_route(St),

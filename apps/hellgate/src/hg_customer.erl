@@ -139,19 +139,13 @@ start(ID, Params) ->
     map_start_error(hg_machine:start(?NS, ID, EncodedParams)).
 
 call(ID, Function, Args) ->
-    call(ID, 'CustomerManagement', Function, Args).
-
-call(ID, Service, Function, Args) ->
-    FunRef = {dmsl_payment_processing_thrift, {Service, Function}},
-    EncodedArgs = hg_proto_utils:serialize_function_args(FunRef, Args),
-    Call = {thrift_call, {Service, Function}, EncodedArgs},
-    case hg_machine:call(?NS, ID, Call) of
-        {ok, void} ->
+    case hg_machine:thrift_call(?NS, ID, customer_management, {'CustomerManagement', Function}, Args) of
+        ok ->
             ok;
-        {ok, {reply, Reply}} ->
-            hg_proto_utils:deserialize_function_reply(FunRef, Reply);
-        {ok, {exception, Exception}} ->
-            erlang:throw(hg_proto_utils:deserialize_function_exception(FunRef, Exception));
+        {ok, Reply} ->
+            Reply;
+        {exception, Exception} ->
+            erlang:throw(Exception);
         {error, Error} ->
             map_error(Error)
     end.
@@ -260,41 +254,36 @@ is_binding_succeeded(#payproc_CustomerBinding{status = ?customer_binding_succeed
 is_binding_succeeded(_) ->
     false.
 
--type call() :: {thrift_call, hg_proto_utils:thrift_fun_ref(), Args :: binary()}.
+-type call() :: {hg_proto_utils:thrift_fun_ref(), Args :: any()}.
 
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
-process_call({thrift_call, FunRef, EncodedArgs}, #{history := History}) ->
-    FullFunRef = {dmsl_payment_processing_thrift, FunRef},
-    Args = hg_proto_utils:deserialize_function_args(FullFunRef, EncodedArgs),
+process_call(Call, #{history := History}) ->
     St = collapse_history(unmarshal_history(History)),
-    try handle_result(handle_call(FunRef, Args, St)) of
-        {{ok, ok}, Result} ->
-            {void, Result};
-        {{ok, Reply}, Result} ->
-            EncodedReply = hg_proto_utils:serialize_function_reply(FullFunRef, Reply),
-            {{reply, EncodedReply}, Result}
+    try
+        handle_result(handle_call(Call, St))
     catch
         throw:Exception ->
-            EncodedException = hg_proto_utils:serialize_function_exception(FullFunRef, Exception),
-            {{exception, EncodedException}, #{}}
+            {{exception, Exception}, #{}}
     end.
 
-handle_call({'CustomerManagement', 'Delete'}, [_CustomerID], St) ->
+handle_call({{'CustomerManagement', 'Delete'}, [_CustomerID]}, St) ->
     ok = assert_customer_operable(St),
     #{
         response => ok,
         changes  => [?customer_deleted()]
     };
-handle_call({'CustomerManagement', 'StartBinding'}, [_CustomerID, BindingParams], St) ->
+handle_call({{'CustomerManagement', 'StartBinding'}, [_CustomerID, BindingParams]}, St) ->
     ok = assert_customer_operable(St),
     start_binding(BindingParams, St).
 
 handle_result(Params) ->
     Result = handle_aux_state(Params, handle_result_changes(Params, handle_result_action(Params, #{}))),
     case maps:find(response, Params) of
-        {ok, Response} ->
-            {{ok, Response}, Result};
+        {ok, ok} ->
+            {ok, Result};
+        {ok, {ok, _Reply} = Response} ->
+            {Response, Result};
         error ->
             Result
     end.
@@ -325,7 +314,7 @@ start_binding(BindingParams, St) ->
     Binding = construct_binding(BindingID, RecurrentPaytoolID, PaymentResource),
     Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
     #{
-        response => Binding,
+        response => {ok, Binding},
         changes  => Changes,
         action   => set_event_poll_timer(actual)
     }.

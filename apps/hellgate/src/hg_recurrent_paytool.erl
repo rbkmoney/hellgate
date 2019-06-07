@@ -49,6 +49,7 @@
 -type party()                   :: dmsl_domain_thrift:'Party'().
 -type merchant_terms()          :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
 -type domain_revision()         :: hg_domain:revision().
+-type action()                  :: hg_machine_action:t().
 
 -type session() :: #{
     status      := active | suspended | finished,
@@ -61,6 +62,11 @@
 -type trx_info()                :: dmsl_domain_thrift:'TransactionInfo'().
 -type session_result()          :: dmsl_payment_processing_thrift:'SessionResult'().
 
+-type tag()                     :: dmsl_base_thrift:'Tag'().
+-type callback()                :: {provider, dmsl_proxy_provider_thrift:'Callback'()}.
+-type callback_response()       :: dmsl_proxy_provider_thrift:'CallbackResponse'().
+-type proxy_callback_result()   :: dmsl_proxy_provider_thrift:'RecurrentTokenCallbackResult'().
+-type token()                   :: dmsl_domain_thrift:'Token'().
 
 %% Woody handler
 
@@ -136,15 +142,14 @@ start(ID, Params) ->
 call(ID, Args) ->
     map_error(hg_machine:call(?NS, ID, Args)).
 
--spec map_error({ok, _Result} | {error, _Error}) ->
+-spec map_error(ok | {ok, _Result} | {error, _Error}) ->
     _Result | no_return().
-map_error({ok, CallResult}) ->
-    case CallResult of
-        {ok, Result} ->
-            Result;
-        {exception, Reason} ->
-            throw(Reason)
-    end;
+map_error(ok) ->
+    ok;
+map_error({ok, Result}) ->
+    Result;
+map_error({exception, Reason}) ->
+    throw(Reason);
 map_error({error, notfound}) ->
     throw(#payproc_RecurrentPaymentToolNotFound{});
 map_error({error, Reason}) ->
@@ -441,6 +446,8 @@ handle_proxy_result(
             make_proxy_result(Changes, Action)
     end.
 
+-spec handle_callback_result(proxy_callback_result(), action(), session()) ->
+    {callback_response(), {[rec_payment_tool_change()], action(), token()}}.
 handle_callback_result(
     #prxprv_RecurrentTokenCallbackResult{result = ProxyResult, response = Response},
     Action0,
@@ -465,6 +472,8 @@ wrap_session_events(SessionEvents) ->
 
 %%
 
+-spec finish_processing({[rec_payment_tool_change()], action(), token()}, st()) ->
+    call_result().
 finish_processing({Changes, Action, Token}, St) ->
     St1 = apply_changes(Changes, St),
     case get_session(St1) of
@@ -549,6 +558,11 @@ create_session() ->
     }.
 
 -type call() :: abandon.
+-type call_result() :: #{
+    changes   => [rec_payment_tool_change()],
+    action    => action(),
+    response  => ok | term()
+}.
 
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
@@ -559,6 +573,8 @@ process_call(Call, #{history := History}) ->
             {{exception, Exception}, #{}}
     end.
 
+-spec handle_call(call(), st()) ->
+    call_result().
 handle_call(abandon, St) ->
     ok = assert_rec_payment_tool_status(acquired, St),
     Changes = [?recurrent_payment_tool_has_abandoned()],
@@ -570,6 +586,8 @@ handle_call(abandon, St) ->
 handle_call({callback, Callback}, St) ->
     dispatch_callback(Callback, St).
 
+-spec dispatch_callback(callback(), st()) ->
+    call_result().
 dispatch_callback({provider, Payload}, St) ->
     Action = hg_machine_action:new(),
     case get_session_status(get_session(St)) of
@@ -586,29 +604,26 @@ dispatch_callback({provider, Payload}, St) ->
             throw(invalid_callback)
     end.
 
--type tag()               :: dmsl_base_thrift:'Tag'().
--type callback()          :: _. %% FIXME
--type callback_response() :: _. %% FIXME
-
 -spec process_callback(tag(), callback()) ->
     {ok, callback_response()} | {error, invalid_callback | notfound | failed} | no_return().
-
 process_callback(Tag, Callback) ->
     case hg_machine:call(?NS, {tag, Tag}, {callback, Callback}) of
-        {ok, {ok, _} = Ok} ->
-            Ok;
-        {ok, {exception, invalid_callback}} ->
+        {ok, _CallbackResponse} = Result ->
+            Result;
+        {exception, invalid_callback} ->
             {error, invalid_callback};
         {error, _} = Error ->
             Error
     end.
 
+-spec handle_result(call_result()) ->
+    {hg_machine:response(), hg_machine:result()} | hg_machine:result().
 handle_result(Params) ->
     Result = handle_result_changes(Params, handle_result_action(Params, #{})),
-    case maps:find(response, Params) of
-        {ok, Response} ->
+    case Params of
+        #{response := Response} ->
             {{ok, Response}, Result};
-        error ->
+        #{} ->
             Result
     end.
 

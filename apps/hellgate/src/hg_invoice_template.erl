@@ -158,19 +158,13 @@ start(ID, Params) ->
     map_start_error(hg_machine:start(?NS, ID, EncodedParams)).
 
 call(ID, Function, Args) ->
-    call(ID, 'InvoiceTemplating', Function, Args).
-
-call(ID, Service, Function, Args) ->
-    FunRef = {dmsl_payment_processing_thrift, {Service, Function}},
-    EncodedArgs = hg_proto_utils:serialize_function_args(FunRef, Args),
-    Call = {thrift_call, {Service, Function}, EncodedArgs},
-    case hg_machine:call(?NS, ID, Call) of
-        {ok, void} ->
+    case hg_machine:thrift_call(?NS, ID, invoice_templating, {'InvoiceTemplating', Function}, Args) of
+        ok ->
             ok;
-        {ok, {reply, Reply}} ->
-            hg_proto_utils:deserialize_function_reply(FunRef, Reply);
-        {ok, {exception, Exception}} ->
-            erlang:throw(hg_proto_utils:deserialize_function_exception(FunRef, Exception));
+        {ok, Reply} ->
+            Reply;
+        {exception, Exception} ->
+            erlang:throw(Exception);
         {error, Error} ->
             map_error(Error)
     end.
@@ -198,7 +192,7 @@ map_history_error({error, notfound}) ->
 %% Machine
 
 -type create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
--type call()          :: {thrift_call, hg_proto_utils:thrift_fun_ref(), Args :: binary()}.
+-type call()          :: {hg_proto_utils:thrift_fun_ref(), Args :: any()}.
 
 -define(ev(Body),
     {invoice_template_changes, Body}
@@ -262,26 +256,22 @@ process_signal({repair, _}, _Machine) ->
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
 
-process_call({thrift_call, FunRef, EncodedArgs}, #{history := History}) ->
-    FullFunRef = {dmsl_payment_processing_thrift, FunRef},
-    Args = hg_proto_utils:deserialize_function_args(FullFunRef, EncodedArgs),
+process_call(Call, #{history := History}) ->
     St = collapse_history(unmarshal_history(History)),
-    try handle_call(FunRef, Args, St) of
+    try handle_call(Call, St) of
         {ok, Changes} ->
-            {void, #{events => [marshal_event_payload(Changes)]}};
+            {ok, #{events => [marshal_event_payload(Changes)]}};
         {Reply, Changes} ->
-            EncodedReply = hg_proto_utils:serialize_function_reply(FullFunRef, Reply),
-            {{reply, EncodedReply}, #{events => [marshal_event_payload(Changes)]}}
+            {{ok, Reply}, #{events => [marshal_event_payload(Changes)]}}
     catch
         throw:Exception ->
-            EncodedException = hg_proto_utils:serialize_function_exception(FullFunRef, Exception),
-            {{exception, EncodedException}, #{}}
+            {{exception, Exception}, #{}}
     end.
 
-handle_call({'InvoiceTemplating', 'Update'}, [_UserInfo, _TplID, Params], Tpl) ->
+handle_call({{'InvoiceTemplating', 'Update'}, [_UserInfo, _TplID, Params]}, Tpl) ->
     Changes = [?tpl_updated(Params)],
     {merge_changes(Changes, Tpl), Changes};
-handle_call({'InvoiceTemplating', 'Delete'}, [_UserInfo, _TplID], _Tpl) ->
+handle_call({{'InvoiceTemplating', 'Delete'}, [_UserInfo, _TplID]}, _Tpl) ->
     {ok, [?tpl_deleted()]}.
 
 collapse_history(History) ->

@@ -78,6 +78,8 @@
 -export([start/3]).
 -export([call/3]).
 -export([call/6]).
+-export([thrift_call/5]).
+-export([thrift_call/8]).
 -export([repair/3]).
 -export([get_history/2]).
 -export([get_history/4]).
@@ -103,42 +105,59 @@
 
 -type mg_event() :: mg_proto_state_processing_thrift:'Event'().
 -type mg_event_payload() :: mg_proto_state_processing_thrift:'EventBody'().
+-type function_ref() :: hg_proto_utils:thrift_fun_ref().
+-type service_name() :: atom().
 
 %%
 
 -spec start(ns(), id(), term()) ->
     {ok, term()} | {error, exists | term()} | no_return().
-
 start(Ns, ID, Args) ->
     call_automaton('Start', [Ns, ID, wrap_args(Args)]).
 
--spec call(ns(), ref(), Args :: term()) ->
-    {ok, term()} | {error, notfound | failed} | no_return().
+-spec thrift_call(ns(), ref(), service_name(), function_ref(), args()) ->
+    response() | {error, notfound | failed}.
+thrift_call(Ns, Ref, Service, FunRef, Args) ->
+    thrift_call(Ns, Ref, Service, FunRef, Args, undefined, undefined, forward).
 
+-spec thrift_call(Ns, Ref, Service, FunRef, Args, After, Limit, Direction) -> Result when
+    Ns :: ns(),
+    Ref :: ref(),
+    Service :: service_name(),
+    FunRef :: function_ref(),
+    Args :: args(),
+    After :: event_id() | undefined,
+    Limit :: integer() | undefined,
+    Direction :: forward | backward,
+    Result :: response() | {error, notfound | failed}.
+thrift_call(Ns, Ref, Service, FunRef, Args, After, Limit, Direction) ->
+    EncodedArgs = marshal_thrift_args(Service, FunRef, Args),
+    Call = {thrift_call, Service, FunRef, EncodedArgs},
+    case do_call(Ns, Ref, Call, After, Limit, Direction) of
+        {ok, Response} ->
+            % should be specific to a processing interface already
+            unmarshal_thrift_response(Service, FunRef, Response);
+        {error, _} = Error ->
+            Error
+    end.
+
+-spec call(ns(), ref(), Args :: term()) ->
+    response() | {error, notfound | failed}.
 call(Ns, Ref, Args) ->
     call(Ns, Ref, Args, undefined, undefined, forward).
 
--spec call(
-    ns(),
-    ref(),
-    Args :: term(),
+-spec call(Ns, Ref, Args, After, Limit, Direction) -> Result when
+    Ns :: ns(),
+    Ref :: ref(),
+    Args :: args(),
     After :: event_id() | undefined,
     Limit :: integer() | undefined,
-    Direction :: forward | backward
-) ->
-    {ok, term()} | {error, notfound | failed} | no_return().
-
+    Direction :: forward | backward,
+    Result :: response() | {error, notfound | failed}.
 call(Ns, Ref, Args, After, Limit, Direction) ->
-    HistoryRange = #mg_stateproc_HistoryRange{
-        'after' = After,
-        'limit' = Limit,
-        'direction' = Direction
-    },
-    Descriptor = prepare_descriptor(Ns, Ref, HistoryRange),
-    case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
+    case do_call(Ns, Ref, {schemaless_call, Args}, After, Limit, Direction) of
         {ok, Response} ->
-            % should be specific to a processing interface already
-            {ok, unmarshal_term(Response)};
+            unmarshal_schemaless_response(Response);
         {error, _} = Error ->
             Error
     end.
@@ -187,6 +206,28 @@ get_machine(Ns, Ref, AfterID, Limit, Direction) ->
     end.
 
 %%
+
+-spec do_call(Ns, Ref, Args, After, Limit, Direction) -> Result when
+    Ns :: ns(),
+    Ref :: ref(),
+    Args :: args(),
+    After :: event_id() | undefined,
+    Limit :: integer() | undefined,
+    Direction :: forward | backward,
+    Result :: {ok, response()} | {error, notfound | failed}.
+do_call(Ns, Ref, Args, After, Limit, Direction) ->
+    HistoryRange = #mg_stateproc_HistoryRange{
+        'after' = After,
+        'limit' = Limit,
+        'direction' = Direction
+    },
+    Descriptor = prepare_descriptor(Ns, Ref, HistoryRange),
+    case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
+        {ok, Response} ->
+            {ok, unmarshal_response(Response)};
+        {error, _} = Error ->
+            Error
+    end.
 
 call_automaton(Function, Args) ->
     case hg_woody_wrapper:call(automaton, Function, Args) of
@@ -286,10 +327,18 @@ dispatch_call(Ns, Payload, Machine) ->
     Args = unwrap_args(Payload),
     _ = log_dispatch(call, Args, Machine),
     Module = get_handler_module(Ns),
-    Result = Module:process_call(Args, Machine),
-    marshal_call_result(Result, Machine).
+    do_dispatch_call(Module, Args, Machine).
 
-marshal_call_result({Response, Result}, #{aux_state := AuxStWas}) ->
+do_dispatch_call(Module, {schemaless_call, Args}, Machine) ->
+    {Response, Result} = Module:process_call(Args, Machine),
+    marshal_call_result(marshal_schemaless_response(Response), Result, Machine);
+do_dispatch_call(Module, {thrift_call, ServiceName, FunctionRef, EncodedArgs}, Machine) ->
+    Args = unmarshal_thrift_args(ServiceName, FunctionRef, EncodedArgs),
+    {Response, Result} = Module:process_call({FunctionRef, Args}, Machine),
+    EncodedResponse = marshal_thrift_response(ServiceName, FunctionRef, Response),
+    marshal_call_result(EncodedResponse, Result, Machine).
+
+marshal_call_result(Response, Result, #{aux_state := AuxStWas}) ->
     _ = lager:debug("call response = ~p with result = ~p", [Response, Result]),
     Change = #mg_stateproc_MachineStateChange{
         events = marshal_events(maps:get(events, Result, [])),
@@ -298,7 +347,7 @@ marshal_call_result({Response, Result}, #{aux_state := AuxStWas}) ->
     #mg_stateproc_CallResult{
         change = Change,
         action = maps:get(action, Result, hg_machine_action:new()),
-        response = marshal_term(Response)
+        response = marshal_response(Response)
     }.
 
 %%
@@ -391,6 +440,84 @@ marshal_aux_st_format(AuxSt) ->
         format_version = undefined,
         data = mg_msgpack_marshalling:marshal(AuxSt)
     }.
+
+-spec marshal_thrift_args(service_name(), function_ref(), args()) ->
+    binary().
+marshal_thrift_args(ServiceName, FunctionRef, Args) ->
+    {Service, _Function} = FunctionRef,
+    {Module, Service} = hg_proto:get_service(ServiceName),
+    FullFunctionRef = {Module, FunctionRef},
+    hg_proto_utils:serialize_function_args(FullFunctionRef, Args).
+
+-spec unmarshal_thrift_args(service_name(), function_ref(), binary()) ->
+    args().
+unmarshal_thrift_args(ServiceName, FunctionRef, Args) ->
+    {Service, _Function} = FunctionRef,
+    {Module, Service} = hg_proto:get_service(ServiceName),
+    FullFunctionRef = {Module, FunctionRef},
+    hg_proto_utils:deserialize_function_args(FullFunctionRef, Args).
+
+-spec marshal_thrift_response(service_name(), function_ref(), response()) ->
+    response().
+marshal_thrift_response(ServiceName, FunctionRef, Response) ->
+    {Service, _Function} = FunctionRef,
+    {Module, Service} = hg_proto:get_service(ServiceName),
+    FullFunctionRef = {Module, FunctionRef},
+    case Response of
+        ok ->
+            ok;
+        {ok, Reply} ->
+            EncodedReply = hg_proto_utils:serialize_function_reply(FullFunctionRef, Reply),
+            {ok, EncodedReply};
+        {exception, Exception} ->
+            EncodedException = hg_proto_utils:serialize_function_exception(FullFunctionRef, Exception),
+            {exception, EncodedException}
+    end.
+
+-spec unmarshal_thrift_response(service_name(), function_ref(), response()) ->
+    response().
+unmarshal_thrift_response(ServiceName, FunctionRef, Response) ->
+    {Service, _Function} = FunctionRef,
+    {Module, Service} = hg_proto:get_service(ServiceName),
+    FullFunctionRef = {Module, FunctionRef},
+    case Response of
+        ok ->
+            ok;
+        {ok, EncodedReply} ->
+            Reply = hg_proto_utils:deserialize_function_reply(FullFunctionRef, EncodedReply),
+            {ok, Reply};
+        {exception, EncodedException} ->
+            Exception = hg_proto_utils:deserialize_function_exception(FullFunctionRef, EncodedException),
+            {exception, Exception}
+    end.
+
+-spec marshal_schemaless_response(response()) ->
+    response().
+marshal_schemaless_response(ok) ->
+    ok;
+marshal_schemaless_response({ok, _Reply} = Response) ->
+    Response;
+marshal_schemaless_response({exception, _Exception} = Response) ->
+    Response.
+
+-spec unmarshal_schemaless_response(response()) ->
+    response().
+unmarshal_schemaless_response(ok) ->
+    ok;
+unmarshal_schemaless_response({ok, _Reply} = Response) ->
+    Response;
+unmarshal_schemaless_response({exception, _Exception} = Response) ->
+    Response.
+
+marshal_response(ok = Response) ->
+    marshal_term(Response);
+marshal_response({ok, _Reply} = Response) ->
+    marshal_term(Response);
+marshal_response({exception, _Exception} = Response) ->
+    marshal_term(Response).
+
+unmarshal_response(Response) ->
+    unmarshal_term(Response).
 
 -spec unmarshal_events([mg_event()]) ->
     [event()].

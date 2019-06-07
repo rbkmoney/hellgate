@@ -421,13 +421,12 @@ call(PartyID, Call) ->
         backward
     )).
 
+map_error(ok) ->
+    ok;
 map_error({ok, CallResult}) ->
-    case CallResult of
-        {ok, Result} ->
-            Result;
-        {exception, Reason} ->
-            throw(Reason)
-    end;
+    CallResult;
+map_error({exception, Reason}) ->
+    throw(Reason);
 map_error({error, notfound}) ->
     throw(#payproc_PartyNotFound{});
 map_error({error, Reason}) ->
