@@ -189,7 +189,7 @@ register_operation(Status, ServiceId, OperationId, ServiceConfig) ->
 
 call(Service, Args) ->
     EnvFDConfig = genlib_app:env(hellgate, fault_detector, #{}),
-    Timeout     = genlib_map:get(timeout, EnvFDConfig, 500),
+    Timeout     = genlib_map:get(timeout, EnvFDConfig, 4000),
     Deadline    = woody_deadline:from_timeout(Timeout),
     do_call(Service, Args, Deadline).
 
