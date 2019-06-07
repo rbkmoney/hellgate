@@ -142,7 +142,7 @@ start_app(hellgate = AppName) ->
         {inspect_timeout, 1000},
         {fault_detector, #{
             critical_fail_rate   => 0.7,
-            timeout              => 2000,
+            timeout              => 10, % very low to speed up tests
             sliding_window       => 60000,
             operation_time_limit => 10000,
             pre_aggregation_size => 2
