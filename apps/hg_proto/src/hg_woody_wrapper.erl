@@ -63,11 +63,14 @@ call(ServiceName, Function, Args) ->
     Opts = get_service(ServiceName),
     call(ServiceName, Function, Args, Opts).
 
--spec call(atom(), woody:func(), list(), client_opts()) ->
+-spec call(atom(), woody:func(), list(), client_opts() | woody_deadline:deadline()) ->
     term().
 
-call(ServiceName, Function, Args, Opts) ->
-    call(ServiceName, Function, Args, Opts, undefined).
+call(ServiceName, Function, Args, Opts) when is_map(Opts) ->
+    call(ServiceName, Function, Args, Opts, undefined);
+call(ServiceName, Function, Args, Deadline) when is_tuple(Deadline); Deadline == undefined ->
+    Opts = get_service(ServiceName),
+    call(ServiceName, Function, Args, Opts, Deadline).
 
 -spec call(atom(), woody:func(), list(), client_opts(), woody_deadline:deadline()) ->
     term().
