@@ -60,7 +60,7 @@
 }).
 -type st() :: #st{}.
 
--type invoice_change()  :: dmsl_payment_processing_thrift:'InvoiceChange'().
+-type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
 
 %% API
 
@@ -524,16 +524,12 @@ handle_call({{'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID,
     _ = assert_invoice_operable(St),
     #payproc_InvoicePaymentCaptureParams{
         reason = Reason,
-        cash = Cash
+        cash = Cash,
+        cart = Cart
     } = Params,
     PaymentSession = get_payment_session(PaymentID, St),
-    {ok, {Changes, Action}} = case Cash of
-        #domain_Cash{} ->
-            Opts = get_payment_opts(St),
-            hg_invoice_payment:capture(PaymentSession, Reason, Cash, Opts);
-        undefined ->
-            hg_invoice_payment:capture(PaymentSession, Reason)
-    end,
+    Opts = get_payment_opts(St),
+    {ok, {Changes, Action}} = capture_payment(PaymentSession, Reason, Cash, Cart, Opts),
     #{
         response => ok,
         changes => wrap_payment_changes(PaymentID, Changes),
@@ -661,6 +657,14 @@ assert_no_pending_payment(_) ->
 
 set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
     hg_machine_action:set_deadline(Due).
+
+capture_payment(PaymentSession, Reason, undefined, Cart, Opts) when
+    Cart =/= undefined
+->
+    Cash = hg_invoice_utils:get_cart_amount(Cart),
+    capture_payment(PaymentSession, Reason, Cash, Cart, Opts);
+capture_payment(PaymentSession, Reason, Cash, Cart, Opts) ->
+    hg_invoice_payment:capture(PaymentSession, Reason, Cash, Cart, Opts).
 
 %%
 
@@ -957,7 +961,7 @@ make_invoice_params(Params) ->
         description = Description,
         cart = Cart
     },
-    InvoiceCost = get_cart_amount(Cart),
+    InvoiceCost = hg_invoice_utils:get_cart_amount(Cart),
     InvoiceDue = make_invoice_due_date(Lifetime),
     InvoiceContext = make_invoice_context(Context, TplContext),
     [
@@ -1007,21 +1011,6 @@ get_templated_price(Cost, {unlim, _}, Shop) ->
 get_cost(Cost, Shop) ->
     ok = hg_invoice_utils:validate_cost(Cost, Shop),
     Cost.
-
-get_cart_amount(#domain_InvoiceCart{lines = [FirstLine | Cart]}) ->
-    lists:foldl(
-        fun (Line, CashAcc) ->
-            hg_cash:add(get_line_amount(Line), CashAcc)
-        end,
-        get_line_amount(FirstLine),
-        Cart
-    ).
-
-get_line_amount(#domain_InvoiceLine{
-    quantity = Quantity,
-    price = #domain_Cash{amount = Amount, currency = Currency}
-}) ->
-    #domain_Cash{amount = Amount * Quantity, currency = Currency}.
 
 assert_cost_in_range(
     #domain_Cash{amount = Amount, currency = Currency},
