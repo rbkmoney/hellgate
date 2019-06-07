@@ -24,7 +24,7 @@
 -export([start/2]).
 -export([get_party/1]).
 -export([checkout/2]).
--export([call/2]).
+-export([call/4]).
 -export([get_claim/2]).
 -export([get_claims/1]).
 -export([get_public_history/3]).
@@ -50,29 +50,16 @@
 
 -type st() :: #st{}.
 
--type call() ::
-    {block, call_target(), binary()}                            |
-    {unblock, call_target(), binary()}                          |
-    {suspend, call_target()}                                    |
-    {activate, call_target()}                                   |
-    {set_metadata, meta_ns(), meta_data()}                      |
-    {remove_metadata, meta_ns()}                                |
-    {create_claim, changeset()}                                 |
-    {update_claim, claim_id(), claim_revision(), changeset()}   |
-    {accept_claim, claim_id(), claim_revision()}                |
-    {deny_claim, claim_id(), claim_revision(), binary()}        |
-    {revoke_claim, claim_id(), claim_revision(), binary()}.
+-type call()            :: hg_machine:thrift_call().
+-type service_name()    :: atom().
 
--type call_target()     :: party | {shop, shop_id()} | {wallet, wallet_id()}.
+-type call_target()     :: party | {shop, shop_id()}.
 
 -type party()           :: hg_party:party().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
--type wallet_id()       :: dmsl_domain_thrift:'WalletID'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
--type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
--type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
 -type timestamp()       :: hg_datetime:timestamp().
 -type meta()            :: dmsl_domain_thrift:'PartyMeta'().
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
@@ -104,10 +91,12 @@
 namespace() ->
     ?NS.
 
--spec init(dmsl_payment_processing_thrift:'PartyParams'(), hg_machine:machine()) ->
+-spec init(binary(), hg_machine:machine()) ->
     hg_machine:result().
 
-init(PartyParams, #{id := ID}) ->
+init(EncodedPartyParams, #{id := ID}) ->
+    ParamsType = {struct, struct, {dmsl_payment_processing_thrift, 'PartyParams'}},
+    PartyParams = hg_proto_utils:deserialize(ParamsType, EncodedPartyParams),
     scoper:scope(
         party,
         #{
@@ -140,18 +129,20 @@ process_signal({repair, _}, _Machine) ->
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
 
-process_call(Call, #{id := PartyID, history := History, aux_state := WrappedAuxSt}) ->
+process_call({{'PartyManagement', Fun}, FunArgs}, Machine) ->
+    [_UserInfo, PartyID | Args] = FunArgs,
+    #{id := PartyID, history := History, aux_state := WrappedAuxSt} = Machine,
     try
         scoper:scope(
             party,
             #{
                 id => PartyID,
-                activity => get_call_name(Call)
+                activity => Fun
             },
             fun() ->
                 AuxSt0 = unwrap_aux_state(WrappedAuxSt),
                 {St, AuxSt1} = get_state_for_call(PartyID, History, AuxSt0),
-                handle_call(Call, AuxSt1, St)
+                handle_call(Fun, Args, AuxSt1, St)
             end
         )
     catch
@@ -159,58 +150,37 @@ process_call(Call, #{id := PartyID, history := History, aux_state := WrappedAuxS
             respond_w_exception(Exception)
     end.
 
-get_call_name(Call) when is_tuple(Call) ->
-    element(1, Call);
-get_call_name(Call) when is_atom(Call) ->
-    Call.
+%% Party
 
-handle_call({block, Target, Reason}, AuxSt, St) ->
-    ok = assert_unblocked(Target, St),
-    Timestamp = hg_datetime:format_now(),
-    Revision = get_next_party_revision(St),
-    respond(
-        ok,
-        [block(Target, Reason, Timestamp), ?revision_changed(Timestamp, Revision)],
-        AuxSt,
-        St
-    );
+handle_call('Block', [Reason], AuxSt, St) ->
+    handle_block(party, Reason, AuxSt, St);
 
-handle_call({unblock, Target, Reason}, AuxSt, St) ->
-    ok = assert_blocked(Target, St),
-    Timestamp = hg_datetime:format_now(),
-    Revision = get_next_party_revision(St),
-    respond(
-        ok,
-        [unblock(Target, Reason, Timestamp), ?revision_changed(Timestamp, Revision)],
-        AuxSt,
-        St
-    );
+handle_call('Unblock', [Reason], AuxSt, St) ->
+    handle_unblock(party, Reason, AuxSt, St);
 
-handle_call({suspend, Target}, AuxSt, St) ->
-    ok = assert_unblocked(Target, St),
-    ok = assert_active(Target, St),
-    Timestamp = hg_datetime:format_now(),
-    Revision = get_next_party_revision(St),
-    respond(
-        ok,
-        [suspend(Target, Timestamp), ?revision_changed(Timestamp, Revision)],
-        AuxSt,
-        St
-    );
+handle_call('Suspend', [], AuxSt, St) ->
+    handle_suspend(party, AuxSt, St);
 
-handle_call({activate, Target}, AuxSt, St) ->
-    ok = assert_unblocked(Target, St),
-    ok = assert_suspended(Target, St),
-    Timestamp = hg_datetime:format_now(),
-    Revision = get_next_party_revision(St),
-    respond(
-        ok,
-        [activate(Target, Timestamp), ?revision_changed(Timestamp, Revision)],
-        AuxSt,
-        St
-    );
+handle_call('Activate', [], AuxSt, St) ->
+    handle_activate(party, AuxSt, St);
 
-handle_call({set_metadata, NS, Data}, AuxSt, St) ->
+%% Shop
+
+handle_call('BlockShop', [ID, Reason], AuxSt, St) ->
+    handle_block({shop, ID}, Reason, AuxSt, St);
+
+handle_call('UnblockShop', [ID, Reason], AuxSt, St) ->
+    handle_unblock({shop, ID}, Reason, AuxSt, St);
+
+handle_call('SuspendShop', [ID], AuxSt, St) ->
+    handle_suspend({shop, ID}, AuxSt, St);
+
+handle_call('ActivateShop', [ID], AuxSt, St) ->
+    handle_activate({shop, ID}, AuxSt, St);
+
+%% PartyMeta
+
+handle_call('SetMetaData', [NS, Data], AuxSt, St) ->
     respond(
         ok,
         [?party_meta_set(NS, Data)],
@@ -218,7 +188,7 @@ handle_call({set_metadata, NS, Data}, AuxSt, St) ->
         St
     );
 
-handle_call({remove_metadata, NS}, AuxSt, St) ->
+handle_call('RemoveMetaData', [NS], AuxSt, St) ->
     _ = get_st_metadata(NS, St),
     respond(
         ok,
@@ -227,7 +197,9 @@ handle_call({remove_metadata, NS}, AuxSt, St) ->
         St
     );
 
-handle_call({create_claim, Changeset}, AuxSt, St) ->
+%% Claim
+
+handle_call('CreateClaim', [Changeset], AuxSt, St) ->
     ok = assert_party_operable(St),
     {Claim, Changes} = create_claim(Changeset, St),
     respond(
@@ -237,7 +209,7 @@ handle_call({create_claim, Changeset}, AuxSt, St) ->
         St
     );
 
-handle_call({update_claim, ID, ClaimRevision, Changeset}, AuxSt, St) ->
+handle_call('UpdateClaim', [ID, ClaimRevision, Changeset], AuxSt, St) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     respond(
@@ -247,7 +219,7 @@ handle_call({update_claim, ID, ClaimRevision, Changeset}, AuxSt, St) ->
         St
     );
 
-handle_call({accept_claim, ID, ClaimRevision}, AuxSt, St) ->
+handle_call('AcceptClaim', [ID, ClaimRevision], AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Timestamp = hg_datetime:format_now(),
     Revision = get_next_party_revision(St),
@@ -264,7 +236,7 @@ handle_call({accept_claim, ID, ClaimRevision}, AuxSt, St) ->
         St
     );
 
-handle_call({deny_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
+handle_call('DenyClaim', [ID, ClaimRevision, Reason], AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Timestamp = hg_datetime:format_now(),
     Claim = hg_claim:deny(Reason, Timestamp, get_st_claim(ID, St)),
@@ -275,7 +247,7 @@ handle_call({deny_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
         St
     );
 
-handle_call({revoke_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
+handle_call('RevokeClaim', [ID, ClaimRevision, Reason], AuxSt, St) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Timestamp = hg_datetime:format_now(),
@@ -283,6 +255,66 @@ handle_call({revoke_claim, ID, ClaimRevision, Reason}, AuxSt, St) ->
     respond(
         ok,
         [finalize_claim(Claim, Timestamp)],
+        AuxSt,
+        St
+    ).
+
+%% Generic handlers
+
+-spec handle_block(call_target(), binary(), party_aux_st(), st()) ->
+    {hg_machine:response(), hg_machine:result()}.
+
+handle_block(Target, Reason, AuxSt, St) ->
+    ok = assert_unblocked(Target, St),
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(
+        ok,
+        [block(Target, Reason, Timestamp), ?revision_changed(Timestamp, Revision)],
+        AuxSt,
+        St
+    ).
+
+-spec handle_unblock(call_target(), binary(), party_aux_st(), st()) ->
+    {hg_machine:response(), hg_machine:result()}.
+
+handle_unblock(Target, Reason, AuxSt, St) ->
+    ok = assert_blocked(Target, St),
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(
+        ok,
+        [unblock(Target, Reason, Timestamp), ?revision_changed(Timestamp, Revision)],
+        AuxSt,
+        St
+    ).
+
+-spec handle_suspend(call_target(), party_aux_st(), st()) ->
+    {hg_machine:response(), hg_machine:result()}.
+
+handle_suspend(Target, AuxSt, St) ->
+    ok = assert_unblocked(Target, St),
+    ok = assert_active(Target, St),
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(
+        ok,
+        [suspend(Target, Timestamp), ?revision_changed(Timestamp, Revision)],
+        AuxSt,
+        St
+    ).
+
+-spec handle_activate(call_target(), party_aux_st(), st()) ->
+    {hg_machine:response(), hg_machine:result()}.
+
+handle_activate(Target, AuxSt, St) ->
+    ok = assert_unblocked(Target, St),
+    ok = assert_suspended(Target, St),
+    Timestamp = hg_datetime:format_now(),
+    Revision = get_next_party_revision(St),
+    respond(
+        ok,
+        [activate(Target, Timestamp), ?revision_changed(Timestamp, Revision)],
         AuxSt,
         St
     ).
@@ -300,8 +332,10 @@ publish_event(PartyID, Ev) ->
 -spec start(party_id(), Args :: term()) ->
     ok | no_return().
 
-start(PartyID, Args) ->
-    case hg_machine:start(?NS, PartyID, Args) of
+start(PartyID, PartyParams) ->
+    ParamsType = {struct, struct, {dmsl_payment_processing_thrift, 'PartyParams'}},
+    EncodedPartyParams = hg_proto_utils:serialize(ParamsType, PartyParams),
+    case hg_machine:start(?NS, PartyID, EncodedPartyParams) of
         {ok, _} ->
             ok;
         {error, exists} ->
@@ -408,14 +442,16 @@ get_last_revision_old_way(PartyID) ->
     {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
     get_revision_of_part(PartyID, History, Last, Step).
 
--spec call(party_id(), call()) ->
+-spec call(party_id(), service_name(), hg_proto_utils:thrift_fun_ref(), Args :: [term()]) ->
     term() | no_return().
 
-call(PartyID, Call) ->
-    map_error(hg_machine:call(
+call(PartyID, ServiceName, FucntionRef, Args) ->
+    map_error(hg_machine:thrift_call(
         ?NS,
         PartyID,
-        Call,
+        ServiceName,
+        FucntionRef,
+        Args,
         undefined,
         ?SNAPSHOT_STEP,
         backward
@@ -669,11 +705,16 @@ apply_accepted_claim(Claim, St) ->
             St
     end.
 
-respond(Response, Changes, AuxSt0, St) ->
+respond(ok, Changes, AuxSt, St) ->
+    do_respond(ok, Changes, AuxSt, St);
+respond(Response, Changes, AuxSt, St) ->
+    do_respond({ok, Response}, Changes, AuxSt, St).
+
+do_respond(Response, Changes, AuxSt0, St) ->
     AuxSt1 = append_party_revision_index(Changes, St, AuxSt0),
     {Events, AuxSt2} = try_attach_snapshot(Changes, AuxSt1, St),
     {
-        {ok, Response},
+        Response,
         #{
             events  => Events,
             auxst   => AuxSt2
@@ -859,30 +900,22 @@ merge_party_change(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) -
 block(party, Reason, Timestamp) ->
     ?party_blocking(?blocked(Reason, Timestamp));
 block({shop, ID}, Reason, Timestamp) ->
-    ?shop_blocking(ID, ?blocked(Reason, Timestamp));
-block({wallet, ID}, Reason, Timestamp) ->
-    ?wallet_blocking(ID, ?blocked(Reason, Timestamp)).
+    ?shop_blocking(ID, ?blocked(Reason, Timestamp)).
 
 unblock(party, Reason, Timestamp) ->
     ?party_blocking(?unblocked(Reason, Timestamp));
 unblock({shop, ID}, Reason, Timestamp) ->
-    ?shop_blocking(ID, ?unblocked(Reason, Timestamp));
-unblock({wallet, ID}, Reason, Timestamp) ->
-    ?wallet_blocking(ID, ?unblocked(Reason, Timestamp)).
+    ?shop_blocking(ID, ?unblocked(Reason, Timestamp)).
 
 suspend(party, Timestamp) ->
     ?party_suspension(?suspended(Timestamp));
 suspend({shop, ID}, Timestamp) ->
-    ?shop_suspension(ID, ?suspended(Timestamp));
-suspend({wallet, ID}, Timestamp) ->
-    ?wallet_suspension(ID, ?suspended(Timestamp)).
+    ?shop_suspension(ID, ?suspended(Timestamp)).
 
 activate(party, Timestamp) ->
     ?party_suspension(?active(Timestamp));
 activate({shop, ID}, Timestamp) ->
-    ?shop_suspension(ID, ?active(Timestamp));
-activate({wallet, ID}, Timestamp) ->
-    ?wallet_suspension(ID, ?active(Timestamp)).
+    ?shop_suspension(ID, ?active(Timestamp)).
 
 assert_party_operable(St) ->
     _ = assert_unblocked(party, St),
@@ -894,12 +927,7 @@ assert_unblocked({shop, ID}, St) ->
     Party = get_st_party(St),
     ok = assert_blocking(Party, unblocked),
     Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
-    assert_shop_blocking(Shop, unblocked);
-assert_unblocked({wallet, ID}, St) ->
-    Party = get_st_party(St),
-    ok = assert_blocking(Party, unblocked),
-    Wallet = assert_wallet_found(hg_party:get_wallet(ID, Party)),
-    assert_wallet_blocking(Wallet, unblocked).
+    assert_shop_blocking(Shop, unblocked).
 
 assert_blocked(party, St) ->
     assert_blocking(get_st_party(St), blocked);
@@ -907,12 +935,7 @@ assert_blocked({shop, ID}, St) ->
     Party = get_st_party(St),
     ok = assert_blocking(Party, unblocked),
     Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
-    assert_shop_blocking(Shop, blocked);
-assert_blocked({wallet, ID}, St) ->
-    Party = get_st_party(St),
-    ok = assert_blocking(Party, unblocked),
-    Wallet = assert_wallet_found(hg_party:get_wallet(ID, Party)),
-    assert_wallet_blocking(Wallet, blocked).
+    assert_shop_blocking(Shop, blocked).
 
 assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
     ok;
@@ -925,12 +948,7 @@ assert_active({shop, ID}, St) ->
     Party = get_st_party(St),
     ok = assert_suspension(Party, active),
     Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
-    assert_shop_suspension(Shop, active);
-assert_active({wallet, ID}, St) ->
-    Party = get_st_party(St),
-    ok = assert_suspension(Party, active),
-    Wallet = assert_wallet_found(hg_party:get_wallet(ID, Party)),
-    assert_wallet_suspension(Wallet, active).
+    assert_shop_suspension(Shop, active).
 
 assert_suspended(party, St) ->
     assert_suspension(get_st_party(St), suspended);
@@ -938,12 +956,7 @@ assert_suspended({shop, ID}, St) ->
     Party = get_st_party(St),
     ok = assert_suspension(Party, active),
     Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
-    assert_shop_suspension(Shop, suspended);
-assert_suspended({wallet, ID}, St) ->
-    Party = get_st_party(St),
-    ok = assert_suspension(Party, active),
-    Wallet = assert_wallet_found(hg_party:get_wallet(ID, Party)),
-    assert_wallet_suspension(Wallet, suspended).
+    assert_shop_suspension(Shop, suspended).
 
 assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
     ok;
@@ -964,21 +977,6 @@ assert_shop_suspension(#domain_Shop{suspension = {Status, _}}, Status) ->
     ok;
 assert_shop_suspension(#domain_Shop{suspension = Suspension}, _) ->
     throw(#payproc_InvalidShopStatus{status = {suspension, Suspension}}).
-
-assert_wallet_found(#domain_Wallet{} = Wallet) ->
-    Wallet;
-assert_wallet_found(undefined) ->
-    throw(#payproc_WalletNotFound{}).
-
-assert_wallet_blocking(#domain_Wallet{blocking = {Status, _}}, Status) ->
-    ok;
-assert_wallet_blocking(#domain_Wallet{blocking = Blocking}, _) ->
-    throw(#payproc_InvalidWalletStatus{status = {blocking, Blocking}}).
-
-assert_wallet_suspension(#domain_Wallet{suspension = {Status, _}}, Status) ->
-    ok;
-assert_wallet_suspension(#domain_Wallet{suspension = Suspension}, _) ->
-    throw(#payproc_InvalidWalletStatus{status = {suspension, Suspension}}).
 
 %% backward compatibility stuff
 %% TODO remove after migration

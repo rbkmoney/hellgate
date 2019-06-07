@@ -192,7 +192,7 @@ map_history_error({error, notfound}) ->
 %% Machine
 
 -type create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
--type call()          :: {hg_proto_utils:thrift_fun_ref(), Args :: any()}.
+-type call()          :: hg_machine:thrift_call().
 
 -define(ev(Body),
     {invoice_template_changes, Body}

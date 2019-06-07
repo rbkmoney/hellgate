@@ -39,21 +39,14 @@ handle_function_('GetRevision', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:get_last_revision(PartyID);
 
-handle_function_('Block', [UserInfo, PartyID, Reason], _Opts) ->
+handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
+    Fun =:= 'Block' orelse
+    Fun =:= 'Unblock' orelse
+    Fun =:= 'Suspend' orelse
+    Fun =:= 'Activate'
+->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {block, party, Reason});
-
-handle_function_('Unblock', [UserInfo, PartyID, Reason], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {unblock, party, Reason});
-
-handle_function_('Suspend', [UserInfo, PartyID], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {suspend, party});
-
-handle_function_('Activate', [UserInfo, PartyID], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {activate, party});
+    call(PartyID, Fun, Args);
 
 %% Contract
 
@@ -83,22 +76,6 @@ handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
     Party = hg_party_machine:get_party(PartyID),
     ensure_shop(hg_party:get_shop(ID, Party));
 
-handle_function_('BlockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {block, {shop, ID}, Reason});
-
-handle_function_('UnblockShop', [UserInfo, PartyID, ID, Reason], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {unblock, {shop, ID}, Reason});
-
-handle_function_('SuspendShop', [UserInfo, PartyID, ID], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {suspend, {shop, ID}});
-
-handle_function_('ActivateShop', [UserInfo, PartyID, ID], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {activate, {shop, ID}});
-
 handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
@@ -113,6 +90,15 @@ handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Op
         identification_level => get_identification_level(Contract, Party)
     },
     hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
+
+handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
+    Fun =:= 'BlockShop' orelse
+    Fun =:= 'UnblockShop' orelse
+    Fun =:= 'SuspendShop' orelse
+    Fun =:= 'ActivateShop'
+->
+    ok = set_meta_and_check_access(UserInfo, PartyID),
+    call(PartyID, Fun, Args);
 
 %% Wallet
 
@@ -141,10 +127,6 @@ handle_function_('ComputeWalletTermsNew', [UserInfo, PartyID, ContractID, Timest
 
 %% Claim
 
-handle_function_('CreateClaim', [UserInfo, PartyID, Changeset], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {create_claim, Changeset});
-
 handle_function_('GetClaim', [UserInfo, PartyID, ID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:get_claim(ID, PartyID);
@@ -153,21 +135,15 @@ handle_function_('GetClaims', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:get_claims(PartyID);
 
-handle_function_('AcceptClaim', [UserInfo, PartyID, ID, ClaimRevision], _Opts) ->
+handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
+    Fun =:= 'CreateClaim' orelse
+    Fun =:= 'AcceptClaim' orelse
+    Fun =:= 'UpdateClaim' orelse
+    Fun =:= 'DenyClaim' orelse
+    Fun =:= 'RevokeClaim'
+->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {accept_claim, ID, ClaimRevision});
-
-handle_function_('UpdateClaim', [UserInfo, PartyID, ID, ClaimRevision, Changeset], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {update_claim, ID, ClaimRevision, Changeset});
-
-handle_function_('DenyClaim', [UserInfo, PartyID, ID, ClaimRevision, Reason], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {deny_claim, ID, ClaimRevision, Reason});
-
-handle_function_('RevokeClaim', [UserInfo, PartyID, ID, ClaimRevision, Reason], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {revoke_claim, ID, ClaimRevision, Reason});
+    call(PartyID, Fun, Args);
 
 %% Event
 
@@ -198,13 +174,12 @@ handle_function_('GetMetaData', [UserInfo, PartyID, NS], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:get_metadata(NS, PartyID);
 
-handle_function_('SetMetaData', [UserInfo, PartyID, NS, Data], _Opts) ->
+handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
+    Fun =:= 'SetMetaData' orelse
+    Fun =:= 'RemoveMetaData'
+->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {set_metadata, NS, Data});
-
-handle_function_('RemoveMetaData', [UserInfo, PartyID, NS], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:call(PartyID, {remove_metadata, NS});
+    call(PartyID, Fun, Args);
 
 %% Payment Institutions
 
@@ -250,6 +225,11 @@ handle_function_(
         #domain_TermSet{payouts = undefined} ->
             throw(#payproc_OperationNotPermitted{})
     end.
+
+%%
+
+call(PartyID, FuntionName, Args) ->
+    hg_party_machine:call(PartyID, party_management, {'PartyManagement', FuntionName}, Args).
 
 %%
 

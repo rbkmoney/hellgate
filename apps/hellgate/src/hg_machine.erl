@@ -50,6 +50,7 @@
     result().
 
 -type call() :: _.
+-type thrift_call() :: {hg_proto_utils:thrift_fun_ref(), Args :: [term()]}.
 -type response() :: ok | {ok, term()} | {exception, term()}.
 
 -callback process_call(call(), machine()) ->
@@ -70,6 +71,8 @@
 -export_type([history/0]).
 -export_type([auxst/0]).
 -export_type([signal/0]).
+-export_type([call/0]).
+-export_type([thrift_call/0]).
 -export_type([result/0]).
 -export_type([context/0]).
 -export_type([response/0]).

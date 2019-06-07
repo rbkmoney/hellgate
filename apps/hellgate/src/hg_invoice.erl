@@ -489,7 +489,7 @@ handle_expiration(St) ->
 
 %%
 
--type thrift_call()   :: {hg_proto_utils:thrift_fun_ref(), Args :: any()}.
+-type thrift_call()   :: hg_machine:thrift_call().
 -type callback_call() :: {callback, tag(), callback()}.
 -type call()          :: thrift_call() | callback_call().
 -type call_result()   :: #{

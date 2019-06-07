@@ -254,7 +254,7 @@ is_binding_succeeded(#payproc_CustomerBinding{status = ?customer_binding_succeed
 is_binding_succeeded(_) ->
     false.
 
--type call() :: {hg_proto_utils:thrift_fun_ref(), Args :: any()}.
+-type call() :: hg_machine:thrift_call().
 
 -spec process_call(call(), hg_machine:machine()) ->
     {hg_machine:response(), hg_machine:result()}.
