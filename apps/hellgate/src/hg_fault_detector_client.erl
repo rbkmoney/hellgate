@@ -191,10 +191,11 @@ call(Service, Args) ->
     EnvFDConfig = genlib_app:env(hellgate, fault_detector, #{}),
     Timeout     = genlib_map:get(timeout, EnvFDConfig, 4000),
     Deadline    = woody_deadline:from_timeout(Timeout),
-    do_call(Service, Args, Deadline).
+    Opts        = hg_woody_wrapper:get_service_options(fault_detector),
+    do_call(Service, Args, Opts, Deadline).
 
-do_call('InitService', Args, Deadline) ->
-    try hg_woody_wrapper:call(fault_detector, 'InitService', Args, Deadline) of
+do_call('InitService', Args, Opts, Deadline) ->
+    try hg_woody_wrapper:call(fault_detector, 'InitService', Args, Opts, Deadline) of
         {ok, _Result} -> {ok, initialised}
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason
@@ -210,8 +211,8 @@ do_call('InitService', Args, Deadline) ->
             _ = lager:error(ErrorText, [ServiceId, error, Reason]),
             {error, Reason}
     end;
-do_call('GetStatistics', Args, Deadline) ->
-    try hg_woody_wrapper:call(fault_detector, 'GetStatistics', Args, Deadline) of
+do_call('GetStatistics', Args, Opts, Deadline) ->
+    try hg_woody_wrapper:call(fault_detector, 'GetStatistics', Args, Opts, Deadline) of
         {ok, Stats} -> Stats
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason
@@ -227,8 +228,8 @@ do_call('GetStatistics', Args, Deadline) ->
             _ = lager:error(String, [ServiceIds, error, Reason]),
             []
     end;
-do_call('RegisterOperation', Args, Deadline) ->
-    try hg_woody_wrapper:call(fault_detector, 'RegisterOperation', Args, Deadline) of
+do_call('RegisterOperation', Args, Opts, Deadline) ->
+    try hg_woody_wrapper:call(fault_detector, 'RegisterOperation', Args, Opts, Deadline) of
         {ok, _Result} ->
             {ok, registered};
         {exception, #fault_detector_ServiceNotFoundException{}} ->
