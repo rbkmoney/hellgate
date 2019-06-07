@@ -228,8 +228,8 @@ handle_function_(
 
 %%
 
-call(PartyID, FuntionName, Args) ->
-    hg_party_machine:call(PartyID, party_management, {'PartyManagement', FuntionName}, Args).
+call(PartyID, FunctionName, Args) ->
+    hg_party_machine:call(PartyID, party_management, {'PartyManagement', FunctionName}, Args).
 
 %%
 
