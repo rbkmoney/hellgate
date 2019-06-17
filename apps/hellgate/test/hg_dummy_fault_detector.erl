@@ -50,4 +50,5 @@ handle_function(
          ]};
 
 handle_function(_Function, _Args, _Context, _Options) ->
+    timer:sleep(3000),
     {ok, undefined}.
