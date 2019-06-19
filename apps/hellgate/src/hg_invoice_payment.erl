@@ -178,6 +178,7 @@ get_party_revision(#st{activity = {payment, _}} = St) ->
     #domain_InvoicePayment{party_revision = Revision, created_at = Timestamp} = get_payment(St),
     {Revision, Timestamp};
 get_party_revision(#st{activity = {_, ID} = Activity} = St) when
+    Activity =:= {refund_new, ID} orelse
     Activity =:= {refund_session, ID} orelse
     Activity =:= {refund_accounter, ID} ->
         #domain_InvoicePaymentRefund{party_revision = Revision, created_at = Timestamp} = get_refund(ID, St),
@@ -995,15 +996,14 @@ refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
     Payment = get_payment(St),
-    Refund =
-        prepare_refund(Params, Payment, Revision, St, Opts),
-    {AccountMap, FinalCashflow} =
-        prepare_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    Refund = make_refund(Params, Payment, Revision, St, Opts),
+    {_AccountMap, FinalCashflow} = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
     Changes = [
-        ?refund_created(Refund, FinalCashflow),
-        ?session_ev(?refunded(), ?session_started())
+        ?refund_created(Refund, FinalCashflow)
     ],
-    try_commit_refund(Refund, Changes, AccountMap, St).
+    Action = hg_machine_action:instant(),
+    ID = Refund#domain_InvoicePaymentRefund.id,
+    {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
 
 -spec manual_refund(refund_params(), st(), opts()) ->
     {refund(), result()}.
@@ -1012,27 +1012,35 @@ manual_refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
     Payment = get_payment(St),
-    Refund =
-        prepare_refund(Params, Payment, Revision, St, Opts),
-    {AccountMap, FinalCashflow} =
-        prepare_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    Refund = make_refund(Params, Payment, Revision, St, Opts),
+    {AccountMap, FinalCashflow} = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
     Changes = [
         ?refund_created(Refund, FinalCashflow),
         ?session_ev(?refunded(), ?session_started())
-    ]
-    ++ make_transaction_event(TransactionInfo) ++
-    [
+    ] ++ make_transaction_event(TransactionInfo) ++ [
         ?session_ev(?refunded(), ?session_finished(?session_succeeded()))
     ],
-    try_commit_refund(Refund, Changes, AccountMap, St).
+    RefundSt = collapse_refund_changes(Changes),
+    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
+    % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
+    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
+        % TODO we must pull this rule out of refund terms
+        Available when Available >= 0 ->
+            ID = Refund#domain_InvoicePaymentRefund.id,
+            Action = hg_machine_action:instant(),
+            {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}};
+        Available when Available < 0 ->
+            _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
+            throw(#payproc_InsufficientAccountBalance{})
+    end.
 
 make_transaction_event(undefined) ->
     [];
 make_transaction_event(TransactionInfo) ->
     [?session_ev(?refunded(), ?trx_bound(TransactionInfo))].
 
-prepare_refund(Params, Payment, Revision, St, Opts) ->
+make_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_payment_status(captured, Payment),
     PartyRevision = get_opts_party_revision(Opts),
     _ = assert_previous_refunds_finished(St),
@@ -1052,7 +1060,7 @@ prepare_refund(Params, Payment, Revision, St, Opts) ->
         cart            = Cart
     }.
 
-prepare_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
+make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
     Route = get_route(St),
     Shop = get_shop(Opts),
     MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision)),
@@ -1064,23 +1072,8 @@ prepare_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
-    FinalCashflow = construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap),
-    {AccountMap, FinalCashflow}.
-
-try_commit_refund(Refund, Changes, AccountMap, St) ->
-    ID = Refund#domain_InvoicePaymentRefund.id,
-    RefundSt = collapse_refund_changes(Changes),
-    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
-    % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
-    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
-        % TODO we must pull this rule out of refund terms
-        Available when Available >= 0 ->
-            Action = hg_machine_action:instant(),
-            {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}};
-        Available when Available < 0 ->
-            _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
-            throw(#payproc_InsufficientAccountBalance{})
-    end.
+    FinalCashFlow = construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap),
+    {AccountMap, FinalCashFlow}.
 
 construct_refund_id(St) ->
     PaymentID = get_payment_id(get_payment(St)),
@@ -1449,6 +1442,9 @@ process_timeout({payment, Step}, Action, St) when
     Step =:= finalizing_accounter
 ->
     process_result(Action, St);
+process_timeout({refund_new, _ID}, Action, St) ->
+    %% Only cash flow building here, `process_routing` for consistency
+    process_routing(Action, St);
 process_timeout({refund_session, _ID}, Action, St) ->
     process_session(Action, St);
 process_timeout({refund_accounter, _ID}, Action, St) ->
@@ -1494,6 +1490,9 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
 
 -spec process_routing(action(), st()) -> machine_result().
 process_routing(Action, St) ->
+    process_routing(get_activity(St), Action, St).
+
+process_routing({payment, risk_scoring}, Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
     PaymentInstitution = get_payment_institution(Opts, Revision),
@@ -1510,6 +1509,30 @@ process_routing(Action, St) ->
                 {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
             )},
             process_failure(get_activity(St), Events0, Action, Failure, St)
+    end;
+process_routing({refund_new, ID}, Action, St) -> %%@todo probably not a `process_routing` but is now for consistency
+    Opts = get_opts(St),
+    Shop = get_shop(Opts),
+    Payment = get_payment(St),
+    RefundSt = try_get_refund_state(ID, St),
+    Route = get_route(St),
+    Revision = get_refund_revision(RefundSt),
+    Provider = get_route_provider(Route, Revision),
+    VS = collect_validation_varset(St, Opts), %@todo do i need to do `validate_refund`?
+    PaymentInstitution = get_payment_institution(Opts, Revision),
+    AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
+    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
+    % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
+    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
+        % TODO we must pull this rule out of refund terms
+        Available when Available >= 0 ->
+            Events = [?refund_ev(ID, ?session_ev(?refunded(), ?session_started()))],
+            {next, {Events, hg_machine_action:set_timeout(0, Action)}};
+        Available when Available < 0 ->
+            Failure = {failure, payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {insufficient_funds, #payprocerr_GeneralFailure{}}} %%@todo ???
+            )},
+            process_failure(get_activity(St), [], Action, Failure, St, RefundSt)
     end.
 
 process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opts, Events0, Action) ->
@@ -1692,6 +1715,9 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
         fatal ->
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
+process_failure({refund_new, ID}, Events, Action, Failure, St, RefundSt) ->
+    _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
+    {done, {Events ++ [?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))], Action}};
 process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
     case check_retry_possibility(Target, Failure, St) of
@@ -2257,15 +2283,18 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
     St1 = case Event of
         ?refund_created(_, _) ->
             _ = validate_transition(idle, Change, St, Opts),
-            St;
+            St#st{activity = {refund_new, ID}};
         ?session_ev(?refunded(), ?session_started()) ->
-            _ = validate_transition([idle, {refund_session, ID}], Change, St, Opts),
+            _ = validate_transition([{refund_new, ID}, {refund_session, ID}], Change, St, Opts),
             St#st{activity = {refund_session, ID}};
         ?session_ev(?refunded(), ?session_finished(?session_succeeded())) ->
             _ = validate_transition({refund_session, ID}, Change, St, Opts),
             St#st{activity = {refund_accounter, ID}};
         ?refund_status_changed(?refund_succeeded()) ->
             _ = validate_transition([{refund_accounter, ID}], Change, St, Opts),
+            St;
+        ?refund_status_changed(?refund_failed(_)) ->
+            _ = validate_transition([{refund_new, ID}, {refund_session, ID}], Change, St, Opts),
             St;
         _ ->
             _ = validate_transition([{refund_session, ID}], Change, St, Opts),
@@ -2534,6 +2563,9 @@ get_recurrent_token(#st{recurrent_token = Token}) ->
     Token.
 
 get_payment_revision(#st{payment = #domain_InvoicePayment{domain_revision = Revision}}) ->
+    Revision.
+
+get_refund_revision(#refund_st{refund = #domain_InvoicePaymentRefund{domain_revision = Revision}}) ->
     Revision.
 
 get_payment_payer(#st{payment = #domain_InvoicePayment{payer = Payer}}) ->
