@@ -2294,7 +2294,7 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
             _ = validate_transition([{refund_accounter, ID}], Change, St, Opts),
             St;
         ?refund_status_changed(?refund_failed(_)) ->
-            _ = validate_transition([{refund_new, ID}, {refund_session, ID}], Change, St, Opts),
+            _ = validate_transition([{refund_session, ID}, {refund_new, ID}], Change, St, Opts),
             St;
         _ ->
             _ = validate_transition([{refund_session, ID}], Change, St, Opts),
