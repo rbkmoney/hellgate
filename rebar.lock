@@ -42,7 +42,7 @@
  {<<"jsx">>,{pkg,<<"jsx">>,<<"2.8.0">>},1},
  {<<"logger_logstash_formatter">>,
   {git,"git@github.com:rbkmoney/logger_logstash_formatter.git",
-       {ref,"4348f24487c400da0579032422d93acd89c6e121"}},
+       {ref,"54c371215e3d73b2a868bc6375e523f95e826fe3"}},
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
  {<<"mg_proto">>,
