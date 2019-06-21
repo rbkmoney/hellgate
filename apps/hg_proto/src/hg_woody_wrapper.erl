@@ -34,6 +34,7 @@
 -export([call/5]).
 -export([raise/1]).
 
+-export([get_service_options/1]).
 
 -spec handle_function(woody:func(), woody:args(), woody_context:ctx(), handler_opts()) ->
     {ok, term()} | no_return().
@@ -60,14 +61,16 @@ handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
     term().
 
 call(ServiceName, Function, Args) ->
-    Opts = get_service(ServiceName),
-    call(ServiceName, Function, Args, Opts).
+    Opts = get_service_options(ServiceName),
+    Deadline = undefined,
+    call(ServiceName, Function, Args, Opts, Deadline).
 
 -spec call(atom(), woody:func(), list(), client_opts()) ->
     term().
 
 call(ServiceName, Function, Args, Opts) ->
-    call(ServiceName, Function, Args, Opts, undefined).
+    Deadline = undefined,
+    call(ServiceName, Function, Args, Opts, Deadline).
 
 -spec call(atom(), woody:func(), list(), client_opts(), woody_deadline:deadline()) ->
     term().
@@ -80,6 +83,11 @@ call(ServiceName, Function, Args, Opts, Deadline) ->
         Opts#{event_handler => scoper_woody_event_handler},
         attach_deadline(Deadline, Context)
     ).
+
+-spec get_service_options(atom()) ->
+    client_opts().
+get_service_options(ServiceName) ->
+    construct_opts(maps:get(ServiceName, genlib_app:env(hellgate, services))).
 
 -spec attach_deadline(woody_deadline:deadline(), woody_context:ctx()) -> woody_context:ctx().
 
@@ -95,9 +103,6 @@ raise(Exception) ->
     woody_error:raise(business, Exception).
 
 %% Internal functions
-
-get_service(ServiceName) ->
-    construct_opts(maps:get(ServiceName, genlib_app:env(hellgate, services))).
 
 construct_opts(Opts = #{url := Url}) ->
     Opts#{url := genlib:to_binary(Url)};

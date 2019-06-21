@@ -11,8 +11,7 @@
 -export([get/2]).
 -export([fulfill/3]).
 -export([rescind/3]).
--export([repair/3]).
--export([repair/4]).
+-export([repair/5]).
 -export([repair_scenario/3]).
 
 -export([start_payment/3]).
@@ -20,7 +19,7 @@
 -export([cancel_payment/4]).
 -export([capture_payment/4]).
 -export([capture_payment/5]).
--export([new_capture_payment/4]).
+-export([capture_payment/6]).
 
 -export([refund_payment/4]).
 -export([refund_payment_manual/4]).
@@ -63,7 +62,8 @@
 -type refund_id()          :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
 -type refund_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type term_set()           :: dmsl_domain_thrift:'TermSet'().
--type cash()               :: dmsl_domain_thrift:'Cash'().
+-type cash()               :: undefined | dmsl_domain_thrift:'Cash'().
+-type cart()               :: undefined | dmsl_domain_thrift:'InvoiceCart'().
 
 -spec start(hg_client_api:t()) -> pid().
 
@@ -122,17 +122,11 @@ fulfill(InvoiceID, Reason, Client) ->
 rescind(InvoiceID, Reason, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Rescind', [InvoiceID, Reason]})).
 
--spec repair(invoice_id(), [tuple()], pid()) ->
+-spec repair(invoice_id(), [tuple()], tuple() | undefined, tuple() | undefined, pid()) ->
     ok | woody_error:business_error().
 
-repair(InvoiceID, Changes, Client) ->
-    repair(InvoiceID, Changes, undefined, Client).
-
--spec repair(invoice_id(), [tuple()], tuple() | undefined, pid()) ->
-    ok | woody_error:business_error().
-
-repair(InvoiceID, Changes, Action, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'Repair', [InvoiceID, Changes, Action]})).
+repair(InvoiceID, Changes, Action, Params, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'Repair', [InvoiceID, Changes, Action, Params]})).
 
 -spec repair_scenario(invoice_id(), hg_invoice_repair:scenario(), pid()) ->
     ok | woody_error:business_error().
@@ -162,43 +156,32 @@ cancel_payment(InvoiceID, PaymentID, Reason, Client) ->
     ok | woody_error:business_error().
 
 capture_payment(InvoiceID, PaymentID, Reason, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'CapturePayment', [InvoiceID, PaymentID, Reason]})).
-
--spec new_capture_payment(invoice_id(), payment_id(), binary(), pid()) ->
-    ok | woody_error:business_error().
-
-new_capture_payment(InvoiceID, PaymentID, Reason, Client) ->
-    Call = {
-        call,
-        'CapturePaymentNew',
-        [
-            InvoiceID,
-            PaymentID,
-            #payproc_InvoicePaymentCaptureParams{
-                reason = Reason
-            }
-        ]
-    },
-    map_result_error(gen_server:call(Client, Call)).
+    capture_payment(InvoiceID, PaymentID, Reason, undefined, Client).
 
 -spec capture_payment(invoice_id(), payment_id(), binary(), cash(), pid()) ->
     ok | woody_error:business_error().
 
 capture_payment(InvoiceID, PaymentID, Reason, Cash, Client) ->
+    capture_payment(InvoiceID, PaymentID, Reason, Cash, undefined, Client).
+
+-spec capture_payment(invoice_id(), payment_id(), binary(), cash(), cart(), pid()) ->
+    ok | woody_error:business_error().
+
+capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client) ->
     Call = {
         call,
-        'CapturePaymentNew',
+        'CapturePayment',
         [
             InvoiceID,
             PaymentID,
             #payproc_InvoicePaymentCaptureParams{
                 reason = Reason,
-                cash = Cash
+                cash = Cash,
+                cart = Cart
             }
         ]
     },
     map_result_error(gen_server:call(Client, Call)).
-
 
 -spec refund_payment(invoice_id(), payment_id(), refund_params(), pid()) ->
     refund() | woody_error:business_error().

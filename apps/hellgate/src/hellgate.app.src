@@ -8,6 +8,7 @@
     {applications, [
         logger_logstash_formatter,
         kernel,
+        fault_detector_proto,
         stdlib,
         genlib,
         rfc3339,

@@ -20,6 +20,8 @@
 -include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
 -include_lib("dmsl/include/dmsl_msgpack_thrift.hrl").
 
+-include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
+
 %% API
 
 %% St accessors
@@ -40,8 +42,7 @@
 
 %% Business logic
 
--export([capture/2]).
--export([capture/4]).
+-export([capture/5]).
 -export([cancel/2]).
 -export([refund/3]).
 
@@ -116,6 +117,7 @@
 -export_type([machine_result/0]).
 
 -type cash()                :: dmsl_domain_thrift:'Cash'().
+-type cart()                :: dmsl_domain_thrift:'InvoiceCart'().
 -type party()               :: dmsl_domain_thrift:'Party'().
 -type payer()               :: dmsl_domain_thrift:'Payer'().
 -type invoice()             :: dmsl_domain_thrift:'Invoice'().
@@ -137,6 +139,8 @@
 -type session_result()      :: dmsl_payment_processing_thrift:'SessionResult'().
 -type proxy_state()         :: dmsl_proxy_provider_thrift:'ProxyState'().
 -type tag()                 :: dmsl_proxy_provider_thrift:'CallbackTag'().
+-type callback()            :: dmsl_proxy_provider_thrift:'Callback'().
+-type callback_response()   :: dmsl_proxy_provider_thrift:'CallbackResponse'().
 -type make_recurrent()      :: true | false.
 -type recurrent_token()     :: dmsl_domain_thrift:'Token'().
 -type retry_strategy()      :: hg_retry:strategy().
@@ -243,7 +247,7 @@ get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
 -type machine_result() :: {next | done, result()}.
 
 -spec init(payment_id(), _, opts()) ->
-    {payment(), result()}.
+    {st(), result()}.
 
 init(PaymentID, PaymentParams, Opts) ->
     scoper:scope(
@@ -597,9 +601,23 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
         {ok, _Route} = Result ->
             Result;
         undefined ->
-            Payment = get_payment(St),
-            Predestination = choose_routing_predestination(Payment),
-            case hg_routing:choose(Predestination, PaymentInstitution, VS, Revision) of
+            Payment         = get_payment(St),
+            Predestination  = choose_routing_predestination(Payment),
+            {Providers, RejectContext0} = hg_routing:gather_providers(
+                Predestination,
+                PaymentInstitution,
+                VS,
+                Revision
+            ),
+            FailRatedProviders = hg_routing:gather_provider_fail_rates(Providers),
+            {FailRatedRoutes, RejectContext1} = hg_routing:gather_routes(
+                 Predestination,
+                 FailRatedProviders,
+                 RejectContext0,
+                 VS,
+                 Revision
+            ),
+            case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
                 {ok, _Route} = Result ->
                     Result;
                 {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
@@ -613,6 +631,7 @@ choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
     recurrent_payment;
 choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
     payment.
+
 % Other payers has predefined routes
 
 log_reject_context(risk_score_is_too_high = RejectReason, RejectContext) ->
@@ -843,27 +862,26 @@ reduce_selector(Name, Selector, VS, Revision) ->
 start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
--spec capture(st(), atom()) -> {ok, result()}.
+-spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
 
-capture(St, Reason) ->
-    Cost = get_payment_cost(get_payment(St)),
-    do_payment(St, ?captured_with_reason_and_cost(hg_utils:format_reason(Reason), Cost)).
-
--spec capture(st(), binary(), cash(), opts()) -> {ok, result()}.
-
-capture(St, Reason, Cost, Opts) ->
+capture(St, Reason, Cost, Cart, Opts) ->
     Payment = get_payment(St),
     _ = assert_capture_cost_currency(Cost, Payment),
+    _ = assert_capture_cart(Cost, Cart),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
-            capture(St, Reason);
+            total_capture(St, Reason, Cart);
         false ->
             _ = assert_activity({payment, flow_waiting}, St),
             _ = assert_payment_flow(hold, Payment),
-            partial_capture(St, Reason, Cost, Opts)
+            partial_capture(St, Reason, Cost, Cart, Opts)
     end.
 
-partial_capture(St, Reason, Cost, Opts) ->
+total_capture(St, Reason, Cart) ->
+    Cost = get_payment_cost(get_payment(St)),
+    do_payment(St, ?captured(Reason, Cost, Cart)).
+
+partial_capture(St, Reason, Cost, Cart, Opts) ->
     Payment             = get_payment(St),
     Revision            = get_payment_revision(St),
     Shop                = get_shop(Opts),
@@ -896,13 +914,13 @@ partial_capture(St, Reason, Cost, Opts) ->
     ),
     Changes =
         [?cash_flow_changed(FinalCashflow)] ++
-        start_session(?captured_with_reason_and_cost(genlib:to_binary(Reason), Cost)),
+        start_session(?captured(Reason, Cost, Cart)),
     {ok, {Changes, hg_machine_action:instant()}}.
 
--spec cancel(st(), atom()) -> {ok, result()}.
+-spec cancel(st(), binary()) -> {ok, result()}.
 
 cancel(St, Reason) ->
-    do_payment(St, ?cancelled_with_reason(hg_utils:format_reason(Reason))).
+    do_payment(St, ?cancelled_with_reason(Reason)).
 
 do_payment(St, Target) ->
     Payment = get_payment(St),
@@ -910,6 +928,8 @@ do_payment(St, Target) ->
     _ = assert_payment_flow(hold, Payment),
     {ok, {start_session(Target), hg_machine_action:instant()}}.
 
+assert_capture_cost_currency(undefined, _) ->
+    ok;
 assert_capture_cost_currency(?cash(_, SymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
     ok;
 assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
@@ -918,6 +938,18 @@ assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cos
         passed_currency = PassedSymCode
     }).
 
+assert_capture_cart(_Cost, undefined) ->
+    ok;
+assert_capture_cart(Cost, Cart) ->
+    case Cost =:= hg_invoice_utils:get_cart_amount(Cart) of
+        true ->
+            ok;
+        _ ->
+            throw_invalid_request(<<"Capture amount does not match with the cart total amount">>)
+    end.
+
+check_equal_capture_cost_amount(undefined, _) ->
+    true;
 check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)})
     when PassedAmount =:= Amount
 ->
@@ -1006,6 +1038,8 @@ prepare_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_previous_refunds_finished(St),
     Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
     _ = assert_refund_cash(Cash, St),
+    Cart = Params#payproc_InvoicePaymentRefundParams.cart,
+    _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
     ID = construct_refund_id(St),
     #domain_InvoicePaymentRefund {
         id              = ID,
@@ -1014,7 +1048,8 @@ prepare_refund(Params, Payment, Revision, St, Opts) ->
         party_revision  = PartyRevision,
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason,
-        cash            = Cash
+        cash            = Cash,
+        cart            = Cart
     }.
 
 prepare_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
@@ -1052,7 +1087,7 @@ construct_refund_id(St) ->
     InvoiceID = get_invoice_id(get_invoice(get_opts(St))),
     SequenceID = make_refund_squence_id(PaymentID, InvoiceID),
     IntRefundID = hg_sequences:get_next(SequenceID),
-    integer_to_binary(IntRefundID).
+    erlang:integer_to_binary(IntRefundID).
 
 make_refund_squence_id(PaymentID, InvoiceID) ->
     <<InvoiceID/binary, <<"_">>/binary, PaymentID/binary>>.
@@ -1081,6 +1116,19 @@ assert_previous_refunds_finished(St) ->
             ok;
         [_R|_] ->
             throw(#payproc_OperationNotPermitted{})
+    end.
+
+assert_refund_cart(_RefundCash, undefined, _St) ->
+    ok;
+assert_refund_cart(undefined, _Cart, _St) ->
+    throw_invalid_request(<<"Refund amount does not match with the cart total amount">>);
+assert_refund_cart(RefundCash, Cart, St) ->
+    InterimPaymentAmount = get_remaining_payment_balance(St),
+    case hg_cash:sub(InterimPaymentAmount, RefundCash) =:= hg_invoice_utils:get_cart_amount(Cart) of
+        true ->
+            ok;
+        _ ->
+            throw_invalid_request(<<"Remaining payment amount not equal cart cost">>)
     end.
 
 get_remaining_payment_balance(St) ->
@@ -1274,7 +1322,7 @@ get_adjustment_revision(Params) ->
     ).
 
 construct_adjustment_id(#st{adjustments = As}) ->
-    integer_to_binary(length(As) + 1).
+    erlang:integer_to_binary(length(As) + 1).
 
 -spec assert_activity(activity(), st()) -> ok | no_return().
 assert_activity(Activity, #st{activity = Activity}) ->
@@ -1416,8 +1464,8 @@ repair_process_timeout(Activity, Action, St = #st{repair_scenario = Scenario}) -
             process_timeout(Activity, Action, St)
     end.
 
--spec process_call({callback, tag(), _}, st(), opts()) ->
-    {_, machine_result()}. % FIXME
+-spec process_call({callback, tag(), callback()}, st(), opts()) ->
+    {callback_response(), machine_result()}.
 process_call({callback, Tag, Payload}, St, Options) ->
     scoper:scope(
         payment,
@@ -1425,6 +1473,8 @@ process_call({callback, Tag, Payload}, St, Options) ->
         fun() -> process_callback(Tag, Payload, St#st{opts = Options}) end
     ).
 
+-spec process_callback(tag(), callback(), st()) ->
+    {callback_response(), machine_result()}.
 process_callback(Tag, Payload, St) ->
     Action = hg_machine_action:new(),
     Session = get_activity_session(St),
@@ -1514,20 +1564,21 @@ repair_session(St = #st{repair_scenario = Scenario}) ->
             {ok, Result};
         call ->
             ProxyContext = construct_proxy_context(St),
-            issue_process_call(ProxyContext, St)
+            Route        = get_route(St),
+            hg_proxy_provider:process_payment(ProxyContext, Route)
     end.
 
 -spec finalize_payment(action(), st()) -> machine_result().
 finalize_payment(Action, St) ->
     Target = case get_payment_flow(get_payment(St)) of
         ?invoice_payment_flow_instant() ->
-            ?captured_with_reason_and_cost(<<"Timeout">>, get_payment_cost(get_payment(St)));
+            ?captured(<<"Timeout">>, get_payment_cost(get_payment(St)));
         ?invoice_payment_flow_hold(OnHoldExpiration, _) ->
             case OnHoldExpiration of
                 cancel ->
                     ?cancelled();
                 capture ->
-                    ?captured_with_reason_and_cost(
+                    ?captured(
                         <<"Timeout">>,
                         get_payment_cost(get_payment(St))
                     )
@@ -1541,9 +1592,12 @@ process_callback_timeout(Action, Session, Events, St) ->
     Result = handle_proxy_callback_timeout(Action, Events, Session),
     finish_session_processing(Result, St).
 
+-spec handle_callback(callback(), action(), st()) ->
+    {callback_response(), machine_result()}.
 handle_callback(Payload, Action, St) ->
     ProxyContext = construct_proxy_context(St),
-    {ok, CallbackResult} = issue_callback_call(Payload, ProxyContext, St),
+    Route        = get_route(St),
+    {ok, CallbackResult} = hg_proxy_provider:handle_payment_callback(Payload, ProxyContext, Route),
     {Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
     {Response, finish_session_processing(Result, St)}.
 
@@ -1875,13 +1929,13 @@ construct_payment_info(idle, _Target, _St, PaymentInfo) ->
     PaymentInfo;
 construct_payment_info(
     {payment, _Step},
-    ?captured_with_reason_and_cost(Reason, Cost),
+    ?captured(Reason, Cost),
     St,
     PaymentInfo
 ) when Cost =:= undefined ->
     %% Для обратной совместимости и legacy capture
     PaymentInfo#prxprv_PaymentInfo{
-        capture = construct_proxy_capture(?captured_with_reason_and_cost(
+        capture = construct_proxy_capture(?captured(
             Reason,
             get_payment_cost(get_payment(St))
         ))
@@ -2013,7 +2067,7 @@ construct_proxy_refund(#refund_st{
         cash       = construct_proxy_cash(get_refund_cash(Refund))
     }.
 
-construct_proxy_capture(?captured_with_reason_and_cost(_, Cost)) ->
+construct_proxy_capture(?captured(_, Cost)) ->
     #prxprv_InvoicePaymentCapture{
         cost = construct_proxy_cash(Cost)
     }.
@@ -2525,21 +2579,6 @@ get_customer(CustomerID) ->
             error({<<"Can't get customer">>, Error})
     end.
 
-issue_process_call(ProxyContext, St) ->
-    issue_proxy_call('ProcessPayment', [ProxyContext], St).
-
-issue_callback_call(Payload, ProxyContext, St) ->
-    issue_proxy_call('HandlePaymentCallback', [Payload, ProxyContext], St).
-
-issue_proxy_call(Func, Args, St) ->
-    CallOpts = get_call_options(St),
-    hg_woody_wrapper:call(proxy_provider, Func, Args, CallOpts).
-
-get_call_options(St) ->
-    Revision = hg_domain:head(),
-    Provider = hg_domain:get(Revision, {provider, get_route_provider_ref(get_route(St))}),
-    hg_proxy:get_call_options(Provider#domain_Provider.proxy, Revision).
-
 get_route(#st{route = Route}) ->
     Route.
 
@@ -2903,7 +2942,7 @@ unmarshal(status, ?legacy_cancelled(Reason)) ->
 unmarshal(capture, Capture) when is_map(Capture) ->
     Reason = maps:get(<<"reason">>, Capture),
     Cost = maps:get(<<"cost">>, Capture),
-    ?captured_with_reason_and_cost(unmarshal(str, Reason), hg_cash:unmarshal(Cost));
+    ?captured(unmarshal(str, Reason), hg_cash:unmarshal(Cost), undefined);
 unmarshal(capture, Reason) ->
     ?captured_with_reason(unmarshal(str, Reason));
 

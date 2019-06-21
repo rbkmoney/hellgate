@@ -45,6 +45,8 @@ get_service(processor) ->
     {mg_proto_state_processing_thrift, 'Processor'};
 get_service(eventsink) ->
     {mg_proto_state_processing_thrift, 'EventSink'};
+get_service(fault_detector) ->
+    {fd_proto_fault_detector_thrift, 'FaultDetector'};
 get_service(sequences) ->
     {seq_proto_sequences_thrift, 'Sequences'}.
 

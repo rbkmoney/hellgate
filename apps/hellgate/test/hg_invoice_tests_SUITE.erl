@@ -33,14 +33,13 @@
 -export([overdue_invoice_cancellation/1]).
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
--export([no_route_found_for_payment/1]).
--export([fatal_risk_score_for_route_found/1]).
 
 -export([payment_start_idempotency/1]).
 -export([payment_success/1]).
 -export([payment_success_empty_cvv/1]).
 -export([payment_success_additional_info/1]).
 -export([payment_w_terminal_success/1]).
+-export([payment_w_crypto_currency_success/1]).
 -export([payment_w_wallet_success/1]).
 -export([payment_w_customer_success/1]).
 -export([payment_w_another_shop_customer/1]).
@@ -59,11 +58,13 @@
 -export([payment_adjustment_success/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
+-export([terminal_cashflow_overrides_provider/1]).
 -export([payment_hold_cancellation/1]).
 -export([payment_hold_auto_cancellation/1]).
 -export([payment_hold_capturing/1]).
--export([payment_hold_new_capturing/1]).
 -export([payment_hold_partial_capturing/1]).
+-export([payment_hold_partial_capturing_with_cart/1]).
+-export([payment_hold_partial_capturing_with_cart_missing_cash/1]).
 -export([invalid_currency_partial_capture/1]).
 -export([invalid_amount_partial_capture/1]).
 -export([invalid_permit_partial_capture_in_service/1]).
@@ -95,6 +96,7 @@
 -export([adhoc_repair_failed_succeeded/1]).
 -export([adhoc_repair_force_removal/1]).
 -export([adhoc_repair_invalid_changes_failed/1]).
+-export([adhoc_repair_force_invalid_transition/1]).
 
 -export([repair_fail_pre_processing_succeeded/1]).
 -export([repair_skip_inspector_succeeded/1]).
@@ -164,6 +166,7 @@ groups() ->
 
             invalid_payment_w_deprived_party,
             external_account_posting,
+            terminal_cashflow_overrides_provider,
 
             {group, holds_management},
 
@@ -189,13 +192,13 @@ groups() ->
             overdue_invoice_cancellation,
             invoice_cancellation_after_payment_timeout,
             invalid_payment_amount,
-            no_route_found_for_payment,
-            fatal_risk_score_for_route_found,
+
             payment_start_idempotency,
             payment_success,
             payment_success_empty_cvv,
             payment_success_additional_info,
             payment_w_terminal_success,
+            payment_w_crypto_currency_success,
             payment_w_wallet_success,
             payment_w_customer_success,
             payment_w_another_shop_customer,
@@ -236,10 +239,11 @@ groups() ->
             payment_hold_cancellation,
             payment_hold_auto_cancellation,
             payment_hold_capturing,
-            payment_hold_new_capturing,
             invalid_currency_partial_capture,
             invalid_amount_partial_capture,
             payment_hold_partial_capturing,
+            payment_hold_partial_capturing_with_cart,
+            payment_hold_partial_capturing_with_cart_missing_cash,
             payment_hold_auto_capturing,
             {group, holds_management_with_custom_config}
         ]},
@@ -257,7 +261,8 @@ groups() ->
             adhoc_repair_working_failed,
             adhoc_repair_failed_succeeded,
             adhoc_repair_force_removal,
-            adhoc_repair_invalid_changes_failed
+            adhoc_repair_invalid_changes_failed,
+            adhoc_repair_force_invalid_transition
         ]},
         {repair_scenarios, [parallel], [
             repair_fail_pre_processing_succeeded,
@@ -277,6 +282,7 @@ init_per_suite(C) ->
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({'hg_invoice_payment', 'merge_change', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
+
     {Apps, Ret} = hg_ct_helper:start_apps([
         woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}
     ]),
@@ -291,6 +297,7 @@ init_per_suite(C) ->
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
+    {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
     NewC = [
@@ -307,12 +314,15 @@ init_per_suite(C) ->
         {test_sup, SupPid}
         | C
     ],
+
     ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
     NewC.
 
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
+    SupPid = cfg(test_sup, C),
+    ok = supervisor:terminate_child(SupPid, hg_dummy_fault_detector),
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
@@ -735,73 +745,6 @@ invalid_payment_amount(C) ->
         errors = [<<"Invalid amount, more", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
 
--spec no_route_found_for_payment(config()) -> test_return().
-
-no_route_found_for_payment(_C) ->
-    Revision = hg_domain:head(),
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    VS1 = #{
-        category        => ?cat(1),
-        currency        => ?cur(<<"RUB">>),
-        cost            => ?cash(1000, <<"RUB">>),
-        payment_tool    => {bank_card, #domain_BankCard{}},
-        party_id        => <<"12345">>,
-        risk_score      => low,
-        flow            => instant
-    },
-    {error, {no_route_found, {unknown, #{
-        varset := VS1,
-        rejected_providers := [
-            {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
-            {?prv(2), {'PaymentsProvisionTerms', category}},
-            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
-        ],
-        rejected_terminals := []
-    }}}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
-    VS2 = VS1#{
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
-    },
-    {ok, #domain_PaymentRoute{
-        provider = ?prv(3),
-        terminal = ?trm(10)
-    }} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
-
--spec fatal_risk_score_for_route_found(config()) -> test_return().
-
-fatal_risk_score_for_route_found(_C) ->
-    Revision = hg_domain:head(),
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    VS1 = #{
-        category        => ?cat(1),
-        currency        => ?cur(<<"RUB">>),
-        cost            => ?cash(1000, <<"RUB">>),
-        payment_tool    => {bank_card, #domain_BankCard{}},
-        party_id        => <<"12345">>,
-        risk_score      => fatal,
-        flow            => instant
-    },
-
-    {error, {no_route_found, {risk_score_is_too_high, #{
-        varset := VS1,
-        rejected_providers := [
-            {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
-            {?prv(2), {'PaymentsProvisionTerms', category}},
-            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
-        ],
-        rejected_terminals := []
-    }}}} = hg_routing:choose(payment, PaymentInstitution, VS1, Revision),
-    VS2 = VS1#{
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
-    },
-    {error, {no_route_found, {risk_score_is_too_high, #{
-        varset := VS2,
-        rejected_providers := [
-            {?prv(2), {'PaymentsProvisionTerms', category}},
-            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
-        ],
-        rejected_terminals := [{?prv(3), ?trm(10), {'Terminal', risk_coverage}}]}
-    }}} = hg_routing:choose(payment, PaymentInstitution, VS2, Revision).
-
 -spec payment_start_idempotency(config()) -> test_return().
 
 payment_start_idempotency(C) ->
@@ -936,7 +879,7 @@ payment_capture_retries_exceeded(C) ->
     PaymentParams = make_scenario_payment_params([good, temp, temp, temp, temp]),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Reason = ?timeout_reason(),
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    Target = ?captured(Reason, Cost),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, Target),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, 3),
     timeout = next_event(InvoiceID, 1000, Client),
@@ -948,7 +891,7 @@ payment_capture_retries_exceeded(C) ->
     PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
 
 repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    Target = ?captured(Reason, Cost),
     Changes = [
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
     ],
@@ -974,6 +917,26 @@ payment_w_terminal_success(C) ->
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
+
+-spec payment_w_crypto_currency_success(config()) -> _ | no_return().
+
+payment_w_crypto_currency_success(C) ->
+    Client = cfg(client, C),
+    PayCash = 2000,
+    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
+    PaymentParams = make_crypto_currency_payment_params(),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+    ] = next_event(InvoiceID, Client),
+    ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
+    ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
+    ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
 
@@ -1389,7 +1352,7 @@ payment_temporary_unavailability_retry_success(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, ?timeout_reason(), Client, 2),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
+        [?payment_state(?payment_w_status(PaymentID, ?captured(_Reason, _Cost)))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_temporary_unavailability_too_many_retries(config()) -> test_return().
@@ -1586,6 +1549,38 @@ external_account_posting(C) ->
                     account_id = AccountID
                 },
                 details = <<"Assist fee">>
+            } <- CF
+    ],
+    #domain_ExternalAccountSet{
+        accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
+    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
+
+
+-spec terminal_cashflow_overrides_provider(config()) -> test_return().
+
+terminal_cashflow_overrides_provider(C) ->
+    PartyID = <<"LGBT">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    _ = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    [ _, _, ?payment_ev(PaymentID, ?cash_flow_changed(CF)) ] = next_event(InvoiceID, InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
+    [AssistAccountID] = [
+        AccountID ||
+            #domain_FinalCashFlowPosting{
+                destination = #domain_FinalCashFlowAccount{
+                    account_type = {external, outcome},
+                    account_id = AccountID
+                },
+                details = <<"Kek">>
             } <- CF
     ],
     #domain_ExternalAccountSet{
@@ -1811,7 +1806,8 @@ invalid_amount_payment_partial_refund(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceAmount = 42000,
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), InvoiceAmount, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     RefundParams1 = make_refund_params(50, <<"RUB">>),
@@ -1823,7 +1819,25 @@ invalid_amount_payment_partial_refund(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more than allowed maximum">>]
     }} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client).
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
+    RefundAmount = 10000,
+    %% make cart cost not equal to remaining invoice cost
+    Cash = ?cash(InvoiceAmount - RefundAmount - 1, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    RefundParams3 = make_refund_params(RefundAmount, <<"RUB">>, Cart),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Remaining payment amount not equal cart cost">>]
+    }} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams3, Client),
+    %% miss cash in refund params
+    RefundParams4 = #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>,
+        cart = Cart
+    },
+    {exception, #'InvalidRequest'{
+        errors = [<<"Refund amount does not match with the cart total amount">>]
+    }} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams4, Client).
 
  -spec invalid_amount_partial_capture_and_refund(config()) -> _ | no_return().
 
@@ -1961,16 +1975,6 @@ payment_hold_capturing(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
 
--spec payment_hold_new_capturing(config()) -> _ | no_return().
-
-payment_hold_new_capturing(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params({hold, cancel}),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    ok = hg_client_invoicing:new_capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
-
 -spec payment_hold_partial_capturing(config()) -> _ | no_return().
 
 payment_hold_partial_capturing(C) ->
@@ -1983,9 +1987,43 @@ payment_hold_partial_capturing(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash).
+
+-spec payment_hold_partial_capturing_with_cart(config()) -> _ | no_return().
+
+payment_hold_partial_capturing_with_cart(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    Cash = ?cash(10000, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client),
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash, Cart), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
+
+-spec payment_hold_partial_capturing_with_cart_missing_cash(config()) -> _ | no_return().
+
+payment_hold_partial_capturing_with_cart_missing_cash(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    Cash = ?cash(10000, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, undefined, Cart, Client),
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash, Cart), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
 
 -spec invalid_currency_partial_capture(config()) -> _ | no_return().
 
@@ -2176,6 +2214,7 @@ terms_retrieval(C) ->
             ?pmt(bank_card, jcb),
             ?pmt(bank_card, mastercard),
             ?pmt(bank_card, visa),
+            ?pmt(crypto_currency, bitcoin),
             ?pmt(digital_wallet, qiwi),
             ?pmt(empty_cvv_bank_card, visa),
             ?pmt(payment_terminal, euroset),
@@ -2226,7 +2265,7 @@ adhoc_repair_failed_succeeded(C) ->
     Changes = [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
     ],
-    ok = repair_invoice(InvoiceID, Changes, ?repair_set_timer({timeout, 0}), Client),
+    ok = repair_invoice(InvoiceID, Changes, ?repair_set_timer({timeout, 0}), undefined, Client),
     Changes = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
@@ -2248,7 +2287,7 @@ adhoc_repair_force_removal(C) ->
         {{woody_error, {external, result_unexpected, _}}, _},
         hg_client_invoicing:rescind(InvoiceID, <<"LOL NO">>, Client)
     ),
-    ok = repair_invoice(InvoiceID, [], ?repair_mark_removal(), Client),
+    ok = repair_invoice(InvoiceID, [], ?repair_mark_removal(), undefined, Client),
     {exception, #payproc_InvoiceNotFound{}} = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec adhoc_repair_invalid_changes_failed(config()) -> _ | no_return().
@@ -2293,6 +2332,38 @@ adhoc_repair_invalid_changes_failed(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec adhoc_repair_force_invalid_transition(config()) -> _ | no_return().
+
+adhoc_repair_force_invalid_transition(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberdank">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    _ = ?assertEqual(ok, hg_invoice:fail(InvoiceID)),
+    Failure = payproc_errors:construct(
+        'PaymentFailure',
+        {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}
+    ),
+    InvalidChanges = [
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure}))),
+        ?invoice_status_changed(?invoice_unpaid())
+    ],
+    ?assertException(
+        error,
+        {{woody_error, {external, result_unexpected, _}}, _},
+        repair_invoice(InvoiceID, InvalidChanges, Client)
+    ),
+    Params = #payproc_InvoiceRepairParams{validate_transitions = false},
+    ?assertEqual(
+        ok,
+        repair_invoice(InvoiceID, InvalidChanges, #repair_ComplexAction{}, Params, Client)
+    ),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_unpaid()),
+        [?payment_state(?payment_w_status(PaymentID, ?failed({failure, Failure})))]
+    ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_with_offsite_preauth_success(config()) -> test_return().
 
@@ -2639,6 +2710,10 @@ make_terminal_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(terminal),
     make_payment_params(PaymentTool, Session, instant).
 
+make_crypto_currency_payment_params() ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency),
+    make_payment_params(PaymentTool, Session, instant).
+
 make_wallet_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet),
     make_payment_params(PaymentTool, Session, instant).
@@ -2709,6 +2784,13 @@ make_refund_params(Amount, Currency) ->
         cash = make_cash(Amount, Currency)
     }.
 
+make_refund_params(Amount, Currency, Cart) ->
+    #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>,
+        cash = make_cash(Amount, Currency),
+        cart = Cart
+    }.
+
 make_adjustment_params() ->
     make_adjustment_params(<<>>).
 
@@ -2729,10 +2811,10 @@ create_invoice(InvoiceParams, Client) ->
     InvoiceID.
 
 repair_invoice(InvoiceID, Changes, Client) ->
-    hg_client_invoicing:repair(InvoiceID, Changes, Client).
+    repair_invoice(InvoiceID, Changes, undefined, undefined, Client).
 
-repair_invoice(InvoiceID, Changes, Action, Client) ->
-    hg_client_invoicing:repair(InvoiceID, Changes, Action, Client).
+repair_invoice(InvoiceID, Changes, Action, Params, Client) ->
+    hg_client_invoicing:repair(InvoiceID, Changes, Action, Params, Client).
 
 create_repair_scenario(fail_pre_processing) ->
     Failure = payproc_errors:construct('PaymentFailure', {no_route_found, {unknown, #payprocerr_GeneralFailure{}}}),
@@ -2827,7 +2909,7 @@ await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
 await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cost), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts).
 
@@ -2837,7 +2919,7 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
 await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cash).
 
@@ -2846,7 +2928,10 @@ await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost).
 
 await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost) ->
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, undefined).
+
+await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, Cart) ->
+    Target = ?captured(Reason, Cost, Cart),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts),
     [
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
@@ -3106,7 +3191,8 @@ construct_domain_fixture() ->
                         ?pmt(payment_terminal, euroset),
                         ?pmt(digital_wallet, qiwi),
                         ?pmt(empty_cvv_bank_card, visa),
-                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
+                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay)),
+                        ?pmt(crypto_currency, bitcoin)
                     ])}
                 }
             ]},
@@ -3290,6 +3376,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(crypto_currency, bitcoin)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
@@ -3500,6 +3587,7 @@ construct_domain_fixture() ->
                         ?pmt(bank_card, mastercard),
                         ?pmt(bank_card, jcb),
                         ?pmt(empty_cvv_bank_card, visa),
+                        ?pmt(crypto_currency, bitcoin),
                         ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
                     ])},
                     cash_limit = {value, ?cashrng(
@@ -3564,6 +3652,23 @@ construct_domain_fixture() ->
                                     payment_system_is = visa,
                                     token_provider_is = applepay
                                 }}
+                            }}}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(20, 1000, operation_amount)
+                                )
+                            ]}
+                        },
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {payment_tool, {crypto_currency, #domain_CryptoCurrencyCondition{
+                                definition = {crypto_currency_is, bitcoin}
                             }}}},
                             then_ = {value, [
                                 ?cfpost(
@@ -3732,7 +3837,27 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
-                risk_coverage = high
+                risk_coverage = high,
+                terms = #domain_PaymentsProvisionTerms{
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(16, 1000, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {external, outcome},
+                            ?fixed(20, <<"RUB">>),
+                            <<"Kek">>
+                        )
+                    ]}
+                }
             }
         }},
 
