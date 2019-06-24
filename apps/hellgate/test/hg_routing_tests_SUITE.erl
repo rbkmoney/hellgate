@@ -1322,8 +1322,8 @@ terminal_priority_fixture(Revision, _C) ->
                             }
                         },
                         then_ = {value, [
-                            #domain_ProviderTerminalRef{id = 111, priority = 1.0},
-                            #domain_ProviderTerminalRef{id = 222, priority = 0.5}
+                            #domain_ProviderTerminalRef{id = 111, priority = 10},
+                            #domain_ProviderTerminalRef{id = 222, priority = 5}
                         ]}
                     },
                     #domain_TerminalDecision{
@@ -1334,8 +1334,8 @@ terminal_priority_fixture(Revision, _C) ->
                             }
                         },
                         then_ = {value, [
-                            #domain_ProviderTerminalRef{id = 111, priority = 0.5},
-                            #domain_ProviderTerminalRef{id = 222, priority = 1.0}
+                            #domain_ProviderTerminalRef{id = 111, priority = 5},
+                            #domain_ProviderTerminalRef{id = 222, priority = 10}
                         ]}
                     },
                     #domain_TerminalDecision{
