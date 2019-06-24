@@ -282,7 +282,7 @@ acceptable_risk(RiskCoverage, VS) ->
 get_terminal_ref(#domain_ProviderTerminalRef{id = ID}) ->
     #domain_TerminalRef{id = ID}.
 
-get_terminal_priority(#domain_ProviderTerminalRef{priority = Priority}) ->
+get_terminal_priority(#domain_ProviderTerminalRef{priority = Priority}) when is_integer(Priority) ->
     Priority.
 
 %%
