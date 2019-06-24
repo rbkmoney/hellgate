@@ -640,21 +640,21 @@ log_reject_context(RejectReason, RejectContext) ->
     log_reject_context(warning, RejectReason, RejectContext).
 
 log_reject_context(Level, RejectReason, RejectContext) ->
-    _ = logger:log(
+    _ = lager:log(
         Level,
+        lager:md(),
         "No route found, reason = ~p, varset: ~p",
-        [RejectReason, maps:get(varset, RejectContext)],
-        logger:get_process_metadata()),
-    _ = logger:log(
+        [RejectReason, maps:get(varset, RejectContext)]),
+    _ = lager:log(
         Level,
+        lager:md(),
         "No route found, reason = ~p, rejected providers: ~p",
-        [RejectReason, maps:get(rejected_providers, RejectContext)],
-        logger:get_process_metadata()),
-    _ = logger:log(
+        [RejectReason, maps:get(rejected_providers, RejectContext)]),
+    _ = lager:log(
         Level,
+        lager:md(),
         "No route found, reason = ~p, rejected terminals: ~p",
-        [RejectReason, maps:get(rejected_terminals, RejectContext)],
-        logger:get_process_metadata()),
+        [RejectReason, maps:get(rejected_terminals, RejectContext)]),
     ok.
 
 validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector, VS, Revision) ->
@@ -1686,7 +1686,7 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
     Target = get_target(St),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
-            _ = logger:info("Retry session after transient failure, wait ~p", [Timeout]),
+            _ = lager:info("Retry session after transient failure, wait ~p", [Timeout]),
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             {next, {Events ++ SessionEvents, SessionAction}};
         fatal ->
@@ -1696,7 +1696,7 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
-            _ = logger:info("Retry session after transient failure, wait ~p", [Timeout]),
+            _ = lager:info("Retry session after transient failure, wait ~p", [Timeout]),
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             Events1 = [?refund_ev(ID, E) || E <- SessionEvents],
             {next, {Events ++ Events1, SessionAction}};
@@ -1741,11 +1741,11 @@ check_retry_possibility(Target, Failure, St) ->
                 {wait, Timeout, _NewStrategy} ->
                     {retry, Timeout};
                 finish ->
-                    _ = logger:debug("Retries strategy is exceed"),
+                    _ = lager:debug("Retries strategy is exceed"),
                     fatal
             end;
         fatal ->
-            _ = logger:debug("Failure ~p is not transient", [Failure]),
+            _ = lager:debug("Failure ~p is not transient", [Failure]),
             fatal
     end.
 
@@ -2364,7 +2364,7 @@ validate_transition(Allowed, Change, St, Opts) ->
         #{validation := strict} when not Valid ->
             erlang:error({invalid_transition, Change, St, Allowed});
         #{} when not Valid ->
-            logger:warning(
+            lager:warning(
                 "Invalid transition for change ~p in state ~p, allowed ~p",
                 [Change, St, Allowed]
             )

@@ -67,7 +67,7 @@ groups() -> [
 init_per_suite(C) ->
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, _Ret} = hg_ct_helper:start_apps([
-        woody, scoper, dmt_client, hellgate, {cowboy, CowboySpec}
+        lager, woody, scoper, dmt_client, hellgate, {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture()),
 

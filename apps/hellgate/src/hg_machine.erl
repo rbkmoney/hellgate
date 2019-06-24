@@ -311,7 +311,7 @@ dispatch_signal(Ns, #mg_stateproc_RepairSignal{arg = Payload}, Machine) ->
     marshal_signal_result(Result, Machine).
 
 marshal_signal_result(Result = #{}, #{aux_state := AuxStWas}) ->
-    _ = logger:debug("signal result = ~p", [Result]),
+    _ = lager:debug("signal result = ~p", [Result]),
     Change = #mg_stateproc_MachineStateChange{
         events = marshal_events(maps:get(events, Result, [])),
         aux_state = marshal_aux_st_format(maps:get(auxst, Result, AuxStWas))
@@ -342,7 +342,7 @@ do_dispatch_call(Module, {thrift_call, ServiceName, FunctionRef, EncodedArgs}, M
     marshal_call_result(EncodedResponse, Result, Machine).
 
 marshal_call_result(Response, Result, #{aux_state := AuxStWas}) ->
-    _ = logger:debug("call response = ~p with result = ~p", [Response, Result]),
+    _ = lager:debug("call response = ~p with result = ~p", [Response, Result]),
     Change = #mg_stateproc_MachineStateChange{
         events = marshal_events(maps:get(events, Result, [])),
         aux_state = marshal_aux_st_format(maps:get(auxst, Result, AuxStWas))
@@ -406,13 +406,13 @@ get_handler_module(Ns) ->
     ets:lookup_element(?TABLE, Ns, 2).
 
 log_dispatch(Operation, #{id := ID, history := History, aux_state := AuxSt}) ->
-    logger:debug(
+    lager:debug(
         "dispatch ~p with id = ~p, history = ~p, aux state = ~p",
         [Operation, ID, History, AuxSt]
     ).
 
 log_dispatch(Operation, Args, #{id := ID, history := History, aux_state := AuxSt}) ->
-    logger:debug(
+    lager:debug(
         "dispatch ~p with id = ~p, args = ~p, history = ~p, aux state = ~p",
         [Operation, ID, Args, History, AuxSt]
     ).
