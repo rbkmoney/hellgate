@@ -71,4 +71,14 @@
 
 -define(timeout_reason(), <<"Timeout">>).
 
+-define(cart(Price, Details),
+    #domain_InvoiceCart{
+        lines = [
+            #domain_InvoiceLine{
+                product = <<"Test">>,
+                quantity = 1,
+                price = Price,
+                metadata = Details
+}]}).
+
 -endif.

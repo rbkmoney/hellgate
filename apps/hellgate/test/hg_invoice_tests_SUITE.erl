@@ -58,10 +58,13 @@
 -export([payment_adjustment_success/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
+-export([terminal_cashflow_overrides_provider/1]).
 -export([payment_hold_cancellation/1]).
 -export([payment_hold_auto_cancellation/1]).
 -export([payment_hold_capturing/1]).
 -export([payment_hold_partial_capturing/1]).
+-export([payment_hold_partial_capturing_with_cart/1]).
+-export([payment_hold_partial_capturing_with_cart_missing_cash/1]).
 -export([invalid_currency_partial_capture/1]).
 -export([invalid_amount_partial_capture/1]).
 -export([invalid_permit_partial_capture_in_service/1]).
@@ -163,6 +166,7 @@ groups() ->
 
             invalid_payment_w_deprived_party,
             external_account_posting,
+            terminal_cashflow_overrides_provider,
 
             {group, holds_management},
 
@@ -238,6 +242,8 @@ groups() ->
             invalid_currency_partial_capture,
             invalid_amount_partial_capture,
             payment_hold_partial_capturing,
+            payment_hold_partial_capturing_with_cart,
+            payment_hold_partial_capturing_with_cart_missing_cash,
             payment_hold_auto_capturing,
             {group, holds_management_with_custom_config}
         ]},
@@ -278,7 +284,7 @@ init_per_suite(C) ->
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
     {Apps, Ret} = hg_ct_helper:start_apps([
-        lager, woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}
+        woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
@@ -873,7 +879,7 @@ payment_capture_retries_exceeded(C) ->
     PaymentParams = make_scenario_payment_params([good, temp, temp, temp, temp]),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Reason = ?timeout_reason(),
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    Target = ?captured(Reason, Cost),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, Target),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, 3),
     timeout = next_event(InvoiceID, 1000, Client),
@@ -885,7 +891,7 @@ payment_capture_retries_exceeded(C) ->
     PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
 
 repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    Target = ?captured(Reason, Cost),
     Changes = [
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
     ],
@@ -916,14 +922,21 @@ payment_w_terminal_success(C) ->
 
 payment_w_crypto_currency_success(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), 42000, C),
+    PayCash = 2000,
+    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
     PaymentParams = make_crypto_currency_payment_params(),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ?invoice_state(
-        ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+    ] = next_event(InvoiceID, Client),
+    ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
+    ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
+    ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
 
@@ -1339,7 +1352,7 @@ payment_temporary_unavailability_retry_success(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, ?timeout_reason(), Client, 2),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured_with_reason_and_cost(_Reason, _Cost)))]
+        [?payment_state(?payment_w_status(PaymentID, ?captured(_Reason, _Cost)))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
 -spec payment_temporary_unavailability_too_many_retries(config()) -> test_return().
@@ -1536,6 +1549,38 @@ external_account_posting(C) ->
                     account_id = AccountID
                 },
                 details = <<"Assist fee">>
+            } <- CF
+    ],
+    #domain_ExternalAccountSet{
+        accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
+    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
+
+
+-spec terminal_cashflow_overrides_provider(config()) -> test_return().
+
+terminal_cashflow_overrides_provider(C) ->
+    PartyID = <<"LGBT">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    _ = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    [ _, _, ?payment_ev(PaymentID, ?cash_flow_changed(CF)) ] = next_event(InvoiceID, InvoicingClient),
+    _ = next_event(InvoiceID, InvoicingClient),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
+    [AssistAccountID] = [
+        AccountID ||
+            #domain_FinalCashFlowPosting{
+                destination = #domain_FinalCashFlowAccount{
+                    account_type = {external, outcome},
+                    account_id = AccountID
+                },
+                details = <<"Kek">>
             } <- CF
     ],
     #domain_ExternalAccountSet{
@@ -1761,7 +1806,8 @@ invalid_amount_payment_partial_refund(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceAmount = 42000,
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), InvoiceAmount, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     RefundParams1 = make_refund_params(50, <<"RUB">>),
@@ -1773,7 +1819,25 @@ invalid_amount_payment_partial_refund(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more than allowed maximum">>]
     }} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client).
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
+    RefundAmount = 10000,
+    %% make cart cost not equal to remaining invoice cost
+    Cash = ?cash(InvoiceAmount - RefundAmount - 1, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    RefundParams3 = make_refund_params(RefundAmount, <<"RUB">>, Cart),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Remaining payment amount not equal cart cost">>]
+    }} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams3, Client),
+    %% miss cash in refund params
+    RefundParams4 = #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>,
+        cart = Cart
+    },
+    {exception, #'InvalidRequest'{
+        errors = [<<"Refund amount does not match with the cart total amount">>]
+    }} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams4, Client).
 
  -spec invalid_amount_partial_capture_and_refund(config()) -> _ | no_return().
 
@@ -1923,9 +1987,43 @@ payment_hold_partial_capturing(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash).
+
+-spec payment_hold_partial_capturing_with_cart(config()) -> _ | no_return().
+
+payment_hold_partial_capturing_with_cart(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    Cash = ?cash(10000, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client),
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash, Cart), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
+
+-spec payment_hold_partial_capturing_with_cart_missing_cash(config()) -> _ | no_return().
+
+payment_hold_partial_capturing_with_cart_missing_cash(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    Cash = ?cash(10000, <<"RUB">>),
+    Cart = ?cart(Cash, #{}),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, undefined, Cart, Client),
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash, Cart), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
 
 -spec invalid_currency_partial_capture(config()) -> _ | no_return().
 
@@ -2686,6 +2784,13 @@ make_refund_params(Amount, Currency) ->
         cash = make_cash(Amount, Currency)
     }.
 
+make_refund_params(Amount, Currency, Cart) ->
+    #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>,
+        cash = make_cash(Amount, Currency),
+        cart = Cart
+    }.
+
 make_adjustment_params() ->
     make_adjustment_params(<<>>).
 
@@ -2804,7 +2909,7 @@ await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
 await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cost), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts).
 
@@ -2814,7 +2919,7 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
 await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
-        ?payment_ev(PaymentID, ?session_ev(?captured_with_reason_and_cost(Reason, Cash), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cash).
 
@@ -2823,7 +2928,10 @@ await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost).
 
 await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost) ->
-    Target = ?captured_with_reason_and_cost(Reason, Cost),
+    await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, undefined).
+
+await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, Cart) ->
+    Target = ?captured(Reason, Cost, Cart),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts),
     [
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
@@ -3729,7 +3837,27 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
-                risk_coverage = high
+                risk_coverage = high,
+                terms = #domain_PaymentsProvisionTerms{
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(16, 1000, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {external, outcome},
+                            ?fixed(20, <<"RUB">>),
+                            <<"Kek">>
+                        )
+                    ]}
+                }
             }
         }},
 

@@ -95,7 +95,7 @@ init_per_suite(C) ->
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({woody_client, '_', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
-    {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, scoper, dmt_client, hellgate, {cowboy, CowboySpec}]),
+    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, hellgate, {cowboy, CowboySpec}]),
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
@@ -416,7 +416,7 @@ await_payment_capture(InvoiceID, PaymentID, Client) ->
 await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     Pattern = [
-        ?evp(?payment_ev(PaymentID, ?payment_status_changed(?captured_with_reason_and_cost(Reason, Cost))))
+        ?evp(?payment_ev(PaymentID, ?payment_status_changed(?captured(Reason, Cost))))
     ],
     {ok, _Events} = await_events(InvoiceID, Pattern, Client),
     PaymentID.

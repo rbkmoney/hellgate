@@ -19,6 +19,7 @@
 -export([cancel_payment/4]).
 -export([capture_payment/4]).
 -export([capture_payment/5]).
+-export([capture_payment/6]).
 
 -export([refund_payment/4]).
 -export([refund_payment_manual/4]).
@@ -61,7 +62,8 @@
 -type refund_id()          :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
 -type refund_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type term_set()           :: dmsl_domain_thrift:'TermSet'().
--type cash()               :: dmsl_domain_thrift:'Cash'().
+-type cash()               :: undefined | dmsl_domain_thrift:'Cash'().
+-type cart()               :: undefined | dmsl_domain_thrift:'InvoiceCart'().
 
 -spec start(hg_client_api:t()) -> pid().
 
@@ -154,37 +156,32 @@ cancel_payment(InvoiceID, PaymentID, Reason, Client) ->
     ok | woody_error:business_error().
 
 capture_payment(InvoiceID, PaymentID, Reason, Client) ->
-    Call = {
-        call,
-        'CapturePaymentNew',
-        [
-            InvoiceID,
-            PaymentID,
-            #payproc_InvoicePaymentCaptureParams{
-                reason = Reason
-            }
-        ]
-    },
-    map_result_error(gen_server:call(Client, Call)).
+    capture_payment(InvoiceID, PaymentID, Reason, undefined, Client).
 
 -spec capture_payment(invoice_id(), payment_id(), binary(), cash(), pid()) ->
     ok | woody_error:business_error().
 
 capture_payment(InvoiceID, PaymentID, Reason, Cash, Client) ->
+    capture_payment(InvoiceID, PaymentID, Reason, Cash, undefined, Client).
+
+-spec capture_payment(invoice_id(), payment_id(), binary(), cash(), cart(), pid()) ->
+    ok | woody_error:business_error().
+
+capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client) ->
     Call = {
         call,
-        'CapturePaymentNew',
+        'CapturePayment',
         [
             InvoiceID,
             PaymentID,
             #payproc_InvoicePaymentCaptureParams{
                 reason = Reason,
-                cash = Cash
+                cash = Cash,
+                cart = Cart
             }
         ]
     },
     map_result_error(gen_server:call(Client, Call)).
-
 
 -spec refund_payment(invoice_id(), payment_id(), refund_params(), pid()) ->
     refund() | woody_error:business_error().
@@ -300,21 +297,21 @@ handle_call({pull_event, InvoiceID, Timeout}, _From, St = #st{client = Client}) 
     end;
 
 handle_call(Call, _From, State) ->
-    _ = lager:warning("unexpected call received: ~tp", [Call]),
+    _ = logger:warning("unexpected call received: ~tp", [Call]),
     {noreply, State}.
 
 -spec handle_cast(_, st()) ->
     {noreply, st()}.
 
 handle_cast(Cast, State) ->
-    _ = lager:warning("unexpected cast received: ~tp", [Cast]),
+    _ = logger:warning("unexpected cast received: ~tp", [Cast]),
     {noreply, State}.
 
 -spec handle_info(_, st()) ->
     {noreply, st()}.
 
 handle_info(Info, State) ->
-    _ = lager:warning("unexpected info received: ~tp", [Info]),
+    _ = logger:warning("unexpected info received: ~tp", [Info]),
     {noreply, State}.
 
 -spec terminate(Reason, st()) ->

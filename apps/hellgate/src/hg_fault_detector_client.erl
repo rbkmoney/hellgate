@@ -187,14 +187,12 @@ register_operation(Status, ServiceId, OperationId, ServiceConfig) ->
 
 %% PRIVATE
 
-call(Function, Args) ->
-    ServiceUrls = genlib_app:env(hellgate, services),
-    Url         = genlib:to_binary(maps:get(fault_detector, ServiceUrls)),
-    Opts        = #{url => Url},
+call(Service, Args) ->
     EnvFDConfig = genlib_app:env(hellgate, fault_detector, #{}),
-    Timeout     = genlib_map:get(timeout, EnvFDConfig, infinity),
+    Timeout     = genlib_map:get(timeout, EnvFDConfig, 4000),
     Deadline    = woody_deadline:from_timeout(Timeout),
-    do_call(Function, Args, Opts, Deadline).
+    Opts        = hg_woody_wrapper:get_service_options(fault_detector),
+    do_call(Service, Args, Opts, Deadline).
 
 do_call('InitService', Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'InitService', Args, Opts, Deadline) of
@@ -205,12 +203,12 @@ do_call('InitService', Args, Opts, Deadline) ->
                  Class =:= result_unknown ->
             [ServiceId | _] = Args,
             ErrorText = "Unable to init service ~p in fault detector, ~p:~p",
-            _ = lager:warning(ErrorText, [ServiceId, error, Reason]),
+            _ = logger:warning(ErrorText, [ServiceId, error, Reason]),
             {error, Reason};
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
             [ServiceId | _] = Args,
             ErrorText = "Unable to init service ~p in fault detector, ~p:~p",
-            _ = lager:error(ErrorText, [ServiceId, error, Reason]),
+            _ = logger:error(ErrorText, [ServiceId, error, Reason]),
             {error, Reason}
     end;
 do_call('GetStatistics', Args, Opts, Deadline) ->
@@ -222,12 +220,12 @@ do_call('GetStatistics', Args, Opts, Deadline) ->
                  Class =:= result_unknown ->
             [ServiceIds | _] = Args,
             String = "Unable to get statistics for services ~p from fault detector, ~p:~p",
-            _ = lager:warning(String, [ServiceIds, error, Reason]),
+            _ = logger:warning(String, [ServiceIds, error, Reason]),
             [];
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
             [ServiceIds | _] = Args,
             String = "Unable to get statistics for services ~p from fault detector, ~p:~p",
-            _ = lager:error(String, [ServiceIds, error, Reason]),
+            _ = logger:error(String, [ServiceIds, error, Reason]),
             []
     end;
 do_call('RegisterOperation', Args, Opts, Deadline) ->
@@ -242,12 +240,12 @@ do_call('RegisterOperation', Args, Opts, Deadline) ->
                  Class =:= result_unknown ->
             [ServiceId, OperationId | _] = Args,
             ErrorText = "Unable to register operation ~p for service ~p in fault detector, ~p:~p",
-            _ = lager:warning(ErrorText, [OperationId, ServiceId, error, Reason]),
+            _ = logger:warning(ErrorText, [OperationId, ServiceId, error, Reason]),
             {error, Reason};
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
             [ServiceId, OperationId | _] = Args,
             ErrorText = "Unable to register operation ~p for service ~p in fault detector, ~p:~p",
-            _ = lager:error(ErrorText, [OperationId, ServiceId, error, Reason]),
+            _ = logger:error(ErrorText, [OperationId, ServiceId, error, Reason]),
             {error, Reason}
     end.
 

@@ -13,10 +13,12 @@
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
 -export([compute_shop_terms/4]).
+-export([get_cart_amount/1]).
 
 -type amount()     :: dmsl_domain_thrift:'Amount'().
 -type currency()   :: dmsl_domain_thrift:'CurrencyRef'().
 -type cash()       :: dmsl_domain_thrift:'Cash'().
+-type cart()       :: dmsl_domain_thrift:'InvoiceCart'().
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 -type party()      :: dmsl_domain_thrift:'Party'().
 -type shop()       :: dmsl_domain_thrift:'Shop'().
@@ -111,3 +113,22 @@ assert_shop_unblocked(V = {Status, _}) ->
 
 assert_shop_active(V = {Status, _}) ->
     Status == active orelse throw(#payproc_InvalidShopStatus{status = {suspension, V}}).
+
+-spec get_cart_amount(cart()) ->
+    cash().
+
+get_cart_amount(#domain_InvoiceCart{lines = [FirstLine | Cart]}) ->
+    lists:foldl(
+        fun (Line, CashAcc) ->
+            hg_cash:add(get_line_amount(Line), CashAcc)
+        end,
+        get_line_amount(FirstLine),
+        Cart
+    ).
+
+get_line_amount(#domain_InvoiceLine{
+    quantity = Quantity,
+    price = #domain_Cash{amount = Amount, currency = Currency}
+}) ->
+    #domain_Cash{amount = Amount * Quantity, currency = Currency}.
+

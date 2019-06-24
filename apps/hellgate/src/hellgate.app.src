@@ -6,11 +6,10 @@
     {registered, []},
     {mod, {hellgate, []}},
     {applications, [
+        logger_logstash_formatter,
         kernel,
         fault_detector_proto,
         stdlib,
-        lager,
-        lager_logstash_formatter,
         genlib,
         rfc3339,
         cowboy,

@@ -364,36 +364,35 @@ acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
-        holds           = Holds0,
-        refunds         = Refunds0
+        currencies      = PCurrencies,
+        categories      = PCategories,
+        payment_methods = PPaymentMethods,
+        cash_limit      = PCashLimit,
+        cash_flow       = PCashflow,
+        holds           = PHolds,
+        refunds         = PRefunds
     },
     #domain_PaymentsProvisionTerms{
-        currencies      = Currencies1,
-        categories      = Categories1,
-        payment_methods = PaymentMethods1,
-        cash_limit      = CashLimit1,
-        cash_flow       = Cashflow1,
-        holds           = Holds1,
-        refunds         = Refunds1
+        currencies      = TCurrencies,
+        categories      = TCategories,
+        payment_methods = TPaymentMethods,
+        cash_limit      = TCashLimit,
+        cash_flow       = TCashflow,
+        holds           = THolds,
+        refunds         = TRefunds
     }
 ) ->
     #domain_PaymentsProvisionTerms{
-        currencies      = Currencies1,
-        categories      = Categories1,
-        payment_methods = PaymentMethods1,
-        cash_limit      = CashLimit1,
-        cash_flow       = Cashflow1,
-        holds           = merge_holds_terms(Holds1, Holds0),
-        refunds         = merge_refunds_terms(Refunds1, Refunds0)
+        currencies      = hg_utils:select_defined(TCurrencies,     PCurrencies),
+        categories      = hg_utils:select_defined(TCategories,     PCategories),
+        payment_methods = hg_utils:select_defined(TPaymentMethods, PPaymentMethods),
+        cash_limit      = hg_utils:select_defined(TCashLimit,      PCashLimit),
+        cash_flow       = hg_utils:select_defined(TCashflow,       PCashflow),
+        holds           = hg_utils:select_defined(THolds,          PHolds),
+        refunds         = hg_utils:select_defined(TRefunds,        PRefunds)
     };
-merge_payment_terms(Terms0, Terms1) ->
-    hg_utils:select_defined(Terms1, Terms0).
-
-merge_holds_terms(Terms0, Terms1) ->
-    hg_utils:select_defined(Terms1, Terms0).
-
-merge_refunds_terms(Terms0, Terms1) ->
-    hg_utils:select_defined(Terms1, Terms0).
+merge_payment_terms(ProviderTerms, TerminalTerms) ->
+    hg_utils:select_defined(TerminalTerms, ProviderTerms).
 
 %%
 
