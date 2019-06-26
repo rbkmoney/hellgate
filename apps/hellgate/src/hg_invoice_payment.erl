@@ -1442,9 +1442,8 @@ process_timeout({payment, Step}, Action, St) when
     Step =:= finalizing_accounter
 ->
     process_result(Action, St);
-process_timeout({refund_new, _ID}, Action, St) ->
-    %% Only cash flow building here, `process_routing` for consistency
-    process_routing(Action, St);
+process_timeout({refund_new, ID}, Action, St) ->
+    process_refund_cashflow(ID, Action, St);
 process_timeout({refund_session, _ID}, Action, St) ->
     process_session(Action, St);
 process_timeout({refund_accounter, _ID}, Action, St) ->
@@ -1490,9 +1489,6 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
 
 -spec process_routing(action(), st()) -> machine_result().
 process_routing(Action, St) ->
-    process_routing(get_activity(St), Action, St).
-
-process_routing({payment, risk_scoring}, Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
     PaymentInstitution = get_payment_institution(Opts, Revision),
@@ -1509,30 +1505,6 @@ process_routing({payment, risk_scoring}, Action, St) ->
                 {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
             )},
             process_failure(get_activity(St), Events0, Action, Failure, St)
-    end;
-process_routing({refund_new, ID}, Action, St) -> %%@todo probably not a `process_routing` but is now for consistency
-    Opts = get_opts(St),
-    Shop = get_shop(Opts),
-    Payment = get_payment(St),
-    RefundSt = try_get_refund_state(ID, St),
-    Route = get_route(St),
-    Revision = get_refund_revision(RefundSt),
-    Provider = get_route_provider(Route, Revision),
-    VS = collect_validation_varset(St, Opts), %@todo do i need to do `validate_refund`?
-    PaymentInstitution = get_payment_institution(Opts, Revision),
-    AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
-    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
-    % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
-    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
-        % TODO we must pull this rule out of refund terms
-        Available when Available >= 0 ->
-            Events = [?refund_ev(ID, ?session_ev(?refunded(), ?session_started()))],
-            {next, {Events, hg_machine_action:set_timeout(0, Action)}};
-        Available when Available < 0 ->
-            Failure = {failure, payproc_errors:construct('PaymentFailure',
-                {authorization_failed, {insufficient_funds, #payprocerr_GeneralFailure{}}} %%@todo ???
-            )},
-            process_failure(get_activity(St), [], Action, Failure, St, RefundSt)
     end.
 
 process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opts, Events0, Action) ->
@@ -1549,6 +1521,32 @@ process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opt
     ),
     Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
     {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
+
+-spec process_refund_cashflow(refund_id(), action(), st()) -> machine_result().
+process_refund_cashflow(ID, Action, St) ->
+    Opts = get_opts(St),
+    Shop = get_shop(Opts),
+    Payment = get_payment(St),
+    RefundSt = try_get_refund_state(ID, St),
+    Route = get_route(St),
+    Revision = get_refund_revision(RefundSt),
+    Provider = get_route_provider(Route, Revision),
+    VS = collect_validation_varset(St, Opts),
+    PaymentInstitution = get_payment_institution(Opts, Revision),
+    AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
+    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
+    % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
+    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
+        % TODO we must pull this rule out of refund terms
+        Available when Available >= 0 ->
+            Events = [?refund_ev(ID, ?session_ev(?refunded(), ?session_started()))],
+            {next, {Events, hg_machine_action:set_timeout(0, Action)}};
+        Available when Available < 0 ->
+            Failure = {failure, payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {insufficient_funds, #payprocerr_GeneralFailure{}}} %%@todo ???
+            )},
+            process_failure(get_activity(St), [], Action, Failure, St, RefundSt)
+    end.
 
 %%
 
