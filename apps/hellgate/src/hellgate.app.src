@@ -6,7 +6,6 @@
     {registered, []},
     {mod, {hellgate, []}},
     {applications, [
-        logger_logstash_formatter,
         kernel,
         fault_detector_proto,
         stdlib,
