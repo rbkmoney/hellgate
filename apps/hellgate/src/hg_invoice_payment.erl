@@ -73,7 +73,7 @@
 -type activity()      :: payment_activity() | refund_activity() | adjustment_activity() | idle.
 -type payment_activity()  :: {payment, payment_step()}.
 -type refund_activity()   :: {refund_new | refund_session | refund_accounter, refund_id()}.
--type adjustment_activity() :: {adjustment_new | adjustment_idle, adjustment_id()}.
+-type adjustment_activity() :: {adjustment_new, adjustment_id()}.
 -type payment_step()      ::
     new |
     risk_scoring |
