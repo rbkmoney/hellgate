@@ -161,8 +161,16 @@
 ).
 
 -define(refund_created(Refund, CashFlow),
+    ?refund_created(Refund, CashFlow, undefined)
+).
+
+-define(refund_created(Refund, CashFlow, TrxInfo),
     {invoice_payment_refund_created,
-        #payproc_InvoicePaymentRefundCreated{refund = Refund, cash_flow = CashFlow}
+        #payproc_InvoicePaymentRefundCreated{
+            refund = Refund,
+            cash_flow = CashFlow,
+            transaction_info = TrxInfo
+        }
     }
 ).
 

@@ -1642,11 +1642,14 @@ payment_refund_success(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     % not enough funds on the merchant account
+    Failure = {failure, payproc_errors:construct('RefundFailure',
+        {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
+    )},
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(_))))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
@@ -1688,8 +1691,15 @@ payment_manual_refund(C) ->
     },
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     % not enough funds on the merchant account
-    ?insufficient_account_balance() =
-        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
+    Failure = {failure, payproc_errors:construct('RefundFailure',
+        {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
+    )},
+    Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
+    ] = next_event(InvoiceID, Client),
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
@@ -1704,7 +1714,9 @@ payment_manual_refund(C) ->
     Refund =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _, TrxInfo)))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started()))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?trx_bound(TrxInfo)))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))

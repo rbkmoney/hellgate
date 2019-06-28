@@ -105,7 +105,8 @@
 -record(refund_st, {
     refund            :: undefined | refund(),
     cash_flow         :: undefined | cash_flow(),
-    session           :: undefined | session()
+    session           :: undefined | session(),
+    transaction_info  :: undefined | trx_info()
 }).
 
 -type refund_state() :: #refund_st{}.
@@ -997,10 +998,8 @@ refund(Params, St0, Opts) ->
     Revision = hg_domain:head(),
     Payment = get_payment(St),
     Refund = make_refund(Params, Payment, Revision, St, Opts),
-    {_AccountMap, FinalCashflow} = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
-    Changes = [
-        ?refund_created(Refund, FinalCashflow)
-    ],
+    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    Changes = [?refund_created(Refund, FinalCashflow)],
     Action = hg_machine_action:instant(),
     ID = Refund#domain_InvoicePaymentRefund.id,
     {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
@@ -1013,32 +1012,12 @@ manual_refund(Params, St0, Opts) ->
     Revision = hg_domain:head(),
     Payment = get_payment(St),
     Refund = make_refund(Params, Payment, Revision, St, Opts),
-    {AccountMap, FinalCashflow} = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
-    Changes = [
-        ?refund_created(Refund, FinalCashflow),
-        ?session_ev(?refunded(), ?session_started())
-    ] ++ make_transaction_event(TransactionInfo) ++ [
-        ?session_ev(?refunded(), ?session_finished(?session_succeeded()))
-    ],
-    RefundSt = collapse_refund_changes(Changes),
-    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
-    % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
-    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
-        % TODO we must pull this rule out of refund terms
-        Available when Available >= 0 ->
-            ID = Refund#domain_InvoicePaymentRefund.id,
-            Action = hg_machine_action:instant(),
-            {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}};
-        Available when Available < 0 ->
-            _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
-            throw(#payproc_InsufficientAccountBalance{})
-    end.
-
-make_transaction_event(undefined) ->
-    [];
-make_transaction_event(TransactionInfo) ->
-    [?session_ev(?refunded(), ?trx_bound(TransactionInfo))].
+    Changes = [?refund_created(Refund, FinalCashflow, TransactionInfo)],
+    Action = hg_machine_action:instant(),
+    ID = Refund#domain_InvoicePaymentRefund.id,
+    {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
 
 make_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_payment_status(captured, Payment),
@@ -1072,8 +1051,7 @@ make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
     PaymentInstitution = get_payment_institution(Opts, Revision),
     Provider = get_route_provider(Route, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
-    FinalCashFlow = construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap),
-    {AccountMap, FinalCashFlow}.
+    construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
 
 construct_refund_id(St) ->
     PaymentID = get_payment_id(get_payment(St)),
@@ -1522,6 +1500,8 @@ process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opt
     Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
     {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
 
+%%
+
 -spec process_refund_cashflow(refund_id(), action(), st()) -> machine_result().
 process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
@@ -1539,15 +1519,26 @@ process_refund_cashflow(ID, Action, St) ->
     case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
-            Events = [?refund_ev(ID, ?session_ev(?refunded(), ?session_started()))],
-            {next, {Events, hg_machine_action:set_timeout(0, Action)}};
+            Events0 = [?session_ev(?refunded(), ?session_started())],
+            Events1 = get_manual_refund_events(RefundSt),
+            {next, {
+                [?refund_ev(ID, C) || C <- Events0 ++ Events1],
+                hg_machine_action:set_timeout(0, Action)
+            }};
         Available when Available < 0 ->
-            Failure = {failure, payproc_errors:construct('PaymentFailure',
-                {authorization_failed, {insufficient_funds, #payprocerr_GeneralFailure{}}} %%@todo ???
+            Failure = {failure, payproc_errors:construct('RefundFailure',
+                {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
             )},
             process_failure(get_activity(St), [], Action, Failure, St, RefundSt)
     end.
 
+get_manual_refund_events(#refund_st{transaction_info = undefined}) ->
+    [];
+get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
+    [
+        ?session_ev(?refunded(), ?trx_bound(TransactionInfo)),
+        ?session_ev(?refunded(), ?session_finished(?session_succeeded()))
+    ].
 %%
 
 -spec process_session(action(), st()) -> machine_result().
@@ -2279,7 +2270,7 @@ merge_change(Change = ?payment_status_changed({refunded, _} = Status), #st{payme
 
 merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
     St1 = case Event of
-        ?refund_created(_, _) ->
+        ?refund_created(_, _, _) ->
             _ = validate_transition(idle, Change, St, Opts),
             St#st{activity = {refund_new, ID}};
         ?session_ev(?refunded(), ?session_started()) ->
@@ -2366,11 +2357,11 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
     St#st{retry_attempts = maps:update_with(get_target_type(Target), fun(N) -> N + 1 end, 0, Attempts)}.
 
-collapse_refund_changes(Changes) ->
-    lists:foldl(fun merge_refund_change/2, undefined, Changes).
+%collapse_refund_changes(Changes) ->
+%    lists:foldl(fun merge_refund_change/2, undefined, Changes).
 
-merge_refund_change(?refund_created(Refund, Cashflow), undefined) ->
-    #refund_st{refund = Refund, cash_flow = Cashflow};
+merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefined) ->
+    #refund_st{refund = Refund, cash_flow = Cashflow, transaction_info = TransactionInfo};
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
