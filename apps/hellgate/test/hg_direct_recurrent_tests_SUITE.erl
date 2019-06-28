@@ -95,7 +95,7 @@ init_per_suite(C) ->
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({woody_client, '_', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
-    {Apps, Ret} = hg_ct_helper:start_apps([lager, woody, scoper, dmt_client, hellgate, {cowboy, CowboySpec}]),
+    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, hellgate, {cowboy, CowboySpec}]),
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
@@ -628,7 +628,7 @@ construct_domain_fixture(TermSet) ->
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
-                terminal = {value, [?trm(1)]},
+                terminal = {value, [?prvtrm(1)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),

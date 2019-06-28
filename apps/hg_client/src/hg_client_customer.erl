@@ -140,21 +140,21 @@ handle_call({pull_event, CustomerID, Timeout}, _From, St = #st{client = Client})
     end;
 
 handle_call(Call, _From, State) ->
-    _ = lager:warning("unexpected call received: ~tp", [Call]),
+    _ = logger:warning("unexpected call received: ~tp", [Call]),
     {noreply, State}.
 
 -spec handle_cast(_, st()) ->
     {noreply, st()}.
 
 handle_cast(Cast, State) ->
-    _ = lager:warning("unexpected cast received: ~tp", [Cast]),
+    _ = logger:warning("unexpected cast received: ~tp", [Cast]),
     {noreply, State}.
 
 -spec handle_info(_, st()) ->
     {noreply, st()}.
 
 handle_info(Info, State) ->
-    _ = lager:warning("unexpected info received: ~tp", [Info]),
+    _ = logger:warning("unexpected info received: ~tp", [Info]),
     {noreply, State}.
 
 -spec terminate(Reason, st()) ->

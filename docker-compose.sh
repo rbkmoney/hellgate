@@ -15,9 +15,10 @@ services:
         condition: service_healthy
       shumway:
         condition: service_healthy
+    mem_limit: 256M
 
   dominant:
-    image: dr.rbkmoney.com/rbkmoney/dominant:48fb4cd638ebb4937a48a03f9433077891f442eb
+    image: dr.rbkmoney.com/rbkmoney/dominant:22491bfc5fe573a9ab1110905abd4cfbd0ee9338
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
