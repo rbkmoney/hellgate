@@ -146,6 +146,8 @@
 
 -define(adjustment_pending(),
     {pending, #domain_InvoicePaymentAdjustmentPending{}}).
+-define(adjustment_processed(),
+    {processed, #domain_InvoicePaymentAdjustmentProcessed{}}).
 -define(adjustment_captured(At),
     {captured, #domain_InvoicePaymentAdjustmentCaptured{at = At}}).
 -define(adjustment_cancelled(At),

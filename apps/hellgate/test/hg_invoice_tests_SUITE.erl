@@ -1323,6 +1323,12 @@ payment_adjustment_success(C) ->
     %% no way to create another one yet
     ?invalid_adjustment_pending(AdjustmentID) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    %% can't capture untill processed
+    ?invalid_adjustment_status(?adjustment_pending()) =
+        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
+    ] = next_event(InvoiceID, Client),
     ok =
         hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     ?invalid_adjustment_status(?adjustment_captured(_)) =

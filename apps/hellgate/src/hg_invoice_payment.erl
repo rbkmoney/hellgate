@@ -70,9 +70,10 @@
 
 %%
 
--type activity()      :: payment_activity() | refund_activity() | idle.
+-type activity()      :: payment_activity() | refund_activity() | adjustment_activity() | idle.
 -type payment_activity()  :: {payment, payment_step()}.
 -type refund_activity()   :: {refund_new | refund_session | refund_accounter, refund_id()}.
+-type adjustment_activity() :: {adjustment_new | adjustment_idle, adjustment_id()}.
 -type payment_step()      ::
     new |
     risk_scoring |
@@ -184,6 +185,9 @@ get_party_revision(#st{activity = {_, ID} = Activity} = St) when
     Activity =:= {refund_accounter, ID} ->
         #domain_InvoicePaymentRefund{party_revision = Revision, created_at = Timestamp} = get_refund(ID, St),
         {Revision, Timestamp};
+get_party_revision(#st{activity = {adjustment_new, ID}} = St) ->
+    #domain_InvoicePaymentAdjustment{party_revision = Revision, created_at = Timestamp} = get_adjustment(ID, St),
+    {Revision, Timestamp};
 get_party_revision(#st{activity = Activity}) ->
     erlang:error({no_revision_for_activity, Activity}).
 
@@ -1282,9 +1286,8 @@ create_adjustment(Timestamp, Params, St, Opts) ->
         old_cash_flow_inverse = hg_cashflow:revert(get_cashflow(St)),
         new_cash_flow         = FinalCashflow
     },
-    _AffectedAccounts = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Event = ?adjustment_ev(ID, ?adjustment_created(Adjustment)),
-    {Adjustment, {[Event], hg_machine_action:new()}}.
+    {Adjustment, {[Event], hg_machine_action:instant()}}.
 
 get_adjustment_revision(Params) ->
     hg_utils:select_defined(
@@ -1311,7 +1314,10 @@ assert_payment_status(_, #domain_InvoicePayment{status = Status}) ->
 assert_no_adjustment_pending(#st{adjustments = As}) ->
     lists:foreach(fun assert_adjustment_finalized/1, As).
 
-assert_adjustment_finalized(#domain_InvoicePaymentAdjustment{id = ID, status = {pending, _}}) ->
+assert_adjustment_finalized(#domain_InvoicePaymentAdjustment{id = ID, status = {Status, _}}) when
+    Status =:= pending;
+    Status =:= processed
+->
     throw(#payproc_InvoicePaymentAdjustmentPending{id = ID});
 assert_adjustment_finalized(_) ->
     ok.
@@ -1335,7 +1341,7 @@ cancel_adjustment(ID, St, Options) ->
 
 finalize_adjustment(ID, Intent, St, Options) ->
     Adjustment = get_adjustment(ID, St),
-    ok = assert_adjustment_status(pending, Adjustment),
+    ok = assert_adjustment_status(processed, Adjustment),
     _AffectedAccounts = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
     Status = case Intent of
         capture ->
@@ -1426,6 +1432,8 @@ process_timeout({refund_session, _ID}, Action, St) ->
     process_session(Action, St);
 process_timeout({refund_accounter, _ID}, Action, St) ->
     process_result(Action, St);
+process_timeout({adjustment_new, ID}, Action, St) ->
+    process_adjustment_cashflow(ID, Action, St);
 process_timeout({payment, flow_waiting}, Action, St) ->
     finalize_payment(Action, St).
 
@@ -1539,6 +1547,15 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
         ?session_ev(?refunded(), ?trx_bound(TransactionInfo)),
         ?session_ev(?refunded(), ?session_finished(?session_succeeded()))
     ].
+%%
+
+-spec process_adjustment_cashflow(adjustment_id(), action(), st()) -> machine_result().
+process_adjustment_cashflow(ID, Action, St) ->
+    Opts = get_opts(St),
+    Adjustment = get_adjustment(ID, St),
+    _AffectedAccounts = prepare_adjustment_cashflow(Adjustment, St, Opts),
+    Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
+    {done, {Events, hg_machine_action:set_timeout(0, Action)}}.
 %%
 
 -spec process_session(action(), st()) -> machine_result().
@@ -2298,15 +2315,25 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
             St2
     end;
 merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
-    _ = validate_transition(idle, Change, St, Opts),
-    Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St)),
-    St1 = set_adjustment(ID, Adjustment, St),
+    St1 = case Event of
+        ?adjustment_created(_) ->
+            _ = validate_transition(idle, Change, St, Opts),
+            St#st{activity = {adjustment_new, ID}};
+        ?adjustment_status_changed(?adjustment_processed()) ->
+            _ = validate_transition({adjustment_new, ID}, Change, St, Opts),
+            St;
+        ?adjustment_status_changed(_) ->
+            _ = validate_transition({adjustment_new, ID}, Change, St, Opts),
+            St#st{activity = idle}
+    end,
+    Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St1)),
+    St2 = set_adjustment(ID, Adjustment, St1),
     % TODO new cashflow imposed implicitly on the payment state? rough
     case get_adjustment_status(Adjustment) of
         ?adjustment_captured(_) ->
-            set_cashflow(get_adjustment_cashflow(Adjustment), St1);
+            set_cashflow(get_adjustment_cashflow(Adjustment), St2);
         _ ->
-            St1
+            St2
     end;
 
 merge_change(
@@ -2356,9 +2383,6 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
     St#st{retry_attempts = maps:update_with(get_target_type(Target), fun(N) -> N + 1 end, 0, Attempts)}.
-
-%collapse_refund_changes(Changes) ->
-%    lists:foldl(fun merge_refund_change/2, undefined, Changes).
 
 merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefined) ->
     #refund_st{refund = Refund, cash_flow = Cashflow, transaction_info = TransactionInfo};
@@ -3076,6 +3100,8 @@ unmarshal(adjustment,
 
 unmarshal(adjustment_status, <<"pending">>) ->
     ?adjustment_pending();
+unmarshal(adjustment_status, <<"processed">>) ->
+    ?adjustment_processed();
 unmarshal(adjustment_status, [<<"captured">>, At]) ->
     ?adjustment_captured(At);
 unmarshal(adjustment_status, [<<"cancelled">>, At]) ->
