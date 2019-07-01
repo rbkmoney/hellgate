@@ -1787,10 +1787,16 @@ check_failure_type(Target, {failure, Failure}) ->
 check_failure_type(_Target, _Other) ->
     fatal.
 
+get_error_class(Target) when
+    Target =:= ?processed();
+    Target =:= ?captured();
+    Target =:= ?cancelled()
+->
+    'PaymentFailure';
 get_error_class(?refunded()) ->
     'RefundFailure';
-get_error_class(_Target) ->
-    'PaymentFailure'.
+get_error_class(Target) ->
+    error({unsupported_target, Target}).
 
 do_check_failure_type({authorization_failed, {temporarily_unavailable, _}}) ->
     transient;
