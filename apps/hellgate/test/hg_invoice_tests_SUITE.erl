@@ -3146,6 +3146,9 @@ make_payment_adjustment_and_get_revision(PaymentID, InvoiceID, Client) ->
     [
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
     ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
+    ] = next_event(InvoiceID, Client),
     ok =
         hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
