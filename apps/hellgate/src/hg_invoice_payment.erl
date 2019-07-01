@@ -3061,8 +3061,6 @@ unmarshal(adjustment_change, [1, ?legacy_adjustment_status_changed(Status)]) ->
 
 unmarshal(refund_change, [2, [<<"created">>, Refund, Cashflow]]) ->
     ?refund_created(unmarshal(refund, Refund), hg_cashflow:unmarshal(Cashflow));
-unmarshal(refund_change, [2, [<<"created">>, Refund, Cashflow, TransactionInfo]]) ->
-    ?refund_created(unmarshal(refund, Refund), hg_cashflow:unmarshal(Cashflow), unmarshal(trx, TransactionInfo));
 unmarshal(refund_change, [2, [<<"status">>, Status]]) ->
     ?refund_status_changed(unmarshal(refund_status, Status));
 unmarshal(refund_change, [2, [<<"session">>, Payload]]) ->
@@ -3107,8 +3105,6 @@ unmarshal(adjustment,
 
 unmarshal(adjustment_status, <<"pending">>) ->
     ?adjustment_pending();
-unmarshal(adjustment_status, <<"processed">>) ->
-    ?adjustment_processed();
 unmarshal(adjustment_status, [<<"captured">>, At]) ->
     ?adjustment_captured(At);
 unmarshal(adjustment_status, [<<"cancelled">>, At]) ->
