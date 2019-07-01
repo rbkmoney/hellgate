@@ -1787,13 +1787,13 @@ check_failure_type(Target, {failure, Failure}) ->
 check_failure_type(_Target, _Other) ->
     fatal.
 
-get_error_class(Target) when
-    Target =:= ?processed();
-    Target =:= ?captured();
-    Target =:= ?cancelled()
+get_error_class({Target, _}) when
+    Target =:= processed;
+    Target =:= captured;
+    Target =:= cancelled
 ->
     'PaymentFailure';
-get_error_class(?refunded()) ->
+get_error_class({refunded, _}) ->
     'RefundFailure';
 get_error_class(Target) ->
     error({unsupported_target, Target}).
