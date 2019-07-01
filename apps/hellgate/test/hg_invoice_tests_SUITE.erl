@@ -1237,7 +1237,7 @@ party_revision_check(C) ->
     party_revision_increment(ShopID, PartyClient),
 
     % add some cash to make smooth refund after
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 200000),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, 200000),
     InvoiceID2 = create_invoice(InvoiceParams2, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
@@ -1271,7 +1271,7 @@ invalid_payment_adjustment(C) ->
 
 payment_adjustment_success(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(1000), 100000, C),
     %% start a healthy man's payment
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
@@ -1317,15 +1317,15 @@ payment_adjustment_success(C) ->
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, Params, Client),
     Adjustment = #domain_InvoicePaymentAdjustment{id = AdjustmentID, reason = Reason} =
         hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
-    [
-        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
-    ] = next_event(InvoiceID, Client),
     %% no way to create another one yet
     ?invalid_adjustment_pending(AdjustmentID) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
+    ] = next_event(InvoiceID, Client),
     %% can't capture untill processed
-    ?invalid_adjustment_status(?adjustment_pending()) =
-        hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    %?invalid_adjustment_status(?adjustment_pending()) =
+    %    hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
@@ -2590,7 +2590,7 @@ consistent_account_balance(AccountID, Comment) ->
 
 next_event(InvoiceID, Client) ->
     %% timeout should be at least as large as hold expiration in construct_domain_fixture/0
-    next_event(InvoiceID, 12000, Client).
+    next_event(InvoiceID, 20000, Client).
 
 next_event(InvoiceID, Timeout, Client) ->
     case hg_client_invoicing:pull_event(InvoiceID, Timeout, Client) of
@@ -3109,7 +3109,7 @@ party_revision_check_init_params(C) ->
     {PartyID, PartyClient, Client, ShopID}.
 
 invoice_create_and_get_revision(PartyID, Client, ShopID) ->
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, make_due_date(10), 5000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, 5000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()) = ?invoice_w_revision(InvoiceRev))] =
         next_event(InvoiceID, Client),
