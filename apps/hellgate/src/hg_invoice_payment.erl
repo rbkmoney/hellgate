@@ -1766,7 +1766,7 @@ get_initial_retry_strategy(TargetType) ->
     St :: st(),
     Timeout :: non_neg_integer().
 check_retry_possibility(Target, Failure, St) ->
-    case check_failure_type(Failure) of
+    case check_failure_type(Target, Failure) of
         transient ->
             RetryStrategy = get_actual_retry_strategy(Target, St),
             case hg_retry:next_step(RetryStrategy) of
@@ -1781,11 +1781,16 @@ check_retry_possibility(Target, Failure, St) ->
             fatal
     end.
 
--spec check_failure_type(dmsl_domain_thrift:'OperationFailure'()) -> transient | fatal.
-check_failure_type({failure, Failure}) ->
-    payproc_errors:match('PaymentFailure', Failure, fun do_check_failure_type/1);
-check_failure_type(_Other) ->
+-spec check_failure_type(target(), dmsl_domain_thrift:'OperationFailure'()) -> transient | fatal.
+check_failure_type(Target, {failure, Failure}) ->
+    payproc_errors:match(get_error_class(Target), Failure, fun do_check_failure_type/1);
+check_failure_type(_Target, _Other) ->
     fatal.
+
+get_error_class(?refunded()) ->
+    'RefundFailure';
+get_error_class(_Target) ->
+    'PaymentFailure'.
 
 do_check_failure_type({authorization_failed, {temporarily_unavailable, _}}) ->
     transient;
@@ -1887,8 +1892,8 @@ handle_proxy_intent(
     Events = [?session_suspended(Tag) | try_request_interaction(UserInteraction)],
     {wrap_session_events(Events, Session), Action}.
 
-handle_proxy_capture_failure(Action, Failure, Session) ->
-    case check_failure_type({failure, Failure}) of
+handle_proxy_capture_failure(Action, Failure, Session = #{target := Target}) ->
+    case check_failure_type(Target, {failure, Failure}) of
         transient ->
             Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
             {Events, Action};
@@ -2321,9 +2326,9 @@ merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
             St#st{activity = {adjustment_new, ID}};
         ?adjustment_status_changed(?adjustment_processed()) ->
             _ = validate_transition({adjustment_new, ID}, Change, St, Opts),
-            St;
+            St#st{activity = idle};
         ?adjustment_status_changed(_) ->
-            _ = validate_transition({adjustment_new, ID}, Change, St, Opts),
+            _ = validate_transition(idle, Change, St, Opts),
             St#st{activity = idle}
     end,
     Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St1)),
