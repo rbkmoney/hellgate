@@ -73,7 +73,7 @@
 -type activity()      :: payment_activity() | refund_activity() | adjustment_activity() | idle.
 -type payment_activity()  :: {payment, payment_step()}.
 -type refund_activity()   :: {refund_new | refund_session | refund_accounter, refund_id()}.
--type adjustment_activity() :: {adjustment_new, adjustment_id()}.
+-type adjustment_activity() :: {adjustment_new | adjustment_pending, adjustment_id()}.
 -type payment_step()      ::
     new |
     risk_scoring |
@@ -185,7 +185,9 @@ get_party_revision(#st{activity = {_, ID} = Activity} = St) when
     Activity =:= {refund_accounter, ID} ->
         #domain_InvoicePaymentRefund{party_revision = Revision, created_at = Timestamp} = get_refund(ID, St),
         {Revision, Timestamp};
-get_party_revision(#st{activity = {adjustment_new, ID}} = St) ->
+get_party_revision(#st{activity = {Activity, ID}} = St) when
+    Activity =:= adjustment_new;
+    Activity =:= adjustment_pending ->
     #domain_InvoicePaymentAdjustment{party_revision = Revision, created_at = Timestamp} = get_adjustment(ID, St),
     {Revision, Timestamp};
 get_party_revision(#st{activity = Activity}) ->
@@ -1550,12 +1552,12 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
 %%
 
 -spec process_adjustment_cashflow(adjustment_id(), action(), st()) -> machine_result().
-process_adjustment_cashflow(ID, Action, St) ->
+process_adjustment_cashflow(ID, _Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
     _AffectedAccounts = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
-    {done, {Events, hg_machine_action:set_timeout(0, Action)}}.
+    {done, {Events, hg_machine_action:new()}}.
 %%
 
 -spec process_session(action(), st()) -> machine_result().
@@ -2332,9 +2334,9 @@ merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
             St#st{activity = {adjustment_new, ID}};
         ?adjustment_status_changed(?adjustment_processed()) ->
             _ = validate_transition({adjustment_new, ID}, Change, St, Opts),
-            St#st{activity = idle};
+            St#st{activity = {adjustment_pending, ID}};
         ?adjustment_status_changed(_) ->
-            _ = validate_transition(idle, Change, St, Opts),
+            _ = validate_transition({adjustment_pending, ID}, Change, St, Opts),
             St#st{activity = idle}
     end,
     Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St1)),
