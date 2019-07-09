@@ -129,17 +129,24 @@ do_choose_route(FailRatedRoutes, VS, RejectContext) ->
     ScoredRoutes = score_routes(FailRatedRoutes, VS),
     choose_scored_route(ScoredRoutes, RejectContext).
 
-choose_scored_route([{_Score, Route}], _RejectContext) ->
+choose_scored_route([{_Score, _Weight, Route}], _RejectContext) ->
     {ok, export_route(Route)};
 choose_scored_route(ScoredRoutes, _RejectContext) ->
-    [{_Score, Route}|_Rest] = lists:reverse(lists:keysort(1, ScoredRoutes)),
-    {ok, export_route(Route)}.
+    SortedScoredRoutes = lists:reverse(lists:keysort(1, ScoredRoutes)),
+    FilteredScoredRoutes = filter_routes_by_priority(SortedScoredRoutes),
+    {ok, export_route(get_random_route(FilteredScoredRoutes))}.
 
 score_routes(Routes, VS) ->
-    [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
+    lists:map(
+        fun (R = {Provider, Terminal, _ProviderStatus}) ->
+            {Score, Weight} = score_route(R, VS),
+            {Score, Weight, {Provider, Terminal}}
+        end,
+        Routes
+    ).
 
 export_route({ProviderRef, {TerminalRef, _Terminal, _Priority}}) ->
-    % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
+    % TODO shouldn't we provide sscore_routesomething along the lines of `get_provider_ref/1`,
     %      `get_terminal_ref/1` instead?
     ?route(ProviderRef, TerminalRef).
 
@@ -169,7 +176,81 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
     RiskCoverage = score_risk_coverage(Terminal, VS),
     {ProviderCondition, FailRate} = ProviderStatus,
     SuccessRate = 1.0 - FailRate,
-    {ProviderCondition, Priority, RiskCoverage, SuccessRate}.
+    {PriorityRate, Weight} = Priority,
+    {{ProviderCondition, PriorityRate, RiskCoverage, SuccessRate}, Weight}.
+
+get_priority_from_scored_route({{_, Priority, _, _}, _Weight, _Route}) ->
+    Priority.
+
+get_weight_from_scored_route({_Priority, Weight, _Route}) ->
+    Weight.
+
+get_route_from_scored_route({_Priority, _Weight, Route}) ->
+    Route.
+
+filter_routes_by_priority([Route | _Rest] = Routes) ->
+    Priority = get_priority_from_scored_route(Route),
+    lists:filter(
+        fun (R) ->
+            P = get_priority_from_scored_route(R),
+            P =:= Priority
+        end,
+        Routes
+    ).
+
+get_random_route(Routes) ->
+    {WithWeight, WithoutWeight} = devide_routes_by_weight(Routes),
+    ScoredRoute = case Summary = get_summary_weight(WithWeight) > 100 of
+        true ->
+            Random = rand:uniform() * Summary,
+            choose_scored_route(0, Random, WithWeight);
+        false ->
+            Random = rand:uniform() * 100,
+            case Random < Summary of
+                true ->
+                    choose_scored_route(0, Random, WithWeight);
+                false ->
+                    [Route | _Rest] = WithoutWeight,
+                    Route
+            end
+    end,
+    get_route_from_scored_route(ScoredRoute).
+
+devide_routes_by_weight(Routes) ->
+    lists:foldl(
+        fun (Route, {WithWeight, WithoutWeight}) ->
+            Weight = get_weight_from_scored_route(Route),
+            case Weight of
+                undefined ->
+                    {WithWeight, [Route | WithoutWeight]};
+                _ ->
+                    {[Route | WithWeight], WithoutWeight}
+            end
+        end,
+        {[], []},
+        Routes
+    ).
+
+get_summary_weight(Routes) ->
+    lists:foldl(
+        fun (Route, Acc) ->
+            Weight = get_weight_from_scored_route(Route),
+            Acc + Weight
+        end,
+        0,
+        Routes
+    ).
+
+choose_scored_route(_StartFrom, _Random, [Route]) ->
+    Route;
+choose_scored_route(StartFrom, Random, [Route | Rest]) ->
+    Weight = get_weight_from_scored_route(Route),
+    case StartFrom + Weight < Random of
+        true ->
+            Route;
+        false ->
+            choose_route(StartFrom + Weight, Random, Rest)
+    end.
 
 %% NOTE
 %% Score ∈ [0.0 .. 1.0]
@@ -282,8 +363,11 @@ acceptable_risk(RiskCoverage, VS) ->
 get_terminal_ref(#domain_ProviderTerminalRef{id = ID}) ->
     #domain_TerminalRef{id = ID}.
 
-get_terminal_priority(#domain_ProviderTerminalRef{priority = Priority}) when is_integer(Priority) ->
-    Priority.
+get_terminal_priority(#domain_ProviderTerminalRef{
+    priority = Priority,
+    weight = Weight
+}) when is_integer(Priority) ->
+    {Priority, Weight}.
 
 %%
 
