@@ -126,27 +126,43 @@ do_choose_route(_FailRatedRoutes, #{risk_score := fatal}, RejectContext) ->
 do_choose_route([] = _FailRatedRoutes, _VS, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
 do_choose_route(FailRatedRoutes, VS, RejectContext) ->
-    ScoredRoutes = score_routes(FailRatedRoutes, VS),
+    BalancedRoutes = balance_routes(FailRatedRoutes),
+    ScoredRoutes = score_routes(BalancedRoutes, VS),
     choose_scored_route(ScoredRoutes, RejectContext).
 
-choose_scored_route([{_Score, _Weight, Route}], _RejectContext) ->
+choose_scored_route([{_Score, Route}], _RejectContext) ->
     {ok, export_route(Route)};
 choose_scored_route(ScoredRoutes, _RejectContext) ->
-    SortedScoredRoutes = lists:reverse(lists:keysort(1, ScoredRoutes)),
-    FilteredScoredRoutes = filter_routes_by_priority(SortedScoredRoutes),
-    {ok, export_route(get_random_route(FilteredScoredRoutes))}.
+    [{_Score, Route} | _Rest] = lists:reverse(lists:keysort(1, ScoredRoutes)),
+    {ok, export_route(Route)}.
 
 score_routes(Routes, VS) ->
     lists:map(
         fun (R = {Provider, Terminal, _ProviderStatus}) ->
-            {Score, Weight} = score_route(R, VS),
-            {Score, Weight, {Provider, Terminal}}
+            Score = score_route(R, VS),
+            {Score, {Provider, Terminal}}
         end,
         Routes
     ).
 
+balance_routes(FailRatedRoutes) ->
+    FilteredRouteGroups = lists:foldl(
+        fun sort_routes_by_priority/2,
+        #{},
+        FailRatedRoutes
+    ),
+    case maps:size(FilteredRouteGroups) > 0 of
+        true ->
+            calc_random_condition(FilteredRouteGroups);
+        false ->
+            lists:map(
+                fun(R) -> set_random_condition(0, R) end,
+                FailRatedRoutes
+            )
+    end.
+
 export_route({ProviderRef, {TerminalRef, _Terminal, _Priority}}) ->
-    % TODO shouldn't we provide sscore_routesomething along the lines of `get_provider_ref/1`,
+    % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
     %      `get_terminal_ref/1` instead?
     ?route(ProviderRef, TerminalRef).
 
@@ -176,50 +192,103 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
     RiskCoverage = score_risk_coverage(Terminal, VS),
     {ProviderCondition, FailRate} = ProviderStatus,
     SuccessRate = 1.0 - FailRate,
-    {PriorityRate, Weight} = Priority,
-    {{ProviderCondition, PriorityRate, RiskCoverage, SuccessRate}, Weight}.
+    {PriorityRate, RandomCondition} = Priority,
+    {ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, SuccessRate}.
 
-get_priority_from_scored_route({{_, Priority, _, _}, _Weight, _Route}) ->
-    Priority.
+calc_random_condition(RouteGroups) ->
+    maps:fold(
+        fun (_Priority, Routes, Acc) ->
+            {WithWeight, WithoutWeight} = devide_routes_by_weight(Routes),
+            Random = get_random_route(WithWeight, WithoutWeight),
+            NewRoutes = map_random_condition(Random, Routes),
+            NewRoutes ++ Acc
+        end,
+        [],
+        RouteGroups
+    ).
 
-get_weight_from_scored_route({_Priority, Weight, _Route}) ->
-    Weight.
-
-get_route_from_scored_route({_Priority, _Weight, Route}) ->
-    Route.
-
-filter_routes_by_priority([Route | _Rest] = Routes) ->
-    Priority = get_priority_from_scored_route(Route),
-    lists:filter(
+map_random_condition(Random, Routes) when is_list(Random) ->
+    lists:map(
         fun (R) ->
-            P = get_priority_from_scored_route(R),
-            P =:= Priority
+            set_random_condition(1, R)
+        end,
+        Routes
+    );
+map_random_condition(Route, Routes) ->
+    lists:map(
+        fun (R) ->
+            case R =:= Route of
+                true ->
+                    set_random_condition(1, R);
+                false ->
+                    set_random_condition(0, R)
+            end
         end,
         Routes
     ).
 
-get_random_route(Routes) ->
-    {WithWeight, WithoutWeight} = devide_routes_by_weight(Routes),
-    ScoredRoute = case Summary = get_summary_weight(WithWeight) > 100 of
+set_random_condition(Value, Route) ->
+    {Provider, {TerminalRef, Terminal, Priority}, ProviderStatus} = Route,
+    {PriorityRate, _Weight} = Priority,
+    {Provider, {TerminalRef, Terminal, {PriorityRate, Value}}, ProviderStatus}.
+
+get_priority_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
+    {PriorityRate, _Weight} = Priority,
+    PriorityRate.
+
+get_weight_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
+    {_PriorityRate, Weight} = Priority,
+    Weight.
+
+set_weight_to_route(Value, Route) ->
+    set_random_condition(Value, Route).
+
+map_weight_to_routes(Weight, Routes) ->
+    lists:map(
+        fun(R) -> set_weight_to_route(Weight, R) end,
+        Routes
+    ).
+
+sort_routes_by_priority({_, _, {ProviderCondition, _}}, SortedRoutes) when
+    ProviderCondition =:= 0
+->
+    SortedRoutes;
+sort_routes_by_priority(Route, SortedRoutes) ->
+    Priority = get_priority_from_route(Route),
+    RoutesWithPriority = maps:get(Priority, SortedRoutes, undefined),
+    case RoutesWithPriority of
+        undefined ->
+            SortedRoutes#{Priority => [Route]};
+        List ->
+            SortedRoutes#{Priority := [Route | List]}
+    end.
+
+get_random_route(WithWeight, WithoutWeight) when
+    length(WithWeight) =:= 0
+->
+    WithoutWeight;
+get_random_route(WithWeight, WithoutWeight) ->
+    Summary = get_summary_weight(WithWeight),
+    case length(WithoutWeight) =:= 0 of
         true ->
             Random = rand:uniform() * Summary,
-            choose_scored_route(0, Random, WithWeight);
+            random_choose_route(0, Random, WithWeight);
         false ->
             Random = rand:uniform() * 100,
             case Random < Summary of
                 true ->
-                    choose_scored_route(0, Random, WithWeight);
+                    random_choose_route(0, Random, WithWeight);
                 false ->
-                    [Route | _Rest] = WithoutWeight,
-                    Route
+                    UnitWeight = (100 - Summary)/length(WithoutWeight),
+                    NewWithoutWeight = map_weight_to_routes(UnitWeight, WithoutWeight),
+                    random_choose_route(Summary, Random, NewWithoutWeight)
             end
-    end,
-    get_route_from_scored_route(ScoredRoute).
+    end.
 
 devide_routes_by_weight(Routes) ->
     lists:foldl(
         fun (Route, {WithWeight, WithoutWeight}) ->
-            Weight = get_weight_from_scored_route(Route),
+            Weight = get_weight_from_route(Route),
             case Weight of
                 undefined ->
                     {WithWeight, [Route | WithoutWeight]};
@@ -234,22 +303,22 @@ devide_routes_by_weight(Routes) ->
 get_summary_weight(Routes) ->
     lists:foldl(
         fun (Route, Acc) ->
-            Weight = get_weight_from_scored_route(Route),
+            Weight = get_weight_from_route(Route),
             Acc + Weight
         end,
         0,
         Routes
     ).
 
-choose_scored_route(_StartFrom, _Random, [Route]) ->
+random_choose_route(_StartFrom, _Random, [Route]) ->
     Route;
-choose_scored_route(StartFrom, Random, [Route | Rest]) ->
-    Weight = get_weight_from_scored_route(Route),
-    case StartFrom + Weight < Random of
+random_choose_route(StartFrom, Random, [Route | Rest]) ->
+    Weight = get_weight_from_route(Route),
+    case Random < StartFrom + Weight of
         true ->
             Route;
         false ->
-            choose_route(StartFrom + Weight, Random, Rest)
+            random_choose_route(StartFrom + Weight, Random, Rest)
     end.
 
 %% NOTE
