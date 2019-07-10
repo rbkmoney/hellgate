@@ -146,6 +146,8 @@
 
 -define(adjustment_pending(),
     {pending, #domain_InvoicePaymentAdjustmentPending{}}).
+-define(adjustment_processed(),
+    {processed, #domain_InvoicePaymentAdjustmentProcessed{}}).
 -define(adjustment_captured(At),
     {captured, #domain_InvoicePaymentAdjustmentCaptured{at = At}}).
 -define(adjustment_cancelled(At),
@@ -161,8 +163,16 @@
 ).
 
 -define(refund_created(Refund, CashFlow),
+    ?refund_created(Refund, CashFlow, undefined)
+).
+
+-define(refund_created(Refund, CashFlow, TrxInfo),
     {invoice_payment_refund_created,
-        #payproc_InvoicePaymentRefundCreated{refund = Refund, cash_flow = CashFlow}
+        #payproc_InvoicePaymentRefundCreated{
+            refund = Refund,
+            cash_flow = CashFlow,
+            transaction_info = TrxInfo
+        }
     }
 ).
 
