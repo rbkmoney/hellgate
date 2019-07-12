@@ -137,13 +137,7 @@ choose_scored_route(ScoredRoutes, _RejectContext) ->
     {ok, export_route(Route)}.
 
 score_routes(Routes, VS) ->
-    lists:map(
-        fun (R = {Provider, Terminal, _ProviderStatus}) ->
-            Score = score_route(R, VS),
-            {Score, {Provider, Terminal}}
-        end,
-        Routes
-    ).
+    [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
 
 balance_routes(FailRatedRoutes) ->
     FilteredRouteGroups = lists:foldl(
