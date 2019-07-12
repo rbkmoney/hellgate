@@ -23,6 +23,7 @@
 -export([prefer_lower_fail_rate/1]).
 
 -export([terminal_priority_for_shop/1]).
+-export([terminal_weight_for_shop/1]).
 
 -behaviour(supervisor).
 -export([init/1]).
@@ -30,6 +31,7 @@
 -define(dummy_party_id,        <<"dummy_party_id">>).
 -define(dummy_shop_id,         <<"dummy_shop_id">>).
 -define(dummy_another_shop_id, <<"dummy_another_shop_id">>).
+-define(weight_shop_id(Type),  <<"weight_shop_id_", Type/binary>>).
 
 -spec init([]) ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
@@ -59,7 +61,8 @@ groups() -> [
         prefer_lower_fail_rate
     ]},
     {terminal_priority, [], [
-        terminal_priority_for_shop
+        terminal_priority_for_shop,
+        terminal_weight_for_shop
     ]}
 ].
 
@@ -380,6 +383,38 @@ terminal_priority_for_shop(C) ->
         terminal = ?trm(222)
     }} = terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C),
     ok = hg_context:cleanup().
+
+-spec terminal_weight_for_shop(config()) -> test_return().
+terminal_weight_for_shop(C) ->
+    ok = hg_context:save(hg_context:create()),
+    Count = 1000,
+    AllStats = get_weight_route(<<"AllWithWeight">>, Count, #{}, C),
+    true = validate_stat_value(maps:get(111, AllStats), Count*1/3, 50),
+    true = validate_stat_value(maps:get(222, AllStats), Count*2/3, 50),
+    PartStats = get_weight_route(<<"PartWithWeight">>, Count, #{}, C),
+    true = validate_stat_value(maps:get(111, PartStats), Count*25/100, 50),
+    true = validate_stat_value(maps:get(222, PartStats), Count*75/100, 50),
+    WithoutStats = get_weight_route(<<"WithoutWeight">>, Count, #{}, C),
+    true = validate_stat_value(maps:get(222, WithoutStats), Count, 0),
+    ok = hg_context:cleanup().
+
+get_weight_route(_Type, 0, Stats, _C) ->
+    Stats;
+get_weight_route(Type, CountLeft, Stats, C) ->
+    {ok, #domain_PaymentRoute{
+        provider = ?prv(300),
+        terminal = ?trm(Terminal)
+    }} = terminal_priority_for_shop(?dummy_party_id, ?weight_shop_id(Type), C),
+    NewStats = case maps:get(Terminal, Stats, undefined) of
+        undefined ->
+            Stats#{Terminal => 1};
+        Value ->
+            Stats#{Terminal := Value + 1}
+    end,
+    get_weight_route(Type, CountLeft - 1, NewStats, C).
+
+validate_stat_value(Value, Target, Delta) ->
+    (Value =< (Target + Delta)) and (Value >= (Target - Delta)).
 
 terminal_priority_for_shop(PartyID, ShopID, _C) ->
     VS = #{
@@ -1336,6 +1371,63 @@ terminal_priority_fixture(Revision, _C) ->
                         then_ = {value, [
                             #domain_ProviderTerminalRef{id = 111, priority = 5},
                             #domain_ProviderTerminalRef{id = 222, priority = 10}
+                        ]}
+                    },
+                    #domain_TerminalDecision{
+                        if_ = {condition,
+                            {party, #domain_PartyCondition{
+                                id = PartyID,
+                                definition = {shop_is, ?weight_shop_id(<<"AllWithWeight">>)}}
+                            }
+                        },
+                        then_ = {value, [
+                            #domain_ProviderTerminalRef{
+                                id = 111,
+                                priority = 10,
+                                weight = 1
+                            },
+                            #domain_ProviderTerminalRef{
+                                id = 222,
+                                priority = 10,
+                                weight = 2
+                            }
+                        ]}
+                    },
+                    #domain_TerminalDecision{
+                        if_ = {condition,
+                            {party, #domain_PartyCondition{
+                                id = PartyID,
+                                definition = {shop_is, ?weight_shop_id(<<"PartWithWeight">>)}}
+                            }
+                        },
+                        then_ = {value, [
+                            #domain_ProviderTerminalRef{
+                                id = 111,
+                                priority = 10,
+                                weight = 25
+                            },
+                            #domain_ProviderTerminalRef{
+                                id = 222,
+                                priority = 10
+                            }
+                        ]}
+                    },
+                    #domain_TerminalDecision{
+                        if_ = {condition,
+                            {party, #domain_PartyCondition{
+                                id = PartyID,
+                                definition = {shop_is, ?weight_shop_id(<<"WithoutWeight">>)}}
+                            }
+                        },
+                        then_ = {value, [
+                            #domain_ProviderTerminalRef{
+                                id = 111,
+                                priority = 10
+                            },
+                            #domain_ProviderTerminalRef{
+                                id = 222,
+                                priority = 10
+                            }
                         ]}
                     },
                     #domain_TerminalDecision{
