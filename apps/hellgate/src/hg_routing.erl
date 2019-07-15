@@ -192,7 +192,7 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
 calc_random_condition(RouteGroups) ->
     maps:fold(
         fun (_Priority, Routes, Acc) ->
-            {WithWeight, WithoutWeight} = devide_routes_by_weight(Routes),
+            {WithWeight, WithoutWeight} = divide_routes_by_weight(Routes),
             Random = get_random_route(WithWeight, WithoutWeight),
             NewRoutes = map_random_condition(Random, Routes),
             NewRoutes ++ Acc
@@ -268,7 +268,7 @@ get_random_route(WithWeight, WithoutWeight) ->
             end
     end.
 
-devide_routes_by_weight(Routes) ->
+divide_routes_by_weight(Routes) ->
     lists:foldl(
         fun (Route, {WithWeight, WithoutWeight}) ->
             Weight = get_weight_from_route(Route),
