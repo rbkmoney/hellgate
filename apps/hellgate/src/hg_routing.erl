@@ -234,15 +234,6 @@ get_weight_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _Provider
     {_PriorityRate, Weight} = Priority,
     Weight.
 
-set_weight_to_route(Value, Route) ->
-    set_random_condition(Value, Route).
-
-map_weight_to_routes(Weight, Routes) ->
-    lists:map(
-        fun(R) -> set_weight_to_route(Weight, R) end,
-        Routes
-    ).
-
 sort_routes_by_priority({_, _, {ProviderCondition, _}}, SortedRoutes) when
     ProviderCondition =:= 0
 ->
@@ -273,9 +264,7 @@ get_random_route(WithWeight, WithoutWeight) ->
                 true ->
                     random_choose_route(0, Random, WithWeight);
                 false ->
-                    UnitWeight = (100 - Summary)/length(WithoutWeight),
-                    NewWithoutWeight = map_weight_to_routes(UnitWeight, WithoutWeight),
-                    random_choose_route(Summary, Random, NewWithoutWeight)
+                    WithoutWeight
             end
     end.
 
