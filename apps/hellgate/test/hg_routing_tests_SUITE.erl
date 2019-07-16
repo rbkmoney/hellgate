@@ -392,10 +392,9 @@ terminal_weight_for_shop(C) ->
     true = validate_stat_value(maps:get(111, AllStats), Count*1/3, 50),
     true = validate_stat_value(maps:get(222, AllStats), Count*2/3, 50),
     PartStats = get_weight_route(<<"PartWithWeight">>, Count, #{}, C),
-    true = validate_stat_value(maps:get(111, PartStats), Count*25/100, 50),
-    true = validate_stat_value(maps:get(222, PartStats), Count*75/100, 50),
+    true = validate_stat_value(maps:get(222, PartStats), Count, 0),
     WithoutStats = get_weight_route(<<"WithoutWeight">>, Count, #{}, C),
-    true = validate_stat_value(maps:get(222, WithoutStats), Count, 0),
+    true = validate_stat_value(maps:get(111, WithoutStats), Count, 0),
     ok = hg_context:cleanup().
 
 get_weight_route(_Type, 0, Stats, _C) ->
@@ -1403,12 +1402,12 @@ terminal_priority_fixture(Revision, _C) ->
                         then_ = {value, [
                             #domain_ProviderTerminalRef{
                                 id = 111,
-                                priority = 10,
-                                weight = 25
+                                priority = 10
                             },
                             #domain_ProviderTerminalRef{
                                 id = 222,
-                                priority = 10
+                                priority = 10,
+                                weight = 25
                             }
                         ]}
                     },
