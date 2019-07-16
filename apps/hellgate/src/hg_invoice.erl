@@ -575,11 +575,7 @@ handle_call({{'Invoicing', 'RefundPayment'}, [_UserInfo, _InvoiceID, PaymentID, 
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    wrap_payment_impact(
-        PaymentID,
-        hg_invoice_payment:refund(Params, PaymentSession, get_payment_opts(St)),
-        St
-    );
+    start_refund(Params, PaymentID, PaymentSession, St);
 
 handle_call({{'Invoicing', 'CreateManualRefund'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
@@ -798,6 +794,36 @@ validate_result(#{changes := Changes = [_ | _], state := St}) ->
     ok;
 validate_result(_Result) ->
     ok.
+
+%%
+
+start_refund(#payproc_InvoicePaymentRefundParams{id = undefined} = RefundParams, PaymentID, PaymentSession, St) ->
+    do_start_refund(PaymentID, RefundParams, PaymentSession, St);
+start_refund(#payproc_InvoicePaymentRefundParams{id = RefundID} = RefundParams, PaymentID, PaymentSession, St) ->
+    case try_get_refund(RefundID, PaymentSession) of
+        undefined ->
+            do_start_refund(PaymentID, RefundParams, PaymentSession, St);
+        Refund ->
+            #{
+                response => Refund,
+                state    => St
+            }
+    end.
+
+try_get_refund(ID, PaymentSession) ->
+    try
+        hg_invoice_payment:get_refund(ID, PaymentSession)
+    catch
+        throw:#payproc_InvoicePaymentRefundNotFound{} ->
+            undefined
+    end.
+
+do_start_refund(PaymentID, Params, PaymentSession, St) ->
+    wrap_payment_impact(
+        PaymentID,
+        hg_invoice_payment:refund(Params, PaymentSession, get_payment_opts(St)),
+        St
+    ).
 
 %%
 

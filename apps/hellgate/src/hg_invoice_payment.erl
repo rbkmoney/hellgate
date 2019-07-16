@@ -1031,7 +1031,7 @@ make_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
-    ID = construct_refund_id(St),
+    ID = genlib:define(Params#payproc_InvoicePaymentRefundParams.id, construct_refund_id(St)),
     #domain_InvoicePaymentRefund {
         id              = ID,
         created_at      = hg_datetime:format_now(),
@@ -1040,7 +1040,8 @@ make_refund(Params, Payment, Revision, St, Opts) ->
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason,
         cash            = Cash,
-        cart            = Cart
+        cart            = Cart,
+        external_id     = Params#payproc_InvoicePaymentRefundParams.external_id
     }.
 
 make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
