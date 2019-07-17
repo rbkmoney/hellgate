@@ -575,17 +575,13 @@ handle_call({{'Invoicing', 'RefundPayment'}, [_UserInfo, _InvoiceID, PaymentID, 
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    start_refund(Params, PaymentID, PaymentSession, St);
+    start_refund(refund, Params, PaymentID, PaymentSession, St);
 
 handle_call({{'Invoicing', 'CreateManualRefund'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    wrap_payment_impact(
-        PaymentID,
-        hg_invoice_payment:manual_refund(Params, PaymentSession, get_payment_opts(St)),
-        St
-    );
+    start_refund(manual_refund, Params, PaymentID, PaymentSession, St);
 
 handle_call({{'Invoicing', 'CreatePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
@@ -797,12 +793,12 @@ validate_result(_Result) ->
 
 %%
 
-start_refund(#payproc_InvoicePaymentRefundParams{id = undefined} = RefundParams, PaymentID, PaymentSession, St) ->
-    do_start_refund(PaymentID, RefundParams, PaymentSession, St);
-start_refund(#payproc_InvoicePaymentRefundParams{id = RefundID} = RefundParams, PaymentID, PaymentSession, St) ->
+start_refund(Type, #payproc_InvoicePaymentRefundParams{id = undefined} = RefundParams, PaymentID, PaymentSession, St) ->
+    do_start_refund(Type, PaymentID, RefundParams, PaymentSession, St);
+start_refund(Type, #payproc_InvoicePaymentRefundParams{id = RefundID} = RefundParams, PaymentID, PaymentSession, St) ->
     case try_get_refund(RefundID, PaymentSession) of
         undefined ->
-            do_start_refund(PaymentID, RefundParams, PaymentSession, St);
+            do_start_refund(Type, PaymentID, RefundParams, PaymentSession, St);
         Refund ->
             #{
                 response => Refund,
@@ -818,10 +814,10 @@ try_get_refund(ID, PaymentSession) ->
             undefined
     end.
 
-do_start_refund(PaymentID, Params, PaymentSession, St) ->
+do_start_refund(RefundType, PaymentID, Params, PaymentSession, St) ->
     wrap_payment_impact(
         PaymentID,
-        hg_invoice_payment:refund(Params, PaymentSession, get_payment_opts(St)),
+        hg_invoice_payment:RefundType(Params, PaymentSession, get_payment_opts(St)),
         St
     ).
 

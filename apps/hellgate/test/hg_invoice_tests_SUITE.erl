@@ -1670,10 +1670,9 @@ payment_refund_idempotency(C) ->
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
-    Refund1 = #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
-        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
-    Refund1 = #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client).
+    Refund1 = Refund0#domain_InvoicePaymentRefund{status = ?refund_succeeded()},
+    Refund1 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    Refund1 = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client).
 
 -spec payment_refund_success(config()) -> _ | no_return().
 
