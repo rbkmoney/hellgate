@@ -41,7 +41,6 @@
 -export([payment_w_terminal_success/1]).
 -export([payment_w_crypto_currency_success/1]).
 -export([payment_w_wallet_success/1]).
--export([payment_w_token_wallet_success/1]).
 -export([payment_w_customer_success/1]).
 -export([payment_w_another_shop_customer/1]).
 -export([payment_w_another_party_customer/1]).
@@ -201,7 +200,6 @@ groups() ->
             payment_w_terminal_success,
             payment_w_crypto_currency_success,
             payment_w_wallet_success,
-            payment_w_token_wallet_success,
             payment_w_customer_success,
             payment_w_another_shop_customer,
             payment_w_another_party_customer,
@@ -946,19 +944,6 @@ payment_w_wallet_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"bubbleblob">>, make_due_date(10), 42000, C),
     PaymentParams = make_wallet_payment_params(),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ?invoice_state(
-        ?invoice_w_status(?invoice_paid()),
-        [?payment_state(?payment_w_status(PaymentID, ?captured()))]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
-
--spec payment_w_token_wallet_success(config()) -> _ | no_return().
-
-payment_w_token_wallet_success(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"bubbleblob">>, make_due_date(10), 42000, C),
-    PaymentParams = make_token_wallet_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
@@ -2756,10 +2741,6 @@ make_crypto_currency_payment_params() ->
 
 make_wallet_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet),
-    make_payment_params(PaymentTool, Session, instant).
-
-make_token_wallet_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet_token),
     make_payment_params(PaymentTool, Session, instant).
 
 make_tds_payment_params() ->
