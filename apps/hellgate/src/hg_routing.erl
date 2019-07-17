@@ -145,7 +145,7 @@ balance_routes(FailRatedRoutes) ->
         #{},
         FailRatedRoutes
     ),
-    calc_random_condition(FilteredRouteGroups).
+    balance_route_groups(FilteredRouteGroups).
 
 export_route({ProviderRef, {TerminalRef, _Terminal, _Priority}}) ->
     % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
@@ -181,11 +181,11 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
     {PriorityRate, RandomCondition} = Priority,
     {ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, SuccessRate}.
 
-calc_random_condition(RouteGroups) ->
+balance_route_groups(RouteGroups) ->
     maps:fold(
         fun (_Priority, Routes, Acc) ->
             {WithWeight, WithoutWeight} = divide_routes_by_weight(Routes),
-            NewRoutes = get_random_route(WithWeight, WithoutWeight),
+            NewRoutes = set_routes_random_condition(WithWeight, WithoutWeight),
             NewRoutes ++ Acc
         end,
         [],
@@ -205,6 +205,9 @@ get_weight_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _Provider
     {_PriorityRate, Weight} = Priority,
     Weight.
 
+set_weight_to_route(Value, Route) ->
+    set_random_condition(Value, Route).
+
 group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) ->
     Priority = get_priority_from_route(Route),
     Key = {ProviderCondition, Priority},
@@ -215,25 +218,22 @@ group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) -
             SortedRoutes#{Key := [Route | List]}
     end.
 
-get_random_route([], WithoutWeight) ->
-    WithoutWeight;
-get_random_route(WithWeight, _WithoutWeight) ->
+set_routes_random_condition(WithWeight, WithoutWeight) ->
+    NewWithoutWeight = lists:map(
+        fun(Route) ->
+            set_weight_to_route(0, Route)
+        end,
+        WithoutWeight
+    ),
     Summary = get_summary_weight(WithWeight),
     Random = rand:uniform() * Summary,
-    random_choose_route(0, Random, WithWeight, []).
+    lists:reverse(calc_random_condition({0, Random, Summary}, WithWeight ++ NewWithoutWeight, [])).
 
 divide_routes_by_weight(Routes) ->
-    lists:foldl(
-        fun (Route, {WithWeight, WithoutWeight}) ->
-            Weight = get_weight_from_route(Route),
-            case Weight of
-                undefined ->
-                    {WithWeight, [Route | WithoutWeight]};
-                _ ->
-                    {[Route | WithWeight], WithoutWeight}
-            end
+    lists:partition(
+        fun (Route) ->
+            undefined =:= get_weight_from_route(Route)
         end,
-        {[], []},
         Routes
     ).
 
@@ -247,17 +247,24 @@ get_summary_weight(Routes) ->
         Routes
     ).
 
-random_choose_route(_StartFrom, _Random, [], Routes) ->
+calc_random_condition(_, [], Routes) ->
     Routes;
-random_choose_route(StartFrom, Random, [Route | Rest], Routes) ->
+calc_random_condition({StartFrom, Random, Summary}, [Route | Rest], Routes) ->
     Weight = get_weight_from_route(Route),
-    case Random < StartFrom + Weight of
+    %% Учитываем краевое условие, когда случайная величина равна максимульно возможной
+    Edge = (Random =:= StartFrom + Weight) and (Random =:= Summary),
+    %% Не учитываем нулевые значения, так как в случае краевого условия
+    %% получаем ложно положительный результат для всех нулей после границы
+    NotZero = Weight =/= 0,
+    %% Проверяем, что случайная величина в диапазоне
+    InRange = (Random >= StartFrom) and ((Random < StartFrom + Weight) or Edge),
+    case InRange and NotZero of
         true ->
             NewRoute = set_random_condition(1, Route),
-            random_choose_route(StartFrom + Weight, Random, Rest, [NewRoute | Routes]);
+            calc_random_condition({StartFrom + Weight, Random, Summary}, Rest, [NewRoute | Routes]);
         false ->
             NewRoute = set_random_condition(0, Route),
-            random_choose_route(StartFrom + Weight, Random, Rest, [NewRoute | Routes])
+            calc_random_condition({StartFrom + Weight, Random, Summary}, Rest, [NewRoute | Routes])
     end.
 
 %% NOTE
@@ -596,3 +603,65 @@ unmarshal(terminal_ref_legacy, ?legacy_terminal(ObjectID)) ->
 
 unmarshal(_, Other) ->
     Other.
+
+%%
+
+-ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
+
+-spec test() -> _.
+
+-type testcase() :: {_, fun()}.
+
+-spec balance_routes_test() -> [testcase()].
+balance_routes_test() ->
+    WithWeight = [
+        {1, {test, test, {test, 1}}, test},
+        {2, {test, test, {test, 2}}, test},
+        {3, {test, test, {test, 0}}, test},
+        {4, {test, test, {test, 1}}, test},
+        {5, {test, test, {test, 0}}, test}
+    ],
+    Result1 = [
+        {1, {test, test, {test, 1}}, test},
+        {2, {test, test, {test, 0}}, test},
+        {3, {test, test, {test, 0}}, test},
+        {4, {test, test, {test, 0}}, test},
+        {5, {test, test, {test, 0}}, test}
+    ],
+    Result2 = [
+        {1, {test, test, {test, 0}}, test},
+        {2, {test, test, {test, 1}}, test},
+        {3, {test, test, {test, 0}}, test},
+        {4, {test, test, {test, 0}}, test},
+        {5, {test, test, {test, 0}}, test}
+    ],
+    Result3 = [
+        {1, {test, test, {test, 0}}, test},
+        {2, {test, test, {test, 0}}, test},
+        {3, {test, test, {test, 0}}, test},
+        {4, {test, test, {test, 1}}, test},
+        {5, {test, test, {test, 0}}, test}
+    ],
+    [
+        ?assertEqual(Result1, lists:reverse(calc_random_condition({0, 0.2, 4}, WithWeight, []))),
+        ?assertEqual(Result2, lists:reverse(calc_random_condition({0, 1.5, 4}, WithWeight, []))),
+        ?assertEqual(Result3, lists:reverse(calc_random_condition({0, 4, 4}, WithWeight, [])))
+    ].
+
+-spec balance_routes_without_weight_test() -> [testcase()].
+balance_routes_without_weight_test() ->
+    WithoutWeight = [
+        {1, {test, test, {test, undefined}}, test},
+        {2, {test, test, {test, undefined}}, test}
+    ],
+    Result = [
+        {1, {test, test, {test, 0}}, test},
+        {2, {test, test, {test, 0}}, test}
+    ],
+    [
+        ?assertEqual(Result, set_routes_random_condition([], WithoutWeight))
+    ].
+
+-endif.
