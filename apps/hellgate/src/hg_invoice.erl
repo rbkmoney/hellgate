@@ -793,12 +793,11 @@ validate_result(_Result) ->
 
 %%
 
-start_refund(Type, #payproc_InvoicePaymentRefundParams{id = undefined} = RefundParams, PaymentID, PaymentSession, St) ->
-    do_start_refund(Type, PaymentID, RefundParams, PaymentSession, St);
-start_refund(Type, #payproc_InvoicePaymentRefundParams{id = RefundID} = RefundParams, PaymentID, PaymentSession, St) ->
+start_refund(RefundType, RefundParams, PaymentID, PaymentSession, St) ->
+    #payproc_InvoicePaymentRefundParams{id = RefundID} = RefundParams,
     case try_get_refund(RefundID, PaymentSession) of
         undefined ->
-            do_start_refund(Type, PaymentID, RefundParams, PaymentSession, St);
+            do_start_refund(RefundType, PaymentID, RefundParams, PaymentSession, St);
         Refund ->
             #{
                 response => Refund,
@@ -806,6 +805,8 @@ start_refund(Type, #payproc_InvoicePaymentRefundParams{id = RefundID} = RefundPa
             }
     end.
 
+try_get_refund(undefined, _) ->
+    undefined;
 try_get_refund(ID, PaymentSession) ->
     try
         hg_invoice_payment:get_refund(ID, PaymentSession)
@@ -814,7 +815,10 @@ try_get_refund(ID, PaymentSession) ->
             undefined
     end.
 
-do_start_refund(RefundType, PaymentID, Params, PaymentSession, St) ->
+do_start_refund(RefundType, PaymentID, Params, PaymentSession, St) when
+    RefundType =:= refund;
+    RefundType =:= manual_refund
+->
     wrap_payment_impact(
         PaymentID,
         hg_invoice_payment:RefundType(Params, PaymentSession, get_payment_opts(St)),
