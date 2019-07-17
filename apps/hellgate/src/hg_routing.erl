@@ -231,7 +231,7 @@ set_routes_random_condition(Routes) ->
     ),
     Summary = get_summary_weight(NewRoutes),
     Random = rand:uniform() * Summary,
-    lists:reverse(calc_random_condition({0, Random, Summary}, NewRoutes, [])).
+    lists:reverse(calc_random_condition(0.0, Random, NewRoutes, [])).
 
 get_summary_weight(Routes) ->
     lists:foldl(
@@ -243,24 +243,18 @@ get_summary_weight(Routes) ->
         Routes
     ).
 
-calc_random_condition(_, [], Routes) ->
+calc_random_condition(_, _, [], Routes) ->
     Routes;
-calc_random_condition({StartFrom, Random, Summary}, [Route | Rest], Routes) ->
+calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
     Weight = get_weight_from_route(Route),
-    %% Учитываем краевое условие, когда случайная величина равна максимульно возможной
-    Edge = (Random =:= StartFrom + Weight) and (Random =:= Summary),
-    %% Не учитываем нулевые значения, так как в случае краевого условия
-    %% получаем ложно положительный результат для всех нулей после границы
-    NotZero = Weight =/= 0,
-    %% Проверяем, что случайная величина в диапазоне
-    InRange = (Random >= StartFrom) and ((Random < StartFrom + Weight) or Edge),
-    case InRange and NotZero of
+    InRange = (Random >= StartFrom) and (Random < StartFrom + Weight),
+    case InRange of
         true ->
             NewRoute = set_random_condition(1, Route),
-            calc_random_condition({StartFrom + Weight, Random, Summary}, Rest, [NewRoute | Routes]);
+            calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes]);
         false ->
             NewRoute = set_random_condition(0, Route),
-            calc_random_condition({StartFrom + Weight, Random, Summary}, Rest, [NewRoute | Routes])
+            calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes])
     end.
 
 %% NOTE
@@ -637,13 +631,13 @@ balance_routes_test() ->
         {1, {test, test, {test, 0}}, test},
         {2, {test, test, {test, 0}}, test},
         {3, {test, test, {test, 0}}, test},
-        {4, {test, test, {test, 1}}, test},
+        {4, {test, test, {test, 0}}, test},
         {5, {test, test, {test, 0}}, test}
     ],
     [
-        ?assertEqual(Result1, lists:reverse(calc_random_condition({0, 0.2, 4}, WithWeight, []))),
-        ?assertEqual(Result2, lists:reverse(calc_random_condition({0, 1.5, 4}, WithWeight, []))),
-        ?assertEqual(Result3, lists:reverse(calc_random_condition({0, 4, 4}, WithWeight, [])))
+        ?assertEqual(Result1, lists:reverse(calc_random_condition(0.0, 0.2, WithWeight, []))),
+        ?assertEqual(Result2, lists:reverse(calc_random_condition(0.0, 1.5, WithWeight, []))),
+        ?assertEqual(Result3, lists:reverse(calc_random_condition(0.0, 4.0, WithWeight, [])))
     ].
 
 -spec balance_routes_without_weight_test() -> [testcase()].
