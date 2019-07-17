@@ -133,7 +133,7 @@ do_choose_route(FailRatedRoutes, VS, RejectContext) ->
 choose_scored_route([{_Score, Route}], _RejectContext) ->
     {ok, export_route(Route)};
 choose_scored_route(ScoredRoutes, _RejectContext) ->
-    [{_Score, Route} | _Rest] = lists:reverse(lists:keysort(1, ScoredRoutes)),
+    {_Score, Route} = lists:max(ScoredRoutes),
     {ok, export_route(Route)}.
 
 score_routes(Routes, VS) ->
@@ -184,8 +184,7 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
 balance_route_groups(RouteGroups) ->
     maps:fold(
         fun (_Priority, Routes, Acc) ->
-            {WithWeight, WithoutWeight} = divide_routes_by_weight(Routes),
-            NewRoutes = set_routes_random_condition(WithWeight, WithoutWeight),
+            NewRoutes = set_routes_random_condition(Routes),
             NewRoutes ++ Acc
         end,
         [],
@@ -218,24 +217,21 @@ group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) -
             SortedRoutes#{Key := [Route | List]}
     end.
 
-set_routes_random_condition(WithWeight, WithoutWeight) ->
-    NewWithoutWeight = lists:map(
+set_routes_random_condition(Routes) ->
+    NewRoutes = lists:map(
         fun(Route) ->
-            set_weight_to_route(0, Route)
-        end,
-        WithoutWeight
-    ),
-    Summary = get_summary_weight(WithWeight),
-    Random = rand:uniform() * Summary,
-    lists:reverse(calc_random_condition({0, Random, Summary}, WithWeight ++ NewWithoutWeight, [])).
-
-divide_routes_by_weight(Routes) ->
-    lists:partition(
-        fun (Route) ->
-            undefined =:= get_weight_from_route(Route)
+            case undefined =:= get_weight_from_route(Route) of
+                true ->
+                    set_weight_to_route(0, Route);
+                false ->
+                    Route
+            end
         end,
         Routes
-    ).
+    ),
+    Summary = get_summary_weight(NewRoutes),
+    Random = rand:uniform() * Summary,
+    lists:reverse(calc_random_condition({0, Random, Summary}, NewRoutes, [])).
 
 get_summary_weight(Routes) ->
     lists:foldl(
@@ -652,7 +648,7 @@ balance_routes_test() ->
 
 -spec balance_routes_without_weight_test() -> [testcase()].
 balance_routes_without_weight_test() ->
-    WithoutWeight = [
+    Routes = [
         {1, {test, test, {test, undefined}}, test},
         {2, {test, test, {test, undefined}}, test}
     ],
@@ -661,7 +657,7 @@ balance_routes_without_weight_test() ->
         {2, {test, test, {test, 0}}, test}
     ],
     [
-        ?assertEqual(Result, set_routes_random_condition([], WithoutWeight))
+        ?assertEqual(Result, set_routes_random_condition(Routes))
     ].
 
 -endif.
