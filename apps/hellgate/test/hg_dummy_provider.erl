@@ -498,7 +498,8 @@ make_payment_tool(digital_wallet) ->
     {
         {digital_wallet, #domain_DigitalWallet{
             provider = qiwi,
-            id       = <<"+79876543210">>
+            id       = <<"+79876543210">>,
+            token    = <<"some_token">>
         }},
         <<>>
     };
