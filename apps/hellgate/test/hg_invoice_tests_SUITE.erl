@@ -1658,8 +1658,7 @@ payment_refund_idempotency(C) ->
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
     RefundParams2 = RefundParams0#payproc_InvoicePaymentRefundParams{id = <<"2">>},
-    ?operation_not_permitted() =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
+    ?operation_not_permitted() = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund0, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     [
