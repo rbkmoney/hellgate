@@ -69,7 +69,7 @@ get_api_child_spec(MachineHandlers, Opts) ->
             port          => genlib_app:env(?MODULE, port, 8022),
             transport_opts => genlib_app:env(?MODULE, transport_opts, #{}),
             protocol_opts => genlib_app:env(?MODULE, protocol_opts, #{}),
-            event_handler => scoper_woody_event_handler,
+            event_handler => hg_woody_event_handler,
             handlers      => hg_machine:get_service_handlers(MachineHandlers, Opts) ++ [
                 construct_service_handler(party_management             , hg_party_woody_handler, Opts),
                 construct_service_handler(invoicing                    , hg_invoice            , Opts),
