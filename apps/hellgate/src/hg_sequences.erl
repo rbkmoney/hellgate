@@ -31,8 +31,7 @@ generate_id(Key, BenderSchema, Hash, _) ->
         <<"params_hash">> => Hash
     }),
     Args = [Key, BenderSchema, Context],
-    R = issue_call('GenerateID', Args),
-    Result = case R of
+    Result = case issue_call('GenerateID', Args) of
         {ok, #bender_GenerationResult{internal_id = InternalID, context = undefined}} ->
             {ok, InternalID};
         {ok, #bender_GenerationResult{internal_id = InternalID, context = Ctx}}       ->
