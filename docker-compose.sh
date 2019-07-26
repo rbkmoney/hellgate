@@ -24,9 +24,9 @@ services:
       machinegun:
         condition: service_healthy
 
-  sequences:
-    image: dr.rbkmoney.com/rbkmoney/sequences:727c81115f861dc3d9b80c0e06e64d27728d447f
-    command: /opt/sequences/bin/sequences foreground
+  bender:
+    image: dr2.rbkmoney.com/rbkmoney/bender:349115f1738aeebf0dcdddf89af98c8b06a1e765
+    command: /opt/bender/bin/bender foreground
     depends_on:
       machinegun:
         condition: service_healthy
