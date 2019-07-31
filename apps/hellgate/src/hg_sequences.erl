@@ -26,11 +26,7 @@ gen_by_sequence(IdempotentKey, SequenceID, Hash, WoodyContext) ->
     generate_id(IdempotentKey, Sequence, Hash, WoodyContext).
 
 generate_id(Key, BenderSchema, Hash, _) ->
-    Context = hg_msgpack_marshalling:marshal(#{
-        <<"version">>     => 1,
-        <<"params_hash">> => Hash
-    }),
-    Args = [Key, BenderSchema, Context],
+    Args = [Key, BenderSchema, undefined],
     Result = case issue_call('GenerateID', Args) of
         {ok, #bender_GenerationResult{internal_id = InternalID, context = undefined}} ->
             {ok, InternalID};

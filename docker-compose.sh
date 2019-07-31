@@ -26,7 +26,6 @@ services:
 
   bender:
     image: dr2.rbkmoney.com/rbkmoney/bender:349115f1738aeebf0dcdddf89af98c8b06a1e765
-    command: /opt/bender/bin/bender foreground
     depends_on:
       machinegun:
         condition: service_healthy
