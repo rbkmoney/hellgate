@@ -1,6 +1,6 @@
 -module(hg_event_provider).
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -type source_event() :: _.
 -type public_event() :: {source(), payload()}.

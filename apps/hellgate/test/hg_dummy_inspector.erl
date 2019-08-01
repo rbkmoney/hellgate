@@ -8,7 +8,7 @@
 -export([get_service_spec/0]).
 
 
--include_lib("dmsl/include/dmsl_proxy_inspector_thrift.hrl").
+-include_lib("damsel/include/dmsl_proxy_inspector_thrift.hrl").
 -include_lib("hellgate/include/invoice_events.hrl").
 
 -spec get_service_spec() ->

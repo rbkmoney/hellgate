@@ -6,7 +6,7 @@
         kernel,
         stdlib,
         thrift,
-        dmsl,
+        damsel,
         mg_proto,
         seq_proto
     ]}

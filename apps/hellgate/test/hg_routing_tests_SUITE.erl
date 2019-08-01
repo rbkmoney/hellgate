@@ -2,8 +2,8 @@
 
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
 -include_lib("stdlib/include/assert.hrl").
 
 -export([all/0]).

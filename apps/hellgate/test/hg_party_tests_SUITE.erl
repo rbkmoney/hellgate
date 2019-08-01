@@ -3,7 +3,7 @@
 -include("hg_ct_domain.hrl").
 -include("party_events.hrl").
 -include_lib("common_test/include/ct.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([all/0]).
 -export([groups/0]).

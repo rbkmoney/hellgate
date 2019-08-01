@@ -1,5 +1,5 @@
 -module(hg_proxy).
--include_lib("dmsl/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %%
 

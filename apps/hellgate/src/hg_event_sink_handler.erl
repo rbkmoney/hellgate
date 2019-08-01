@@ -6,7 +6,7 @@
 
 -export([handle_function/3]).
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -type event_id() :: dmsl_base_thrift:'EventID'().
 -type event()    :: dmsl_payment_processing_thrift:'Event'().

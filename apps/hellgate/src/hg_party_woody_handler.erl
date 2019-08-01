@@ -1,6 +1,6 @@
 -module(hg_party_woody_handler).
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %% Woody handler called by hg_woody_wrapper
 

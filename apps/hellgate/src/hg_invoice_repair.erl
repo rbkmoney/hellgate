@@ -1,8 +1,8 @@
 -module(hg_invoice_repair).
 -include("domain.hrl").
 -include("payment_events.hrl").
--include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([check_for_action/2]).
 -export([get_repair_state/3]).
