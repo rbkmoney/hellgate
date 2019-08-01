@@ -2,7 +2,7 @@
 %%%
 
 -module(hg_invoice_utils).
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([validate_cost/2]).
 -export([validate_amount/1]).

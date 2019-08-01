@@ -1,5 +1,5 @@
 -module(hg_client_event_poller).
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([new/2]).
 -export([poll/4]).

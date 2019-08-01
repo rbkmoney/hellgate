@@ -11,8 +11,8 @@
 -module(hg_party).
 
 -include("party_events.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_accounter_thrift.hrl").
 
 %% Party support functions
 

@@ -12,7 +12,7 @@
 -export([parse_ts/1]).
 -export([add_time_span/2]).
 
--include_lib("dmsl/include/dmsl_base_thrift.hrl").
+-include_lib("damsel/include/dmsl_base_thrift.hrl").
 
 -type datetime() :: calendar:datetime().
 -type unix_timestamp() :: integer().

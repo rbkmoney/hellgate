@@ -1,7 +1,7 @@
 %%% Naïve routing oracle
 
 -module(hg_routing).
--include_lib("dmsl/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
 -export([gather_providers/4]).

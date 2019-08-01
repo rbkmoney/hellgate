@@ -4,7 +4,7 @@
 %%%  - designate an exception when specified tag is missing
 
 -module(hg_proxy_host_provider).
--include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
+-include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
 
 %% Woody handler called by hg_woody_wrapper
 
