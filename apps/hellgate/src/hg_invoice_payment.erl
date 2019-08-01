@@ -83,7 +83,8 @@
     processing_accounter |
     flow_waiting |
     finalizing_session |
-    finalizing_accounter.
+    finalizing_accounter |
+    updating_accounter.
 
 -record(st, {
     activity               :: activity(),
@@ -100,7 +101,8 @@
     adjustments    = []    :: [adjustment()],
     recurrent_token        :: undefined | recurrent_token(),
     opts                   :: undefined | opts(),
-    repair_scenario        :: undefined | hg_invoice_repair:scenario()
+    repair_scenario        :: undefined | hg_invoice_repair:scenario(),
+    capture_params         :: undefined | capture_params()
 }).
 
 -record(refund_st, {
@@ -146,6 +148,7 @@
 -type make_recurrent()      :: true | false.
 -type recurrent_token()     :: dmsl_domain_thrift:'Token'().
 -type retry_strategy()      :: hg_retry:strategy().
+-type capture_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
 
 -type session_status()      :: active | suspended | finished.
 -type session() :: #{
@@ -910,17 +913,15 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         VS,
         Revision
     ),
-    Invoice             = get_invoice(Opts),
-    _AffectedAccounts   = hg_accounting:plan(
-        construct_payment_plan_id(Invoice, Payment2),
-        [
-            {2, hg_cashflow:revert(get_cashflow(St))},
-            {3, FinalCashflow}
-        ]
-    ),
     Changes =
-        [?cash_flow_changed(FinalCashflow)] ++
-        start_session(?captured(Reason, Cost, Cart)),
+        [
+            ?cash_flow_changed(FinalCashflow),
+            ?payment_capture_started(#payproc_InvoicePaymentCaptureParams{
+                reason = Reason,
+                cash = Cost,
+                cart = Cart
+            })
+        ],
     {ok, {Changes, hg_machine_action:instant()}}.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
@@ -1426,6 +1427,8 @@ process_timeout({payment, Step}, Action, St) when
     Step =:= finalizing_accounter
 ->
     process_result(Action, St);
+process_timeout({payment, updating_accounter}, Action, St) ->
+    process_accounter_update(Action, St);
 process_timeout({refund_new, ID}, Action, St) ->
     process_refund_cashflow(ID, Action, St);
 process_timeout({refund_session, _ID}, Action, St) ->
@@ -1556,6 +1559,27 @@ process_adjustment_cashflow(ID, _Action, St) ->
     _AffectedAccounts = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
     {done, {Events, hg_machine_action:new()}}.
+
+process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
+    Opts = get_opts(St),
+    #payproc_InvoicePaymentCaptureParams{
+        reason = Reason,
+        cash = Cost,
+        cart = Cart
+    } = CaptureParams,
+    Invoice  = get_invoice(Opts),
+    Payment  = get_payment(St),
+    Payment2 = Payment#domain_InvoicePayment{cost = Cost},
+    _AffectedAccounts = hg_accounting:plan(
+        construct_payment_plan_id(Invoice, Payment2),
+        [
+            {2, hg_cashflow:revert(get_cashflow(St))},
+            {3, FinalCashflow}
+        ]
+    ),
+    Events = start_session(?captured(Reason, Cost, Cart)),
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+
 %%
 
 -spec process_session(action(), st()) -> machine_result().
@@ -2259,6 +2283,19 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
+merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
+    _ = validate_transition({payment, flow_waiting}, Change, St, Opts),
+    Payment = get_payment(St),
+    #payproc_InvoicePaymentCaptureParams{cash = Cost} = Params,
+    case check_equal_capture_cost_amount(Cost, Payment) of
+        true ->
+            St;
+        false ->
+            St#st{
+                activity = {payment, updating_accounter},
+                capture_params = Params
+            }
+    end;
 merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [
         risk_scoring,
@@ -2355,6 +2392,7 @@ merge_change(
     _ = validate_transition([{payment, S} || S <- [
         processing_session,
         flow_waiting,
+        updating_accounter,
         finalizing_session
     ]], Change, St, Opts),
     % FIXME why the hell dedicated handling
@@ -2365,6 +2403,8 @@ merge_change(
             %% session retrying
             St2#st{activity = {payment, processing_session}};
         {payment, flow_waiting} ->
+            St2#st{activity = {payment, finalizing_session}};
+        {payment, updating_accounter} ->
             St2#st{activity = {payment, finalizing_session}};
         {payment, finalizing_session} ->
             %% session retrying

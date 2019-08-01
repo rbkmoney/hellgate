@@ -2012,6 +2012,9 @@ payment_hold_partial_capturing(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_capture_started(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash).
@@ -2029,6 +2032,9 @@ payment_hold_partial_capturing_with_cart(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_capture_started(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash, Cart), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
@@ -2046,6 +2052,9 @@ payment_hold_partial_capturing_with_cart_missing_cash(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, undefined, Cart, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_capture_started(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash, Cart), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
@@ -2944,6 +2953,9 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
 await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_capture_started(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cash).

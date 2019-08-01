@@ -50,6 +50,12 @@
     }
 ).
 
+-define(payment_capture_started(Params),
+    {invoice_payment_capture_started,
+        #payproc_InvoicePaymentCaptureStarted{params = Params}
+    }
+).
+
 -define(pending(),
     {pending, #domain_InvoicePaymentPending{}}).
 -define(processed(),
