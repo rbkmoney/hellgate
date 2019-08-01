@@ -7,21 +7,21 @@
     {mod, {hellgate, []}},
     {applications, [
         kernel,
-        fault_detector_proto,
         stdlib,
         genlib,
         rfc3339,
-        cowboy,
-        woody,
-        gproc,
+        fault_detector_proto,
         hg_proto,
+        cowboy,
+        how_are_you,  % must be after ranch and before any woody usage
+        woody,
+        scoper,  % should be before any scoper event handler usage
+        gproc,
         dmt_client,
         party_client,
         woody_user_identity,
-        scoper,
         payproc_errors,
-        erl_health,
-        how_are_you
+        erl_health
     ]},
     {env, []},
     {modules, []},
