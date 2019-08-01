@@ -1058,13 +1058,8 @@ make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
     construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
 
 construct_refund_id(St) ->
-    PaymentID = get_payment_id(get_payment(St)),
-    InvoiceID = get_invoice_id(get_invoice(get_opts(St))),
-    SequenceID = make_refund_squence_id(PaymentID, InvoiceID),
-    hg_sequences:get_next(SequenceID).
-
-make_refund_squence_id(PaymentID, InvoiceID) ->
-    <<InvoiceID/binary, <<"_">>/binary, PaymentID/binary>>.
+    Refunds = get_refunds(St),
+    genlib:to_binary(length(Refunds) + 1).
 
 assert_refund_cash(Cash, St) ->
     PaymentAmount = get_remaining_payment_amount(Cash, St),
