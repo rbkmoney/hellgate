@@ -1031,7 +1031,7 @@ make_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
-    ID = construct_refund_id(St),
+    ID = construct_refund_id(get_refunds(St)),
     #domain_InvoicePaymentRefund {
         id              = ID,
         created_at      = hg_datetime:format_now(),
@@ -1057,9 +1057,17 @@ make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
     construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
 
-construct_refund_id(St) ->
-    Refunds = get_refunds(St),
-    genlib:to_binary(length(Refunds) + 1).
+construct_refund_id(Refunds) ->
+    % we can't be sure that old ids were constructed in strict increasing order, so we need to find max ID
+    MaxID = lists:foldl(fun find_max_refund_id/2, 0, Refunds),
+    genlib:to_binary(MaxID + 1).
+
+find_max_refund_id(#domain_InvoicePaymentRefund{id = ID}, Max) ->
+    IntID = genlib:to_int(ID),
+    case IntID > Max of
+        true -> IntID;
+        _    -> Max
+    end.
 
 assert_refund_cash(Cash, St) ->
     PaymentAmount = get_remaining_payment_amount(Cash, St),
@@ -3379,3 +3387,40 @@ unmarshal(risk_score, RiskScore) when is_atom(RiskScore) ->
 
 unmarshal(_, Other) ->
     Other.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-spec test() -> _.
+
+-spec construct_refund_id_test() -> _.
+construct_refund_id_test() ->
+    Refunds = [
+        {domain_InvoicePaymentRefund,<<"4">>,
+            {succeeded,{domain_InvoicePaymentRefundSucceeded}},
+            <<"">>,42,42,
+            {domain_Cash,10000,{domain_CurrencyRef,<<"RUB">>}},
+            <<"">>,undefined},
+        {domain_InvoicePaymentRefund,<<"2">>,
+            {succeeded,{domain_InvoicePaymentRefundSucceeded}},
+            <<"">>,42,42,
+            {domain_Cash,30000,{domain_CurrencyRef,<<"RUB">>}},
+            <<"">>,undefined},
+        {domain_InvoicePaymentRefund,<<"5">>,
+            {succeeded,{domain_InvoicePaymentRefundSucceeded}},
+            <<"">>,42,42,
+            {domain_Cash,30000,{domain_CurrencyRef,<<"RUB">>}},
+            <<"">>,undefined},
+        {domain_InvoicePaymentRefund,<<"0">>,
+            {succeeded,{domain_InvoicePaymentRefundSucceeded}},
+            <<"">>,42,42,
+            {domain_Cash,30000,{domain_CurrencyRef,<<"RUB">>}},
+            <<"">>,undefined},
+        {domain_InvoicePaymentRefund,<<"1">>,
+            {succeeded,{domain_InvoicePaymentRefundSucceeded}},
+            <<"">>,42,42,
+            {domain_Cash,30000,{domain_CurrencyRef,<<"RUB">>}},
+            <<"">>,undefined}
+    ],
+    ?assert(<<"6">> =:= construct_refund_id(Refunds)).
+-endif.
