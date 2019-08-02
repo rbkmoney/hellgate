@@ -3407,7 +3407,7 @@ create_dummy_refund_with_id(ID) ->
 
 -spec construct_refund_id_test() -> _.
 construct_refund_id_test() ->
-    IDs = [X||{_,X} <- lists:sort([ {rand:uniform(), N} || N <- lists:seq(1, 10)])], % 10 IDs shuffled
+    IDs = [X||{_, X} <- lists:sort([ {rand:uniform(), N} || N <- lists:seq(1, 10)])], % 10 IDs shuffled
     Refunds = lists:map(fun create_dummy_refund_with_id/1, IDs),
     ?assert(<<"11">> =:= construct_refund_id(Refunds)).
 -endif.
