@@ -24,12 +24,6 @@ services:
       machinegun:
         condition: service_healthy
 
-  bender:
-    image: dr2.rbkmoney.com/rbkmoney/bender:349115f1738aeebf0dcdddf89af98c8b06a1e765
-    depends_on:
-      machinegun:
-        condition: service_healthy
-
   machinegun:
     image: dr2.rbkmoney.com/rbkmoney/machinegun:aec434f47029dbd81762e10de04c9422e3c93e5e
     command: /opt/machinegun/bin/machinegun foreground
