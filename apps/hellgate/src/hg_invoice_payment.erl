@@ -3393,34 +3393,21 @@ unmarshal(_, Other) ->
 
 -spec test() -> _.
 
+create_dummy_refund_with_id(ID) ->
+    #domain_InvoicePaymentRefund{
+        id              = genlib:to_binary(ID),
+        created_at      = hg_datetime:format_now(),
+        domain_revision = 42,
+        party_revision  = 42,
+        status          = ?refund_pending(),
+        reason          = <<"No reason">>,
+        cash            = 1000,
+        cart            = unefined
+    }.
+
 -spec construct_refund_id_test() -> _.
 construct_refund_id_test() ->
-    Refunds = [
-        {domain_InvoicePaymentRefund, <<"4">>,
-            {succeeded, {domain_InvoicePaymentRefundSucceeded}},
-            <<"">>, 42, 42,
-            {domain_Cash, 10000, {domain_CurrencyRef, <<"RUB">>}},
-            <<"">>, undefined},
-        {domain_InvoicePaymentRefund, <<"2">>,
-            {succeeded, {domain_InvoicePaymentRefundSucceeded}},
-            <<"">>, 42, 42,
-            {domain_Cash, 30000, {domain_CurrencyRef, <<"RUB">>}},
-            <<"">>, undefined},
-        {domain_InvoicePaymentRefund, <<"5">>,
-            {succeeded, {domain_InvoicePaymentRefundSucceeded}},
-            <<"">>, 42, 42,
-            {domain_Cash, 30000, {domain_CurrencyRef, <<"RUB">>}},
-            <<"">>, undefined},
-        {domain_InvoicePaymentRefund, <<"0">>,
-            {succeeded, {domain_InvoicePaymentRefundSucceeded}},
-            <<"">>, 42, 42,
-            {domain_Cash, 30000, {domain_CurrencyRef, <<"RUB">>}},
-            <<"">>, undefined},
-        {domain_InvoicePaymentRefund, <<"1">>,
-            {succeeded, {domain_InvoicePaymentRefundSucceeded}},
-            <<"">>, 42, 42,
-            {domain_Cash, 30000, {domain_CurrencyRef, <<"RUB">>}},
-            <<"">>, undefined}
-    ],
-    ?assert(<<"6">> =:= construct_refund_id(Refunds)).
+    IDs = [X||{_,X} <- lists:sort([ {rand:uniform(), N} || N <- lists:seq(1, 10)])], % 10 IDs shuffled
+    Refunds = lists:map(fun create_dummy_refund_with_id/1, IDs),
+    ?assert(<<"11">> =:= construct_refund_id(Refunds)).
 -endif.
