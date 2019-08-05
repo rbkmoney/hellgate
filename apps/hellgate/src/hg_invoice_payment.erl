@@ -82,10 +82,10 @@
     processing_session |
     processing_accounter |
     flow_waiting |
-    finalizing_session |
-    finalizing_accounter |
     processing_capture |
-    updating_accounter.
+    updating_accounter |
+    finalizing_session |
+    finalizing_accounter.
 
 -record(st, {
     activity               :: activity(),
@@ -872,6 +872,16 @@ reduce_selector(Name, Selector, VS, Revision) ->
 start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
+start_capture(Reason, Cost, Cart) ->
+    [?payment_capture_started(Reason, Cost, Cart)]
+    ++ start_session(?captured(Reason, Cost, Cart)).
+
+start_partial_capture(Reason, Cost, Cart, Cashflow) ->
+    [
+        ?payment_capture_started(Reason, Cost, Cart),
+        ?cash_flow_changed(Cashflow)
+    ].
+
 -spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
 
 capture(St, Reason, Cost, Cart, Opts) ->
@@ -892,8 +902,7 @@ total_capture(St, Reason, Cart) ->
     _ = assert_activity({payment, flow_waiting}, St),
     _ = assert_payment_flow(hold, Payment),
     Cost = get_payment_cost(Payment),
-    Changes = [?payment_capture_started(Reason, Cost, Cart)]
-        ++ start_session(?captured(Reason, Cost, Cart)),
+    Changes = start_capture(Reason, Cost, Cart),
     {ok, {Changes, hg_machine_action:instant()}}.
 
 partial_capture(St, Reason, Cost, Cart, Opts) ->
@@ -919,10 +928,7 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         VS,
         Revision
     ),
-    Changes = [
-        ?payment_capture_started(Reason, Cost, Cart),
-        ?cash_flow_changed(FinalCashflow)
-    ],
+    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
     {ok, {Changes, hg_machine_action:instant()}}.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
@@ -1640,12 +1646,11 @@ finalize_payment(Action, St) ->
     end,
     StartEvents = case Target of
         ?captured(Reason, Cost) ->
-            [?payment_capture_started(Reason, Cost, undefined)];
+            start_capture(Reason, Cost, undefined);
         _ ->
-            []
+            start_session(Target)
     end,
-    Events = StartEvents ++ start_session(Target),
-    {done, {Events, hg_machine_action:set_timeout(0, Action)}}.
+    {done, {StartEvents, hg_machine_action:set_timeout(0, Action)}}.
 
 -spec process_callback_timeout(action(), session(), events(), st()) -> machine_result().
 process_callback_timeout(Action, Session, Events, St) ->
@@ -2406,11 +2411,12 @@ merge_change(
         {payment, processing_session} ->
             %% session retrying
             St2#st{activity = {payment, processing_session}};
-        {payment, flow_waiting} ->
-            St2#st{activity = {payment, finalizing_session}};
-        {payment, processing_capture} ->
-            St2#st{activity = {payment, finalizing_session}};
-        {payment, updating_accounter} ->
+        {payment, PaymentActivity} when
+            PaymentActivity =:= flow_waiting orelse
+            PaymentActivity =:= processing_capture orelse
+            PaymentActivity =:= updating_accounter
+        ->
+            %% session flow
             St2#st{activity = {payment, finalizing_session}};
         {payment, finalizing_session} ->
             %% session retrying
