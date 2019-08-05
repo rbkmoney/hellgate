@@ -888,19 +888,17 @@ capture(St, Reason, Cost, Cart, Opts) ->
     Payment = get_payment(St),
     _ = assert_capture_cost_currency(Cost, Payment),
     _ = assert_capture_cart(Cost, Cart),
+    _ = assert_activity({payment, flow_waiting}, St),
+    _ = assert_payment_flow(hold, Payment),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
             total_capture(St, Reason, Cart);
         false ->
-            _ = assert_activity({payment, flow_waiting}, St),
-            _ = assert_payment_flow(hold, Payment),
             partial_capture(St, Reason, Cost, Cart, Opts)
     end.
 
 total_capture(St, Reason, Cart) ->
     Payment = get_payment(St),
-    _ = assert_activity({payment, flow_waiting}, St),
-    _ = assert_payment_flow(hold, Payment),
     Cost = get_payment_cost(Payment),
     Changes = start_capture(Reason, Cost, Cart),
     {ok, {Changes, hg_machine_action:instant()}}.
@@ -933,14 +931,9 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
 
 -spec cancel(st(), binary()) -> {ok, result()}.
 
-cancel(St, Reason) ->
-    do_payment(St, ?cancelled_with_reason(Reason)).
-
-do_payment(St, Target) ->
-    Payment = get_payment(St),
-    _ = assert_activity({payment, flow_waiting}, St),
-    _ = assert_payment_flow(hold, Payment),
-    {ok, {start_session(Target), hg_machine_action:instant()}}.
+cancel(_St, Reason) ->
+    Changes = start_session(?cancelled_with_reason(Reason)),
+    {ok, {Changes, hg_machine_action:instant()}}.
 
 assert_capture_cost_currency(undefined, _) ->
     ok;
