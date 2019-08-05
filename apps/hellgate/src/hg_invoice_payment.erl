@@ -1064,10 +1064,7 @@ construct_refund_id(Refunds) ->
 
 find_max_refund_id(#domain_InvoicePaymentRefund{id = ID}, Max) ->
     IntID = genlib:to_int(ID),
-    case IntID > Max of
-        true -> IntID;
-        _    -> Max
-    end.
+    erlang:max(IntID, Max).
 
 assert_refund_cash(Cash, St) ->
     PaymentAmount = get_remaining_payment_amount(Cash, St),
