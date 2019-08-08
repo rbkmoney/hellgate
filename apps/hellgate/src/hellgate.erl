@@ -61,7 +61,7 @@ init([]) ->
 
 get_api_child_spec(MachineHandlers, Opts) ->
     {ok, Ip} = inet:parse_address(genlib_app:env(?MODULE, ip, "::")),
-    HealthCheckers = genlib_app:env(?MODULE, health_checkers, []),
+    HealthRoutes = construct_health_routes(genlib_app:env(?MODULE, health_check, #{})),
     woody_server:child_spec(
         ?MODULE,
         #{
@@ -80,10 +80,17 @@ get_api_child_spec(MachineHandlers, Opts) ->
                 construct_service_handler(proxy_host_provider          , hg_proxy_host_provider, Opts),
                 construct_service_handler(payment_processing_eventsink , hg_event_sink_handler , Opts)
             ],
-            additional_routes => [erl_health_handle:get_route(HealthCheckers)],
+            additional_routes => HealthRoutes,
             shutdown_timeout => genlib_app:env(?MODULE, shutdown_timeout, 0)
         }
     ).
+
+construct_health_routes(Check) ->
+    [erl_health_handle:get_route(enable_health_logging(Check))].
+
+enable_health_logging(Check) ->
+    EvHandler = {erl_health_event_handler, []},
+    maps:map(fun (_, V = {_, _, _}) -> #{runner => V, event_handler => EvHandler} end, Check).
 
 construct_service_handler(Name, Module, Opts) ->
     FullOpts = maps:merge(#{handler => Module}, Opts),

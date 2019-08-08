@@ -22,7 +22,7 @@
   1},
  {<<"erl_health">>,
   {git,"https://github.com/rbkmoney/erlang-health.git",
-       {ref,"2575c7b63d82a92de54d2d27e504413675e64811"}},
+       {ref,"c190cb8de0359b933a27cd20ddc74180c0e5f5c4"}},
   0},
  {<<"fault_detector_proto">>,
   {git,"git@github.com:rbkmoney/fault-detector-proto.git",
@@ -46,7 +46,7 @@
  {<<"jsx">>,{pkg,<<"jsx">>,<<"2.8.0">>},1},
  {<<"logger_logstash_formatter">>,
   {git,"git@github.com:rbkmoney/logger_logstash_formatter.git",
-       {ref,"54c371215e3d73b2a868bc6375e523f95e826fe3"}},
+       {ref,"b53af86014ba5748d8704cdb23867a590e8a7ae0"}},
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},
  {<<"mg_proto">>,
@@ -85,7 +85,7 @@
   0},
  {<<"woody_user_identity">>,
   {git,"git@github.com:rbkmoney/woody_erlang_user_identity.git",
-       {ref,"fe973ab27fee9fc1cc39281e88816c7b6dce84c6"}},
+       {ref,"6eca18a62ccd7f0b3b62f9b2119b328b1798859d"}},
   0}]}.
 [
 {pkg_hash,[
