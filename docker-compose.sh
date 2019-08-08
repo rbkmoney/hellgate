@@ -44,7 +44,7 @@ services:
 
   shumway:
     image: dr.rbkmoney.com/rbkmoney/shumway:7a5f95ee1e8baa42fdee9c08cc0ae96cd7187d55
-    restart: always
+    restart: unless-stopped
     entrypoint:
       - java
       - -Xmx512m
