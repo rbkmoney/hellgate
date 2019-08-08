@@ -10,7 +10,11 @@
  {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.6.0">>},2},
  {<<"damsel">>,
   {git,"git@github.com:rbkmoney/damsel.git",
+<<<<<<< HEAD
        {ref,"d0a1fd0e4bade2b0ad34234347631619db72b40f"}},
+=======
+       {ref,"3523f3b61bfcefb05256de5b1852d9bbeca6aa86"}},
+>>>>>>> master
   0},
  {<<"dmt_client">>,
   {git,"git@github.com:rbkmoney/dmt_client.git",
@@ -22,7 +26,7 @@
   1},
  {<<"erl_health">>,
   {git,"https://github.com/rbkmoney/erlang-health.git",
-       {ref,"2575c7b63d82a92de54d2d27e504413675e64811"}},
+       {ref,"c190cb8de0359b933a27cd20ddc74180c0e5f5c4"}},
   0},
  {<<"fault_detector_proto">>,
   {git,"git@github.com:rbkmoney/fault-detector-proto.git",
