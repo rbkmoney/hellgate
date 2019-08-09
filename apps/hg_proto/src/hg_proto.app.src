@@ -7,7 +7,6 @@
         stdlib,
         thrift,
         damsel,
-        mg_proto,
-        seq_proto
+        mg_proto
     ]}
 ]}.

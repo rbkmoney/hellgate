@@ -796,7 +796,7 @@ validate_result(_Result) ->
 start_refund(RefundType, RefundParams, PaymentID, PaymentSession, St) ->
     RefundID = case get_refund_id(RefundParams) of
         undefined ->
-            construct_refund_id(PaymentID, St);
+            make_new_refund_id(PaymentID, St);
         ID ->
             ID
     end,
@@ -817,6 +817,20 @@ get_refund_id(#payproc_InvoicePaymentRefundParams{id = RefundID}) ->
 set_refund_id(RefundID, RefundParams) ->
     RefundParams#payproc_InvoicePaymentRefundParams{id = RefundID}.
 
+make_new_refund_id(PaymentID, St) ->
+    {ok, Payment} = get_payment(PaymentID, St),
+    Refunds = hg_invoice_payment:get_refunds(Payment),
+    construct_refund_id(Refunds).
+
+construct_refund_id(Refunds) ->
+    % we can't be sure that old ids were constructed in strict increasing order, so we need to find max ID
+    MaxID = lists:foldl(fun find_max_refund_id/2, 0, Refunds),
+    genlib:to_binary(MaxID + 1).
+
+find_max_refund_id(#domain_InvoicePaymentRefund{id = ID}, Max) ->
+    IntID = genlib:to_int(ID),
+    erlang:max(IntID, Max).
+
 get_refund(ID, PaymentSession) ->
     try
         hg_invoice_payment:get_refund(ID, PaymentSession)
@@ -824,15 +838,6 @@ get_refund(ID, PaymentSession) ->
         throw:#payproc_InvoicePaymentRefundNotFound{} ->
             undefined
     end.
-
-construct_refund_id(PaymentID, St) ->
-    InvoiceID = get_invoice_id(St),
-    SequenceID = make_refund_squence_id(PaymentID, InvoiceID),
-    IntRefundID = hg_sequences:get_next(SequenceID),
-    erlang:integer_to_binary(IntRefundID).
-
-make_refund_squence_id(PaymentID, InvoiceID) ->
-    <<InvoiceID/binary, <<"_">>/binary, PaymentID/binary>>.
 
 do_start_refund(RefundType, PaymentID, Params, PaymentSession, St) when
     RefundType =:= refund;
@@ -922,9 +927,6 @@ merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
         idle ->
             St1#st{activity = invoice}
     end.
-
-get_invoice_id(#st{invoice = #domain_Invoice{id = Id}}) ->
-    Id.
 
 get_party_id(#st{invoice = #domain_Invoice{owner_id = PartyID}}) ->
     PartyID.
@@ -1351,3 +1353,27 @@ wrap_event_payload(Payload) ->
         format_version => 1,
         data => {bin, Bin}
     }.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-spec test() -> _.
+
+create_dummy_refund_with_id(ID) ->
+    #domain_InvoicePaymentRefund{
+        id              = genlib:to_binary(ID),
+        created_at      = hg_datetime:format_now(),
+        domain_revision = 42,
+        party_revision  = 42,
+        status          = ?refund_pending(),
+        reason          = <<"No reason">>,
+        cash            = 1000,
+        cart            = unefined
+    }.
+
+-spec construct_refund_id_test() -> _.
+construct_refund_id_test() ->
+    IDs = [X||{_, X} <- lists:sort([ {rand:uniform(), N} || N <- lists:seq(1, 10)])], % 10 IDs shuffled
+    Refunds = lists:map(fun create_dummy_refund_with_id/1, IDs),
+    ?assert(<<"11">> =:= construct_refund_id(Refunds)).
+-endif.
