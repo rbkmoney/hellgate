@@ -93,7 +93,7 @@ handle_function(Func, Args, Opts) ->
 
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     DomainRevison = hg_domain:head(),
-    RecPaymentToolID = hg_utils:unique_id(),
+    RecPaymentToolID = get_paytool_id(RecurrentPaymentToolParams),
     ok = set_meta(RecPaymentToolID),
     Party = ensure_party_accessible(RecurrentPaymentToolParams),
     Shop = ensure_shop_exists(RecurrentPaymentToolParams, Party),
@@ -116,6 +116,11 @@ handle_function_('Get', [RecPaymentToolID], _Opts) ->
 handle_function_('GetEvents', [RecPaymentToolID, Range], _Opts) ->
     ok = set_meta(RecPaymentToolID),
     get_public_history(RecPaymentToolID, Range).
+
+get_paytool_id(#payproc_RecurrentPaymentToolParams{id = undefined}) ->
+    hg_utils:unique_id();
+get_paytool_id(#payproc_RecurrentPaymentToolParams{id = ID}) ->
+    ID.
 
 get_public_history(RecPaymentToolID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_rec_payment_tool_event(RecPaymentToolID, Ev) || Ev <- get_history(RecPaymentToolID, AfterID, Limit)].

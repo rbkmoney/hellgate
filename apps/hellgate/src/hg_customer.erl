@@ -310,9 +310,13 @@ handle_result_action(#{}, Acc) ->
 start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
     PaymentResource = BindingParams#payproc_CustomerBindingParams.payment_resource,
-    RecurrentPaytoolID = create_recurrent_paytool(PaymentResource, St),
+    RecurrentPaytoolID = hg_utils:unique_id(),
+    RecurrentPaytoolID = create_recurrent_paytool(RecurrentPaytoolID, PaymentResource, St),
     Binding = construct_binding(BindingID, RecurrentPaytoolID, PaymentResource),
-    Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
+    Changes = [
+        ?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now())),
+        ?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))
+    ],
     #{
         response => {ok, Binding},
         changes  => Changes,
@@ -324,7 +328,7 @@ construct_binding(BindingID, RecPaymentToolID, PaymentResource) ->
         id                  = BindingID,
         rec_payment_tool_id = RecPaymentToolID,
         payment_resource    = PaymentResource,
-        status              = ?customer_binding_pending()
+        status              = ?customer_binding_creating()
     }.
 
 create_binding_id(St) ->
@@ -379,8 +383,9 @@ produce_binding_changes_(?recurrent_payment_tool_has_abandoned() = Change, _Bind
 produce_binding_changes_(?session_ev(_), _Binding) ->
     [].
 
-create_recurrent_paytool(PaymentResource, St) ->
+create_recurrent_paytool(ID, PaymentResource, St) ->
     create_recurrent_paytool(#payproc_RecurrentPaymentToolParams{
+        id               = ID,
         party_id         = get_party_id(St),
         shop_id          = get_shop_id(St),
         payment_resource = PaymentResource
