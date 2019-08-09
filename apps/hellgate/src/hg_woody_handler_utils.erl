@@ -1,5 +1,5 @@
 -module(hg_woody_handler_utils).
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -type user_info()     :: dmsl_payment_processing_thrift:'UserInfo'().
 -type user_identity() :: woody_user_identity:user_identity().

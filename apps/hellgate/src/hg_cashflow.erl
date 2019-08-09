@@ -7,7 +7,7 @@
 %%%  - we should probably validate final cash flow somewhere here
 
 -module(hg_cashflow).
--include_lib("dmsl/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 -type account()         :: dmsl_domain_thrift:'CashFlowAccount'().
 -type account_id()      :: dmsl_domain_thrift:'AccountID'().

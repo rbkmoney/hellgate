@@ -2,7 +2,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include("hg_ct_domain.hrl").
 -include("hg_ct_json.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/customer_events.hrl").
 -include_lib("hellgate/include/recurrent_payment_tools.hrl").
 

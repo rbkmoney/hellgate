@@ -15,8 +15,8 @@
 -export([commit/2]).
 -export([rollback/2]).
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("dmsl/include/dmsl_accounter_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_accounter_thrift.hrl").
 
 -type amount()          :: dmsl_domain_thrift:'Amount'().
 -type currency_code()   :: dmsl_domain_thrift:'CurrencySymbolicCode'().

@@ -1,5 +1,5 @@
 -module(hg_cash).
--include_lib("dmsl/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include("domain.hrl").
 
 -export([add/2]).

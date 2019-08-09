@@ -4,8 +4,8 @@
 
 -module(hg_recurrent_paytool).
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
 
 -define(NS, <<"recurrent_paytools">>).
 
