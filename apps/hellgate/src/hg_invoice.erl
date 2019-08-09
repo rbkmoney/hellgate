@@ -794,10 +794,16 @@ validate_result(_Result) ->
 %%
 
 start_refund(RefundType, RefundParams, PaymentID, PaymentSession, St) ->
-    #payproc_InvoicePaymentRefundParams{id = RefundID} = RefundParams,
-    case try_get_refund(RefundID, PaymentSession) of
+    RefundID = case get_refund_id(RefundParams) of
         undefined ->
-            do_start_refund(RefundType, PaymentID, RefundParams, PaymentSession, St);
+            construct_refund_id(PaymentID, St);
+        ID ->
+            ID
+    end,
+    case get_refund(RefundID, PaymentSession) of
+        undefined ->
+            RefundParams0 = set_refund_id(RefundID, RefundParams),
+            do_start_refund(RefundType, PaymentID, RefundParams0, PaymentSession, St);
         Refund ->
             #{
                 response => Refund,
@@ -805,15 +811,28 @@ start_refund(RefundType, RefundParams, PaymentID, PaymentSession, St) ->
             }
     end.
 
-try_get_refund(undefined, _) ->
-    undefined;
-try_get_refund(ID, PaymentSession) ->
+get_refund_id(#payproc_InvoicePaymentRefundParams{id = RefundID}) ->
+    RefundID.
+
+set_refund_id(RefundID, RefundParams) ->
+    RefundParams#payproc_InvoicePaymentRefundParams{id = RefundID}.
+
+get_refund(ID, PaymentSession) ->
     try
         hg_invoice_payment:get_refund(ID, PaymentSession)
     catch
         throw:#payproc_InvoicePaymentRefundNotFound{} ->
             undefined
     end.
+
+construct_refund_id(PaymentID, St) ->
+    InvoiceID = get_invoice_id(St),
+    SequenceID = make_refund_squence_id(PaymentID, InvoiceID),
+    IntRefundID = hg_sequences:get_next(SequenceID),
+    erlang:integer_to_binary(IntRefundID).
+
+make_refund_squence_id(PaymentID, InvoiceID) ->
+    <<InvoiceID/binary, <<"_">>/binary, PaymentID/binary>>.
 
 do_start_refund(RefundType, PaymentID, Params, PaymentSession, St) when
     RefundType =:= refund;
@@ -903,6 +922,9 @@ merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
         idle ->
             St1#st{activity = invoice}
     end.
+
+get_invoice_id(#st{invoice = #domain_Invoice{id = Id}}) ->
+    Id.
 
 get_party_id(#st{invoice = #domain_Invoice{owner_id = PartyID}}) ->
     PartyID.

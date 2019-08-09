@@ -1031,9 +1031,8 @@ make_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
-    ID = genlib:define(Params#payproc_InvoicePaymentRefundParams.id, construct_refund_id(St)),
     #domain_InvoicePaymentRefund {
-        id              = ID,
+        id              = Params#payproc_InvoicePaymentRefundParams.id,
         created_at      = hg_datetime:format_now(),
         domain_revision = Revision,
         party_revision  = PartyRevision,
@@ -1057,16 +1056,6 @@ make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
     Provider = get_route_provider(Route, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
     construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
-
-construct_refund_id(St) ->
-    PaymentID = get_payment_id(get_payment(St)),
-    InvoiceID = get_invoice_id(get_invoice(get_opts(St))),
-    SequenceID = make_refund_squence_id(PaymentID, InvoiceID),
-    IntRefundID = hg_sequences:get_next(SequenceID),
-    erlang:integer_to_binary(IntRefundID).
-
-make_refund_squence_id(PaymentID, InvoiceID) ->
-    <<InvoiceID/binary, <<"_">>/binary, PaymentID/binary>>.
 
 assert_refund_cash(Cash, St) ->
     PaymentAmount = get_remaining_payment_amount(Cash, St),

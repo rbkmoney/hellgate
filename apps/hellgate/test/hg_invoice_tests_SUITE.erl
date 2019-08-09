@@ -1638,13 +1638,11 @@ invalid_refund_shop_status(C) ->
 
 payment_refund_idempotency(C) ->
     Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
     RefundParams0 = make_refund_params(),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
     PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
     RefundID = <<"1">>,
@@ -1653,11 +1651,13 @@ payment_refund_idempotency(C) ->
         id = RefundID,
         external_id = ExternalID
     },
+    % try starting the same refund twice
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
     RefundParams2 = RefundParams0#payproc_InvoicePaymentRefundParams{id = <<"2">>},
+    % can't start a different refund
     ?operation_not_permitted() = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund0, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
@@ -1669,8 +1669,10 @@ payment_refund_idempotency(C) ->
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
+    % check refund completed
     Refund1 = Refund0#domain_InvoicePaymentRefund{status = ?refund_succeeded()},
     Refund1 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    % get back a completed refund when trying to start a new one
     Refund1 = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client).
 
 -spec payment_refund_success(config()) -> _ | no_return().
