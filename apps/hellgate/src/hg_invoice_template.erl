@@ -2,7 +2,7 @@
 
 -module(hg_invoice_template).
 
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -define(NS, <<"invoice_template">>).
 

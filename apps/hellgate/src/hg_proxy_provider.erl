@@ -1,7 +1,7 @@
 -module(hg_proxy_provider).
 
--include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([collect_proxy_options/1]).
 

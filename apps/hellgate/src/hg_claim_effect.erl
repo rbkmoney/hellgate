@@ -1,7 +1,7 @@
 -module(hg_claim_effect).
 
 -include("party_events.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([make/3]).
 -export([make_safe/3]).

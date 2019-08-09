@@ -1,6 +1,6 @@
 -module(hg_party_marshalling).
 
--include_lib("dmsl/include/dmsl_msgpack_thrift.hrl").
+-include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 
 -export([marshal/1]).
 -export([unmarshal/1]).

@@ -15,10 +15,10 @@
 %%%    finishes, which could have happened in the past, not just now
 
 -module(hg_invoice_payment).
--include_lib("dmsl/include/dmsl_proxy_provider_thrift.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_errors_thrift.hrl").
--include_lib("dmsl/include/dmsl_msgpack_thrift.hrl").
+-include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
+-include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 

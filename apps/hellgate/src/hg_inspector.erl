@@ -4,8 +4,8 @@
 
 -export([compare_risk_score/2]).
 
--include_lib("dmsl/include/dmsl_domain_thrift.hrl").
--include_lib("dmsl/include/dmsl_proxy_inspector_thrift.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_proxy_inspector_thrift.hrl").
 
 -type shop() :: dmsl_domain_thrift:'Shop'().
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
