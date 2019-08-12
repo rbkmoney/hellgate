@@ -25,6 +25,10 @@ handle_event(Event, RpcID, RawMeta, Opts) ->
     scoper_woody_event_handler:handle_event(Event, RpcID, RawMeta, Opts).
 
 format_meta(#{args := _Args, type := call} = RawMeta) ->
+%%    _ = dbg:tracer(),
+%%    _ = dbg:p(all, c),
+%%    _ = dbg:tpl({?MODULE, '_', '_'}, x),
+
     FormattedMeta =
         try
             format_message(RawMeta)
@@ -60,7 +64,15 @@ format_(FunctionArgsMeta, FunctionArgs) ->
             ({{_Fid, _Required, {struct, union, {Module, Struct}}, Name, _Default}, Value}, Acc) ->
                 [io_lib:format("~s = ~s", [Name, format_union(Module, Struct, Value)]) | Acc];
             ({{_Fid, _Required, {struct, enum, {Module, Struct}}, Name, _Default}, Value}, Acc) ->
-                [io_lib:format("~s = ~s", [Name, format_enum(Module, Struct, Value)]) | Acc];
+                    [io_lib:format("~s = ~s", [Name, format_enum(Module, Struct, Value)]) | Acc];
+            ({{_Fid, _Required, {list, {struct, union, {Module, Struct}}}, Name, _Default}, ValueList}, Acc) ->
+                FormattedValueList =
+                    lists:foldr(
+                        fun(Value, FormattedAcc) ->
+                            [format_union(Module, Struct, Value) | FormattedAcc]
+                        end, [], ValueList),
+                FormattedValue = string:join(FormattedValueList, ", "),
+                [io_lib:format("~s = [~s]", [Name, FormattedValue]) | Acc];
             ({{_Fid, _Required, _Type, Name, _Default}, Value}, Acc) ->
                 %% All other types such as i32, i64, bool, etc. format here
                 [io_lib:format("~s = ~p", [Name, Value]) | Acc]
@@ -98,6 +110,8 @@ format_union(Module, Struct, {Type, UnionValue}) ->
                     FormattedArgs = format_(UnionMeta, ValueList),
                     lists:flatten([atom_to_list(S), "{", string:join(lists:reverse(FormattedArgs), ", "), "}"])
             end;
+        {value, {_, _, {struct, union, {M, S}}, _, _}} ->
+            format_union(M, S, UnionValue);
         {value, {_, _, string, Name, _}} when is_binary(UnionValue) ->
             io_lib:format("~s{~s = ~s}", [Struct, Name, UnionValue]);
         {value, {_, _, _Type, Name, _}} ->
@@ -250,6 +264,57 @@ args_test_() -> [
                     <<"user-identity.realm">> => <<"external">>},
                 role => server,service => 'Processor',
                 service_schema => {mg_proto_state_processing_thrift,'Processor'},
+                type => call}
+        )
+    ),
+    ?_assertEqual(
+        "PartyManagement:CreateClaim(party_id = '1CR1Xziml7o', changeset = [ContractModificationUnit{id = '1CR1Y2ZcrA0', modification = ContractParams{template = ContractTemplateRef{id = 1}, payment_institution = PaymentInstitutionRef{id = 1}, contractor = RussianLegalEntity{registered_name = 'Hoofs & Horns OJSC', registered_number = '1234509876', inn = '1213456789012', actual_address = 'Nezahualcoyotl 109 Piso 8, Centro, 06082, MEXICO', post_address = 'NaN', representative_position = 'Director', representative_full_name = 'Someone', representative_document = '100$ banknote', russian_bank_account = RussianBankAccount{account = '4276300010908312893', bank_name = 'SomeBank', bank_post_account = '123129876', bank_bik = '66642666'}}}}, ContractModificationUnit{id = '1CR1Y2ZcrA0', modification = PayoutToolModificationUnit{payout_tool_id = '1CR1Y2ZcrA1', modification = PayoutToolParams{currency = CurrencyRef{symbolic_code = 'RUB'}, tool_info = RussianBankAccount{account = '4276300010908312893', bank_name = 'SomeBank', bank_post_account = '123129876', bank_bik = '66642666'}}}}, ShopModificationUnit{id = '1CR1Y2ZcrA2', modification = ShopParams{category = CategoryRef{id = 1}, location = ShopLocation{url = }, details = ShopDetails{name = 'Battle Ready Shop'}, contract_id = '1CR1Y2ZcrA0', payout_tool_id = '1CR1Y2ZcrA1'}}, ShopModificationUnit{id = '1CR1Y2ZcrA2', modification = ShopAccountParams{currency = CurrencyRef{symbolic_code = 'RUB'}}}])",
+        format_meta(
+            #{args =>
+            [undefined,<<"1CR1Xziml7o">>,
+                [{contract_modification,
+                    {payproc_ContractModificationUnit,<<"1CR1Y2ZcrA0">>,
+                        {creation,
+                            {payproc_ContractParams,undefined,
+                                {domain_ContractTemplateRef,1},
+                                {domain_PaymentInstitutionRef,1},
+                                {legal_entity,
+                                    {russian_legal_entity,
+                                        {domain_RussianLegalEntity,<<"Hoofs & Horns OJSC">>,
+                                            <<"1234509876">>,<<"1213456789012">>,
+                                            <<"Nezahualcoyotl 109 Piso 8, Centro, 06082, MEXICO">>,<<"NaN">>,
+                                            <<"Director">>,<<"Someone">>,<<"100$ banknote">>,
+                                            {domain_RussianBankAccount,<<"4276300010908312893">>,
+                                                <<"SomeBank">>,<<"123129876">>,<<"66642666">>}}}}}}}},
+                    {contract_modification,
+                        {payproc_ContractModificationUnit,<<"1CR1Y2ZcrA0">>,
+                            {payout_tool_modification,
+                                {payproc_PayoutToolModificationUnit,<<"1CR1Y2ZcrA1">>,
+                                    {creation,
+                                        {payproc_PayoutToolParams,
+                                            {domain_CurrencyRef,<<"RUB">>},
+                                            {russian_bank_account,
+                                                {domain_RussianBankAccount,<<"4276300010908312893">>,
+                                                    <<"SomeBank">>,<<"123129876">>,<<"66642666">>}}}}}}}},
+                    {shop_modification,
+                        {payproc_ShopModificationUnit,<<"1CR1Y2ZcrA2">>,
+                            {creation,
+                                {payproc_ShopParams,
+                                    {domain_CategoryRef,1},
+                                    {url,<<>>},
+                                    {domain_ShopDetails,<<"Battle Ready Shop">>,undefined},
+                                    <<"1CR1Y2ZcrA0">>,<<"1CR1Y2ZcrA1">>}}}},
+                    {shop_modification,
+                        {payproc_ShopModificationUnit,<<"1CR1Y2ZcrA2">>,
+                            {shop_account_creation,
+                                {payproc_ShopAccountParams,{domain_CurrencyRef,<<"RUB">>}}}}}]],
+                deadline => undefined,execution_start_time => 1565617299263,
+                function => 'CreateClaim',
+                metadata =>
+                #{<<"user-identity.id">> => <<"1CR1Xziml7o">>,
+                    <<"user-identity.realm">> => <<"external">>},
+                role => server,service => 'PartyManagement',
+                service_schema => {dmsl_payment_processing_thrift,'PartyManagement'},
                 type => call}
         )
     )
