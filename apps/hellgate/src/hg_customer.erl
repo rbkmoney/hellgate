@@ -1003,7 +1003,7 @@ unmarshal(
         id                  = unmarshal(str              , ID),
         rec_payment_tool_id = unmarshal(str              , RecPaymentToolID),
         payment_resource    = unmarshal(payment_resource , PaymentResource),
-        status              = ?customer_binding_pending()
+        status              = ?customer_binding_creating()
     };
 
 unmarshal(

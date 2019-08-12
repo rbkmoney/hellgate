@@ -315,22 +315,23 @@ start_two_bindings(C) ->
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     CustomerBindingParams =
         hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
-    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1} =
+    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1, status = ?customer_binding_creating()} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
+    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2, status = ?customer_binding_creating()} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     #payproc_Customer{id = CustomerID, bindings = _} = hg_client_customer:get(CustomerID, Client),
     %true = sets:from_list(Bindings) =:= sets:from_list([CustomerBinding1, CustomerBinding2]),
     [
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
-    StartChanges = [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending())),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
+    [
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, _)),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending()))
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, _)),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending()))
-    ],
-    _ = await_for_changes(StartChanges, CustomerID, Client),
+    ] = next_event(CustomerID, Client),
     SuccessChanges = [
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
@@ -412,7 +413,7 @@ start_binding_not_permitted(C) ->
 %%
 
 -define(INTERVAL, 100).
--define(DEFAULT_TIMEOUT, 5000).
+-define(DEFAULT_TIMEOUT, 10000).
 
 await_for_changes(ChangeMatchPatterns, CustomerID, Client) ->
     await_for_changes(ChangeMatchPatterns, CustomerID, Client, ?DEFAULT_TIMEOUT).
