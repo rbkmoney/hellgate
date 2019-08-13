@@ -149,7 +149,14 @@ format_value({obj, S}) ->
         ),
     lists:flatten("#{",[string:join(Result, ", "), "}"]);
 format_value({arr, S}) ->
-    Result = lists:map(fun(Entry) -> format_value(Entry) end, S),
+    Result = lists:map(
+        fun
+            ({i, _} = Entry) ->
+                %% Avoid crash on string concatenation
+                integer_to_list(format_value(Entry));
+            (Entry) ->
+                format_value(Entry)
+        end, S),
     lists:flatten("[",[string:join(Result, ", "), "]"]).
 
 -ifdef(TEST).
