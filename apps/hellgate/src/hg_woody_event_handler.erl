@@ -168,32 +168,27 @@ format_enum(Module, Struct, {Type, EnumValue}) ->
     io_lib:format("~s{~s = ~s}",[Struct,Name,Value]).
 
 format_value({nl, _Null}) -> 'Null';
-format_value({bin, Bin}) when size(Bin) == 0 -> "<<>>";
 format_value({bin, Bin}) when size(Bin) =< ?MAX_BIN_LENGTH -> io_lib:format("~p", [Bin]);
 format_value({bin, _Bin}) -> "<<...>>";
-format_value({i, N}) -> N;
-format_value({str, S}) when is_binary(S)-> binary_to_list(S);
-format_value({str, S}) -> S;
+format_value({i, N}) -> integer_to_list(N);
+format_value({str, S}) -> io_lib:format("'~s'", [S]);
 format_value({obj, S}) ->
     ObjData = maps:to_list(S),
     Result =
         lists:foldr(
             fun({K, V}, Acc) ->
-                [io_lib:format("~s => ~p", [format_value(K), format_value(V)]) | Acc]
+                [ lists:flatten(io_lib:format("~s => ~s", [format_value(K), format_value(V)])) | Acc]
             end,
             [], ObjData
         ),
-    lists:flatten("#{",[string:join(Result, ", "), "}"]);
+    lists:flatten(["#{",string:join(Result, ", "), "}"]);
 format_value({arr, S}) ->
     Result = lists:map(
         fun
-            ({i, _} = Entry) ->
-                %% Avoid crash on string concatenation
-                integer_to_list(format_value(Entry));
             (Entry) ->
                 format_value(Entry)
         end, S),
-    lists:flatten("[",[string:join(Result, ", "), "]"]).
+    lists:flatten(["[",string:join(Result, ", "), "]"]).
 
 -ifdef(TEST).
 
@@ -409,10 +404,10 @@ args_test_() -> [
     ?_assertEqual(
         lists:flatten([
             "Processor:ProcessCall(a = CallArgs{arg = <<...>>, machine = Machine{ns = 'party', id = '1CSHThTEJ84', ",
-            "history = [Event{id = 1, created_at = '2019-08-13T07:52:11.080519Z', data = [#{ct => \"application/x-erlang-binary\", ",
-            "vsn => 6}, <<...>>]}], history_range = HistoryRange{limit = 10, direction = backward}, aux_state = Content{data = ",
-            "#{aux_state => \"<<...>>\", ct => \"application/x-erlang-binary\"}}, aux_state_legacy = #{aux_state => \"<<...>>\", ",
-            "ct => \"application/x-erlang-binary\"}}})"
+            "history = [Event{id = 1, created_at = '2019-08-13T07:52:11.080519Z', data = [#{'ct' => 'application/x-erlang-binary', ",
+            "'vsn' => 6}, <<...>>]}], history_range = HistoryRange{limit = 10, direction = backward}, aux_state = Content{data = #{",
+            "'aux_state' => <<...>>, 'ct' => 'application/x-erlang-binary'}}, aux_state_legacy = #{'aux_state' => <<...>>, ",
+            "'ct' => 'application/x-erlang-binary'}}})"
         ]),
         format_meta(
             #{args =>
@@ -521,8 +516,9 @@ result_test_() -> [
     ?_assertEqual(
         lists:flatten([
             "CallResult{response = <<131,100,0,2,111,107>>, change = MachineStateChange{aux_state = Content{",
-            "data = #{aux_state => \"<<...>>\", ct => \"application/x-erlang-binary\"}}, events = [Content{",
-            "data = [#{ct => \"application/x-erlang-binary\", vsn => 6}, <<...>>]}]}, action = ComplexAction{}}"
+            "data = #{'aux_state' => <<...>>, 'ct' => 'application/x-erlang-binary'}}, ",
+            "events = [Content{data = [#{'ct' => 'application/x-erlang-binary', 'vsn' => 6}, <<...>>]}]}, ",
+            "action = ComplexAction{}}"
             ]),
         format_meta(
             #{
@@ -669,10 +665,10 @@ result_test_() -> [
     ?_assertEqual(
         lists:flatten([
             "SignalResult{change = MachineStateChange{aux_state = Content{data = #{}}, ",
-            "events = [Content{data = [[2, #{change => \"created\", ",
-            "contact_info => [35,123,[\"email\",32,61,62,32,\"\\\"create_customer\\\"\"],\"}\"], ",
-            "created_at => \"2019-08-13T11:19:03.714218Z\", customer_id => \"1CSWGJ3N8Ns\", ",
-            "metadata => 'Null', owner_id => \"1CSWG2vduGe\", shop_id => \"1CSWG8j04wM\"}]]}]}, ",
+            "events = [Content{data = [[2, #{'change' => 'created', ",
+            "'contact_info' => #{'email' => 'create_customer'}, ",
+            "'created_at' => '2019-08-13T11:19:03.714218Z', 'customer_id' => '1CSWGJ3N8Ns', ",
+            "'metadata' => Null, 'owner_id' => '1CSWG2vduGe', 'shop_id' => '1CSWG8j04wM'}]]}]}, ",
             "action = ComplexAction{}}"
         ]),
         format_meta(
