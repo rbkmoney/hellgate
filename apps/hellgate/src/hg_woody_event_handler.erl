@@ -2,9 +2,6 @@
 
 -behaviour(woody_event_handler).
 
--include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
--include_lib("woody/src/woody_defs.hrl").
-
 %% woody_event_handler behaviour callbacks
 -export([handle_event/4]).
 
