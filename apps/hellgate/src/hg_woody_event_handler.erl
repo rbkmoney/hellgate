@@ -19,8 +19,8 @@
     Opts  :: woody:options().
 
 handle_event(Event, RpcID, RawMeta, Opts) ->
-    FormattedMeta = format_meta(RawMeta),
-    file:write_file("/Users/s.elin/Projects/rbkmoney/hellgate/formatted_test.out", io_lib:format("~s~n", [FormattedMeta]), [append]),
+    _FormattedMeta = format_meta(RawMeta),
+%%    file:write_file("/Users/s.elin/Projects/rbkmoney/hellgate/formatted_test.out", io_lib:format("~s~n", [FormattedMeta]), [append]),
     scoper_woody_event_handler:handle_event(Event, RpcID, RawMeta, Opts).
 
 format_meta(#{type := call} = RawMeta) ->
