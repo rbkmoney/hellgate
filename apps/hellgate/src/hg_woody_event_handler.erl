@@ -251,7 +251,11 @@ args_test_() -> [
         )
     ),
     ?_assertEqual(
-        "Processor:ProcessSignal(a = SignalArgs{signal = InitSignal{arg = <<...>>}, machine = Machine{ns = 'party', id = '1CQxZsCgLJY', history = [], history_range = HistoryRange{direction = forward}, aux_state = Content{data = <<>>}, aux_state_legacy = <<>>}})",
+        lists:flatten([
+            "Processor:ProcessSignal(a = SignalArgs{signal = InitSignal{arg = <<...>>}, machine = Machine{ns = 'party', ",
+            "id = '1CQxZsCgLJY', history = [], history_range = HistoryRange{direction = forward}, aux_state = Content{data = <<>>}, ",
+            "aux_state_legacy = <<>>}})"
+        ]),
         format_meta(
             #{args =>
             [{mg_stateproc_SignalArgs,
@@ -276,7 +280,21 @@ args_test_() -> [
         )
     ),
     ?_assertEqual(
-        "PartyManagement:CreateClaim(party_id = '1CR1Xziml7o', changeset = [ContractModificationUnit{id = '1CR1Y2ZcrA0', modification = ContractParams{template = ContractTemplateRef{id = 1}, payment_institution = PaymentInstitutionRef{id = 1}, contractor = RussianLegalEntity{registered_name = 'Hoofs & Horns OJSC', registered_number = '1234509876', inn = '1213456789012', actual_address = 'Nezahualcoyotl 109 Piso 8, Centro, 06082, MEXICO', post_address = 'NaN', representative_position = 'Director', representative_full_name = 'Someone', representative_document = '100$ banknote', russian_bank_account = RussianBankAccount{account = '4276300010908312893', bank_name = 'SomeBank', bank_post_account = '123129876', bank_bik = '66642666'}}}}, ContractModificationUnit{id = '1CR1Y2ZcrA0', modification = PayoutToolModificationUnit{payout_tool_id = '1CR1Y2ZcrA1', modification = PayoutToolParams{currency = CurrencyRef{symbolic_code = 'RUB'}, tool_info = RussianBankAccount{account = '4276300010908312893', bank_name = 'SomeBank', bank_post_account = '123129876', bank_bik = '66642666'}}}}, ShopModificationUnit{id = '1CR1Y2ZcrA2', modification = ShopParams{category = CategoryRef{id = 1}, location = ShopLocation{url = }, details = ShopDetails{name = 'Battle Ready Shop'}, contract_id = '1CR1Y2ZcrA0', payout_tool_id = '1CR1Y2ZcrA1'}}, ShopModificationUnit{id = '1CR1Y2ZcrA2', modification = ShopAccountParams{currency = CurrencyRef{symbolic_code = 'RUB'}}}])",
+        lists:flatten([
+            "PartyManagement:CreateClaim(party_id = '1CR1Xziml7o', changeset = [ContractModificationUnit{id = '1CR1Y2ZcrA0', ",
+            "modification = ContractParams{template = ContractTemplateRef{id = 1}, payment_institution = PaymentInstitutionRef{id = 1}, ",
+            "contractor = RussianLegalEntity{registered_name = 'Hoofs & Horns OJSC', registered_number = '1234509876', ",
+            "inn = '1213456789012', actual_address = 'Nezahualcoyotl 109 Piso 8, Centro, 06082, MEXICO', post_address = 'NaN', ",
+            "representative_position = 'Director', representative_full_name = 'Someone', representative_document = '100$ banknote', ",
+            "russian_bank_account = RussianBankAccount{account = '4276300010908312893', bank_name = 'SomeBank', ",
+            "bank_post_account = '123129876', bank_bik = '66642666'}}}}, ContractModificationUnit{id = '1CR1Y2ZcrA0', ",
+            "modification = PayoutToolModificationUnit{payout_tool_id = '1CR1Y2ZcrA1', modification = PayoutToolParams{",
+            "currency = CurrencyRef{symbolic_code = 'RUB'}, tool_info = RussianBankAccount{account = '4276300010908312893', ",
+            "bank_name = 'SomeBank', bank_post_account = '123129876', bank_bik = '66642666'}}}}, ShopModificationUnit{id = '1CR1Y2ZcrA2', ",
+            "modification = ShopParams{category = CategoryRef{id = 1}, location = ShopLocation{url = }, details = ShopDetails{",
+            "name = 'Battle Ready Shop'}, contract_id = '1CR1Y2ZcrA0', payout_tool_id = '1CR1Y2ZcrA1'}}, ShopModificationUnit{",
+            "id = '1CR1Y2ZcrA2', modification = ShopAccountParams{currency = CurrencyRef{symbolic_code = 'RUB'}}}])"
+        ]),
         format_meta(
             #{args =>
             [undefined,<<"1CR1Xziml7o">>,
