@@ -73,6 +73,14 @@ format_(FunctionArgsMeta, FunctionArgs) ->
                         end, [], ValueList),
                 FormattedValue = string:join(FormattedValueList, ", "),
                 [io_lib:format("~s = [~s]", [Name, FormattedValue]) | Acc];
+            ({{_Fid, _Required, {list, {struct, struct, {Module, Struct}}}, Name, _Default}, ValueList}, Acc) ->
+                FormattedValueList =
+                    lists:foldr(
+                        fun(Value, FormattedAcc) ->
+                            [format_struct(Module, Struct, Value) | FormattedAcc]
+                        end, [], ValueList),
+                FormattedValue = string:join(FormattedValueList, ", "),
+                [io_lib:format("~s = [~s]", [Name, FormattedValue]) | Acc];
             ({{_Fid, _Required, _Type, Name, _Default}, Value}, Acc) ->
                 %% All other types such as i32, i64, bool, etc. format here
                 [io_lib:format("~s = ~p", [Name, Value]) | Acc]
