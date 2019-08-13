@@ -155,7 +155,7 @@ format_union(Module, Struct, {Type, UnionValue}) ->
         {value, {_, _, {struct, union, {M, S}}, _, _}} ->
             format_union(M, S, UnionValue);
         {value, {_, _, string, Name, _}} when is_binary(UnionValue) ->
-            io_lib:format("~s{~s = ~s}", [Struct, Name, UnionValue]);
+            io_lib:format("~s{~s = '~s'}", [Struct, Name, UnionValue]);
         {value, {_, _, _Type, Name, _}} ->
             io_lib:format("~s{~s = ~p}", [Struct, Name, UnionValue])
     end.
@@ -353,7 +353,7 @@ args_test_() -> [
             "modification = PayoutToolModificationUnit{payout_tool_id = '1CR1Y2ZcrA1', modification = PayoutToolParams{",
             "currency = CurrencyRef{symbolic_code = 'RUB'}, tool_info = RussianBankAccount{account = '4276300010908312893', ",
             "bank_name = 'SomeBank', bank_post_account = '123129876', bank_bik = '66642666'}}}}, ShopModificationUnit{id = '1CR1Y2ZcrA2', ",
-            "modification = ShopParams{category = CategoryRef{id = 1}, location = ShopLocation{url = }, details = ShopDetails{",
+            "modification = ShopParams{category = CategoryRef{id = 1}, location = ShopLocation{url = ''}, details = ShopDetails{",
             "name = 'Battle Ready Shop'}, contract_id = '1CR1Y2ZcrA0', payout_tool_id = '1CR1Y2ZcrA1'}}, ShopModificationUnit{",
             "id = '1CR1Y2ZcrA2', modification = ShopAccountParams{currency = CurrencyRef{symbolic_code = 'RUB'}}}])"
         ]),
@@ -605,7 +605,7 @@ result_test_() -> [
             "bank_bik = '66642666'}}}}, shops = #{1CSWG8j04wM => Shop{id = '1CSWG8j04wM', ",
             "created_at = '2019-08-13T11:19:01.387269Z', blocking = Blocked{reason = '', ",
             "since = '2019-08-13T11:19:03.015222Z'}, suspension = Active{since = '2019-08-13T11:19:01.387269Z'}, ",
-            "details = ShopDetails{name = 'Battle Ready Shop'}, location = ShopLocation{url = }, ",
+            "details = ShopDetails{name = 'Battle Ready Shop'}, location = ShopLocation{url = ''}, ",
             "category = CategoryRef{id = 1}, account = ShopAccount{currency = CurrencyRef{symbolic_code = 'RUB'}, ",
             "settlement = 7, guarantee = 6, payout = 8}, contract_id = '1CSWG8j04wK', payout_tool_id = '1CSWG8j04wL'}}, ",
             "wallets = #{}, revision = 6}"
