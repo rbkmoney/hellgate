@@ -427,7 +427,7 @@ start_binding_not_permitted(C) ->
 %%
 
 -define(INTERVAL, 100).
--define(DEFAULT_TIMEOUT, 10000).
+-define(DEFAULT_TIMEOUT, 5000).
 
 await_for_changes(ChangeMatchPatterns, CustomerID, Client) ->
     await_for_changes(ChangeMatchPatterns, CustomerID, Client, ?DEFAULT_TIMEOUT).
