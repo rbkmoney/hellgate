@@ -3,6 +3,7 @@
 -include("hg_ct_domain.hrl").
 -include("hg_ct_json.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
 -include_lib("hellgate/include/customer_events.hrl").
 
 -export([init_per_suite/1]).
@@ -245,7 +246,9 @@ start_binding_w_failure(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(_, _)),
+        ?customer_binding_changed(_, ?customer_binding_started(_, _))
+    ] = next_event(CustomerID, Client),
+    [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -269,7 +272,9 @@ start_binding(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(_, _)),
+        ?customer_binding_changed(_, ?customer_binding_started(_, _))
+    ] = next_event(CustomerID, Client),
+    [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -294,7 +299,9 @@ start_binding_w_tds(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(_, _)),
+        ?customer_binding_changed(_, ?customer_binding_started(_, _))
+    ] = next_event(CustomerID, Client),
+    [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -324,20 +331,16 @@ start_two_bindings(C) ->
     [
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
-    [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, _)),
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending()))
-    ] = next_event(CustomerID, Client),
-    [
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, _)),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending()))
-    ] = next_event(CustomerID, Client),
-    SuccessChanges = [
+    StartChanges = [
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending())),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_status_changed(?customer_ready())
     ],
-    _ = await_for_changes(SuccessChanges, CustomerID, Client, 10000).
+    _ = await_for_changes(StartChanges, CustomerID, Client, 30000).
 
 start_two_bindings_w_tds(C) ->
     Client = cfg(client, C),
@@ -407,8 +410,23 @@ start_binding_not_permitted(C) ->
     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     CustomerBindingParams =
         hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
-    {exception, #payproc_OperationNotPermitted{}} =
-        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client).
+    Binding = #payproc_CustomerBinding{id = BindingID} =
+        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    [
+        ?customer_created(_, _, _, _, _, _)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(BindingID, ?customer_binding_started(Binding, _))
+    ] = next_event(CustomerID, Client),
+    %@todo
+    Failure = payproc_errors:construct('PaymentFailure', {preauthorization_failed, #payprocerr_GeneralFailure{}}),
+    [
+        ?customer_binding_changed(BindingID,
+            ?customer_binding_status_changed(
+                ?customer_binding_failed({failure, Failure})
+            )
+        )
+    ] = next_event(CustomerID, Client).
 
 %%
 

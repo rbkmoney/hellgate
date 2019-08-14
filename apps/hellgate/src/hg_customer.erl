@@ -5,6 +5,7 @@
 -module(hg_customer).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
 -include("customer_events.hrl").
 
 -define(NS, <<"customer">>).
@@ -207,7 +208,9 @@ process_signal(Signal, #{history := History,  aux_state := AuxSt}) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), unmarshal(auxst, AuxSt))).
 
 handle_signal(timeout, St0, AuxSt0) ->
-    {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
+    Changes0 = process_creating_bindings(St0),
+    {Changes1, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
+    Changes = Changes0 ++ Changes1,
     St1 = merge_changes(Changes, St0),
     Action = case detect_binding_status(St1) of
         all_ready ->
@@ -222,6 +225,37 @@ handle_signal(timeout, St0, AuxSt0) ->
         action  => Action,
         auxst   => AuxSt1
     }.
+
+process_creating_bindings(St) ->
+    Bindings = get_creating_bindings(St),
+    process_creating_bindings(Bindings, St, []).
+
+process_creating_bindings([Binding | Rest], St, ChangesAcc) ->
+    #payproc_CustomerBinding{
+        id = BindingID,
+        rec_payment_tool_id = RecurrentPaytoolID,
+        payment_resource = PaymentResource
+    } = Binding,
+    Changes = case create_recurrent_paytool(RecurrentPaytoolID, PaymentResource, St) of
+        {ok, RecurrentPaytoolID} ->
+            [?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))];
+        {exception, Exception} ->
+            handle_paytool_creation_exception(BindingID, Exception)
+    end,
+    process_creating_bindings(Rest, St, ChangesAcc ++ Changes);
+process_creating_bindings([], _St, Changes) ->
+    Changes.
+
+handle_paytool_creation_exception(BindingID, _Exception) ->
+    %@todo
+    Failure = payproc_errors:construct('PaymentFailure', {preauthorization_failed, #payprocerr_GeneralFailure{}}),
+    [
+        ?customer_binding_changed(BindingID,
+            ?customer_binding_status_changed(
+                ?customer_binding_failed({failure, Failure})
+            )
+        )
+    ].
 
 detect_binding_status(St) ->
     case get_pending_binding_set(St) of
@@ -311,16 +345,12 @@ start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
     PaymentResource = BindingParams#payproc_CustomerBindingParams.payment_resource,
     RecurrentPaytoolID = hg_utils:unique_id(),
-    RecurrentPaytoolID = create_recurrent_paytool(RecurrentPaytoolID, PaymentResource, St),
     Binding = construct_binding(BindingID, RecurrentPaytoolID, PaymentResource),
-    Changes = [
-        ?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now())),
-        ?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))
-    ],
+    Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
     #{
         response => {ok, Binding},
         changes  => Changes,
-        action   => set_event_poll_timer(actual)
+        action   => hg_machine_action:instant()
     }.
 
 construct_binding(BindingID, RecPaymentToolID, PaymentResource) ->
@@ -394,22 +424,20 @@ create_recurrent_paytool(ID, PaymentResource, St) ->
 create_recurrent_paytool(Params) ->
     case issue_recurrent_paytools_call('Create', [Params]) of
         {ok, RecurrentPaytool} ->
-            RecurrentPaytool#payproc_RecurrentPaymentTool.id;
-        {exception, Exception = #payproc_InvalidUser{}} ->
-            throw(Exception);
-        {exception, Exception = #payproc_InvalidPartyStatus{}} ->
-            throw(Exception);
-        {exception, Exception = #payproc_InvalidShopStatus{}} ->
-            throw(Exception);
-        {exception, Exception = #payproc_InvalidContractStatus{}} ->
-            throw(Exception);
-        {exception, Exception = #payproc_OperationNotPermitted{}} ->
-            throw(Exception);
+            {ok, RecurrentPaytool#payproc_RecurrentPaymentTool.id};
+        {exception, Exception} when
+            Exception =:= #payproc_InvalidUser{};
+            Exception =:= #payproc_InvalidPartyStatus{};
+            Exception =:= #payproc_InvalidShopStatus{};
+            Exception =:= #payproc_InvalidContractStatus{};
+            Exception =:= #payproc_OperationNotPermitted{}
+        ->
+            {exception, Exception};
         % TODO
         % These are essentially the same, we should probably decide on some kind
         % of exception encompassing both.
         {exception, #payproc_InvalidPaymentMethod{}} ->
-            throw(#payproc_OperationNotPermitted{})
+            {exception, #payproc_OperationNotPermitted{}}
     end.
 
 get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
@@ -556,6 +584,12 @@ set_binding(Binding, Customer = #payproc_Customer{bindings = Bindings}) ->
     Customer#payproc_Customer{
         bindings = lists:keystore(BindingID, #payproc_CustomerBinding.id, Bindings, Binding)
     }.
+
+get_creating_bindings(St) ->
+    Bindings = get_bindings(get_customer(St)),
+    [Binding ||
+        Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_creating()
+    ].
 
 get_pending_binding_set(St) ->
     Bindings = get_bindings(get_customer(St)),
