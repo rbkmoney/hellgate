@@ -113,7 +113,7 @@ handle_function_('GetEvents', [RecPaymentToolID, Range], _Opts) ->
     ok | no_return().
 
 validate_paytool_params(RecurrentPaymentToolParams) ->
-    DomainRevison = hg_domain:head(),
+    DomainRevison = RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.domain_revision,
     Party = ensure_party_accessible(RecurrentPaymentToolParams),
     Shop = ensure_shop_exists(RecurrentPaymentToolParams, Party),
     ok = assert_party_shop_operable(Shop, Party),
