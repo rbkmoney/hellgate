@@ -336,7 +336,7 @@ start_binding(BindingParams, St) ->
     PaytoolID = hg_utils:unique_id(),
     DomainRevision = hg_domain:head(),
     PartyID = get_party_id(St),
-    PartyRevision = hg_party:get_party_revision(),
+    PartyRevision = hg_party:get_party_revision(PartyID),
     Binding = construct_binding(BindingID, PaytoolID, PaymentResource, PartyRevision, DomainRevision),
     PaytoolParams = create_paytool_params(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
     _ = hg_recurrent_paytool:validate_paytool_params(PaytoolParams),
@@ -787,13 +787,17 @@ marshal(
     #payproc_CustomerBinding{
         id                  = ID,
         rec_payment_tool_id = RecPaymentToolID,
-        payment_resource    = PaymentResource
+        payment_resource    = PaymentResource,
+        party_revision      = PartyRevision,
+        domain_revision     = DomainRevision
     }
 ) ->
     #{
-        <<"id">>            => marshal(str              , ID),
-        <<"recpaytool_id">> => marshal(str              , RecPaymentToolID),
-        <<"payresource">>   => marshal(payment_resource , PaymentResource)
+        <<"id">>              => marshal(str              , ID),
+        <<"recpaytool_id">>   => marshal(str              , RecPaymentToolID),
+        <<"payresource">>     => marshal(payment_resource , PaymentResource),
+        <<"party_revision">>  => marshal(int              , PartyRevision),
+        <<"domain_revision">> => marshal(int              , DomainRevision)
     };
 
 marshal(
@@ -1027,16 +1031,20 @@ unmarshal(customer_status, <<"ready">>) ->
 unmarshal(
     binding,
     #{
-        <<"id">>             := ID,
-        <<"recpaytool_id">>  := RecPaymentToolID,
-        <<"payresource">>    := PaymentResource
+        <<"id">>              := ID,
+        <<"recpaytool_id">>   := RecPaymentToolID,
+        <<"payresource">>     := PaymentResource,
+        <<"party_revision">>  := PartyRevision,
+        <<"domain_revision">> := DomainRevision
     }
 ) ->
     #payproc_CustomerBinding{
         id                  = unmarshal(str              , ID),
         rec_payment_tool_id = unmarshal(str              , RecPaymentToolID),
         payment_resource    = unmarshal(payment_resource , PaymentResource),
-        status              = ?customer_binding_creating()
+        status              = ?customer_binding_creating(),
+        party_revision      = unmarshal(int              , PartyRevision),
+        domain_revision     = unmarshal(int              , DomainRevision)
     };
 
 unmarshal(

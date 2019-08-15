@@ -219,7 +219,6 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     Type        = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolParams'}},
     Params      = hg_proto_utils:deserialize(Type, EncodedParams),
     PaymentTool = get_payment_tool(Params#payproc_RecurrentPaymentToolParams.payment_resource),
-
     Revision           = get_domain_revision(Params),
     CreatedAt          = hg_datetime:format_now(),
     {Party, Shop}      = get_party_shop(Params),
