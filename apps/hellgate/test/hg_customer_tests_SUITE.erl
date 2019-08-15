@@ -406,23 +406,8 @@ start_binding_not_permitted(C) ->
     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     CustomerBindingParams =
         hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
-    Binding = #payproc_CustomerBinding{id = BindingID} =
-        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    [
-        ?customer_created(_, _, _, _, _, _)
-    ] = next_event(CustomerID, Client),
-    [
-        ?customer_binding_changed(BindingID, ?customer_binding_started(Binding, _))
-    ] = next_event(CustomerID, Client),
-    %@todo
-    Failure = payproc_errors:construct('PaymentFailure', {preauthorization_failed, #payprocerr_GeneralFailure{}}),
-    [
-        ?customer_binding_changed(BindingID,
-            ?customer_binding_status_changed(
-                ?customer_binding_failed({failure, Failure})
-            )
-        )
-    ] = next_event(CustomerID, Client).
+    {exception, #payproc_OperationNotPermitted{}} =
+        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client).
 
 %%
 

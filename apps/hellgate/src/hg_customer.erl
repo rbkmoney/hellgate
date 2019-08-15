@@ -228,34 +228,20 @@ handle_signal(timeout, St0, AuxSt0) ->
 
 process_creating_bindings(St) ->
     Bindings = get_creating_bindings(St),
-    process_creating_bindings(Bindings, St, []).
+    process_creating_bindings(Bindings, St).
 
-process_creating_bindings([Binding | Rest], St, ChangesAcc) ->
+process_creating_bindings([Binding | Rest], St) ->
     #payproc_CustomerBinding{
         id = BindingID,
         rec_payment_tool_id = RecurrentPaytoolID,
         payment_resource = PaymentResource
     } = Binding,
-    Changes = case create_recurrent_paytool(RecurrentPaytoolID, PaymentResource, St) of
-        {ok, RecurrentPaytoolID} ->
-            [?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))];
-        {exception, Exception} ->
-            handle_paytool_creation_exception(BindingID, Exception)
-    end,
-    process_creating_bindings(Rest, St, ChangesAcc ++ Changes);
-process_creating_bindings([], _St, Changes) ->
-    Changes.
-
-handle_paytool_creation_exception(BindingID, _Exception) ->
-    %@todo
-    Failure = payproc_errors:construct('PaymentFailure', {preauthorization_failed, #payprocerr_GeneralFailure{}}),
-    [
-        ?customer_binding_changed(BindingID,
-            ?customer_binding_status_changed(
-                ?customer_binding_failed({failure, Failure})
-            )
-        )
-    ].
+    RecurrentPaytoolID = create_recurrent_paytool(RecurrentPaytoolID, PaymentResource, St),
+    Changes0 = [?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))],
+    Changes1 = process_creating_bindings(Rest, St),
+    Changes0 ++ Changes1;
+process_creating_bindings([], _St) ->
+    [].
 
 detect_binding_status(St) ->
     case get_pending_binding_set(St) of
@@ -345,6 +331,7 @@ start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
     PaymentResource = BindingParams#payproc_CustomerBindingParams.payment_resource,
     RecurrentPaytoolID = hg_utils:unique_id(),
+    _ = hg_recurrent_paytool:validate_paytool_params(create_paytool_params(RecurrentPaytoolID, PaymentResource, St)),
     Binding = construct_binding(BindingID, RecurrentPaytoolID, PaymentResource),
     Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
     #{
@@ -413,18 +400,19 @@ produce_binding_changes_(?recurrent_payment_tool_has_abandoned() = Change, _Bind
 produce_binding_changes_(?session_ev(_), _Binding) ->
     [].
 
-create_recurrent_paytool(ID, PaymentResource, St) ->
-    create_recurrent_paytool(#payproc_RecurrentPaymentToolParams{
+create_paytool_params(ID, PaymentResource, St) ->
+    #payproc_RecurrentPaymentToolParams{
         id               = ID,
         party_id         = get_party_id(St),
         shop_id          = get_shop_id(St),
         payment_resource = PaymentResource
-    }).
+    }.
 
-create_recurrent_paytool(Params) ->
+create_recurrent_paytool(ID, PaymentResource, St) ->
+    Params = create_paytool_params(ID, PaymentResource, St),
     case issue_recurrent_paytools_call('Create', [Params]) of
         {ok, RecurrentPaytool} ->
-            {ok, RecurrentPaytool#payproc_RecurrentPaymentTool.id};
+            RecurrentPaytool#payproc_RecurrentPaymentTool.id;
         {exception, Exception} when
             Exception =:= #payproc_InvalidUser{};
             Exception =:= #payproc_InvalidPartyStatus{};
@@ -432,12 +420,12 @@ create_recurrent_paytool(Params) ->
             Exception =:= #payproc_InvalidContractStatus{};
             Exception =:= #payproc_OperationNotPermitted{}
         ->
-            {exception, Exception};
+            throw(Exception);
         % TODO
         % These are essentially the same, we should probably decide on some kind
         % of exception encompassing both.
         {exception, #payproc_InvalidPaymentMethod{}} ->
-            {exception, #payproc_OperationNotPermitted{}}
+            throw(#payproc_OperationNotPermitted{})
     end.
 
 get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
