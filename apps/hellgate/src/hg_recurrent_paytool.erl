@@ -220,7 +220,7 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     Params      = hg_proto_utils:deserialize(Type, EncodedParams),
     PaymentTool = get_payment_tool(Params#payproc_RecurrentPaymentToolParams.payment_resource),
 
-    Revision           = hg_domain:head(),
+    Revision           = get_domain_revision(Params),
     CreatedAt          = hg_datetime:format_now(),
     {Party, Shop}      = get_party_shop(Params),
     PaymentInstitution = get_payment_institution(Shop, Party, Revision),
@@ -252,6 +252,11 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
         action => Action
     }).
+
+get_domain_revision(#payproc_RecurrentPaymentToolParams{domain_revision = undefined}) ->
+    hg_domain:head();
+get_domain_revision(#payproc_RecurrentPaymentToolParams{domain_revision = Revision}) ->
+    Revision.
 
 get_party_shop(Params) ->
     #payproc_RecurrentPaymentToolParams{

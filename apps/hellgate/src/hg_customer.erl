@@ -233,10 +233,13 @@ process_creating_bindings(St) ->
 process_creating_bindings([Binding | Rest], St) ->
     #payproc_CustomerBinding{
         id = BindingID,
-        rec_payment_tool_id = RecurrentPaytoolID,
-        payment_resource = PaymentResource
+        rec_payment_tool_id = PaytoolID,
+        payment_resource = PaymentResource,
+        party_revision = PartyRevision,
+        domain_revision = DomainRevision
     } = Binding,
-    RecurrentPaytoolID = create_recurrent_paytool(RecurrentPaytoolID, PaymentResource, St),
+    PartyID = get_party_id(St),
+    PaytoolID = create_recurrent_paytool(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
     Changes0 = [?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))],
     Changes1 = process_creating_bindings(Rest, St),
     Changes0 ++ Changes1;
@@ -330,9 +333,13 @@ handle_result_action(#{}, Acc) ->
 start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
     PaymentResource = BindingParams#payproc_CustomerBindingParams.payment_resource,
-    RecurrentPaytoolID = hg_utils:unique_id(),
-    _ = hg_recurrent_paytool:validate_paytool_params(create_paytool_params(RecurrentPaytoolID, PaymentResource, St)),
-    Binding = construct_binding(BindingID, RecurrentPaytoolID, PaymentResource),
+    PaytoolID = hg_utils:unique_id(),
+    DomainRevision = hg_domain:head(),
+    PartyID = get_party_id(St),
+    PartyRevision = hg_party:get_party_revision(),
+    Binding = construct_binding(BindingID, PaytoolID, PaymentResource, PartyRevision, DomainRevision),
+    PaytoolParams = create_paytool_params(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
+    _ = hg_recurrent_paytool:validate_paytool_params(PaytoolParams),
     Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
     #{
         response => {ok, Binding},
@@ -340,12 +347,14 @@ start_binding(BindingParams, St) ->
         action   => hg_machine_action:instant()
     }.
 
-construct_binding(BindingID, RecPaymentToolID, PaymentResource) ->
+construct_binding(BindingID, RecPaymentToolID, PaymentResource, PartyRevision, DomainRevision) ->
     #payproc_CustomerBinding{
         id                  = BindingID,
         rec_payment_tool_id = RecPaymentToolID,
         payment_resource    = PaymentResource,
-        status              = ?customer_binding_creating()
+        status              = ?customer_binding_creating(),
+        party_revision      = PartyRevision,
+        domain_revision     = DomainRevision
     }.
 
 create_binding_id(St) ->
@@ -400,16 +409,18 @@ produce_binding_changes_(?recurrent_payment_tool_has_abandoned() = Change, _Bind
 produce_binding_changes_(?session_ev(_), _Binding) ->
     [].
 
-create_paytool_params(ID, PaymentResource, St) ->
+create_paytool_params(ID, PartyID, PartyRevision, DomainRevision, PaymentResource, St) ->
     #payproc_RecurrentPaymentToolParams{
         id               = ID,
-        party_id         = get_party_id(St),
+        party_id         = PartyID,
+        party_revision   = PartyRevision,
+        domain_revision  = DomainRevision,
         shop_id          = get_shop_id(St),
         payment_resource = PaymentResource
     }.
 
-create_recurrent_paytool(ID, PaymentResource, St) ->
-    Params = create_paytool_params(ID, PaymentResource, St),
+create_recurrent_paytool(ID, PartyID, PartyRevision, DomainRevision, PaymentResource, St) ->
+    Params = create_paytool_params(ID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
     case issue_recurrent_paytools_call('Create', [Params]) of
         {ok, RecurrentPaytool} ->
             RecurrentPaytool#payproc_RecurrentPaymentTool.id;
