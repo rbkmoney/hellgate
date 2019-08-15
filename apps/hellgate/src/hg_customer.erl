@@ -5,7 +5,6 @@
 -module(hg_customer).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
--include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
 -include("customer_events.hrl").
 
 -define(NS, <<"customer">>).
