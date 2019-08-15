@@ -50,6 +50,26 @@
     }
 ).
 
+-define(payment_capture_started(Params),
+    {invoice_payment_capture_started,
+        #payproc_InvoicePaymentCaptureStarted{
+            params = Params
+        }
+    }
+).
+
+-define(payment_capture_started(Reason, Cost, Cart),
+    {invoice_payment_capture_started,
+        #payproc_InvoicePaymentCaptureStarted{
+            params = #payproc_InvoicePaymentCaptureParams{
+                reason = Reason,
+                cash = Cost,
+                cart = Cart
+            }
+        }
+    }
+).
+
 -define(pending(),
     {pending, #domain_InvoicePaymentPending{}}).
 -define(processed(),
