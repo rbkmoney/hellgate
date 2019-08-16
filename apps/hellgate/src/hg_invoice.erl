@@ -793,17 +793,9 @@ validate_result(_Result) ->
 
 %%
 
-start_refund(RefundType, RefundParams, PaymentID, PaymentSession, St) ->
-    case get_refund_id(RefundParams) of
-        undefined ->
-            start_new_refund(RefundType, PaymentID, RefundParams, PaymentSession, St);
-        ID ->
-            get_or_start_refund(ID, RefundType, RefundParams, PaymentID, PaymentSession, St)
-    end.
-
-
-get_or_start_refund(RefundID, RefundType, RefundParams, PaymentID, PaymentSession, St) ->
-    case get_refund(RefundID, PaymentSession) of
+start_refund(RefundType, RefundParams0, PaymentID, PaymentSession, St) ->
+    RefundParams = ensure_refund_id_defined(RefundType, PaymentID, RefundParams0, St),
+    case get_refund(get_refund_id(RefundParams), PaymentSession) of
         undefined ->
             start_new_refund(RefundType, PaymentID, RefundParams, PaymentSession, St);
         Refund ->
@@ -815,6 +807,44 @@ get_or_start_refund(RefundID, RefundType, RefundParams, PaymentID, PaymentSessio
 
 get_refund_id(#payproc_InvoicePaymentRefundParams{id = RefundID}) ->
     RefundID.
+
+ensure_refund_id_defined(RefundType, PaymentID, Params, St) ->
+    RefundID = force_refund_id_format(RefundType, define_refund_id(Params, PaymentID, St)),
+    Params#payproc_InvoicePaymentRefundParams{id = RefundID}.
+
+define_refund_id(#payproc_InvoicePaymentRefundParams{id = undefined}, PaymentID, St) ->
+    make_new_refund_id(PaymentID, St);
+define_refund_id(#payproc_InvoicePaymentRefundParams{id = ID}, _PaymentID, _St) ->
+    ID.
+
+-define(MANUAL_REFUND_ID_PREFIX, "m").
+
+%% If something breaks - this is why
+force_refund_id_format(manual_refund, Correct = <<?MANUAL_REFUND_ID_PREFIX, _Rest/binary>>) ->
+    Correct;
+force_refund_id_format(manual_refund, Incorrect) ->
+    <<?MANUAL_REFUND_ID_PREFIX, Incorrect/binary>>;
+force_refund_id_format(refund, ID) ->
+    ID.
+
+parse_refund_id(<<?MANUAL_REFUND_ID_PREFIX, ID/binary>>) ->
+    ID;
+parse_refund_id(ID) ->
+    ID.
+
+make_new_refund_id(PaymentID, St) ->
+    {ok, Payment} = get_payment(PaymentID, St),
+    Refunds = hg_invoice_payment:get_refunds(Payment),
+    construct_refund_id(Refunds).
+
+construct_refund_id(Refunds) ->
+    % we can't be sure that old ids were constructed in strict increasing order, so we need to find max ID
+    MaxID = lists:foldl(fun find_max_refund_id/2, 0, Refunds),
+    genlib:to_binary(MaxID + 1).
+
+find_max_refund_id(#domain_InvoicePaymentRefund{id = ID}, Max) ->
+    IntID = genlib:to_int(parse_refund_id(ID)),
+    erlang:max(IntID, Max).
 
 get_refund(ID, PaymentSession) ->
     try
@@ -1338,3 +1368,27 @@ wrap_event_payload(Payload) ->
         format_version => 1,
         data => {bin, Bin}
     }.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-spec test() -> _.
+
+create_dummy_refund_with_id(ID) ->
+    #domain_InvoicePaymentRefund{
+        id              = genlib:to_binary(ID),
+        created_at      = hg_datetime:format_now(),
+        domain_revision = 42,
+        party_revision  = 42,
+        status          = ?refund_pending(),
+        reason          = <<"No reason">>,
+        cash            = 1000,
+        cart            = unefined
+    }.
+
+-spec construct_refund_id_test() -> _.
+construct_refund_id_test() ->
+    IDs = [X||{_, X} <- lists:sort([ {rand:uniform(), N} || N <- lists:seq(1, 10)])], % 10 IDs shuffled
+    Refunds = lists:map(fun create_dummy_refund_with_id/1, IDs),
+    ?assert(<<"11">> =:= construct_refund_id(Refunds)).
+-endif.

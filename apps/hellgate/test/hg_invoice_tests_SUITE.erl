@@ -76,6 +76,7 @@
 -export([payment_refund_success/1]).
 -export([payment_manual_refund/1]).
 -export([payment_partial_refunds_success/1]).
+-export([payment_refund_id_types/1]).
 -export([payment_temporary_unavailability_retry_success/1]).
 -export([payment_temporary_unavailability_too_many_retries/1]).
 -export([invalid_amount_payment_partial_refund/1]).
@@ -234,7 +235,8 @@ groups() ->
                 cant_start_simultaneous_partial_refunds
             ]},
             ineligible_payment_partial_refund,
-            payment_manual_refund
+            payment_manual_refund,
+            payment_refund_id_types
         ]},
 
         {holds_management, [parallel], [
@@ -1742,8 +1744,10 @@ payment_manual_refund(C) ->
         {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
     )},
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
+        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_created(Refund0, _, TrxInfo)))
+    ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
@@ -1996,6 +2000,57 @@ retry_temporary_unavailability_refund(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
+-spec payment_refund_id_types(config()) -> _ | no_return().
+
+payment_refund_id_types(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    TrxInfo = ?trx_info(<<"test">>, #{}),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    % top up merchant account
+    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    % create refund
+    RefundParams = #payproc_InvoicePaymentRefundParams{
+        reason = <<"42">>,
+        cash = ?cash(5000, <<"RUB">>),
+        transaction_info = TrxInfo
+    },
+    % 0
+    ManualRefundParams = RefundParams#payproc_InvoicePaymentRefundParams{transaction_info = TrxInfo},
+    Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
+        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, ManualRefundParams, Client),
+    Refund0 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID0, Client),
+    PaymentID = await_partial_manual_refund_succeeded(Refund0, TrxInfo, InvoiceID, PaymentID, RefundID0, Client),
+    % 1
+    Refund1 = #domain_InvoicePaymentRefund{id = RefundID1} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund1 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID1, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID1, Refund1, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID1, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    % 2
+    CustomIdParams = ManualRefundParams#payproc_InvoicePaymentRefundParams{id = <<"2">>},
+    Refund2 = #domain_InvoicePaymentRefund{id = RefundID2} =
+        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, CustomIdParams, Client),
+    Refund2 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID2, Client),
+    PaymentID = await_partial_manual_refund_succeeded(Refund2, TrxInfo, InvoiceID, PaymentID, RefundID2, Client),
+    % 3
+    Refund3 = #domain_InvoicePaymentRefund{id = RefundID3} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund3 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID3, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID3, Refund3, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID3, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    % Check ids
+    <<"m1">> =:= RefundID0 andalso
+    <<"2">> =:= RefundID1 andalso
+    <<"m2">> =:= RefundID2 andalso
+    <<"3">> =:= RefundID3.
 %%
 
 -spec consistent_history(config()) -> test_return().
@@ -3047,6 +3102,20 @@ await_payment_process_failure(InvoiceID, PaymentID, Client, Restarts, Target) ->
 refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client) ->
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _)))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
+
+await_partial_manual_refund_succeeded(Refund, TrxInfo, InvoiceID, PaymentID, RefundID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _, TrxInfo)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started()))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?trx_bound(TrxInfo)))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_status_changed(?refund_succeeded())))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
