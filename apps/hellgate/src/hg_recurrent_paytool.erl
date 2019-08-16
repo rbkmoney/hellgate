@@ -96,8 +96,9 @@ handle_function(Func, Args, Opts) ->
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     RecPaymentToolID = get_paytool_id(RecurrentPaymentToolParams),
     ok = set_meta(RecPaymentToolID),
-    _ = validate_paytool_params(RecurrentPaymentToolParams),
-    ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
+    RecurrentPaymentToolParams0 = ensure_domain_revision_defined(RecurrentPaymentToolParams),
+    _ = validate_paytool_params(RecurrentPaymentToolParams0),
+    ok = start(RecPaymentToolID, RecurrentPaymentToolParams0),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
@@ -111,7 +112,6 @@ handle_function_('GetEvents', [RecPaymentToolID, Range], _Opts) ->
 
 -spec validate_paytool_params(rec_payment_tool_params()) ->
     ok | no_return().
-
 validate_paytool_params(RecurrentPaymentToolParams) ->
     DomainRevison = RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.domain_revision,
     Party = ensure_party_accessible(RecurrentPaymentToolParams),
@@ -125,6 +125,11 @@ validate_paytool_params(RecurrentPaymentToolParams) ->
         DomainRevison
     ),
     ok.
+
+ensure_domain_revision_defined(#payproc_RecurrentPaymentToolParams{domain_revision = undefined} = Params) ->
+    Params#payproc_RecurrentPaymentToolParams{domain_revision = hg_domain:head()};
+ensure_domain_revision_defined(Params) ->
+    Params.
 
 get_paytool_id(#payproc_RecurrentPaymentToolParams{id = undefined}) ->
     hg_utils:unique_id();
@@ -219,7 +224,7 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     Type        = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolParams'}},
     Params      = hg_proto_utils:deserialize(Type, EncodedParams),
     PaymentTool = get_payment_tool(Params#payproc_RecurrentPaymentToolParams.payment_resource),
-    Revision           = get_domain_revision(Params),
+    Revision           = Params#payproc_RecurrentPaymentToolParams.domain_revision,
     CreatedAt          = hg_datetime:format_now(),
     {Party, Shop}      = get_party_shop(Params),
     PaymentInstitution = get_payment_institution(Shop, Party, Revision),
@@ -251,11 +256,6 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
         action => Action
     }).
-
-get_domain_revision(#payproc_RecurrentPaymentToolParams{domain_revision = undefined}) ->
-    hg_domain:head();
-get_domain_revision(#payproc_RecurrentPaymentToolParams{domain_revision = Revision}) ->
-    Revision.
 
 get_party_shop(Params) ->
     #payproc_RecurrentPaymentToolParams{
