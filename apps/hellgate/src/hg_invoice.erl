@@ -794,7 +794,7 @@ validate_result(_Result) ->
 %%
 
 start_refund(RefundType, RefundParams0, PaymentID, PaymentSession, St) ->
-    RefundParams = ensure_refund_id_defined(RefundType, PaymentID, RefundParams0, St),
+    RefundParams = ensure_refund_id_defined(RefundType, RefundParams0, PaymentSession),
     case get_refund(get_refund_id(RefundParams), PaymentSession) of
         undefined ->
             start_new_refund(RefundType, PaymentID, RefundParams, PaymentSession, St);
@@ -808,13 +808,13 @@ start_refund(RefundType, RefundParams0, PaymentID, PaymentSession, St) ->
 get_refund_id(#payproc_InvoicePaymentRefundParams{id = RefundID}) ->
     RefundID.
 
-ensure_refund_id_defined(RefundType, PaymentID, Params, St) ->
-    RefundID = force_refund_id_format(RefundType, define_refund_id(Params, PaymentID, St)),
+ensure_refund_id_defined(RefundType, Params, PaymentSession) ->
+    RefundID = force_refund_id_format(RefundType, define_refund_id(Params, PaymentSession)),
     Params#payproc_InvoicePaymentRefundParams{id = RefundID}.
 
-define_refund_id(#payproc_InvoicePaymentRefundParams{id = undefined}, PaymentID, St) ->
-    make_new_refund_id(PaymentID, St);
-define_refund_id(#payproc_InvoicePaymentRefundParams{id = ID}, _PaymentID, _St) ->
+define_refund_id(#payproc_InvoicePaymentRefundParams{id = undefined}, PaymentSession) ->
+    make_new_refund_id(PaymentSession);
+define_refund_id(#payproc_InvoicePaymentRefundParams{id = ID}, _PaymentSession) ->
     ID.
 
 -define(MANUAL_REFUND_ID_PREFIX, "m").
@@ -832,9 +832,8 @@ parse_refund_id(<<?MANUAL_REFUND_ID_PREFIX, ID/binary>>) ->
 parse_refund_id(ID) ->
     ID.
 
-make_new_refund_id(PaymentID, St) ->
-    {ok, Payment} = get_payment(PaymentID, St),
-    Refunds = hg_invoice_payment:get_refunds(Payment),
+make_new_refund_id(PaymentSession) ->
+    Refunds = hg_invoice_payment:get_refunds(PaymentSession),
     construct_refund_id(Refunds).
 
 construct_refund_id(Refunds) ->
