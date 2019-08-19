@@ -2019,8 +2019,7 @@ payment_refund_id_types(C) ->
     % create refund
     RefundParams = #payproc_InvoicePaymentRefundParams{
         reason = <<"42">>,
-        cash = ?cash(5000, <<"RUB">>),
-        transaction_info = TrxInfo
+        cash = ?cash(5000, <<"RUB">>)
     },
     % 0
     ManualRefundParams = RefundParams#payproc_InvoicePaymentRefundParams{transaction_info = TrxInfo},
@@ -2036,14 +2035,15 @@ payment_refund_id_types(C) ->
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID1, Client),
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
     % 2
-    CustomIdParams = ManualRefundParams#payproc_InvoicePaymentRefundParams{id = <<"2">>},
+    CustomIdManualParams = ManualRefundParams#payproc_InvoicePaymentRefundParams{id = <<"2">>},
     Refund2 = #domain_InvoicePaymentRefund{id = RefundID2} =
-        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, CustomIdParams, Client),
+        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, CustomIdManualParams, Client),
     Refund2 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID2, Client),
     PaymentID = await_partial_manual_refund_succeeded(Refund2, TrxInfo, InvoiceID, PaymentID, RefundID2, Client),
     % 3
+    CustomIdParams = RefundParams#payproc_InvoicePaymentRefundParams{id = <<"m3">>},
     Refund3 = #domain_InvoicePaymentRefund{id = RefundID3} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, CustomIdParams, Client),
     Refund3 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID3, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID3, Refund3, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID3, Client),

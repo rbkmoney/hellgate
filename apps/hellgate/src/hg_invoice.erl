@@ -824,6 +824,8 @@ force_refund_id_format(manual_refund, Correct = <<?MANUAL_REFUND_ID_PREFIX, _Res
     Correct;
 force_refund_id_format(manual_refund, Incorrect) ->
     <<?MANUAL_REFUND_ID_PREFIX, Incorrect/binary>>;
+force_refund_id_format(refund, <<?MANUAL_REFUND_ID_PREFIX, ID/binary>>) ->
+    ID;
 force_refund_id_format(refund, ID) ->
     ID.
 
