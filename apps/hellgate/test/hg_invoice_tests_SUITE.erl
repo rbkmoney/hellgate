@@ -1856,7 +1856,9 @@ payment_partial_refunds_success(C) ->
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams5, Client),
     % Check sequence
-    <<"1">> =:= RefundID1 andalso <<"2">> =:= RefundID3 andalso <<"3">> =:= RefundID4.
+    ?assertEqual(<<"1">>, RefundID1),
+    ?assertEqual(<<"2">>, RefundID3),
+    ?assertEqual(<<"3">>, RefundID4).
 
 -spec invalid_currency_payment_partial_refund(config()) -> _ | no_return().
 
@@ -2047,10 +2049,10 @@ payment_refund_id_types(C) ->
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID3, Client),
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
     % Check ids
-    <<"m1">> =:= RefundID0 andalso
-    <<"2">> =:= RefundID1 andalso
-    <<"m2">> =:= RefundID2 andalso
-    <<"3">> =:= RefundID3.
+    ?assertEqual(<<"m1">>, RefundID0),
+    ?assertEqual(<<"2">>, RefundID1),
+    ?assertEqual(<<"m2">>, RefundID2),
+    ?assertEqual(<<"3">>, RefundID3).
 %%
 
 -spec consistent_history(config()) -> test_return().
