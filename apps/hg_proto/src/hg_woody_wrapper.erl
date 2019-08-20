@@ -56,7 +56,6 @@ handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
         hg_context:cleanup()
     end.
 
-
 -spec call(atom(), woody:func(), list()) ->
     term().
 

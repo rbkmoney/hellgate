@@ -45,6 +45,8 @@
 -export([payment_w_another_shop_customer/1]).
 -export([payment_w_another_party_customer/1]).
 -export([payment_w_deleted_customer/1]).
+-export([payment_w_mobile_commerce/1]).
+-export([payment_suspend_timeout_failure/1]).
 -export([payments_w_bank_card_issuer_conditions/1]).
 -export([payments_w_bank_conditions/1]).
 -export([payment_success_on_second_try/1]).
@@ -160,7 +162,6 @@ groups() ->
     [
         {all_non_destructive_tests, [parallel], [
             {group, base_payments},
-
             payment_risk_score_check,
             payment_risk_score_check_fail,
             payment_risk_score_check_timeout,
@@ -206,6 +207,8 @@ groups() ->
             payment_w_another_shop_customer,
             payment_w_another_party_customer,
             payment_w_deleted_customer,
+            payment_w_mobile_commerce,
+            payment_suspend_timeout_failure,
             payment_success_on_second_try,
             payment_fail_after_silent_callback,
             payment_temporary_unavailability_retry_success,
@@ -284,7 +287,7 @@ groups() ->
 init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
-    % _ = dbg:tpl({'hg_invoice_payment', 'merge_change', '_'}, x),
+    % _ = dbg:tpl({'hg_invoice_payment', 'p', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
     {Apps, Ret} = hg_ct_helper:start_apps([
@@ -941,6 +944,52 @@ payment_w_crypto_currency_success(C) ->
     ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
     ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
     ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
+
+-spec payment_w_mobile_commerce(config()) -> _ | no_return().
+
+payment_w_mobile_commerce(C) ->
+    Client = cfg(client, C),
+    PayCash = 1001,
+    InvoiceID = start_invoice(<<"oatmeal">>, make_due_date(10), PayCash, C),
+    PaymentParams = make_mobile_commerce_params(success),
+    hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client).
+
+-spec payment_suspend_timeout_failure(config()) -> _ | no_return().
+
+payment_suspend_timeout_failure(C) ->
+    Client = cfg(client, C),
+    PayCash = 1001,
+    InvoiceID = start_invoice(<<"oatmeal">>, make_due_date(10), PayCash, C),
+    PaymentParams = make_mobile_commerce_params(failure),
+    _ = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, _Failure})))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
+    ] = next_event(InvoiceID, Client).
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
 
@@ -2343,6 +2392,7 @@ terms_retrieval(C) ->
             ?pmt(crypto_currency, bitcoin),
             ?pmt(digital_wallet, qiwi),
             ?pmt(empty_cvv_bank_card, visa),
+            ?pmt(mobile, mts),
             ?pmt(payment_terminal, euroset),
             ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
         ]}
@@ -2712,7 +2762,7 @@ filter_change(?refund_ev(_, C)) ->
     filter_change(C);
 filter_change(?session_ev(_, ?proxy_st_changed(_))) ->
     false;
-filter_change(?session_ev(_, ?session_suspended(_))) ->
+filter_change(?session_ev(_, ?session_suspended(_, _))) ->
     false;
 filter_change(?session_ev(_, ?session_activated())) ->
     false;
@@ -2838,6 +2888,13 @@ make_terminal_payment_params() ->
 
 make_crypto_currency_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency),
+    make_payment_params(PaymentTool, Session, instant).
+
+make_mobile_commerce_params(success) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce),
+    make_payment_params(PaymentTool, Session, instant);
+make_mobile_commerce_params(failure) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce_failure),
     make_payment_params(PaymentTool, Session, instant).
 
 make_wallet_payment_params() ->
@@ -3341,7 +3398,8 @@ construct_domain_fixture() ->
                         ?pmt(digital_wallet, qiwi),
                         ?pmt(empty_cvv_bank_card, visa),
                         ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay)),
-                        ?pmt(crypto_currency, bitcoin)
+                        ?pmt(crypto_currency, bitcoin),
+                        ?pmt(mobile, mts)
                     ])}
                 }
             ]},
@@ -3526,6 +3584,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(crypto_currency, bitcoin)),
+        hg_ct_fixture:construct_payment_method(?pmt(mobile, mts)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
@@ -3559,7 +3618,8 @@ construct_domain_fixture() ->
                 providers = {value, ?ordset([
                     ?prv(1),
                     ?prv(2),
-                    ?prv(3)
+                    ?prv(3),
+                    ?prv(4)
                 ])},
 
                 % TODO do we realy need this decision hell here?
@@ -4061,8 +4121,72 @@ construct_domain_fixture() ->
                 description = <<"Euroset">>,
                 risk_coverage = low
             }
-        }}
+        }},
 
+        {provider, #domain_ProviderObject{
+            ref = ?prv(4),
+            data = #domain_Provider{
+                name = <<"UnionTelecom">>,
+                description = <<"Mobile commerce terminal provider">>,
+                terminal = {decisions, [
+                    #domain_TerminalDecision{
+                        if_ = {condition,
+                                {payment_tool, {mobile_commerce, #domain_MobileCommerceCondition{
+                                    definition = {operator_is, mts}
+                                }}}
+                            },
+                        then_ = {value, [?prvtrm(11)]}
+                    }
+                ]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"Union Telecom">>
+                    }
+                },
+                abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                payment_terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(1)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(mobile, mts)
+                    ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(    1000, <<"RUB">>)},
+                        {exclusive, ?cash(10000000, <<"RUB">>)}
+                    )},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(21, 1000, operation_amount)
+                        )
+                    ]}
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(11),
+            data = #domain_Terminal{
+                name = <<"Parking Payment Terminal">>,
+                description = <<"Mts">>,
+                risk_coverage = low,
+                options = #{
+                    <<"goodPhone">> => <<"7891">>,
+                    <<"prefix">>    => <<"1234567890">>
+                }
+            }
+        }}
     ].
 
 construct_term_set_for_cost(LowerBound, UpperBound) ->

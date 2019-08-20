@@ -27,6 +27,12 @@
     {sleep, #'prxprv_SleepIntent'{timer = {timeout, To}, user_interaction = UI}}).
 -define(suspend(Tag, To, UI),
     {suspend, #'prxprv_SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
+-define(suspend(Tag, To, UI, TimeoutBehaviour),
+    {suspend, #'prxprv_SuspendIntent'{
+        tag = Tag,
+        timeout = {timeout, To},
+        user_interaction = UI,
+        timeout_behaviour = TimeoutBehaviour}}).
 -define(finish(Status),
     {finish, #'prxprv_FinishIntent'{status = Status}}).
 -define(success(Token),
@@ -250,6 +256,11 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         crypto_currency ->
             %% simple workflow
             sleep(1, <<"sleeping">>);
+        mobile_commerce ->
+            InvoiceID = get_invoice_id(PaymentInfo),
+            PaymentID = get_payment_id(PaymentInfo),
+            TimeoutBehaviour = {callback, <<"mobile_commerce">>},
+            suspend(<<InvoiceID/binary, "/", PaymentID/binary>>, 0, <<"suspended">>, undefined, TimeoutBehaviour);
         recurrent ->
             %% simple workflow without 3DS
             sleep(1, <<"sleeping">>);
@@ -306,6 +317,36 @@ handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentI
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
         intent     = undefined,
         next_state = <<"suspended">>
+    });
+handle_payment_callback(<<"mobile_commerce">>, ?processed(), <<"suspended">>, PaymentInfo, _Opts) ->
+    InvoiceID = get_invoice_id(PaymentInfo),
+    PaymentID = get_payment_id(PaymentInfo),
+    TimeoutBehaviour = case get_mobile_commerce(PaymentInfo) of
+        {<<"777">>, <<"0000000000">>} ->
+            {callback, <<"mobile_commerce failure">>};
+        _Other ->
+            {callback, <<"mobile_commerce finish success">>}
+    end,
+    respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
+        intent     = ?suspend(<<InvoiceID/binary, "/", PaymentID/binary>>, 1, undefined, TimeoutBehaviour),
+        next_state = <<"start">>
+    });
+handle_payment_callback(<<"mobile_commerce failure">>, ?processed(), <<"start">>, PaymentInfo, _Opts) ->
+    InvoiceID = get_invoice_id(PaymentInfo),
+    PaymentID = get_payment_id(PaymentInfo),
+    Failure = #domain_Failure{
+        code = <<"authorization_failed">>,
+        reason = <<"test">>,
+        sub = #domain_SubFailure{code = <<"unknown">>}},
+    TimeoutBehaviour = {operation_failure, {failure, Failure}},
+    respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
+        intent     = ?suspend(<<InvoiceID/binary, "/", PaymentID/binary>>, 1, undefined, TimeoutBehaviour),
+        next_state = <<"start">>
+    });
+handle_payment_callback(<<"mobile_commerce finish success">>, ?processed(), <<"start">>, _PaymentInfo, _Opts) ->
+    respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
+        intent     = ?finish(?success(undefined)),
+        next_state = <<"finish">>
     });
 handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) ->
     {{ok, PaymentInfo}, _} = get_payment_info(Tag),
@@ -391,6 +432,11 @@ suspend(Tag, Timeout, State, UserInteraction) ->
         intent     = ?suspend(Tag, Timeout, UserInteraction),
         next_state = State
     }.
+suspend(Tag, Timeout, State, UserInteraction, TimeoutBehaviour) ->
+    #prxprv_PaymentProxyResult{
+        intent     = ?suspend(Tag, Timeout, UserInteraction, TimeoutBehaviour),
+        next_state = State
+    }.
 
 respond(Response, CallbackResult) ->
     #prxprv_PaymentCallbackResult{
@@ -413,6 +459,16 @@ get_payment_id(#prxprv_PaymentInfo{payment = Payment}) ->
 
 get_refund_id(#prxprv_PaymentInfo{refund = Refund}) ->
     Refund#prxprv_InvoicePaymentRefund.id.
+
+get_mobile_commerce(#prxprv_PaymentInfo{payment = Payment}) ->
+    #prxprv_InvoicePayment{payment_resource = Resource} = Payment,
+    {disposable_payment_resource, #domain_DisposablePaymentResource{payment_tool = PaymentTool}} = Resource,
+    {mobile_commerce, #domain_MobileCommerce{phone = MobilePhone}} = PaymentTool,
+    #domain_MobilePhone{
+        cc = CC,
+        ctn = Phone
+    } = MobilePhone,
+    {CC, Phone}.
 
 get_invoice_id(#prxprv_PaymentInfo{invoice = Invoice}) ->
     Invoice#prxprv_Invoice.id.
@@ -453,7 +509,9 @@ get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
     digital_wallet;
 get_payment_tool_scenario({'crypto_currency', bitcoin}) ->
-    crypto_currency.
+    crypto_currency;
+get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = mts}}) ->
+    mobile_commerce.
 
 -spec make_payment_tool(PaymenToolCode) -> PaymenTool when
     PaymenToolCode :: atom() | {temporary_unavailability, failure_scenario()},
@@ -508,6 +566,28 @@ make_payment_tool(tokenized_bank_card) ->
 make_payment_tool(crypto_currency) ->
     {
         {crypto_currency, bitcoin},
+        <<"">>
+    };
+make_payment_tool(mobile_commerce_failure) ->
+    {
+        {mobile_commerce, #domain_MobileCommerce{
+            operator = mts,
+            phone = #domain_MobilePhone{
+                cc = <<"777">>,
+                ctn = <<"0000000000">>
+            }
+        }},
+        <<"">>
+    };
+make_payment_tool(mobile_commerce) ->
+    {
+        {mobile_commerce, #domain_MobileCommerce{
+            operator = mts,
+            phone = #domain_MobilePhone{
+                cc = <<"7">>,
+                ctn = <<"9876543210">>
+            }
+        }},
         <<"">>
     }.
 

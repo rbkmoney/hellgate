@@ -90,9 +90,12 @@
         #payproc_SessionFinished{result = Result}
     }
 ).
--define(session_suspended(Tag),
+-define(session_suspended(Tag, TimeoutBehaviour),
     {session_suspended,
-        #payproc_SessionSuspended{tag = Tag}
+        #payproc_SessionSuspended{
+            tag = Tag,
+            timeout_behaviour = TimeoutBehaviour
+        }
     }
 ).
 -define(session_activated(),
