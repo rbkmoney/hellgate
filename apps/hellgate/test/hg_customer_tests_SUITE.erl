@@ -245,9 +245,7 @@ start_binding_w_failure(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
-    ] = next_event(CustomerID, Client),
-    [
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -271,9 +269,7 @@ start_binding(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
-    ] = next_event(CustomerID, Client),
-    [
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -298,9 +294,7 @@ start_binding_w_tds(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
-    ] = next_event(CustomerID, Client),
-    [
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -321,9 +315,9 @@ start_two_bindings(C) ->
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     CustomerBindingParams =
         hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
-    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1, status = ?customer_binding_creating()} =
+    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2, status = ?customer_binding_creating()} =
+    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     [
         ?customer_created(_, _, _, _, _, _)

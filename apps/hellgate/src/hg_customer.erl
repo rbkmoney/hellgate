@@ -238,8 +238,13 @@ process_creating_bindings([Binding | Rest], St) ->
         domain_revision = DomainRevision
     } = Binding,
     PartyID = get_party_id(St),
-    PaytoolID = create_recurrent_paytool(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
-    Changes0 = [?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))],
+    Params = create_paytool_params(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
+    Changes0 = case try_get_payment_tool(Params#payproc_RecurrentPaymentToolParams.id) of
+        undefined ->
+            create_recurrent_paytool(BindingID, Params);
+        _ ->
+            []
+    end,
     Changes1 = process_creating_bindings(Rest, St),
     Changes0 ++ Changes1;
 process_creating_bindings([], _St) ->
@@ -338,20 +343,39 @@ start_binding(BindingParams, St) ->
     PartyRevision = hg_party:get_party_revision(PartyID),
     Binding = construct_binding(BindingID, PaytoolID, PaymentResource, PartyRevision, DomainRevision),
     PaytoolParams = create_paytool_params(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
-    _ = hg_recurrent_paytool:validate_paytool_params(PaytoolParams),
-    Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
+    _ = validate_paytool_params(PaytoolParams),
+    Changes0 = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
+    Changes1 = create_recurrent_paytool(BindingID, PaytoolParams), %% @TODO: Remove after migration
     #{
         response => {ok, Binding},
-        changes  => Changes,
+        changes  => Changes0 ++ Changes1,
         action   => hg_machine_action:instant()
     }.
+
+validate_paytool_params(PaytoolParams) ->
+    try
+        ok = hg_recurrent_paytool:validate_paytool_params(PaytoolParams)
+    catch
+        throw:(Exception = #payproc_InvalidUser{}) ->
+            throw(Exception);
+        throw:(Exception = #payproc_InvalidPartyStatus{}) ->
+            throw(Exception);
+        throw:(Exception = #payproc_InvalidShopStatus{}) ->
+            throw(Exception);
+        throw:(Exception = #payproc_InvalidContractStatus{}) ->
+            throw(Exception);
+        throw:(Exception = #payproc_OperationNotPermitted{}) ->
+            throw(Exception);
+        throw:(#payproc_InvalidPaymentMethod{}) ->
+            throw(#payproc_OperationNotPermitted{})
+    end.
 
 construct_binding(BindingID, RecPaymentToolID, PaymentResource, PartyRevision, DomainRevision) ->
     #payproc_CustomerBinding{
         id                  = BindingID,
         rec_payment_tool_id = RecPaymentToolID,
         payment_resource    = PaymentResource,
-        status              = ?customer_binding_creating(),
+        status              = ?customer_binding_pending(), %% @TODO: `creating` after migration
         party_revision      = PartyRevision,
         domain_revision     = DomainRevision
     }.
@@ -418,24 +442,16 @@ create_paytool_params(ID, PartyID, PartyRevision, DomainRevision, PaymentResourc
         payment_resource = PaymentResource
     }.
 
-create_recurrent_paytool(ID, PartyID, PartyRevision, DomainRevision, PaymentResource, St) ->
-    Params = create_paytool_params(ID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
-    case issue_recurrent_paytools_call('Create', [Params]) of
-        {ok, RecurrentPaytool} ->
-            RecurrentPaytool#payproc_RecurrentPaymentTool.id;
-        {exception, Exception} when
-            Exception =:= #payproc_InvalidUser{};
-            Exception =:= #payproc_InvalidPartyStatus{};
-            Exception =:= #payproc_InvalidShopStatus{};
-            Exception =:= #payproc_InvalidContractStatus{};
-            Exception =:= #payproc_OperationNotPermitted{}
-        ->
-            throw(Exception);
-        % TODO
-        % These are essentially the same, we should probably decide on some kind
-        % of exception encompassing both.
-        {exception, #payproc_InvalidPaymentMethod{}} ->
-            throw(#payproc_OperationNotPermitted{})
+create_recurrent_paytool(BindingID, Params) ->
+    {ok, _} = issue_recurrent_paytools_call('Create', [Params]),
+    [?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))].
+
+try_get_payment_tool(PaymentToolID) ->
+    try
+        issue_recurrent_paytools_call('Get', [PaymentToolID])
+    catch
+        throw:(#payproc_RecurrentPaymentToolNotFound{}) ->
+            undefined
     end.
 
 get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
@@ -1032,18 +1048,16 @@ unmarshal(
     #{
         <<"id">>              := ID,
         <<"recpaytool_id">>   := RecPaymentToolID,
-        <<"payresource">>     := PaymentResource,
-        <<"party_revision">>  := PartyRevision,
-        <<"domain_revision">> := DomainRevision
-    }
+        <<"payresource">>     := PaymentResource
+    } = Binding
 ) ->
     #payproc_CustomerBinding{
         id                  = unmarshal(str              , ID),
         rec_payment_tool_id = unmarshal(str              , RecPaymentToolID),
         payment_resource    = unmarshal(payment_resource , PaymentResource),
-        status              = ?customer_binding_creating(),
-        party_revision      = unmarshal(int              , PartyRevision),
-        domain_revision     = unmarshal(int              , DomainRevision)
+        status              = ?customer_binding_pending(), %% @TODO: `creating` after migration
+        party_revision      = unmarshal(int, maps:get(<<"party_revision">>, Binding, undefined)),
+        domain_revision     = unmarshal(int, maps:get(<<"domain_revision">>, Binding, undefined))
     };
 
 unmarshal(

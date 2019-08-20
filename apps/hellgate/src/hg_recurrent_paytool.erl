@@ -94,11 +94,12 @@ handle_function(Func, Args, Opts) ->
     ).
 
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
-    RecPaymentToolID = get_paytool_id(RecurrentPaymentToolParams),
+    RecurrentPaymentToolParams0 = ensure_paytool_id_defined(RecurrentPaymentToolParams),
+    RecPaymentToolID = get_paytool_id(RecurrentPaymentToolParams0),
     ok = set_meta(RecPaymentToolID),
-    RecurrentPaymentToolParams0 = ensure_domain_revision_defined(RecurrentPaymentToolParams),
-    _ = validate_paytool_params(RecurrentPaymentToolParams0),
-    ok = start(RecPaymentToolID, RecurrentPaymentToolParams0),
+    RecurrentPaymentToolParams1 = ensure_domain_revision_defined(RecurrentPaymentToolParams0),
+    _ = validate_paytool_params(RecurrentPaymentToolParams1),
+    ok = start(RecPaymentToolID, RecurrentPaymentToolParams1),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
@@ -131,8 +132,11 @@ ensure_domain_revision_defined(#payproc_RecurrentPaymentToolParams{domain_revisi
 ensure_domain_revision_defined(Params) ->
     Params.
 
-get_paytool_id(#payproc_RecurrentPaymentToolParams{id = undefined}) ->
-    hg_utils:unique_id();
+ensure_paytool_id_defined(Params = #payproc_RecurrentPaymentToolParams{id = undefined}) ->
+    Params#payproc_RecurrentPaymentToolParams{id = hg_utils:unique_id()};
+ensure_paytool_id_defined(Params) ->
+    Params.
+
 get_paytool_id(#payproc_RecurrentPaymentToolParams{id = ID}) ->
     ID.
 
