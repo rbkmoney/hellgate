@@ -1055,7 +1055,7 @@ unmarshal(
         id                  = unmarshal(str              , ID),
         rec_payment_tool_id = unmarshal(str              , RecPaymentToolID),
         payment_resource    = unmarshal(payment_resource , PaymentResource),
-        status              = ?customer_binding_pending(), %% @TODO: `creating` after migration
+        status              = ?customer_binding_creating(),
         party_revision      = unmarshal(int, maps:get(<<"party_revision">>, Binding, undefined)),
         domain_revision     = unmarshal(int, maps:get(<<"domain_revision">>, Binding, undefined))
     };

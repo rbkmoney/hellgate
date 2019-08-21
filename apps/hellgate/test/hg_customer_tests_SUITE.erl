@@ -245,7 +245,7 @@ start_binding_w_failure(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
+        ?customer_binding_changed(_, ?customer_binding_started(_, _)),
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -268,8 +268,9 @@ start_binding(C) ->
     [
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
+    EventBinding = CustomerBinding#payproc_CustomerBinding{status = ?customer_binding_creating()},
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
+        ?customer_binding_changed(_, ?customer_binding_started(EventBinding, _)),
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -294,7 +295,7 @@ start_binding_w_tds(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
+        ?customer_binding_changed(_, ?customer_binding_started(_, _)),
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
     ] = next_event(CustomerID, Client),
     [
@@ -315,16 +316,16 @@ start_two_bindings(C) ->
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     CustomerBindingParams =
         hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
-    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1} =
+    #payproc_CustomerBinding{id = CustomerBindingID1} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
+    #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     [
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     StartChanges = [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started('_', '_')),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started('_', '_')),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
@@ -343,26 +344,26 @@ start_two_bindings_w_tds(C) ->
     CustomerBindingParams = #payproc_CustomerBindingParams{
         payment_resource = make_disposable_payment_resource(PaymentTool, Session)
     },
-    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1} =
+    #payproc_CustomerBinding{id = CustomerBindingID1} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
+    #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     [
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     StartChanges = [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started('_', '_')),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested('_')),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started('_', '_')),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested('_'))
     ],
     [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, _)),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(_, _)),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested(UserInteraction1)),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, _)),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(_, _)),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested(UserInteraction2))
     ] = await_for_changes(StartChanges, CustomerID, Client),
