@@ -99,7 +99,7 @@ handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     ok = set_meta(RecPaymentToolID),
     RecurrentPaymentToolParams1 = ensure_domain_revision_defined(RecurrentPaymentToolParams0),
     _ = validate_paytool_params(RecurrentPaymentToolParams1),
-    ok = start(RecPaymentToolID, RecurrentPaymentToolParams1),
+    ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
@@ -208,6 +208,8 @@ map_history_error({error, notfound}) ->
     throw(#payproc_RecurrentPaymentToolNotFound{}).
 
 map_start_error({ok, _}) ->
+    ok;
+map_start_error({error, exists}) ->
     ok;
 map_start_error({error, Reason}) ->
     error(Reason).

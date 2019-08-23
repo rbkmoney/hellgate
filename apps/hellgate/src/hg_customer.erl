@@ -239,12 +239,7 @@ process_creating_bindings([Binding | Rest], St) ->
     } = Binding,
     PartyID = get_party_id(St),
     Params = create_paytool_params(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
-    Changes0 = case try_get_payment_tool(Params#payproc_RecurrentPaymentToolParams.id) of
-        undefined ->
-            create_recurrent_paytool(BindingID, Params);
-        _ ->
-            []
-    end,
+    Changes0 = create_recurrent_paytool(BindingID, Params),
     Changes1 = process_creating_bindings(Rest, St),
     Changes0 ++ Changes1;
 process_creating_bindings([], _St) ->
@@ -445,14 +440,6 @@ create_paytool_params(ID, PartyID, PartyRevision, DomainRevision, PaymentResourc
 create_recurrent_paytool(BindingID, Params) ->
     {ok, _} = issue_recurrent_paytools_call('Create', [Params]),
     [?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))].
-
-try_get_payment_tool(PaymentToolID) ->
-    try
-        issue_recurrent_paytools_call('Get', [PaymentToolID])
-    catch
-        throw:(#payproc_RecurrentPaymentToolNotFound{}) ->
-            undefined
-    end.
 
 get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
     EventRange = construct_event_range(LastEventID),
@@ -803,6 +790,7 @@ marshal(
         id                  = ID,
         rec_payment_tool_id = RecPaymentToolID,
         payment_resource    = PaymentResource,
+        status              = Status,
         party_revision      = PartyRevision,
         domain_revision     = DomainRevision
     }
@@ -811,6 +799,7 @@ marshal(
         <<"id">>              => marshal(str              , ID),
         <<"recpaytool_id">>   => marshal(str              , RecPaymentToolID),
         <<"payresource">>     => marshal(payment_resource , PaymentResource),
+        <<"status">>          => marshal(binding_status   , Status),
         <<"party_revision">>  => marshal(int              , PartyRevision),
         <<"domain_revision">> => marshal(int              , DomainRevision)
     };
@@ -853,6 +842,8 @@ marshal(
         <<"fingerprint">> => marshal(str, Fingerprint)
     });
 
+marshal(binding_status, ?customer_binding_creating()) ->
+    <<"creating">>;
 marshal(binding_status, ?customer_binding_pending()) ->
     <<"pending">>;
 marshal(binding_status, ?customer_binding_succeeded()) ->
@@ -1055,7 +1046,7 @@ unmarshal(
         id                  = unmarshal(str              , ID),
         rec_payment_tool_id = unmarshal(str              , RecPaymentToolID),
         payment_resource    = unmarshal(payment_resource , PaymentResource),
-        status              = ?customer_binding_creating(),
+        status              = unmarshal(binding_status, maps:get(<<"status">>, Binding, undefined)),
         party_revision      = unmarshal(int, maps:get(<<"party_revision">>, Binding, undefined)),
         domain_revision     = unmarshal(int, maps:get(<<"domain_revision">>, Binding, undefined))
     };
@@ -1080,6 +1071,10 @@ unmarshal(client_info, ClientInfo) ->
         fingerprint     = unmarshal(str, genlib_map:get(<<"fingerprint">>, ClientInfo))
     };
 
+unmarshal(binding_status, undefined) ->
+    ?customer_binding_pending();
+unmarshal(binding_status, <<"creating">>) ->
+    ?customer_binding_creating();
 unmarshal(binding_status, <<"pending">>) ->
     ?customer_binding_pending();
 unmarshal(binding_status, <<"succeeded">>) ->
