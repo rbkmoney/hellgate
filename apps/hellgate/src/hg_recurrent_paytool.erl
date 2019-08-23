@@ -99,7 +99,7 @@ handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     ok = set_meta(RecPaymentToolID),
     RecurrentPaymentToolParams1 = ensure_domain_revision_defined(RecurrentPaymentToolParams0),
     _ = validate_paytool_params(RecurrentPaymentToolParams1),
-    ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
+    ok = start(RecPaymentToolID, RecurrentPaymentToolParams1),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
