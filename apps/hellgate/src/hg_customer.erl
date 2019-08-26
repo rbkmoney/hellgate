@@ -701,6 +701,11 @@ assert_shop_operable(Shop) ->
 %% Marshalling
 %%
 
+-define(BINARY_BINDING_STATUS_CREATING, <<"creating">>).
+-define(BINARY_BINDING_STATUS_PENDING, <<"pending">>).
+-define(BINARY_BINDING_STATUS_SUCCEEDED, <<"succeeded">>).
+-define(BINARY_BINDING_STATUS_FAILED(Failure), [<<"failed">>, Failure]).
+
 -spec marshal_event_payload([customer_change()]) ->
     hg_machine:event_payload().
 marshal_event_payload(Changes) ->
@@ -843,16 +848,15 @@ marshal(
     });
 
 marshal(binding_status, ?customer_binding_creating()) ->
-    <<"creating">>;
+    ?BINARY_BINDING_STATUS_CREATING;
 marshal(binding_status, ?customer_binding_pending()) ->
-    <<"pending">>;
+    ?BINARY_BINDING_STATUS_PENDING;
 marshal(binding_status, ?customer_binding_succeeded()) ->
-    <<"succeeded">>;
+    ?BINARY_BINDING_STATUS_SUCCEEDED;
 marshal(binding_status, ?customer_binding_failed(Failure)) ->
-    [
-        <<"failed">>,
+    ?BINARY_BINDING_STATUS_FAILED(
         marshal(failure, Failure)
-    ];
+    );
 
 marshal(binding_change_payload, ?customer_binding_started(CustomerBinding, Timestamp)) ->
     [
@@ -1042,13 +1046,16 @@ unmarshal(
         <<"payresource">>     := PaymentResource
     } = Binding
 ) ->
+    Status = maps:get(<<"status">>, Binding, ?BINARY_BINDING_STATUS_PENDING),
+    PartyRevision = maps:get(<<"party_revision">>, Binding, undefined),
+    DomainRevision = maps:get(<<"domain_revision">>, Binding, undefined),
     #payproc_CustomerBinding{
-        id                  = unmarshal(str              , ID),
-        rec_payment_tool_id = unmarshal(str              , RecPaymentToolID),
-        payment_resource    = unmarshal(payment_resource , PaymentResource),
-        status              = unmarshal(binding_status, maps:get(<<"status">>, Binding, undefined)),
-        party_revision      = unmarshal(int, maps:get(<<"party_revision">>, Binding, undefined)),
-        domain_revision     = unmarshal(int, maps:get(<<"domain_revision">>, Binding, undefined))
+        id                  = unmarshal(str             , ID),
+        rec_payment_tool_id = unmarshal(str             , RecPaymentToolID),
+        payment_resource    = unmarshal(payment_resource, PaymentResource),
+        status              = unmarshal(binding_status  , Status),
+        party_revision      = unmarshal(int             , PartyRevision),
+        domain_revision     = unmarshal(int             , DomainRevision)
     };
 
 unmarshal(
@@ -1071,15 +1078,13 @@ unmarshal(client_info, ClientInfo) ->
         fingerprint     = unmarshal(str, genlib_map:get(<<"fingerprint">>, ClientInfo))
     };
 
-unmarshal(binding_status, undefined) ->
-    ?customer_binding_pending();
-unmarshal(binding_status, <<"creating">>) ->
+unmarshal(binding_status, ?BINARY_BINDING_STATUS_CREATING) ->
     ?customer_binding_creating();
-unmarshal(binding_status, <<"pending">>) ->
+unmarshal(binding_status, ?BINARY_BINDING_STATUS_PENDING) ->
     ?customer_binding_pending();
-unmarshal(binding_status, <<"succeeded">>) ->
+unmarshal(binding_status, ?BINARY_BINDING_STATUS_SUCCEEDED) ->
     ?customer_binding_succeeded();
-unmarshal(binding_status, [<<"failed">>, Failure]) ->
+unmarshal(binding_status, ?BINARY_BINDING_STATUS_FAILED(Failure)) ->
     ?customer_binding_failed(unmarshal(failure, Failure));
 
 unmarshal(binding_change_payload, [<<"started">>, Binding]) ->
