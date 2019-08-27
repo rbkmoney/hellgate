@@ -65,7 +65,7 @@ services:
       - SERVICE_NAME=shumway-db
 
   shumpune:
-    image: dr2.rbkmoney.com/rbkmoney/shumpune:7084098cdda5df734cc1ce1bc2dbf73442cd9288
+    image: dr2.rbkmoney.com/rbkmoney/shumpune:0e19e7eec1d5eab59f9e9b63188998947423810f
     restart: unless-stopped
     entrypoint:
       - java
