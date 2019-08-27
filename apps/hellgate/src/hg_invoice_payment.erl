@@ -832,17 +832,17 @@ choose_external_account(Currency, VS, Revision) ->
             undefined
     end.
 
-get_account_state(AccountType, AccountMap, Accounts) ->
+get_account_id(AccountType, AccountMap) ->
     % FIXME move me closer to hg_accounting
     case AccountMap of
         #{AccountType := AccountID} ->
-            #{AccountID := AccountState} = Accounts,
-            AccountState;
+            AccountID;
         #{} ->
             undefined
     end.
 
-get_available_amount(#{min_available_amount := V}) ->
+get_available_amount(AccountID, Clock) ->
+    #{min_available_amount := V} = hg_accounting:get_balance(AccountID, Clock),
     V.
 
 construct_payment_plan_id(St) ->
@@ -913,7 +913,7 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         Revision
     ),
     Invoice             = get_invoice(Opts),
-    _AffectedAccounts   = hg_accounting:plan(
+    _Slocks   = hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment2),
         [
             {2, hg_cashflow:revert(get_cashflow(St))},
@@ -1523,9 +1523,9 @@ process_refund_cashflow(ID, Action, St) ->
     VS = collect_validation_varset(St, Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
-    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
+    Clock = prepare_refund_cashflow(RefundSt, St),
     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
-    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
+    case get_available_amount(get_account_id({merchant, settlement}, AccountMap), Clock) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
             Events0 = [?session_ev(?refunded(), ?session_started())],

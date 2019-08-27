@@ -9,6 +9,7 @@
 
 -export([get_account/1]).
 -export([get_balance/1]).
+-export([get_balance/2]).
 -export([create_account/1]).
 -export([create_account/2]).
 
@@ -26,6 +27,7 @@
 -type batch_id()        :: dmsl_accounter_thrift:'BatchID'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type batch()           :: {batch_id(), final_cash_flow()}.
+-type clock()           :: shumpune_shumpune_thrift:'Clock'().
 
 -export_type([batch/0]).
 
@@ -56,11 +58,18 @@ get_account(AccountID) ->
     balance().
 
 get_balance(AccountID) ->
-    case call_accounter('GetBalanceByID', [AccountID, #shumpune_LatestClock{}]) of
+    get_balance(AccountID, #shumpune_LatestClock{}).
+
+-spec get_balance(account_id(), clock()) ->
+    balance().
+
+get_balance(AccountID, Clock) ->
+    case call_accounter('GetBalanceByID', [AccountID, Clock]) of
         {ok, Result} ->
             construct_balance(AccountID, Result);
         {exception, #shumpune_AccountNotFound{}} ->
             hg_woody_wrapper:raise(#payproc_AccountNotFound{})
+        %% TODO Add ClockInFuture
     end.
 
 -spec create_account(currency_code()) ->
@@ -90,15 +99,17 @@ construct_prototype(CurrencyCode, Description) ->
 -type accounts_state() :: #{account_id() => account()}.
 
 -spec plan(plan_id(), batch() | [batch()]) ->
-    accounts_state().
+    clock() | [clock()].
 
 plan(PlanID, Batches) when is_list(Batches) ->
-    lists:foldl(
-        fun (Batch, AS) ->
-            maps:merge(plan(PlanID, Batch), AS)
-        end,
-        #{},
-        Batches
+    lists:reverse(
+        lists:foldl(
+            fun (Batch, AS) ->
+               [plan(PlanID, Batch) | AS]
+            end,
+            [],
+            Batches
+        )
     );
 plan(PlanID, Batch) ->
     do('Hold', construct_plan_change(PlanID, Batch)).
@@ -117,8 +128,8 @@ rollback(PlanID, Batches) ->
 
 do(Op, Plan) ->
     case call_accounter(Op, [Plan]) of
-        {ok, PlanLog} ->
-            collect_accounts_state(PlanLog);
+        {ok, Clock} ->
+            Clock;
         {exception, Exception} ->
             error({accounting, Exception}) % FIXME
     end.
@@ -167,14 +178,6 @@ construct_posting_description(Details) when is_binary(Details) ->
     Details;
 construct_posting_description(undefined) ->
     <<>>.
-
-collect_accounts_state(#shumpune_PostingPlanLog{affected_accounts = Affected}) ->
-    maps:map(
-        fun (AccountID, Account) ->
-            construct_account(AccountID, Account)
-        end,
-        Affected
-    ).
 
 %%
 

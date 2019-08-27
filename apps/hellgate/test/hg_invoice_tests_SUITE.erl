@@ -1430,7 +1430,7 @@ get_cashflow_account(Type, CF) ->
             account_type = T
         }
     } <- CF, T == Type],
-    hg_ct_helper:get_account(ID).
+    hg_ct_helper:get_balance(ID).
 
 get_adjustment_fixture(Revision) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
