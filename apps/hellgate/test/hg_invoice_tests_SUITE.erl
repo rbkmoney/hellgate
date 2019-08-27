@@ -2626,7 +2626,7 @@ consistent_account_balances(C) ->
     ].
 
 consistent_account_balance(AccountID, Comment) ->
-    case hg_ct_helper:get_account(AccountID) of
+    case hg_ct_helper:get_balance(AccountID) of
         #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
             ok;
         #{} = Account ->

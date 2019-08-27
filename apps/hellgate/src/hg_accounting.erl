@@ -58,7 +58,7 @@ get_account(AccountID) ->
     balance().
 
 get_balance(AccountID) ->
-    get_balance(AccountID, #shumpune_LatestClock{}).
+    get_balance(AccountID, {latest, #shumpune_LatestClock{}}).
 
 -spec get_balance(account_id(), clock()) ->
     balance().
@@ -68,8 +68,9 @@ get_balance(AccountID, Clock) ->
         {ok, Result} ->
             construct_balance(AccountID, Result);
         {exception, #shumpune_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
-        %% TODO Add ClockInFuture
+            hg_woody_wrapper:raise(#payproc_AccountNotFound{});
+        {exception, #shumpune_ClockInFuture{}} ->
+            hg_woody_wrapper:raise(<<"Clock in future">>)
     end.
 
 -spec create_account(currency_code()) ->
