@@ -15,6 +15,8 @@ services:
         condition: service_healthy
       shumway:
         condition: service_healthy
+      shumpune:
+        condition: service_healthy
     mem_limit: 256M
 
   dominant:
@@ -61,5 +63,32 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - SERVICE_NAME=shumway-db
+
+  shumpune:
+    image: dr2.rbkmoney.com/rbkmoney/shumpune:7084098cdda5df734cc1ce1bc2dbf73442cd9288
+    restart: unless-stopped
+    entrypoint:
+      - java
+      - -Xmx512m
+      - -jar
+      - /opt/shumpune/shumpune.jar
+      - --spring.datasource.url=jdbc:postgresql://shumpune-db:5432/shumpune
+      - --spring.datasource.username=postgres
+      - --spring.datasource.password=postgres
+    depends_on:
+      - shumpune-db
+    healthcheck:
+      test: "curl http://localhost:8022/"
+      interval: 5s
+      timeout: 1s
+      retries: 20
+
+  shumpune-db:
+    image: dr.rbkmoney.com/rbkmoney/postgres:9.6
+    environment:
+      - POSTGRES_DB=shumpune
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - SERVICE_NAME=shumpune-db
 EOF
 

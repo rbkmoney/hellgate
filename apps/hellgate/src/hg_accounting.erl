@@ -207,4 +207,4 @@ construct_balance(
 %%
 
 call_accounter(Function, Args) ->
-    hg_woody_wrapper:call(accounter, Function, Args).
+    hg_woody_wrapper:call(shumpune, Function, Args).
