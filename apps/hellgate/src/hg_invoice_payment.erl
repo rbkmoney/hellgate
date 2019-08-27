@@ -1343,7 +1343,7 @@ cancel_adjustment(ID, St, Options) ->
 finalize_adjustment(ID, Intent, St, Options) ->
     Adjustment = get_adjustment(ID, St),
     ok = assert_adjustment_status(processed, Adjustment),
-    _AffectedAccounts = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
+    _Clocks = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
     Status = case Intent of
         capture ->
             ?adjustment_captured(hg_datetime:format_now());
@@ -1502,7 +1502,7 @@ process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opt
     Shop = get_shop(Opts),
     FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
     Invoice = get_invoice(Opts),
-    _AffectedAccounts = hg_accounting:plan(
+    _Clocks = hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
@@ -1554,7 +1554,7 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
 process_adjustment_cashflow(ID, _Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
-    _AffectedAccounts = prepare_adjustment_cashflow(Adjustment, St, Opts),
+    _Clocks = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
     {done, {Events, hg_machine_action:new()}}.
 %%
@@ -1686,7 +1686,7 @@ process_result({payment, processing_accounter}, Action, St) ->
 
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
-    _AffectedAccounts = case Target of
+    _Clocks = case Target of
         ?captured() ->
             commit_payment_cashflow(St);
         ?cancelled() ->
@@ -1697,7 +1697,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
 
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    _AffectedAccounts = commit_refund_cashflow(RefundSt, St),
+    _Clocks = commit_refund_cashflow(RefundSt, St),
         Events2 = [
             ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
         ],
@@ -1733,7 +1733,7 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
 process_failure({refund_new, ID}, Events, Action, Failure, St, RefundSt) ->
-    _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
+    _Clocks = rollback_refund_cashflow(RefundSt, St),
     {done, {Events ++ [?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))], Action}};
 process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
@@ -1744,7 +1744,7 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             Events1 = [?refund_ev(ID, E) || E <- SessionEvents],
             {next, {Events ++ Events1, SessionAction}};
         fatal ->
-            _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
+            _Clocks = rollback_refund_cashflow(RefundSt, St),
             Events1 = [
                 ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
             ],
@@ -1754,7 +1754,7 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
 process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
     error({invalid_capture_failure, Failure});
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
-    _AffectedAccounts = rollback_payment_cashflow(St),
+    _Clocks = rollback_payment_cashflow(St),
     {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}.
 
 retry_session(Action, Target, Timeout) ->
