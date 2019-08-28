@@ -112,13 +112,13 @@ plan(PlanID, Batch) ->
     do('Hold', construct_plan_change(PlanID, Batch)).
 
 -spec commit(plan_id(), [batch()]) ->
-    accounts_state().
+    clock().
 
 commit(PlanID, Batches) ->
     do('CommitPlan', construct_plan(PlanID, Batches)).
 
 -spec rollback(plan_id(), [batch()]) ->
-    accounts_state().
+    clock().
 
 rollback(PlanID, Batches) ->
     do('RollbackPlan', construct_plan(PlanID, Batches)).
