@@ -13,6 +13,7 @@
 -export([create_account/1]).
 -export([create_account/2]).
 
+-export([hold/2]).
 -export([plan/2]).
 -export([commit/2]).
 -export([rollback/2]).
@@ -95,20 +96,21 @@ construct_prototype(CurrencyCode, Description) ->
     }.
 
 %%
--spec plan(plan_id(), batch() | [batch()]) ->
-    clock() | [clock()].
+-spec plan(plan_id(), [batch()]) ->
+    ok.
 
 plan(PlanID, Batches) when is_list(Batches) ->
-    lists:reverse(
-        lists:foldl(
-            fun (Batch, AS) ->
-               [plan(PlanID, Batch) | AS]
-            end,
-            [],
-            Batches
-        )
-    );
-plan(PlanID, Batch) ->
+    lists:foreach(
+        fun (Batch) ->
+           _Clock = hold(PlanID, Batch)
+        end,
+        Batches
+    ).
+
+-spec hold(plan_id(), batch()) ->
+    clock().
+
+hold(PlanID, Batch) ->
     do('Hold', construct_plan_change(PlanID, Batch)).
 
 -spec commit(plan_id(), [batch()]) ->

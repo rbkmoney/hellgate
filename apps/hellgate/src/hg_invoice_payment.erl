@@ -916,7 +916,7 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         Revision
     ),
     Invoice             = get_invoice(Opts),
-    _Clocks   = hg_accounting:plan(
+    hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment2),
         [
             {2, hg_cashflow:revert(get_cashflow(St))},
@@ -1232,7 +1232,7 @@ collect_refund_cashflow(
     MerchantCashflow ++ ProviderCashflow.
 
 prepare_refund_cashflow(RefundSt, St) ->
-    hg_accounting:plan(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
+    hg_accounting:hold(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
 
 commit_refund_cashflow(RefundSt, St) ->
     hg_accounting:commit(construct_refund_plan_id(RefundSt, St), [get_refund_cashflow_plan(RefundSt)]).
@@ -1496,7 +1496,7 @@ process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opt
     Shop = get_shop(Opts),
     FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
     Invoice = get_invoice(Opts),
-    _Clocks = hg_accounting:plan(
+    _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
