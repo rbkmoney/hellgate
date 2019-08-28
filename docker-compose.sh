@@ -13,8 +13,6 @@ services:
     depends_on:
       machinegun:
         condition: service_healthy
-      shumway:
-        condition: service_healthy
       shumpune:
         condition: service_healthy
     mem_limit: 256M
@@ -36,33 +34,6 @@ services:
       interval: 5s
       timeout: 1s
       retries: 20
-
-  shumway:
-    image: dr.rbkmoney.com/rbkmoney/shumway:7a5f95ee1e8baa42fdee9c08cc0ae96cd7187d55
-    restart: unless-stopped
-    entrypoint:
-      - java
-      - -Xmx512m
-      - -jar
-      - /opt/shumway/shumway.jar
-      - --spring.datasource.url=jdbc:postgresql://shumway-db:5432/shumway
-      - --spring.datasource.username=postgres
-      - --spring.datasource.password=postgres
-    depends_on:
-      - shumway-db
-    healthcheck:
-      test: "curl http://localhost:8022/"
-      interval: 5s
-      timeout: 1s
-      retries: 20
-
-  shumway-db:
-    image: dr.rbkmoney.com/rbkmoney/postgres:9.6
-    environment:
-      - POSTGRES_DB=shumway
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - SERVICE_NAME=shumway-db
 
   shumpune:
     image: dr2.rbkmoney.com/rbkmoney/shumpune:0e19e7eec1d5eab59f9e9b63188998947423810f
