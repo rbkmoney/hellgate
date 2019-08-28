@@ -112,8 +112,7 @@ start_app(hellgate = AppName) ->
         {services, #{
             automaton           => <<"http://machinegun:8022/v1/automaton">>,
             eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
-            accounter           => <<"http://shumway:8022/accounter">>,
-            shumpune            => <<"http://shumpune:8022/shumpune">>,
+            accounter           => <<"http://shumpune:8022/shumpune">>,
             party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
             customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
             recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>,
