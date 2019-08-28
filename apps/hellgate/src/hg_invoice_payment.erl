@@ -842,8 +842,11 @@ get_account_id(AccountType, AccountMap) ->
     end.
 
 get_available_amount(AccountID, Clock) ->
-    #{min_available_amount := V} = hg_accounting:get_balance(AccountID, Clock),
-    V.
+    #{
+        min_available_amount := AvailableAmount
+    } =
+        hg_accounting:get_balance(AccountID, Clock),
+    AvailableAmount.
 
 construct_payment_plan_id(St) ->
     construct_payment_plan_id(get_invoice(get_opts(St)), get_payment(St)).
@@ -913,7 +916,7 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         Revision
     ),
     Invoice             = get_invoice(Opts),
-    _Slocks   = hg_accounting:plan(
+    _Clocks   = hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment2),
         [
             {2, hg_cashflow:revert(get_cashflow(St))},
