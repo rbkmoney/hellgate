@@ -95,8 +95,6 @@ construct_prototype(CurrencyCode, Description) ->
     }.
 
 %%
--type accounts_state() :: #{account_id() => account()}.
-
 -spec plan(plan_id(), batch() | [batch()]) ->
     clock() | [clock()].
 
