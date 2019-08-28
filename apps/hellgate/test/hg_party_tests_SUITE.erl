@@ -3,7 +3,7 @@
 -include("hg_ct_domain.hrl").
 -include("party_events.hrl").
 -include_lib("common_test/include/ct.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -13,6 +13,8 @@
 -export([end_per_group/2]).
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
+
+-export([construct_domain_fixture/0]).
 
 -export([party_creation/1]).
 -export([party_not_found_on_retrieval/1]).
@@ -1575,6 +1577,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
         hg_ct_fixture:construct_business_schedule(?bussched(1)),
+        hg_ct_fixture:construct_business_schedule(?bussched(2)),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),

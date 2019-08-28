@@ -1,5 +1,5 @@
 -module(hg_client_invoice_templating).
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([start/1]).
 -export([start/2]).

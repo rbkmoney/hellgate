@@ -13,7 +13,7 @@
 %%%    belonging to this party
 
 -module(hg_invoice).
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -define(NS, <<"invoice">>).
 

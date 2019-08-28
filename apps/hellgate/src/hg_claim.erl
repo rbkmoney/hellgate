@@ -1,8 +1,8 @@
 -module(hg_claim).
 
 -include("party_events.hrl").
--include_lib("dmsl/include/dmsl_domain_thrift.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([create/5]).
 -export([update/5]).
@@ -23,6 +23,8 @@
 
 -export([assert_revision/2]).
 -export([assert_pending/1]).
+-export([assert_changeset_applicable/4]).
+-export([assert_changeset_acceptable/4]).
 -export([raise_invalid_changeset/1]).
 
 %% Types
@@ -379,7 +381,9 @@ update_contract(
 update_contract({legal_agreement_bound, LegalAgreement}, Contract) ->
     Contract#domain_Contract{legal_agreement = LegalAgreement};
 update_contract({report_preferences_changed, ReportPreferences}, Contract) ->
-    Contract#domain_Contract{report_preferences = ReportPreferences}.
+    Contract#domain_Contract{report_preferences = ReportPreferences};
+update_contract({contractor_changed, ContractorID}, Contract) ->
+    Contract#domain_Contract{contractor_id = ContractorID}.
 
 apply_shop_effect(_, {created, Shop}, Party) ->
     hg_party:set_shop(Shop, Party);
@@ -439,6 +443,11 @@ assert_pending(#payproc_Claim{status = ?pending()}) ->
 assert_pending(#payproc_Claim{status = Status}) ->
     throw(#payproc_InvalidClaimStatus{status = Status}).
 
+-spec assert_changeset_applicable(claim() | changeset(), timestamp(), revision(), party()) ->
+    ok | no_return().
+
+assert_changeset_applicable(#payproc_Claim{changeset = Changeset}, Timestamp, Revision, Party) ->
+    assert_changeset_applicable(Changeset, Timestamp, Revision, Party);
 assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
     case Change of
         ?contract_modification(ID, Modification) ->
@@ -572,6 +581,11 @@ get_payment_institution_realm(Ref, Revision, ContractID) ->
             raise_invalid_payment_institution(ContractID, Ref)
     end.
 
+-spec assert_changeset_acceptable(claim() | changeset(), timestamp(), revision(), party()) ->
+    ok | no_return().
+
+assert_changeset_acceptable(#payproc_Claim{changeset = Changeset}, Timestamp, Revision, Party) ->
+    assert_changeset_acceptable(Changeset, Timestamp, Revision, Party);
 assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),
     Party = apply_effects(Effects, Timestamp, Party0),

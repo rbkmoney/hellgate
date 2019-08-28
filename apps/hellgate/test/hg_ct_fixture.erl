@@ -1,8 +1,8 @@
 -module(hg_ct_fixture).
 
 -include("hg_ct_domain.hrl").
--include_lib("dmsl/include/dmsl_base_thrift.hrl").
--include_lib("dmsl/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_base_thrift.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 %%
 
 -export([construct_currency/1]).

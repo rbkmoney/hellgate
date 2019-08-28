@@ -2,7 +2,8 @@
 
 -include("party_events.hrl").
 -include("legacy_party_structures.hrl").
--include_lib("dmsl/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
 %% Machine callbacks
 
@@ -131,6 +132,12 @@ process_signal({repair, _}, _Machine) ->
 
 process_call({{'PartyManagement', Fun}, FunArgs}, Machine) ->
     [_UserInfo, PartyID | Args] = FunArgs,
+    process_call_(PartyID, Fun, Args, Machine);
+process_call({{'ClaimCommitter', Fun}, FunArgs}, Machine) ->
+    [PartyID | Args] = FunArgs,
+    process_call_(PartyID, Fun, Args, Machine).
+
+process_call_(PartyID, Fun, Args, Machine) ->
     #{id := PartyID, history := History, aux_state := WrappedAuxSt} = Machine,
     try
         scoper:scope(
@@ -255,6 +262,54 @@ handle_call('RevokeClaim', [ID, ClaimRevision, Reason], AuxSt, St) ->
     respond(
         ok,
         [finalize_claim(Claim, Timestamp)],
+        AuxSt,
+        St
+    );
+
+%% ClaimCommitter
+
+handle_call('Accept', [Claim], AuxSt, St) ->
+    ok = assert_party_operable(St),
+    #claim_management_Claim{
+        changeset = Changeset,
+        created_at = Timestamp % FIXME: what time should we use?
+    } = Claim,
+    PayprocClaim = hg_claim_committer:from_claim_mgmt(Claim),
+    % Timestamp = hg_datetime:format_now(),
+    Revision = hg_domain:head(),
+    Party = get_st_party(St),
+    try
+        ok = hg_claim:assert_changeset_applicable(PayprocClaim, Timestamp, Revision, Party),
+        ok = hg_claim:assert_changeset_acceptable(PayprocClaim, Timestamp, Revision, Party),
+        respond(
+            ok,
+            [],
+            AuxSt,
+            St
+        )
+    catch
+        throw:#payproc_InvalidChangeset{reason = Reason0} ->
+            Reason1 = io_lib:format("~9999tp", [Reason0]),
+            Reason2 = unicode:characters_to_binary(Reason1),
+            erlang:throw(#claim_management_InvalidChangeset{reason = Reason2, invalid_changeset = Changeset})
+    end;
+
+handle_call('Commit', [CmClaim], AuxSt, St) ->
+    ok = assert_party_operable(St),
+    PayprocClaim = hg_claim_committer:from_claim_mgmt(CmClaim),
+    Timestamp = hg_datetime:format_now(),
+    Revision = hg_domain:head(),
+    Party = get_st_party(St),
+    AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, PayprocClaim),
+    PartyRevision = get_next_party_revision(St),
+    Changes = [
+        ?claim_created(PayprocClaim),
+        finalize_claim(AcceptedClaim, Timestamp),
+        ?revision_changed(Timestamp, PartyRevision)
+    ],
+    respond(
+        ok,
+        Changes,
         AuxSt,
         St
     ).

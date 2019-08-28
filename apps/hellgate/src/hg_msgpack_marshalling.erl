@@ -1,5 +1,5 @@
 -module(hg_msgpack_marshalling).
--include_lib("dmsl/include/dmsl_msgpack_thrift.hrl").
+-include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 -include_lib("mg_proto/include/mg_proto_msgpack_thrift.hrl").
 
 %% API
@@ -73,7 +73,7 @@ unmarshal({arr, Array}) ->
 
 %%
 
--include_lib("dmsl/include/dmsl_json_thrift.hrl").
+-include_lib("damsel/include/dmsl_json_thrift.hrl").
 
 -spec marshal
     (json, dmsl_json_thrift:'Value'()) -> value().

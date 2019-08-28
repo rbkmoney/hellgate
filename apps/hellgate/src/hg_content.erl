@@ -1,5 +1,5 @@
 -module(hg_content).
--include_lib("dmsl/include/dmsl_base_thrift.hrl").
+-include_lib("damsel/include/dmsl_base_thrift.hrl").
 
 -export([marshal/1]).
 -export([unmarshal/1]).
