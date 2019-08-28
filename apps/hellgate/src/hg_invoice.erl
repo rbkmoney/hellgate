@@ -575,21 +575,13 @@ handle_call({{'Invoicing', 'RefundPayment'}, [_UserInfo, _InvoiceID, PaymentID, 
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    wrap_payment_impact(
-        PaymentID,
-        hg_invoice_payment:refund(Params, PaymentSession, get_payment_opts(St)),
-        St
-    );
+    start_refund(refund, Params, PaymentID, PaymentSession, St);
 
 handle_call({{'Invoicing', 'CreateManualRefund'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    wrap_payment_impact(
-        PaymentID,
-        hg_invoice_payment:manual_refund(Params, PaymentSession, get_payment_opts(St)),
-        St
-    );
+    start_refund(manual_refund, Params, PaymentID, PaymentSession, St);
 
 handle_call({{'Invoicing', 'CreatePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
@@ -798,6 +790,80 @@ validate_result(#{changes := Changes = [_ | _], state := St}) ->
     ok;
 validate_result(_Result) ->
     ok.
+
+%%
+
+start_refund(RefundType, RefundParams0, PaymentID, PaymentSession, St) ->
+    RefundParams = ensure_refund_id_defined(RefundType, RefundParams0, PaymentSession),
+    case get_refund(get_refund_id(RefundParams), PaymentSession) of
+        undefined ->
+            start_new_refund(RefundType, PaymentID, RefundParams, PaymentSession, St);
+        Refund ->
+            #{
+                response => Refund,
+                state    => St
+            }
+    end.
+
+get_refund_id(#payproc_InvoicePaymentRefundParams{id = RefundID}) ->
+    RefundID.
+
+ensure_refund_id_defined(RefundType, Params, PaymentSession) ->
+    RefundID = force_refund_id_format(RefundType, define_refund_id(Params, PaymentSession)),
+    Params#payproc_InvoicePaymentRefundParams{id = RefundID}.
+
+define_refund_id(#payproc_InvoicePaymentRefundParams{id = undefined}, PaymentSession) ->
+    make_new_refund_id(PaymentSession);
+define_refund_id(#payproc_InvoicePaymentRefundParams{id = ID}, _PaymentSession) ->
+    ID.
+
+-define(MANUAL_REFUND_ID_PREFIX, "m").
+
+%% If something breaks - this is why
+force_refund_id_format(manual_refund, Correct = <<?MANUAL_REFUND_ID_PREFIX, _Rest/binary>>) ->
+    Correct;
+force_refund_id_format(manual_refund, Incorrect) ->
+    <<?MANUAL_REFUND_ID_PREFIX, Incorrect/binary>>;
+force_refund_id_format(refund, <<?MANUAL_REFUND_ID_PREFIX, _ID/binary>>) ->
+    throw(#'InvalidRequest'{errors = [<<"Invalid id format">>]});
+force_refund_id_format(refund, ID) ->
+    ID.
+
+parse_refund_id(<<?MANUAL_REFUND_ID_PREFIX, ID/binary>>) ->
+    ID;
+parse_refund_id(ID) ->
+    ID.
+
+make_new_refund_id(PaymentSession) ->
+    Refunds = hg_invoice_payment:get_refunds(PaymentSession),
+    construct_refund_id(Refunds).
+
+construct_refund_id(Refunds) ->
+    % we can't be sure that old ids were constructed in strict increasing order, so we need to find max ID
+    MaxID = lists:foldl(fun find_max_refund_id/2, 0, Refunds),
+    genlib:to_binary(MaxID + 1).
+
+find_max_refund_id(#domain_InvoicePaymentRefund{id = ID}, Max) ->
+    IntID = genlib:to_int(parse_refund_id(ID)),
+    erlang:max(IntID, Max).
+
+get_refund(ID, PaymentSession) ->
+    try
+        hg_invoice_payment:get_refund(ID, PaymentSession)
+    catch
+        throw:#payproc_InvoicePaymentRefundNotFound{} ->
+            undefined
+    end.
+
+start_new_refund(RefundType, PaymentID, Params, PaymentSession, St) when
+    RefundType =:= refund;
+    RefundType =:= manual_refund
+->
+    wrap_payment_impact(
+        PaymentID,
+        hg_invoice_payment:RefundType(Params, PaymentSession, get_payment_opts(St)),
+        St
+    ).
 
 %%
 
@@ -1303,3 +1369,27 @@ wrap_event_payload(Payload) ->
         format_version => 1,
         data => {bin, Bin}
     }.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-spec test() -> _.
+
+create_dummy_refund_with_id(ID) ->
+    #domain_InvoicePaymentRefund{
+        id              = genlib:to_binary(ID),
+        created_at      = hg_datetime:format_now(),
+        domain_revision = 42,
+        party_revision  = 42,
+        status          = ?refund_pending(),
+        reason          = <<"No reason">>,
+        cash            = 1000,
+        cart            = unefined
+    }.
+
+-spec construct_refund_id_test() -> _.
+construct_refund_id_test() ->
+    IDs = [X||{_, X} <- lists:sort([ {rand:uniform(), N} || N <- lists:seq(1, 10)])], % 10 IDs shuffled
+    Refunds = lists:map(fun create_dummy_refund_with_id/1, IDs),
+    ?assert(<<"11">> =:= construct_refund_id(Refunds)).
+-endif.

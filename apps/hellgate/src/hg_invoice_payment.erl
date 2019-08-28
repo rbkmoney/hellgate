@@ -1036,16 +1036,16 @@ make_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
-    ID = construct_refund_id(get_refunds(St)),
     #domain_InvoicePaymentRefund {
-        id              = ID,
+        id              = Params#payproc_InvoicePaymentRefundParams.id,
         created_at      = hg_datetime:format_now(),
         domain_revision = Revision,
         party_revision  = PartyRevision,
         status          = ?refund_pending(),
         reason          = Params#payproc_InvoicePaymentRefundParams.reason,
         cash            = Cash,
-        cart            = Cart
+        cart            = Cart,
+        external_id     = Params#payproc_InvoicePaymentRefundParams.external_id
     }.
 
 make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
@@ -1061,15 +1061,6 @@ make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
     Provider = get_route_provider(Route, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
     construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
-
-construct_refund_id(Refunds) ->
-    % we can't be sure that old ids were constructed in strict increasing order, so we need to find max ID
-    MaxID = lists:foldl(fun find_max_refund_id/2, 0, Refunds),
-    genlib:to_binary(MaxID + 1).
-
-find_max_refund_id(#domain_InvoicePaymentRefund{id = ID}, Max) ->
-    IntID = genlib:to_int(ID),
-    erlang:max(IntID, Max).
 
 assert_refund_cash(Cash, St) ->
     PaymentAmount = get_remaining_payment_amount(Cash, St),
@@ -3421,27 +3412,3 @@ unmarshal(risk_score, RiskScore) when is_atom(RiskScore) ->
 
 unmarshal(_, Other) ->
     Other.
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
--spec test() -> _.
-
-create_dummy_refund_with_id(ID) ->
-    #domain_InvoicePaymentRefund{
-        id              = genlib:to_binary(ID),
-        created_at      = hg_datetime:format_now(),
-        domain_revision = 42,
-        party_revision  = 42,
-        status          = ?refund_pending(),
-        reason          = <<"No reason">>,
-        cash            = 1000,
-        cart            = unefined
-    }.
-
--spec construct_refund_id_test() -> _.
-construct_refund_id_test() ->
-    IDs = [X||{_, X} <- lists:sort([ {rand:uniform(), N} || N <- lists:seq(1, 10)])], % 10 IDs shuffled
-    Refunds = lists:map(fun create_dummy_refund_with_id/1, IDs),
-    ?assert(<<"11">> =:= construct_refund_id(Refunds)).
--endif.
