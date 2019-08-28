@@ -56,7 +56,6 @@ handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
         hg_context:cleanup()
     end.
 
-
 -spec call(atom(), woody:func(), list()) ->
     term().
 
@@ -78,8 +77,9 @@ call(ServiceName, Function, Args, Opts) ->
 call(ServiceName, Function, Args, Opts, Deadline) ->
     Service = get_service_modname(ServiceName),
     Context = hg_context:get_woody_context(hg_context:load()),
+    Request = {Service, Function, Args},
     woody_client:call(
-        {Service, Function, Args},
+        Request,
         Opts#{event_handler => scoper_woody_event_handler},
         attach_deadline(Deadline, Context)
     ).

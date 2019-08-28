@@ -45,6 +45,8 @@
 -export([payment_w_another_shop_customer/1]).
 -export([payment_w_another_party_customer/1]).
 -export([payment_w_deleted_customer/1]).
+-export([payment_w_mobile_commerce/1]).
+-export([payment_suspend_timeout_failure/1]).
 -export([payments_w_bank_card_issuer_conditions/1]).
 -export([payments_w_bank_conditions/1]).
 -export([payment_success_on_second_try/1]).
@@ -72,9 +74,11 @@
 -export([payment_hold_auto_capturing/1]).
 -export([invalid_refund_party_status/1]).
 -export([invalid_refund_shop_status/1]).
+-export([payment_refund_idempotency/1]).
 -export([payment_refund_success/1]).
 -export([payment_manual_refund/1]).
 -export([payment_partial_refunds_success/1]).
+-export([payment_refund_id_types/1]).
 -export([payment_temporary_unavailability_retry_success/1]).
 -export([payment_temporary_unavailability_too_many_retries/1]).
 -export([invalid_amount_payment_partial_refund/1]).
@@ -158,7 +162,6 @@ groups() ->
     [
         {all_non_destructive_tests, [parallel], [
             {group, base_payments},
-
             payment_risk_score_check,
             payment_risk_score_check_fail,
             payment_risk_score_check_timeout,
@@ -204,6 +207,8 @@ groups() ->
             payment_w_another_shop_customer,
             payment_w_another_party_customer,
             payment_w_deleted_customer,
+            payment_w_mobile_commerce,
+            payment_suspend_timeout_failure,
             payment_success_on_second_try,
             payment_fail_after_silent_callback,
             payment_temporary_unavailability_retry_success,
@@ -224,6 +229,7 @@ groups() ->
             invalid_refund_shop_status,
             {refunds_, [parallel], [
                 retry_temporary_unavailability_refund,
+                payment_refund_idempotency,
                 payment_refund_success,
                 payment_partial_refunds_success,
                 invalid_amount_payment_partial_refund,
@@ -232,7 +238,8 @@ groups() ->
                 cant_start_simultaneous_partial_refunds
             ]},
             ineligible_payment_partial_refund,
-            payment_manual_refund
+            payment_manual_refund,
+            payment_refund_id_types
         ]},
 
         {holds_management, [parallel], [
@@ -280,7 +287,7 @@ groups() ->
 init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
-    % _ = dbg:tpl({'hg_invoice_payment', 'merge_change', '_'}, x),
+    % _ = dbg:tpl({'hg_invoice_payment', 'p', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
     {Apps, Ret} = hg_ct_helper:start_apps([
@@ -937,6 +944,52 @@ payment_w_crypto_currency_success(C) ->
     ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
     ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
     ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
+
+-spec payment_w_mobile_commerce(config()) -> _ | no_return().
+
+payment_w_mobile_commerce(C) ->
+    Client = cfg(client, C),
+    PayCash = 1001,
+    InvoiceID = start_invoice(<<"oatmeal">>, make_due_date(10), PayCash, C),
+    PaymentParams = make_mobile_commerce_params(success),
+    hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client).
+
+-spec payment_suspend_timeout_failure(config()) -> _ | no_return().
+
+payment_suspend_timeout_failure(C) ->
+    Client = cfg(client, C),
+    PayCash = 1001,
+    InvoiceID = start_invoice(<<"oatmeal">>, make_due_date(10), PayCash, C),
+    PaymentParams = make_mobile_commerce_params(failure),
+    _ = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, _Failure})))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
+    ] = next_event(InvoiceID, Client).
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
 
@@ -1631,6 +1684,48 @@ invalid_refund_shop_status(C) ->
     }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
+
+-spec payment_refund_idempotency(config()) -> _ | no_return().
+
+payment_refund_idempotency(C) ->
+    Client = cfg(client, C),
+    RefundParams0 = make_refund_params(),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    RefundID = <<"1">>,
+    ExternalID = <<"42">>,
+    RefundParams1 = RefundParams0#payproc_InvoicePaymentRefundParams{
+        id = RefundID,
+        external_id = ExternalID
+    },
+    % try starting the same refund twice
+    Refund0 = #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
+    Refund0 = #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
+    RefundParams2 = RefundParams0#payproc_InvoicePaymentRefundParams{id = <<"2">>},
+    % can't start a different refund
+    ?operation_not_permitted() = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund0, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
+    ] = next_event(InvoiceID, Client),
+    % check refund completed
+    Refund1 = Refund0#domain_InvoicePaymentRefund{status = ?refund_succeeded()},
+    Refund1 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    % get back a completed refund when trying to start a new one
+    Refund1 = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client).
+
 -spec payment_refund_success(config()) -> _ | no_return().
 
 payment_refund_success(C) ->
@@ -1698,8 +1793,10 @@ payment_manual_refund(C) ->
         {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
     )},
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
+        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_created(Refund0, _, TrxInfo)))
+    ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
@@ -1808,7 +1905,9 @@ payment_partial_refunds_success(C) ->
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams5, Client),
     % Check sequence
-    <<"1">> =:= RefundID1 andalso <<"2">> =:= RefundID3 andalso <<"3">> =:= RefundID4.
+    ?assertEqual(<<"1">>, RefundID1),
+    ?assertEqual(<<"2">>, RefundID3),
+    ?assertEqual(<<"3">>, RefundID4).
 
 -spec invalid_currency_payment_partial_refund(config()) -> _ | no_return().
 
@@ -1952,6 +2051,59 @@ retry_temporary_unavailability_refund(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
+-spec payment_refund_id_types(config()) -> _ | no_return().
+
+payment_refund_id_types(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    TrxInfo = ?trx_info(<<"test">>, #{}),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    % top up merchant account
+    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    % create refund
+    RefundParams = #payproc_InvoicePaymentRefundParams{
+        reason = <<"42">>,
+        cash = ?cash(5000, <<"RUB">>)
+    },
+    % 0
+    ManualRefundParams = RefundParams#payproc_InvoicePaymentRefundParams{transaction_info = TrxInfo},
+    Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
+        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, ManualRefundParams, Client),
+    Refund0 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID0, Client),
+    PaymentID = await_partial_manual_refund_succeeded(Refund0, TrxInfo, InvoiceID, PaymentID, RefundID0, Client),
+    % 1
+    Refund1 = #domain_InvoicePaymentRefund{id = RefundID1} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund1 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID1, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID1, Refund1, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID1, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    % 2
+    CustomIdManualParams = ManualRefundParams#payproc_InvoicePaymentRefundParams{id = <<"2">>},
+    Refund2 = #domain_InvoicePaymentRefund{id = RefundID2} =
+        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, CustomIdManualParams, Client),
+    Refund2 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID2, Client),
+    PaymentID = await_partial_manual_refund_succeeded(Refund2, TrxInfo, InvoiceID, PaymentID, RefundID2, Client),
+    % 3
+    CustomIdParams = RefundParams#payproc_InvoicePaymentRefundParams{id = <<"m3">>},
+    {exception, #'InvalidRequest'{}} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, CustomIdParams, Client),
+    Refund3 = #domain_InvoicePaymentRefund{id = RefundID3} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund3 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID3, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID3, Refund3, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID3, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    % Check ids
+    ?assertEqual(<<"m1">>, RefundID0),
+    ?assertEqual(<<"2">>, RefundID1),
+    ?assertEqual(<<"m2">>, RefundID2),
+    ?assertEqual(<<"3">>, RefundID3).
 %%
 
 -spec consistent_history(config()) -> test_return().
@@ -2242,6 +2394,7 @@ terms_retrieval(C) ->
             ?pmt(crypto_currency, bitcoin),
             ?pmt(digital_wallet, qiwi),
             ?pmt(empty_cvv_bank_card, visa),
+            ?pmt(mobile, mts),
             ?pmt(payment_terminal, euroset),
             ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
         ]}
@@ -2611,7 +2764,7 @@ filter_change(?refund_ev(_, C)) ->
     filter_change(C);
 filter_change(?session_ev(_, ?proxy_st_changed(_))) ->
     false;
-filter_change(?session_ev(_, ?session_suspended(_))) ->
+filter_change(?session_ev(_, ?session_suspended(_, _))) ->
     false;
 filter_change(?session_ev(_, ?session_activated())) ->
     false;
@@ -2737,6 +2890,13 @@ make_terminal_payment_params() ->
 
 make_crypto_currency_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency),
+    make_payment_params(PaymentTool, Session, instant).
+
+make_mobile_commerce_params(success) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce),
+    make_payment_params(PaymentTool, Session, instant);
+make_mobile_commerce_params(failure) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce_failure),
     make_payment_params(PaymentTool, Session, instant).
 
 make_wallet_payment_params() ->
@@ -3006,6 +3166,20 @@ refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client) ->
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
+await_partial_manual_refund_succeeded(Refund, TrxInfo, InvoiceID, PaymentID, RefundID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _, TrxInfo)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started()))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?trx_bound(TrxInfo)))),
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_status_changed(?refund_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
+
 await_refund_session_started(InvoiceID, PaymentID, RefundID, Client) ->
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))
@@ -3226,7 +3400,8 @@ construct_domain_fixture() ->
                         ?pmt(digital_wallet, qiwi),
                         ?pmt(empty_cvv_bank_card, visa),
                         ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay)),
-                        ?pmt(crypto_currency, bitcoin)
+                        ?pmt(crypto_currency, bitcoin),
+                        ?pmt(mobile, mts)
                     ])}
                 }
             ]},
@@ -3411,6 +3586,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(crypto_currency, bitcoin)),
+        hg_ct_fixture:construct_payment_method(?pmt(mobile, mts)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
@@ -3444,7 +3620,8 @@ construct_domain_fixture() ->
                 providers = {value, ?ordset([
                     ?prv(1),
                     ?prv(2),
-                    ?prv(3)
+                    ?prv(3),
+                    ?prv(4)
                 ])},
 
                 % TODO do we realy need this decision hell here?
@@ -3946,8 +4123,72 @@ construct_domain_fixture() ->
                 description = <<"Euroset">>,
                 risk_coverage = low
             }
-        }}
+        }},
 
+        {provider, #domain_ProviderObject{
+            ref = ?prv(4),
+            data = #domain_Provider{
+                name = <<"UnionTelecom">>,
+                description = <<"Mobile commerce terminal provider">>,
+                terminal = {decisions, [
+                    #domain_TerminalDecision{
+                        if_ = {condition,
+                                {payment_tool, {mobile_commerce, #domain_MobileCommerceCondition{
+                                    definition = {operator_is, mts}
+                                }}}
+                            },
+                        then_ = {value, [?prvtrm(11)]}
+                    }
+                ]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"Union Telecom">>
+                    }
+                },
+                abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                payment_terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ?ordset([
+                        ?cat(1)
+                    ])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(mobile, mts)
+                    ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(    1000, <<"RUB">>)},
+                        {exclusive, ?cash(10000000, <<"RUB">>)}
+                    )},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(21, 1000, operation_amount)
+                        )
+                    ]}
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(11),
+            data = #domain_Terminal{
+                name = <<"Parking Payment Terminal">>,
+                description = <<"Mts">>,
+                risk_coverage = low,
+                options = #{
+                    <<"goodPhone">> => <<"7891">>,
+                    <<"prefix">>    => <<"1234567890">>
+                }
+            }
+        }}
     ].
 
 construct_term_set_for_cost(LowerBound, UpperBound) ->
