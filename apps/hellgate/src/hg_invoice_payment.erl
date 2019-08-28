@@ -1496,9 +1496,11 @@ process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opt
     Shop = get_shop(Opts),
     FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
     Invoice = get_invoice(Opts),
-    _Clock = hg_accounting:hold(
+    hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment),
-        {1, FinalCashflow}
+        [
+            {1, FinalCashflow}
+        ]
     ),
     Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
     {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.

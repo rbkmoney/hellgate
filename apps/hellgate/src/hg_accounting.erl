@@ -99,7 +99,7 @@ construct_prototype(CurrencyCode, Description) ->
 -spec plan(plan_id(), [batch()]) ->
     ok.
 
-plan(PlanID, Batches) when is_list(Batches) ->
+plan(PlanID, Batches) ->
     lists:foreach(
         fun (Batch) ->
            _Clock = hold(PlanID, Batch)
