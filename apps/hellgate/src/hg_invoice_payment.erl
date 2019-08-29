@@ -1550,7 +1550,7 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
 process_adjustment_cashflow(ID, _Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
-    _Clocks = prepare_adjustment_cashflow(Adjustment, St, Opts),
+    prepare_adjustment_cashflow(Adjustment, St, Opts),
     Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
     {done, {Events, hg_machine_action:new()}}.
 %%
