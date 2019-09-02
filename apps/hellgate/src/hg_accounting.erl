@@ -97,13 +97,16 @@ construct_prototype(CurrencyCode, Description) ->
 
 %%
 -spec plan(plan_id(), [batch()]) ->
-    ok.
+    clock().
 
+plan(_PlanID, []) ->
+    error(badarg);
 plan(PlanID, Batches) ->
-    lists:foreach(
-        fun (Batch) ->
-           _Clock = hold(PlanID, Batch)
+    lists:foldl(
+        fun (Batch, _) ->
+           hold(PlanID, Batch)
         end,
+        undefined,
         Batches
     ).
 

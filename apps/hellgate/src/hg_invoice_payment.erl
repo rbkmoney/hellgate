@@ -916,7 +916,7 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         Revision
     ),
     Invoice             = get_invoice(Opts),
-    hg_accounting:plan(
+    _Clock = hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment2),
         [
             {2, hg_cashflow:revert(get_cashflow(St))},
@@ -1496,11 +1496,9 @@ process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opt
     Shop = get_shop(Opts),
     FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
     Invoice = get_invoice(Opts),
-    hg_accounting:plan(
+    _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
-        [
-            {1, FinalCashflow}
-        ]
+        {1, FinalCashflow}
     ),
     Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
     {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
@@ -1550,7 +1548,7 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
 process_adjustment_cashflow(ID, _Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
-    prepare_adjustment_cashflow(Adjustment, St, Opts),
+    _Clock = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
     {done, {Events, hg_machine_action:new()}}.
 %%
