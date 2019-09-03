@@ -22,6 +22,10 @@
 -export([shop_complex_modification/1]).
 -export([shop_contract_modification/1]).
 -export([contract_termination/1]).
+-export([contractor_already_exists/1]).
+-export([contract_already_exists/1]).
+-export([contract_already_terminated/1]).
+-export([shop_already_exists/1]).
 
 -type config() :: hg_ct_helper:config().
 -type test_case_name() :: hg_ct_helper:test_case_name().
@@ -53,7 +57,11 @@ all() ->
         shop_creation,
         shop_complex_modification,
         shop_contract_modification,
-        contract_termination
+        contract_termination,
+        contractor_already_exists,
+        contract_already_exists,
+        contract_already_terminated,
+        shop_already_exists
     ].
 
 -spec init_per_suite(config()) -> config().
@@ -61,7 +69,7 @@ all() ->
 init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate]),
     RootUrl     = maps:get(hellgate_root_url, Ret),
-    ok          = hg_domain:insert(hg_party_tests_SUITE:construct_domain_fixture()),
+    ok          = hg_domain:insert(construct_domain_fixture()),
     PartyID     = erlang:list_to_binary([?MODULE_STRING, ".", erlang:integer_to_list(erlang:system_time())]),
     ApiClient   = hg_ct_helper:create_client(RootUrl, PartyID),
     [{root_url, RootUrl}, {apps, Apps}, {party_id, PartyID}, {api_client, ApiClient} | C].
@@ -379,6 +387,75 @@ contract_termination(C) ->
         status = {terminated, _}
     }} = get_contract(PartyID, ContractID, C).
 
+-spec contractor_already_exists(config()) -> _.
+
+contractor_already_exists(C) ->
+    ContractorParams = hg_ct_helper:make_battle_ready_contractor(),
+    ContractorID = ?REAL_CONTRACTOR_ID1,
+    Modifications = [?cm_contractor_creation(ContractorID, ContractorParams)],
+    Claim = claim(Modifications),
+    Reason = <<"{invalid_contractor,{payproc_InvalidContractor,<<\"", ContractorID/binary,
+               "\">>,{already_exists,<<\"", ContractorID/binary, "\">>}}}">>,
+    {exception, #claim_management_InvalidChangeset{
+        reason = Reason
+    }} = accept_claim(Claim, C).
+
+-spec contract_already_exists(config()) -> _.
+
+contract_already_exists(C) ->
+    ContractParams = make_contract_params(?REAL_CONTRACTOR_ID1),
+    ContractID = ?REAL_CONTRACT_ID1,
+    Modifications = [?cm_contract_creation(ContractID, ContractParams)],
+    Claim = claim(Modifications),
+    Reason = <<"{invalid_contract,{payproc_InvalidContract,<<\"", ContractID/binary,
+               "\">>,{already_exists,<<\"", ContractID/binary, "\">>}}}">>,
+    {exception, #claim_management_InvalidChangeset{
+        reason = Reason
+    }} = accept_claim(Claim, C).
+
+-spec contract_already_terminated(config()) -> _.
+
+contract_already_terminated(C) ->
+    ContractID    = ?REAL_CONTRACT_ID1,
+    Reason        = #claim_management_ContractTermination{reason = <<"Because!">>},
+    Modifications = [?cm_contract_modification(ContractID, {termination, Reason})],
+    Claim         = claim(Modifications),
+    ErrorReason   = <<"{invalid_contract,{payproc_InvalidContract,<<\"", ContractID/binary,
+                      "\">>,{invalid_status,{terminated,{domain_ContractTerminated">>,
+    ErrorReasonSize = erlang:byte_size(ErrorReason),
+    {exception, #claim_management_InvalidChangeset{
+        reason = <<ErrorReason:ErrorReasonSize/binary, _/binary>>
+    }} = accept_claim(Claim, C).
+
+-spec shop_already_exists(config()) -> _.
+
+shop_already_exists(C) ->
+    Details = #domain_ShopDetails{
+        name        = <<"SOME SHOP NAME">>,
+        description = <<"Very meaningfull description of the shop.">>
+    },
+    ShopID = ?REAL_SHOP_ID,
+    ShopParams = #claim_management_ShopParams{
+        category       = ?cat(2),
+        location       = {url, <<"https://example.com">>},
+        details        = Details,
+        contract_id    = ?REAL_CONTRACT_ID1,
+        payout_tool_id = ?REAL_PAYOUT_TOOL_ID1
+    },
+    ShopAccountParams = #claim_management_ShopAccountParams{currency = ?cur(<<"RUB">>)},
+    ScheduleParams = #claim_management_ScheduleModification{schedule = ?bussched(1)},
+    Modifications = [
+        ?cm_shop_creation(ShopID, ShopParams),
+        ?cm_shop_account_creation(ShopID, ShopAccountParams),
+        ?cm_shop_modification(ShopID, {payout_schedule_modification, ScheduleParams})
+    ],
+    Claim = claim(Modifications),
+    Reason = <<"{invalid_shop,{payproc_InvalidShop,<<\"", ShopID/binary,
+               "\">>,{already_exists,<<\"", ShopID/binary, "\">>}}}">>,
+    {exception, #claim_management_InvalidChangeset{
+        reason = Reason
+    }} = accept_claim(Claim, C).
+
 %%% Internal functions
 
 claim(PartyModifications) ->
@@ -394,7 +471,7 @@ id() ->
     erlang:unique_integer([positive, monotonic]).
 
 ts() ->
-    erlang:list_to_binary(calendar:system_time_to_rfc3339(erlang:system_time(second), [{offset, "Z"}])).
+    hg_datetime:format_now().
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
@@ -457,3 +534,245 @@ make_payout_tool_params() ->
             bank_bik = <<"66642666">>
         }}
     }.
+
+-spec construct_domain_fixture() -> [hg_domain:object()].
+
+construct_domain_fixture() ->
+    TestTermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
+            categories = {value, ordsets:from_list([?cat(1)])}
+        }
+    },
+    DefaultTermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            currencies = {value, ordsets:from_list([
+                ?cur(<<"RUB">>),
+                ?cur(<<"USD">>)
+            ])},
+            categories = {value, ordsets:from_list([
+                ?cat(2),
+                ?cat(3)
+            ])},
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card, visa)
+            ])}
+        }
+    },
+    TermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            cash_limit = {value, #domain_CashRange{
+                lower = {inclusive, #domain_Cash{amount = 1000, currency = ?cur(<<"RUB">>)}},
+                upper = {exclusive, #domain_Cash{amount = 4200000, currency = ?cur(<<"RUB">>)}}
+            }},
+            fees = {value, [
+                ?cfpost(
+                    {merchant, settlement},
+                    {system, settlement},
+                    ?share(45, 1000, operation_amount)
+                )
+            ]}
+        },
+        payouts = #domain_PayoutsServiceTerms{
+            payout_methods = {decisions, [
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool,
+                        {bank_card, #domain_BankCardCondition{
+                            definition = {issuer_bank_is, ?bank(1)}
+                        }}
+                    }},
+                    then_ = {value, ordsets:from_list([?pomt(russian_bank_account), ?pomt(international_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                        definition = {empty_cvv_is, true}
+                    }}}},
+                    then_ = {value, ordsets:from_list([])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{}}}},
+                    then_ = {value, ordsets:from_list([?pomt(russian_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {condition, {payment_tool, {payment_terminal, #domain_PaymentTerminalCondition{}}}},
+                    then_ = {value, ordsets:from_list([?pomt(international_bank_account)])}
+                },
+                #domain_PayoutMethodDecision{
+                    if_   = {constant, true},
+                    then_ = {value, ordsets:from_list([])}
+                }
+            ]},
+            fees = {value, [
+                ?cfpost(
+                    {merchant, settlement},
+                    {merchant, payout},
+                    ?share(750, 1000, operation_amount)
+                ),
+                ?cfpost(
+                    {merchant, settlement},
+                    {system, settlement},
+                    ?share(250, 1000, operation_amount)
+                )
+            ]}
+        },
+        wallets = #domain_WalletServiceTerms{
+            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])}
+        }
+    },
+    [
+        hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
+        hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
+
+        hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
+        hg_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
+        hg_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
+
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+
+        hg_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
+        hg_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
+
+        hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
+        hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
+        hg_ct_fixture:construct_system_account_set(?sas(1)),
+        hg_ct_fixture:construct_system_account_set(?sas(2)),
+        hg_ct_fixture:construct_external_account_set(?eas(1)),
+
+        hg_ct_fixture:construct_business_schedule(?bussched(1)),
+        hg_ct_fixture:construct_business_schedule(?bussched(2)),
+
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = #domain_PaymentInstitution{
+                name = <<"Test Inc.">>,
+                system_account_set = {value, ?sas(1)},
+                default_contract_template = {value, ?tmpl(1)},
+                providers = {value, ?ordset([])},
+                inspector = {value, ?insp(1)},
+                residences = [],
+                realm = test
+            }
+        }},
+
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(2),
+            data = #domain_PaymentInstitution{
+                name = <<"Chetky Payments Inc.">>,
+                system_account_set = {value, ?sas(2)},
+                default_contract_template = {value, ?tmpl(2)},
+                providers = {value, ?ordset([])},
+                inspector = {value, ?insp(1)},
+                residences = [],
+                realm = live
+            }
+        }},
+
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(3),
+            data = #domain_PaymentInstitution{
+                name = <<"Chetky Payments Inc.">>,
+                system_account_set = {value, ?sas(2)},
+                default_contract_template = {value, ?tmpl(2)},
+                providers = {value, ?ordset([])},
+                inspector = {value, ?insp(1)},
+                residences = [],
+                realm = live
+            }
+        }},
+
+        {globals, #domain_GlobalsObject{
+            ref = #domain_GlobalsRef{},
+            data = #domain_Globals{
+                external_account_set = {value, ?eas(1)},
+                payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
+            }
+        }},
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(1),
+            ?trms(1)
+        ),
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(2),
+            ?trms(3)
+        ),
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(3),
+            ?trms(2),
+            {interval, #domain_LifetimeInterval{years = -1}},
+            {interval, #domain_LifetimeInterval{days = -1}}
+        ),
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(4),
+            ?trms(1),
+            undefined,
+            {interval, #domain_LifetimeInterval{months = 1}}
+        ),
+        hg_ct_fixture:construct_contract_template(
+            ?tmpl(5),
+            ?trms(4)
+        ),
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(1),
+            data = #domain_TermSetHierarchy{
+                parent_terms = undefined,
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TestTermSet
+                }]
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(2),
+            data = #domain_TermSetHierarchy{
+                parent_terms = undefined,
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = DefaultTermSet
+                }]
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(3),
+            data = #domain_TermSetHierarchy{
+                parent_terms = ?trms(2),
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TermSet
+                }]
+            }
+        }},
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(4),
+            data = #domain_TermSetHierarchy{
+                parent_terms = ?trms(3),
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = #domain_TermSet{
+                        payments = #domain_PaymentsServiceTerms{
+                            currencies = {value, ordsets:from_list([
+                                ?cur(<<"RUB">>)
+                            ])},
+                            categories = {value, ordsets:from_list([
+                                ?cat(2)
+                            ])},
+                            payment_methods = {value, ordsets:from_list([
+                                ?pmt(bank_card, visa)
+                            ])}
+                        }
+                    }
+                }]
+            }
+        }},
+        {bank, #domain_BankObject{
+            ref = ?bank(1),
+            data = #domain_Bank {
+                name = <<"Test BIN range">>,
+                description = <<"Test BIN range">>,
+                bins = ordsets:from_list([<<"1234">>, <<"5678">>])
+            }
+        }}
+    ].

@@ -269,18 +269,16 @@ handle_call('RevokeClaim', [ID, ClaimRevision, Reason], AuxSt, St) ->
 %% ClaimCommitter
 
 handle_call('Accept', [Claim], AuxSt, St) ->
-    ok = assert_party_operable(St),
     #claim_management_Claim{
-        changeset = Changeset,
-        created_at = Timestamp % FIXME: what time should we use?
+        changeset = Changeset
     } = Claim,
     PayprocClaim = hg_claim_committer:from_claim_mgmt(Claim),
-    % Timestamp = hg_datetime:format_now(),
+    Timestamp = hg_datetime:format_now(),
     Revision = hg_domain:head(),
     Party = get_st_party(St),
     try
-        ok = hg_claim:assert_changeset_applicable(PayprocClaim, Timestamp, Revision, Party),
-        ok = hg_claim:assert_changeset_acceptable(PayprocClaim, Timestamp, Revision, Party),
+        ok = hg_claim:assert_claim_applicable(PayprocClaim, Timestamp, Revision, Party),
+        ok = hg_claim:assert_claim_acceptable(PayprocClaim, Timestamp, Revision, Party),
         respond(
             ok,
             [],
@@ -289,13 +287,12 @@ handle_call('Accept', [Claim], AuxSt, St) ->
         )
     catch
         throw:#payproc_InvalidChangeset{reason = Reason0} ->
-            Reason1 = io_lib:format("~9999tp", [Reason0]),
+            Reason1 = io_lib:format("~0tp", [Reason0]),
             Reason2 = unicode:characters_to_binary(Reason1),
             erlang:throw(#claim_management_InvalidChangeset{reason = Reason2, invalid_changeset = Changeset})
     end;
 
 handle_call('Commit', [CmClaim], AuxSt, St) ->
-    ok = assert_party_operable(St),
     PayprocClaim = hg_claim_committer:from_claim_mgmt(CmClaim),
     Timestamp = hg_datetime:format_now(),
     Revision = hg_domain:head(),

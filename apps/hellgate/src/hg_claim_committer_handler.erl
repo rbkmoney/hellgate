@@ -10,7 +10,7 @@
     term()| no_return().
 
 handle_function(Func, Args, Opts) ->
-    scoper:scope(partymgmt,
+    scoper:scope(claimmgmt,
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 

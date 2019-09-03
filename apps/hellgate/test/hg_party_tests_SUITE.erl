@@ -14,8 +14,6 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
--export([construct_domain_fixture/0]).
-
 -export([party_creation/1]).
 -export([party_not_found_on_retrieval/1]).
 -export([party_already_exists/1]).
@@ -1577,7 +1575,6 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
         hg_ct_fixture:construct_business_schedule(?bussched(1)),
-        hg_ct_fixture:construct_business_schedule(?bussched(2)),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
