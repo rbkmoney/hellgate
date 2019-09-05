@@ -245,8 +245,7 @@ start_binding_w_failure(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
-        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_failed(_)))
@@ -269,8 +268,7 @@ start_binding(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
-        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded())),
@@ -294,8 +292,7 @@ start_binding_w_tds(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _)),
-        ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_pending()))
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_interaction_requested(UserInteraction))
@@ -325,8 +322,6 @@ start_two_bindings(C) ->
     StartChanges = [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending())),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_status_changed(?customer_ready())
@@ -352,18 +347,14 @@ start_two_bindings_w_tds(C) ->
     ] = next_event(CustomerID, Client),
     StartChanges = [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested('_')),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested('_'))
     ],
     [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, _)),
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested(UserInteraction1)),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, _)),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_pending())),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested(UserInteraction2))
     ] = await_for_changes(StartChanges, CustomerID, Client),
     _ = assert_success_post_request(get_post_request(UserInteraction1)),

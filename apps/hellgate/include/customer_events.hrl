@@ -54,10 +54,6 @@
     {ready,
         #payproc_CustomerReady{}}).
 
--define(customer_binding_creating(),
-    {creating,
-        #payproc_CustomerBindingCreating{}}).
-
 -define(customer_binding_pending(),
     {pending,
         #payproc_CustomerBindingPending{}}).

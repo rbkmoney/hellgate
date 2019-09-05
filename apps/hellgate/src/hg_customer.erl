@@ -207,9 +207,7 @@ process_signal(Signal, #{history := History,  aux_state := AuxSt}) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), unmarshal(auxst, AuxSt))).
 
 handle_signal(timeout, St0, AuxSt0) ->
-    Changes0 = process_creating_bindings(St0),
-    {Changes1, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
-    Changes = Changes0 ++ Changes1,
+    {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
     St1 = merge_changes(Changes, St0),
     Action = case detect_binding_status(St1) of
         all_ready ->
@@ -224,26 +222,6 @@ handle_signal(timeout, St0, AuxSt0) ->
         action  => Action,
         auxst   => AuxSt1
     }.
-
-process_creating_bindings(St) ->
-    Bindings = get_creating_bindings(St),
-    process_creating_bindings(Bindings, St).
-
-process_creating_bindings([Binding | Rest], St) ->
-    #payproc_CustomerBinding{
-        id = BindingID,
-        rec_payment_tool_id = PaytoolID,
-        payment_resource = PaymentResource,
-        party_revision = PartyRevision,
-        domain_revision = DomainRevision
-    } = Binding,
-    PartyID = get_party_id(St),
-    Params = create_paytool_params(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
-    Changes0 = create_recurrent_paytool(BindingID, Params),
-    Changes1 = process_creating_bindings(Rest, St),
-    Changes0 ++ Changes1;
-process_creating_bindings([], _St) ->
-    [].
 
 detect_binding_status(St) ->
     case get_pending_binding_set(St) of
@@ -337,14 +315,14 @@ start_binding(BindingParams, St) ->
     PartyID = get_party_id(St),
     PartyRevision = hg_party:get_party_revision(PartyID),
     Binding = construct_binding(BindingID, PaytoolID, PaymentResource, PartyRevision, DomainRevision),
-    PaytoolParams = create_paytool_params(PaytoolID, PartyID, PartyRevision, DomainRevision, PaymentResource, St),
+    PaytoolParams = create_paytool_params(Binding, St),
     _ = validate_paytool_params(PaytoolParams),
-    Changes0 = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
-    Changes1 = create_recurrent_paytool(BindingID, PaytoolParams), %% @TODO: Remove after migration
+    Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
+    {ok, _} = create_recurrent_paytool(PaytoolParams), %% @TODO: Remove after migration
     #{
         response => {ok, Binding},
-        changes  => Changes0 ++ Changes1,
-        action   => hg_machine_action:instant()
+        changes  => Changes,
+        action   => set_event_poll_timer(actual) %% @TODO: Remove after migration
     }.
 
 validate_paytool_params(PaytoolParams) ->
@@ -370,7 +348,7 @@ construct_binding(BindingID, RecPaymentToolID, PaymentResource, PartyRevision, D
         id                  = BindingID,
         rec_payment_tool_id = RecPaymentToolID,
         payment_resource    = PaymentResource,
-        status              = ?customer_binding_pending(), %% @TODO: `creating` after migration
+        status              = ?customer_binding_pending(),
         party_revision      = PartyRevision,
         domain_revision     = DomainRevision
     }.
@@ -383,18 +361,24 @@ sync_pending_bindings(St, AuxSt) ->
 
 sync_pending_bindings([BindingID | Rest], St, AuxSt0) ->
     Binding = try_get_binding(BindingID, get_customer(St)),
-    {Changes1, AuxSt1} = sync_binding_state(Binding, AuxSt0),
+    {Changes1, AuxSt1} = sync_binding_state(Binding, St, AuxSt0),
     {Changes2, AuxSt2} = sync_pending_bindings(Rest, St, AuxSt1),
     {Changes1 ++ Changes2, AuxSt2};
 sync_pending_bindings([], _St, AuxSt) ->
     {[], AuxSt}.
 
-sync_binding_state(Binding, AuxSt) ->
+sync_binding_state(Binding, St, AuxSt) ->
     RecurrentPaytoolID = get_binding_recurrent_paytool_id(Binding),
     LastEventID0 = get_binding_last_event_id(Binding, AuxSt),
-    {RecurrentPaytoolChanges, LastEventID1} = get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID0),
-    BindingChanges = produce_binding_changes(RecurrentPaytoolChanges, Binding),
-    {wrap_binding_changes(get_binding_id(Binding), BindingChanges), update_aux_state(LastEventID1, Binding, AuxSt)}.
+    case get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID0) of
+        {ok, {RecurrentPaytoolChanges, LastEventID1}} ->
+            BindingChanges = produce_binding_changes(RecurrentPaytoolChanges, Binding),
+            {wrap_binding_changes(get_binding_id(Binding), BindingChanges), update_aux_state(LastEventID1, Binding, AuxSt)};
+        {error, paytool_not_found} -> % lazily create paytool
+            PaytoolParams = create_paytool_params(Binding, St),
+            {ok, _} = create_recurrent_paytool(PaytoolParams),
+            {[], AuxSt}
+    end.
 
 update_aux_state(undefined, _Binding, AuxSt) ->
     AuxSt;
@@ -427,24 +411,38 @@ produce_binding_changes_(?recurrent_payment_tool_has_abandoned() = Change, _Bind
 produce_binding_changes_(?session_ev(_), _Binding) ->
     [].
 
-create_paytool_params(ID, PartyID, PartyRevision, DomainRevision, PaymentResource, St) ->
+create_paytool_params(
+    #payproc_CustomerBinding{
+        rec_payment_tool_id = RecPaymentToolID,
+        payment_resource    = PaymentResource,
+        party_revision      = PartyRevision,
+        domain_revision     = DomainRevision
+    },
+    St
+) ->
     #payproc_RecurrentPaymentToolParams{
-        id               = ID,
-        party_id         = PartyID,
+        id               = RecPaymentToolID,
+        party_id         = get_party_id(St),
         party_revision   = PartyRevision,
         domain_revision  = DomainRevision,
         shop_id          = get_shop_id(St),
         payment_resource = PaymentResource
     }.
 
-create_recurrent_paytool(BindingID, Params) ->
-    {ok, _} = issue_recurrent_paytools_call('Create', [Params]),
-    [?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_pending()))].
+create_recurrent_paytool(Params) ->
+    issue_recurrent_paytools_call('Create', [Params]).
+
+get_recurrent_paytool_events(RecurrentPaytoolID, EventRange) ->
+    issue_recurrent_paytools_call('GetEvents', [RecurrentPaytoolID, EventRange]).
 
 get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
     EventRange = construct_event_range(LastEventID),
-    {ok, Events} = issue_recurrent_paytools_call('GetEvents', [RecurrentPaytoolID, EventRange]),
-    {gather_recurrent_paytool_changes(Events), get_last_event_id(Events)}.
+    case get_recurrent_paytool_events(RecurrentPaytoolID, EventRange) of
+        {ok, Events} ->
+            {ok, {gather_recurrent_paytool_changes(Events), get_last_event_id(Events)}};
+        {exception, #payproc_RecurrentPaymentToolNotFound{}} ->
+            {error, paytool_not_found}
+    end.
 
 construct_event_range(undefined) ->
     #payproc_EventRange{limit = ?REC_PAYTOOL_EVENTS_LIMIT};
@@ -586,12 +584,6 @@ set_binding(Binding, Customer = #payproc_Customer{bindings = Bindings}) ->
         bindings = lists:keystore(BindingID, #payproc_CustomerBinding.id, Bindings, Binding)
     }.
 
-get_creating_bindings(St) ->
-    Bindings = get_bindings(get_customer(St)),
-    [Binding ||
-        Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_creating()
-    ].
-
 get_pending_binding_set(St) ->
     Bindings = get_bindings(get_customer(St)),
     [get_binding_id(Binding) ||
@@ -701,7 +693,6 @@ assert_shop_operable(Shop) ->
 %% Marshalling
 %%
 
--define(BINARY_BINDING_STATUS_CREATING, <<"creating">>).
 -define(BINARY_BINDING_STATUS_PENDING, <<"pending">>).
 -define(BINARY_BINDING_STATUS_SUCCEEDED, <<"succeeded">>).
 -define(BINARY_BINDING_STATUS_FAILED(Failure), [<<"failed">>, Failure]).
@@ -847,8 +838,6 @@ marshal(
         <<"fingerprint">> => marshal(str, Fingerprint)
     });
 
-marshal(binding_status, ?customer_binding_creating()) ->
-    ?BINARY_BINDING_STATUS_CREATING;
 marshal(binding_status, ?customer_binding_pending()) ->
     ?BINARY_BINDING_STATUS_PENDING;
 marshal(binding_status, ?customer_binding_succeeded()) ->
@@ -1078,8 +1067,6 @@ unmarshal(client_info, ClientInfo) ->
         fingerprint     = unmarshal(str, genlib_map:get(<<"fingerprint">>, ClientInfo))
     };
 
-unmarshal(binding_status, ?BINARY_BINDING_STATUS_CREATING) ->
-    ?customer_binding_creating();
 unmarshal(binding_status, ?BINARY_BINDING_STATUS_PENDING) ->
     ?customer_binding_pending();
 unmarshal(binding_status, ?BINARY_BINDING_STATUS_SUCCEEDED) ->
