@@ -1,6 +1,8 @@
 -module(hg_claim_committer).
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
+-include("claim_management.hrl").
+-include("party_events.hrl").
 
 -export([from_claim_mgmt/1]).
 
@@ -45,46 +47,25 @@ from_cm_changeset(Changeset) ->
         modification = {party_modification, PartyMod}
      } <- Changeset].
 
-from_cm_party_mod({contractor_modification, Mod}) ->
-    #claim_management_ContractorModificationUnit{
-        id           = ContractorID,
-        modification = ContractorModification
-    } = Mod,
+from_cm_party_mod(?cm_contractor_modification(ContractorID, ContractorModification)) ->
     NewContractorModification =
         case ContractorModification of
-            {identity_documents_modification,
-            #claim_management_ContractorIdentityDocumentsModification{
-                identity_documents = Documents
-            }} ->
-                {identity_documents_modification,
-                #payproc_ContractorIdentityDocumentsModification{
-                    identity_documents = Documents
-                }};
+            ?cm_identity_documents_modification(Documents) ->
+                ?identity_documents_modification(Documents);
             Other ->
                 Other
         end,
-    {contractor_modification, #payproc_ContractorModificationUnit{
-         id           = ContractorID,
-         modification = NewContractorModification
-    }};
-from_cm_party_mod({contract_modification, Mod}) ->
-    #claim_management_ContractModificationUnit{
-        id           = ContractID,
-        modification = ContractModification
-    } = Mod,
-    {contract_modification, #payproc_ContractModificationUnit{
-        id           = ContractID,
-        modification = from_cm_contract_modification(ContractModification)
-    }};
-from_cm_party_mod({shop_modification, Mod}) ->
-    #claim_management_ShopModificationUnit{
-        id           = ShopID,
-        modification = ShopModification
-    } = Mod,
-    {shop_modification, #payproc_ShopModificationUnit{
-        id           = ShopID,
-        modification = from_cm_shop_modification(ShopModification)
-    }}.
+    ?contractor_modification(ContractorID, NewContractorModification);
+from_cm_party_mod(?cm_contract_modification(ContractID, ContractModification)) ->
+    ?contract_modification(
+        ContractID,
+        from_cm_contract_modification(ContractModification)
+    );
+from_cm_party_mod(?cm_shop_modification(ShopID, ShopModification)) ->
+    ?shop_modification(
+        ShopID,
+        from_cm_shop_modification(ShopModification)
+    ).
 
 from_cm_contract_modification(
     {creation, #claim_management_ContractParams{

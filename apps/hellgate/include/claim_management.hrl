@@ -30,13 +30,18 @@
 ).
 
 -define(
-    cm_contractor_identity_documents_modification(ContractorID, Documents),
-    ?cm_contractor_modification(ContractorID, {
+    cm_identity_documents_modification(Documents),
+    {
         identity_documents_modification,
         #claim_management_ContractorIdentityDocumentsModification{
             identity_documents = Documents
         }
-    })
+    }
+).
+
+-define(
+    cm_contractor_identity_documents_modification(ContractorID, Documents),
+    ?cm_contractor_modification(ContractorID, ?cm_identity_documents_modification(Documents))
 ).
 
 -define(
