@@ -79,28 +79,18 @@ from_cm_contract_modification(
         template            = ContractTemplateRef,
         payment_institution = PaymentInstitutionRef
     }};
+from_cm_contract_modification(?cm_contract_termination(Reason)) ->
+    ?contract_termination(Reason);
 from_cm_contract_modification(
-    {termination, #claim_management_ContractTermination{
-        reason = Reason
-    }}
+    ?cm_adjustment_creation(
+        ContractAdjustmentID,
+        #claim_management_ContractAdjustmentParams{template = ContractTemplateRef}
+    )
 ) ->
-    {termination, #payproc_ContractTermination{
-        reason = Reason
-    }};
-from_cm_contract_modification(
-    {adjustment_modification, #claim_management_ContractAdjustmentModificationUnit{
-        adjustment_id = ContractAdjustmentID,
-        modification = {creation, #claim_management_ContractAdjustmentParams{
-            template = ContractTemplateRef
-        }}
-    }}
-) ->
-    {adjustment_modification, #payproc_ContractAdjustmentModificationUnit{
-        adjustment_id = ContractAdjustmentID,
-        modification = {creation, #payproc_ContractAdjustmentParams{
-            template = ContractTemplateRef
-        }}
-    }};
+    ?adjustment_creation(
+        ContractAdjustmentID,
+        #payproc_ContractAdjustmentParams{template = ContractTemplateRef}
+    );
 from_cm_contract_modification(
     {payout_tool_modification, #claim_management_PayoutToolModificationUnit{
         payout_tool_id = PayoutToolID,

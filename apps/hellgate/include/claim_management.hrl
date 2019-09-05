@@ -64,6 +64,9 @@
     ?cm_contract_modification(ContractID, {creation, ContractParams})
 ).
 
+-define(cm_contract_termination(Reason),
+    {termination, #claim_management_ContractTermination{reason = Reason}}).
+
 -define(
     cm_payout_tool_modification(PayoutToolID, Mod),
     {payout_tool_modification, #claim_management_PayoutToolModificationUnit{
