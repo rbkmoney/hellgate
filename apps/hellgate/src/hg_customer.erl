@@ -373,7 +373,9 @@ sync_binding_state(Binding, St, AuxSt) ->
     case get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID0) of
         {ok, {RecurrentPaytoolChanges, LastEventID1}} ->
             BindingChanges = produce_binding_changes(RecurrentPaytoolChanges, Binding),
-            {wrap_binding_changes(get_binding_id(Binding), BindingChanges), update_aux_state(LastEventID1, Binding, AuxSt)};
+            WrappedChanges = wrap_binding_changes(get_binding_id(Binding), BindingChanges),
+            UpdatedAuxState = update_aux_state(LastEventID1, Binding, AuxSt),
+            {WrappedChanges, UpdatedAuxState};
         {error, paytool_not_found} -> % lazily create paytool
             PaytoolParams = create_paytool_params(Binding, St),
             {ok, _} = create_recurrent_paytool(PaytoolParams),
