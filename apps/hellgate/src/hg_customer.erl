@@ -322,7 +322,7 @@ start_binding(BindingParams, St) ->
     #{
         response => {ok, Binding},
         changes  => Changes,
-        action   => set_event_poll_timer(actual) %% @TODO: Remove after migration
+        action   => set_event_poll_timer(actual) %% @TODO: `hg_machine_action:instant()` after migration
     }.
 
 validate_paytool_params(PaytoolParams) ->
