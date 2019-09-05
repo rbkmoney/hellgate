@@ -102,24 +102,8 @@ from_cm_contract_modification(
         tool_info = PayoutToolInfo
     });
 from_cm_contract_modification(
-    {payout_tool_modification, #claim_management_PayoutToolModificationUnit{
-        payout_tool_id = PayoutToolID,
-        modification   = PayoutToolModification
-    }}
+    ?cm_payout_tool_info_modification(PayoutToolID, PayoutToolModification)
 ) ->
-%%    NewPayoutToolModification =
-%%        case PayoutToolModification of
-%%            {creation, #claim_management_PayoutToolParams{
-%%                currency  = CurrencyRef,
-%%                tool_info = PayoutToolInfo
-%%            }} ->
-%%                {creation, #payproc_PayoutToolParams{
-%%                    currency  = CurrencyRef,
-%%                    tool_info = PayoutToolInfo
-%%                }};
-%%            {info_modification, _PayoutToolInfo} = InfoModification ->
-%%                InfoModification
-%%        end,
     ?payout_tool_info_modification(PayoutToolID, PayoutToolModification);
 from_cm_contract_modification({legal_agreement_binding, _LegalAgreement} = LegalAgreementBinding) ->
     LegalAgreementBinding;

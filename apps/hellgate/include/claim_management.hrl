@@ -81,6 +81,11 @@
 ).
 
 -define(
+    cm_payout_tool_info_modification(PayoutToolID, Info),
+    ?cm_payout_tool_modification(PayoutToolID, {info_modification, Info})
+).
+
+-define(
     cm_adjustment_modification(ContractAdjustmentID, Mod),
     {adjustment_modification, #claim_management_ContractAdjustmentModificationUnit{
         adjustment_id = ContractAdjustmentID,
