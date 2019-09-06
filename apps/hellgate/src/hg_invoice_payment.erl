@@ -627,6 +627,7 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
             ),
             case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
                 {ok, _Route} = Result ->
+                    _ = log_misconfigurations(RejectContext1),
                     Result;
                 {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
                     _ = log_reject_context(RejectReason, RejectContext),
@@ -641,6 +642,22 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
     payment.
 
 % Other payers has predefined routes
+
+log_misconfigurations(RejectContext) ->
+    RejectedProviders = maps:get(rejected_providers, RejectContext),
+    RejectedRoutes    = maps:get(rejected_routes, RejectContext),
+    Rejects           = RejectedProviders ++ RejectedRoutes,
+    _ = lists:foreach(fun maybe_log_misconfiguration/1, Rejects),
+    ok.
+
+maybe_log_misconfiguration({PRef, {'Misconfiguration', Reason}}) ->
+    Text = "The provider with ref ~p has been misconfigured: ~p",
+    _ = logger:warning(Text, [PRef, Reason]);
+maybe_log_misconfiguration({PRef, TRef, {'Misconfiguration', Reason}}) ->
+    Text = "The route with provider ref ~p and terminal ref ~p has been misconfigured: ~p",
+    _ = logger:warning(Text, [PRef, TRef, Reason]);
+maybe_log_misconfiguration(_NotMisconfiguration) ->
+    ok.
 
 log_reject_context(risk_score_is_too_high = RejectReason, RejectContext) ->
     log_reject_context(info, RejectReason, RejectContext);
@@ -660,8 +677,8 @@ log_reject_context(Level, RejectReason, RejectContext) ->
         logger:get_process_metadata()),
     _ = logger:log(
         Level,
-        "No route found, reason = ~p, rejected terminals: ~p",
-        [RejectReason, maps:get(rejected_terminals, RejectContext)],
+        "No route found, reason = ~p, rejected routes: ~p",
+        [RejectReason, maps:get(rejected_routes, RejectContext)],
         logger:get_process_metadata()),
     ok.
 

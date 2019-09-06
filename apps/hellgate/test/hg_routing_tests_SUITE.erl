@@ -21,6 +21,7 @@
 -export([prefer_alive/1]).
 -export([prefer_better_risk_score/1]).
 -export([prefer_lower_fail_rate/1]).
+-export([handle_uncomputale_provider_terms/1]).
 
 -export([terminal_priority_for_shop/1]).
 
@@ -46,6 +47,7 @@ init([]) ->
 all() -> [
     fatal_risk_score_for_route_found,
     no_route_found_for_payment,
+    handle_uncomputale_provider_terms,
     {group, routing_with_fail_rate},
     {group, terminal_priority}
 ].
@@ -112,6 +114,31 @@ end_per_testcase(_Name, _C) -> ok.
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
 
+-spec handle_uncomputale_provider_terms(config()) -> test_return().
+handle_uncomputale_provider_terms(_C) ->
+    ok = hg_context:save(hg_context:create()),
+    VS0 = #{
+        category        => ?cat(1),
+        currency        => ?cur(<<"EUR">>),
+        cost            => ?cash(1000, <<"EUR">>),
+        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        party_id        => <<"12345">>,
+        risk_score      => low,
+        flow            => instant
+    },
+
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+
+    {Providers0, RejectContext0} = hg_routing:gather_providers(payment, PaymentInstitution, VS0, Revision),
+    {[], #{
+        rejected_providers := [
+            {?prv(3), {'Misconfiguration', _}},
+            {?prv(2), {'PaymentsProvisionTerms', currency}},
+            {?prv(1), {'PaymentsProvisionTerms', currency}}
+        ]}
+    } = {Providers0, RejectContext0}.
+
 -spec gathers_fail_rated_providers(config()) -> test_return().
 gathers_fail_rated_providers(_C) ->
     ok = hg_context:save(hg_context:create()),
@@ -171,7 +198,7 @@ fatal_risk_score_for_route_found(_C) ->
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
         ],
-        rejected_terminals := []
+        rejected_routes := []
     }}}} = Result0,
 
     VS1 = VS0#{
@@ -193,7 +220,7 @@ fatal_risk_score_for_route_found(_C) ->
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
         ],
-        rejected_terminals := [{?prv(3), ?trm(10), {'Terminal', risk_coverage}}]}
+        rejected_routes := [{?prv(3), ?trm(10), {'Terminal', risk_coverage}}]}
     }}} = Result1,
     hg_context:cleanup(),
     ok.
@@ -241,7 +268,7 @@ no_route_found_for_payment(_C) ->
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
         ],
-        rejected_terminals => []
+        rejected_routes => []
     }}}},
 
     Result0 = hg_routing:choose_route(FailRatedRoutes0, RejectContext1, VS0),
@@ -763,6 +790,7 @@ construct_domain_fixture() ->
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
         hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
+        hg_ct_fixture:construct_currency(?cur(<<"EUR">>)),
 
         hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
         hg_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
@@ -1239,13 +1267,17 @@ construct_domain_fixture() ->
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 payment_terms = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
+                        ?cur(<<"RUB">>),
+                        ?cur(<<"EUR">>)
                     ])},
                     categories = {value, ?ordset([
                         ?cat(1)
                     ])},
                     payment_methods = {value, ?ordset([
                         ?pmt(payment_terminal, euroset),
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard),
+                        ?pmt(bank_card, jcb),
                         ?pmt(digital_wallet, qiwi)
                     ])},
                     cash_limit = {value, ?cashrng(

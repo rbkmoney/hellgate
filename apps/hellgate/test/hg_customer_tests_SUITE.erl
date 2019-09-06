@@ -23,6 +23,10 @@
 -export([create_customer/1]).
 -export([delete_customer/1]).
 -export([start_binding_w_failure/1]).
+-export([start_binding_w_suspend/1]).
+-export([start_binding_w_suspend_timeout/1]).
+-export([start_binding_w_suspend_failure/1]).
+-export([start_binding_w_suspend_timeout_default/1]).
 -export([start_binding/1]).
 -export([start_binding_w_tds/1]).
 -export([start_two_bindings/1]).
@@ -55,6 +59,9 @@ cfg(Key, C) ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
+    % _ = dbg:tracer(),
+    % _ = dbg:p(all, c),
+    % _ = dbg:tpl({'hg_dummy_provider', 'handle_function', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([
         woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}
@@ -111,6 +118,10 @@ groups() ->
             create_customer,
             delete_customer,
             start_binding_w_failure,
+            start_binding_w_suspend,
+            start_binding_w_suspend_timeout,
+            start_binding_w_suspend_failure,
+            start_binding_w_suspend_timeout_default,
             start_binding,
             start_binding_w_tds,
             start_two_bindings,
@@ -204,6 +215,10 @@ invalid_shop_status(C) ->
 -spec create_customer(config()) -> test_case_result().
 -spec delete_customer(config()) -> test_case_result().
 -spec start_binding_w_failure(config()) -> test_case_result().
+-spec start_binding_w_suspend(config()) -> test_case_result().
+-spec start_binding_w_suspend_timeout(config()) -> test_case_result().
+-spec start_binding_w_suspend_failure(config()) -> test_case_result().
+-spec start_binding_w_suspend_timeout_default(config()) -> test_case_result().
 -spec start_binding(config()) -> test_case_result().
 -spec start_binding_w_tds(config()) -> test_case_result().
 -spec start_two_bindings(config()) -> test_case_result().
@@ -250,6 +265,114 @@ start_binding_w_failure(C) ->
     [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_failed(_)))
     ] = next_event(CustomerID, Client).
+
+start_binding_w_suspend(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool({preauth_3ds_sleep, 180})),
+    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    Customer1 = hg_client_customer:get(CustomerID, Client),
+    #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
+    Bindings = [CustomerBinding],
+    [
+        ?customer_created(_, _, _, _, _, _)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(_, ?customer_binding_started(_, _))
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(ID, ?customer_binding_interaction_requested(UserInteraction))
+    ] = next_event(CustomerID, Client),
+    {URL, GoodForm} = get_post_request(UserInteraction),
+    _ = assert_success_post_request({URL, GoodForm}),
+    SuccessChanges = [
+        ?customer_binding_changed(ID, ?customer_binding_status_changed(?customer_binding_succeeded())),
+        ?customer_status_changed(?customer_ready())
+    ],
+    _ = await_for_changes(SuccessChanges, CustomerID, Client).
+
+start_binding_w_suspend_timeout(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth_timeout)),
+    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    Customer1 = hg_client_customer:get(CustomerID, Client),
+    #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
+    Bindings = [CustomerBinding],
+    [
+        ?customer_created(_, _, _, _, _, _)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(ID, ?customer_binding_started(_, _))
+    ] = next_event(CustomerID, Client),
+    SuccessChanges = [
+        ?customer_binding_changed(ID, ?customer_binding_status_changed(?customer_binding_succeeded())),
+        ?customer_status_changed(?customer_ready())
+    ],
+    _ = await_for_changes(SuccessChanges, CustomerID, Client).
+
+start_binding_w_suspend_timeout_default(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth_suspend_default)),
+    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    Customer1 = hg_client_customer:get(CustomerID, Client),
+    #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
+    Bindings = [CustomerBinding],
+    [
+        ?customer_created(_, _, _, _, _, _)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(ID, ?customer_binding_started(_, _))
+    ] = next_event(CustomerID, Client),
+    OperationFailure = {operation_timeout, #domain_OperationTimeout{}},
+    DefaultFailure = [
+        ?customer_binding_changed(ID, ?customer_binding_status_changed(?customer_binding_failed(OperationFailure)))
+    ],
+    _ = await_for_changes(DefaultFailure, CustomerID, Client).
+
+start_binding_w_suspend_failure(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Customer = hg_client_customer:create(CustomerParams, Client),
+    #payproc_Customer{id = CustomerID} = Customer,
+    CustomerBindingParams =
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth_timeout_failure)),
+    CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+    Customer1 = hg_client_customer:get(CustomerID, Client),
+    #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
+    Bindings = [CustomerBinding],
+    [
+        ?customer_created(_, _, _, _, _, _)
+    ] = next_event(CustomerID, Client),
+    [
+        ?customer_binding_changed(ID, ?customer_binding_started(_, _))
+    ] = next_event(CustomerID, Client),
+    OperationFailure = {failure, #domain_Failure{
+        code = <<"preauthorization_failed">>
+    }},
+    SuccessChanges = [
+        ?customer_binding_changed(ID, ?customer_binding_status_changed(?customer_binding_failed(OperationFailure)))
+    ],
+    _ = await_for_changes(SuccessChanges, CustomerID, Client).
+
 
 start_binding(C) ->
     Client = cfg(client, C),
