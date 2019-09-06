@@ -109,6 +109,14 @@
 ).
 
 -define(
+    cm_shop_contract_modification(ContractID, PayoutToolID),
+    {contract_modification, #claim_management_ShopContractModification{
+        contract_id = ContractID,
+        payout_tool_id = PayoutToolID
+    }}
+).
+
+-define(
     cm_shop_creation(ShopID, ShopParams),
     ?cm_shop_modification(ShopID, {creation, ShopParams})
 ).

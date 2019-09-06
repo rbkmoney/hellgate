@@ -131,15 +131,8 @@ from_cm_shop_modification({category_modification, _CategoryRef} = CategoryModifi
     CategoryModification;
 from_cm_shop_modification({details_modification, _ShopDetails} = DetailsModification) ->
     DetailsModification;
-from_cm_shop_modification({contract_modification, ShopContractModification}) ->
-    #claim_management_ShopContractModification{
-        contract_id = ContractID,
-        payout_tool_id = PayoutToolID
-    } = ShopContractModification,
-    {contract_modification, #payproc_ShopContractModification{
-        contract_id = ContractID,
-        payout_tool_id = PayoutToolID
-    }};
+from_cm_shop_modification(?cm_shop_contract_modification(ContractID, PayoutToolID)) ->
+    ?shop_contract_modification(ContractID, PayoutToolID);
 from_cm_shop_modification({payout_tool_modification, _PayoutToolID} = PayoutToolModification) ->
     PayoutToolModification;
 from_cm_shop_modification({location_modification, _ShopLocation} = LocationModification) ->
