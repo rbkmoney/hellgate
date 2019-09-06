@@ -128,10 +128,19 @@
     ?cm_shop_modification(ShopID, {creation, ShopParams})
 ).
 
+-define(
+    cm_shop_account_creation_params(CurrencyRef),
+    {shop_account_creation, #claim_management_ShopAccountParams{
+        currency = CurrencyRef
+    }}
+).
 
 -define(
-    cm_shop_account_creation(ShopID, ShopAccountParams),
-    ?cm_shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
+    cm_shop_account_creation(ShopID, CurrencyRef),
+    ?cm_shop_modification(
+        ShopID,
+        ?cm_shop_account_creation_params(CurrencyRef)
+    )
 ).
 
 -endif.

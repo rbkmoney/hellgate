@@ -298,12 +298,11 @@ shop_creation(C) ->
         contract_id    = ContractID,
         payout_tool_id = PayoutToolID1
     },
-    ShopAccountParams = #claim_management_ShopAccountParams{currency = ?cur(<<"RUB">>)},
     Schedule = ?bussched(1),
     ScheduleParams = #claim_management_ScheduleModification{schedule = Schedule},
     Modifications = [
         ?cm_shop_creation(ShopID, ShopParams),
-        ?cm_shop_account_creation(ShopID, ShopAccountParams),
+        ?cm_shop_account_creation(ShopID, ?cur(<<"RUB">>)),
         ?cm_shop_modification(ShopID, {payout_schedule_modification, ScheduleParams})
     ],
     Claim = claim(Modifications),
@@ -442,11 +441,10 @@ shop_already_exists(C) ->
         contract_id    = ?REAL_CONTRACT_ID1,
         payout_tool_id = ?REAL_PAYOUT_TOOL_ID1
     },
-    ShopAccountParams = #claim_management_ShopAccountParams{currency = ?cur(<<"RUB">>)},
     ScheduleParams = #claim_management_ScheduleModification{schedule = ?bussched(1)},
     Modifications = [
         ?cm_shop_creation(ShopID, ShopParams),
-        ?cm_shop_account_creation(ShopID, ShopAccountParams),
+        ?cm_shop_account_creation(ShopID, ?cur(<<"RUB">>)),
         ?cm_shop_modification(ShopID, {payout_schedule_modification, ScheduleParams})
     ],
     Claim = claim(Modifications),

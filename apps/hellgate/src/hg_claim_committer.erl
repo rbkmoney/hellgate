@@ -137,10 +137,7 @@ from_cm_shop_modification({payout_tool_modification, _PayoutToolID} = PayoutTool
     PayoutToolModification;
 from_cm_shop_modification({location_modification, _ShopLocation} = LocationModification) ->
     LocationModification;
-from_cm_shop_modification({shop_account_creation, ShopAccountParams}) ->
-    #claim_management_ShopAccountParams{
-        currency = CurrencyRef
-    } = ShopAccountParams,
+from_cm_shop_modification(?cm_shop_account_creation_params(CurrencyRef)) ->
     {shop_account_creation, #payproc_ShopAccountParams{
         currency = CurrencyRef
     }};
