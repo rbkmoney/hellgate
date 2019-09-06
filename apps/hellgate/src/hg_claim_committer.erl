@@ -11,7 +11,6 @@
 
 from_claim_mgmt(#claim_management_Claim{
     id         = ID,
-    status     = Status,
     changeset  = Changeset,
     revision   = Revision,
     created_at = CreatedAt,
@@ -19,7 +18,7 @@ from_claim_mgmt(#claim_management_Claim{
 }) ->
     #payproc_Claim{
         id         = ID,
-        status     = from_cm_status(Status),
+        status     = ?pending(),
         changeset  = from_cm_changeset(Changeset),
         revision   = Revision,
         created_at = CreatedAt,
@@ -27,19 +26,6 @@ from_claim_mgmt(#claim_management_Claim{
     }.
 
 %%% Internal functions
-
-from_cm_status({pending, #claim_management_ClaimPending{}}) ->
-    {pending, #payproc_ClaimPending{}};
-from_cm_status({review, #claim_management_ClaimReview{}}) ->
-    {pending, #payproc_ClaimPending{}};
-from_cm_status({pending_acceptance, #claim_management_ClaimPendingAcceptance{}}) ->
-    {pending, #payproc_ClaimPending{}};
-from_cm_status({accepted, #claim_management_ClaimAccepted{}}) ->
-    {pending, #payproc_ClaimAccepted{}};
-from_cm_status({denied, #claim_management_ClaimDenied{reason = Reason}}) ->
-    {pending, #payproc_ClaimDenied{reason = Reason}};
-from_cm_status({revoked, #claim_management_ClaimRevoked{reason = Reason}}) ->
-    {pending, #payproc_ClaimRevoked{reason = Reason}}.
 
 from_cm_changeset(Changeset) ->
     [from_cm_party_mod(PartyMod) ||

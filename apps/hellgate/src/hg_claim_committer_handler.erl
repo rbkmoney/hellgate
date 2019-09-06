@@ -22,19 +22,9 @@ handle_function_(Fun, [PartyID, _Claim] = Args, _Opts) when Fun == 'Accept'; Fun
 
 call(PartyID, FunctionName, Args) ->
     ok = scoper:add_meta(#{party_id => PartyID}),
-    ok = assert_party_accessible(PartyID),
     try
         hg_party_machine:call(PartyID, claim_committer, {'ClaimCommitter', FunctionName}, Args)
     catch
         throw:#payproc_PartyNotFound{} ->
             erlang:throw(#claim_management_PartyNotFound{})
-    end.
-
-assert_party_accessible(PartyID) ->
-    UserIdentity = hg_woody_handler_utils:get_user_identity(),
-    case hg_access_control:check_user(UserIdentity, PartyID) of
-        ok ->
-            ok;
-        invalid_user ->
-            throw(#claim_management_InvalidChangeset{reason = <<"invalid_user">>, invalid_changeset = []})
     end.
