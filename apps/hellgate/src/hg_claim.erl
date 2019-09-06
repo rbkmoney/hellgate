@@ -23,8 +23,8 @@
 
 -export([assert_revision/2]).
 -export([assert_pending/1]).
--export([assert_claim_applicable/4]).
--export([assert_claim_acceptable/4]).
+-export([assert_applicable/4]).
+-export([assert_acceptable/4]).
 -export([raise_invalid_changeset/1]).
 
 %% Types
@@ -89,7 +89,7 @@ update_changeset(NewChangeset, NewRevision, Timestamp, #payproc_Claim{changeset 
     claim() | no_return().
 
 accept(Timestamp, DomainRevision, Party, Claim) ->
-    ok = assert_claim_acceptable(Claim, Timestamp, DomainRevision, Party),
+    ok = assert_acceptable(Claim, Timestamp, DomainRevision, Party),
     Effects = make_effects(Timestamp, DomainRevision, Claim),
     set_status(?accepted(Effects), get_next_revision(Claim), Timestamp, Claim).
 
@@ -443,10 +443,10 @@ assert_pending(#payproc_Claim{status = ?pending()}) ->
 assert_pending(#payproc_Claim{status = Status}) ->
     throw(#payproc_InvalidClaimStatus{status = Status}).
 
--spec assert_claim_applicable(claim(), timestamp(), revision(), party()) ->
+-spec assert_applicable(claim(), timestamp(), revision(), party()) ->
     ok | no_return().
 
-assert_claim_applicable(Claim, Timestamp, Revision, Party) ->
+assert_applicable(Claim, Timestamp, Revision, Party) ->
     assert_changeset_applicable(get_changeset(Claim), Timestamp, Revision, Party).
 
 -spec assert_changeset_applicable(changeset(), timestamp(), revision(), party()) ->
@@ -585,10 +585,10 @@ get_payment_institution_realm(Ref, Revision, ContractID) ->
             raise_invalid_payment_institution(ContractID, Ref)
     end.
 
--spec assert_claim_acceptable(claim(), timestamp(), revision(), party()) ->
+-spec assert_acceptable(claim(), timestamp(), revision(), party()) ->
     ok | no_return().
 
-assert_claim_acceptable(Claim, Timestamp, Revision, Party0) ->
+assert_acceptable(Claim, Timestamp, Revision, Party0) ->
     Changeset = get_changeset(Claim),
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),
     Party = apply_effects(Effects, Timestamp, Party0),

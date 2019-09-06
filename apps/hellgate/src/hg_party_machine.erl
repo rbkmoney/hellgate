@@ -277,8 +277,8 @@ handle_call('Accept', [Claim], AuxSt, St) ->
     Revision = hg_domain:head(),
     Party = get_st_party(St),
     try
-        ok = hg_claim:assert_claim_applicable(PayprocClaim, Timestamp, Revision, Party),
-        ok = hg_claim:assert_claim_acceptable(PayprocClaim, Timestamp, Revision, Party),
+        ok = hg_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
+        ok = hg_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party),
         respond(
             ok,
             [],
