@@ -144,10 +144,5 @@ from_cm_shop_modification({shop_account_creation, ShopAccountParams}) ->
     {shop_account_creation, #payproc_ShopAccountParams{
         currency = CurrencyRef
     }};
-from_cm_shop_modification({payout_schedule_modification, ScheduleModification}) ->
-    #claim_management_ScheduleModification{
-        schedule = BusinessScheduleRef
-    } = ScheduleModification,
-    {payout_schedule_modification, #payproc_ScheduleModification{
-        schedule = BusinessScheduleRef
-    }}.
+from_cm_shop_modification(?cm_payout_schedule_modification(BusinessScheduleRef)) ->
+    ?payout_schedule_modification(BusinessScheduleRef).

@@ -86,6 +86,13 @@
 ).
 
 -define(
+    cm_payout_schedule_modification(BusinessScheduleRef),
+    {payout_schedule_modification, #claim_management_ScheduleModification{
+        schedule = BusinessScheduleRef
+    }}
+).
+
+-define(
     cm_adjustment_modification(ContractAdjustmentID, Mod),
     {adjustment_modification, #claim_management_ContractAdjustmentModificationUnit{
         adjustment_id = ContractAdjustmentID,
