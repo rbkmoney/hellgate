@@ -138,11 +138,7 @@ contractor_modification(C) ->
     {ok, Party1} = get_party(PartyID, C),
     #domain_PartyContractor{} = C1 = hg_party:get_contractor(ContractorID, Party1),
     Modifications = [
-        ?cm_contractor_identification_level_modification(ContractorID, full),
-        ?cm_contractor_identity_documents_modification(
-            ContractorID,
-            [<<"some_binary">>, <<"and_even_more_binary">>]
-        )
+        ?cm_contractor_identification_level_modification(ContractorID, full)
     ],
     Claim = claim(Modifications),
     ok = accept_claim(Claim, C),

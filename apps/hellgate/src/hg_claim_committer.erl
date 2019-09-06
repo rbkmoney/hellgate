@@ -48,14 +48,7 @@ from_cm_changeset(Changeset) ->
      } <- Changeset].
 
 from_cm_party_mod(?cm_contractor_modification(ContractorID, ContractorModification)) ->
-    NewContractorModification =
-        case ContractorModification of
-            ?cm_identity_documents_modification(Documents) ->
-                ?identity_documents_modification(Documents);
-            Other ->
-                Other
-        end,
-    ?contractor_modification(ContractorID, NewContractorModification);
+    ?contractor_modification(ContractorID, ContractorModification);
 from_cm_party_mod(?cm_contract_modification(ContractID, ContractModification)) ->
     ?contract_modification(
         ContractID,
