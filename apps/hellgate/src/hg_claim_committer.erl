@@ -81,11 +81,7 @@ from_cm_contract_modification(
     }};
 from_cm_contract_modification(?cm_contract_termination(Reason)) ->
     ?contract_termination(Reason);
-from_cm_contract_modification(
-    ?cm_adjustment_creation(
-        ContractAdjustmentID,
-        #claim_management_ContractAdjustmentParams{template = ContractTemplateRef}
-    )
+from_cm_contract_modification(?cm_adjustment_creation(ContractAdjustmentID, ContractTemplateRef)
 ) ->
     ?adjustment_creation(
         ContractAdjustmentID,
@@ -138,8 +134,6 @@ from_cm_shop_modification({payout_tool_modification, _PayoutToolID} = PayoutTool
 from_cm_shop_modification({location_modification, _ShopLocation} = LocationModification) ->
     LocationModification;
 from_cm_shop_modification(?cm_shop_account_creation_params(CurrencyRef)) ->
-    {shop_account_creation, #payproc_ShopAccountParams{
-        currency = CurrencyRef
-    }};
+    ?shop_account_creation_params(CurrencyRef);
 from_cm_shop_modification(?cm_payout_schedule_modification(BusinessScheduleRef)) ->
     ?payout_schedule_modification(BusinessScheduleRef).

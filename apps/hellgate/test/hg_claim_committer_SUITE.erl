@@ -219,10 +219,8 @@ contract_adjustment_creation(C) ->
     PartyID = cfg(party_id, C),
     ContractID = ?REAL_CONTRACT_ID1,
     ID = <<"ADJ1">>,
-    AdjustmentParams = #claim_management_ContractAdjustmentParams{
-        template = #domain_ContractTemplateRef{id = 2}
-    },
-    Modifications = [?cm_contract_modification(ContractID, ?cm_adjustment_creation(ID, AdjustmentParams))],
+    AdjustmentTemplate = #domain_ContractTemplateRef{id = 2},
+    Modifications = [?cm_contract_modification(ContractID, ?cm_adjustment_creation(ID, AdjustmentTemplate))],
     Claim = claim(Modifications),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),

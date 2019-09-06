@@ -101,8 +101,13 @@
 ).
 
 -define(
-    cm_adjustment_creation(ContractAdjustmentID, ContractAdjustmentParams),
-    ?cm_adjustment_modification(ContractAdjustmentID, {creation, ContractAdjustmentParams})
+    cm_adjustment_creation(ContractAdjustmentID, ContractTemplateRef),
+    ?cm_adjustment_modification(
+        ContractAdjustmentID,
+        {creation, #claim_management_ContractAdjustmentParams{
+            template = ContractTemplateRef
+        }}
+    )
 ).
 
 %%% Shop
