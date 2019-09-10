@@ -59,7 +59,7 @@
 
 -type party()           :: hg_party:party().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
--type party_status()     :: hg_party:party_status().
+-type party_status()    :: hg_party:party_status().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
