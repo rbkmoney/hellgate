@@ -23,6 +23,7 @@
 -export([create_party/3]).
 -export([blocking/2]).
 -export([suspension/2]).
+-export([get_status/1]).
 
 -export([get_contractor/2]).
 -export([set_contractor/2]).
@@ -50,6 +51,7 @@
 
 -export_type([party/0]).
 -export_type([party_revision/0]).
+-export_type([party_status/0]).
 
 %% Asserts
 
@@ -60,6 +62,7 @@
 -type party()                 :: dmsl_domain_thrift:'Party'().
 -type party_id()              :: dmsl_domain_thrift:'PartyID'().
 -type party_revision()        :: dmsl_domain_thrift:'PartyRevision'().
+-type party_status()          :: dmsl_domain_thrift:'PartyStatus'().
 -type contract()              :: dmsl_domain_thrift:'Contract'().
 -type contract_id()           :: dmsl_domain_thrift:'ContractID'().
 -type contractor()            :: dmsl_domain_thrift:'PartyContractor'().
@@ -129,6 +132,17 @@ blocking(Blocking, Party) ->
 
 suspension(Suspension, Party) ->
     Party#domain_Party{suspension = Suspension}.
+
+-spec get_status(party()) ->
+    party_status().
+
+get_status(Party) ->
+    #domain_PartyStatus{
+        id = Party#domain_Party.id,
+        revision = Party#domain_Party.revision,
+        blocking = Party#domain_Party.blocking,
+        suspension = Party#domain_Party.suspension
+    }.
 
 -spec get_contractor(contractor_id(), party()) ->
     contractor() | undefined.

@@ -32,6 +32,7 @@
 -export([get_meta/1]).
 -export([get_metadata/2]).
 -export([get_last_revision/1]).
+-export([get_status/1]).
 
 %%
 
@@ -58,6 +59,7 @@
 
 -type party()           :: hg_party:party().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
+-type party_status()     :: hg_party:party_status().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
@@ -493,6 +495,14 @@ get_last_revision(PartyID) ->
 get_last_revision_old_way(PartyID) ->
     {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
     get_revision_of_part(PartyID, History, Last, Step).
+
+-spec get_status(party_id()) ->
+    party_status() | no_return().
+
+get_status(PartyID) ->
+    hg_party:get_status(
+        get_party(PartyID)
+    ).
 
 -spec call(party_id(), service_name(), hg_proto_utils:thrift_fun_ref(), Args :: [term()]) ->
     term() | no_return().

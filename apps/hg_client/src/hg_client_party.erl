@@ -14,6 +14,7 @@
 -export([unblock/2]).
 -export([suspend/1]).
 -export([activate/1]).
+-export([get_status/1]).
 
 -export([get_meta/1]).
 -export([get_metadata/2]).
@@ -121,6 +122,11 @@ get(Client) ->
 get_revision(Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetRevision', []})).
 
+-spec get_status(pid()) ->
+    dmsl_domain_thrift:'PartyStatus'() | woody_error:business_error().
+
+get_status(Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetStatus', []})).
 
 -spec checkout(party_revision_param(), pid()) ->
     dmsl_domain_thrift:'Party'() | woody_error:business_error().
