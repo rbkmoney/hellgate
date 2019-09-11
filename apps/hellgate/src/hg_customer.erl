@@ -192,8 +192,7 @@ namespace() ->
 -spec init(binary(), hg_machine:machine()) ->
     hg_machine:result().
 init(EncodedParams, #{id := CustomerID}) ->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
-    CustomerParams = hg_proto_utils:deserialize(Type, EncodedParams),
+    CustomerParams = unmarshal_customer_params(EncodedParams),
     handle_result(#{
         changes => [
             get_customer_created_event(CustomerID, CustomerParams)
@@ -203,8 +202,10 @@ init(EncodedParams, #{id := CustomerID}) ->
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
-process_signal(Signal, #{history := History,  aux_state := AuxSt}) ->
-    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), unmarshal(auxst, AuxSt))).
+process_signal(Signal, #{history := History, aux_state := AuxSt0}) ->
+    State = collapse_history(unmarshal_history(History)),
+    AuxSt = unmarshal_aux_state(AuxSt0),
+    handle_result(handle_signal(Signal, State, AuxSt)).
 
 handle_signal(timeout, St0, AuxSt0) ->
     {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
@@ -289,7 +290,7 @@ handle_result(Params) ->
     end.
 
 handle_aux_state(#{auxst := AuxSt}, Acc) ->
-    Acc#{auxst => marshal(auxst, AuxSt)};
+    Acc#{auxst => marshal_aux_state(AuxSt)};
 handle_aux_state(#{}, Acc) ->
     Acc.
 
@@ -664,207 +665,23 @@ assert_shop_operable(Shop) ->
 -spec marshal_event_payload([customer_change()]) ->
     hg_machine:event_payload().
 marshal_event_payload(Changes) ->
-    #{format_version => undefined, data => marshal({list, change}, Changes)}.
+    wrap_event_payload({customer_changes, Changes}).
 
-marshal({list, T}, Vs) when is_list(Vs) ->
-    [marshal(T, V) || V <- Vs];
+wrap_event_payload(Payload) ->
+    Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
+    Bin = hg_proto_utils:serialize(Type, Payload),
+    #{
+        format_version => 1,
+        data => {bin, Bin}
+    }.
 
 %% AuxState
 
-marshal(auxst, AuxState) ->
-    maps:fold(
-        fun(K, V, Acc) ->
-            maps:put(marshal(binding_id, K), marshal(event_id, V), Acc)
-        end,
-        #{},
-        AuxState
-    );
-
-marshal(binding_id, BindingID) ->
-    marshal(str, BindingID);
-
-marshal(event_id, EventID) ->
-    marshal(int, EventID);
-
-%% Changes
-
-marshal(change, Change) ->
-    marshal(change_payload, Change);
-
-marshal(change_payload, ?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt)) ->
-    [2, #{
-        <<"change">>       => <<"created">>,
-        <<"customer_id">>  => marshal(str         , CustomerID),
-        <<"owner_id">>     => marshal(str         , OwnerID),
-        <<"shop_id">>      => marshal(str         , ShopID),
-        <<"metadata">>     => marshal(metadata    , Metadata),
-        <<"contact_info">> => marshal(contact_info, ContactInfo),
-        <<"created_at">>   => marshal(str         , CreatedAt)
-    }];
-marshal(change_payload, ?customer_deleted()) ->
-    [1, #{
-        <<"change">> => <<"deleted">>
-    }];
-marshal(change_payload, ?customer_status_changed(CustomerStatus)) ->
-    [1, #{
-        <<"change">> => <<"status">>,
-        <<"status">> => marshal(customer_status, CustomerStatus)
-    }];
-marshal(change_payload, ?customer_binding_changed(CustomerBindingID, Payload)) ->
-    [1, #{
-        <<"change">>     => <<"binding">>,
-        <<"binding_id">> => marshal(str, CustomerBindingID),
-        <<"payload">>    => marshal(binding_change_payload, Payload)
-    }];
-
-%% Change components
-
-marshal(
-    customer,
-    #payproc_Customer{
-        id           = ID,
-        owner_id     = OwnerID,
-        shop_id      = ShopID,
-        created_at   = CreatedAt,
-        contact_info = ContactInfo,
-        metadata     = Metadata
-    }
-) ->
-    #{
-        <<"id">>           => marshal(str         , ID),
-        <<"owner_id">>     => marshal(str         , OwnerID),
-        <<"shop_id">>      => marshal(str         , ShopID),
-        <<"created_at">>   => marshal(str         , CreatedAt),
-        <<"contact_info">> => marshal(contact_info, ContactInfo),
-        <<"metadata">>     => marshal(metadata    , Metadata)
-    };
-
-marshal(customer_status, ?customer_unready()) ->
-    <<"unready">>;
-marshal(customer_status, ?customer_ready()) ->
-    <<"ready">>;
-
-marshal(
-    binding,
-    #payproc_CustomerBinding{
-        id                  = ID,
-        rec_payment_tool_id = RecPaymentToolID,
-        payment_resource    = PaymentResource
-    }
-) ->
-    #{
-        <<"id">>            => marshal(str              , ID),
-        <<"recpaytool_id">> => marshal(str              , RecPaymentToolID),
-        <<"payresource">>   => marshal(payment_resource , PaymentResource)
-    };
-
-marshal(
-    contact_info,
-    #domain_ContactInfo{
-        phone_number = PhoneNumber,
-        email        = Email
-    }
-) ->
-    genlib_map:compact(#{
-        <<"phone">> => marshal(str, PhoneNumber),
-        <<"email">> => marshal(str, Email)
-    });
-
-marshal(
-    payment_resource,
-    #domain_DisposablePaymentResource{
-        payment_tool       = PaymentTool,
-        payment_session_id = PaymentSessionID,
-        client_info        = ClientInfo
-    }
-) ->
-    #{
-        <<"paytool">>     => hg_payment_tool:marshal(PaymentTool),
-        <<"session">>     => marshal(str           , PaymentSessionID),
-        <<"client_info">> => marshal(client_info   , ClientInfo)
-    };
-
-marshal(
-    client_info,
-    #domain_ClientInfo{
-        ip_address  = IPAddress,
-        fingerprint = Fingerprint
-    }
-) ->
-    genlib_map:compact(#{
-        <<"ip">>          => marshal(str, IPAddress),
-        <<"fingerprint">> => marshal(str, Fingerprint)
-    });
-
-marshal(binding_status, ?customer_binding_pending()) ->
-    <<"pending">>;
-marshal(binding_status, ?customer_binding_succeeded()) ->
-    <<"succeeded">>;
-marshal(binding_status, ?customer_binding_failed(Failure)) ->
-    [
-        <<"failed">>,
-        marshal(failure, Failure)
-    ];
-
-marshal(binding_change_payload, ?customer_binding_started(CustomerBinding, Timestamp)) ->
-    [
-        <<"started">>,
-        marshal(binding, CustomerBinding),
-        marshal(str, Timestamp)
-    ];
-marshal(binding_change_payload, ?customer_binding_status_changed(CustomerBindingStatus)) ->
-    [
-        <<"status">>,
-        marshal(binding_status, CustomerBindingStatus)
-    ];
-marshal(binding_change_payload, ?customer_binding_interaction_requested(UserInteraction)) ->
-    [
-        <<"interaction">>,
-        marshal(interaction, UserInteraction)
-    ];
-
-marshal(interaction, {redirect, Redirect}) ->
-    [
-        <<"redirect">>,
-        marshal(redirect, Redirect)
-    ];
-
-marshal(redirect, {get_request, #'BrowserGetRequest'{uri = URI}}) ->
-    [
-        <<"get">>,
-        marshal(str, URI)
-    ];
-marshal(redirect, {post_request, #'BrowserPostRequest'{uri = URI, form = Form}}) ->
-    [
-        <<"post">>,
-        #{
-            <<"uri">>  => marshal(str, URI),
-            <<"form">> => marshal(map_str, Form)
-        }
-    ];
-
-marshal(sub_failure, undefined) ->
-    undefined;
-marshal(sub_failure, #domain_SubFailure{} = SubFailure) ->
-    genlib_map:compact(#{
-        <<"code">> => marshal(str        , SubFailure#domain_SubFailure.code),
-        <<"sub" >> => marshal(sub_failure, SubFailure#domain_SubFailure.sub )
-    });
-
-marshal(failure, {operation_timeout, _}) ->
-    [1, <<"operation_timeout">>];
-marshal(failure, {failure, #domain_Failure{} = Failure}) ->
-    [1, [<<"failure">>, genlib_map:compact(#{
-        <<"code"  >> => marshal(str        , Failure#domain_Failure.code  ),
-        <<"reason">> => marshal(str        , Failure#domain_Failure.reason),
-        <<"sub"   >> => marshal(sub_failure, Failure#domain_Failure.sub   )
-    })]];
-
-marshal(metadata, Metadata) ->
-    hg_msgpack_marshalling:marshal(json, Metadata);
-
-marshal(_, Other) ->
-    Other.
+-spec marshal_aux_state(hg_machine:auxst()) ->
+    binary().
+marshal_aux_state(Payload) ->
+    Type = {map, string, i64},
+    hg_proto_utils:serialize(Type, Payload).
 
 %%
 %% Unmarshalling
@@ -880,15 +697,31 @@ unmarshal_history(Events) ->
 unmarshal_event({ID, Dt, Payload}) ->
     {ID, Dt, unmarshal_event_payload(Payload)}.
 
+-spec unmarshal_aux_state(binary()) ->
+    hg_machine:auxst().
+unmarshal_aux_state(Bin) -> %@ TODO: Compatability?
+    Type = {map, string, i64},
+    hg_proto_utils:deserialize(Type, Bin).
+
 -spec unmarshal_event_payload(hg_machine:event_payload()) ->
     [customer_change()].
+unmarshal_event_payload(#{format_version := 1, data := {bin, Changes}}) ->
+    Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
+    {customer_changes, Buf} = hg_proto_utils:deserialize(Type, Changes),
+    Buf;
 unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
     unmarshal({list, change}, Changes).
+
+-spec unmarshal_customer_params(binary()) ->
+    customer_params().
+unmarshal_customer_params(Bin) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
+    hg_proto_utils:deserialize(Type, Bin).
 
 unmarshal({list, T}, Vs) when is_list(Vs) ->
     [unmarshal(T, V) || V <- Vs];
 
-%% AuxState
+%% Aux State
 
 unmarshal(auxst, AuxState) ->
     maps:fold(
