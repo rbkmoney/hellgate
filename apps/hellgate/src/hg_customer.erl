@@ -134,8 +134,7 @@ publish_customer_event(CustomerID, {ID, Dt, Payload}) ->
 -spec start(customer_id(), customer_params()) ->
     ok | no_return().
 start(ID, Params) ->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
-    EncodedParams = hg_proto_utils:serialize(Type, Params),
+    EncodedParams = marshal_customer_params(Params),
     map_start_error(hg_machine:start(?NS, ID, EncodedParams)).
 
 call(ID, Function, Args) ->
@@ -672,6 +671,12 @@ wrap_event_payload(Payload) ->
         format_version => 1,
         data => {bin, Bin}
     }.
+
+-spec marshal_customer_params(customer_params()) ->
+    binary().
+marshal_customer_params(Params) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
+    hg_proto_utils:serialize(Type, Params).
 
 %%
 %% Unmarshalling
