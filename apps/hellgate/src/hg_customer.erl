@@ -202,10 +202,8 @@ init(EncodedParams, #{id := CustomerID}) ->
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
-process_signal(Signal, #{history := History, aux_state := AuxSt0}) ->
-    State = collapse_history(unmarshal_history(History)),
-    AuxSt = unmarshal_aux_state(AuxSt0),
-    handle_result(handle_signal(Signal, State, AuxSt)).
+process_signal(Signal, #{history := History, aux_state := AuxSt}) ->
+    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), unmarshal(auxst, AuxSt))).
 
 handle_signal(timeout, St0, AuxSt0) ->
     {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
@@ -290,7 +288,7 @@ handle_result(Params) ->
     end.
 
 handle_aux_state(#{auxst := AuxSt}, Acc) ->
-    Acc#{auxst => marshal_aux_state(AuxSt)};
+    Acc#{auxst => marshal(auxst, AuxSt)};
 handle_aux_state(#{}, Acc) ->
     Acc.
 
@@ -677,11 +675,23 @@ wrap_event_payload(Payload) ->
 
 %% AuxState
 
--spec marshal_aux_state(hg_machine:auxst()) ->
-    binary().
-marshal_aux_state(Payload) ->
-    Type = {map, string, i64},
-    hg_proto_utils:serialize(Type, Payload).
+marshal(auxst, AuxState) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(marshal(binding_id, K), marshal(event_id, V), Acc)
+        end,
+        #{},
+        AuxState
+    );
+
+marshal(binding_id, BindingID) ->
+    marshal(str, BindingID);
+
+marshal(event_id, EventID) ->
+    marshal(int, EventID);
+
+marshal(_, Other) ->
+    Other.
 
 %%
 %% Unmarshalling
@@ -696,12 +706,6 @@ unmarshal_history(Events) ->
     hg_machine:event([customer_change()]).
 unmarshal_event({ID, Dt, Payload}) ->
     {ID, Dt, unmarshal_event_payload(Payload)}.
-
--spec unmarshal_aux_state(binary()) ->
-    hg_machine:auxst().
-unmarshal_aux_state(Bin) -> %@ TODO: Compatability?
-    Type = {map, string, i64},
-    hg_proto_utils:deserialize(Type, Bin).
 
 -spec unmarshal_event_payload(hg_machine:event_payload()) ->
     [customer_change()].
