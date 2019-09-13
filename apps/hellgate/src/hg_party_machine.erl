@@ -40,6 +40,7 @@
 -define(STEP, 5).
 -define(SNAPSHOT_STEP, 10).
 -define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
+-define(CT_THIRFT_BINARY, <<"application/x-thrift-binary">>).
 
 -record(st, {
     party                :: undefined | party(),
@@ -1173,23 +1174,24 @@ try_attach_snapshot(Changes, AuxSt, _) ->
 -define(TOP_VERSION, 6).
 
 wrap_event_payload(Event) ->
-    ContentType = ?CT_ERLANG_BINARY,
-    Meta = #{
-        <<"vsn">> => ?TOP_VERSION,
-        <<"ct">>  => ContentType
-    },
-    Data = encode_event(ContentType, Event),
-    #{format_version => undefined, data => [Meta, Data]}.
+    EncodedEv = marshal_event_payload(Event),
+    #{
+        format_version => 1,
+        data => [EncodedEv, undefined]
+    }.
 
 wrap_event_payload_w_snapshot(Event, St) ->
-    ContentType = ?CT_ERLANG_BINARY,
-    Meta = #{
-        <<"vsn">> => ?TOP_VERSION,
-        <<"ct">>  => ContentType,
-        <<"state_snapshot">> => encode_state(ContentType, St)
-    },
-    Data = encode_event(ContentType, Event),
-    #{format_version => undefined, data => [Meta, Data]}.
+    EncodedEv = marshal_event_payload(Event),
+    StateSnapshot = encode_state(?CT_THIRFT_BINARY, St),
+    #{
+        format_version => 1,
+        data => [EncodedEv, StateSnapshot]
+    }.
+
+marshal_event_payload(Event) ->
+    Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
+    Bin = hg_proto_utils:serialize(Type, Event),
+    {bin, Bin}.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
@@ -1200,6 +1202,11 @@ unwrap_event({ID, Dt, Event}) ->
 unwrap_event_payload(#{format_version := Format, data := Changes}) ->
     unwrap_event_payload(Format, Changes).
 
+unwrap_event_payload(1, [{bin, Changes}, _]) ->
+    Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
+    hg_proto_utils:deserialize(Type, Changes);
+
+%% Legacy formats below
 unwrap_event_payload(undefined, [
     #{
         <<"vsn">> := Version,
@@ -1218,6 +1225,17 @@ unwrap_state({
     _ID,
     _Dt,
     #{
+        data := [_, {bin, _} = EncodedSt],
+        format_version := 1
+    }
+}) ->
+    decode_state(?CT_THIRFT_BINARY, EncodedSt);
+
+%% Legacy formats below
+unwrap_state({
+    _ID,
+    _Dt,
+    #{
         data := [
             #{<<"ct">>  := ContentType, <<"state_snapshot">> := EncodedSt},
             _EncodedEvent],
@@ -1229,13 +1247,14 @@ unwrap_state(_) ->
     undefined.
 
 encode_state(?CT_ERLANG_BINARY, St) ->
+    {bin, term_to_binary(St)};
+encode_state(?CT_THIRFT_BINARY, St) ->
     {bin, term_to_binary(St)}.
 
 decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
+    binary_to_term(EncodedSt);
+decode_state(?CT_THIRFT_BINARY, {bin, EncodedSt}) ->
     binary_to_term(EncodedSt).
-
-encode_event(?CT_ERLANG_BINARY, Event) ->
-    {bin, term_to_binary(Event)}.
 
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
