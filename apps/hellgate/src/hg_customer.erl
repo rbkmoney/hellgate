@@ -202,7 +202,7 @@ init(EncodedParams, #{id := CustomerID}) ->
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
 process_signal(Signal, #{history := History, aux_state := AuxSt}) ->
-    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), AuxSt)).
+    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), unmarshal(auxst, AuxSt))).
 
 handle_signal(timeout, St0, AuxSt0) ->
     {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
@@ -287,7 +287,7 @@ handle_result(Params) ->
     end.
 
 handle_aux_state(#{auxst := AuxSt}, Acc) ->
-    Acc#{auxst => AuxSt};
+    Acc#{auxst => marshal(auxst, AuxSt)};
 handle_aux_state(#{}, Acc) ->
     Acc.
 
@@ -678,6 +678,26 @@ marshal_customer_params(Params) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
     hg_proto_utils:serialize(Type, Params).
 
+%% AuxState
+
+marshal(auxst, AuxState) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(marshal(binding_id, K), marshal(event_id, V), Acc)
+        end,
+        #{},
+        AuxState
+    );
+
+marshal(binding_id, BindingID) ->
+    marshal(str, BindingID);
+
+marshal(event_id, EventID) ->
+    marshal(int, EventID);
+
+marshal(_, Other) ->
+    Other.
+
 %%
 %% Unmarshalling
 %%
@@ -709,6 +729,23 @@ unmarshal_customer_params(Bin) ->
 
 unmarshal({list, T}, Vs) when is_list(Vs) ->
     [unmarshal(T, V) || V <- Vs];
+
+%% Aux State
+
+unmarshal(auxst, AuxState) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(unmarshal(binding_id, K), unmarshal(event_id, V), Acc)
+        end,
+        #{},
+        AuxState
+    );
+
+unmarshal(binding_id, BindingID) ->
+    unmarshal(str, BindingID);
+
+unmarshal(event_id, EventID) ->
+    unmarshal(int, EventID);
 
 %% Changes
 
