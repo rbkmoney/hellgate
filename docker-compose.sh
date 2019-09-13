@@ -36,7 +36,7 @@ services:
       retries: 20
 
   shumpune:
-    image: dr2.rbkmoney.com/rbkmoney/shumpune:0e19e7eec1d5eab59f9e9b63188998947423810f
+    image: dr2.rbkmoney.com/rbkmoney/shumpune:d4c6618754b45d128be595d8813ed45f20c00b10
     restart: unless-stopped
     entrypoint:
       - java
