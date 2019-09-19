@@ -766,9 +766,8 @@ marshal_recurrent_paytool_params(Params) ->
 -spec marshal_event_payload([rec_payment_tool_change()]) ->
     hg_machine:event_payload().
 marshal_event_payload(Changes) ->
-    Type = {list, {struct, union, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolChange'}}},
-    %% {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
-    Bin = hg_proto_utils:serialize(Type, Changes),
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolEventData'}},
+    Bin = hg_proto_utils:serialize(Type, #payproc_RecurrentPaymentToolEventData{changes = Changes}),
     #{
         format_version => 1,
         data => {bin, Bin}
@@ -796,9 +795,10 @@ unmarshal_event({ID, Dt, Payload}) ->
 
 -spec unmarshal_event_payload(hg_machine:event_payload()) ->
     [rec_payment_tool_change()].
-unmarshal_event_payload(#{format_version := 1, data := {bin, Changes}}) ->
-    Type = {list, {struct, union, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolChange'}}},
-    hg_proto_utils:deserialize(Type, Changes);
+unmarshal_event_payload(#{format_version := 1, data := {bin, Bin}}) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolEventData'}},
+    #payproc_RecurrentPaymentToolEventData{changes = Changes} = hg_proto_utils:deserialize(Type, Bin),
+    Changes;
 unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
     unmarshal({list, changes}, Changes).
 
