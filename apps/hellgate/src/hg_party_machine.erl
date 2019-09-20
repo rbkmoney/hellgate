@@ -1172,24 +1172,20 @@ try_attach_snapshot(Changes, AuxSt, _) ->
 
 -define(TOP_VERSION, 6).
 
-wrap_event_payload(Event) ->
-    ContentType = ?CT_ERLANG_BINARY,
-    Meta = #{
-        <<"vsn">> => ?TOP_VERSION,
-        <<"ct">>  => ContentType
-    },
-    Data = encode_event(ContentType, Event),
-    #{format_version => undefined, data => [Meta, Data]}.
+wrap_event_payload(Changes) ->
+    marshal_event_payload(Changes, undefined).
 
-wrap_event_payload_w_snapshot(Event, St) ->
-    ContentType = ?CT_ERLANG_BINARY,
-    Meta = #{
-        <<"vsn">> => ?TOP_VERSION,
-        <<"ct">>  => ContentType,
-        <<"state_snapshot">> => encode_state(ContentType, St)
-    },
-    Data = encode_event(ContentType, Event),
-    #{format_version => undefined, data => [Meta, Data]}.
+wrap_event_payload_w_snapshot(Changes, St) ->
+    StateSnapshot = encode_state(?CT_ERLANG_BINARY, St),
+    marshal_event_payload(Changes, StateSnapshot).
+
+marshal_event_payload(?party_ev(Changes), StateSnapshot) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
+    Bin = hg_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
+    #{
+        format_version => 1,
+        data => {bin, Bin}
+    }.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
@@ -1199,6 +1195,11 @@ unwrap_event({ID, Dt, Event}) ->
 
 unwrap_event_payload(#{format_version := Format, data := Changes}) ->
     unwrap_event_payload(Format, Changes).
+
+unwrap_event_payload(1, {bin, ThriftEncodedBin}) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
+    #payproc_PartyEventData{changes = Changes} = hg_proto_utils:deserialize(Type, ThriftEncodedBin),
+    ?party_ev(Changes);
 
 unwrap_event_payload(undefined, [
     #{
@@ -1218,6 +1219,17 @@ unwrap_state({
     _ID,
     _Dt,
     #{
+        data := {bin, ThriftEncodedBin},
+        format_version := 1
+    }
+}) ->
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
+    #payproc_PartyEventData{state_snapshot = StateSnapshot} = hg_proto_utils:deserialize(Type, ThriftEncodedBin),
+    decode_state(?CT_ERLANG_BINARY, StateSnapshot);
+unwrap_state({
+    _ID,
+    _Dt,
+    #{
         data := [
             #{<<"ct">>  := ContentType, <<"state_snapshot">> := EncodedSt},
             _EncodedEvent],
@@ -1231,11 +1243,10 @@ unwrap_state(_) ->
 encode_state(?CT_ERLANG_BINARY, St) ->
     {bin, term_to_binary(St)}.
 
+decode_state(?CT_ERLANG_BINARY, undefined) ->
+    undefined;
 decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
     binary_to_term(EncodedSt).
-
-encode_event(?CT_ERLANG_BINARY, Event) ->
-    {bin, term_to_binary(Event)}.
 
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
