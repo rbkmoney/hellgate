@@ -79,6 +79,13 @@
 -define(shop_contract_modification(ContractID, PayoutToolID),
     {contract_modification, #payproc_ShopContractModification{contract_id = ContractID, payout_tool_id = PayoutToolID}}).
 
+-define(
+    shop_account_creation_params(CurrencyRef),
+    {shop_account_creation, #payproc_ShopAccountParams{
+        currency = CurrencyRef
+    }}
+).
+
 -define(proxy_modification(Proxy),
     {proxy_modification, #payproc_ProxyModification{proxy = Proxy}}).
 

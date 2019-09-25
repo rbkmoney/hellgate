@@ -23,6 +23,8 @@
 
 -export([assert_revision/2]).
 -export([assert_pending/1]).
+-export([assert_applicable/4]).
+-export([assert_acceptable/4]).
 -export([raise_invalid_changeset/1]).
 
 %% Types
@@ -87,7 +89,7 @@ update_changeset(NewChangeset, NewRevision, Timestamp, #payproc_Claim{changeset 
     claim() | no_return().
 
 accept(Timestamp, DomainRevision, Party, Claim) ->
-    ok = assert_changeset_acceptable(get_changeset(Claim), Timestamp, DomainRevision, Party),
+    ok = assert_acceptable(Claim, Timestamp, DomainRevision, Party),
     Effects = make_effects(Timestamp, DomainRevision, Claim),
     set_status(?accepted(Effects), get_next_revision(Claim), Timestamp, Claim).
 
@@ -379,7 +381,9 @@ update_contract(
 update_contract({legal_agreement_bound, LegalAgreement}, Contract) ->
     Contract#domain_Contract{legal_agreement = LegalAgreement};
 update_contract({report_preferences_changed, ReportPreferences}, Contract) ->
-    Contract#domain_Contract{report_preferences = ReportPreferences}.
+    Contract#domain_Contract{report_preferences = ReportPreferences};
+update_contract({contractor_changed, ContractorID}, Contract) ->
+    Contract#domain_Contract{contractor_id = ContractorID}.
 
 apply_shop_effect(_, {created, Shop}, Party) ->
     hg_party:set_shop(Shop, Party);
@@ -438,6 +442,15 @@ assert_pending(#payproc_Claim{status = ?pending()}) ->
     ok;
 assert_pending(#payproc_Claim{status = Status}) ->
     throw(#payproc_InvalidClaimStatus{status = Status}).
+
+-spec assert_applicable(claim(), timestamp(), revision(), party()) ->
+    ok | no_return().
+
+assert_applicable(Claim, Timestamp, Revision, Party) ->
+    assert_changeset_applicable(get_changeset(Claim), Timestamp, Revision, Party).
+
+-spec assert_changeset_applicable(changeset(), timestamp(), revision(), party()) ->
+    ok | no_return().
 
 assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
     case Change of
@@ -572,7 +585,11 @@ get_payment_institution_realm(Ref, Revision, ContractID) ->
             raise_invalid_payment_institution(ContractID, Ref)
     end.
 
-assert_changeset_acceptable(Changeset, Timestamp, Revision, Party0) ->
+-spec assert_acceptable(claim(), timestamp(), revision(), party()) ->
+    ok | no_return().
+
+assert_acceptable(Claim, Timestamp, Revision, Party0) ->
+    Changeset = get_changeset(Claim),
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),
     Party = apply_effects(Effects, Timestamp, Party0),
     hg_party:assert_party_objects_valid(Timestamp, Revision, Party).

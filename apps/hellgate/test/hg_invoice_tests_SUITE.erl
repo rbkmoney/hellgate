@@ -36,6 +36,7 @@
 
 -export([payment_start_idempotency/1]).
 -export([payment_success/1]).
+-export([processing_deadline_reached_test/1]).
 -export([payment_success_empty_cvv/1]).
 -export([payment_success_additional_info/1]).
 -export([payment_w_terminal_success/1]).
@@ -64,6 +65,7 @@
 -export([payment_hold_cancellation/1]).
 -export([payment_hold_auto_cancellation/1]).
 -export([payment_hold_capturing/1]).
+-export([deadline_doesnt_affect_payment_capturing/1]).
 -export([payment_hold_partial_capturing/1]).
 -export([payment_hold_partial_capturing_with_cart/1]).
 -export([payment_hold_partial_capturing_with_cart_missing_cash/1]).
@@ -76,6 +78,7 @@
 -export([invalid_refund_shop_status/1]).
 -export([payment_refund_idempotency/1]).
 -export([payment_refund_success/1]).
+-export([deadline_doesnt_affect_payment_refund/1]).
 -export([payment_manual_refund/1]).
 -export([payment_partial_refunds_success/1]).
 -export([payment_refund_id_types/1]).
@@ -198,6 +201,7 @@ groups() ->
 
             payment_start_idempotency,
             payment_success,
+            processing_deadline_reached_test,
             payment_success_empty_cvv,
             payment_success_additional_info,
             payment_w_terminal_success,
@@ -231,6 +235,7 @@ groups() ->
                 retry_temporary_unavailability_refund,
                 payment_refund_idempotency,
                 payment_refund_success,
+                deadline_doesnt_affect_payment_refund,
                 payment_partial_refunds_success,
                 invalid_amount_payment_partial_refund,
                 invalid_amount_partial_capture_and_refund,
@@ -246,6 +251,7 @@ groups() ->
             payment_hold_cancellation,
             payment_hold_auto_cancellation,
             payment_hold_capturing,
+            deadline_doesnt_affect_payment_capturing,
             invalid_currency_partial_capture,
             invalid_amount_partial_capture,
             payment_hold_partial_capturing,
@@ -804,6 +810,27 @@ payment_success(C) ->
     ) = hg_client_invoicing:get(InvoiceID, Client),
     ?payment_w_status(PaymentID, ?captured()) = Payment,
     ?payment_w_context(Context) = Payment.
+
+-spec processing_deadline_reached_test(config()) -> test_return().
+
+processing_deadline_reached_test(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams0 = set_payment_context(Context, make_payment_params()),
+    Deadline = hg_datetime:format_now(),
+    PaymentParams = PaymentParams0#payproc_InvoicePaymentParams{processing_deadline = Deadline},
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_sessions_restarts(PaymentID, ?processed(), InvoiceID, Client, 0),
+    [?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))] = next_event(InvoiceID, Client),
+    ok = payproc_errors:match(
+        'PaymentFailure',
+        Failure,
+        fun({authorization_failed, {processing_deadline_reached, _}}) -> ok end
+    ).
 
 -spec payment_success_empty_cvv(config()) -> test_return().
 
@@ -1774,6 +1801,55 @@ payment_refund_success(C) ->
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
 
+-spec deadline_doesnt_affect_payment_refund(config()) -> _ | no_return().
+
+deadline_doesnt_affect_payment_refund(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    ProcessingDeadline = 4000, % ms
+    PaymentParams = set_processing_deadline(ProcessingDeadline, make_payment_params()),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    RefundParams = make_refund_params(),
+    % not finished yet
+    ?invalid_payment_status(?processed()) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    timer:sleep(ProcessingDeadline),
+    % not enough funds on the merchant account
+    Failure = {failure, payproc_errors:construct('RefundFailure',
+        {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
+    )},
+    Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
+    ] = next_event(InvoiceID, Client),
+    % top up merchant account
+    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    % create a refund finally
+    Refund = #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
+    ] = next_event(InvoiceID, Client),
+    #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client).
+
+
 -spec payment_manual_refund(config()) -> _ | no_return().
 
 payment_manual_refund(C) ->
@@ -2147,8 +2223,19 @@ payment_hold_auto_cancellation(C) ->
 payment_hold_capturing(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params({hold, cancel}),
+    PaymentID = process_payment(InvoiceID, make_payment_params({hold, cancel}), Client),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
+
+-spec deadline_doesnt_affect_payment_capturing(config()) -> _ | no_return().
+
+deadline_doesnt_affect_payment_capturing(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    ProcessingDeadline = 4000, % ms
+    PaymentParams = set_processing_deadline(ProcessingDeadline, make_payment_params({hold, cancel})),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    timer:sleep(ProcessingDeadline),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
 
@@ -2435,9 +2522,11 @@ adhoc_repair_failed_succeeded(C) ->
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
+    ]  = next_event(InvoiceID, Client),
     % assume no more events here since machine is FUBAR already
     timeout = next_event(InvoiceID, 2000, Client),
     Changes = [
@@ -2477,7 +2566,9 @@ adhoc_repair_invalid_changes_failed(C) ->
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
     ] = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, 1000, Client),
@@ -2652,7 +2743,9 @@ repair_fail_session_succeeded(C) ->
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
     ] = next_event(InvoiceID, Client),
 
@@ -2701,7 +2794,9 @@ repair_complex_succeeded_second(C) ->
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
     ] = next_event(InvoiceID, Client),
 
@@ -3059,10 +3154,14 @@ await_payment_session_started(InvoiceID, PaymentID, Client, Target) ->
     PaymentID.
 
 await_payment_process_interaction(InvoiceID, PaymentID, Client) ->
+    Events0 = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started())),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = Events0,
+    Events1 = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?interaction_requested(UserInteraction)))
-    ] = next_event(InvoiceID, Client),
+    ] = Events1,
     UserInteraction.
 
 await_payment_process_finish(InvoiceID, PaymentID, Client) ->
@@ -4580,3 +4679,8 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
             }
         }}
     ].
+
+% Deadline as timeout()
+set_processing_deadline(Timeout, PaymentParams) ->
+    Deadline = woody_deadline:to_binary(woody_deadline:from_timeout(Timeout)),
+    PaymentParams#payproc_InvoicePaymentParams{processing_deadline = Deadline}.

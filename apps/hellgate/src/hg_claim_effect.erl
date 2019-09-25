@@ -84,7 +84,9 @@ make_contract_effect(_, {legal_agreement_binding, LegalAgreement}, _, _) ->
     {legal_agreement_bound, LegalAgreement};
 make_contract_effect(ID, {report_preferences_modification, ReportPreferences}, _, Revision) ->
     _ = assert_report_schedule_valid(ID, ReportPreferences, Revision),
-    {report_preferences_changed, ReportPreferences}.
+    {report_preferences_changed, ReportPreferences};
+make_contract_effect(_, {contractor_modification, ContractorID}, _, _) ->
+    {contractor_changed, ContractorID}.
 
 make_shop_effect(ID, {creation, ShopParams}, Timestamp, _) ->
     {created, hg_party:create_shop(ID, ShopParams, Timestamp)};

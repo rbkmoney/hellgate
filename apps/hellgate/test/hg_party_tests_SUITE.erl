@@ -40,6 +40,7 @@
 -export([party_activation/1]).
 -export([party_already_suspended/1]).
 -export([party_already_active/1]).
+-export([party_get_status/1]).
 
 -export([party_meta_retrieval/1]).
 -export([party_metadata_setting/1]).
@@ -109,6 +110,7 @@ all() ->
         {group, party_revisioning},
         {group, party_blocking_suspension},
         {group, party_meta},
+        {group, party_status},
         {group, contract_management},
         {group, shop_management},
         {group, shop_account_lazy_creation},
@@ -158,6 +160,10 @@ groups() ->
             party_metadata_retrieval,
             party_metadata_removing,
             party_meta_retrieval
+        ]},
+        {party_status, [sequence], [
+            party_creation,
+            party_get_status
         ]},
         {contract_management, [sequence], [
             party_creation,
@@ -393,6 +399,7 @@ end_per_testcase(_Name, _C) ->
 -spec party_activation(config()) -> _ | no_return().
 -spec party_already_suspended(config()) -> _ | no_return().
 -spec party_already_active(config()) -> _ | no_return().
+-spec party_get_status(config()) -> _ | no_return().
 
 -spec party_meta_retrieval(config()) -> _ | no_return().
 -spec party_metadata_setting(config()) -> _ | no_return().
@@ -1195,6 +1202,17 @@ party_meta_retrieval(C) ->
     ok = hg_client_party:set_metadata(NS, hg_ct_helper:make_meta_data(), Client),
     Meta1 = hg_client_party:get_meta(Client),
     Meta0 =/= Meta1.
+
+party_get_status(C) ->
+    Client = cfg(client, C),
+    Status0 = hg_client_party:get_status(Client),
+    ?active(_) = Status0#domain_PartyStatus.suspension,
+    ?unblocked(_) = Status0#domain_PartyStatus.blocking,
+    ok = hg_client_party:block(<<"too much">>, Client),
+    Status1 = hg_client_party:get_status(Client),
+    ?active(_) = Status1#domain_PartyStatus.suspension,
+    ?blocked(<<"too much">>, _) = Status1#domain_PartyStatus.blocking,
+    Status1 =/= Status0.
 
 shop_blocking(C) ->
     Client = cfg(client, C),

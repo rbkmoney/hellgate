@@ -14,6 +14,7 @@
 -export([assert_shop_operable/1]).
 -export([compute_shop_terms/4]).
 -export([get_cart_amount/1]).
+-export([check_deadline/1]).
 
 -type amount()     :: dmsl_domain_thrift:'Amount'().
 -type currency()   :: dmsl_domain_thrift:'CurrencyRef'().
@@ -132,3 +133,14 @@ get_line_amount(#domain_InvoiceLine{
 }) ->
     #domain_Cash{amount = Amount * Quantity, currency = Currency}.
 
+-spec check_deadline(Deadline :: binary() | undefined) ->
+    ok | {error, deadline_reached}.
+check_deadline(undefined) ->
+    ok;
+check_deadline(Deadline) ->
+    case hg_datetime:compare(Deadline, hg_datetime:format_now()) of
+        later ->
+            ok;
+        _ ->
+            {error, deadline_reached}
+    end.

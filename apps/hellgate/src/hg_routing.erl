@@ -32,10 +32,10 @@
 -type reject_context() :: #{
     varset              := hg_selector:varset(),
     rejected_providers  := list(rejected_provider()),
-    rejected_terminals  := list(rejected_terminal())
+    rejected_routes     := list(rejected_route())
 }.
 -type rejected_provider() :: {provider_ref(), Reason :: term()}.
--type rejected_terminal() :: {terminal_ref(), Reason :: term()}.
+-type rejected_route()    :: {provider_ref(), terminal_ref(), Reason :: term()}.
 
 -type provider()     :: dmsl_domain_thrift:'Provider'().
 -type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
@@ -63,7 +63,7 @@ gather_providers(Predestination, PaymentInstitution, VS, Revision) ->
     RejectContext = #{
         varset => VS,
         rejected_providers => [],
-        rejected_terminals => []
+        rejected_routes => []
     },
     select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext).
 
@@ -102,7 +102,9 @@ select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext
                 {[P | Prvs], Reasons}
              catch
                 ?rejected(Reason) ->
-                    {Prvs, [{ProviderRef, Reason} | Reasons]}
+                    {Prvs, [{ProviderRef, Reason} | Reasons]};
+                error:{misconfiguration, Reason} ->
+                    {Prvs, [{ProviderRef, {'Misconfiguration', Reason}} | Reasons]}
             end
         end,
         {[], []},
@@ -112,14 +114,14 @@ select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext
 
 select_routes(Predestination, FailRatedProviders, VS, Revision, RejectContext) ->
     {Accepted, Rejected} = lists:foldl(
-        fun (Provider, {AcceptedTerminals, RejectedTerminals}) ->
+        fun (Provider, {AcceptedTerminals, RejectedRoutes}) ->
             {Accepts, Rejects} = collect_routes_for_provider(Predestination, Provider, VS, Revision),
-            {Accepts ++ AcceptedTerminals, Rejects ++ RejectedTerminals}
+            {Accepts ++ AcceptedTerminals, Rejects ++ RejectedRoutes}
         end,
         {[], []},
         FailRatedProviders
     ),
-    {Accepted, RejectContext#{rejected_terminals => Rejected}}.
+    {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
 do_choose_route(_FailRatedRoutes, #{risk_score := fatal}, RejectContext) ->
     {error, {no_route_found, {risk_score_is_too_high, RejectContext}}};
@@ -319,7 +321,9 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider, FailRate}, V
                 {[{ProviderRef, {TerminalRef, Terminal, Priority}, FailRate} | Accepted], Rejected}
             catch
                 ?rejected(Reason) ->
-                    {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]}
+                    {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]};
+                error:{misconfiguration, Reason} ->
+                    {Accepted, [{ProviderRef, TerminalRef, {'Misconfiguration', Reason}} | Rejected]}
             end
         end,
         {[], []},

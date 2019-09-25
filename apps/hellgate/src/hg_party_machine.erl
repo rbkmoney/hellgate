@@ -3,6 +3,7 @@
 -include("party_events.hrl").
 -include("legacy_party_structures.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
 %% Machine callbacks
 
@@ -31,6 +32,7 @@
 -export([get_meta/1]).
 -export([get_metadata/2]).
 -export([get_last_revision/1]).
+-export([get_status/1]).
 
 %%
 
@@ -57,6 +59,7 @@
 
 -type party()           :: hg_party:party().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
+-type party_status()    :: hg_party:party_status().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
@@ -131,6 +134,12 @@ process_signal({repair, _}, _Machine) ->
 
 process_call({{'PartyManagement', Fun}, FunArgs}, Machine) ->
     [_UserInfo, PartyID | Args] = FunArgs,
+    process_call_(PartyID, Fun, Args, Machine);
+process_call({{'ClaimCommitter', Fun}, FunArgs}, Machine) ->
+    [PartyID | Args] = FunArgs,
+    process_call_(PartyID, Fun, Args, Machine).
+
+process_call_(PartyID, Fun, Args, Machine) ->
     #{id := PartyID, history := History, aux_state := WrappedAuxSt} = Machine,
     try
         scoper:scope(
@@ -255,6 +264,51 @@ handle_call('RevokeClaim', [ID, ClaimRevision, Reason], AuxSt, St) ->
     respond(
         ok,
         [finalize_claim(Claim, Timestamp)],
+        AuxSt,
+        St
+    );
+
+%% ClaimCommitter
+
+handle_call('Accept', [Claim], AuxSt, St) ->
+    #claim_management_Claim{
+        changeset = Changeset
+    } = Claim,
+    PayprocClaim = hg_claim_committer:from_claim_mgmt(Claim),
+    Timestamp = hg_datetime:format_now(),
+    Revision = hg_domain:head(),
+    Party = get_st_party(St),
+    try
+        ok = hg_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
+        ok = hg_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party),
+        respond(
+            ok,
+            [],
+            AuxSt,
+            St
+        )
+    catch
+        throw:#payproc_InvalidChangeset{reason = Reason0} ->
+            Reason1 = io_lib:format("~0tp", [Reason0]),
+            Reason2 = unicode:characters_to_binary(Reason1),
+            erlang:throw(#claim_management_InvalidChangeset{reason = Reason2, invalid_changeset = Changeset})
+    end;
+
+handle_call('Commit', [CmClaim], AuxSt, St) ->
+    PayprocClaim = hg_claim_committer:from_claim_mgmt(CmClaim),
+    Timestamp = hg_datetime:format_now(),
+    Revision = hg_domain:head(),
+    Party = get_st_party(St),
+    AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, PayprocClaim),
+    PartyRevision = get_next_party_revision(St),
+    Changes = [
+        ?claim_created(PayprocClaim),
+        finalize_claim(AcceptedClaim, Timestamp),
+        ?revision_changed(Timestamp, PartyRevision)
+    ],
+    respond(
+        ok,
+        Changes,
         AuxSt,
         St
     ).
@@ -441,6 +495,14 @@ get_last_revision(PartyID) ->
 get_last_revision_old_way(PartyID) ->
     {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
     get_revision_of_part(PartyID, History, Last, Step).
+
+-spec get_status(party_id()) ->
+    party_status() | no_return().
+
+get_status(PartyID) ->
+    hg_party:get_status(
+        get_party(PartyID)
+    ).
 
 -spec call(party_id(), service_name(), hg_proto_utils:thrift_fun_ref(), Args :: [term()]) ->
     term() | no_return().

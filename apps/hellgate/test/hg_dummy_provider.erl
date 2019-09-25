@@ -167,13 +167,38 @@ generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = Recurre
                 }
             },
             token_suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
+        {preauth_3ds_sleep, Timeout} ->
+            Tag = <<"recurrent-sleep">>,
+            Uri = get_callback_url(),
+            UserInteraction = {
+                'redirect',
+                {
+                    'post_request',
+                    #'BrowserPostRequest'{uri = Uri, form = #{<<"tag">> => Tag}}
+                }
+            },
+            token_suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
+        no_preauth_timeout ->
+            Tag = <<"recurrent-suspend-timeout">>,
+            token_suspend(Tag, 1, <<"suspended">>, undefined);
+        no_preauth_timeout_failure ->
+            Tag = <<"recurrent-suspend-timeout-failure">>,
+            token_suspend(Tag, 1, <<"suspended">>, undefined);
+        no_preauth_suspend_default ->
+            Tag = <<"recurrent-suspend-timeout-default">>,
+            token_suspend(Tag, 1, <<"suspended">>, undefined);
         no_preauth ->
             token_sleep(1, <<"finishing">>)
     end;
+generate_token(<<"rec_token">> = Token, TokenInfo, _Opts) ->
+    token_finish(TokenInfo, Token);
 generate_token(<<"finishing">>, TokenInfo, _Opts) ->
     Token = ?REC_TOKEN,
     token_finish(TokenInfo, Token).
 
+handle_token_callback(<<"recurrent-sleep">>, <<"suspended">>, _TokenInfo, _Opts) ->
+    Token = ?REC_TOKEN,
+    token_respond(<<"sure">>, token_sleep(1, Token));
 handle_token_callback(_Tag, <<"suspended">>, TokenInfo, _Opts) ->
     Token = ?REC_TOKEN,
     token_respond(<<"sure">>, token_finish(TokenInfo, Token)).
@@ -190,6 +215,26 @@ token_sleep(Timeout, State) ->
         next_state = State
     }.
 
+token_suspend(<<"recurrent-suspend-timeout">> = Tag, Timeout, State, UserInteraction) ->
+    Callback = {callback, Tag},
+    #prxprv_RecurrentTokenProxyResult{
+        intent     = ?suspend(Tag, Timeout, UserInteraction, Callback),
+        next_state = State
+    };
+token_suspend(<<"recurrent-suspend-timeout-failure">> = Tag, Timeout, State, UserInteraction) ->
+    Failure = #domain_Failure{
+        code = <<"preauthorization_failed">>
+    },
+    OperationFailure = {operation_failure, {failure, Failure}},
+    #prxprv_RecurrentTokenProxyResult{
+        intent     = ?suspend(Tag, Timeout, UserInteraction, OperationFailure),
+        next_state = State
+    };
+token_suspend(<<"recurrent-suspend-timeout-default">> = Tag, Timeout, State, UserInteraction) ->
+    #prxprv_RecurrentTokenProxyResult{
+        intent     = ?suspend(Tag, Timeout, UserInteraction, undefined),
+        next_state = State
+    };
 token_suspend(Tag, Timeout, State, UserInteraction) ->
     #prxprv_RecurrentTokenProxyResult{
         intent     = ?suspend(Tag, Timeout, UserInteraction),
@@ -490,12 +535,20 @@ get_recurrent_paytool_scenario(#prxprv_RecurrentPaymentTool{payment_resource = P
 
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"no_preauth">>}}) ->
     no_preauth;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"no_preauth_timeout">>}}) ->
+    no_preauth_timeout;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"no_preauth_timeout_failure">>}}) ->
+    no_preauth_timeout_failure;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"no_preauth_suspend_default">>}}) ->
+    no_preauth_suspend_default;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"empty_cvv">>}}) ->
     empty_cvv;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds:timeout=", Timeout/binary>>}}) ->
     {preauth_3ds, erlang:binary_to_integer(Timeout)};
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_offsite">>}}) ->
     preauth_3ds_offsite;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_sleep:timeout=", Timeout/binary>>}}) ->
+    {preauth_3ds_sleep, erlang:binary_to_integer(Timeout)};
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>}}) ->
     forbidden;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_failure">>}}) ->
@@ -519,6 +572,12 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = 
 
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
+make_payment_tool(no_preauth_timeout) ->
+    make_simple_payment_tool(<<"no_preauth_timeout">>, visa);
+make_payment_tool(no_preauth_timeout_failure) ->
+    make_simple_payment_tool(<<"no_preauth_timeout_failure">>, visa);
+make_payment_tool(no_preauth_suspend_default) ->
+    make_simple_payment_tool(<<"no_preauth_suspend_default">>, visa);
 make_payment_tool(empty_cvv) ->
     {
         {bank_card, #domain_BankCard{
@@ -538,6 +597,9 @@ make_payment_tool({preauth_3ds, Timeout}) ->
     make_simple_payment_tool(<<"preauth_3ds:timeout=", TimeoutBin/binary>>, visa);
 make_payment_tool(preauth_3ds_offsite) ->
     make_simple_payment_tool(<<"preauth_3ds_offsite">>, jcb);
+make_payment_tool({preauth_3ds_sleep, Timeout}) ->
+    TimeoutBin = erlang:integer_to_binary(Timeout),
+    make_simple_payment_tool(<<"preauth_3ds_sleep:timeout=", TimeoutBin/binary>>, visa);
 make_payment_tool(forbidden) ->
     make_simple_payment_tool(<<"forbidden">>, visa);
 make_payment_tool(unexpected_failure) ->

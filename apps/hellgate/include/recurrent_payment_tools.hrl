@@ -67,6 +67,14 @@
         #payproc_SessionSuspended{}
     }
 ).
+-define(session_suspended(Tag, TimeoutBehaviour),
+    {session_suspended,
+        #payproc_SessionSuspended{
+            tag = Tag,
+            timeout_behaviour = TimeoutBehaviour
+        }
+    }
+).
 -define(session_activated(),
     {session_activated,
         #payproc_SessionActivated{}
