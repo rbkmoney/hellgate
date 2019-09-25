@@ -235,9 +235,10 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS1),
         RecPaymentTool
     ),
+    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS1, Revision),
     {ok, {Changes, Action}} = start_session(),
     handle_result(#{
-        changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
+        changes => [?recurrent_payment_tool_has_created(RecPaymentTool2, RiskScore, Route) | Changes],
         action => Action
     }).
 
@@ -381,6 +382,7 @@ process_callback_timeout(Action, St) ->
 
 get_route(#st{route = Route}) ->
     Route.
+
 %%
 
 construct_proxy_context(St) ->
@@ -724,6 +726,12 @@ create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision) ->
         route                = undefined
     }.
 
+set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision) ->
+    ProviderTerms = hg_routing:get_rec_paytools_terms(Route, Revision),
+    RecPaymentTool#payproc_RecurrentPaymentTool{
+        minimal_payment_cost = get_minimal_payment_cost(ProviderTerms, VS, Revision)
+    }.
+
 get_minimal_payment_cost(ProviderTerms, VS, Revision) ->
     {Cash, _VS} = validate_cost(
         ProviderTerms#domain_RecurrentPaytoolsProvisionTerms.cash_value,
@@ -799,6 +807,7 @@ marshal(rec_payment_tool, #payproc_RecurrentPaymentTool{} = RecPaymentTool) ->
         <<"id">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.id),
         <<"shop_id">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.shop_id),
         <<"party_id">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.party_id),
+        <<"party_revision">> => marshal(int, RecPaymentTool#payproc_RecurrentPaymentTool.party_revision),
         <<"domain_revision">> => marshal(int, RecPaymentTool#payproc_RecurrentPaymentTool.domain_revision),
         <<"status">> => marshal(status, RecPaymentTool#payproc_RecurrentPaymentTool.status),
         <<"created_at">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.created_at),
@@ -807,7 +816,8 @@ marshal(rec_payment_tool, #payproc_RecurrentPaymentTool{} = RecPaymentTool) ->
             RecPaymentTool#payproc_RecurrentPaymentTool.payment_resource
         ),
         <<"rec_token">> => marshal(str, RecPaymentTool#payproc_RecurrentPaymentTool.rec_token),
-        <<"route">> => hg_routing:marshal(RecPaymentTool#payproc_RecurrentPaymentTool.route)
+        <<"route">> => hg_routing:marshal(RecPaymentTool#payproc_RecurrentPaymentTool.route),
+        <<"minimal_payment_cost">> => marshal(cash, RecPaymentTool#payproc_RecurrentPaymentTool.minimal_payment_cost)
     };
 
 marshal(risk_score, low) ->
@@ -928,6 +938,12 @@ marshal(disposable_payment_resource, #domain_DisposablePaymentResource{} = Payme
         <<"client_info">> => marshal(client_info, PaymentResource#domain_DisposablePaymentResource.client_info)
     };
 
+marshal(cash, #domain_Cash{amount = Amount, currency = CurrencyRef}) ->
+    #{
+        <<"amount">>       => marshal(int, Amount),
+        <<"currency_ref">> => marshal(str, CurrencyRef#domain_CurrencyRef.symbolic_code)
+    };
+
 %%
 
 marshal(client_info, #domain_ClientInfo{} = ClientInfo) ->
@@ -1011,17 +1027,21 @@ unmarshal(rec_payment_tool, #{
     <<"payment_resource">>     := PaymentResource,
     <<"rec_token">>            := RecToken,
     <<"route">>                := Route
-}) ->
+} = MarshalledRecPaymentTool) ->
+    PartyRevision = maps:get(<<"party_revision">>, MarshalledRecPaymentTool, undefined),
+    MinimalPaymentCost = maps:get(<<"minimal_payment_cost">>, MarshalledRecPaymentTool, undefined),
     #payproc_RecurrentPaymentTool{
         id                   = unmarshal(str, ID),
         shop_id              = unmarshal(str, ShopID),
         party_id             = unmarshal(str, PartyID),
+        party_revision       = maybe_unmarshal_party_revision(PartyRevision),
         domain_revision      = unmarshal(int, Revision),
         status               = unmarshal(status, Status),
         created_at           = unmarshal(str, CreatedAt),
         payment_resource     = unmarshal(disposable_payment_resource, PaymentResource),
         rec_token            = unmarshal(str, RecToken),
-        route                = hg_routing:unmarshal(Route)
+        route                = hg_routing:unmarshal(Route),
+        minimal_payment_cost = maybe_unmarshal_cash(MinimalPaymentCost)
     };
 
 unmarshal(risk_score, <<"low">>) ->
@@ -1147,6 +1167,21 @@ unmarshal(client_info, ClientInfo) ->
 
 unmarshal(_, Other) ->
     Other.
+
+maybe_unmarshal_cash(undefined) ->
+    undefined;
+maybe_unmarshal_cash(#{<<"amount">> := Amount, <<"currency_ref">> := Code}) ->
+    #domain_Cash{
+        amount   = unmarshal(int, Amount),
+        currency = #domain_CurrencyRef{
+            symbolic_code = unmarshal(str, Code)
+        }
+    }.
+
+maybe_unmarshal_party_revision(undefined) ->
+    undefined;
+maybe_unmarshal_party_revision(PartyRevision) ->
+    unmarshal(int, PartyRevision).
 
 %%
 %% Event sink

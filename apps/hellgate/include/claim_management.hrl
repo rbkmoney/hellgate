@@ -3,15 +3,19 @@
 
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
--define(cm_modification_unit(ModID, Timestamp, Mod), #claim_management_ModificationUnit{
-    modification_id = ModID,
-    created_at      = Timestamp,
-    modification    = Mod
-}).
+-define(
+    cm_modification_unit(ModID, Timestamp, Mod, UserInfo),
+    #claim_management_ModificationUnit{
+        modification_id = ModID,
+        created_at      = Timestamp,
+        modification    = Mod,
+        user_info       = UserInfo
+    }
+).
 
 -define(
-    cm_party_modification(ModID, Timestamp, Mod),
-    ?cm_modification_unit(ModID, Timestamp, {party_modification, Mod})
+    cm_party_modification(ModID, Timestamp, Mod, UserInfo),
+    ?cm_modification_unit(ModID, Timestamp, {party_modification, Mod}, UserInfo)
 ).
 
 %%% Contractor
