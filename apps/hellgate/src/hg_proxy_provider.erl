@@ -172,7 +172,7 @@ handle_proxy_intent(#'prxprv_RecurrentTokenFinishIntent'{status = {failure, Fail
     {Events, Action};
 handle_proxy_intent(#'prxprv_SleepIntent'{timer = Timer, user_interaction = UserInteraction}, Action0) ->
     Action = hg_machine_action:set_timer(Timer, Action0),
-    Events = try_request_interaction(UserInteraction),
+    Events = [?session_activated() | try_request_interaction(UserInteraction)],
     {Events, Action};
 handle_proxy_intent(#'prxprv_SuspendIntent'{} = Intent, Action0) ->
     #'prxprv_SuspendIntent'{

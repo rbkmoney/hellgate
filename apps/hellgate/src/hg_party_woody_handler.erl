@@ -39,6 +39,10 @@ handle_function_('GetRevision', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     hg_party_machine:get_last_revision(PartyID);
 
+handle_function_('GetStatus', [UserInfo, PartyID], _Opts) ->
+    ok = set_meta_and_check_access(UserInfo, PartyID),
+    hg_party_machine:get_status(PartyID);
+
 handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
     Fun =:= 'Block' orelse
     Fun =:= 'Unblock' orelse

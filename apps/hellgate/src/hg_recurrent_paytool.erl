@@ -50,12 +50,14 @@
 -type merchant_terms()          :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
 -type domain_revision()         :: hg_domain:revision().
 -type action()                  :: hg_machine_action:t().
+-type timeout_behaviour()       :: dmsl_timeout_behaviour_thrift:'TimeoutBehaviour'().
 
 -type session() :: #{
-    status      := active | suspended | finished,
-    result      => session_result(),
-    trx         => undefined | trx_info(),
-    proxy_state => proxy_state()
+    status            := active | suspended | finished,
+    result            => session_result(),
+    trx               => undefined | trx_info(),
+    proxy_state       => proxy_state(),
+    timeout_behaviour => timeout_behaviour()
 }.
 
 -type proxy_state()             :: dmsl_proxy_provider_thrift:'ProxyState'().
@@ -326,7 +328,7 @@ validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentToo
     end,
     _ = LogFun("No route found, reason = ~p, varset: ~p", maps:get(varset, RejectContext)),
     _ = LogFun("No route found, reason = ~p, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
-    _ = LogFun("No route found, reason = ~p, rejected terminals: ~p", maps:get(rejected_terminals, RejectContext)),
+    _ = LogFun("No route found, reason = ~p, rejected routes: ~p", maps:get(rejected_routes, RejectContext)),
     error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}).
 
 start_session() ->
@@ -337,7 +339,8 @@ start_session() ->
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
     hg_machine:result().
 process_signal(Signal, #{history := History}) ->
-    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)))).
+    Result = handle_signal(Signal, collapse_history(unmarshal_history(History))),
+    handle_result(Result).
 
 handle_signal(timeout, St) ->
     process_timeout(St).
@@ -364,8 +367,17 @@ process(Action, St) ->
     finish_processing(Result, St).
 
 process_callback_timeout(Action, St) ->
-    Result = handle_proxy_callback_timeout(Action),
-    finish_processing(Result, St).
+    case get_session_timeout_behaviour(get_session(St)) of
+        {callback, Payload} ->
+            ProxyContext = construct_proxy_context(St),
+            Route = get_route(St),
+            {ok, CallbackResult} = hg_proxy_provider:handle_recurrent_token_callback(Payload, ProxyContext, Route),
+            {_Response, Result} = handle_callback_result(CallbackResult, Action, get_session(St)),
+            finish_processing(Result, St);
+        {operation_failure, Failure} ->
+            Result = handle_callback_timeout_failure(unmarshal(failure, Failure), Action),
+            finish_processing(Result, St)
+    end.
 
 get_route(#st{route = Route}) ->
     Route.
@@ -393,6 +405,9 @@ get_session_trx(#{trx := Trx}) ->
     Trx;
 get_session_trx(_) ->
     undefined.
+
+get_session_timeout_behaviour(#{timeout_behaviour := TimeoutBehaviour}) ->
+    TimeoutBehaviour.
 
 get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
@@ -461,10 +476,8 @@ make_proxy_result(Changes, Action) ->
 make_proxy_result(Changes, Action, Token) ->
     {wrap_session_events(Changes), Action, Token}.
 
-%%
-
-handle_proxy_callback_timeout(Action) ->
-    Changes = [?session_finished(?session_failed(?operation_timeout()))],
+handle_callback_timeout_failure(Failure, Action) ->
+    Changes = [?session_finished(?session_failed(Failure))],
     make_proxy_result(Changes, Action).
 
 wrap_session_events(SessionEvents) ->
@@ -540,8 +553,10 @@ merge_session_change(?session_finished(Result), Session) ->
     Session#{status := finished, result => Result};
 merge_session_change(?session_activated(), Session) ->
     Session#{status := active};
-merge_session_change(?session_suspended(), Session) ->
-    Session#{status := suspended};
+merge_session_change(?session_suspended(Tag, undefined), Session) ->
+    Session#{status := suspended, tag => Tag};
+merge_session_change(?session_suspended(Tag, TimeoutBehaviour), Session) ->
+    Session#{status := suspended, tag => Tag, timeout_behaviour := TimeoutBehaviour};
 merge_session_change(?trx_bound(Trx), Session) ->
     Session#{trx := Trx};
 merge_session_change(?proxy_st_changed(ProxyState), Session) ->
@@ -554,7 +569,8 @@ merge_session_change(?interaction_requested(_), Session) ->
 create_session() ->
     #{
         status => active,
-        trx => undefined
+        trx => undefined,
+        timeout_behaviour => {operation_failure, ?operation_timeout()}
     }.
 
 -type call() :: abandon.
@@ -827,8 +843,13 @@ marshal(session_change, ?session_finished(Result)) ->
         <<"finished">>,
         marshal(session_status, Result)
     ];
-marshal(session_change, ?session_suspended()) ->
-    <<"suspended">>;
+marshal(session_change, ?session_suspended(Tag, TimeoutBehaviour)) ->
+    [
+       <<"suspended">>,
+       marshal(str, Tag),
+       marshal(timeout_behaviour, TimeoutBehaviour)
+    ];
+
 marshal(session_change, ?session_activated()) ->
     <<"activated">>;
 marshal(session_change, ?trx_bound(Trx)) ->
@@ -881,6 +902,10 @@ marshal(interaction, {redirect, {post_request, #'BrowserPostRequest'{uri = URI, 
             }
         ]
     };
+marshal(timeout_behaviour, {callback, Callback}) ->
+    #{<<"callback">> => marshal(str, Callback)};
+marshal(timeout_behaviour, {operation_failure, Failure}) ->
+    #{<<"operation_failure">> => marshal(failure, Failure)};
 
 %%
 
@@ -1040,6 +1065,8 @@ unmarshal(session_change, [<<"finished">>, Result]) ->
     ?session_finished(unmarshal(session_status, Result));
 unmarshal(session_change, <<"suspended">>) ->
     ?session_suspended();
+unmarshal(session_change, [<<"suspended">>, Tag, TimeoutBehaviour]) ->
+    ?session_suspended(Tag, unmarshal(timeout_behaviour, TimeoutBehaviour));
 unmarshal(session_change, <<"activated">>) ->
     ?session_activated();
 unmarshal(session_change, [<<"transaction_bound">>, Trx]) ->
@@ -1080,6 +1107,10 @@ unmarshal(interaction, #{<<"redirect">> := [<<"post_request">>, #{
         }
     }};
 
+unmarshal(timeout_behaviour, #{<<"callback">> := Callback}) ->
+    {callback, unmarshal(str, Callback)};
+unmarshal(timeout_behaviour, #{<<"operation_failure">> := Failure}) ->
+    {operation_failure, unmarshal(failure, Failure)};
 %%
 
 unmarshal(status, <<"created">>) ->
