@@ -168,7 +168,7 @@ generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = Recurre
             },
             token_suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
         {preauth_3ds_sleep, Timeout} ->
-            Tag = <<"recurrent-sleep">>,
+            Tag = generate_tag(<<"recurrent-sleep">>),
             Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
@@ -179,13 +179,13 @@ generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = Recurre
             },
             token_suspend(Tag, Timeout, <<"suspended">>, UserInteraction);
         no_preauth_timeout ->
-            Tag = <<"recurrent-suspend-timeout">>,
+            Tag = generate_tag(<<"recurrent-suspend-timeout">>),
             token_suspend(Tag, 1, <<"suspended">>, undefined);
         no_preauth_timeout_failure ->
-            Tag = <<"recurrent-suspend-timeout-failure">>,
+            Tag = generate_tag(<<"recurrent-suspend-timeout-failure">>),
             token_suspend(Tag, 1, <<"suspended">>, undefined);
         no_preauth_suspend_default ->
-            Tag = <<"recurrent-suspend-timeout-default">>,
+            Tag = generate_tag(<<"recurrent-suspend-timeout-default">>),
             token_suspend(Tag, 1, <<"suspended">>, undefined);
         no_preauth ->
             token_sleep(1, <<"finishing">>)
@@ -196,7 +196,7 @@ generate_token(<<"finishing">>, TokenInfo, _Opts) ->
     Token = ?REC_TOKEN,
     token_finish(TokenInfo, Token).
 
-handle_token_callback(<<"recurrent-sleep">>, <<"suspended">>, _TokenInfo, _Opts) ->
+handle_token_callback(<<"recurrent-sleep-", _/binary>>, <<"suspended">>, _TokenInfo, _Opts) ->
     Token = ?REC_TOKEN,
     token_respond(<<"sure">>, token_sleep(1, Token));
 handle_token_callback(_Tag, <<"suspended">>, TokenInfo, _Opts) ->
@@ -215,13 +215,7 @@ token_sleep(Timeout, State) ->
         next_state = State
     }.
 
-token_suspend(<<"recurrent-suspend-timeout">> = Tag, Timeout, State, UserInteraction) ->
-    Callback = {callback, Tag},
-    #prxprv_RecurrentTokenProxyResult{
-        intent     = ?suspend(Tag, Timeout, UserInteraction, Callback),
-        next_state = State
-    };
-token_suspend(<<"recurrent-suspend-timeout-failure">> = Tag, Timeout, State, UserInteraction) ->
+token_suspend(<<"recurrent-suspend-timeout-failure-", _/binary>> = Tag, Timeout, State, UserInteraction) ->
     Failure = #domain_Failure{
         code = <<"preauthorization_failed">>
     },
@@ -230,9 +224,15 @@ token_suspend(<<"recurrent-suspend-timeout-failure">> = Tag, Timeout, State, Use
         intent     = ?suspend(Tag, Timeout, UserInteraction, OperationFailure),
         next_state = State
     };
-token_suspend(<<"recurrent-suspend-timeout-default">> = Tag, Timeout, State, UserInteraction) ->
+token_suspend(<<"recurrent-suspend-timeout-default-", _/binary>> = Tag, Timeout, State, UserInteraction) ->
     #prxprv_RecurrentTokenProxyResult{
         intent     = ?suspend(Tag, Timeout, UserInteraction, undefined),
+        next_state = State
+    };
+token_suspend(<<"recurrent-suspend-timeout-", _/binary>> = Tag, Timeout, State, UserInteraction) ->
+    Callback = {callback, Tag},
+    #prxprv_RecurrentTokenProxyResult{
+        intent     = ?suspend(Tag, Timeout, UserInteraction, Callback),
         next_state = State
     };
 token_suspend(Tag, Timeout, State, UserInteraction) ->
@@ -775,12 +775,14 @@ callback_to_hell(Tag, Payload) ->
     end.
 
 generate_payment_tag() ->
-    Tag = hg_utils:unique_id(),
-    <<"payment-", Tag/binary>>.
+    generate_tag(<<"payment">>).
 
 generate_recurent_tag() ->
-    Tag = hg_utils:unique_id(),
-    <<"recurrent-", Tag/binary>>.
+    generate_tag(<<"recurrent">>).
+
+generate_tag(Prefix) ->
+    ID = hg_utils:unique_id(),
+    <<Prefix/binary, "-", ID/binary>>.
 
 get_payment_info(Tag) ->
     hg_client_api:call(

@@ -294,6 +294,7 @@ init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({'hg_invoice_payment', 'p', '_'}, x),
+    application:set_env(hackney, max_connections, 200),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
     {Apps, Ret} = hg_ct_helper:start_apps([
