@@ -10,11 +10,21 @@
 -define(recurrent_payment_tool_event(RecurrentPaymentToolChanges),
     {recurrent_payment_tool_changes, RecurrentPaymentToolChanges}).
 
--define(recurrent_payment_tool_has_created(RecurrentPaymentTool, RiskScore, Route),
+-define(recurrent_payment_tool_has_created(RecurrentPaymentTool),
     {rec_payment_tool_created,
         #payproc_RecurrentPaymentToolHasCreated{
-            rec_payment_tool = RecurrentPaymentTool,
-            risk_score = RiskScore,
+            rec_payment_tool = RecurrentPaymentTool
+        }}).
+
+-define(recurrent_payment_tool_risk_score_changed(RiskScore),
+    {rec_payment_tool_risk_score_changed,
+        #payproc_RecurrentPaymentToolRiskScoreChanged{
+            risk_score = RiskScore
+        }}).
+
+-define(recurrent_payment_tool_route_changed(Route),
+    {rec_payment_tool_route_changed,
+        #payproc_RecurrentPaymentToolRouteChanged{
             route = Route
         }}).
 

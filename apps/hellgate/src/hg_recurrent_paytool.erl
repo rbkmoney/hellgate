@@ -235,8 +235,13 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         RecPaymentTool
     ),
     {ok, {Changes, Action}} = start_session(),
+    StartChanges = [
+        ?recurrent_payment_tool_has_created(RecPaymentTool),
+        ?recurrent_payment_tool_risk_score_changed(RiskScore),
+        ?recurrent_payment_tool_route_changed(Route)
+    ],
     handle_result(#{
-        changes => [?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route) | Changes],
+        changes => StartChanges ++ Changes,
         action => Action
     }).
 
@@ -512,12 +517,19 @@ apply_changes(Changes, St) ->
 apply_change(Event, undefined) ->
     apply_change(Event, #st{});
 
-apply_change(?recurrent_payment_tool_has_created(RecPaymentTool, RiskScore, Route), St) ->
+apply_change(?recurrent_payment_tool_has_created(RecPaymentTool), St) ->
+    St#st{
+        rec_payment_tool = RecPaymentTool
+    };
+apply_change(?recurrent_payment_tool_risk_score_changed(RiskScore), St) ->
+    St#st{
+        risk_score = RiskScore
+    };
+apply_change(?recurrent_payment_tool_route_changed(Route), St = #st{rec_payment_tool = RecPaymentTool}) ->
     St#st{
         rec_payment_tool = RecPaymentTool#payproc_RecurrentPaymentTool{
             route = Route
         },
-        risk_score = RiskScore,
         route = Route
     };
 apply_change(?recurrent_payment_tool_has_acquired(Token), St) ->
@@ -805,7 +817,7 @@ unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
 %%
 
 unmarshal({list, changes}, Changes) when is_list(Changes) ->
-    [unmarshal(change, Change) || Change <- Changes];
+    lists:flatten([unmarshal(change, Change) || Change <- Changes]);
 
 %%
 
@@ -815,11 +827,11 @@ unmarshal(change, [1, #{
     <<"risk_score">>       := RiskScore,
     <<"route">>            := Route
 }]) ->
-    ?recurrent_payment_tool_has_created(
-        unmarshal(rec_payment_tool, RecPaymentTool),
-        unmarshal(risk_score, RiskScore),
-        hg_routing:unmarshal(Route)
-    );
+    [
+        ?recurrent_payment_tool_has_created(unmarshal(rec_payment_tool, RecPaymentTool)),
+        ?recurrent_payment_tool_risk_score_changed(unmarshal(risk_score, RiskScore)),
+        ?recurrent_payment_tool_route_changed(hg_routing:unmarshal(Route))
+    ];
 unmarshal(change, [1, #{
     <<"change">> := <<"acquired">>,
     <<"token">>  := Token

@@ -362,7 +362,13 @@ produce_binding_changes([RecurrentPaytoolChange | Rest], Binding) ->
 produce_binding_changes([], _Binding) ->
     [].
 
-produce_binding_changes_(?recurrent_payment_tool_has_created(_, _, _), Binding) ->
+produce_binding_changes_(?recurrent_payment_tool_has_created(_), Binding) ->
+    ok = assert_binding_status(pending, Binding),
+    [];
+produce_binding_changes_(?recurrent_payment_tool_risk_score_changed(_), Binding) ->
+    ok = assert_binding_status(pending, Binding),
+    [];
+produce_binding_changes_(?recurrent_payment_tool_route_changed(_), Binding) ->
     ok = assert_binding_status(pending, Binding),
     [];
 produce_binding_changes_(?recurrent_payment_tool_has_acquired(_), Binding) ->
