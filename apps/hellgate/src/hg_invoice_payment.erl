@@ -283,9 +283,10 @@ init_(PaymentID, Params, Opts) ->
     MerchantTerms = get_merchant_terms(Opts, Revision),
     VS1 = collect_validation_varset(Party, Shop, VS0),
     Context = get_context_params(Params),
+    Deadline = get_processing_deadline(Params),
     Payment = construct_payment(
         PaymentID, CreatedAt, Cost, Payer, Flow, MerchantTerms, Party, Shop,
-        VS1, Revision, MakeRecurrent, Context, ExternalID
+        VS1, Revision, MakeRecurrent, Context, ExternalID, Deadline
     ),
     Events = [?payment_started(Payment)],
     {collapse_changes(Events, undefined), {Events, hg_machine_action:instant()}}.
@@ -332,6 +333,9 @@ get_context_params(#payproc_InvoicePaymentParams{context = Context}) ->
 
 get_external_id(#payproc_InvoicePaymentParams{external_id = ExternalID}) ->
     ExternalID.
+
+get_processing_deadline(#payproc_InvoicePaymentParams{processing_deadline = Deadline}) ->
+    Deadline.
 
 construct_payer({payment_resource, #payproc_PaymentResourcePayerParams{
     resource = Resource,
@@ -401,7 +405,8 @@ construct_payment(
     Revision,
     MakeRecurrent,
     Context,
-    ExternalID
+    ExternalID,
+    Deadline
 ) ->
     #domain_TermSet{payments = PaymentTerms, recurrent_paytools = RecurrentTerms} = Terms,
     PaymentTool = get_payer_payment_tool(Payer),
@@ -437,19 +442,20 @@ construct_payment(
     },
     ok = validate_recurrent_intention(RecurrentValidationVarset, MakeRecurrent),
     #domain_InvoicePayment{
-        id              = PaymentID,
-        created_at      = CreatedAt,
-        owner_id        = Party#domain_Party.id,
-        shop_id         = Shop#domain_Shop.id,
-        domain_revision = Revision,
-        party_revision  = Party#domain_Party.revision,
-        status          = ?pending(),
-        cost            = Cost,
-        payer           = Payer,
-        flow            = Flow,
-        make_recurrent  = MakeRecurrent,
-        context         = Context,
-        external_id     = ExternalID
+        id                  = PaymentID,
+        created_at          = CreatedAt,
+        owner_id            = Party#domain_Party.id,
+        shop_id             = Shop#domain_Shop.id,
+        domain_revision     = Revision,
+        party_revision      = Party#domain_Party.revision,
+        status              = ?pending(),
+        cost                = Cost,
+        payer               = Payer,
+        flow                = Flow,
+        make_recurrent      = MakeRecurrent,
+        context             = Context,
+        external_id         = ExternalID,
+        processing_deadline = Deadline
     }.
 
 construct_payment_flow({instant, _}, _CreatedAt, _Terms, _VS, _Revision) ->
@@ -962,6 +968,19 @@ assert_capture_cost_currency(?cash(_, PassedSymCode), #domain_InvoicePayment{cos
         payment_currency = SymCode,
         passed_currency = PassedSymCode
     }).
+
+validate_processing_deadline(#domain_InvoicePayment{processing_deadline = Deadline}, _TargetType = processed) ->
+    case hg_invoice_utils:check_deadline(Deadline) of
+        ok ->
+            ok;
+        {error, deadline_reached} ->
+            {failure, payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {processing_deadline_reached, #payprocerr_GeneralFailure{}}}
+            )}
+    end;
+validate_processing_deadline(_, _TargetType) ->
+    ok.
+
 
 assert_capture_cart(_Cost, undefined) ->
     ok;
@@ -1573,10 +1592,15 @@ process_session(Action, St) ->
     process_session(Session, Action, St).
 
 process_session(undefined, Action, St0) ->
-    Events = start_session(get_target(St0)),
-    St1 = collapse_changes(Events, St0),
-    Session = get_activity_session(St1),
-    process_session(Session, Action, Events, St1);
+    case validate_processing_deadline(get_payment(St0), get_target_type(get_target(St0))) of
+        ok ->
+            Events = start_session(get_target(St0)),
+            St1 = collapse_changes(Events, St0),
+            Result = {start_session(get_target(St0)), hg_machine_action:set_timeout(0, Action)},
+            finish_session_processing(Result, St1);
+        Failure ->
+            process_failure(get_activity(St0), [], Action, Failure, St0)
+    end;
 process_session(Session, Action, St) ->
     process_session(Session, Action, [], St).
 
@@ -2025,7 +2049,8 @@ construct_proxy_payment(
         created_at = CreatedAt,
         payer = Payer,
         cost = Cost,
-        make_recurrent = MakeRecurrent
+        make_recurrent = MakeRecurrent,
+        processing_deadline = Deadline
     },
     Trx
 ) ->
@@ -2037,7 +2062,8 @@ construct_proxy_payment(
         payment_resource = construct_payment_resource(Payer),
         cost = construct_proxy_cash(Cost),
         contact_info = ContactInfo,
-        make_recurrent = MakeRecurrent
+        make_recurrent = MakeRecurrent,
+        processing_deadline = Deadline
     }.
 
 construct_payment_resource(?payment_resource_payer(Resource, _)) ->

@@ -27,6 +27,7 @@
 -export([recurrent_paytool_abandoned/1]).
 -export([recurrent_paytool_acquirement_failed/1]).
 -export([recurrent_paytool_acquired/1]).
+-export([recurrent_paytool_cost/1]).
 -export([recurrent_paytool_w_tds_acquired/1]).
 
 -export([recurrent_paytool_creation_not_permitted/1]).
@@ -43,6 +44,9 @@ init([]) ->
     {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
 
 %%
+
+-define(MINIMAL_PAYMENT_COST_CURRENCY, <<"RUB">>).
+-define(MINIMAL_PAYMENT_COST_AMOUNT, 1000).
 
 -type config()           :: hg_ct_helper:config().
 -type test_case_name()   :: hg_ct_helper:test_case_name().
@@ -99,6 +103,7 @@ all() ->
         get_recurrent_paytool,
         recurrent_paytool_acquirement_failed,
         recurrent_paytool_acquired,
+        recurrent_paytool_cost,
         recurrent_paytool_w_tds_acquired,
         recurrent_paytool_abandoned,
         recurrent_paytool_creation_not_permitted
@@ -224,6 +229,7 @@ invalid_payment_method(C) ->
 -spec get_recurrent_paytool(config()) -> test_case_result().
 -spec recurrent_paytool_acquirement_failed(config()) -> test_case_result().
 -spec recurrent_paytool_acquired(config()) -> test_case_result().
+-spec recurrent_paytool_cost(config()) -> test_case_result().
 -spec recurrent_paytool_w_tds_acquired(config()) -> test_case_result().
 -spec recurrent_paytool_abandoned(config()) -> test_case_result().
 
@@ -268,6 +274,28 @@ recurrent_paytool_acquired(C) ->
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     ok = await_acquirement(RecurrentPaytoolID, Client).
+
+recurrent_paytool_cost(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
+    #payproc_RecurrentPaymentTool{
+        id = RecurrentPaytoolID,
+        minimal_payment_cost = #domain_Cash{
+            amount = ?MINIMAL_PAYMENT_COST_AMOUNT,
+            currency = #domain_CurrencyRef{symbolic_code = ?MINIMAL_PAYMENT_COST_CURRENCY}
+        }
+    } = RecurrentPaytool,
+    RecurrentPaytool2 = RecurrentPaytool#payproc_RecurrentPaymentTool{route = undefined},
+    [
+        ?recurrent_payment_tool_has_created(RecurrentPaytool2),
+        ?recurrent_payment_tool_risk_score_changed(_),
+        ?recurrent_payment_tool_route_changed(_),
+        ?session_ev(?session_started())
+    ] = next_event(RecurrentPaytoolID, Client),
+    ok = await_acquirement_finish(RecurrentPaytoolID, Client).
 
 recurrent_paytool_w_tds_acquired(C) ->
     Client = cfg(client, C),
@@ -607,8 +635,8 @@ construct_domain_fixture(TermSet) ->
                     ])},
                     cash_value = {decisions, [
                         #domain_CashValueDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                            then_ = {value, ?cash(1000, <<"RUB">>)}
+                            if_   = {condition, {currency_is, ?cur(?MINIMAL_PAYMENT_COST_CURRENCY)}},
+                            then_ = {value, ?cash(?MINIMAL_PAYMENT_COST_AMOUNT, ?MINIMAL_PAYMENT_COST_CURRENCY)}
                         }
                     ]}
                 }
