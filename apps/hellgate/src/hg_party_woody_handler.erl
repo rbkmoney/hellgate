@@ -59,19 +59,18 @@ handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
     Party = hg_party_machine:get_party(PartyID),
     ensure_contract(hg_party:get_contract(ContractID, Party));
 
-handle_function_('ComputeContractTerms', [UserInfo, PartyID, ContractID, Timestamp], _Opts) ->
+handle_function_('ComputeContractTerms', Args, _Opts) ->
+    [UserInfo, PartyID, ContractID, Timestamp, PartyRevisionParams, DomainRevision, Varset] = Args,
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = checkout_party(PartyID, {timestamp, Timestamp}),
+    Party = checkout_party(PartyID, PartyRevisionParams),
     Contract = ensure_contract(hg_party:get_contract(ContractID, Party)),
-    Revision = hg_domain:head(),
-    hg_party:reduce_terms(
-        hg_party:get_terms(Contract, Timestamp, Revision),
-        #{
-            party_id => PartyID,
-            identification_level => get_identification_level(Contract, Party)
-        },
-        Revision
-    );
+    VS0 = #{
+        party_id => PartyID,
+        identification_level => get_identification_level(Contract, Party)
+    },
+    VS1 = prepare_varset(PartyID, Varset, VS0),
+    Terms = hg_party:get_terms(Contract, Timestamp, DomainRevision),
+    hg_party:reduce_terms(Terms, VS1, DomainRevision);
 
 %% Shop
 
@@ -106,18 +105,6 @@ handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
 
 %% Wallet
 
-handle_function_('ComputeWalletTerms', [UserInfo, PartyID, ContractID, WalletID, Currency, Timestamp], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = checkout_party(PartyID, {timestamp, Timestamp}),
-    Contract = hg_party:get_contract(ContractID, Party),
-    Revision = hg_domain:head(),
-    VS = #{
-        party_id => PartyID,
-        wallet_id => WalletID,
-        currency => Currency,
-        identification_level => get_identification_level(Contract, Party)
-    },
-    hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
 handle_function_('ComputeWalletTermsNew', [UserInfo, PartyID, ContractID, Timestamp, Varset], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),

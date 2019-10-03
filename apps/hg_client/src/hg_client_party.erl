@@ -22,7 +22,7 @@
 -export([remove_metadata/2]).
 
 -export([get_contract/2]).
--export([compute_contract_terms/3]).
+-export([compute_contract_terms/6]).
 -export([get_shop/2]).
 -export([compute_shop_terms/3]).
 -export([compute_payment_institution_terms/3]).
@@ -61,6 +61,7 @@
 -type user_info()       :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
 -type party_params()    :: dmsl_payment_processing_thrift:'PartyParams'().
+-type domain_revision() :: dmsl_domain_thrift:'DataRevision'().
 -type contract_id()     :: dmsl_domain_thrift:'ContractID'().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
@@ -188,11 +189,12 @@ remove_metadata(NS, Client) ->
 get_contract(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetContract', [ID]})).
 
--spec compute_contract_terms(contract_id(), timestamp(), pid()) ->
+-spec compute_contract_terms(contract_id(), timestamp(), party_revision_param(), domain_revision(), varset(), pid()) ->
     dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
 
-compute_contract_terms(ID, Timestamp, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ComputeContractTerms', [ID, Timestamp]})).
+compute_contract_terms(ID, Timestamp, PartyRevision, DomainRevision, Varset, Client) ->
+    Args = [ID, Timestamp, PartyRevision, DomainRevision, Varset],
+    map_result_error(gen_server:call(Client, {call, 'ComputeContractTerms', Args})).
 
 -spec compute_payment_institution_terms(payment_intitution_ref(), varset(), pid()) ->
     dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
