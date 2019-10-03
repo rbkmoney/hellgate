@@ -656,20 +656,23 @@ merge_wallets_terms(
         currencies = Currencies0,
         wallet_limit = CashLimit0,
         turnover_limit = TurnoverLimit0,
-        withdrawals = Withdrawals0
+        withdrawals = Withdrawals0,
+        p2p = PeerToPeer0
     },
     #domain_WalletServiceTerms{
         currencies = Currencies1,
         wallet_limit = CashLimit1,
         turnover_limit = TurnoverLimit1,
-        withdrawals = Withdrawals1
+        withdrawals = Withdrawals1,
+        p2p = PeerToPeer1
     }
 ) ->
     #domain_WalletServiceTerms{
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
         wallet_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
         turnover_limit = hg_utils:select_defined(TurnoverLimit1, TurnoverLimit0),
-        withdrawals = merge_withdrawals_terms(Withdrawals0, Withdrawals1)
+        withdrawals = merge_withdrawals_terms(Withdrawals0, Withdrawals1),
+        p2p = merge_p2p_terms(PeerToPeer0, PeerToPeer1)
     };
 merge_wallets_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
@@ -692,6 +695,26 @@ merge_withdrawals_terms(
         cash_flow = hg_utils:select_defined(CashFlow1, CashFlow0)
     };
 merge_withdrawals_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_p2p_terms(
+    #domain_P2PServiceTerms{
+        currencies = Currencies0,
+        cash_limit = CashLimit0,
+        operation_plan = OperationPlan0
+    },
+    #domain_P2PServiceTerms{
+        currencies = Currencies1,
+        cash_limit = CashLimit1,
+        operation_plan = OperationPlan1
+    }
+) ->
+    #domain_P2PServiceTerms{
+        currencies = hg_utils:select_defined(Currencies1, Currencies0),
+        cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
+        operation_plan = hg_utils:select_defined(OperationPlan1, OperationPlan0)
+    };
+merge_p2p_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
