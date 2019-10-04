@@ -451,10 +451,16 @@ shop_already_exists(C) ->
 %%% Internal functions
 
 claim(PartyModifications) ->
+    UserInfo = #claim_management_UserInfo{
+        id = <<"test">>,
+        email = <<"test@localhost">>,
+        username = <<"test">>,
+        type = {internal_user, #claim_management_InternalUser{}}
+    },
     #claim_management_Claim{
         id         = id(),
         status     = {pending, #claim_management_ClaimPending{}},
-        changeset  = [?cm_party_modification(id(), ts(), Mod) || Mod <- PartyModifications],
+        changeset  = [?cm_party_modification(id(), ts(), Mod, UserInfo) || Mod <- PartyModifications],
         revision   = 1,
         created_at = ts()
     }.
