@@ -260,7 +260,7 @@ start_binding_w_failure(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(_, _))
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_failed(_)))
@@ -391,7 +391,7 @@ start_binding(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(_, _))
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_succeeded())),
@@ -415,7 +415,7 @@ start_binding_w_tds(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(_, _))
+        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_interaction_requested(UserInteraction))
@@ -439,22 +439,17 @@ start_two_bindings(C) ->
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    #payproc_Customer{id = CustomerID, bindings = Bindings} = hg_client_customer:get(CustomerID, Client),
-    true = sets:from_list(Bindings) =:= sets:from_list([CustomerBinding1, CustomerBinding2]),
     [
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     StartChanges = [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_'))
-    ],
-    _ = await_for_changes(StartChanges, CustomerID, Client),
-    SuccessChanges = [
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_status_changed(?customer_ready())
     ],
-    _ = await_for_changes(SuccessChanges, CustomerID, Client, 10000).
+    _ = await_for_changes(StartChanges, CustomerID, Client, 30000).
 
 start_two_bindings_w_tds(C) ->
     Client = cfg(client, C),
@@ -470,21 +465,19 @@ start_two_bindings_w_tds(C) ->
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    #payproc_Customer{id = CustomerID, bindings = Bindings} = hg_client_customer:get(CustomerID, Client),
-    true = sets:from_list(Bindings) =:= sets:from_list([CustomerBinding1, CustomerBinding2]),
     [
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     StartChanges = [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested('_')),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested('_'))
     ],
     [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, _)),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, _)),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested(UserInteraction1)),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, _)),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested(UserInteraction2))
     ] = await_for_changes(StartChanges, CustomerID, Client),
     _ = assert_success_post_request(get_post_request(UserInteraction1)),
