@@ -125,9 +125,9 @@ start_app(hellgate = AppName) ->
                 transport_opts => #{
                     max_connections => 300
                 }
-            }
+            },
             party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
-            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>,
+            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>
         }},
         {proxy_opts, #{
             transport_opts => #{
