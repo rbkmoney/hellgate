@@ -106,20 +106,20 @@ cfg(Key, C) ->
 
 all() ->
     [
-        % {group, party_access_control},
-        % {group, party_creation},
-        % {group, party_revisioning},
-        % {group, party_blocking_suspension},
-        % {group, party_meta},
-        % {group, party_status},
-        {group, contract_management}
-        % {group, shop_management},
-        % {group, shop_account_lazy_creation},
-        % {group, contractor_management},
+        {group, party_access_control},
+        {group, party_creation},
+        {group, party_revisioning},
+        {group, party_blocking_suspension},
+        {group, party_meta},
+        {group, party_status},
+        {group, contract_management},
+        {group, shop_management},
+        {group, shop_account_lazy_creation},
+        {group, contractor_management},
 
-        % {group, claim_management},
+        {group, claim_management},
 
-        % {group, consistent_history}
+        {group, consistent_history}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -829,25 +829,36 @@ compute_payout_cash_flow(C) ->
     ] = hg_client_party:compute_payout_cash_flow(Params, Client).
 
 contract_p2p_terms(C) ->
-    ct:print("constract_p2p_terms START"),
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ContractID = ?REAL_CONTRACT_ID,
-    % ID = <<"ADJ2">>,
     Revision = hg_domain:head(),
     Terms = hg_party:get_terms(
         hg_client_party:get_contract(ContractID, Client),
         hg_datetime:format_now(),
         Revision
     ),
-    ct:print("Terms: ~p~n", [Terms]),
     VS = #{
         party_id => PartyID,
-        amount => #domain_Cash{amount = 2500, currency = ?cur(<<"RUB">>)}
+        cost => #domain_Cash{amount = 2500, currency = ?cur(<<"RUB">>)}
     },
-    ReduceTerms = hg_party:reduce_terms(Terms, VS, Revision),
-    ct:print("ReduceTerms: ~p", [ReduceTerms]),
-    ok.
+    #domain_TermSet{
+        wallets = #domain_WalletServiceTerms{
+            p2p = P2PServiceTerms
+        }
+    } = hg_party:reduce_terms(Terms, VS, Revision),
+    #domain_P2PServiceTerms{cash_flow = {decisions, [
+        #domain_CashFlowDecision{
+            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+            then_ = {value, [#domain_CashFlowPosting{
+                source = {wallet, receiver_destination},
+                destination = {system, settlement},
+                volume = {fixed, #domain_CashVolumeFixed{
+                    cash = ?cash(50, <<"RUB">>)
+                }}
+            }]}
+        }
+    ]}} = P2PServiceTerms.
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
@@ -1630,40 +1641,39 @@ construct_domain_fixture() ->
                 ]},
                 cash_flow = {decisions, [
                     #domain_CashFlowDecision{
-                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, [
-                            #domain_CashFlowPosting{
-                                source = {wallet, receiver_destination},
-                                destination = {system, settlement},
-                                volume = ?share(10, 100, operation_amount)
-                            }
-                        ]}
-                    },
-                    #domain_CashFlowDecision{
-                        if_ = {condition, {p2p_tool, #domain_P2PToolCondition{
-                            sender_is = {bank_card, #domain_BankCardCondition{
-                                definition = {issuer_country_is, rus}
-                            }}
-                        }}},
-                        then_ = {value, [
-                            #domain_CashFlowPosting{
-                                source = {wallet, receiver_destination},
-                                destination = {system, settlement},
-                                volume = ?share(1, 100, operation_amount)
-                            }
-                        ]}
-                    },
-                    #domain_CashFlowDecision{
-                        if_ = {condition, {p2p_tool, #domain_P2PToolCondition{
-                            sender_is = {bank_card, #domain_BankCardCondition{
-                                definition = {issuer_country_is, usa}
-                            }}
-                        }}},
-                        then_ = {value, [
-                            #domain_CashFlowPosting{
-                                source = {wallet, receiver_destination},
-                                destination = {system, settlement},
-                                volume = ?share(1, 1, operation_amount)
+                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {decisions, [
+                            #domain_CashFlowDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(   0, <<"RUB">>)},
+                                        {exclusive, ?cash(3000, <<"RUB">>)}
+                                    )}
+                                },
+                                then_ = {
+                                    value, [
+                                        #domain_CashFlowPosting{
+                                            source = {wallet, receiver_destination},
+                                            destination = {system, settlement},
+                                            volume = ?fixed(50, <<"RUB">>)
+                                        }
+                                    ]
+                                }
+                            },
+                            #domain_CashFlowDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(3001,  <<"RUB">>)},
+                                        {exclusive, ?cash(10001, <<"RUB">>)}
+                                    )}
+                                },
+                                then_ = {
+                                    value, [
+                                        #domain_CashFlowPosting{
+                                            source = {wallet, receiver_destination},
+                                            destination = {system, settlement},
+                                            volume = ?share(1, 100, operation_amount)
+                                        }
+                                    ]
+                                }
                             }
                         ]}
                     }
