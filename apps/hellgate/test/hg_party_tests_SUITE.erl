@@ -168,7 +168,7 @@ groups() ->
         ]},
         {contract_management, [sequence], [
             party_creation,
-            % contract_not_found,
+            contract_not_found,
             contract_creation,
             contract_terms_retrieval,
             contract_already_exists,
