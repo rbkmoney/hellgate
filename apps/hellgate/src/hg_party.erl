@@ -421,7 +421,7 @@ reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
     #domain_P2PServiceTerms{
         currencies = reduce_if_defined(Terms#domain_P2PServiceTerms.currencies, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_limit, VS, Rev),
-        operation_plan = reduce_if_defined(Terms#domain_P2PServiceTerms.operation_plan, VS, Rev)
+        cash_flow = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_flow, VS, Rev)
     }.
 
 reduce_if_defined(Selector, VS, Rev) ->
@@ -701,18 +701,18 @@ merge_p2p_terms(
     #domain_P2PServiceTerms{
         currencies = Currencies0,
         cash_limit = CashLimit0,
-        operation_plan = OperationPlan0
+        cash_flow  = CashFlow0
     },
     #domain_P2PServiceTerms{
         currencies = Currencies1,
         cash_limit = CashLimit1,
-        operation_plan = OperationPlan1
+        cash_flow  = CashFlow1
     }
 ) ->
     #domain_P2PServiceTerms{
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
         cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
-        operation_plan = hg_utils:select_defined(OperationPlan1, OperationPlan0)
+        cash_flow  = hg_utils:select_defined(CashFlow1, CashFlow0)
     };
 merge_p2p_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).

@@ -99,6 +99,7 @@ reduce({decisions, Ps}, VS, Rev) ->
     end.
 
 reduce_decisions([{Type, V, S} | Rest], VS, Rev) ->
+    ct:print("reduce_predicate[~p, ~p, ~p]", [V, VS, Rev]),
     case reduce_predicate(V, VS, Rev) of
         ?const(false) ->
             reduce_decisions(Rest, VS, Rev);
@@ -153,6 +154,7 @@ reduce_combination(Type, _, [], _, _, PAcc) ->
     {Type, lists:reverse(PAcc)}.
 
 reduce_condition(C, VS, Rev) ->
+    ct:print("hg_condition [~p, ~p]", [C, VS]),
     case hg_condition:test(C, VS, Rev) of
         B when is_boolean(B) ->
             ?const(B);

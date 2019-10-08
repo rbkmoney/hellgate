@@ -84,6 +84,7 @@
 -export([contract_payout_tool_modification/1]).
 -export([contract_adjustment_creation/1]).
 -export([contract_adjustment_expiration/1]).
+-export([contract_p2p_terms/1]).
 
 -export([compute_payment_institution_terms/1]).
 -export([compute_payout_cash_flow/1]).
@@ -105,20 +106,20 @@ cfg(Key, C) ->
 
 all() ->
     [
-        {group, party_access_control},
-        {group, party_creation},
-        {group, party_revisioning},
-        {group, party_blocking_suspension},
-        {group, party_meta},
-        {group, party_status},
-        {group, contract_management},
-        {group, shop_management},
-        {group, shop_account_lazy_creation},
-        {group, contractor_management},
+        % {group, party_access_control},
+        % {group, party_creation},
+        % {group, party_revisioning},
+        % {group, party_blocking_suspension},
+        % {group, party_meta},
+        % {group, party_status},
+        {group, contract_management}
+        % {group, shop_management},
+        % {group, shop_account_lazy_creation},
+        % {group, contractor_management},
 
-        {group, claim_management},
+        % {group, claim_management},
 
-        {group, consistent_history}
+        % {group, consistent_history}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -167,7 +168,7 @@ groups() ->
         ]},
         {contract_management, [sequence], [
             party_creation,
-            contract_not_found,
+            % contract_not_found,
             contract_creation,
             contract_terms_retrieval,
             contract_already_exists,
@@ -180,7 +181,8 @@ groups() ->
             contract_payout_tool_modification,
             contract_adjustment_creation,
             contract_adjustment_expiration,
-            compute_payment_institution_terms
+            compute_payment_institution_terms,
+            contract_p2p_terms
         ]},
         {shop_management, [sequence], [
             party_creation,
@@ -435,6 +437,7 @@ end_per_testcase(_Name, _C) ->
 -spec contract_adjustment_expiration(config()) -> _ | no_return().
 -spec compute_payment_institution_terms(config()) -> _ | no_return().
 -spec compute_payout_cash_flow(config()) -> _ | no_return().
+-spec contract_p2p_terms(config()) -> _ | no_return().
 
 -spec contractor_creation(config()) -> _ | no_return().
 -spec contractor_modification(config()) -> _ | no_return().
@@ -814,6 +817,27 @@ compute_payout_cash_flow(C) ->
             volume = #domain_Cash{amount = 2500, currency = ?cur(<<"RUB">>)}
         }
     ] = hg_client_party:compute_payout_cash_flow(Params, Client).
+
+contract_p2p_terms(C) ->
+    ct:print("constract_p2p_terms START"),
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ContractID = ?REAL_CONTRACT_ID,
+    % ID = <<"ADJ2">>,
+    Revision = hg_domain:head(),
+    Terms = hg_party:get_terms(
+        hg_client_party:get_contract(ContractID, Client),
+        hg_datetime:format_now(),
+        Revision
+    ),
+    ct:print("Terms: ~p~n", [Terms]),
+    VS = #{
+        party_id => PartyID,
+        amount => #domain_Cash{amount = 2500, currency = ?cur(<<"RUB">>)}
+    },
+    ReduceTerms = hg_party:reduce_terms(Terms, VS, Revision),
+    ct:print("ReduceTerms: ~p", [ReduceTerms]),
+    ok.
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
@@ -1566,7 +1590,75 @@ construct_domain_fixture() ->
             ]}
         },
         wallets = #domain_WalletServiceTerms{
-            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])}
+            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
+            wallet_limit = {decisions, [
+                #domain_CashLimitDecision{
+                    if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, ?cashrng(
+                        {inclusive, ?cash(      0, <<"RUB">>)},
+                        {exclusive, ?cash(5000001, <<"RUB">>)}
+                    )}
+                },
+                #domain_CashLimitDecision{
+                    if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                    then_ = {value, ?cashrng(
+                        {inclusive, ?cash(       0, <<"USD">>)},
+                        {exclusive, ?cash(10000001, <<"USD">>)}
+                    )}
+                }
+            ]},
+            p2p = #domain_P2PServiceTerms{
+                currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                cash_limit = {decisions, [
+                    #domain_CashLimitDecision{
+                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, ?cashrng(
+                            {inclusive, ?cash(       0, <<"RUB">>)},
+                            {exclusive, ?cash(10000001, <<"RUB">>)}
+                        )}
+                    }
+                ]},
+                cash_flow = {decisions, [
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, [
+                            #domain_CashFlowPosting{
+                                source = {wallet, receiver_destination},
+                                destination = {system, settlement},
+                                volume = ?share(10, 100, operation_amount)
+                            }
+                        ]}
+                    },
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {p2p_tool, #domain_P2PToolCondition{
+                            sender_is = {bank_card, #domain_BankCardCondition{
+                                definition = {issuer_country_is, rus}
+                            }}
+                        }}},
+                        then_ = {value, [
+                            #domain_CashFlowPosting{
+                                source = {wallet, receiver_destination},
+                                destination = {system, settlement},
+                                volume = ?share(1, 100, operation_amount)
+                            }
+                        ]}
+                    },
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {p2p_tool, #domain_P2PToolCondition{
+                            sender_is = {bank_card, #domain_BankCardCondition{
+                                definition = {issuer_country_is, usa}
+                            }}
+                        }}},
+                        then_ = {value, [
+                            #domain_CashFlowPosting{
+                                source = {wallet, receiver_destination},
+                                destination = {system, settlement},
+                                volume = ?share(1, 1, operation_amount)
+                            }
+                        ]}
+                    }
+                ]}
+            }
         }
     },
     [
