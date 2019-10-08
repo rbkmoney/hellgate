@@ -547,12 +547,22 @@ contract_terms_retrieval(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ContractID = ?REAL_CONTRACT_ID,
-    TermSet1 = hg_client_party:compute_contract_terms(ContractID, hg_datetime:format_now(), Client),
+    Varset = #payproc_Varset{},
+    PartyRevision = hg_client_party:get_revision(Client),
+    DomainRevision1 = hg_domain:head(),
+    Timstamp1 = hg_datetime:format_now(),
+    TermSet1 = hg_client_party:compute_contract_terms(
+        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+    ),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet1,
     ok = hg_domain:update(construct_term_set_for_party(PartyID, undefined)),
-    TermSet2 = hg_client_party:compute_contract_terms(ContractID, hg_datetime:format_now(), Client),
+    DomainRevision2 = hg_domain:head(),
+    Timstamp2 = hg_datetime:format_now(),
+    TermSet2 = hg_client_party:compute_contract_terms(
+        ContractID, Timstamp2, {revision, PartyRevision}, DomainRevision2, Varset, Client
+    ),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
     }} = TermSet2.
