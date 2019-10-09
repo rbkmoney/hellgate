@@ -158,6 +158,13 @@ handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
 handle_function_('CapturePaymentNew', Args, Opts) ->
     handle_function_('CapturePayment', Args, Opts);
 
+handle_function_('Get', [UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}], _Opts) ->
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID),
+    St = assert_invoice_accessible(collapse_history(get_history(InvoiceID, AfterID, Limit))),
+    get_invoice_state(St);
+
+%% TODO Удалить после перехода на новый протокол
 handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
