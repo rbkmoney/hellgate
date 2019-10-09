@@ -30,6 +30,17 @@ test({payout_method_is, V1}, #{payout_method := V2}, _) ->
     V1 =:= V2;
 test({identification_level_is, V1}, #{identification_level := V2}, _) ->
     V1 =:= V2;
+test(
+    {p2p_tool, #domain_P2PToolCondition{sender_is = SenderIs, receiver_is = ReceiverIs}},
+    #{p2p_tool := #domain_P2PTool{sender = Sender, receiver = Receiver}},
+Rev) ->
+    case {
+        test({payment_tool, SenderIs}, #{payment_tool => Sender}, Rev),
+        test({payment_tool, ReceiverIs}, #{payment_tool => Receiver}, Rev)
+    } of
+            {true, true} -> true;
+            {_, _} -> false
+    end;
 test(_, #{}, _) ->
     undefined.
 

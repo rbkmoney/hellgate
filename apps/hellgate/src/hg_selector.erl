@@ -40,7 +40,8 @@
     flow            => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
     payout_method   => dmsl_domain_thrift:'PayoutMethodRef'(),
     wallet_id       => dmsl_domain_thrift:'WalletID'(),
-    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'()
+    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'(),
+    p2p_tool        => dmsl_domain_thrift:'P2PTool'()
 }.
 
 -export_type([varset/0]).
