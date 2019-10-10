@@ -2885,12 +2885,20 @@ make_log_params(cashflow, CashFlow) ->
     [{accounts, Accounts}];
 make_log_params(risk_score, Score) ->
     [{risk_score, Score}];
-make_log_params(route, _Route) ->
-    [];
+make_log_params(route, Route) ->
+    [{route, format_route_details(Route)}];
 make_log_params(status, {StatusTag, StatusDetails}) ->
     [{status, StatusTag}] ++ format_status_details(StatusDetails);
 make_log_params(event_type, EventType) ->
     [{type, EventType}].
+
+format_route_details(
+    #domain_PaymentRoute{
+        provider = #domain_ProviderRef{id = ProviderID},
+        terminal = #domain_TerminalRef{id = TerminalID}
+    }
+) ->
+    [{provider, ProviderID}, {terminal, TerminalID}].
 
 format_status_details(#domain_InvoicePaymentFailed{failure = Failure}) ->
     [{error, list_to_binary(format_failure(Failure))}];
