@@ -42,12 +42,32 @@
 -type terminal()     :: dmsl_domain_thrift:'Terminal'().
 -type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 
+-type provider_terminal_ref() :: dmsl_domain_thrift:'ProviderTerminalRef'().
+
+-type fd_service_stats()    :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
+
+-type terminal_priority_rate()   :: integer().
+-type terminal_priority_weight() :: integer().
+-type terminal_priority()   :: {terminal_priority_rate(), terminal_priority_weight()}.
+-type unweighted_terminal() :: {terminal_ref(), terminal()}.
+-type weighted_terminal()   :: {terminal_ref(), terminal(), terminal_priority()}.
+
 -type provider_status()     :: {provider_condition(), fail_rate()}.
--type provider_condition()  :: alive | dead.
+
+-define(PROVIDER_CONDITION_ALIVE, 1).
+-define(PROVIDER_CONDITION_DEAD , 0).
+
+-type provider_condition()  :: ?PROVIDER_CONDITION_ALIVE | ?PROVIDER_CONDITION_DEAD.
 -type fail_rate()           :: float().
 
--type fail_rated_provider() :: {provider_ref(), provider(), provider_status()}.
--type fail_rated_route()    :: {provider_ref(), {terminal_ref(), terminal()}, provider_status()}.
+-type fail_unrated_provider():: {provider_ref(), provider()}.
+-type fail_rated_provider()  :: {provider_ref(), provider(), provider_status()}.
+-type fail_rated_route()     :: {provider_ref(), weighted_terminal(), provider_status()}.
+
+-type route_choise_meta()     :: #{
+    ideal_route := route(),
+    reason => fail_rate | provider_condition
+}.
 
 -export_type([route_predestination/0]).
 
@@ -57,7 +77,7 @@
     hg_selector:varset(),
     hg_domain:revision()
 ) ->
-    {[{provider_ref(), provider()}], reject_context()}.
+    {[fail_unrated_provider()], reject_context()}.
 
 gather_providers(Predestination, PaymentInstitution, VS, Revision) ->
     RejectContext = #{
@@ -67,7 +87,7 @@ gather_providers(Predestination, PaymentInstitution, VS, Revision) ->
     },
     select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext).
 
--spec gather_provider_fail_rates([provider_ref()]) ->
+-spec gather_provider_fail_rates([fail_unrated_provider()]) ->
     [fail_rated_provider()].
 
 gather_provider_fail_rates(Providers) ->
@@ -91,6 +111,15 @@ gather_routes(Predestination, FailRatedProviders, RejectContext, VS, Revision) -
 choose_route(FailRatedRoutes, RejectContext, VS) ->
     do_choose_route(FailRatedRoutes, VS, RejectContext).
 
+-spec select_providers(
+    route_predestination(),
+    payment_institution(),
+    hg_selector:varset(),
+    hg_domain:revision(),
+    reject_context()
+) ->
+    {[fail_unrated_provider()], reject_context()}.
+
 select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
     ProviderSelector = PaymentInstitution#domain_PaymentInstitution.providers,
     ProviderRefs0    = reduce(provider, ProviderSelector, VS, Revision),
@@ -112,6 +141,15 @@ select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext
     ),
     {Providers, RejectContext#{rejected_providers => RejectReasons}}.
 
+-spec select_routes(
+    route_predestination(),
+    [fail_rated_provider()],
+    hg_selector:varset(),
+    hg_domain:revision(),
+    reject_context()
+) ->
+    {[fail_rated_route()], reject_context()}.
+
 select_routes(Predestination, FailRatedProviders, VS, Revision, RejectContext) ->
     {Accepted, Rejected} = lists:foldl(
         fun (Provider, {AcceptedTerminals, RejectedRoutes}) ->
@@ -123,24 +161,54 @@ select_routes(Predestination, FailRatedProviders, VS, Revision, RejectContext) -
     ),
     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
+-spec do_choose_route([fail_rated_route()], hg_selector:varset(), reject_context()) ->
+    {ok, route(), route_choise_meta()} | {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
+
 do_choose_route(_FailRatedRoutes, #{risk_score := fatal}, RejectContext) ->
     {error, {no_route_found, {risk_score_is_too_high, RejectContext}}};
 do_choose_route([] = _FailRatedRoutes, _VS, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
-do_choose_route(FailRatedRoutes, VS, RejectContext) ->
+do_choose_route(FailRatedRoutes, VS, _RejectContext) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes, VS),
-    choose_scored_route(ScoredRoutes, RejectContext).
+    ChosenRoute = choose_best_route(ScoredRoutes),
+    RouteChoiseMeta = get_route_choise_meta(ChosenRoute, ScoredRoutes),
+    {ok, export_route(ChosenRoute), RouteChoiseMeta}.
 
-choose_scored_route([{_Score, Route}], _RejectContext) ->
-    {ok, export_route(Route)};
-choose_scored_route(ScoredRoutes, _RejectContext) ->
-    {_Score, Route} = lists:max(ScoredRoutes),
-    {ok, export_route(Route)}.
+choose_best_route([Route]) ->
+    Route;
+choose_best_route(ScoredRoutes) ->
+    lists:max(ScoredRoutes).
 
-score_routes(Routes, VS) ->
-    [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
+get_route_choise_meta(ChosenRoute, ScoredRoutes) ->
+    IdealScoredRoutes = set_ideal_scores(ScoredRoutes),
+    IdealRoute = choose_best_route(IdealScoredRoutes),
+    genlib_map:compact(#{
+        ideal_route => export_route(IdealRoute),
+        reason => map_route_switch_reason(ChosenRoute, IdealRoute)
+    }).
 
+set_ideal_scores(ScoredRoutes) ->
+    [{set_ideal_score(Score), PT} || {Score, PT} <- ScoredRoutes].
+
+set_ideal_score({_ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, _SuccessRate}) ->
+    {?PROVIDER_CONDITION_ALIVE, PriorityRate, RandomCondition, RiskCoverage, 1.0}.
+
+map_route_switch_reason(
+    {{_, _, _, _, ProviderFailRate1}, _},
+    {{_, _, _, _, ProviderFailRate2}, _}
+) when ProviderFailRate1 =/= ProviderFailRate2 ->
+    fail_rate;
+map_route_switch_reason(
+    {{ProviderCondition1, _, _, _, _}, _},
+    {{ProviderCondition2, _, _, _, _}, _}
+) when ProviderCondition1 =/= ProviderCondition2 ->
+    provider_condition;
+map_route_switch_reason(Route, Route) ->
+    undefined.
+
+-spec balance_routes([fail_rated_route()]) ->
+    [fail_rated_route()].
 balance_routes(FailRatedRoutes) ->
     FilteredRouteGroups = lists:foldl(
         fun group_routes_by_priority/2,
@@ -149,39 +217,29 @@ balance_routes(FailRatedRoutes) ->
     ),
     balance_route_groups(FilteredRouteGroups).
 
-export_route({ProviderRef, {TerminalRef, _Terminal, _Priority}}) ->
-    % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
-    %      `get_terminal_ref/1` instead?
-    ?route(ProviderRef, TerminalRef).
+-type priority_route_groups() :: #{
+    {provider_condition(), terminal_priority_rate()} => [fail_rated_route()]
+}.
 
-score_providers_with_fault_detector([]) -> [];
-score_providers_with_fault_detector(Providers) ->
-    ServiceIDs         = [build_fd_service_id(PR) || {PR, _P} <- Providers],
-    FDStats            = hg_fault_detector_client:get_statistics(ServiceIDs),
-    FailRatedProviders = [{PR, P, get_provider_status(PR, P, FDStats)} || {PR, P} <- Providers],
-    FailRatedProviders.
+-spec group_routes_by_priority(fail_rated_route(), Acc :: priority_route_groups()) ->
+    priority_route_groups().
 
-%% TODO: maybe use custom cutoffs per provider
-get_provider_status(ProviderRef, _Provider, FDStats) ->
-    ProviderID       = build_fd_service_id(ProviderRef),
-    FDConfig         = genlib_app:env(hellgate, fault_detector, #{}),
-    CriticalFailRate = genlib_map:get(critical_fail_rate, FDConfig, 0.7),
-    case lists:keysearch(ProviderID, #fault_detector_ServiceStatistics.service_id, FDStats) of
-        {value, #fault_detector_ServiceStatistics{failure_rate = FailRate}}
-            when FailRate >= CriticalFailRate ->
-            {0, FailRate};
-        {value, #fault_detector_ServiceStatistics{failure_rate = FailRate}} ->
-            {1, FailRate};
-        false ->
-            {1, 0.0}
+group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) ->
+    TerminalPriority = get_priority_from_route(Route),
+    Key = {ProviderCondition, TerminalPriority},
+    case maps:get(Key, SortedRoutes, undefined) of
+        undefined ->
+            SortedRoutes#{Key => [Route]};
+        List ->
+            SortedRoutes#{Key := [Route | List]}
     end.
 
-score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS) ->
-    RiskCoverage = score_risk_coverage(Terminal, VS),
-    {ProviderCondition, FailRate} = ProviderStatus,
-    SuccessRate = 1.0 - FailRate,
-    {PriorityRate, RandomCondition} = Priority,
-    {ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, SuccessRate}.
+get_priority_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
+    {PriorityRate, _Weight} = Priority,
+    PriorityRate.
+
+-spec balance_route_groups(priority_route_groups()) ->
+    [fail_rated_route()].
 
 balance_route_groups(RouteGroups) ->
     maps:fold(
@@ -192,32 +250,6 @@ balance_route_groups(RouteGroups) ->
         [],
         RouteGroups
     ).
-
-set_random_condition(Value, Route) ->
-    {Provider, {TerminalRef, Terminal, Priority}, ProviderStatus} = Route,
-    {PriorityRate, _Weight} = Priority,
-    {Provider, {TerminalRef, Terminal, {PriorityRate, Value}}, ProviderStatus}.
-
-get_priority_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
-    {PriorityRate, _Weight} = Priority,
-    PriorityRate.
-
-get_weight_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
-    {_PriorityRate, Weight} = Priority,
-    Weight.
-
-set_weight_to_route(Value, Route) ->
-    set_random_condition(Value, Route).
-
-group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) ->
-    Priority = get_priority_from_route(Route),
-    Key = {ProviderCondition, Priority},
-    case maps:get(Key, SortedRoutes, undefined) of
-        undefined ->
-            SortedRoutes#{Key => [Route]};
-        List ->
-            SortedRoutes#{Key := [Route | List]}
-    end.
 
 set_routes_random_condition(Routes) ->
     NewRoutes = lists:map(
@@ -234,6 +266,18 @@ set_routes_random_condition(Routes) ->
     Summary = get_summary_weight(NewRoutes),
     Random = rand:uniform() * Summary,
     lists:reverse(calc_random_condition(0.0, Random, NewRoutes, [])).
+
+get_weight_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
+    {_PriorityRate, Weight} = Priority,
+    Weight.
+
+set_weight_to_route(Value, Route) ->
+    {Provider, {TerminalRef, Terminal, Priority}, ProviderStatus} = Route,
+    {PriorityRate, _Weight} = Priority,
+    {Provider, {TerminalRef, Terminal, {PriorityRate, Value}}, ProviderStatus}.
+
+set_random_condition(Value, Route) ->
+    set_weight_to_route(Value, Route).
 
 get_summary_weight(Routes) ->
     lists:foldl(
@@ -257,6 +301,53 @@ calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
         false ->
             NewRoute = set_random_condition(0, Route),
             calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes])
+    end.
+
+score_routes(Routes, VS) ->
+    [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
+
+score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS) ->
+    RiskCoverage = score_risk_coverage(Terminal, VS),
+    {ProviderCondition, FailRate} = ProviderStatus,
+    SuccessRate = 1.0 - FailRate,
+    {PriorityRate, RandomCondition} = Priority,
+    {ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, SuccessRate}.
+
+export_route({_Scores, {ProviderRef, {TerminalRef, _Terminal, _Priority}}}) ->
+    % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
+    %      `get_terminal_ref/1` instead?
+    ?route(ProviderRef, TerminalRef).
+
+-spec score_providers_with_fault_detector([fail_unrated_provider()]) ->
+    [fail_rated_provider()].
+
+score_providers_with_fault_detector([]) -> [];
+score_providers_with_fault_detector(Providers) ->
+    ServiceIDs         = [build_fd_service_id(PR) || {PR, _P} <- Providers],
+    FDStats            = hg_fault_detector_client:get_statistics(ServiceIDs),
+    FailRatedProviders = [{PR, P, get_provider_status(PR, P, FDStats)} || {PR, P} <- Providers],
+    FailRatedProviders.
+
+-spec get_provider_status(
+    provider_ref(),
+    provider(),
+    [fd_service_stats()]
+) ->
+    provider_status().
+
+%% TODO: maybe use custom cutoffs per provider
+get_provider_status(ProviderRef, _Provider, FDStats) ->
+    ProviderID       = build_fd_service_id(ProviderRef),
+    FDConfig         = genlib_app:env(hellgate, fault_detector, #{}),
+    CriticalFailRate = genlib_map:get(critical_fail_rate, FDConfig, 0.7),
+    case lists:keysearch(ProviderID, #fault_detector_ServiceStatistics.service_id, FDStats) of
+        {value, #fault_detector_ServiceStatistics{failure_rate = FailRate}}
+            when FailRate >= CriticalFailRate ->
+            {?PROVIDER_CONDITION_DEAD , FailRate};
+        {value, #fault_detector_ServiceStatistics{failure_rate = FailRate}} ->
+            {?PROVIDER_CONDITION_ALIVE, FailRate};
+        false ->
+            {?PROVIDER_CONDITION_ALIVE, 0.0}
     end.
 
 %% NOTE
@@ -285,6 +376,14 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
     #domain_Provider{recurrent_paytool_terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
     Terms.
 
+-spec acceptable_provider(
+    route_predestination(),
+    provider_ref(),
+    hg_selector:varset(),
+    hg_domain:revision()
+) ->
+    fail_unrated_provider() | no_return().
+
 acceptable_provider(payment, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
         payment_terms = Terms
@@ -309,6 +408,14 @@ acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
 
 %%
 
+-spec collect_routes_for_provider(
+    route_predestination(),
+    fail_rated_provider(),
+    hg_selector:varset(),
+    hg_domain:revision()
+) ->
+    {[fail_rated_route()], [rejected_route()]}.
+
 collect_routes_for_provider(Predestination, {ProviderRef, Provider, FailRate}, VS, Revision) ->
     TerminalSelector = Provider#domain_Provider.terminal,
     ProviderTerminalRefs = reduce(terminal, TerminalSelector, VS, Revision),
@@ -329,6 +436,15 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider, FailRate}, V
         {[], []},
         ordsets:to_list(ProviderTerminalRefs)
     ).
+
+-spec acceptable_terminal(
+    route_predestination(),
+    terminal_ref(),
+    provider(),
+    hg_selector:varset(),
+    hg_domain:revision()
+) ->
+    unweighted_terminal() | no_return().
 
 acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms0}, VS, Revision) ->
     Terminal = #domain_Terminal{
@@ -369,8 +485,14 @@ acceptable_risk(RiskCoverage, VS) ->
     hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0
         orelse throw(?rejected({'Terminal', risk_coverage})).
 
+-spec get_terminal_ref(provider_terminal_ref()) ->
+    terminal_ref().
+
 get_terminal_ref(#domain_ProviderTerminalRef{id = ID}) ->
     #domain_TerminalRef{id = ID}.
+
+-spec get_terminal_priority(provider_terminal_ref()) ->
+    terminal_priority().
 
 get_terminal_priority(#domain_ProviderTerminalRef{
     priority = Priority,
