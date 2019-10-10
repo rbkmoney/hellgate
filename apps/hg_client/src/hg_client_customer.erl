@@ -9,6 +9,7 @@
 
 -export([create       /2]).
 -export([get          /2]).
+-export([get          /3]).
 -export([delete       /2]).
 -export([start_binding/3]).
 
@@ -34,6 +35,7 @@
 
 -type customer_binding()        :: dmsl_payment_processing_thrift:'CustomerBinding'().
 -type customer_binding_params() :: dmsl_payment_processing_thrift:'CustomerBindingParams'().
+-type event_range() :: dmsl_payment_processing_thrift:'EventRange'().
 
 %% API
 
@@ -67,7 +69,12 @@ create(Params, Client) ->
 -spec get(id(), pid()) ->
     customer() | woody_error:business_error().
 get(ID, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'Get', [ID]})).
+    get(ID, Client, #payproc_EventRange{}).
+
+-spec get(id(), pid(), event_range()) ->
+    customer() | woody_error:business_error().
+get(ID, Client, EventRange) ->
+    map_result_error(gen_server:call(Client, {call, 'Get', [ID, EventRange]})).
 
 -spec delete(id(), pid()) ->
     ok | woody_error:business_error().

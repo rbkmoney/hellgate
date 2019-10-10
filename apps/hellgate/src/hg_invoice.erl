@@ -161,11 +161,11 @@ handle_function_('CapturePaymentNew', Args, Opts) ->
 handle_function_('Get', [UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
-    St = assert_invoice_accessible(collapse_history(get_history(InvoiceID, AfterID, Limit))),
+    St = assert_invoice_accessible(get_state(InvoiceID, AfterID, Limit)),
     get_invoice_state(St);
 
 %% TODO Удалить после перехода на новый протокол
-handle_function_('Get', [UserInfo, InvoiceID], _Opts) ->
+handle_function_('Get', [UserInfo, InvoiceID, undefined], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
@@ -315,6 +315,9 @@ get_history(Ref, AfterID, Limit) ->
 
 get_state(Ref) ->
     collapse_history(get_history(Ref)).
+
+get_state(Ref, AfterID, Limit) ->
+    collapse_history(get_history(Ref, AfterID, Limit)).
 
 get_initial_state(Ref) ->
     collapse_history(get_history(Ref, undefined, 1)).

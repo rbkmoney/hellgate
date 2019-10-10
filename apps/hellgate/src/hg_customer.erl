@@ -72,9 +72,15 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     ok = start(CustomerID, CustomerParams),
     get_customer(get_state(CustomerID));
 
-handle_function_('Get', [CustomerID], _Opts) ->
+handle_function_('Get', [CustomerID, undefined], _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
+    ok = assert_customer_accessible(St),
+    get_customer(St);
+
+handle_function_('Get', [CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}], _Opts) ->
+    ok = set_meta(CustomerID),
+    St = get_state(CustomerID, AfterID, Limit),
     ok = assert_customer_accessible(St),
     get_customer(St);
 
@@ -116,6 +122,9 @@ get_history(Ref, AfterID, Limit) ->
 
 get_state(Ref) ->
     collapse_history(get_history(Ref)).
+
+get_state(Ref, AfterID, Limit) ->
+    collapse_history(get_history(Ref, AfterID, Limit)).
 
 get_initial_state(Ref) ->
     collapse_history(get_history(Ref, undefined, 1)).
