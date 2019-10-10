@@ -72,6 +72,7 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     ok = start(CustomerID, CustomerParams),
     get_customer(get_state(CustomerID));
 
+%% TODO Удалить после перехода на новый протокол
 handle_function_('Get', [CustomerID, undefined], _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
