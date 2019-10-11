@@ -85,7 +85,6 @@
 -export([contract_adjustment_creation/1]).
 -export([contract_adjustment_expiration/1]).
 -export([contract_p2p_terms/1]).
--export([p2p_providers_select/1]).
 
 -export([compute_payment_institution_terms/1]).
 -export([compute_payout_cash_flow/1]).
@@ -183,8 +182,7 @@ groups() ->
             contract_adjustment_creation,
             contract_adjustment_expiration,
             compute_payment_institution_terms,
-            contract_p2p_terms,
-            p2p_providers_select
+            contract_p2p_terms
         ]},
         {shop_management, [sequence], [
             party_creation,
@@ -440,8 +438,6 @@ end_per_testcase(_Name, _C) ->
 -spec compute_payment_institution_terms(config()) -> _ | no_return().
 -spec compute_payout_cash_flow(config()) -> _ | no_return().
 -spec contract_p2p_terms(config()) -> _ | no_return().
--spec p2p_providers_select(config()) -> _ | no_return().
-
 -spec contractor_creation(config()) -> _ | no_return().
 -spec contractor_modification(config()) -> _ | no_return().
 -spec contract_w_contractor_creation(config()) -> _ | no_return().
@@ -862,50 +858,6 @@ contract_p2p_terms(C) ->
             }]}
         }
     ]}} = P2PServiceTerms.
-
-p2p_providers_select(_C) ->
-    BankCardCondition = #domain_BankCardCondition{definition = {issuer_country_is, rus}},
-    BankCardCondition2 = #domain_BankCardCondition{definition = {issuer_country_is, usa}},
-    P2PCondition1 = #domain_P2PToolCondition{
-        sender_is = {bank_card, BankCardCondition},
-        receiver_is = {bank_card, BankCardCondition}
-    },
-    P2PCondition2 = #domain_P2PToolCondition{
-        sender_is = {payment_tool, {bank_card, BankCardCondition}},
-        receiver_is = {payment_tool, {bank_card, BankCardCondition2}}
-    },
-    P2PProviderSelector = {decisions, [
-        #domain_P2PProviderDecision{
-            if_ = {condition, {p2p_tool, P2PCondition1}},
-            then_ = {value, [#domain_ProviderRef{id = 1}]}
-        },
-        #domain_P2PProviderDecision{
-            if_ = {condition, {p2p_tool, P2PCondition2}},
-            then_ = {value, [#domain_ProviderRef{id = 2}]}
-        }
-    ]},
-    BankCard1 = #domain_BankCard{
-        token          = <<"TOKEN1">>,
-        payment_system = mastercard,
-        bin            = <<"888888">>,
-        masked_pan     = <<"888">>,
-        issuer_country = rus
-    },
-    BankCard2 = #domain_BankCard{
-        token          = <<"TOKEN2">>,
-        payment_system = mastercard,
-        bin            = <<"777777">>,
-        masked_pan     = <<"777">>,
-        issuer_country = rus
-    },
-    Vs = #{
-        p2p_tool => #domain_P2PTool{
-            sender   = {bank_card, BankCard1},
-            receiver = {bank_card, BankCard2}
-        }
-    },
-    Revision = hg_domain:head(),
-    [{domain_ProviderRef,1}] = hg_selector:reduce_to_value(P2PProviderSelector, Vs, Revision).
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),

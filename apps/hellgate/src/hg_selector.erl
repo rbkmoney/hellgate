@@ -24,7 +24,8 @@
     dmsl_domain_thrift:'HoldLifetimeSelector'() |
     dmsl_domain_thrift:'CashValueSelector'() |
     dmsl_domain_thrift:'CumulativeLimitSelector'() |
-    dmsl_domain_thrift:'TimeSpanSelector'().
+    dmsl_domain_thrift:'TimeSpanSelector'() |
+    dmsl_domain_thrift:'P2PProviderSelector'().
 
 -type value() ::
     _. %% FIXME
@@ -161,3 +162,55 @@ reduce_condition(C, VS, Rev) ->
             % Irreducible, return as is
             C
     end.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
+
+-spec test() -> _.
+
+-spec p2p_provider_test() -> _.
+p2p_provider_test() ->
+    BankCardCondition = #domain_BankCardCondition{definition = {issuer_country_is, rus}},
+    BankCardCondition2 = #domain_BankCardCondition{definition = {issuer_country_is, usa}},
+    P2PCondition1 = #domain_P2PToolCondition{
+        sender_is = {bank_card, BankCardCondition},
+        receiver_is = {bank_card, BankCardCondition}
+    },
+    P2PCondition2 = #domain_P2PToolCondition{
+        sender_is = {payment_tool, {bank_card, BankCardCondition}},
+        receiver_is = {payment_tool, {bank_card, BankCardCondition2}}
+    },
+    P2PProviderSelector = {decisions, [
+        #domain_P2PProviderDecision{
+            if_ = {condition, {p2p_tool, P2PCondition1}},
+            then_ = {value, [#domain_ProviderRef{id = 1}]}
+        },
+        #domain_P2PProviderDecision{
+            if_ = {condition, {p2p_tool, P2PCondition2}},
+            then_ = {value, [#domain_ProviderRef{id = 2}]}
+        }
+    ]},
+    BankCard1 = #domain_BankCard{
+        token          = <<"TOKEN1">>,
+        payment_system = mastercard,
+        bin            = <<"888888">>,
+        masked_pan     = <<"888">>,
+        issuer_country = rus
+    },
+    BankCard2 = #domain_BankCard{
+        token          = <<"TOKEN2">>,
+        payment_system = mastercard,
+        bin            = <<"777777">>,
+        masked_pan     = <<"777">>,
+        issuer_country = rus
+    },
+    Vs = #{
+        p2p_tool => #domain_P2PTool{
+            sender   = {bank_card, BankCard1},
+            receiver = {bank_card, BankCard2}
+        }
+    },
+    [{domain_ProviderRef,1}] = reduce_to_value(P2PProviderSelector, Vs, 1).
+
+-endif.
