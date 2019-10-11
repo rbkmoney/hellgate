@@ -106,7 +106,8 @@ gather_routes(Predestination, FailRatedProviders, RejectContext, VS, Revision) -
     select_routes(Predestination, FailRatedProviders, VS, Revision, RejectContext).
 
 -spec choose_route([fail_rated_route()], reject_context(), hg_selector:varset()) ->
-    {ok, route()} | {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
+    {ok, route(), route_choise_meta()} |
+    {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 
 choose_route(FailRatedRoutes, RejectContext, VS) ->
     do_choose_route(FailRatedRoutes, VS, RejectContext).
@@ -162,7 +163,8 @@ select_routes(Predestination, FailRatedProviders, VS, Revision, RejectContext) -
     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
 -spec do_choose_route([fail_rated_route()], hg_selector:varset(), reject_context()) ->
-    {ok, route(), route_choise_meta()} | {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
+    {ok, route(), route_choise_meta()} |
+    {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 
 do_choose_route(_FailRatedRoutes, #{risk_score := fatal}, RejectContext) ->
     {error, {no_route_found, {risk_score_is_too_high, RejectContext}}};
