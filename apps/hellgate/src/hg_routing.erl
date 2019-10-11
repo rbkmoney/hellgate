@@ -173,30 +173,23 @@ do_choose_route([] = _FailRatedRoutes, _VS, RejectContext) ->
 do_choose_route(FailRatedRoutes, VS, _RejectContext) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes, VS),
-    ChosenRoute = choose_best_route(ScoredRoutes),
-    RouteChoiseMeta = get_route_choise_meta(ChosenRoute, ScoredRoutes),
-    {ok, export_route(ChosenRoute), RouteChoiseMeta}.
+    {RealRoute, IdealRoute} = choose_routes(ScoredRoutes),
+    RouteChoiseMeta = wrap_route_choise_meta(RealRoute, IdealRoute),
+    {ok, export_route(RealRoute), RouteChoiseMeta}.
 
-choose_best_route([Route]) ->
-    Route;
-choose_best_route(ScoredRoutes) ->
-    lists:max(ScoredRoutes).
-
-get_route_choise_meta(ChosenRoute, ScoredRoutes) ->
-    IdealRoute = choose_ideal_route(ScoredRoutes),
-    wrap_route_choise_meta(ChosenRoute, IdealRoute).
-
-choose_ideal_route([Route]) ->
-    Route;
-choose_ideal_route([Route | Rest]) ->
+choose_routes([Route]) ->
+    {Route, Route};
+choose_routes([Route | Rest]) ->
     lists:foldl(
-        fun(In, Acc) ->
-            case set_ideal_score(In) > set_ideal_score(Acc) of
+        fun(In, {RealAcc, IdealAcc}) ->
+            IdealMax = case set_ideal_score(In) > set_ideal_score(IdealAcc) of
                 true -> In;
-                false -> Acc
-            end
+                false -> IdealAcc
+            end,
+            RealMax = max(In, RealAcc),
+            {RealMax, IdealMax}
         end,
-        Route,
+        {Route, Route},
         Rest
     ).
 
