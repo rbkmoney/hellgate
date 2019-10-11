@@ -202,14 +202,14 @@ choose_ideal_route([Route | Rest]) ->
 set_ideal_score({{_ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, _SuccessRate}, PT}) ->
     {{?PROVIDER_CONDITION_ALIVE, PriorityRate, RandomCondition, RiskCoverage, 1.0}, PT}.
 
+wrap_route_choise_meta(Route, Route) ->
+    #{};
 wrap_route_choise_meta(ChosenRoute, IdealRoute) ->
-    genlib_map:compact(#{
+    #{
         ideal_route => export_route(IdealRoute),
         mismatch_reason => map_route_switch_reason(ChosenRoute, IdealRoute)
-    }).
+    }.
 
-map_route_switch_reason(Route, Route) ->
-    undefined;
 map_route_switch_reason(
     {{ProviderCondition1, _, _, _, _}, _},
     {{ProviderCondition2, _, _, _, _}, _}
