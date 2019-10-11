@@ -898,14 +898,16 @@ start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
 start_capture(Reason, Cost, Cart) ->
-    [?payment_capture_started(Reason, Cost, Cart)]
-    ++ start_session(?captured(Reason, Cost, Cart)).
+    %@TODO uncomment after migration
+    %[?payment_capture_started(Reason, Cost, Cart)] ++
+    start_session(?captured(Reason, Cost, Cart)).
 
-start_partial_capture(Reason, Cost, Cart, Cashflow) ->
-    [
-        ?payment_capture_started(Reason, Cost, Cart),
-        ?cash_flow_changed(Cashflow)
-    ].
+%@TODO uncomment after migration
+%start_partial_capture(_Reason, _Cost, _Cart, Cashflow) ->
+%    [
+%        ?payment_capture_started(Reason, Cost, Cart),
+%        ?cash_flow_changed(Cashflow)
+%    ].
 
 -spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
 
@@ -951,7 +953,20 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         VS,
         Revision
     ),
-    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
+    %@TODO change after migration
+    %Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
+    Invoice             = get_invoice(Opts),
+    _AffectedAccounts   = hg_accounting:plan(
+        construct_payment_plan_id(Invoice, Payment2),
+        [
+            {2, hg_cashflow:revert(get_cashflow(St))},
+            {3, FinalCashflow}
+        ]
+    ),
+    Changes =
+        [?cash_flow_changed(FinalCashflow)] ++
+        start_session(?captured(Reason, Cost, Cart)),
+    %%
     {ok, {Changes, hg_machine_action:instant()}}.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
@@ -2318,8 +2333,14 @@ merge_change(Change = ?route_changed(Route), #st{} = St, Opts) ->
         route      = Route,
         activity   = {payment, cash_flow_building}
     };
+merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
+    _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
+    St#st{
+        capture_params = Params,
+        activity = {payment, processing_capture}
+    };
 merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St, Opts) ->
-    _ = validate_transition([{payment, S} || S <- [cash_flow_building, processing_capture]], Change, St, Opts),
+    _ = validate_transition([{payment, S} || S <- [flow_waiting, cash_flow_building, processing_capture]], Change, St, Opts),
     case Activity of
         {payment, cash_flow_building} ->
             St#st{
@@ -2331,18 +2352,16 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
                 partial_cash_flow = Cashflow,
                 activity   = {payment, updating_accounter}
             };
+        {payment, flow_waiting} ->
+            St#st{
+                partial_cash_flow = Cashflow
+            };
         _ ->
             St
     end;
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
-merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
-    _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
-    St#st{
-        capture_params = Params,
-        activity = {payment, processing_capture}
-    };
 merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [
         risk_scoring,
