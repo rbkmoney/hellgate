@@ -65,8 +65,8 @@
 -type fail_rated_route()     :: {provider_ref(), weighted_terminal(), provider_status()}.
 
 -type route_choise_meta()     :: #{
-    ideal_route := route(),
-    reason => fail_rate | provider_condition
+    ideal_route => route(),
+    mismatch_reason => fail_rate | provider_condition
 }.
 
 -export_type([route_predestination/0]).
@@ -181,31 +181,45 @@ choose_best_route(ScoredRoutes) ->
     lists:max(ScoredRoutes).
 
 get_route_choise_meta(ChosenRoute, ScoredRoutes) ->
-    IdealScoredRoutes = set_ideal_scores(ScoredRoutes),
-    IdealRoute = choose_best_route(IdealScoredRoutes),
+    IdealRoute = choose_ideal_route(ScoredRoutes),
+    wrap_route_choise_meta(ChosenRoute, IdealRoute).
+
+choose_ideal_route([Route]) ->
+    Route;
+choose_ideal_route([Route | Rest]) ->
+    lists:foldl(
+        fun(In, Acc) ->
+            case set_ideal_score(In) > set_ideal_score(Acc) of
+                true -> In;
+                false -> Acc
+            end
+        end,
+        Route,
+        Rest
+    ).
+
+%@todo maybe introduce an intermediate representation for this tuple
+set_ideal_score({{_ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, _SuccessRate}, PT}) ->
+    {{?PROVIDER_CONDITION_ALIVE, PriorityRate, RandomCondition, RiskCoverage, 1.0}, PT}.
+
+wrap_route_choise_meta(ChosenRoute, IdealRoute) ->
     genlib_map:compact(#{
         ideal_route => export_route(IdealRoute),
-        reason => map_route_switch_reason(ChosenRoute, IdealRoute)
+        mismatch_reason => map_route_switch_reason(ChosenRoute, IdealRoute)
     }).
 
-set_ideal_scores(ScoredRoutes) ->
-    [{set_ideal_score(Score), PT} || {Score, PT} <- ScoredRoutes].
-
-set_ideal_score({_ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, _SuccessRate}) ->
-    {?PROVIDER_CONDITION_ALIVE, PriorityRate, RandomCondition, RiskCoverage, 1.0}.
-
-map_route_switch_reason(
-    {{_, _, _, _, ProviderFailRate1}, _},
-    {{_, _, _, _, ProviderFailRate2}, _}
-) when ProviderFailRate1 =/= ProviderFailRate2 ->
-    fail_rate;
+map_route_switch_reason(Route, Route) ->
+    undefined;
 map_route_switch_reason(
     {{ProviderCondition1, _, _, _, _}, _},
     {{ProviderCondition2, _, _, _, _}, _}
 ) when ProviderCondition1 =/= ProviderCondition2 ->
     provider_condition;
-map_route_switch_reason(Route, Route) ->
-    undefined.
+map_route_switch_reason(
+    {{_, _, _, _, ProviderFailRate1}, _},
+    {{_, _, _, _, ProviderFailRate2}, _}
+) when ProviderFailRate1 =/= ProviderFailRate2 ->
+    fail_rate.
 
 -spec balance_routes([fail_rated_route()]) ->
     [fail_rated_route()].
@@ -217,12 +231,10 @@ balance_routes(FailRatedRoutes) ->
     ),
     balance_route_groups(FilteredRouteGroups).
 
--type priority_route_groups() :: #{
-    {provider_condition(), terminal_priority_rate()} => [fail_rated_route()]
-}.
+-type route_groups_by_priority() :: #{{provider_condition(), terminal_priority_rate()} => [fail_rated_route()]}.
 
--spec group_routes_by_priority(fail_rated_route(), Acc :: priority_route_groups()) ->
-    priority_route_groups().
+-spec group_routes_by_priority(fail_rated_route(), Acc :: route_groups_by_priority()) ->
+    route_groups_by_priority().
 
 group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) ->
     TerminalPriority = get_priority_from_route(Route),
@@ -238,7 +250,7 @@ get_priority_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _Provid
     {PriorityRate, _Weight} = Priority,
     PriorityRate.
 
--spec balance_route_groups(priority_route_groups()) ->
+-spec balance_route_groups(route_groups_by_priority()) ->
     [fail_rated_route()].
 
 balance_route_groups(RouteGroups) ->

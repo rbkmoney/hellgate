@@ -616,8 +616,8 @@ validate_limit(Cash, CashRange) ->
 choose_route(PaymentInstitution, VS, Revision, St) ->
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
-        {ok, _Route} = Result ->
-            Result;
+        {ok, Route} ->
+            {ok, Route, #{}};
         undefined ->
             Payment         = get_payment(St),
             Predestination  = choose_routing_predestination(Payment),

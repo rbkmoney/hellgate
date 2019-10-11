@@ -334,7 +334,7 @@ inspect(_RecPaymentTool, _VS) ->
 validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}}.
 
-validate_route({ok, Route}, _RecPaymentTool) ->
+validate_route({ok, Route, _ChoiseMeta}, _RecPaymentTool) ->
     Route;
 validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
     Level =
