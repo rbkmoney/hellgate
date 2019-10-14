@@ -112,11 +112,23 @@ start_app(hellgate = AppName) ->
         {services, #{
             accounter           => <<"http://shumway:8022/shumpune">>,
             automaton           => <<"http://machinegun:8022/v1/automaton">>,
-            eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
-            party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
             customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
-            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>,
-            fault_detector      => <<"http://127.0.0.1:20001/">>
+            eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
+            fault_detector      => <<"http://127.0.0.1:20001/">>,
+            invoice_templating  => #{
+                url => <<"http://hellgate:8022/v1/processing/invoice_templating">>,
+                transport_opts => #{
+                    max_connections => 300
+                }
+            },
+            invoicing           => #{
+                url => <<"http://hellgate:8022/v1/processing/invoicing">>,
+                transport_opts => #{
+                    max_connections => 300
+                }
+            },
+            party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>
         }},
         {proxy_opts, #{
             transport_opts => #{
