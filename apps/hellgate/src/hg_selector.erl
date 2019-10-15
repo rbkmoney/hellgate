@@ -211,6 +211,6 @@ p2p_provider_test() ->
             receiver = {bank_card, BankCard2}
         }
     },
-    [{domain_ProviderRef,1}] = reduce_to_value(P2PProviderSelector, Vs, 1).
+    ?assertEqual([{domain_ProviderRef,1}], reduce_to_value(P2PProviderSelector, Vs, 1)).
 
 -endif.

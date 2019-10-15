@@ -846,18 +846,16 @@ contract_p2p_terms(C) ->
             p2p = P2PServiceTerms
         }
     } = hg_party:reduce_terms(Terms, VS, Revision),
-    #domain_P2PServiceTerms{cash_flow = {decisions, [
-        #domain_CashFlowDecision{
-            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-            then_ = {value, [#domain_CashFlowPosting{
+    #domain_P2PServiceTerms{
+        cash_flow = CashFlow
+    } = P2PServiceTerms,
+    {value, [#domain_CashFlowPosting{
                 source = {wallet, receiver_destination},
                 destination = {system, settlement},
                 volume = {fixed, #domain_CashVolumeFixed{
                     cash = ?cash(50, <<"RUB">>)
                 }}
-            }]}
-        }
-    ]}} = P2PServiceTerms.
+    }]} = CashFlow.
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
@@ -1640,41 +1638,36 @@ construct_domain_fixture() ->
                 ]},
                 cash_flow = {decisions, [
                     #domain_CashFlowDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {decisions, [
-                            #domain_CashFlowDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                        {inclusive, ?cash(   0, <<"RUB">>)},
-                                        {exclusive, ?cash(3000, <<"RUB">>)}
-                                    )}
-                                },
-                                then_ = {
-                                    value, [
-                                        #domain_CashFlowPosting{
-                                            source = {wallet, receiver_destination},
-                                            destination = {system, settlement},
-                                            volume = ?fixed(50, <<"RUB">>)
-                                        }
-                                    ]
+                        if_ = {condition, {cost_in, ?cashrng(
+                                {inclusive, ?cash(   0, <<"RUB">>)},
+                                {exclusive, ?cash(3000, <<"RUB">>)}
+                            )}
+                        },
+                        then_ = {
+                            value, [
+                                #domain_CashFlowPosting{
+                                    source = {wallet, receiver_destination},
+                                    destination = {system, settlement},
+                                    volume = ?fixed(50, <<"RUB">>)
                                 }
-                            },
-                            #domain_CashFlowDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                        {inclusive, ?cash(3001,  <<"RUB">>)},
-                                        {exclusive, ?cash(10001, <<"RUB">>)}
-                                    )}
-                                },
-                                then_ = {
-                                    value, [
-                                        #domain_CashFlowPosting{
-                                            source = {wallet, receiver_destination},
-                                            destination = {system, settlement},
-                                            volume = ?share(1, 100, operation_amount)
-                                        }
-                                    ]
+                            ]
+                        }
+                    },
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                                {inclusive, ?cash(3001, <<"RUB">>)},
+                                {exclusive, ?cash(10000, <<"RUB">>)}
+                            )}
+                        },
+                        then_ = {
+                            value, [
+                                #domain_CashFlowPosting{
+                                    source = {wallet, receiver_destination},
+                                    destination = {system, settlement},
+                                    volume = ?share(1, 100, operation_amount)
                                 }
-                            }
-                        ]}
+                            ]
+                        }
                     }
                 ]}
             }
