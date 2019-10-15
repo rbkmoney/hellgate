@@ -248,14 +248,17 @@ get_account_state(AccountID, Party) ->
     ok = ensure_account(AccountID, Party),
     Account = hg_accounting:get_account(AccountID),
     #{
-        own_amount := OwnAmount,
-        min_available_amount := MinAvailableAmount,
         currency_code := CurrencyCode
     } = Account,
     CurrencyRef = #domain_CurrencyRef{
         symbolic_code = CurrencyCode
     },
     Currency = hg_domain:get(hg_domain:head(), {currency, CurrencyRef}),
+    Balance = hg_accounting:get_balance(AccountID),
+    #{
+        own_amount := OwnAmount,
+        min_available_amount := MinAvailableAmount
+    } = Balance,
     #payproc_AccountState{
         account_id = AccountID,
         own_amount = OwnAmount,
