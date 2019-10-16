@@ -79,25 +79,9 @@ handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
     Party = hg_party_machine:get_party(PartyID),
     ensure_shop(hg_party:get_shop(ID, Party));
 
-% TODO Удалить после перехода на новый протокол
-handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp, undefined], _Opts) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = checkout_party(PartyID, {timestamp, Timestamp}),
-    Shop = ensure_shop(hg_party:get_shop(ShopID, Party)),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    Revision = hg_domain:head(),
-    VS = #{
-        party_id => PartyID,
-        shop_id  => ShopID,
-        category => Shop#domain_Shop.category,
-        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
-        identification_level => get_identification_level(Contract, Party)
-    },
-    hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
-
 handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp, PartyRevision], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = checkout_party(PartyID, PartyRevision),
+    Party = checkout_party(PartyID, hg_maybe:get_defined(PartyRevision, {timestamp, Timestamp})),
     Shop = ensure_shop(hg_party:get_shop(ShopID, Party)),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Revision = hg_domain:head(),

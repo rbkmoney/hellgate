@@ -195,37 +195,20 @@ handle_function_('GetPaymentAdjustment', [UserInfo, InvoiceID, PaymentID, ID], _
     St = assert_invoice_accessible(get_state(InvoiceID)),
     hg_invoice_payment:get_adjustment(ID, get_payment_session(PaymentID, St));
 
-handle_function_('ComputeTerms', [UserInfo, InvoiceID, undefined], _Opts) ->
+handle_function_('ComputeTerms', [UserInfo, InvoiceID, PartyRevision0], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
     ShopID = get_shop_id(St),
     PartyID = get_party_id(St),
     Timestamp = get_created_at(St),
+    PartyRevision1 = hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
     ShopTerms = hg_invoice_utils:compute_shop_terms(
         UserInfo,
         PartyID,
         ShopID,
         Timestamp,
-        {timestamp, Timestamp}
-    ),
-    Revision = hg_domain:head(),
-    Cash = get_cost(St),
-    hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
-
-handle_function_('ComputeTerms', [UserInfo, InvoiceID, PartyRevision], _Opts) ->
-    ok = assume_user_identity(UserInfo),
-    _ = set_invoicing_meta(InvoiceID),
-    St = assert_invoice_accessible(get_state(InvoiceID)),
-    ShopID = get_shop_id(St),
-    PartyID = get_party_id(St),
-    Timestamp = get_created_at(St),
-    ShopTerms = hg_invoice_utils:compute_shop_terms(
-        UserInfo,
-        PartyID,
-        ShopID,
-        Timestamp,
-        PartyRevision
+        PartyRevision1
     ),
     Revision = hg_domain:head(),
     Cash = get_cost(St),
