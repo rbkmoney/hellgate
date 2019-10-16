@@ -12,6 +12,7 @@
 -export([create_party_and_shop/5]).
 -export([create_battle_ready_shop/5]).
 -export([get_account/1]).
+-export([get_balance/1]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
 -export([get_first_payout_tool_id/2]).
@@ -109,13 +110,25 @@ start_app(hellgate = AppName) ->
         {host, ?HELLGATE_HOST},
         {port, ?HELLGATE_PORT},
         {services, #{
+            accounter           => <<"http://shumway:8022/shumpune">>,
             automaton           => <<"http://machinegun:8022/v1/automaton">>,
-            eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
-            accounter           => <<"http://shumway:8022/accounter">>,
-            party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
             customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
-            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>,
-            fault_detector      => <<"http://127.0.0.1:20001/">>
+            eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
+            fault_detector      => <<"http://127.0.0.1:20001/">>,
+            invoice_templating  => #{
+                url => <<"http://hellgate:8022/v1/processing/invoice_templating">>,
+                transport_opts => #{
+                    max_connections => 300
+                }
+            },
+            invoicing           => #{
+                url => <<"http://hellgate:8022/v1/processing/invoicing">>,
+                transport_opts => #{
+                    max_connections => 300
+                }
+            },
+            party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>
         }},
         {proxy_opts, #{
             transport_opts => #{
@@ -229,6 +242,7 @@ make_user_identity(UserID) ->
 -type user_info()                 :: dmsl_payment_processing_thrift:'UserInfo'().
 -type account_id()                :: dmsl_domain_thrift:'AccountID'().
 -type account()                   :: map().
+-type balance()                   :: map().
 -type contract_id()               :: dmsl_domain_thrift:'ContractID'().
 -type contract_tpl()              :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type shop_id()                   :: dmsl_domain_thrift:'ShopID'().
@@ -372,6 +386,12 @@ ensure_claim_accepted(#payproc_Claim{id = ClaimID, revision = ClaimRevision, sta
 get_account(AccountID) ->
     % TODO we sure need to proxy this through the hellgate interfaces
     hg_accounting:get_account(AccountID).
+
+-spec get_balance(account_id()) -> balance().
+
+get_balance(AccountID) ->
+    % TODO we sure need to proxy this through the hellgate interfaces
+    hg_accounting:get_balance(AccountID).
 
 -spec get_first_payout_tool_id(contract_id(), Client :: pid()) ->
     dmsl_domain_thrift:'PayoutToolID'().
