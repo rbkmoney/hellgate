@@ -69,6 +69,14 @@
     mismatch_reason => fail_rate | provider_condition
 }.
 
+-record(route_scores, {
+    provider_condition :: provider_condition(),
+    priority_rate :: terminal_priority_rate(),
+    random_condition :: integer(),
+    risk_coverage :: float(),
+    success_rate :: float()
+}).
+
 -export_type([route_predestination/0]).
 
 -spec gather_providers(
@@ -181,21 +189,23 @@ choose_routes([Route]) ->
     {Route, Route};
 choose_routes([Route | Rest]) ->
     lists:foldl(
-        fun(In, {RealAcc, IdealAcc}) ->
-            IdealMax = case set_ideal_score(In) > set_ideal_score(IdealAcc) of
-                true -> In;
-                false -> IdealAcc
+        fun(RouteIn, {RouteReal, RouteIdeal}) ->
+            NewRouteIdeal = case set_ideal_score(RouteIn) > set_ideal_score(RouteIdeal) of
+                true -> RouteIn;
+                false -> RouteIdeal
             end,
-            RealMax = max(In, RealAcc),
-            {RealMax, IdealMax}
+            NewRouteReal = max(RouteIn, RouteReal),
+            {NewRouteReal, NewRouteIdeal}
         end,
         {Route, Route},
         Rest
     ).
 
-%@todo maybe introduce an intermediate representation for this tuple
-set_ideal_score({{_ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, _SuccessRate}, PT}) ->
-    {{?PROVIDER_CONDITION_ALIVE, PriorityRate, RandomCondition, RiskCoverage, 1.0}, PT}.
+set_ideal_score({RouteScores, PT}) ->
+    {RouteScores#route_scores{
+        provider_condition = ?PROVIDER_CONDITION_ALIVE,
+        success_rate = 1.0
+    }, PT}.
 
 wrap_route_choise_meta(Route, Route) ->
     #{};
@@ -205,16 +215,18 @@ wrap_route_choise_meta(ChosenRoute, IdealRoute) ->
         mismatch_reason => map_route_switch_reason(ChosenRoute, IdealRoute)
     }.
 
-map_route_switch_reason(
-    {{ProviderCondition1, _, _, _, _}, _},
-    {{ProviderCondition2, _, _, _, _}, _}
-) when ProviderCondition1 =/= ProviderCondition2 ->
-    provider_condition;
-map_route_switch_reason(
-    {{_, _, _, _, ProviderFailRate1}, _},
-    {{_, _, _, _, ProviderFailRate2}, _}
-) when ProviderFailRate1 =/= ProviderFailRate2 ->
-    fail_rate.
+map_route_switch_reason({RealScores, _}, {IdealScores, _}) ->
+    Zipped = lists:zip(tuple_to_list(RealScores), tuple_to_list(IdealScores)),
+    DifferenceIdx = find_idx_of_difference(Zipped),
+    lists:nth(DifferenceIdx, record_info(fields, route_scores)).
+
+find_idx_of_difference(ZippedList) ->
+    find_idx_of_difference(ZippedList, 0).
+
+find_idx_of_difference([{Same, Same} | Rest], I) ->
+    find_idx_of_difference(Rest, I + 1);
+find_idx_of_difference(_, I) ->
+    I.
 
 -spec balance_routes([fail_rated_route()]) ->
     [fail_rated_route()].
@@ -318,7 +330,13 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
     {ProviderCondition, FailRate} = ProviderStatus,
     SuccessRate = 1.0 - FailRate,
     {PriorityRate, RandomCondition} = Priority,
-    {ProviderCondition, PriorityRate, RandomCondition, RiskCoverage, SuccessRate}.
+    #route_scores{
+        provider_condition = ProviderCondition,
+        priority_rate = PriorityRate,
+        random_condition = RandomCondition,
+        risk_coverage = RiskCoverage,
+        success_rate = SuccessRate
+    }.
 
 export_route({_Scores, {ProviderRef, {TerminalRef, _Terminal, _Priority}}}) ->
     % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,

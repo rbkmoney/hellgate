@@ -389,7 +389,7 @@ prefer_lower_fail_rate(_C) ->
 
     Result5 = hg_routing:choose_route(FailRatedRoutes5, RC5, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{mismatch_reason := fail_rate}} = Result5,
+    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{mismatch_reason := success_rate}} = Result5,
 
     ok.
 
