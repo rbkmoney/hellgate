@@ -859,12 +859,13 @@ shop_terms_retrieval(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = ?REAL_SHOP_ID,
-    TermSet1 = hg_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), Client),
+    Timestamp = hg_datetime:format_now(),
+    TermSet1 = hg_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet1,
     ok = hg_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
-    TermSet2 = hg_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), Client),
+    TermSet2 = hg_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
     }} = TermSet2.

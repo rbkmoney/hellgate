@@ -202,7 +202,13 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID], _Opts) ->
     ShopID = get_shop_id(St),
     PartyID = get_party_id(St),
     Timestamp = get_created_at(St),
-    ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp),
+    ShopTerms = hg_invoice_utils:compute_shop_terms(
+        UserInfo,
+        PartyID,
+        ShopID,
+        Timestamp,
+        {timestamp, Timestamp}
+    ),
     Revision = hg_domain:head(),
     Cash = get_cost(St),
     hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
