@@ -1702,7 +1702,6 @@ construct_domain_fixture() ->
                         }
                     }
                 ]}
-
             }
         }
     },
