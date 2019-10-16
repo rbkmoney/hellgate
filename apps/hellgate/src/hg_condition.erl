@@ -63,10 +63,8 @@ test_p2p_tool(P2PCondition, P2PTool, Rev) ->
         test({payment_tool, ReceiverIs}, #{payment_tool => Receiver}, Rev)
     } of
             {true, true} -> true;
-            {T1, T2} when
-                T1 =:= undefined orelse
-                T2 =:= undefined
-            -> undefined;
+            {T1, T2} when  T1 =:= undefined
+                    orelse T2 =:= undefined -> undefined;
             {_, _} -> false
     end.
 

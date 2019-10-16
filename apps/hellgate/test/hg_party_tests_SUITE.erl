@@ -847,7 +847,8 @@ contract_p2p_terms(C) ->
         }
     } = hg_party:reduce_terms(Terms, VS, Revision),
     #domain_P2PServiceTerms{
-        cash_flow = CashFlow
+        cash_flow = CashFlow,
+        fees = Fees
     } = P2PServiceTerms,
     {value, [#domain_CashFlowPosting{
                 source = {wallet, receiver_destination},
@@ -855,7 +856,10 @@ contract_p2p_terms(C) ->
                 volume = {fixed, #domain_CashVolumeFixed{
                     cash = ?cash(50, <<"RUB">>)
                 }}
-    }]} = CashFlow.
+    }]} = CashFlow,
+    {value, #domain_Fees{
+        fees = #{surplus := {fixed, #domain_CashVolumeFixed{cash = ?cash(50, <<"RUB">>)}}}
+    }} = Fees.
 
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
@@ -1669,7 +1673,36 @@ construct_domain_fixture() ->
                             ]
                         }
                     }
+                ]},
+                fees = {decisions, [
+                    #domain_FeeDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                                {inclusive, ?cash(   0, <<"RUB">>)},
+                                {exclusive, ?cash(3000, <<"RUB">>)}
+                            )}
+                        },
+                        then_ = {
+                            value,
+                                #domain_Fees{
+                                    fees = #{surplus => ?fixed(50, <<"RUB">>)}
+                                }
+                        }
+                    },
+                    #domain_FeeDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                                {inclusive, ?cash(3000, <<"RUB">>)},
+                                {exclusive, ?cash(300000, <<"RUB">>)}
+                            )}
+                        },
+                        then_ = {
+                            value,
+                                #domain_Fees{
+                                    fees = #{surplus => ?share(4, 100, operation_amount)}
+                                }
+                        }
+                    }
                 ]}
+
             }
         }
     },

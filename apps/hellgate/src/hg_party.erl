@@ -705,18 +705,21 @@ merge_p2p_terms(
     #domain_P2PServiceTerms{
         currencies = Currencies0,
         cash_limit = CashLimit0,
-        cash_flow  = CashFlow0
+        cash_flow = CashFlow0,
+        fees = Fees0
     },
     #domain_P2PServiceTerms{
         currencies = Currencies1,
         cash_limit = CashLimit1,
-        cash_flow  = CashFlow1
+        cash_flow = CashFlow1,
+        fees = Fees1
     }
 ) ->
     #domain_P2PServiceTerms{
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
         cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
-        cash_flow  = hg_utils:select_defined(CashFlow1, CashFlow0)
+        cash_flow = hg_utils:select_defined(CashFlow1, CashFlow0),
+        fees = hg_utils:select_defined(Fees1, Fees0)
     };
 merge_p2p_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
