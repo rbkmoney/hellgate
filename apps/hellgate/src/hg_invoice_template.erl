@@ -96,13 +96,28 @@ handle_function_('Delete' = Fun, [UserInfo, TplID] = Args, _Opts) ->
     _     = set_meta(TplID),
     call(TplID, Fun, Args);
 
-handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp], _Opts) ->
+handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp, undefined], _Opts) ->
     ok    = assume_user_identity(UserInfo),
     _     = set_meta(TplID),
     Tpl   = get_invoice_template(TplID),
     ShopID = Tpl#domain_InvoiceTemplate.shop_id,
     PartyID = Tpl#domain_InvoiceTemplate.owner_id,
     ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, {timestamp, Timestamp}),
+    case Tpl#domain_InvoiceTemplate.details of
+        {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
+            Revision = hg_domain:head(),
+            hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+        _ ->
+            ShopTerms
+    end;
+
+handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp, PartyRevision], _Opts) ->
+    ok    = assume_user_identity(UserInfo),
+    _     = set_meta(TplID),
+    Tpl   = get_invoice_template(TplID),
+    ShopID = Tpl#domain_InvoiceTemplate.shop_id,
+    PartyID = Tpl#domain_InvoiceTemplate.owner_id,
+    ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision),
     case Tpl#domain_InvoiceTemplate.details of
         {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
             Revision = hg_domain:head(),
