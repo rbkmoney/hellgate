@@ -2493,7 +2493,8 @@ get_cashflow_volume(Source, Destination, CF) ->
 terms_retrieval(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 1500, C),
-    TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, Client),
+    Timestamp = hg_datetime:format_now(),
+    TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [
             ?pmt(bank_card, jcb),
@@ -2509,7 +2510,7 @@ terms_retrieval(C) ->
     }} = TermSet1,
     Revision = hg_domain:head(),
     ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
-    TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, Client),
+    TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet2,

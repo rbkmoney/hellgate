@@ -12,7 +12,7 @@
 -export([assert_party_operable/1]).
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
--export([compute_shop_terms/4]).
+-export([compute_shop_terms/5]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
 
@@ -28,6 +28,7 @@
 -type term_set()   :: dmsl_domain_thrift:'TermSet'().
 -type timestamp()  :: dmsl_base_thrift:'Timestamp'().
 -type user_info()  :: dmsl_payment_processing_thrift:'UserInfo'().
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
 -spec validate_cost(cash(), shop()) -> ok.
 
@@ -89,9 +90,9 @@ assert_shop_exists(#domain_Shop{} = V) ->
 assert_shop_exists(undefined) ->
     throw(#payproc_ShopNotFound{}).
 
--spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp()) -> term_set().
-compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp) ->
-    Args = [UserInfo, PartyID, ShopID, Timestamp],
+-spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param()) -> term_set().
+compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision) ->
+    Args = [UserInfo, PartyID, ShopID, Timestamp, PartyRevision],
     {ok, TermSet} = hg_woody_wrapper:call(party_management, 'ComputeShopTerms', Args),
     TermSet.
 

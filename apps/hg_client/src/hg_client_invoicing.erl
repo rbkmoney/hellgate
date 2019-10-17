@@ -31,7 +31,7 @@
 -export([capture_adjustment/4]).
 -export([cancel_adjustment/4]).
 
--export([compute_terms/2]).
+-export([compute_terms/3]).
 
 -export([pull_event/2]).
 -export([pull_event/3]).
@@ -66,6 +66,7 @@
 -type cash()               :: undefined | dmsl_domain_thrift:'Cash'().
 -type cart()               :: undefined | dmsl_domain_thrift:'InvoiceCart'().
 -type event_range()        :: dmsl_payment_processing_thrift:'EventRange'().
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
 -spec start(hg_client_api:t()) -> pid().
 
@@ -238,10 +239,10 @@ cancel_adjustment(InvoiceID, PaymentID, ID, Client) ->
     Args = [InvoiceID, PaymentID, ID],
     map_result_error(gen_server:call(Client, {call, 'CancelPaymentAdjustment', Args})).
 
--spec compute_terms(invoice_id(), pid()) -> term_set().
+-spec compute_terms(invoice_id(), party_revision_param(), pid()) -> term_set().
 
-compute_terms(InvoiceID, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ComputeTerms', [InvoiceID]})).
+compute_terms(InvoiceID, PartyRevision, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputeTerms', [InvoiceID, PartyRevision]})).
 
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
