@@ -829,34 +829,22 @@ compute_payout_cash_flow(C) ->
 
 contract_p2p_terms(C) ->
     Client = cfg(client, C),
-    PartyID = cfg(party_id, C),
     ContractID = ?REAL_CONTRACT_ID,
-    Revision = hg_domain:head(),
-    Terms = hg_party:get_terms(
-        hg_client_party:get_contract(ContractID, Client),
-        hg_datetime:format_now(),
-        Revision
-    ),
-    VS = #{
-        party_id => PartyID,
-        cost => #domain_Cash{amount = 2500, currency = ?cur(<<"RUB">>)}
+    PartyRevision = hg_client_party:get_revision(Client),
+    DomainRevision1 = hg_domain:head(),
+    Timstamp1 = hg_datetime:format_now(),
+    Varset = #payproc_Varset{
+        currency = ?cur(<<"RUB">>),
+        amount = ?cash(2500, <<"RUB">>)
     },
     #domain_TermSet{
         wallets = #domain_WalletServiceTerms{
             p2p = P2PServiceTerms
         }
-    } = hg_party:reduce_terms(Terms, VS, Revision),
-    #domain_P2PServiceTerms{
-        cash_flow = CashFlow,
-        fees = Fees
-    } = P2PServiceTerms,
-    {value, [#domain_CashFlowPosting{
-                source = {wallet, receiver_destination},
-                destination = {system, settlement},
-                volume = {fixed, #domain_CashVolumeFixed{
-                    cash = ?cash(50, <<"RUB">>)
-                }}
-    }]} = CashFlow,
+    } = hg_client_party:compute_contract_terms(
+        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+    ),
+    #domain_P2PServiceTerms{fees = Fees} = P2PServiceTerms,
     {value, #domain_Fees{
         fees = #{surplus := {fixed, #domain_CashVolumeFixed{cash = ?cash(50, <<"RUB">>)}}}
     }} = Fees.
