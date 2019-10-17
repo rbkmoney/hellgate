@@ -62,11 +62,12 @@
 
 -type fail_unrated_provider():: {provider_ref(), provider()}.
 -type fail_rated_provider()  :: {provider_ref(), provider(), provider_status()}.
--type fail_rated_route()     :: {provider_ref(), weighted_terminal(), provider_status()}.
+-type fail_rated_route()     :: {{provider_ref(), provider()}, weighted_terminal(), provider_status()}.
 
 -type route_choise_meta()     :: #{
-    ideal_route => route(),
-    mismatch_reason => success_rate | provider_condition
+    chosen_route => fail_rated_route(),
+    ideal_route => fail_rated_route(),
+    mismatch_reason => atom()
 }.
 
 -record(route_scores, {
@@ -182,7 +183,7 @@ do_choose_route(FailRatedRoutes, VS, _RejectContext) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes, VS),
     {RealRoute, IdealRoute} = find_best_routes(ScoredRoutes),
-    RouteChoiseMeta = wrap_route_choise_meta(RealRoute, IdealRoute),
+    RouteChoiseMeta = get_route_choise_meta(RealRoute, IdealRoute),
     {ok, export_route(RealRoute), RouteChoiseMeta}.
 
 find_best_routes([Route]) ->
@@ -212,15 +213,26 @@ set_ideal_score({RouteScores, PT}) ->
         success_rate = 1.0
     }, PT}.
 
-wrap_route_choise_meta(Route, Route) ->
-    #{};
-wrap_route_choise_meta(ChosenRoute, IdealRoute) ->
+get_route_choise_meta({_, ChosenRoute} = Route, Route) ->
     #{
-        ideal_route => export_route(IdealRoute),
-        mismatch_reason => map_route_switch_reason(ChosenRoute, IdealRoute)
+        chosen_route => ChosenRoute
+    };
+get_route_choise_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
+    #{
+        chosen_route => export_route_info(ChosenRoute),
+        ideal_route => export_route_info(IdealRoute),
+        mismatch_reason => map_route_switch_reason(ChosenScores, IdealScores)
     }.
 
-map_route_switch_reason({RealScores, _}, {IdealScores, _}) ->
+export_route_info({{ProviderRef, Provider}, {TerminalRef, Terminal, _Priority}}) ->
+    #{
+        provider_ref => ProviderRef#domain_ProviderRef.id,
+        provider_name => Provider#domain_Provider.name,
+        terminal_ref => TerminalRef#domain_TerminalRef.id,
+        terminal_name => Terminal#domain_Terminal.name
+    }.
+
+map_route_switch_reason(RealScores, IdealScores) ->
     Zipped = lists:zip(tuple_to_list(RealScores), tuple_to_list(IdealScores)),
     DifferenceIdx = find_idx_of_difference(Zipped),
     lists:nth(DifferenceIdx, record_info(fields, route_scores)).
@@ -343,7 +355,7 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
         success_rate = SuccessRate
     }.
 
-export_route({_Scores, {ProviderRef, {TerminalRef, _Terminal, _Priority}}}) ->
+export_route({_Scores, {{ProviderRef, _Provider}, {TerminalRef, _Terminal, _Priority}}}) ->
     % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
     %      `get_terminal_ref/1` instead?
     ?route(ProviderRef, TerminalRef).
@@ -455,7 +467,7 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider, FailRate}, V
             Priority = get_terminal_priority(ProviderTerminalRef),
             try
                 {TerminalRef, Terminal} = acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
-                {[{ProviderRef, {TerminalRef, Terminal, Priority}, FailRate} | Accepted], Rejected}
+                {[{{ProviderRef, Provider}, {TerminalRef, Terminal, Priority}, FailRate} | Accepted], Rejected}
             catch
                 ?rejected(Reason) ->
                     {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]};
