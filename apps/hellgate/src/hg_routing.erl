@@ -66,7 +66,7 @@
 
 -type route_choise_meta()     :: #{
     ideal_route => route(),
-    mismatch_reason => fail_rate | provider_condition
+    mismatch_reason => success_rate | provider_condition
 }.
 
 -record(route_scores, {
@@ -181,25 +181,30 @@ do_choose_route([] = _FailRatedRoutes, _VS, RejectContext) ->
 do_choose_route(FailRatedRoutes, VS, _RejectContext) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes, VS),
-    {RealRoute, IdealRoute} = choose_routes(ScoredRoutes),
+    {RealRoute, IdealRoute} = find_best_routes(ScoredRoutes),
     RouteChoiseMeta = wrap_route_choise_meta(RealRoute, IdealRoute),
     {ok, export_route(RealRoute), RouteChoiseMeta}.
 
-choose_routes([Route]) ->
+find_best_routes([Route]) ->
     {Route, Route};
-choose_routes([Route | Rest]) ->
+find_best_routes([First | Rest]) ->
     lists:foldl(
-        fun(RouteIn, {RouteReal, RouteIdeal}) ->
-            NewRouteIdeal = case set_ideal_score(RouteIn) > set_ideal_score(RouteIdeal) of
-                true -> RouteIn;
-                false -> RouteIdeal
-            end,
-            NewRouteReal = max(RouteIn, RouteReal),
+        fun(RouteIn, {CurrentRouteReal, CurrentRouteIdeal}) ->
+            NewRouteIdeal = select_better_route_ideal(RouteIn, CurrentRouteIdeal),
+            NewRouteReal = select_better_route_real(RouteIn, CurrentRouteReal),
             {NewRouteReal, NewRouteIdeal}
         end,
-        {Route, Route},
-        Rest
+        {First, First}, Rest
     ).
+
+select_better_route_real(Left, Right) ->
+    max(Left, Right).
+
+select_better_route_ideal(Left, Right) ->
+    case set_ideal_score(Left) > set_ideal_score(Right) of
+        true -> Left;
+        false -> Right
+    end.
 
 set_ideal_score({RouteScores, PT}) ->
     {RouteScores#route_scores{
