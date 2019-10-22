@@ -833,9 +833,20 @@ contract_p2p_terms(C) ->
     PartyRevision = hg_client_party:get_revision(Client),
     DomainRevision1 = hg_domain:head(),
     Timstamp1 = hg_datetime:format_now(),
+    BankCard = #domain_BankCard{
+        token = <<"1OleNyeXogAKZBNTgxBGQE">>,
+        payment_system = visa,
+        bin = <<"415039">>,
+        masked_pan = <<"0900">>,
+        issuer_country = rus
+    },
     Varset = #payproc_Varset{
         currency = ?cur(<<"RUB">>),
-        amount = ?cash(2500, <<"RUB">>)
+        amount = ?cash(2500, <<"RUB">>),
+        p2p_tool = #domain_P2PTool{
+            sender = {bank_card, BankCard},
+            receiver = {bank_card, BankCard}
+        }
     },
     #domain_TermSet{
         wallets = #domain_WalletServiceTerms{
@@ -1665,30 +1676,36 @@ construct_domain_fixture() ->
                 ]},
                 fees = {decisions, [
                     #domain_FeeDecision{
-                        if_ = {condition, {cost_in, ?cashrng(
-                                {inclusive, ?cash(   0, <<"RUB">>)},
-                                {exclusive, ?cash(3000, <<"RUB">>)}
-                            )}
-                        },
-                        then_ = {
-                            value,
-                                #domain_Fees{
-                                    fees = #{surplus => ?fixed(50, <<"RUB">>)}
-                                }
-                        }
-                    },
-                    #domain_FeeDecision{
-                        if_ = {condition, {cost_in, ?cashrng(
-                                {inclusive, ?cash(3000, <<"RUB">>)},
-                                {exclusive, ?cash(300000, <<"RUB">>)}
-                            )}
-                        },
-                        then_ = {
-                            value,
-                                #domain_Fees{
-                                    fees = #{surplus => ?share(4, 100, operation_amount)}
-                                }
-                        }
+                        if_ = {condition, {p2p_tool, #domain_P2PToolCondition{
+                            sender_is = {bank_card, #domain_BankCardCondition{
+                                definition = {payment_system, #domain_PaymentSystemCondition{
+                                    payment_system_is = visa
+                                }}
+                            }},
+                            receiver_is = {bank_card, #domain_BankCardCondition{
+                                definition = {payment_system, #domain_PaymentSystemCondition{
+                                    payment_system_is = visa
+                                }}
+                            }}
+                        }}},
+                        then_ = {decisions, [
+                            #domain_FeeDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(   0, <<"RUB">>)},
+                                        {exclusive, ?cash(3000, <<"RUB">>)}
+                                    )}
+                                },
+                                then_ = {value, #domain_Fees{fees = #{surplus => ?fixed(50, <<"RUB">>)}}}
+                            },
+                            #domain_FeeDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(3000, <<"RUB">>)},
+                                        {exclusive, ?cash(300000, <<"RUB">>)}
+                                    )}
+                                },
+                                then_ = {value, #domain_Fees{fees = #{surplus => ?share(4, 100, operation_amount)}}}
+                            }
+                        ]}
                     }
                 ]}
             }
