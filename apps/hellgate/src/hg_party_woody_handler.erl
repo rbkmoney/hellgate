@@ -336,7 +336,8 @@ prepare_varset(PartyID, #payproc_Varset{} = V, VS0) ->
         cost => V#payproc_Varset.amount,
         payment_tool => prepare_payment_tool_var(V#payproc_Varset.payment_method),
         payout_method => V#payproc_Varset.payout_method,
-        wallet_id => V#payproc_Varset.wallet_id
+        wallet_id => V#payproc_Varset.wallet_id,
+        p2p_tool => V#payproc_Varset.p2p_tool
     }).
 
 prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->
