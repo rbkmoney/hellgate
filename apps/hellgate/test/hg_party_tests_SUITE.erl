@@ -84,6 +84,7 @@
 -export([contract_payout_tool_modification/1]).
 -export([contract_adjustment_creation/1]).
 -export([contract_adjustment_expiration/1]).
+-export([contract_p2p_terms/1]).
 
 -export([compute_payment_institution_terms/1]).
 -export([compute_payout_cash_flow/1]).
@@ -180,7 +181,8 @@ groups() ->
             contract_payout_tool_modification,
             contract_adjustment_creation,
             contract_adjustment_expiration,
-            compute_payment_institution_terms
+            compute_payment_institution_terms,
+            contract_p2p_terms
         ]},
         {shop_management, [sequence], [
             party_creation,
@@ -435,7 +437,7 @@ end_per_testcase(_Name, _C) ->
 -spec contract_adjustment_expiration(config()) -> _ | no_return().
 -spec compute_payment_institution_terms(config()) -> _ | no_return().
 -spec compute_payout_cash_flow(config()) -> _ | no_return().
-
+-spec contract_p2p_terms(config()) -> _ | no_return().
 -spec contractor_creation(config()) -> _ | no_return().
 -spec contractor_modification(config()) -> _ | no_return().
 -spec contract_w_contractor_creation(config()) -> _ | no_return().
@@ -825,6 +827,39 @@ compute_payout_cash_flow(C) ->
         }
     ] = hg_client_party:compute_payout_cash_flow(Params, Client).
 
+contract_p2p_terms(C) ->
+    Client = cfg(client, C),
+    ContractID = ?REAL_CONTRACT_ID,
+    PartyRevision = hg_client_party:get_revision(Client),
+    DomainRevision1 = hg_domain:head(),
+    Timstamp1 = hg_datetime:format_now(),
+    BankCard = #domain_BankCard{
+        token = <<"1OleNyeXogAKZBNTgxBGQE">>,
+        payment_system = visa,
+        bin = <<"415039">>,
+        masked_pan = <<"0900">>,
+        issuer_country = rus
+    },
+    Varset = #payproc_Varset{
+        currency = ?cur(<<"RUB">>),
+        amount = ?cash(2500, <<"RUB">>),
+        p2p_tool = #domain_P2PTool{
+            sender = {bank_card, BankCard},
+            receiver = {bank_card, BankCard}
+        }
+    },
+    #domain_TermSet{
+        wallets = #domain_WalletServiceTerms{
+            p2p = P2PServiceTerms
+        }
+    } = hg_client_party:compute_contract_terms(
+        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+    ),
+    #domain_P2PServiceTerms{fees = Fees} = P2PServiceTerms,
+    {value, #domain_Fees{
+        fees = #{surplus := {fixed, #domain_CashVolumeFixed{cash = ?cash(50, <<"RUB">>)}}}
+    }} = Fees.
+
 shop_not_found_on_retrieval(C) ->
     Client = cfg(client, C),
     ?shop_not_found() = hg_client_party:get_shop(<<"666">>, Client).
@@ -859,12 +894,13 @@ shop_terms_retrieval(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = ?REAL_SHOP_ID,
-    TermSet1 = hg_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), Client),
+    Timestamp = hg_datetime:format_now(),
+    TermSet1 = hg_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet1,
     ok = hg_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
-    TermSet2 = hg_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), Client),
+    TermSet2 = hg_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
     }} = TermSet2.
@@ -1576,7 +1612,103 @@ construct_domain_fixture() ->
             ]}
         },
         wallets = #domain_WalletServiceTerms{
-            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])}
+            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
+            wallet_limit = {decisions, [
+                #domain_CashLimitDecision{
+                    if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, ?cashrng(
+                        {inclusive, ?cash(      0, <<"RUB">>)},
+                        {exclusive, ?cash(5000001, <<"RUB">>)}
+                    )}
+                },
+                #domain_CashLimitDecision{
+                    if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                    then_ = {value, ?cashrng(
+                        {inclusive, ?cash(       0, <<"USD">>)},
+                        {exclusive, ?cash(10000001, <<"USD">>)}
+                    )}
+                }
+            ]},
+            p2p = #domain_P2PServiceTerms{
+                currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                cash_limit = {decisions, [
+                    #domain_CashLimitDecision{
+                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, ?cashrng(
+                            {inclusive, ?cash(       0, <<"RUB">>)},
+                            {exclusive, ?cash(10000001, <<"RUB">>)}
+                        )}
+                    }
+                ]},
+                cash_flow = {decisions, [
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                                {inclusive, ?cash(   0, <<"RUB">>)},
+                                {exclusive, ?cash(3000, <<"RUB">>)}
+                            )}
+                        },
+                        then_ = {
+                            value, [
+                                #domain_CashFlowPosting{
+                                    source = {wallet, receiver_destination},
+                                    destination = {system, settlement},
+                                    volume = ?fixed(50, <<"RUB">>)
+                                }
+                            ]
+                        }
+                    },
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                                {inclusive, ?cash(3001, <<"RUB">>)},
+                                {exclusive, ?cash(10000, <<"RUB">>)}
+                            )}
+                        },
+                        then_ = {
+                            value, [
+                                #domain_CashFlowPosting{
+                                    source = {wallet, receiver_destination},
+                                    destination = {system, settlement},
+                                    volume = ?share(1, 100, operation_amount)
+                                }
+                            ]
+                        }
+                    }
+                ]},
+                fees = {decisions, [
+                    #domain_FeeDecision{
+                        if_ = {condition, {p2p_tool, #domain_P2PToolCondition{
+                            sender_is = {bank_card, #domain_BankCardCondition{
+                                definition = {payment_system, #domain_PaymentSystemCondition{
+                                    payment_system_is = visa
+                                }}
+                            }},
+                            receiver_is = {bank_card, #domain_BankCardCondition{
+                                definition = {payment_system, #domain_PaymentSystemCondition{
+                                    payment_system_is = visa
+                                }}
+                            }}
+                        }}},
+                        then_ = {decisions, [
+                            #domain_FeeDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(   0, <<"RUB">>)},
+                                        {exclusive, ?cash(3000, <<"RUB">>)}
+                                    )}
+                                },
+                                then_ = {value, #domain_Fees{fees = #{surplus => ?fixed(50, <<"RUB">>)}}}
+                            },
+                            #domain_FeeDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(3000, <<"RUB">>)},
+                                        {exclusive, ?cash(300000, <<"RUB">>)}
+                                    )}
+                                },
+                                then_ = {value, #domain_Fees{fees = #{surplus => ?share(4, 100, operation_amount)}}}
+                            }
+                        ]}
+                    }
+                ]}
+            }
         }
     },
     [

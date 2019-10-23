@@ -328,11 +328,10 @@ start_binding(BindingParams, St) ->
     PaytoolParams = create_paytool_params(Binding, St),
     _ = validate_paytool_params(PaytoolParams),
     Changes = [?customer_binding_changed(BindingID, ?customer_binding_started(Binding, hg_datetime:format_now()))],
-    {ok, _} = create_recurrent_paytool(PaytoolParams), %% @TODO: Remove after migration
     #{
         response => {ok, Binding},
         changes  => Changes,
-        action   => set_event_poll_timer(actual) %% @TODO: `hg_machine_action:instant()` after migration
+        action   => hg_machine_action:instant()
     }.
 
 validate_paytool_params(PaytoolParams) ->

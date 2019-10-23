@@ -901,16 +901,14 @@ start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
 start_capture(Reason, Cost, Cart) ->
-    %@TODO uncomment after migration
-    %[?payment_capture_started(Reason, Cost, Cart)] ++
+    [?payment_capture_started(Reason, Cost, Cart)] ++
     start_session(?captured(Reason, Cost, Cart)).
 
-%@TODO uncomment after migration
-%start_partial_capture(_Reason, _Cost, _Cart, Cashflow) ->
-%    [
-%        ?payment_capture_started(Reason, Cost, Cart),
-%        ?cash_flow_changed(Cashflow)
-%    ].
+start_partial_capture(Reason, Cost, Cart, Cashflow) ->
+   [
+       ?payment_capture_started(Reason, Cost, Cart),
+       ?cash_flow_changed(Cashflow)
+   ].
 
 -spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
 
@@ -956,14 +954,7 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         VS,
         Revision
     ),
-    %@TODO change after migration
-    %Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
-    Invoice             = get_invoice(Opts),
-    _AffectedAccounts   = do_accounting_plan(Invoice, Payment2, FinalCashflow, St),
-    Changes =
-        [?cash_flow_changed(FinalCashflow)] ++
-        start_session(?captured(Reason, Cost, Cart)),
-    %%
+    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
     {ok, {Changes, hg_machine_action:instant()}}.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
@@ -1610,18 +1601,15 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
     Invoice  = get_invoice(Opts),
     Payment  = get_payment(St),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
-    _Clock = do_accounting_plan(Invoice, Payment2, FinalCashflow, St),
-    Events = start_session(?captured(Reason, Cost, Cart)),
-    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
-
-do_accounting_plan(Invoice, Payment, FinalCashflow, St) ->
-    hg_accounting:plan(
-        construct_payment_plan_id(Invoice, Payment),
+    _Clock = hg_accounting:plan(
+        construct_payment_plan_id(Invoice, Payment2),
         [
             {2, hg_cashflow:revert(get_cashflow(St))},
             {3, FinalCashflow}
         ]
-    ).
+    ),
+    Events = start_session(?captured(Reason, Cost, Cart)),
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
 
@@ -2341,7 +2329,6 @@ merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
     };
 merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [
-        flow_waiting,
         cash_flow_building,
         processing_capture
     ]], Change, St, Opts),
@@ -2355,10 +2342,6 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
             St#st{
                 partial_cash_flow = Cashflow,
                 activity   = {payment, updating_accounter}
-            };
-        {payment, flow_waiting} ->
-            St#st{
-                partial_cash_flow = Cashflow
             };
         _ ->
             St

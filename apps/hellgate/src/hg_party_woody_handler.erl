@@ -79,9 +79,9 @@ handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
     Party = hg_party_machine:get_party(PartyID),
     ensure_shop(hg_party:get_shop(ID, Party));
 
-handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp], _Opts) ->
+handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp, PartyRevision], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = checkout_party(PartyID, {timestamp, Timestamp}),
+    Party = checkout_party(PartyID, hg_maybe:get_defined(PartyRevision, {timestamp, Timestamp})),
     Shop = ensure_shop(hg_party:get_shop(ShopID, Party)),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Revision = hg_domain:head(),
@@ -336,7 +336,8 @@ prepare_varset(PartyID, #payproc_Varset{} = V, VS0) ->
         cost => V#payproc_Varset.amount,
         payment_tool => prepare_payment_tool_var(V#payproc_Varset.payment_method),
         payout_method => V#payproc_Varset.payout_method,
-        wallet_id => V#payproc_Varset.wallet_id
+        wallet_id => V#payproc_Varset.wallet_id,
+        p2p_tool => V#payproc_Varset.p2p_tool
     }).
 
 prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->

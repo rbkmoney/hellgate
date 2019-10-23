@@ -11,7 +11,7 @@
 -export([update/3]).
 -export([delete/2]).
 
--export([compute_terms/3]).
+-export([compute_terms/4]).
 
 %% GenServer
 
@@ -32,6 +32,7 @@
 -type invoice_tpl()   :: dmsl_domain_thrift:'InvoiceTemplate'().
 -type timestamp()     :: dmsl_base_thrift:'Timestamp'().
 -type term_set()      :: dmsl_domain_thrift:'TermSet'().
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
 -spec start(hg_client_api:t()) -> pid().
 
@@ -84,10 +85,10 @@ update(ID, Params, Client) ->
 delete(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Delete', [ID]})).
 
--spec compute_terms(id(), timestamp(), pid()) -> term_set().
+-spec compute_terms(id(), timestamp(), party_revision_param(), pid()) -> term_set().
 
-compute_terms(ID, Timestamp, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ComputeTerms', [ID, Timestamp]})).
+compute_terms(ID, Timestamp, PartyRevision, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputeTerms', [ID, Timestamp, PartyRevision]})).
 
 map_result_error({ok, Result}) ->
     Result;
