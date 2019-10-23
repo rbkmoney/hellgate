@@ -290,12 +290,8 @@ balance_routes(FailRatedRoutes) ->
 group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) ->
     TerminalPriority = get_priority_from_route(Route),
     Key = {ProviderCondition, TerminalPriority},
-    case maps:get(Key, SortedRoutes, undefined) of
-        undefined ->
-            SortedRoutes#{Key => [Route]};
-        List ->
-            SortedRoutes#{Key := [Route | List]}
-    end.
+    Routes = maps:get(Key, SortedRoutes, []),
+    SortedRoutes#{Key := [Route | Routes]}.
 
 get_priority_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
     {PriorityRate, _Weight} = Priority,
