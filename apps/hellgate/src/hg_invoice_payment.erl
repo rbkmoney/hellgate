@@ -636,7 +636,7 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                  Revision
             ),
             case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
-                {ok, _Route, _ChoiseMeta} = Result ->
+                {ok, _Route, _ChoiceMeta} = Result ->
                     _ = log_misconfigurations(RejectContext1),
                     Result;
                 {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
@@ -1527,7 +1527,7 @@ process_routing(Action, St) ->
     Events0 = [?risk_score_changed(RiskScore)],
     VS1 = VS0#{risk_score => RiskScore},
     case choose_route(PaymentInstitution, VS1, Revision, St) of
-        {ok, Route, _ChoiseMeta} ->
+        {ok, Route, _ChoiceMeta} ->
             process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, {Reason, _Details}}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',

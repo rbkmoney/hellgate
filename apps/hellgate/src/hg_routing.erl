@@ -42,6 +42,8 @@
 -type terminal()     :: dmsl_domain_thrift:'Terminal'().
 -type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 
+-type provider_with_ref() :: {provider_ref(), provider()}.
+
 -type provider_terminal_ref() :: dmsl_domain_thrift:'ProviderTerminalRef'().
 
 -type fd_service_stats()    :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
@@ -62,12 +64,24 @@
 
 -type fail_unrated_provider():: {provider_ref(), provider()}.
 -type fail_rated_provider()  :: {provider_ref(), provider(), provider_status()}.
--type fail_rated_route()     :: {{provider_ref(), provider()}, weighted_terminal(), provider_status()}.
+-type fail_unrated_route()   :: {provider_with_ref(), weighted_terminal()}.
+-type fail_rated_route()     :: {provider_with_ref(), weighted_terminal(), provider_status()}.
 
--type route_choise_meta()     :: #{
-    chosen_route => fail_rated_route(),
-    ideal_route => fail_rated_route(),
-    mismatch_reason => atom()
+-type scored_route() :: {route_scores(), fail_unrated_route()}.
+
+-type route_groups_by_priority() :: #{{provider_condition(), terminal_priority_rate()} => [fail_rated_route()]}.
+
+-type route_info() :: #{
+    provider_ref => integer(),
+    provider_name => binary(),
+    terminal_ref => integer(),
+    terminal_name => binary()
+}.
+
+-type route_choise_meta() :: #{
+    chosen_route => route_info(),
+    ideal_route => route_info(),
+    mismatch_reason => atom() % Contains one of the field names defined in #route_scores{}
 }.
 
 -record(route_scores, {
@@ -77,6 +91,8 @@
     risk_coverage :: float(),
     success_rate :: float()
 }).
+
+-type route_scores() :: #route_scores{}.
 
 -export_type([route_predestination/0]).
 
@@ -182,29 +198,34 @@ do_choose_route([] = _FailRatedRoutes, _VS, RejectContext) ->
 do_choose_route(FailRatedRoutes, VS, _RejectContext) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes, VS),
-    {RealRoute, IdealRoute} = find_best_routes(ScoredRoutes),
-    RouteChoiseMeta = get_route_choise_meta(RealRoute, IdealRoute),
-    {ok, export_route(RealRoute), RouteChoiseMeta}.
+    {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
+    RouteChoiseMeta = get_route_choise_meta(ChosenRoute, IdealRoute),
+    {ok, export_route(ChosenRoute), RouteChoiseMeta}.
+
+-spec find_best_routes([scored_route()]) ->
+    {Chosen :: scored_route(), Ideal :: scored_route()}.
 
 find_best_routes([Route]) ->
     {Route, Route};
 find_best_routes([First | Rest]) ->
     lists:foldl(
-        fun(RouteIn, {CurrentRouteReal, CurrentRouteIdeal}) ->
+        fun(RouteIn, {CurrentRouteChosen, CurrentRouteIdeal}) ->
             NewRouteIdeal = select_better_route_ideal(RouteIn, CurrentRouteIdeal),
-            NewRouteReal = select_better_route_real(RouteIn, CurrentRouteReal),
-            {NewRouteReal, NewRouteIdeal}
+            NewRouteChosen = select_better_route(RouteIn, CurrentRouteChosen),
+            {NewRouteChosen, NewRouteIdeal}
         end,
         {First, First}, Rest
     ).
 
-select_better_route_real(Left, Right) ->
+select_better_route(Left, Right) ->
     max(Left, Right).
 
 select_better_route_ideal(Left, Right) ->
-    case set_ideal_score(Left) > set_ideal_score(Right) of
-        true -> Left;
-        false -> Right
+    IdealLeft = set_ideal_score(Left),
+    IdealRight = set_ideal_score(Right),
+    case select_better_route(IdealLeft, IdealRight) of
+        IdealLeft -> Left;
+        IdealRight -> Right
     end.
 
 set_ideal_score({RouteScores, PT}) ->
@@ -213,9 +234,9 @@ set_ideal_score({RouteScores, PT}) ->
         success_rate = 1.0
     }, PT}.
 
-get_route_choise_meta({_, ChosenRoute} = Route, Route) ->
+get_route_choise_meta({_, SameRoute}, {_, SameRoute}) ->
     #{
-        chosen_route => ChosenRoute
+        chosen_route => export_route_info(SameRoute)
     };
 get_route_choise_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
     #{
@@ -223,6 +244,9 @@ get_route_choise_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
         ideal_route => export_route_info(IdealRoute),
         mismatch_reason => map_route_switch_reason(ChosenScores, IdealScores)
     }.
+
+-spec export_route_info(fail_unrated_route()) ->
+    route_info().
 
 export_route_info({{ProviderRef, Provider}, {TerminalRef, Terminal, _Priority}}) ->
     #{
@@ -232,7 +256,12 @@ export_route_info({{ProviderRef, Provider}, {TerminalRef, Terminal, _Priority}})
         terminal_name => Terminal#domain_Terminal.name
     }.
 
-map_route_switch_reason(RealScores, IdealScores) ->
+map_route_switch_reason(SameScores, SameScores) ->
+    unknown;
+map_route_switch_reason(RealScores, IdealScores) when
+    is_record(RealScores, route_scores);
+    is_record(IdealScores, route_scores)
+->
     Zipped = lists:zip(tuple_to_list(RealScores), tuple_to_list(IdealScores)),
     DifferenceIdx = find_idx_of_difference(Zipped),
     lists:nth(DifferenceIdx, record_info(fields, route_scores)).
@@ -254,8 +283,6 @@ balance_routes(FailRatedRoutes) ->
         FailRatedRoutes
     ),
     balance_route_groups(FilteredRouteGroups).
-
--type route_groups_by_priority() :: #{{provider_condition(), terminal_priority_rate()} => [fail_rated_route()]}.
 
 -spec group_routes_by_priority(fail_rated_route(), Acc :: route_groups_by_priority()) ->
     route_groups_by_priority().
@@ -338,6 +365,9 @@ calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
             NewRoute = set_random_condition(0, Route),
             calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes])
     end.
+
+-spec score_routes([fail_rated_route()], hg_selector:varset()) ->
+    [scored_route()].
 
 score_routes(Routes, VS) ->
     [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
@@ -771,6 +801,24 @@ unmarshal(_, Other) ->
 -spec test() -> _.
 
 -type testcase() :: {_, fun()}.
+
+-spec record_comparsion_test() -> [testcase()].
+record_comparsion_test() ->
+    Bigger = {#route_scores{
+        provider_condition = 1,
+        priority_rate = 1,
+        random_condition = 1,
+        risk_coverage = 1.0,
+        success_rate = 0.5
+    }, {42, 42}},
+    Smaller = {#route_scores{
+        provider_condition = 0,
+        priority_rate = 1,
+        random_condition = 1,
+        risk_coverage = 1.0,
+        success_rate = 0.9
+    }, {99, 99}},
+    Bigger = select_better_route(Bigger, Smaller).
 
 -spec balance_routes_test() -> [testcase()].
 balance_routes_test() ->
