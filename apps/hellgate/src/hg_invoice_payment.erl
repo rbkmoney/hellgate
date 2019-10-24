@@ -636,9 +636,10 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                  Revision
             ),
             case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
-                {ok, _Route, _ChoiceMeta} = Result ->
+                {ok, Route, ChoiceMeta} ->
+                    _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext1),
-                    Result;
+                    {ok, Route};
                 {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
                     _ = log_reject_context(RejectReason, RejectContext),
                     Error
@@ -652,6 +653,10 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
     payment.
 
 % Other payers has predefined routes
+
+log_route_choice_meta(ChoiceMeta) ->
+    Meta = hg_routing:get_logger_metadata(ChoiceMeta),
+    _ = logger:log(info, "Routing decision made", maps:merge(logger:get_process_metadata(), Meta)).
 
 log_misconfigurations(RejectContext) ->
     RejectedProviders = maps:get(rejected_providers, RejectContext),
@@ -1518,7 +1523,7 @@ process_routing(Action, St) ->
     Events0 = [?risk_score_changed(RiskScore)],
     VS1 = VS0#{risk_score => RiskScore},
     case choose_route(PaymentInstitution, VS1, Revision, St) of
-        {ok, Route, _ChoiceMeta} ->
+        {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, PaymentInstitution, Revision, Opts, Events0, Action);
         {error, {no_route_found, {Reason, _Details}}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',
@@ -2891,20 +2896,12 @@ make_log_params(cashflow, CashFlow) ->
     [{accounts, Accounts}];
 make_log_params(risk_score, Score) ->
     [{risk_score, Score}];
-make_log_params(route, Route) ->
-    [{route, format_route_details(Route)}];
+make_log_params(route, _Route) ->
+    [];
 make_log_params(status, {StatusTag, StatusDetails}) ->
     [{status, StatusTag}] ++ format_status_details(StatusDetails);
 make_log_params(event_type, EventType) ->
     [{type, EventType}].
-
-format_route_details(
-    #domain_PaymentRoute{
-        provider = #domain_ProviderRef{id = ProviderID},
-        terminal = #domain_TerminalRef{id = TerminalID}
-    }
-) ->
-    [{provider, ProviderID}, {terminal, TerminalID}].
 
 format_status_details(#domain_InvoicePaymentFailed{failure = Failure}) ->
     [{error, list_to_binary(format_failure(Failure))}];

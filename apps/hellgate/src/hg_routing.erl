@@ -15,6 +15,8 @@
 -export([marshal/1]).
 -export([unmarshal/1]).
 
+-export([get_logger_metadata/1]).
+
 %%
 
 -include("domain.hrl").
@@ -78,7 +80,7 @@
     terminal_name => binary()
 }.
 
--type route_choise_meta() :: #{
+-type route_choice_meta() :: #{
     chosen_route => route_info(),
     ideal_route => route_info(),
     mismatch_reason => atom() % Contains one of the field names defined in #route_scores{}
@@ -131,7 +133,7 @@ gather_routes(Predestination, FailRatedProviders, RejectContext, VS, Revision) -
     select_routes(Predestination, FailRatedProviders, VS, Revision, RejectContext).
 
 -spec choose_route([fail_rated_route()], reject_context(), hg_selector:varset()) ->
-    {ok, route(), route_choise_meta()} |
+    {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 
 choose_route(FailRatedRoutes, RejectContext, VS) ->
@@ -188,7 +190,7 @@ select_routes(Predestination, FailRatedProviders, VS, Revision, RejectContext) -
     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
 -spec do_choose_route([fail_rated_route()], hg_selector:varset(), reject_context()) ->
-    {ok, route(), route_choise_meta()} |
+    {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 
 do_choose_route(_FailRatedRoutes, #{risk_score := fatal}, RejectContext) ->
@@ -199,8 +201,8 @@ do_choose_route(FailRatedRoutes, VS, _RejectContext) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes, VS),
     {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
-    RouteChoiseMeta = get_route_choise_meta(ChosenRoute, IdealRoute),
-    {ok, export_route(ChosenRoute), RouteChoiseMeta}.
+    RoutechoiceMeta = get_route_choice_meta(ChosenRoute, IdealRoute),
+    {ok, export_route(ChosenRoute), RoutechoiceMeta}.
 
 -spec find_best_routes([scored_route()]) ->
     {Chosen :: scored_route(), Ideal :: scored_route()}.
@@ -234,11 +236,11 @@ set_ideal_score({RouteScores, PT}) ->
         success_rate = 1.0
     }, PT}.
 
-get_route_choise_meta({_, SameRoute}, {_, SameRoute}) ->
+get_route_choice_meta({_, SameRoute}, {_, SameRoute}) ->
     #{
         chosen_route => export_route_info(SameRoute)
     };
-get_route_choise_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
+get_route_choice_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
     #{
         chosen_route => export_route_info(ChosenRoute),
         ideal_route => export_route_info(IdealRoute),
@@ -255,6 +257,29 @@ export_route_info({{ProviderRef, Provider}, {TerminalRef, Terminal, _Priority}})
         terminal_ref => TerminalRef#domain_TerminalRef.id,
         terminal_name => Terminal#domain_Terminal.name
     }.
+
+-spec get_logger_metadata(route_choice_meta()) ->
+    LoggerFormattedMetadata :: map().
+
+get_logger_metadata(RouteChoiceMeta) ->
+    #{route_choice_metadata => format_logger_metadata(RouteChoiceMeta)}.
+
+format_logger_metadata(RouteChoiceMeta) ->
+    maps:fold(
+        fun(K, V, Acc) ->
+            Acc ++ format_logger_metadata(K, V)
+        end,
+        [],
+        RouteChoiceMeta
+    ).
+
+format_logger_metadata(mismatch_reason, Reason) ->
+    [{mismatch_reason, Reason}];
+format_logger_metadata(Route, RouteInfo) when
+    Route =:= chosen_route;
+    Route =:= ideal_route
+->
+    [{Route, maps:to_list(RouteInfo)}].
 
 map_route_switch_reason(SameScores, SameScores) ->
     unknown;
@@ -291,7 +316,7 @@ group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) -
     TerminalPriority = get_priority_from_route(Route),
     Key = {ProviderCondition, TerminalPriority},
     Routes = maps:get(Key, SortedRoutes, []),
-    SortedRoutes#{Key := [Route | Routes]}.
+    SortedRoutes#{Key => [Route | Routes]}.
 
 get_priority_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
     {PriorityRate, _Weight} = Priority,
