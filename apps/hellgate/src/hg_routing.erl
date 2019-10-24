@@ -201,8 +201,8 @@ do_choose_route(FailRatedRoutes, VS, _RejectContext) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes, VS),
     {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
-    RoutechoiceMeta = get_route_choice_meta(ChosenRoute, IdealRoute),
-    {ok, export_route(ChosenRoute), RoutechoiceMeta}.
+    RouteChoiceMeta = get_route_choice_meta(ChosenRoute, IdealRoute),
+    {ok, export_route(ChosenRoute), RouteChoiceMeta}.
 
 -spec find_best_routes([scored_route()]) ->
     {Chosen :: scored_route(), Ideal :: scored_route()}.
