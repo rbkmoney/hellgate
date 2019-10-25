@@ -2197,7 +2197,7 @@ consistent_history(C) ->
 
 payment_hold_cancellation(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(6), 10000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
     PaymentParams = make_payment_params({hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
@@ -2212,7 +2212,7 @@ payment_hold_cancellation(C) ->
 
 payment_hold_auto_cancellation(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(6), 10000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
     PaymentParams = make_payment_params({hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_cancel(InvoiceID, PaymentID, undefined, Client),
