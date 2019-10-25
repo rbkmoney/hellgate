@@ -12,6 +12,7 @@
 %% Public interface
 
 -export([assert_operation_permitted/3]).
+-export([validate_paytool_params/1]).
 
 -export([process_callback/2]).
 
@@ -41,6 +42,7 @@
 
 -type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type rec_payment_tool_change() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolChange'().
+-type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 
 -type route()                   :: dmsl_domain_thrift:'PaymentRoute'().
 -type risk_score()              :: dmsl_domain_thrift:'RiskScore'().
@@ -94,20 +96,12 @@ handle_function(Func, Args, Opts) ->
     ).
 
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
-    DomainRevison = hg_domain:head(),
-    RecPaymentToolID = hg_utils:unique_id(),
+    RecurrentPaymentToolParams0 = ensure_paytool_id_defined(RecurrentPaymentToolParams),
+    RecPaymentToolID = get_paytool_id(RecurrentPaymentToolParams0),
     ok = set_meta(RecPaymentToolID),
-    Party = ensure_party_accessible(RecurrentPaymentToolParams),
-    Shop = ensure_shop_exists(RecurrentPaymentToolParams, Party),
-    ok = assert_party_shop_operable(Shop, Party),
-    MerchantTerms = assert_operation_permitted(Shop, Party, DomainRevison),
-    _PaymentTool = validate_payment_tool(
-        get_payment_tool(RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.payment_resource),
-        MerchantTerms#domain_RecurrentPaytoolsServiceTerms.payment_methods,
-        collect_varset(Party, Shop, #{}),
-        DomainRevison
-    ),
-    ok = start(RecPaymentToolID, RecurrentPaymentToolParams),
+    RecurrentPaymentToolParams1 = ensure_domain_revision_defined(RecurrentPaymentToolParams0),
+    _ = validate_paytool_params(RecurrentPaymentToolParams1),
+    ok = start(RecPaymentToolID, RecurrentPaymentToolParams1),
     get_rec_payment_tool(get_state(RecPaymentToolID));
 handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
     ok = set_meta(RecPaymentToolID),
@@ -118,6 +112,35 @@ handle_function_('Get', [RecPaymentToolID], _Opts) ->
 handle_function_('GetEvents', [RecPaymentToolID, Range], _Opts) ->
     ok = set_meta(RecPaymentToolID),
     get_public_history(RecPaymentToolID, Range).
+
+-spec validate_paytool_params(rec_payment_tool_params()) ->
+    ok | no_return().
+validate_paytool_params(RecurrentPaymentToolParams) ->
+    DomainRevison = RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.domain_revision,
+    Party = ensure_party_accessible(RecurrentPaymentToolParams),
+    Shop = ensure_shop_exists(RecurrentPaymentToolParams, Party),
+    ok = assert_party_shop_operable(Shop, Party),
+    MerchantTerms = assert_operation_permitted(Shop, Party, DomainRevison),
+    _PaymentTool = validate_payment_tool(
+        get_payment_tool(RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.payment_resource),
+        MerchantTerms#domain_RecurrentPaytoolsServiceTerms.payment_methods,
+        collect_varset(Party, Shop, #{}),
+        DomainRevison
+    ),
+    ok.
+
+ensure_domain_revision_defined(#payproc_RecurrentPaymentToolParams{domain_revision = undefined} = Params) ->
+    Params#payproc_RecurrentPaymentToolParams{domain_revision = hg_domain:head()};
+ensure_domain_revision_defined(Params) ->
+    Params.
+
+ensure_paytool_id_defined(Params = #payproc_RecurrentPaymentToolParams{id = undefined}) ->
+    Params#payproc_RecurrentPaymentToolParams{id = hg_utils:unique_id()};
+ensure_paytool_id_defined(Params) ->
+    Params.
+
+get_paytool_id(#payproc_RecurrentPaymentToolParams{id = ID}) ->
+    ID.
 
 get_public_history(RecPaymentToolID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_rec_payment_tool_event(RecPaymentToolID, Ev) || Ev <- get_history(RecPaymentToolID, AfterID, Limit)].
@@ -187,6 +210,8 @@ map_history_error({error, notfound}) ->
 
 map_start_error({ok, _}) ->
     ok;
+map_start_error({error, exists}) ->
+    ok;
 map_start_error({error, Reason}) ->
     error(Reason).
 
@@ -207,7 +232,7 @@ namespace() ->
 init(EncodedParams, #{id := RecPaymentToolID}) ->
     Params      = unmarshal_recurrent_paytool_params(EncodedParams),
     PaymentTool = get_payment_tool(Params#payproc_RecurrentPaymentToolParams.payment_resource),
-    Revision           = hg_domain:head(),
+    Revision           = Params#payproc_RecurrentPaymentToolParams.domain_revision,
     CreatedAt          = hg_datetime:format_now(),
     {Party, Shop}      = get_party_shop(Params),
     PaymentInstitution = get_payment_institution(Shop, Party, Revision),

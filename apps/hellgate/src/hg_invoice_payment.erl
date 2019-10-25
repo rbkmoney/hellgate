@@ -82,6 +82,8 @@
     processing_session |
     processing_accounter |
     flow_waiting |
+    processing_capture |
+    updating_accounter |
     finalizing_session |
     finalizing_accounter.
 
@@ -100,7 +102,8 @@
     adjustments    = []    :: [adjustment()],
     recurrent_token        :: undefined | recurrent_token(),
     opts                   :: undefined | opts(),
-    repair_scenario        :: undefined | hg_invoice_repair:scenario()
+    repair_scenario        :: undefined | hg_invoice_repair:scenario(),
+    capture_params         :: undefined | capture_params()
 }).
 
 -record(refund_st, {
@@ -147,6 +150,7 @@
 -type make_recurrent()      :: true | false.
 -type recurrent_token()     :: dmsl_domain_thrift:'Token'().
 -type retry_strategy()      :: hg_retry:strategy().
+-type capture_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
 
 -type session_status()      :: active | suspended | finished.
 -type session() :: #{
@@ -855,18 +859,21 @@ choose_external_account(Currency, VS, Revision) ->
             undefined
     end.
 
-get_account_state(AccountType, AccountMap, Accounts) ->
+get_account_id(AccountType, AccountMap) ->
     % FIXME move me closer to hg_accounting
     case AccountMap of
         #{AccountType := AccountID} ->
-            #{AccountID := AccountState} = Accounts,
-            AccountState;
+            AccountID;
         #{} ->
             undefined
     end.
 
-get_available_amount(#{min_available_amount := V}) ->
-    V.
+get_available_amount(AccountID, Clock) ->
+    #{
+        min_available_amount := AvailableAmount
+    } =
+        hg_accounting:get_balance(AccountID, Clock),
+    AvailableAmount.
 
 construct_payment_plan_id(St) ->
     construct_payment_plan_id(get_invoice(get_opts(St)), get_payment(St)).
@@ -893,24 +900,36 @@ reduce_selector(Name, Selector, VS, Revision) ->
 start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
+start_capture(Reason, Cost, Cart) ->
+    [?payment_capture_started(Reason, Cost, Cart)] ++
+    start_session(?captured(Reason, Cost, Cart)).
+
+start_partial_capture(Reason, Cost, Cart, Cashflow) ->
+   [
+       ?payment_capture_started(Reason, Cost, Cart),
+       ?cash_flow_changed(Cashflow)
+   ].
+
 -spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
 
 capture(St, Reason, Cost, Cart, Opts) ->
     Payment = get_payment(St),
     _ = assert_capture_cost_currency(Cost, Payment),
     _ = assert_capture_cart(Cost, Cart),
+    _ = assert_activity({payment, flow_waiting}, St),
+    _ = assert_payment_flow(hold, Payment),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
             total_capture(St, Reason, Cart);
         false ->
-            _ = assert_activity({payment, flow_waiting}, St),
-            _ = assert_payment_flow(hold, Payment),
             partial_capture(St, Reason, Cost, Cart, Opts)
     end.
 
 total_capture(St, Reason, Cart) ->
-    Cost = get_payment_cost(get_payment(St)),
-    do_payment(St, ?captured(Reason, Cost, Cart)).
+    Payment = get_payment(St),
+    Cost = get_payment_cost(Payment),
+    Changes = start_capture(Reason, Cost, Cart),
+    {ok, {Changes, hg_machine_action:instant()}}.
 
 partial_capture(St, Reason, Cost, Cart, Opts) ->
     Payment             = get_payment(St),
@@ -935,29 +954,14 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
         VS,
         Revision
     ),
-    Invoice             = get_invoice(Opts),
-    _AffectedAccounts   = hg_accounting:plan(
-        construct_payment_plan_id(Invoice, Payment2),
-        [
-            {2, hg_cashflow:revert(get_cashflow(St))},
-            {3, FinalCashflow}
-        ]
-    ),
-    Changes =
-        [?cash_flow_changed(FinalCashflow)] ++
-        start_session(?captured(Reason, Cost, Cart)),
+    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
     {ok, {Changes, hg_machine_action:instant()}}.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
 
-cancel(St, Reason) ->
-    do_payment(St, ?cancelled_with_reason(Reason)).
-
-do_payment(St, Target) ->
-    Payment = get_payment(St),
-    _ = assert_activity({payment, flow_waiting}, St),
-    _ = assert_payment_flow(hold, Payment),
-    {ok, {start_session(Target), hg_machine_action:instant()}}.
+cancel(_St, Reason) ->
+    Changes = start_session(?cancelled_with_reason(Reason)),
+    {ok, {Changes, hg_machine_action:instant()}}.
 
 assert_capture_cost_currency(undefined, _) ->
     ok;
@@ -1265,7 +1269,7 @@ collect_refund_cashflow(
     MerchantCashflow ++ ProviderCashflow.
 
 prepare_refund_cashflow(RefundSt, St) ->
-    hg_accounting:plan(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
+    hg_accounting:hold(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
 
 commit_refund_cashflow(RefundSt, St) ->
     hg_accounting:commit(construct_refund_plan_id(RefundSt, St), [get_refund_cashflow_plan(RefundSt)]).
@@ -1370,7 +1374,7 @@ cancel_adjustment(ID, St, Options) ->
 finalize_adjustment(ID, Intent, St, Options) ->
     Adjustment = get_adjustment(ID, St),
     ok = assert_adjustment_status(processed, Adjustment),
-    _AffectedAccounts = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
+    _Clocks = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
     Status = case Intent of
         capture ->
             ?adjustment_captured(hg_datetime:format_now());
@@ -1454,6 +1458,8 @@ process_timeout({payment, Step}, Action, St) when
     Step =:= finalizing_accounter
 ->
     process_result(Action, St);
+process_timeout({payment, updating_accounter}, Action, St) ->
+    process_accounter_update(Action, St);
 process_timeout({refund_new, ID}, Action, St) ->
     process_refund_cashflow(ID, Action, St);
 process_timeout({refund_session, _ID}, Action, St) ->
@@ -1529,7 +1535,7 @@ process_cash_flow_building(Route, VS, Payment, PaymentInstitution, Revision, Opt
     Shop = get_shop(Opts),
     FinalCashflow = construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
     Invoice = get_invoice(Opts),
-    _AffectedAccounts = hg_accounting:plan(
+    _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
@@ -1550,9 +1556,9 @@ process_refund_cashflow(ID, Action, St) ->
     VS = collect_validation_varset(St, Opts),
     PaymentInstitution = get_payment_institution(Opts, Revision),
     AccountMap = collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
-    AffectedAccounts = prepare_refund_cashflow(RefundSt, St),
+    Clock = prepare_refund_cashflow(RefundSt, St),
     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
-    case get_available_amount(get_account_state({merchant, settlement}, AccountMap, AffectedAccounts)) of
+    case get_available_amount(get_account_id({merchant, settlement}, AccountMap), Clock) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
             Events0 = [?session_ev(?refunded(), ?session_started())],
@@ -1581,9 +1587,30 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
 process_adjustment_cashflow(ID, _Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
-    _AffectedAccounts = prepare_adjustment_cashflow(Adjustment, St, Opts),
+    _Clock = prepare_adjustment_cashflow(Adjustment, St, Opts),
     Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
     {done, {Events, hg_machine_action:new()}}.
+
+process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
+    Opts = get_opts(St),
+    #payproc_InvoicePaymentCaptureParams{
+        reason = Reason,
+        cash = Cost,
+        cart = Cart
+    } = CaptureParams,
+    Invoice  = get_invoice(Opts),
+    Payment  = get_payment(St),
+    Payment2 = Payment#domain_InvoicePayment{cost = Cost},
+    _Clock = hg_accounting:plan(
+        construct_payment_plan_id(Invoice, Payment2),
+        [
+            {2, hg_cashflow:revert(get_cashflow(St))},
+            {3, FinalCashflow}
+        ]
+    ),
+    Events = start_session(?captured(Reason, Cost, Cart)),
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+
 %%
 
 -spec process_session(action(), st()) -> machine_result().
@@ -1646,7 +1673,12 @@ finalize_payment(Action, St) ->
                     )
             end
     end,
-    StartEvents = start_session(Target),
+    StartEvents = case Target of
+        ?captured(Reason, Cost) ->
+            start_capture(Reason, Cost, undefined);
+        _ ->
+            start_session(Target)
+    end,
     {done, {StartEvents, hg_machine_action:set_timeout(0, Action)}}.
 
 -spec process_callback_timeout(action(), session(), events(), st()) -> machine_result().
@@ -1718,7 +1750,7 @@ process_result({payment, processing_accounter}, Action, St) ->
 
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
-    _AffectedAccounts = case Target of
+    _Clocks = case Target of
         ?captured() ->
             commit_payment_cashflow(St);
         ?cancelled() ->
@@ -1729,7 +1761,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
 
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    _AffectedAccounts = commit_refund_cashflow(RefundSt, St),
+    _Clocks = commit_refund_cashflow(RefundSt, St),
         Events2 = [
             ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
         ],
@@ -1765,7 +1797,7 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
 process_failure({refund_new, ID}, Events, Action, Failure, St, RefundSt) ->
-    _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
+    _Clocks = rollback_refund_cashflow(RefundSt, St),
     {done, {Events ++ [?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))], Action}};
 process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
@@ -1776,7 +1808,7 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             Events1 = [?refund_ev(ID, E) || E <- SessionEvents],
             {next, {Events ++ Events1, SessionAction}};
         fatal ->
-            _AffectedAccounts = rollback_refund_cashflow(RefundSt, St),
+            _Clocks = rollback_refund_cashflow(RefundSt, St),
             Events1 = [
                 ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
             ],
@@ -1786,7 +1818,7 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
 process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
     error({invalid_capture_failure, Failure});
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
-    _AffectedAccounts = rollback_payment_cashflow(St),
+    _Clocks = rollback_payment_cashflow(St),
     {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}.
 
 retry_session(Action, Target, Timeout) ->
@@ -2289,18 +2321,30 @@ merge_change(Change = ?route_changed(Route), #st{} = St, Opts) ->
         route      = Route,
         activity   = {payment, cash_flow_building}
     };
+merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
+    _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
+    St#st{
+        capture_params = Params,
+        activity = {payment, processing_capture}
+    };
 merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St, Opts) ->
-    _ = validate_transition([{payment, S} || S <- [cash_flow_building, flow_waiting]], Change, St, Opts),
+    _ = validate_transition([{payment, S} || S <- [
+        cash_flow_building,
+        processing_capture
+    ]], Change, St, Opts),
     case Activity of
         {payment, cash_flow_building} ->
             St#st{
                 cash_flow  = Cashflow,
                 activity   = {payment, processing_session}
             };
-        _ ->
+        {payment, processing_capture} ->
             St#st{
-                partial_cash_flow = Cashflow
-            }
+                partial_cash_flow = Cashflow,
+                activity   = {payment, updating_accounter}
+            };
+        _ ->
+            St
     end;
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
@@ -2401,6 +2445,8 @@ merge_change(
     _ = validate_transition([{payment, S} || S <- [
         processing_session,
         flow_waiting,
+        processing_capture,
+        updating_accounter,
         finalizing_session
     ]], Change, St, Opts),
     % FIXME why the hell dedicated handling
@@ -2410,7 +2456,12 @@ merge_change(
         {payment, processing_session} ->
             %% session retrying
             St2#st{activity = {payment, processing_session}};
-        {payment, flow_waiting} ->
+        {payment, PaymentActivity} when
+            PaymentActivity =:= flow_waiting orelse
+            PaymentActivity =:= processing_capture orelse
+            PaymentActivity =:= updating_accounter
+        ->
+            %% session flow
             St2#st{activity = {payment, finalizing_session}};
         {payment, finalizing_session} ->
             %% session retrying
@@ -2694,7 +2745,7 @@ get_rec_payment_tool(RecPaymentToolID) ->
     hg_woody_wrapper:call(recurrent_paytool, 'Get', [RecPaymentToolID]).
 
 get_customer(CustomerID) ->
-    case issue_customer_call('Get', [CustomerID]) of
+    case issue_customer_call('Get', [CustomerID, #payproc_EventRange{}]) of
         {ok, Customer} ->
             Customer;
         {exception, #payproc_CustomerNotFound{}} ->
