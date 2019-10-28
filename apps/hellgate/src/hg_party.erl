@@ -422,10 +422,14 @@ reduce_withdrawals_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
 
 reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
     #domain_P2PServiceTerms{
+        allow = hg_maybe:apply(fun(X) ->
+            hg_selector:reduce_predicate(X, VS, Rev)
+        end, Terms#domain_P2PServiceTerms.allow),
         currencies = reduce_if_defined(Terms#domain_P2PServiceTerms.currencies, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_limit, VS, Rev),
         cash_flow = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_flow, VS, Rev),
-        fees = reduce_if_defined(Terms#domain_P2PServiceTerms.fees, VS, Rev)
+        fees = reduce_if_defined(Terms#domain_P2PServiceTerms.fees, VS, Rev),
+        quote_lifetime = Terms#domain_P2PServiceTerms.quote_lifetime
     }.
 
 reduce_if_defined(Selector, VS, Rev) ->
