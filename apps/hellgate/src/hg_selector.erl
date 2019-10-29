@@ -119,7 +119,7 @@ reduce_decisions([], _, _) ->
     [].
 
 -spec reduce_predicate(predicate(), varset(), hg_domain:revision()) ->
-    {constant, boolean()}.
+    predicate().
 
 reduce_predicate(?const(B), _, _) ->
     ?const(B);
