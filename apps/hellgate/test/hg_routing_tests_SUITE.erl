@@ -327,10 +327,10 @@ prefer_alive(_C) ->
     Result1 = hg_routing:choose_route(FailRatedRoutes1, RC1, VS),
     Result2 = hg_routing:choose_route(FailRatedRoutes2, RC2, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(202)}, #{mismatch_reason := provider_condition}} = Result0,
+    {ok, #domain_PaymentRoute{provider = ?prv(202)}, #{reject_reason := provider_condition}} = Result0,
     {ok, #domain_PaymentRoute{provider = ?prv(201)}, Meta} = Result1,
-    false = maps:is_key(mismatch_reason, Meta),
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{mismatch_reason := provider_condition}} = Result2,
+    false = maps:is_key(reject_reason, Meta),
+    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{reject_reason := provider_condition}} = Result2,
 
     ok.
 
@@ -360,7 +360,7 @@ prefer_better_risk_score(_C) ->
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
 
     {ok, #domain_PaymentRoute{provider = ?prv(201)}, Meta} = Result,
-    false = maps:is_key(mismatch_reason, Meta),
+    false = maps:is_key(reject_reason, Meta),
 
     ok.
 
@@ -389,7 +389,7 @@ prefer_lower_fail_rate(_C) ->
 
     Result5 = hg_routing:choose_route(FailRatedRoutes5, RC5, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{mismatch_reason := success_rate}} = Result5,
+    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{reject_reason := success_rate}} = Result5,
 
     ok.
 

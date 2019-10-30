@@ -655,8 +655,7 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
 % Other payers has predefined routes
 
 log_route_choice_meta(ChoiceMeta) ->
-    Meta = hg_routing:get_logger_metadata(ChoiceMeta),
-    _ = logger:log(info, "Routing decision made", maps:merge(logger:get_process_metadata(), Meta)).
+    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)).
 
 log_misconfigurations(RejectContext) ->
     RejectedProviders = maps:get(rejected_providers, RejectContext),

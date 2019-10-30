@@ -50,9 +50,9 @@
 
 -type fd_service_stats()    :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
 
--type terminal_priority_rate()   :: integer().
+-type terminal_priority_rating()   :: integer().
 -type terminal_priority_weight() :: integer().
--type terminal_priority()   :: {terminal_priority_rate(), terminal_priority_weight()}.
+-type terminal_priority()   :: {terminal_priority_rating(), terminal_priority_weight()}.
 -type unweighted_terminal() :: {terminal_ref(), terminal()}.
 -type weighted_terminal()   :: {terminal_ref(), terminal(), terminal_priority()}.
 
@@ -71,7 +71,7 @@
 
 -type scored_route() :: {route_scores(), fail_unrated_route()}.
 
--type route_groups_by_priority() :: #{{provider_condition(), terminal_priority_rate()} => [fail_rated_route()]}.
+-type route_groups_by_priority() :: #{{provider_condition(), terminal_priority_rating()} => [fail_rated_route()]}.
 
 -type route_info() :: #{
     provider_ref => integer(),
@@ -82,13 +82,13 @@
 
 -type route_choice_meta() :: #{
     chosen_route => route_info(),
-    ideal_route => route_info(),
-    mismatch_reason => atom() % Contains one of the field names defined in #route_scores{}
+    preferable_route => route_info(),
+    reject_reason => atom() % Contains one of the field names defined in #route_scores{}
 }.
 
 -record(route_scores, {
     provider_condition :: provider_condition(),
-    priority_rate :: terminal_priority_rate(),
+    priority_rating :: terminal_priority_rating(),
     random_condition :: integer(),
     risk_coverage :: float(),
     success_rate :: float()
@@ -243,8 +243,8 @@ get_route_choice_meta({_, SameRoute}, {_, SameRoute}) ->
 get_route_choice_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
     #{
         chosen_route => export_route_info(ChosenRoute),
-        ideal_route => export_route_info(IdealRoute),
-        mismatch_reason => map_route_switch_reason(ChosenScores, IdealScores)
+        preferable_route => export_route_info(IdealRoute),
+        reject_reason => map_route_switch_reason(ChosenScores, IdealScores)
     }.
 
 -spec export_route_info(fail_unrated_route()) ->
@@ -273,11 +273,11 @@ format_logger_metadata(RouteChoiceMeta) ->
         RouteChoiceMeta
     ).
 
-format_logger_metadata(mismatch_reason, Reason) ->
-    [{mismatch_reason, Reason}];
+format_logger_metadata(reject_reason, Reason) ->
+    [{reject_reason, Reason}];
 format_logger_metadata(Route, RouteInfo) when
     Route =:= chosen_route;
-    Route =:= ideal_route
+    Route =:= preferable_route
 ->
     [{Route, maps:to_list(RouteInfo)}].
 
@@ -400,7 +400,7 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
     {PriorityRate, RandomCondition} = Priority,
     #route_scores{
         provider_condition = ProviderCondition,
-        priority_rate = PriorityRate,
+        priority_rating = PriorityRate,
         random_condition = RandomCondition,
         risk_coverage = RiskCoverage,
         success_rate = SuccessRate
@@ -827,14 +827,14 @@ unmarshal(_, Other) ->
 record_comparsion_test() ->
     Bigger = {#route_scores{
         provider_condition = 1,
-        priority_rate = 1,
+        priority_rating = 1,
         random_condition = 1,
         risk_coverage = 1.0,
         success_rate = 0.5
     }, {42, 42}},
     Smaller = {#route_scores{
         provider_condition = 0,
-        priority_rate = 1,
+        priority_rating = 1,
         random_condition = 1,
         risk_coverage = 1.0,
         success_rate = 0.9

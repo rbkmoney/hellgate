@@ -335,8 +335,7 @@ validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}}.
 
 validate_route({ok, Route, ChoiceMeta}, _RecPaymentTool) ->
-    Meta = hg_routing:get_logger_metadata(ChoiceMeta),
-    _ = logger:log(info, "Routing decision made", maps:merge(logger:get_process_metadata(), Meta)),
+    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),
     Route;
 validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
     Level =
