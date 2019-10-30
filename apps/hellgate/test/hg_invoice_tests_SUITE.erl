@@ -878,10 +878,13 @@ payment_has_optional_fields(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
-    ?payment_state(Payment) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?payment_state(Payment) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment.
+    #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID, route = Route} = Payment,
+    false = Route =:= undefined.
 
 -spec payment_capture_failed(config()) -> test_return().
 
