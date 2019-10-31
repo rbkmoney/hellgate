@@ -2319,9 +2319,10 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
         risk_score = RiskScore,
         activity   = {payment, routing}
     };
-merge_change(Change = ?route_changed(Route), #st{} = St, Opts) ->
+merge_change(Change = ?route_changed(Route), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{
+        payment    = Payment#domain_InvoicePayment{route = Route},
         route      = Route,
         activity   = {payment, cash_flow_building}
     };
