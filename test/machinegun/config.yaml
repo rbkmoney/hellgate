@@ -47,4 +47,7 @@ namespaces:
 
 storage:
     type: memory
- 
+
+woody_server:
+    max_concurrent_connections: 8000
+    http_keep_alive_timeout: 15S
