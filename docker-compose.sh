@@ -31,7 +31,7 @@ services:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
     healthcheck:
       test: "curl http://localhost:8022/"
-      interval: 10s
+      interval: 5s
       timeout: 1s
       retries: 20
 
@@ -51,7 +51,7 @@ services:
       - shumway-db
     healthcheck:
       test: "curl http://localhost:8022/"
-      interval: 10s
+      interval: 5s
       timeout: 1s
       retries: 20
 
