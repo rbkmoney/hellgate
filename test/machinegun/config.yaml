@@ -7,6 +7,7 @@ namespaces:
                 machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/invoice
+            pool_size: 300
     invoice_template:
         event_sinks:
             machine:
@@ -14,6 +15,7 @@ namespaces:
                 machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/invoice_template
+            pool_size: 300
     customer:
         event_sinks:
             machine:
@@ -21,6 +23,7 @@ namespaces:
                 machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/customer
+            pool_size: 300
     recurrent_paytools:
         event_sinks:
             machine:
@@ -28,6 +31,7 @@ namespaces:
                 machine_id: recurrent_paytools
         processor:
             url: http://hellgate:8022/v1/stateproc/recurrent_paytools
+            pool_size: 300
     party:
         event_sinks:
             machine:
@@ -35,9 +39,11 @@ namespaces:
                 machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/party
+            pool_size: 300
     domain-config:
         processor:
             url: http://dominant:8022/v1/stateproc
+            pool_size: 300
 
 storage:
     type: memory
