@@ -2795,11 +2795,6 @@ repair_fail_session_on_pre_processing(C) ->
         {{woody_error, {external, result_unexpected, _}}, _},
         repair_invoice_with_scenario(InvoiceID, fail_session, Client)
     ),
-    ?assertException(
-        error,
-        {{woody_error, {external, result_unexpected, _}}, _},
-        repair_invoice_with_scenario(InvoiceID, fail_session, Client)
-    ),
     ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
 
     [

@@ -92,4 +92,4 @@ is_already_failed(InvoiceID, PaymentID) ->
     end.
 
 set_failed(InvoiceID, PaymentID) ->
-    hg_kv_store:put({temporary_failure, InvoiceID, PaymentID}, failed).
+    hg_kv_store:put(?temp_failure_key(InvoiceID, PaymentID), failed).
