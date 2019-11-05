@@ -108,6 +108,7 @@
 -export([repair_fail_pre_processing_succeeded/1]).
 -export([repair_skip_inspector_succeeded/1]).
 -export([repair_fail_session_succeeded/1]).
+-export([repair_fail_session_on_pre_processing/1]).
 -export([repair_complex_succeeded_first/1]).
 -export([repair_complex_succeeded_second/1]).
 
@@ -281,6 +282,7 @@ groups() ->
             repair_fail_pre_processing_succeeded,
             repair_skip_inspector_succeeded,
             repair_fail_session_succeeded,
+            repair_fail_session_on_pre_processing,
             repair_complex_succeeded_first,
             repair_complex_succeeded_second
         ]}
@@ -2774,6 +2776,36 @@ repair_fail_session_succeeded(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
+-spec repair_fail_session_on_pre_processing(config()) -> test_return().
+
+repair_fail_session_on_pre_processing(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(7), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ?assertException(
+        error,
+        {{woody_error, {external, result_unexpected, _}}, _},
+        repair_invoice_with_scenario(InvoiceID, fail_session, Client)
+    ),
+    ?assertException(
+        error,
+        {{woody_error, {external, result_unexpected, _}}, _},
+        repair_invoice_with_scenario(InvoiceID, fail_session, Client)
+    ),
+    ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
+
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
+    ] = next_event(InvoiceID, Client).
+
 -spec repair_complex_succeeded_first(config()) -> test_return().
 
 repair_complex_succeeded_first(C) ->
@@ -3603,7 +3635,8 @@ construct_domain_fixture() ->
                 ?cat(3),
                 ?cat(4),
                 ?cat(5),
-                ?cat(6)
+                ?cat(6),
+                ?cat(7)
             ])},
             payment_methods = {value, ?ordset([
                 ?pmt(bank_card, visa),
@@ -3698,6 +3731,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(4), <<"Offliner">>, live),
         hg_ct_fixture:construct_category(?cat(5), <<"Timeouter">>, live),
         hg_ct_fixture:construct_category(?cat(6), <<"MachineFailer">>, live),
+        hg_ct_fixture:construct_category(?cat(7), <<"TempFailer">>, live),
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
@@ -3721,6 +3755,8 @@ construct_domain_fixture() ->
             #{<<"link_state">> => <<"timeout">>}, low),
         hg_ct_fixture:construct_inspector(?insp(6), <<"Offliner">>, ?prx(2),
             #{<<"link_state">> => <<"unexpected_failure">>}),
+        hg_ct_fixture:construct_inspector(?insp(7), <<"TempFailer">>, ?prx(2),
+            #{<<"link_state">> => <<"temporary_failure">>}),
 
         hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
         hg_ct_fixture:construct_contract_template(?tmpl(2), ?trms(2)),
@@ -3816,6 +3852,10 @@ construct_domain_fixture() ->
                             #domain_InspectorDecision{
                                 if_ = {condition, {category_is, ?cat(6)}},
                                 then_ = {value, ?insp(6)}
+                            },
+                            #domain_InspectorDecision{
+                                if_ = {condition, {category_is, ?cat(7)}},
+                                then_ = {value, ?insp(7)}
                             },
                             #domain_InspectorDecision{
                                 if_ = {condition, {cost_in, ?cashrng(

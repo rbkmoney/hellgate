@@ -47,6 +47,30 @@ handle_function(
 handle_function(
     'InspectPayment',
     [#proxy_inspector_Context{
+        payment = #proxy_inspector_PaymentInfo{
+            payment = #proxy_inspector_InvoicePayment{
+                id = PaymentID
+            },
+            invoice = #proxy_inspector_Invoice{
+                id = InvoiceID
+            }
+        },
+        options = #{
+            <<"link_state">> := <<"temporary_failure">>
+        }
+    }],
+    _Options
+) ->
+    case is_already_failed(InvoiceID, PaymentID) of
+        false ->
+            ok = set_failed(InvoiceID, PaymentID),
+            erlang:error(test_error);
+        true ->
+            low
+    end;
+handle_function(
+    'InspectPayment',
+    [#proxy_inspector_Context{
         payment = _PaymentInfo,
         options = #{
             <<"link_state">> := _LinkState
@@ -56,3 +80,16 @@ handle_function(
 ) ->
     timer:sleep(10000),
     high.
+
+-define(temp_failure_key(InvoiceID, PaymentID), {temporary_failure_inspector, InvoiceID, PaymentID}).
+
+is_already_failed(InvoiceID, PaymentID) ->
+    case hg_kv_store:get(?temp_failure_key(InvoiceID, PaymentID)) of
+        undefined ->
+            false;
+        failed ->
+            true
+    end.
+
+set_failed(InvoiceID, PaymentID) ->
+    hg_kv_store:put({temporary_failure, InvoiceID, PaymentID}, failed).
