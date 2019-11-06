@@ -109,10 +109,6 @@ start_app(hellgate = AppName) ->
     {start_app(AppName, [
         {host, ?HELLGATE_HOST},
         {port, ?HELLGATE_PORT},
-        {default_woody_handling_timeout, 30000},
-        {transport_opts, #{
-            max_connections => 8096
-        }},
         {services, #{
             accounter           => <<"http://shumway:8022/shumpune">>,
             automaton           => <<"http://machinegun:8022/v1/automaton">>,
@@ -136,7 +132,6 @@ start_app(hellgate = AppName) ->
         }},
         {proxy_opts, #{
             transport_opts => #{
-                max_connections => 300
             }
         }},
         {payment_retry_policy, #{
