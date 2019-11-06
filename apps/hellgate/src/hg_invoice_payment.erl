@@ -963,7 +963,10 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
 
 -spec cancel(st(), binary()) -> {ok, result()}.
 
-cancel(_St, Reason) ->
+cancel(St, Reason) ->
+    Payment = get_payment(St),
+    _ = assert_activity({payment, flow_waiting}, St),
+    _ = assert_payment_flow(hold, Payment),
     Changes = start_session(?cancelled_with_reason(Reason)),
     {ok, {Changes, hg_machine_action:instant()}}.
 
