@@ -907,7 +907,7 @@ payment_capture_failed(C) ->
         ?payment_ev(PaymentID, ?payment_capture_started(_)),
         ?payment_ev(PaymentID, ?session_ev(?captured(), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    timeout = next_event(InvoiceID, 3000, Client),
+    timeout = next_event(InvoiceID, 5000, Client),
     ?assertException(
         error,
         {{woody_error, _}, _},
@@ -931,7 +931,7 @@ payment_capture_retries_exceeded(C) ->
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, 3),
-    timeout = next_event(InvoiceID, 1000, Client),
+    timeout = next_event(InvoiceID, 5000, Client),
     ?assertException(
         error,
         {{woody_error, _}, _},
