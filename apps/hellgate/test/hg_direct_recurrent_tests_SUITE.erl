@@ -227,7 +227,7 @@ customer_paytools_as_first_test(C) ->
 -spec cancelled_first_payment_test(config()) -> test_result().
 cancelled_first_payment_test(C) ->
     Client = cfg(client, C),
-    Invoice1ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    Invoice1ID = start_invoice(<<"rubberduck">>, make_due_date(1), 42000, C),
     %% first payment in recurrent session
     Payment1Params = make_payment_params({hold, cancel}, true, undefined),
     {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),

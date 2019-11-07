@@ -636,10 +636,9 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                  Revision
             ),
             case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
-                {ok, Route, ChoiceMeta} ->
-                    _ = log_route_choice_meta(ChoiceMeta),
+                {ok, _Route} = Result ->
                     _ = log_misconfigurations(RejectContext1),
-                    {ok, Route};
+                    Result;
                 {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
                     _ = log_reject_context(RejectReason, RejectContext),
                     Error
@@ -653,9 +652,6 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
     payment.
 
 % Other payers has predefined routes
-
-log_route_choice_meta(ChoiceMeta) ->
-    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)).
 
 log_misconfigurations(RejectContext) ->
     RejectedProviders = maps:get(rejected_providers, RejectContext),
@@ -963,7 +959,10 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
 
 -spec cancel(st(), binary()) -> {ok, result()}.
 
-cancel(_St, Reason) ->
+cancel(St, Reason) ->
+    Payment = get_payment(St),
+    _ = assert_activity({payment, flow_waiting}, St),
+    _ = assert_payment_flow(hold, Payment),
     Changes = start_session(?cancelled_with_reason(Reason)),
     {ok, {Changes, hg_machine_action:instant()}}.
 
