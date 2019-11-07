@@ -429,7 +429,7 @@ reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
         cash_limit = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_limit, VS, Rev),
         cash_flow = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_flow, VS, Rev),
         fees = reduce_if_defined(Terms#domain_P2PServiceTerms.fees, VS, Rev),
-        quote_lifetime = Terms#domain_P2PServiceTerms.quote_lifetime
+        quote_lifetime = reduce_if_defined(Terms#domain_P2PServiceTerms.quote_lifetime, VS, Rev)
     }.
 
 reduce_if_defined(Selector, VS, Rev) ->
