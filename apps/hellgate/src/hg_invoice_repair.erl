@@ -79,14 +79,9 @@ check_activity_compatibility({skip_inspector, #payproc_InvoiceRepairSkipInspecto
          Activity =:= {payment, risk_scoring} ->
     ok;
 check_activity_compatibility({fail_session, #payproc_InvoiceRepairFailSession{}}, Activity)
-    when Activity =:= {payment, new} orelse
-         Activity =:= {payment, risk_scoring} orelse
-         Activity =:= {payment, routing} orelse
-         Activity =:= {payment, cash_flow_building} orelse
-         Activity =:= {payment, processing_session} ->
+    when Activity =:= {payment, processing_session} ->
     ok;
 check_activity_compatibility({fail_session, #payproc_InvoiceRepairFailSession{}}, {refund_session, _}) ->
     ok;
 check_activity_compatibility(Scenario, Activity) ->
     throw({exception, {activity_not_compatible_with_scenario, Activity, Scenario}}).
-
