@@ -265,7 +265,11 @@ get_payment_state(PaymentSession) ->
     #payproc_InvoicePayment{
         payment     = hg_invoice_payment:get_payment(PaymentSession),
         adjustments = hg_invoice_payment:get_adjustments(PaymentSession),
-        refunds     = hg_invoice_payment:get_refunds(PaymentSession)
+        route = hg_invoice_payment:get_route(PaymentSession),
+        cash_flow = hg_invoice_payment:get_cashflow(PaymentSession),
+        legacy_refunds = hg_invoice_payment:get_refunds(PaymentSession),
+        refunds = [],
+        sessions = []
     }.
 
 set_invoicing_meta(InvoiceID) ->

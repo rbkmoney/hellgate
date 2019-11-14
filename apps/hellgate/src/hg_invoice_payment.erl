@@ -31,7 +31,8 @@
 -export([get_refund/2]).
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
-
+-export([get_route/1]).
+-export([get_cashflow/1]).
 
 -export([get_party_revision/1]).
 -export([get_activity/1]).
@@ -2318,10 +2319,9 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
         risk_score = RiskScore,
         activity   = {payment, routing}
     };
-merge_change(Change = ?route_changed(Route), #st{payment = Payment} = St, Opts) ->
+merge_change(Change = ?route_changed(Route), St, Opts) ->
     _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{
-        payment    = Payment#domain_InvoicePayment{route = Route},
         route      = Route,
         activity   = {payment, cash_flow_building}
     };
@@ -2530,6 +2530,8 @@ is_transition_valid(Allowed, St) when is_list(Allowed) ->
     lists:any(fun (A) -> is_transition_valid(A, St) end, Allowed);
 is_transition_valid(Allowed, #st{activity = Activity}) ->
     Activity =:= Allowed.
+
+-spec get_cashflow(st()) -> cash_flow().
 
 get_cashflow(#st{cash_flow = FinalCashflow}) ->
     FinalCashflow.
@@ -2743,6 +2745,11 @@ collapse_changes(Changes, St, Opts) ->
         Changes
     ).
 
+-spec get_route(st()) -> route().
+
+get_route(#st{route = Route}) ->
+    Route.
+
 %%
 
 get_rec_payment_tool(RecPaymentToolID) ->
@@ -2759,9 +2766,6 @@ get_customer(CustomerID) ->
         {exception, Error} ->
             error({<<"Can't get customer">>, Error})
     end.
-
-get_route(#st{route = Route}) ->
-    Route.
 
 get_route_provider_ref(#domain_PaymentRoute{provider = ProviderRef}) ->
     ProviderRef.

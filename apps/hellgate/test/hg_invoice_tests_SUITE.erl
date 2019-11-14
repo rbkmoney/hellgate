@@ -366,6 +366,8 @@ end_per_suite(C) ->
 -define(invoice_state(Invoice), #payproc_Invoice{invoice = Invoice}).
 -define(invoice_state(Invoice, Payments), #payproc_Invoice{invoice = Invoice, payments = Payments}).
 -define(payment_state(Payment), #payproc_InvoicePayment{payment = Payment}).
+-define(payment_route(Route), #payproc_InvoicePayment{route = Route}).
+-define(payment_cashflow(CashFlow), #payproc_InvoicePayment{cash_flow = CashFlow}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
@@ -890,11 +892,15 @@ payment_has_optional_fields(C) ->
     PaymentParams = make_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ?payment_state(Payment) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    InvoicePayment = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    ?payment_state(Payment) = InvoicePayment,
+    ?payment_route(Route) = InvoicePayment,
+    ?payment_cashflow(CashFlow) = InvoicePayment,
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID, route = Route} = Payment,
-    false = Route =:= undefined.
+    #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment,
+    false = Route =:= undefined,
+    false = CashFlow =:= undefined.
 
 -spec payment_capture_failed(config()) -> test_return().
 
@@ -1963,7 +1969,7 @@ payment_partial_refunds_success(C) ->
     % check payment status = captured
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?captured()},
-        refunds =
+        legacy_refunds =
             [
                 #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
                 #domain_InvoicePaymentRefund{cash = ?cash(30000, <<"RUB">>), status = ?refund_succeeded()}
@@ -1986,7 +1992,7 @@ payment_partial_refunds_success(C) ->
     % check payment status = refunded and all refunds
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?refunded()},
-        refunds =
+        legacy_refunds =
             [
                 #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
                 #domain_InvoicePaymentRefund{cash = ?cash(30000, <<"RUB">>), status = ?refund_succeeded()},
@@ -2095,7 +2101,7 @@ cant_start_simultaneous_partial_refunds(C) ->
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?captured()},
-        refunds =
+        legacy_refunds =
             [
                 #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
                 #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()}
@@ -2134,7 +2140,7 @@ retry_temporary_unavailability_refund(C) ->
     % check payment status still captured and all refunds
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?captured()},
-        refunds =
+        legacy_refunds =
             [
                 #domain_InvoicePaymentRefund{cash = ?cash(1000, <<"RUB">>), status = ?refund_succeeded()}
             ]
