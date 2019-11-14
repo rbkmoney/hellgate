@@ -267,7 +267,7 @@ get_payment_state(PaymentSession) ->
         adjustments = hg_invoice_payment:get_adjustments(PaymentSession),
         route = hg_invoice_payment:get_route(PaymentSession),
         cash_flow = hg_invoice_payment:get_cashflow(PaymentSession),
-        legacy_refunds = hg_invoice_payment:get_refunds(PaymentSession),
+        legacy_refunds = hg_invoice_payment:get_legacy_refunds(PaymentSession),
         refunds = [],
         sessions = []
     }.
@@ -856,7 +856,7 @@ parse_refund_id(ID) ->
     ID.
 
 make_new_refund_id(PaymentSession) ->
-    Refunds = hg_invoice_payment:get_refunds(PaymentSession),
+    Refunds = hg_invoice_payment:get_legacy_refunds(PaymentSession),
     construct_refund_id(Refunds).
 
 construct_refund_id(Refunds) ->

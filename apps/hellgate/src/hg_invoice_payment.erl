@@ -27,7 +27,7 @@
 %% St accessors
 
 -export([get_payment/1]).
--export([get_refunds/1]).
+-export([get_legacy_refunds/1]).
 -export([get_refund/2]).
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
@@ -108,7 +108,7 @@
 }).
 
 -record(refund_st, {
-    refund            :: undefined | refund(),
+    refund            :: undefined | domain_refund(),
     cash_flow         :: undefined | cash_flow(),
     session           :: undefined | session(),
     transaction_info  :: undefined | trx_info()
@@ -130,7 +130,7 @@
 -type invoice_id()          :: dmsl_domain_thrift:'InvoiceID'().
 -type payment()             :: dmsl_domain_thrift:'InvoicePayment'().
 -type payment_id()          :: dmsl_domain_thrift:'InvoicePaymentID'().
--type refund()              :: dmsl_domain_thrift:'InvoicePaymentRefund'().
+-type domain_refund()       :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type refund_id()           :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
 -type refund_params()       :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type adjustment()          :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
@@ -218,15 +218,15 @@ get_adjustment(ID, St) ->
             throw(#payproc_InvoicePaymentAdjustmentNotFound{})
     end.
 
--spec get_refunds(st()) -> [refund()].
+-spec get_legacy_refunds(st()) -> [domain_refund()].
 
-get_refunds(#st{refunds = Rs} = St) ->
+get_legacy_refunds(#st{refunds = Rs} = St) ->
     lists:keysort(
         #domain_InvoicePaymentRefund.id,
         [enrich_refund_with_cash(R#refund_st.refund, St) || R <- maps:values(Rs)]
     ).
 
--spec get_refund(refund_id(), st()) -> refund() | no_return().
+-spec get_refund(refund_id(), st()) -> domain_refund() | no_return().
 
 get_refund(ID, St) ->
     case try_get_refund_state(ID, St) of
@@ -1041,7 +1041,7 @@ validate_provider_holds_terms(#domain_PaymentsProvisionTerms{holds = undefined})
     ok.
 
 -spec refund(refund_params(), st(), opts()) ->
-    {refund(), result()}.
+    {domain_refund(), result()}.
 
 refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
@@ -1055,7 +1055,7 @@ refund(Params, St0, Opts) ->
     {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
 
 -spec manual_refund(refund_params(), st(), opts()) ->
-    {refund(), result()}.
+    {domain_refund(), result()}.
 
 manual_refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
@@ -1121,7 +1121,7 @@ assert_previous_refunds_finished(St) ->
             (#domain_InvoicePaymentRefund{}) ->
                 false
         end,
-        get_refunds(St)),
+        get_legacy_refunds(St)),
     case PendingRefunds of
         [] ->
             ok;
@@ -1154,7 +1154,7 @@ get_remaining_payment_balance(St) ->
             end
         end,
         PaymentAmount,
-        get_refunds(St)
+        get_legacy_refunds(St)
     ).
 
 get_remaining_payment_amount(RefundCash, St) ->
