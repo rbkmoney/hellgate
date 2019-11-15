@@ -268,8 +268,8 @@ get_payment_state(PaymentSession) ->
         route = hg_invoice_payment:get_route(PaymentSession),
         cash_flow = hg_invoice_payment:get_cashflow(PaymentSession),
         legacy_refunds = hg_invoice_payment:get_legacy_refunds(PaymentSession),
-        refunds = [],
-        sessions = []
+        refunds = hg_invoice_payment:get_refunds(PaymentSession),
+        sessions = hg_invoice_payment:get_sessions(PaymentSession)
     }.
 
 set_invoicing_meta(InvoiceID) ->

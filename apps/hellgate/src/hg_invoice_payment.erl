@@ -28,11 +28,13 @@
 
 -export([get_payment/1]).
 -export([get_legacy_refunds/1]).
+-export([get_refunds/1]).
 -export([get_refund/2]).
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
 -export([get_route/1]).
 -export([get_cashflow/1]).
+-export([get_sessions/1]).
 
 -export([get_party_revision/1]).
 -export([get_activity/1]).
@@ -131,6 +133,7 @@
 -type payment()             :: dmsl_domain_thrift:'InvoicePayment'().
 -type payment_id()          :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type domain_refund()       :: dmsl_domain_thrift:'InvoicePaymentRefund'().
+-type payment_refund()      :: dmsl_payment_processing_thrift:'InvoicePaymentRefund'().
 -type refund_id()           :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
 -type refund_params()       :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type adjustment()          :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
@@ -152,6 +155,7 @@
 -type recurrent_token()     :: dmsl_domain_thrift:'Token'().
 -type retry_strategy()      :: hg_retry:strategy().
 -type capture_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
+-type payment_session()     :: dmsl_payment_processing_thrift:'InvoicePaymentSession'().
 
 -type session_status()      :: active | suspended | finished.
 -type session() :: #{
@@ -218,12 +222,47 @@ get_adjustment(ID, St) ->
             throw(#payproc_InvoicePaymentAdjustmentNotFound{})
     end.
 
+-spec get_sessions(st()) -> [payment_session()].
+
+get_sessions(#st{sessions = S}) ->
+    lists:map(
+        fun(#{target := TS, trx := TR}) ->
+            #payproc_InvoicePaymentSession{
+                target_status = TS,
+                transaction_info = TR
+            }
+        end,
+        maps:values(S)
+    ).
+
 -spec get_legacy_refunds(st()) -> [domain_refund()].
 
 get_legacy_refunds(#st{refunds = Rs} = St) ->
     lists:keysort(
         #domain_InvoicePaymentRefund.id,
         [enrich_refund_with_cash(R#refund_st.refund, St) || R <- maps:values(Rs)]
+    ).
+
+-spec get_refunds(st()) -> [payment_refund()].
+
+get_refunds(#st{refunds = Rs} = St) ->
+    RefundList = lists:map(
+        fun (#refund_st{refund = R, session = _S, cash_flow = C}) ->
+            #payproc_InvoicePaymentRefund{
+                refund = enrich_refund_with_cash(R, St),
+                sessions = [],
+                cash_flow = C
+            }
+        end,
+        maps:values(Rs)
+    ),
+    lists:sort(
+        fun(X, Y) ->
+            Xid = X#payproc_InvoicePaymentRefund.refund#domain_InvoicePaymentRefund.id,
+            Yid = Y#payproc_InvoicePaymentRefund.refund#domain_InvoicePaymentRefund.id,
+            Xid =< Yid
+        end,
+        RefundList
     ).
 
 -spec get_refund(refund_id(), st()) -> domain_refund() | no_return().
