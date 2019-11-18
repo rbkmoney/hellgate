@@ -334,7 +334,8 @@ inspect(_RecPaymentTool, _VS) ->
 validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
     {RiskScore, VS#{risk_score => RiskScore}}.
 
-validate_route({ok, Route}, _RecPaymentTool) ->
+validate_route({ok, Route, ChoiceMeta}, _RecPaymentTool) ->
+    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),
     Route;
 validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
     Level =

@@ -675,9 +675,10 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                  Revision
             ),
             case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
-                {ok, _Route} = Result ->
+                {ok, Route, ChoiceMeta} ->
+                    _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext1),
-                    Result;
+                    {ok, Route};
                 {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
                     _ = log_reject_context(RejectReason, RejectContext),
                     Error
@@ -691,6 +692,9 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
     payment.
 
 % Other payers has predefined routes
+
+log_route_choice_meta(ChoiceMeta) ->
+    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)).
 
 log_misconfigurations(RejectContext) ->
     RejectedProviders = maps:get(rejected_providers, RejectContext),
