@@ -112,7 +112,7 @@
 -record(refund_st, {
     refund            :: undefined | domain_refund(),
     cash_flow         :: undefined | cash_flow(),
-    session           :: undefined | session(),
+    session      = [] :: [session()],
     transaction_info  :: undefined | trx_info()
 }).
 
@@ -247,10 +247,10 @@ get_legacy_refunds(#st{refunds = Rs} = St) ->
 
 get_refunds(#st{refunds = Rs} = St) ->
     RefundList = lists:map(
-        fun (#refund_st{refund = R, session = _S, cash_flow = C}) ->
+        fun (#refund_st{refund = R, session = S, cash_flow = C}) ->
             #payproc_InvoicePaymentRefund{
                 refund = enrich_refund_with_cash(R, St),
-                sessions = [],
+                sessions = lists:map(fun convert_refund_sessions/1, S),
                 cash_flow = C
             }
         end,
@@ -264,6 +264,11 @@ get_refunds(#st{refunds = Rs} = St) ->
         end,
         RefundList
     ).
+
+convert_refund_sessions(#{trx := TR}) ->
+    #payproc_InvoiceRefundSession{
+        transaction_info = TR
+    }.
 
 -spec get_refund(refund_id(), st()) -> domain_refund() | no_return().
 
@@ -2220,14 +2225,11 @@ construct_proxy_cash(#domain_Cash{
         currency = hg_domain:get(Revision, {currency, CurrencyRef})
     }.
 
-construct_proxy_refund(#refund_st{
-    refund  = Refund,
-    session = Session
-}) ->
+construct_proxy_refund(#refund_st{refund  = Refund} = St) ->
     #prxprv_InvoicePaymentRefund{
         id         = get_refund_id(Refund),
         created_at = get_refund_created_at(Refund),
-        trx        = get_session_trx(Session),
+        trx        = get_session_trx(get_refund_session(St)),
         cash       = construct_proxy_cash(get_refund_cash(Refund))
     }.
 
@@ -2542,7 +2544,7 @@ merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefine
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
-    set_refund_session(create_session(?refunded(), undefined), St);
+    create_refund_session(create_session(?refunded(), undefined), St);
 merge_refund_change(?session_ev(?refunded(), Change), St) ->
     set_refund_session(merge_session_change(Change, get_refund_session(St)), St).
 
@@ -2602,11 +2604,19 @@ get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when
 get_captured_cost(_, #domain_InvoicePayment{cost = Cost}) ->
     Cost.
 
-get_refund_session(#refund_st{session = Session}) ->
+get_refund_session(#refund_st{session = []}) ->
+    undefined;
+get_refund_session(#refund_st{session = [Session | _]}) ->
     Session.
 
-set_refund_session(Session, St = #refund_st{}) ->
-    St#refund_st{session = Session}.
+create_refund_session(Session, St = #refund_st{session = OldSessions}) ->
+    St#refund_st{session = [Session | OldSessions]}.
+
+set_refund_session(Session, St = #refund_st{session = []}) ->
+    St#refund_st{session = [Session]};
+set_refund_session(Session, St = #refund_st{session = OldSessions}) ->
+    %% Replace recent session with updated one
+    St#refund_st{session = [Session | tl(OldSessions)]}.
 
 get_refund(#refund_st{refund = Refund}) ->
     Refund.
@@ -2766,7 +2776,12 @@ get_activity_session({payment, _Step}, St) ->
     get_session(get_target(St), St);
 get_activity_session({refund_session, ID}, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    RefundSt#refund_st.session.
+    case RefundSt#refund_st.session of
+        [Session | _] ->
+            Session;
+        [] ->
+            undefined
+    end.
 
 %%
 
