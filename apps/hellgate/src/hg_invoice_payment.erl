@@ -2549,7 +2549,7 @@ merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefine
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
-    set_refund_session(create_session(?refunded(), undefined), St);
+    add_refund_session(create_session(?refunded(), undefined), St);
 merge_refund_change(?session_ev(?refunded(), Change), St) ->
     update_refund_session(merge_session_change(Change, get_refund_session(St)), St).
 
@@ -2614,7 +2614,7 @@ get_refund_session(#refund_st{sessions = []}) ->
 get_refund_session(#refund_st{sessions = [Session | _]}) ->
     Session.
 
-set_refund_session(Session, St = #refund_st{sessions = OldSessions}) ->
+add_refund_session(Session, St = #refund_st{sessions = OldSessions}) ->
     St#refund_st{sessions = [Session | OldSessions]}.
 
 update_refund_session(Session, St = #refund_st{sessions = []}) ->
@@ -2781,12 +2781,7 @@ get_activity_session({payment, _Step}, St) ->
     get_session(get_target(St), St);
 get_activity_session({refund_session, ID}, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    case RefundSt#refund_st.sessions of
-        [Session | _] ->
-            Session;
-        [] ->
-            undefined
-    end.
+    get_refund_session(RefundSt).
 
 %%
 
