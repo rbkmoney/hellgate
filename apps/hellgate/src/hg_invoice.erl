@@ -262,13 +262,21 @@ get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
     }.
 
 get_payment_state(PaymentSession) ->
+    Refunds = hg_invoice_payment:get_refunds(PaymentSession),
+    LegacyRefunds =
+        lists:map(
+            fun (#payproc_InvoicePaymentRefund{refund = R}) ->
+                R
+            end,
+            Refunds
+        ),
     #payproc_InvoicePayment{
         payment     = hg_invoice_payment:get_payment(PaymentSession),
         adjustments = hg_invoice_payment:get_adjustments(PaymentSession),
         route = hg_invoice_payment:get_route(PaymentSession),
         cash_flow = hg_invoice_payment:get_cashflow(PaymentSession),
-        legacy_refunds = hg_invoice_payment:get_legacy_refunds(PaymentSession),
-        refunds = hg_invoice_payment:get_refunds(PaymentSession),
+        legacy_refunds = LegacyRefunds,
+        refunds = Refunds,
         sessions = hg_invoice_payment:get_sessions(PaymentSession)
     }.
 
@@ -856,7 +864,7 @@ parse_refund_id(ID) ->
     ID.
 
 make_new_refund_id(PaymentSession) ->
-    Refunds = hg_invoice_payment:get_legacy_refunds(PaymentSession),
+    Refunds = hg_invoice_payment:get_refunds(PaymentSession),
     construct_refund_id(Refunds).
 
 construct_refund_id(Refunds) ->
@@ -864,7 +872,8 @@ construct_refund_id(Refunds) ->
     MaxID = lists:foldl(fun find_max_refund_id/2, 0, Refunds),
     genlib:to_binary(MaxID + 1).
 
-find_max_refund_id(#domain_InvoicePaymentRefund{id = ID}, Max) ->
+find_max_refund_id(#payproc_InvoicePaymentRefund{refund = Refund}, Max) ->
+    #domain_InvoicePaymentRefund{id = ID} = Refund,
     IntID = genlib:to_int(parse_refund_id(ID)),
     erlang:max(IntID, Max).
 
@@ -1397,15 +1406,18 @@ wrap_event_payload(Payload) ->
 -spec test() -> _.
 
 create_dummy_refund_with_id(ID) ->
-    #domain_InvoicePaymentRefund{
-        id              = genlib:to_binary(ID),
-        created_at      = hg_datetime:format_now(),
-        domain_revision = 42,
-        party_revision  = 42,
-        status          = ?refund_pending(),
-        reason          = <<"No reason">>,
-        cash            = 1000,
-        cart            = unefined
+    #payproc_InvoicePaymentRefund{
+        refund =
+            #domain_InvoicePaymentRefund{
+                id              = genlib:to_binary(ID),
+                created_at      = hg_datetime:format_now(),
+                domain_revision = 42,
+                party_revision  = 42,
+                status          = ?refund_pending(),
+                reason          = <<"No reason">>,
+                cash            = 1000,
+                cart            = unefined
+            }
     }.
 
 -spec construct_refund_id_test() -> _.

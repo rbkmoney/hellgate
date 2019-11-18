@@ -27,7 +27,6 @@
 %% St accessors
 
 -export([get_payment/1]).
--export([get_legacy_refunds/1]).
 -export([get_refunds/1]).
 -export([get_refund/2]).
 -export([get_adjustments/1]).
@@ -233,14 +232,6 @@ get_sessions(#st{sessions = S}) ->
             }
         end,
         maps:values(S)
-    ).
-
--spec get_legacy_refunds(st()) -> [domain_refund()].
-
-get_legacy_refunds(#st{refunds = Rs} = St) ->
-    lists:keysort(
-        #domain_InvoicePaymentRefund.id,
-        [enrich_refund_with_cash(R#refund_st.refund, St) || R <- maps:values(Rs)]
     ).
 
 -spec get_refunds(st()) -> [payment_refund()].
@@ -1194,7 +1185,7 @@ assert_refund_cart(RefundCash, Cart, St) ->
 get_remaining_payment_balance(St) ->
     PaymentAmount = get_payment_cost(get_payment(St)),
     lists:foldl(
-        fun(R, Acc) ->
+        fun(#payproc_InvoicePaymentRefund{refund = R}, Acc) ->
             case get_refund_status(R) of
                 {S, _} when S == succeeded ->
                     hg_cash:sub(Acc, get_refund_cash(R));
@@ -1203,7 +1194,7 @@ get_remaining_payment_balance(St) ->
             end
         end,
         PaymentAmount,
-        get_legacy_refunds(St)
+        get_refunds(St)
     ).
 
 get_remaining_payment_amount(RefundCash, St) ->
