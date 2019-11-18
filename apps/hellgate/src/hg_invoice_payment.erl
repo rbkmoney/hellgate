@@ -257,9 +257,12 @@ get_refunds(#st{refunds = Rs} = St) ->
         maps:values(Rs)
     ),
     lists:sort(
-        fun(X, Y) ->
-            Xid = X#payproc_InvoicePaymentRefund.refund#domain_InvoicePaymentRefund.id,
-            Yid = Y#payproc_InvoicePaymentRefund.refund#domain_InvoicePaymentRefund.id,
+        fun(
+            #payproc_InvoicePaymentRefund{refund = X},
+            #payproc_InvoicePaymentRefund{refund = Y}
+        ) ->
+            Xid = X#domain_InvoicePaymentRefund.id,
+            Yid = Y#domain_InvoicePaymentRefund.id,
             Xid =< Yid
         end,
         RefundList
