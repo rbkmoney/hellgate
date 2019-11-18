@@ -2544,9 +2544,9 @@ merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefine
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
-    create_refund_session(create_session(?refunded(), undefined), St);
+    set_refund_session(create_session(?refunded(), undefined), St);
 merge_refund_change(?session_ev(?refunded(), Change), St) ->
-    set_refund_session(merge_session_change(Change, get_refund_session(St)), St).
+    update_refund_session(merge_session_change(Change, get_refund_session(St)), St).
 
 merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
     Adjustment;
@@ -2609,12 +2609,12 @@ get_refund_session(#refund_st{session = []}) ->
 get_refund_session(#refund_st{session = [Session | _]}) ->
     Session.
 
-create_refund_session(Session, St = #refund_st{session = OldSessions}) ->
+set_refund_session(Session, St = #refund_st{session = OldSessions}) ->
     St#refund_st{session = [Session | OldSessions]}.
 
-set_refund_session(Session, St = #refund_st{session = []}) ->
+update_refund_session(Session, St = #refund_st{session = []}) ->
     St#refund_st{session = [Session]};
-set_refund_session(Session, St = #refund_st{session = OldSessions}) ->
+update_refund_session(Session, St = #refund_st{session = OldSessions}) ->
     %% Replace recent session with updated one
     St#refund_st{session = [Session | tl(OldSessions)]}.
 
