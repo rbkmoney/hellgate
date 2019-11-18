@@ -112,7 +112,7 @@
 -record(refund_st, {
     refund            :: undefined | domain_refund(),
     cash_flow         :: undefined | cash_flow(),
-    session      = [] :: [session()],
+    sessions     = [] :: [session()],
     transaction_info  :: undefined | trx_info()
 }).
 
@@ -247,7 +247,7 @@ get_legacy_refunds(#st{refunds = Rs} = St) ->
 
 get_refunds(#st{refunds = Rs} = St) ->
     RefundList = lists:map(
-        fun (#refund_st{refund = R, session = S, cash_flow = C}) ->
+        fun (#refund_st{refund = R, sessions = S, cash_flow = C}) ->
             #payproc_InvoicePaymentRefund{
                 refund = enrich_refund_with_cash(R, St),
                 sessions = lists:map(fun convert_refund_sessions/1, S),
@@ -2607,19 +2607,19 @@ get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when
 get_captured_cost(_, #domain_InvoicePayment{cost = Cost}) ->
     Cost.
 
-get_refund_session(#refund_st{session = []}) ->
+get_refund_session(#refund_st{sessions = []}) ->
     undefined;
-get_refund_session(#refund_st{session = [Session | _]}) ->
+get_refund_session(#refund_st{sessions = [Session | _]}) ->
     Session.
 
-set_refund_session(Session, St = #refund_st{session = OldSessions}) ->
-    St#refund_st{session = [Session | OldSessions]}.
+set_refund_session(Session, St = #refund_st{sessions = OldSessions}) ->
+    St#refund_st{sessions = [Session | OldSessions]}.
 
-update_refund_session(Session, St = #refund_st{session = []}) ->
-    St#refund_st{session = [Session]};
-update_refund_session(Session, St = #refund_st{session = OldSessions}) ->
+update_refund_session(Session, St = #refund_st{sessions = []}) ->
+    St#refund_st{sessions = [Session]};
+update_refund_session(Session, St = #refund_st{sessions = OldSessions}) ->
     %% Replace recent session with updated one
-    St#refund_st{session = [Session | tl(OldSessions)]}.
+    St#refund_st{sessions = [Session | tl(OldSessions)]}.
 
 get_refund(#refund_st{refund = Refund}) ->
     Refund.
@@ -2779,7 +2779,7 @@ get_activity_session({payment, _Step}, St) ->
     get_session(get_target(St), St);
 get_activity_session({refund_session, ID}, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    case RefundSt#refund_st.session of
+    case RefundSt#refund_st.sessions of
         [Session | _] ->
             Session;
         [] ->
