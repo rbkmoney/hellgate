@@ -1162,13 +1162,15 @@ assert_remaining_payment_amount(?cash(Amount, _), St) when Amount < 0 ->
 
 assert_previous_refunds_finished(St) ->
     PendingRefunds = lists:filter(
-        fun
-            (#domain_InvoicePaymentRefund{status = ?refund_pending()}) ->
-                true;
-            (#domain_InvoicePaymentRefund{}) ->
-                false
+        fun(#payproc_InvoicePaymentRefund{refund = R}) ->
+            case R#domain_InvoicePaymentRefund.status of
+                 ?refund_pending() ->
+                    true;
+                _ ->
+                    false
+            end
         end,
-        get_legacy_refunds(St)),
+        get_refunds(St)),
     case PendingRefunds of
         [] ->
             ok;
