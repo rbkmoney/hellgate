@@ -1969,10 +1969,20 @@ payment_partial_refunds_success(C) ->
     % check payment status = captured
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?captured()},
-        legacy_refunds =
+        refunds =
             [
-                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
-                #domain_InvoicePaymentRefund{cash = ?cash(30000, <<"RUB">>), status = ?refund_succeeded()}
+                #payproc_InvoicePaymentRefund{
+                    refund = #domain_InvoicePaymentRefund{
+                        cash = ?cash(10000, <<"RUB">>),
+                        status = ?refund_succeeded()
+                    }
+                },
+                #payproc_InvoicePaymentRefund{
+                    refund = #domain_InvoicePaymentRefund{
+                        cash = ?cash(30000, <<"RUB">>),
+                        status = ?refund_succeeded()
+                    }
+                }
             ]
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     % last refund
@@ -1992,11 +2002,26 @@ payment_partial_refunds_success(C) ->
     % check payment status = refunded and all refunds
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?refunded()},
-        legacy_refunds =
+        refunds =
             [
-                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
-                #domain_InvoicePaymentRefund{cash = ?cash(30000, <<"RUB">>), status = ?refund_succeeded()},
-                #domain_InvoicePaymentRefund{cash = ?cash(2000, <<"RUB">>), status = ?refund_succeeded()}
+                #payproc_InvoicePaymentRefund{
+                    refund = #domain_InvoicePaymentRefund{
+                        cash = ?cash(10000, <<"RUB">>),
+                        status = ?refund_succeeded()
+                    }
+                },
+                #payproc_InvoicePaymentRefund{
+                    refund = #domain_InvoicePaymentRefund{
+                        cash = ?cash(30000, <<"RUB">>),
+                        status = ?refund_succeeded()
+                    }
+                },
+                #payproc_InvoicePaymentRefund{
+                    refund = #domain_InvoicePaymentRefund{
+                        cash = ?cash(2000, <<"RUB">>),
+                        status = ?refund_succeeded()
+                    }
+                }
             ]
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     % no more refunds for you
@@ -2101,10 +2126,20 @@ cant_start_simultaneous_partial_refunds(C) ->
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?captured()},
-        legacy_refunds =
+        refunds =
             [
-                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()},
-                #domain_InvoicePaymentRefund{cash = ?cash(10000, <<"RUB">>), status = ?refund_succeeded()}
+                #payproc_InvoicePaymentRefund{
+                    refund = #domain_InvoicePaymentRefund{
+                        cash = ?cash(10000, <<"RUB">>),
+                        status = ?refund_succeeded()
+                    }
+                },
+                #payproc_InvoicePaymentRefund{
+                    refund = #domain_InvoicePaymentRefund{
+                        cash = ?cash(10000, <<"RUB">>),
+                        status = ?refund_succeeded()
+                    }
+                }
             ]
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client).
 
@@ -2140,9 +2175,14 @@ retry_temporary_unavailability_refund(C) ->
     % check payment status still captured and all refunds
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?captured()},
-        legacy_refunds =
+        refunds =
             [
-                #domain_InvoicePaymentRefund{cash = ?cash(1000, <<"RUB">>), status = ?refund_succeeded()}
+                #payproc_InvoicePaymentRefund{
+                    refund = #domain_InvoicePaymentRefund{
+                        cash = ?cash(1000, <<"RUB">>),
+                        status = ?refund_succeeded()
+                    }
+                }
             ]
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     ?invoice_state(
