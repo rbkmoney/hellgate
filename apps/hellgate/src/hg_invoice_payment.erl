@@ -98,7 +98,7 @@
     partial_cash_flow      :: undefined | cash_flow(),
     trx                    :: undefined | trx_info(),
     target                 :: undefined | target(),
-    sessions       = #{}   :: #{target_type() => session()},
+    sessions       = #{}   :: #{target_type() => [session()]},
     retry_attempts = #{}   :: #{target_type() => non_neg_integer()},
     refunds        = #{}   :: #{refund_id() => refund_state()},
     adjustments    = []    :: [adjustment()],
@@ -224,6 +224,15 @@ get_adjustment(ID, St) ->
 -spec get_sessions(st()) -> [payment_session()].
 
 get_sessions(#st{sessions = S}) ->
+    MappedSessions =
+        lists:foldl(
+            fun(Sessions, Acc) ->
+                [map_sessions(Sessions) | Acc]
+            end, [], maps:values(S)
+        ),
+    lists:flatten(MappedSessions).
+
+map_sessions(Sessions) ->
     lists:map(
         fun(#{target := TS, trx := TR}) ->
             #payproc_InvoicePaymentSession{
@@ -231,7 +240,7 @@ get_sessions(#st{sessions = S}) ->
                 transaction_info = TR
             }
         end,
-        maps:values(S)
+        Sessions
     ).
 
 -spec get_refunds(st()) -> [payment_refund()].
@@ -285,7 +294,7 @@ get_activity(#st{activity = Activity}) ->
 
 get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
     lists:usort(lists:flatten(
-        [get_session_tags(S)                     || S <- maps:values(Sessions)] ++
+        [get_session_tags(S)                     || S <- lists:flatten(maps:values(Sessions))] ++
         [get_session_tags(get_refund_session(R)) || R <- maps:values(Refunds) ]
     )).
 
@@ -2495,7 +2504,7 @@ merge_change(
         finalizing_session
     ]], Change, St, Opts),
     % FIXME why the hell dedicated handling
-    St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
+    St1 = add_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
     St2 = save_retry_attempt(Target, St1),
     case Activity of
         {payment, processing_session} ->
@@ -2518,7 +2527,7 @@ merge_change(
 merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity}, Opts) ->
     _ = validate_transition([{payment, S} || S <- [processing_session, finalizing_session]], Change, St, Opts),
     Session = merge_session_change(Event, get_session(Target, St)),
-    St1 = set_session(Target, Session, St),
+    St1 = update_session(Target, Session, St),
     % FIXME leaky transactions
     St2 = set_trx(get_session_trx(Session), St1),
     case Session of
@@ -2719,10 +2728,22 @@ get_payment_state(InvoiceID, PaymentID) ->
     end.
 
 get_session(Target, #st{sessions = Sessions}) ->
-    maps:get(get_target_type(Target), Sessions, undefined).
+    case maps:get(get_target_type(Target), Sessions, []) of
+        [] ->
+            undefined;
+        [Session | _] ->
+            Session
+    end.
 
-set_session(Target, Session, St = #st{sessions = Sessions}) ->
-    St#st{sessions = Sessions#{get_target_type(Target) => Session}}.
+add_session(Target, Session, St = #st{sessions = Sessions}) ->
+    TargetType = get_target_type(Target),
+    TargetTypeSessions = maps:get(TargetType, Sessions, []),
+    St#st{sessions = Sessions#{TargetType => [Session | TargetTypeSessions]}}.
+
+update_session(Target, Session, St = #st{sessions = Sessions}) ->
+    TargetType = get_target_type(Target),
+    [_ | Rest] = maps:get(TargetType, Sessions, []),
+    St#st{sessions = Sessions#{TargetType => [Session | Rest]}}.
 
 get_session_status(#{status := Status}) ->
     Status.
