@@ -224,24 +224,13 @@ get_adjustment(ID, St) ->
 -spec get_sessions(st()) -> [payment_session()].
 
 get_sessions(#st{sessions = S}) ->
-    MappedSessions =
-        lists:foldl(
-            fun(Sessions, Acc) ->
-                [map_sessions(Sessions) | Acc]
-            end, [], maps:values(S)
-        ),
-    lists:flatten(MappedSessions).
-
-map_sessions(Sessions) ->
-    lists:map(
-        fun(#{target := TS, trx := TR}) ->
-            #payproc_InvoicePaymentSession{
-                target_status = TS,
-                transaction_info = TR
-            }
-        end,
-        Sessions
-    ).
+    [
+        #payproc_InvoicePaymentSession{
+            target_status = TS,
+            transaction_info = TR
+        }
+        || #{target := TS, trx := TR} <- lists:flatten(maps:values(S))
+    ].
 
 -spec get_refunds(st()) -> [payment_refund()].
 
