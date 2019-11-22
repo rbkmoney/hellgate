@@ -31,7 +31,9 @@
 -export([get_refund/2]).
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
-
+-export([get_route/1]).
+-export([get_cashflow/1]).
+-export([get_sessions/1]).
 
 -export([get_party_revision/1]).
 -export([get_activity/1]).
@@ -96,7 +98,7 @@
     partial_cash_flow      :: undefined | cash_flow(),
     trx                    :: undefined | trx_info(),
     target                 :: undefined | target(),
-    sessions       = #{}   :: #{target_type() => session()},
+    sessions       = #{}   :: #{target_type() => [session()]},
     retry_attempts = #{}   :: #{target_type() => non_neg_integer()},
     refunds        = #{}   :: #{refund_id() => refund_state()},
     adjustments    = []    :: [adjustment()],
@@ -107,9 +109,9 @@
 }).
 
 -record(refund_st, {
-    refund            :: undefined | refund(),
+    refund            :: undefined | domain_refund(),
     cash_flow         :: undefined | cash_flow(),
-    session           :: undefined | session(),
+    sessions     = [] :: [session()],
     transaction_info  :: undefined | trx_info()
 }).
 
@@ -129,7 +131,8 @@
 -type invoice_id()          :: dmsl_domain_thrift:'InvoiceID'().
 -type payment()             :: dmsl_domain_thrift:'InvoicePayment'().
 -type payment_id()          :: dmsl_domain_thrift:'InvoicePaymentID'().
--type refund()              :: dmsl_domain_thrift:'InvoicePaymentRefund'().
+-type domain_refund()       :: dmsl_domain_thrift:'InvoicePaymentRefund'().
+-type payment_refund()      :: dmsl_payment_processing_thrift:'InvoicePaymentRefund'().
 -type refund_id()           :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
 -type refund_params()       :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
 -type adjustment()          :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
@@ -151,6 +154,7 @@
 -type recurrent_token()     :: dmsl_domain_thrift:'Token'().
 -type retry_strategy()      :: hg_retry:strategy().
 -type capture_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
+-type payment_session()     :: dmsl_payment_processing_thrift:'InvoicePaymentSession'().
 
 -type session_status()      :: active | suspended | finished.
 -type session() :: #{
@@ -217,15 +221,48 @@ get_adjustment(ID, St) ->
             throw(#payproc_InvoicePaymentAdjustmentNotFound{})
     end.
 
--spec get_refunds(st()) -> [refund()].
+-spec get_sessions(st()) -> [payment_session()].
+
+get_sessions(#st{sessions = S}) ->
+    [
+        #payproc_InvoicePaymentSession{
+            target_status = TS,
+            transaction_info = TR
+        }
+        || #{target := TS, trx := TR} <- lists:flatten(maps:values(S))
+    ].
+
+-spec get_refunds(st()) -> [payment_refund()].
 
 get_refunds(#st{refunds = Rs} = St) ->
-    lists:keysort(
-        #domain_InvoicePaymentRefund.id,
-        [enrich_refund_with_cash(R#refund_st.refund, St) || R <- maps:values(Rs)]
+    RefundList = lists:map(
+        fun (#refund_st{refund = R, sessions = S, cash_flow = C}) ->
+            #payproc_InvoicePaymentRefund{
+                refund = enrich_refund_with_cash(R, St),
+                sessions = lists:map(fun convert_refund_sessions/1, S),
+                cash_flow = C
+            }
+        end,
+        maps:values(Rs)
+    ),
+    lists:sort(
+        fun(
+            #payproc_InvoicePaymentRefund{refund = X},
+            #payproc_InvoicePaymentRefund{refund = Y}
+        ) ->
+            Xid = X#domain_InvoicePaymentRefund.id,
+            Yid = Y#domain_InvoicePaymentRefund.id,
+            Xid =< Yid
+        end,
+        RefundList
     ).
 
--spec get_refund(refund_id(), st()) -> refund() | no_return().
+convert_refund_sessions(#{trx := TR}) ->
+    #payproc_InvoiceRefundSession{
+        transaction_info = TR
+    }.
+
+-spec get_refund(refund_id(), st()) -> domain_refund() | no_return().
 
 get_refund(ID, St) ->
     case try_get_refund_state(ID, St) of
@@ -246,7 +283,7 @@ get_activity(#st{activity = Activity}) ->
 
 get_tags(#st{sessions = Sessions, refunds = Refunds}) ->
     lists:usort(lists:flatten(
-        [get_session_tags(S)                     || S <- maps:values(Sessions)] ++
+        [get_session_tags(S)                     || S <- lists:flatten(maps:values(Sessions))] ++
         [get_session_tags(get_refund_session(R)) || R <- maps:values(Refunds) ]
     )).
 
@@ -636,9 +673,10 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                  Revision
             ),
             case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
-                {ok, _Route} = Result ->
+                {ok, Route, ChoiceMeta} ->
+                    _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext1),
-                    Result;
+                    {ok, Route};
                 {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
                     _ = log_reject_context(RejectReason, RejectContext),
                     Error
@@ -652,6 +690,9 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
     payment.
 
 % Other payers has predefined routes
+
+log_route_choice_meta(ChoiceMeta) ->
+    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)).
 
 log_misconfigurations(RejectContext) ->
     RejectedProviders = maps:get(rejected_providers, RejectContext),
@@ -959,7 +1000,10 @@ partial_capture(St, Reason, Cost, Cart, Opts) ->
 
 -spec cancel(st(), binary()) -> {ok, result()}.
 
-cancel(_St, Reason) ->
+cancel(St, Reason) ->
+    Payment = get_payment(St),
+    _ = assert_activity({payment, flow_waiting}, St),
+    _ = assert_payment_flow(hold, Payment),
     Changes = start_session(?cancelled_with_reason(Reason)),
     {ok, {Changes, hg_machine_action:instant()}}.
 
@@ -1037,7 +1081,7 @@ validate_provider_holds_terms(#domain_PaymentsProvisionTerms{holds = undefined})
     ok.
 
 -spec refund(refund_params(), st(), opts()) ->
-    {refund(), result()}.
+    {domain_refund(), result()}.
 
 refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
@@ -1051,7 +1095,7 @@ refund(Params, St0, Opts) ->
     {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
 
 -spec manual_refund(refund_params(), st(), opts()) ->
-    {refund(), result()}.
+    {domain_refund(), result()}.
 
 manual_refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
@@ -1111,11 +1155,13 @@ assert_remaining_payment_amount(?cash(Amount, _), St) when Amount < 0 ->
 
 assert_previous_refunds_finished(St) ->
     PendingRefunds = lists:filter(
-        fun
-            (#domain_InvoicePaymentRefund{status = ?refund_pending()}) ->
-                true;
-            (#domain_InvoicePaymentRefund{}) ->
-                false
+        fun(#payproc_InvoicePaymentRefund{refund = R}) ->
+            case R#domain_InvoicePaymentRefund.status of
+                 ?refund_pending() ->
+                    true;
+                _ ->
+                    false
+            end
         end,
         get_refunds(St)),
     case PendingRefunds of
@@ -1141,7 +1187,7 @@ assert_refund_cart(RefundCash, Cart, St) ->
 get_remaining_payment_balance(St) ->
     PaymentAmount = get_payment_cost(get_payment(St)),
     lists:foldl(
-        fun(R, Acc) ->
+        fun(#payproc_InvoicePaymentRefund{refund = R}, Acc) ->
             case get_refund_status(R) of
                 {S, _} when S == succeeded ->
                     hg_cash:sub(Acc, get_refund_cash(R));
@@ -2177,14 +2223,11 @@ construct_proxy_cash(#domain_Cash{
         currency = hg_domain:get(Revision, {currency, CurrencyRef})
     }.
 
-construct_proxy_refund(#refund_st{
-    refund  = Refund,
-    session = Session
-}) ->
+construct_proxy_refund(#refund_st{refund  = Refund} = St) ->
     #prxprv_InvoicePaymentRefund{
         id         = get_refund_id(Refund),
         created_at = get_refund_created_at(Refund),
-        trx        = get_session_trx(Session),
+        trx        = get_session_trx(get_refund_session(St)),
         cash       = construct_proxy_cash(get_refund_cash(Refund))
     }.
 
@@ -2315,7 +2358,7 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
         risk_score = RiskScore,
         activity   = {payment, routing}
     };
-merge_change(Change = ?route_changed(Route), #st{} = St, Opts) ->
+merge_change(Change = ?route_changed(Route), St, Opts) ->
     _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{
         route      = Route,
@@ -2450,7 +2493,7 @@ merge_change(
         finalizing_session
     ]], Change, St, Opts),
     % FIXME why the hell dedicated handling
-    St1 = set_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
+    St1 = add_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
     St2 = save_retry_attempt(Target, St1),
     case Activity of
         {payment, processing_session} ->
@@ -2473,7 +2516,7 @@ merge_change(
 merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity}, Opts) ->
     _ = validate_transition([{payment, S} || S <- [processing_session, finalizing_session]], Change, St, Opts),
     Session = merge_session_change(Event, get_session(Target, St)),
-    St1 = set_session(Target, Session, St),
+    St1 = update_session(Target, Session, St),
     % FIXME leaky transactions
     St2 = set_trx(get_session_trx(Session), St1),
     case Session of
@@ -2499,9 +2542,9 @@ merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefine
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
-    set_refund_session(create_session(?refunded(), undefined), St);
+    add_refund_session(create_session(?refunded(), undefined), St);
 merge_refund_change(?session_ev(?refunded(), Change), St) ->
-    set_refund_session(merge_session_change(Change, get_refund_session(St)), St).
+    update_refund_session(merge_session_change(Change, get_refund_session(St)), St).
 
 merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
     Adjustment;
@@ -2526,6 +2569,8 @@ is_transition_valid(Allowed, St) when is_list(Allowed) ->
     lists:any(fun (A) -> is_transition_valid(A, St) end, Allowed);
 is_transition_valid(Allowed, #st{activity = Activity}) ->
     Activity =:= Allowed.
+
+-spec get_cashflow(st()) -> cash_flow().
 
 get_cashflow(#st{cash_flow = FinalCashflow}) ->
     FinalCashflow.
@@ -2557,11 +2602,19 @@ get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when
 get_captured_cost(_, #domain_InvoicePayment{cost = Cost}) ->
     Cost.
 
-get_refund_session(#refund_st{session = Session}) ->
+get_refund_session(#refund_st{sessions = []}) ->
+    undefined;
+get_refund_session(#refund_st{sessions = [Session | _]}) ->
     Session.
 
-set_refund_session(Session, St = #refund_st{}) ->
-    St#refund_st{session = Session}.
+add_refund_session(Session, St = #refund_st{sessions = OldSessions}) ->
+    St#refund_st{sessions = [Session | OldSessions]}.
+
+update_refund_session(Session, St = #refund_st{sessions = []}) ->
+    St#refund_st{sessions = [Session]};
+update_refund_session(Session, St = #refund_st{sessions = OldSessions}) ->
+    %% Replace recent session with updated one
+    St#refund_st{sessions = [Session | tl(OldSessions)]}.
 
 get_refund(#refund_st{refund = Refund}) ->
     Refund.
@@ -2664,10 +2717,22 @@ get_payment_state(InvoiceID, PaymentID) ->
     end.
 
 get_session(Target, #st{sessions = Sessions}) ->
-    maps:get(get_target_type(Target), Sessions, undefined).
+    case maps:get(get_target_type(Target), Sessions, []) of
+        [] ->
+            undefined;
+        [Session | _] ->
+            Session
+    end.
 
-set_session(Target, Session, St = #st{sessions = Sessions}) ->
-    St#st{sessions = Sessions#{get_target_type(Target) => Session}}.
+add_session(Target, Session, St = #st{sessions = Sessions}) ->
+    TargetType = get_target_type(Target),
+    TargetTypeSessions = maps:get(TargetType, Sessions, []),
+    St#st{sessions = Sessions#{TargetType => [Session | TargetTypeSessions]}}.
+
+update_session(Target, Session, St = #st{sessions = Sessions}) ->
+    TargetType = get_target_type(Target),
+    [_ | Rest] = maps:get(TargetType, Sessions, []),
+    St#st{sessions = Sessions#{TargetType => [Session | Rest]}}.
 
 get_session_status(#{status := Status}) ->
     Status.
@@ -2721,7 +2786,7 @@ get_activity_session({payment, _Step}, St) ->
     get_session(get_target(St), St);
 get_activity_session({refund_session, ID}, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    RefundSt#refund_st.session.
+    get_refund_session(RefundSt).
 
 %%
 
@@ -2739,6 +2804,11 @@ collapse_changes(Changes, St, Opts) ->
         Changes
     ).
 
+-spec get_route(st()) -> route().
+
+get_route(#st{route = Route}) ->
+    Route.
+
 %%
 
 get_rec_payment_tool(RecPaymentToolID) ->
@@ -2755,9 +2825,6 @@ get_customer(CustomerID) ->
         {exception, Error} ->
             error({<<"Can't get customer">>, Error})
     end.
-
-get_route(#st{route = Route}) ->
-    Route.
 
 get_route_provider_ref(#domain_PaymentRoute{provider = ProviderRef}) ->
     ProviderRef.
