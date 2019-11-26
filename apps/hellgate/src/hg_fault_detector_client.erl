@@ -25,6 +25,7 @@
 
 -export([build_service_id/2]).
 -export([build_operation_id/1]).
+-export([build_operation_id/2]).
 
 -export([init_service/1]).
 -export([init_service/2]).
@@ -43,7 +44,9 @@
 -type operation_time_limit()    :: fd_proto_fault_detector_thrift:'Milliseconds'().
 -type pre_aggregation_size()    :: fd_proto_fault_detector_thrift:'Seconds'() | undefined.
 
--type fd_service_type()         :: adapter_availability.
+-type id()                      :: binary() | atom() | number().
+-type fd_service_type()         :: adapter_availability
+                                 | provider_conversion.
 
 %% API
 
@@ -100,19 +103,34 @@ build_config(SlidingWindow, OpTimeLimit, PreAggrSize) ->
 %% `build_service_id/2` is a helper function for building service IDs
 %% @end
 %%------------------------------------------------------------------------------
--spec build_service_id(fd_service_type(), binary()) ->
+-spec build_service_id(fd_service_type(), id()) ->
     binary().
 build_service_id(ServiceType, ID) ->
-    do_build_service_id(ServiceType, ID).
+    do_build_id(service, ServiceType, genlib:to_binary(ID)).
 
 %%------------------------------------------------------------------------------
 %% @doc
 %% `build_operation_id_id/3` is a helper function for building operation IDs
+%% The final part of the id is generated randomly.
 %% @end
 %%------------------------------------------------------------------------------
 -spec build_operation_id(fd_service_type()) -> binary().
 build_operation_id(ServiceType) ->
-    do_build_operation_id(ServiceType).
+    build_operation_id(ServiceType, hg_utils:unique_id()).
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% `build_operation_id_id/4` is a deterministic version of
+%% `build_operation_id/3`, with the `ID` argument being the final part
+%% of the operation id, instead of it being randomly generated.
+%% One can also build a complex id by passing a list of terms.
+%% @end
+%%------------------------------------------------------------------------------
+-spec build_operation_id(fd_service_type(), id() | [id()]) -> binary().
+build_operation_id(ServiceType, ComplexID) when is_list(ComplexID) ->
+    do_build_id(operation, ServiceType, [genlib:to_binary(ID) || ID <- ComplexID]);
+build_operation_id(ServiceType, ID) ->
+    do_build_id(operation, ServiceType, genlib:to_binary(ID)).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -249,16 +267,10 @@ do_call('RegisterOperation', Args, Opts, Deadline) ->
             {error, Reason}
     end.
 
-do_build_service_id(adapter_availability, ID) ->
-    hg_utils:construct_complex_id([
-        <<"hellgate_service">>,
-        <<"adapter_availability">>,
-        ID
-    ]).
-
-do_build_operation_id(adapter_availability) ->
-    hg_utils:construct_complex_id([
-        <<"hellgate_operation">>,
-        <<"adapter_availability">>,
-        hg_utils:unique_id()
-    ]).
+do_build_id(IDType, ServiceType, ID) ->
+    Prefix = case IDType of
+        service   -> <<"hellgate_service">>;
+        operation -> <<"hellgate_operation">>
+    end,
+    BinServiceType = genlib:to_binary(ServiceType),
+    hg_utils:construct_complex_id(lists:flatten([Prefix, BinServiceType, ID])).

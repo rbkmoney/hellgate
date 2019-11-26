@@ -65,45 +65,57 @@ generate_token(ProxyContext, Route) ->
 
 -spec handle_payment_callback(_Payload, _ProxyContext, route()) ->
     term().
-handle_payment_callback(Payload, ProxyContext, St) ->
-    issue_call('HandlePaymentCallback', [Payload, ProxyContext], St).
+handle_payment_callback(Payload, ProxyContext, Route) ->
+    issue_call('HandlePaymentCallback', [Payload, ProxyContext], Route).
 
 -spec handle_recurrent_token_callback(_Payload, _ProxyContext, route()) ->
     term().
-handle_recurrent_token_callback(Payload, ProxyContext, St) ->
-    issue_call('HandleRecurrentTokenCallback', [Payload, ProxyContext], St).
+handle_recurrent_token_callback(Payload, ProxyContext, Route) ->
+    issue_call('HandleRecurrentTokenCallback', [Payload, ProxyContext], Route).
+
+
 
 -spec issue_call(woody:func(), list(), route()) ->
     term().
 issue_call(Func, Args, Route) ->
-    ServiceType = adapter_availability,
-    ProviderRef = get_route_provider(Route),
-    ProviderID  = ProviderRef#domain_ProviderRef.id,
-    BinaryID    = erlang:integer_to_binary(ProviderID),
-    ServiceID   = hg_fault_detector_client:build_service_id(ServiceType, BinaryID),
-    OperationID = hg_fault_detector_client:build_operation_id(ServiceType),
-
-    _ = notify_fault_detector(start, ServiceID, OperationID),
+    _ = notify_fault_detector(start, Route),
     try hg_woody_wrapper:call(proxy_provider, Func, Args, get_call_options(Route)) of
         Result ->
-            _ = notify_fault_detector(finish, ServiceID, OperationID),
+            _ = notify_fault_detector(finish, Route),
             Result
     catch
         error:{woody_error, _ErrorType} = Reason ->
-            _ = notify_fault_detector(error, ServiceID, OperationID),
+            _ = notify_fault_detector(error, Route),
             error(Reason)
     end.
 
-notify_fault_detector(start, ServiceID, OperationID) ->
-    case hg_fault_detector_client:register_operation(start, ServiceID, OperationID) of
+notify_fault_detector(Status, Route) ->
+    ServiceType   = adapter_availability,
+    ProviderRef   = get_route_provider(Route),
+    ProviderID    = ProviderRef#domain_ProviderRef.id,
+    FDConfig      = genlib_app:env(hellgate, fault_detector, #{}),
+    Config        = genlib_map:get(availability, FDConfig, #{}),
+    SlidingWindow = genlib_map:get(sliding_window,       Config, 60000),
+    OpTimeLimit   = genlib_map:get(operation_time_limit, Config, 10000),
+    PreAggrSize   = genlib_map:get(pre_aggregation_size, Config, 2),
+    ServiceConfig = hg_fault_detector_client:build_config(SlidingWindow, OpTimeLimit, PreAggrSize),
+    ServiceID     = hg_fault_detector_client:build_service_id(ServiceType, ProviderID),
+    OperationID   = hg_fault_detector_client:build_operation_id(ServiceType),
+    fd_register(Status, ServiceID, OperationID, ServiceConfig).
+
+fd_register(start, ServiceID, OperationID, ServiceConfig) ->
+    _ = fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig);
+fd_register(Status, ServiceID, OperationID, ServiceConfig) ->
+    _ = hg_fault_detector_client:register_operation(Status, ServiceID, OperationID, ServiceConfig).
+
+fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig) ->
+    case hg_fault_detector_client:register_operation(start, ServiceID, OperationID, ServiceConfig) of
         {error, not_found} ->
-            _ = hg_fault_detector_client:init_service(ServiceID),
-            _ = hg_fault_detector_client:register_operation(start, ServiceID, OperationID);
+            _ = hg_fault_detector_client:init_service(ServiceID, ServiceConfig),
+            _ = hg_fault_detector_client:register_operation(start, ServiceID, OperationID, ServiceConfig);
         Result ->
             Result
-    end;
-notify_fault_detector(Status, ServiceID, OperationID) ->
-    _ = hg_fault_detector_client:register_operation(Status, ServiceID, OperationID).
+    end.
 
 get_call_options(Route) ->
     Revision = hg_domain:head(),

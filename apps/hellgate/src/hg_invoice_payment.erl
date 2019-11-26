@@ -29,9 +29,9 @@
 -export([get_payment/1]).
 -export([get_refunds/1]).
 -export([get_refund/2]).
+-export([get_route/1]).
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
--export([get_route/1]).
 -export([get_cashflow/1]).
 -export([get_sessions/1]).
 
@@ -205,6 +205,11 @@ get_party_revision(#st{activity = Activity}) ->
 
 get_payment(#st{payment = Payment}) ->
     Payment.
+
+-spec get_route(st()) -> route().
+
+get_route(#st{route = Route}) ->
+    Route.
 
 -spec get_adjustments(st()) -> [adjustment()].
 
@@ -656,29 +661,22 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
         {ok, _Route} = Result ->
             Result;
         undefined ->
-            Payment         = get_payment(St),
-            Predestination  = choose_routing_predestination(Payment),
-            {Providers, RejectContext0} = hg_routing:gather_providers(
+            Payment        = get_payment(St),
+            Predestination = choose_routing_predestination(Payment),
+            {Routes, RejectContext} = hg_routing:gather_routes(
                 Predestination,
                 PaymentInstitution,
                 VS,
                 Revision
             ),
-            FailRatedProviders = hg_routing:gather_provider_fail_rates(Providers),
-            {FailRatedRoutes, RejectContext1} = hg_routing:gather_routes(
-                 Predestination,
-                 FailRatedProviders,
-                 RejectContext0,
-                 VS,
-                 Revision
-            ),
-            case hg_routing:choose_route(FailRatedRoutes, RejectContext1, VS) of
+            FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
+            case hg_routing:choose_route(FailRatedRoutes, RejectContext, VS) of
                 {ok, Route, ChoiceMeta} ->
                     _ = log_route_choice_meta(ChoiceMeta),
-                    _ = log_misconfigurations(RejectContext1),
+                    _ = log_misconfigurations(RejectContext),
                     {ok, Route};
-                {error, {no_route_found, {RejectReason, RejectContext}}} = Error ->
-                    _ = log_reject_context(RejectReason, RejectContext),
+                {error, {no_route_found, {RejectReason, RejectContext1}}} = Error ->
+                    _ = log_reject_context(RejectReason, RejectContext1),
                     Error
             end
     end.
@@ -1665,10 +1663,14 @@ process_session(Action, St) ->
     process_session(Session, Action, St).
 
 process_session(undefined, Action, St0) ->
-    case validate_processing_deadline(get_payment(St0), get_target_type(get_target(St0))) of
+    Target     = get_target(St0),
+    TargetType = get_target_type(Target),
+    Activity   = get_activity(St0),
+    _ = maybe_notify_fault_detector(Activity, TargetType, start, St0),
+    case validate_processing_deadline(get_payment(St0), TargetType) of
         ok ->
-            Events = start_session(get_target(St0)),
-            St1 = collapse_changes(Events, St0),
+            Events = start_session(Target),
+            St1    = collapse_changes(Events, St0),
             Result = {start_session(get_target(St0)), hg_machine_action:set_timeout(0, Action)},
             finish_session_processing(Result, St1);
         Failure ->
@@ -1699,8 +1701,7 @@ repair_session(St = #st{repair_scenario = Scenario}) ->
             {ok, Result};
         call ->
             ProxyContext = construct_proxy_context(St),
-            Route        = get_route(St),
-            hg_proxy_provider:process_payment(ProxyContext, Route)
+            hg_proxy_provider:process_payment(ProxyContext, get_route(St))
     end.
 
 -spec finalize_payment(action(), st()) -> machine_result().
@@ -1732,7 +1733,7 @@ process_callback_timeout(Action, Session, Events, St) ->
     case get_session_timeout_behaviour(Session) of
         {callback, Payload} ->
             ProxyContext = construct_proxy_context(St),
-            Route = get_route(St),
+            Route        = get_route(St),
             {ok, CallbackResult} = hg_proxy_provider:handle_payment_callback(Payload, ProxyContext, Route),
             {_Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
             finish_session_processing(Result, St);
@@ -1759,10 +1760,13 @@ finish_session_processing({payment, Step} = Activity, {Events, Action}, St) when
     Step =:= processing_session orelse
     Step =:= finalizing_session
 ->
-    Target = get_target(St),
+    Target   = get_target(St),
+    Activity = get_activity(St),
     St1 = collapse_changes(Events, St),
     case get_session(Target, St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
+            TargetType = get_target_type(Target),
+            _ = maybe_notify_fault_detector(Activity, TargetType, finish, St),
             NewAction = hg_machine_action:set_timeout(0, Action),
             {next, {Events, NewAction}};
         #{status := finished, result := ?session_failed(Failure)} ->
@@ -1829,7 +1833,7 @@ process_failure({payment, Step}, Events, Action, Failure, _St, _RefundSt) when
     Step =:= routing
 ->
     {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}};
-process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
+process_failure({payment, Step} = Activity, Events, Action, Failure, St, _RefundSt) when
     Step =:= processing_session orelse
     Step =:= finalizing_session
 ->
@@ -1840,6 +1844,8 @@ process_failure({payment, Step}, Events, Action, Failure, St, _RefundSt) when
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             {next, {Events ++ SessionEvents, SessionAction}};
         fatal ->
+            TargetType = get_target_type(Target),
+            _ = maybe_notify_fault_detector(Activity, TargetType, error, St),
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
 process_failure({refund_new, ID}, Events, Action, Failure, St, RefundSt) ->
@@ -1859,6 +1865,42 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
                 ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
             ],
             {done, {Events ++ Events1, Action}}
+    end.
+
+maybe_notify_fault_detector({payment, processing_session}, processed, Status, St) ->
+    notify_fault_detector(Status, St);
+maybe_notify_fault_detector(_Activity, _TargetType, _Status, _St) ->
+    ok.
+
+notify_fault_detector(Status, St) ->
+    ServiceType   = provider_conversion,
+    Route         = get_route(St),
+    ProviderRef   = get_route_provider(Route),
+    ProviderID    = ProviderRef#domain_ProviderRef.id,
+    Payment       = get_payment(St),
+    PaymentID     = get_payment_id(Payment),
+    FDConfig      = genlib_app:env(hellgate, fault_detector, #{}),
+    Config        = genlib_map:get(conversion, FDConfig, #{}),
+    SlidingWindow = genlib_map:get(sliding_window,       Config, 6000000),
+    OpTimeLimit   = genlib_map:get(operation_time_limit, Config, 1200000),
+    PreAggrSize   = genlib_map:get(pre_aggregation_size, Config, 2),
+    ServiceConfig = hg_fault_detector_client:build_config(SlidingWindow, OpTimeLimit, PreAggrSize),
+    ServiceID     = hg_fault_detector_client:build_service_id(ServiceType, ProviderID),
+    OperationID   = hg_fault_detector_client:build_operation_id(ServiceType, PaymentID),
+    fd_register(Status, ServiceID, OperationID, ServiceConfig).
+
+fd_register(start, ServiceID, OperationID, ServiceConfig) ->
+    _ = fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig);
+fd_register(Status, ServiceID, OperationID, ServiceConfig) ->
+    _ = hg_fault_detector_client:register_operation(Status, ServiceID, OperationID, ServiceConfig).
+
+fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig) ->
+    case hg_fault_detector_client:register_operation(start, ServiceID, OperationID, ServiceConfig) of
+        {error, not_found} ->
+            _ = hg_fault_detector_client:init_service(ServiceID, ServiceConfig),
+            _ = hg_fault_detector_client:register_operation(start, ServiceID, OperationID, ServiceConfig);
+        Result ->
+            Result
     end.
 
 process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
@@ -2804,11 +2846,6 @@ collapse_changes(Changes, St, Opts) ->
         Changes
     ).
 
--spec get_route(st()) -> route().
-
-get_route(#st{route = Route}) ->
-    Route.
-
 %%
 
 get_rec_payment_tool(RecPaymentToolID) ->
@@ -2827,6 +2864,9 @@ get_customer(CustomerID) ->
     end.
 
 get_route_provider_ref(#domain_PaymentRoute{provider = ProviderRef}) ->
+    ProviderRef.
+
+get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
     ProviderRef.
 
 get_route_provider(Route, Revision) ->

@@ -146,11 +146,19 @@ start_app(hellgate = AppName) ->
         }},
         {inspect_timeout, 1000},
         {fault_detector, #{
-            critical_fail_rate   => 0.7,
-            timeout              => 20, % very low to speed up tests
-            sliding_window       => 60000,
-            operation_time_limit => 10000,
-            pre_aggregation_size => 2
+            timeout => 20, % very low to speed up tests
+            availability => #{
+                critical_fail_rate   => 0.7,
+                sliding_window       => 60000,
+                operation_time_limit => 10000,
+                pre_aggregation_size => 2
+            },
+            conversion => #{
+                critical_fail_rate   => 0.7,
+                sliding_window       => 6000000,
+                operation_time_limit => 1200000,
+                pre_aggregation_size => 2
+            }
         }}
     ]), #{
         hellgate_root_url => get_hellgate_url()
