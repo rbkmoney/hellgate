@@ -1172,20 +1172,42 @@ try_attach_snapshot(Changes, AuxSt, _) ->
 
 -define(TOP_VERSION, 6).
 
-wrap_event_payload(Changes) ->
-    marshal_event_payload(Changes, undefined).
+%@TODO MIGRATION: To thift binaries
+%wrap_event_payload(Changes) ->
+%    marshal_event_payload(Changes, undefined).
 
-wrap_event_payload_w_snapshot(Changes, St) ->
-    StateSnapshot = encode_state(?CT_ERLANG_BINARY, St),
-    marshal_event_payload(Changes, StateSnapshot).
+%@TODO MIGRATION: To thift binaries
+%wrap_event_payload_w_snapshot(Changes, St) ->
+%    StateSnapshot = encode_state(?CT_ERLANG_BINARY, St),
+%    marshal_event_payload(Changes, StateSnapshot).
 
-marshal_event_payload(?party_ev(Changes), StateSnapshot) ->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-    Bin = hg_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
-    #{
-        format_version => 1,
-        data => {bin, Bin}
-    }.
+wrap_event_payload(Event) ->
+    ContentType = ?CT_ERLANG_BINARY,
+    Meta = #{
+        <<"vsn">> => ?TOP_VERSION,
+        <<"ct">>  => ContentType
+    },
+    Data = encode_event(ContentType, Event),
+    #{format_version => undefined, data => [Meta, Data]}.
+
+wrap_event_payload_w_snapshot(Event, St) ->
+    ContentType = ?CT_ERLANG_BINARY,
+    Meta = #{
+        <<"vsn">> => ?TOP_VERSION,
+        <<"ct">>  => ContentType,
+        <<"state_snapshot">> => encode_state(ContentType, St)
+    },
+    Data = encode_event(ContentType, Event),
+    #{format_version => undefined, data => [Meta, Data]}.
+
+%@TODO MIGRATION: To thift binaries
+%marshal_event_payload(?party_ev(Changes), StateSnapshot) ->
+%    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
+%    Bin = hg_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
+%    #{
+%        format_version => 1,
+%        data => {bin, Bin}
+%    }.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
@@ -1247,6 +1269,9 @@ decode_state(?CT_ERLANG_BINARY, undefined) ->
     undefined;
 decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
     binary_to_term(EncodedSt).
+
+encode_event(?CT_ERLANG_BINARY, Event) ->
+    {bin, term_to_binary(Event)}.
 
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
