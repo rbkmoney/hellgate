@@ -78,18 +78,19 @@ handle_recurrent_token_callback(Payload, ProxyContext, Route) ->
 -spec issue_call(woody:func(), list(), route()) ->
     term().
 issue_call(Func, Args, Route) ->
-    _ = notify_fault_detector(start, Route),
+    CallID = hg_utils:unique_id(),
+    _ = notify_fault_detector(start, Route, CallID),
     try hg_woody_wrapper:call(proxy_provider, Func, Args, get_call_options(Route)) of
         Result ->
-            _ = notify_fault_detector(finish, Route),
+            _ = notify_fault_detector(finish, Route, CallID),
             Result
     catch
         error:{woody_error, _ErrorType} = Reason ->
-            _ = notify_fault_detector(error, Route),
+            _ = notify_fault_detector(error, Route, CallID),
             error(Reason)
     end.
 
-notify_fault_detector(Status, Route) ->
+notify_fault_detector(Status, Route, CallID) ->
     ServiceType   = adapter_availability,
     ProviderRef   = get_route_provider(Route),
     ProviderID    = ProviderRef#domain_ProviderRef.id,
@@ -100,7 +101,7 @@ notify_fault_detector(Status, Route) ->
     PreAggrSize   = genlib_map:get(pre_aggregation_size, Config, 2),
     ServiceConfig = hg_fault_detector_client:build_config(SlidingWindow, OpTimeLimit, PreAggrSize),
     ServiceID     = hg_fault_detector_client:build_service_id(ServiceType, ProviderID),
-    OperationID   = hg_fault_detector_client:build_operation_id(ServiceType),
+    OperationID   = hg_fault_detector_client:build_operation_id(ServiceType, CallID),
     fd_register(Status, ServiceID, OperationID, ServiceConfig).
 
 fd_register(start, ServiceID, OperationID, ServiceConfig) ->
