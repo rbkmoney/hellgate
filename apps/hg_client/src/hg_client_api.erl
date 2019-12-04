@@ -42,7 +42,7 @@ get_opts(ServiceName, RootUrl, Path) ->
     Url = iolist_to_binary([RootUrl, Path]),
     Opts0 = #{
         url           => Url,
-        event_handler => scoper_woody_event_handler
+        event_handler => {scoper_woody_event_handler, genlib_app:env(hellgate, event_handler_opts, #{})}
     },
     case maps:get(ServiceName, genlib_app:env(hellgate, services), undefined) of
         #{} = Opts ->

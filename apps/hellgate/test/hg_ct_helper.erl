@@ -173,7 +173,7 @@ start_app(party_client = AppName) ->
             cache_mode => safe,  % disabled | safe | aggressive
             options => #{
                 woody_client => #{
-                    event_handler => scoper_woody_event_handler
+                    event_handler => {scoper_woody_event_handler, #{}}
                 }
             }
         }}
