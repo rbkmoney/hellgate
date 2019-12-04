@@ -80,7 +80,10 @@ call(ServiceName, Function, Args, Opts, Deadline) ->
     Request = {Service, Function, Args},
     woody_client:call(
         Request,
-        Opts#{event_handler => {scoper_woody_event_handler, genlib_app:env(hellgate, scoper_event_handler_options, #{})}},
+        Opts#{event_handler => {
+            scoper_woody_event_handler,
+            genlib_app:env(hellgate, scoper_event_handler_options, #{})
+        }},
         attach_deadline(Deadline, Context)
     ).
 
