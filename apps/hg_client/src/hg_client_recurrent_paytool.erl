@@ -9,7 +9,11 @@
 
 -export([create/2]).
 -export([get/2]).
+-export([get_events/3]).
 -export([abandon/2]).
+
+-export([get_events/2]).
+-export([get_last_event_id/1]).
 
 -export([pull_event/2]).
 -export([pull_event/3]).
@@ -29,6 +33,8 @@
 -type recurrent_paytool_id()     :: dmsl_payment_processing_thrift:'RecurrentPaymentToolID'().
 -type recurrent_paytool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type recurrent_paytool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
+
+-type range() :: dmsl_payment_processing_thrift:'EventRange'().
 
 %% API
 
@@ -64,10 +70,25 @@ create(Params, Client) ->
 get(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Get', [ID]})).
 
+-spec get_events(recurrent_paytool_id(), range(), pid()) ->
+    recurrent_paytool() | woody_error:business_error().
+get_events(ID, Range, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetEvents', [ID, Range]})).
+
 -spec abandon(recurrent_paytool_id(), pid()) ->
     ok | woody_error:business_error().
 abandon(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'Abandon', [ID]})).
+
+-spec get_events(range(), pid()) ->
+    recurrent_paytool() | woody_error:business_error().
+get_events(Range, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetEvents', [Range]})).
+
+-spec get_last_event_id(pid()) ->
+    recurrent_paytool() | woody_error:business_error().
+get_last_event_id(Client) ->
+    map_result_error(gen_server:call(Client, {call, 'GetLastEventID', []})).
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
@@ -113,6 +134,14 @@ init(ApiClient) ->
 
 -spec handle_call(term(), callref(), st()) ->
     {reply, term(), st()} | {noreply, st()}.
+
+handle_call({call, 'GetLastEventID' = Function, [] = Args}, _From, St = #st{client = Client}) ->
+    {Result, ClientNext} = hg_client_api:call(recurrent_paytool_eventsink, Function, Args, Client),
+    {reply, Result, St#st{client = ClientNext}};
+
+handle_call({call, 'GetEvents' = Function, [_Range] = Args}, _From, St = #st{client = Client}) ->
+    {Result, ClientNext} = hg_client_api:call(recurrent_paytool_eventsink, Function, Args, Client),
+    {reply, Result, St#st{client = ClientNext}};
 
 handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
     {Result, ClientNext} = hg_client_api:call(?SERVICE, Function, Args, Client),
