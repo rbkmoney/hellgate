@@ -79,7 +79,7 @@
 handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->
     case hg_event_sink:get_events(?NS, After, Limit) of
         {ok, Events} ->
-            publish_events(Events);
+            publish_rec_payment_tool_events(Events);
         {error, event_not_found} ->
             throw(#payproc_EventNotFound{})
     end;
@@ -143,7 +143,8 @@ get_paytool_id(#payproc_RecurrentPaymentToolParams{id = ID}) ->
     ID.
 
 get_public_history(RecPaymentToolID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
-    [publish_rec_payment_tool_event(RecPaymentToolID, Ev) || Ev <- get_history(RecPaymentToolID, AfterID, Limit)].
+    Events = get_history(RecPaymentToolID, AfterID, Limit),
+    [publish_rec_payment_tool_event(RecPaymentToolID, Ev) || Ev <- Events].
 
 publish_rec_payment_tool_event(RecPaymentToolID, Event) ->
     {ID, Dt, Payload} = Event,
@@ -1064,8 +1065,18 @@ maybe_unmarshal_party_revision(PartyRevision) ->
 %% Event sink
 %%
 
-publish_events(Events) ->
-    [publish_event(Event) || Event <- Events].
+publish_rec_payment_tool_events(Events) ->
+    [publish_rec_payment_tool_event(Event) || Event <- Events].
 
-publish_event({ID, Ns, SourceID, {EventID, Dt, Payload}}) ->
-    hg_event_provider:publish_event(Ns, ID, SourceID, {EventID, Dt, mg_msgpack_marshalling:unmarshal(Payload)}).
+publish_rec_payment_tool_event({ID, _Ns, SourceID, {EventID, Dt, Payload}}) ->
+    publish_rec_payment_tool_event(ID, SourceID, {EventID, Dt, Payload}).
+
+publish_rec_payment_tool_event(EventID, MachineID, {ID, Dt, Ev}) ->
+    Payload = unmarshal_event_payload(Ev),
+    #payproc_RecurrentPaymentToolEvent{
+        id         = EventID,
+        source     = MachineID,
+        created_at = Dt,
+        payload    = Payload,
+        sequence   = ID
+    }.
