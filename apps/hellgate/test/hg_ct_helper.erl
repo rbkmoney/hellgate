@@ -114,8 +114,10 @@ start_app(hellgate = AppName) ->
             max_connections => 8096
         }},
         {scoper_event_handler_options, #{
-            formatter_opts => #{
-                max_length => 1000
+            scoper_event_handler_options => #{
+                formatter_opts => #{
+                    max_length => 1000
+                }
         }}},
         {services, #{
             accounter           => <<"http://shumway:8022/shumpune">>,
