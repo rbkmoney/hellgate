@@ -108,10 +108,10 @@ contractor_one_creation(C) ->
     Modifications = [
         ?cm_contractor_creation(ContractorID, ContractorParams)
     ],
-    Claim = claim(Modifications),
+    PartyID = cfg(party_id, C),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
-    PartyID = cfg(party_id, C),
     {ok, Party} = get_party(PartyID, C),
     #domain_PartyContractor{} = hg_party:get_contractor(ContractorID, Party).
 
@@ -123,10 +123,10 @@ contractor_two_creation(C) ->
     Modifications = [
         ?cm_contractor_creation(ContractorID, ContractorParams)
     ],
-    Claim = claim(Modifications),
+    PartyID = cfg(party_id, C),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
-    PartyID = cfg(party_id, C),
     {ok, Party} = get_party(PartyID, C),
     #domain_PartyContractor{} = hg_party:get_contractor(ContractorID, Party).
 
@@ -140,7 +140,7 @@ contractor_modification(C) ->
     Modifications = [
         ?cm_contractor_identification_level_modification(ContractorID, full)
     ],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, Party2} = get_party(PartyID, C),
@@ -160,10 +160,10 @@ contract_one_creation(C) ->
         ?cm_contract_modification(ContractID, ?cm_payout_tool_creation(PayoutToolID1, PayoutToolParams)),
         ?cm_contract_modification(ContractID, ?cm_payout_tool_creation(PayoutToolID2, PayoutToolParams))
     ],
-    Claim = claim(Modifications),
+    PartyID = cfg(party_id, C),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
-    PartyID = cfg(party_id, C),
     {ok, #domain_Contract{
         id = ContractID,
         payout_tools = PayoutTools
@@ -182,10 +182,10 @@ contract_two_creation(C) ->
         ?cm_contract_creation(ContractID, ContractParams),
         ?cm_contract_modification(ContractID, ?cm_payout_tool_creation(PayoutToolID1, PayoutToolParams))
     ],
-    Claim = claim(Modifications),
+    PartyID = cfg(party_id, C),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
-    PartyID = cfg(party_id, C),
     {ok, #domain_Contract{
         id = ContractID,
         payout_tools = PayoutTools
@@ -201,7 +201,7 @@ contract_contractor_modification(C) ->
     Modifications = [
         ?cm_contract_modification(ContractID, {contractor_modification, NewContractor})
     ],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, #domain_Contract{
@@ -217,7 +217,7 @@ contract_adjustment_creation(C) ->
     ID = <<"ADJ1">>,
     AdjustmentTemplate = #domain_ContractTemplateRef{id = 2},
     Modifications = [?cm_contract_modification(ContractID, ?cm_adjustment_creation(ID, AdjustmentTemplate))],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, #domain_Contract{
@@ -236,7 +236,7 @@ contract_legal_agreement_binding(C) ->
         legal_agreement_id = <<"20160123-0031235-OGM/GDM">>
     },
     Changeset = [?cm_contract_modification(ContractID, {legal_agreement_binding, LA})],
-    Claim = claim(Changeset),
+    Claim = claim(Changeset, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, #domain_Contract{
@@ -264,7 +264,7 @@ contract_report_preferences_modification(C) ->
         ?cm_contract_modification(ContractID, {report_preferences_modification, Pref1}),
         ?cm_contract_modification(ContractID, {report_preferences_modification, Pref2})
     ],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, #domain_Contract{
@@ -299,7 +299,7 @@ shop_creation(C) ->
         ?cm_shop_account_creation(ShopID, ?cur(<<"RUB">>)),
         ?cm_shop_modification(ShopID, {payout_schedule_modification, ScheduleParams})
     ],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, #domain_Shop{
@@ -334,7 +334,7 @@ shop_complex_modification(C) ->
         ?cm_shop_modification(ShopID, {payout_tool_modification, PayoutToolID2}),
         ?cm_shop_modification(ShopID, {payout_schedule_modification, ScheduleParams})
     ],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, #domain_Shop{
@@ -357,7 +357,7 @@ shop_contract_modification(C) ->
         payout_tool_id = PayoutToolID
     },
     Modifications = [?cm_shop_modification(ShopID, {contract_modification, ShopContractParams})],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, #domain_Shop{
@@ -372,7 +372,7 @@ contract_termination(C) ->
     ContractID    = ?REAL_CONTRACT_ID1,
     Reason        = #claim_management_ContractTermination{reason = <<"Because!">>},
     Modifications = [?cm_contract_modification(ContractID, {termination, Reason})],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, #domain_Contract{
@@ -384,9 +384,10 @@ contract_termination(C) ->
 
 contractor_already_exists(C) ->
     ContractorParams = hg_ct_helper:make_battle_ready_contractor(),
+    PartyID = cfg(party_id, C),
     ContractorID = ?REAL_CONTRACTOR_ID1,
     Modifications = [?cm_contractor_creation(ContractorID, ContractorParams)],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     Reason = <<"{invalid_contractor,{payproc_InvalidContractor,<<\"", ContractorID/binary,
                "\">>,{already_exists,<<\"", ContractorID/binary, "\">>}}}">>,
     {exception, #claim_management_InvalidChangeset{
@@ -396,10 +397,11 @@ contractor_already_exists(C) ->
 -spec contract_already_exists(config()) -> _.
 
 contract_already_exists(C) ->
+    PartyID = cfg(party_id, C),
     ContractParams = make_contract_params(?REAL_CONTRACTOR_ID1),
     ContractID = ?REAL_CONTRACT_ID1,
     Modifications = [?cm_contract_creation(ContractID, ContractParams)],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     Reason = <<"{invalid_contract,{payproc_InvalidContract,<<\"", ContractID/binary,
                "\">>,{already_exists,<<\"", ContractID/binary, "\">>}}}">>,
     {exception, #claim_management_InvalidChangeset{
@@ -410,9 +412,10 @@ contract_already_exists(C) ->
 
 contract_already_terminated(C) ->
     ContractID    = ?REAL_CONTRACT_ID1,
+    PartyID = cfg(party_id, C),
     Reason        = #claim_management_ContractTermination{reason = <<"Because!">>},
     Modifications = [?cm_contract_modification(ContractID, {termination, Reason})],
-    Claim         = claim(Modifications),
+    Claim         = claim(Modifications, PartyID),
     ErrorReason   = <<"{invalid_contract,{payproc_InvalidContract,<<\"", ContractID/binary,
                       "\">>,{invalid_status,{terminated,{domain_ContractTerminated">>,
     ErrorReasonSize = erlang:byte_size(ErrorReason),
@@ -428,6 +431,7 @@ shop_already_exists(C) ->
         description = <<"Very meaningfull description of the shop.">>
     },
     ShopID = ?REAL_SHOP_ID,
+    PartyID = cfg(party_id, C),
     ShopParams = #claim_management_ShopParams{
         category       = ?cat(2),
         location       = {url, <<"https://example.com">>},
@@ -441,7 +445,7 @@ shop_already_exists(C) ->
         ?cm_shop_account_creation(ShopID, ?cur(<<"RUB">>)),
         ?cm_shop_modification(ShopID, {payout_schedule_modification, ScheduleParams})
     ],
-    Claim = claim(Modifications),
+    Claim = claim(Modifications, PartyID),
     Reason = <<"{invalid_shop,{payproc_InvalidShop,<<\"", ShopID/binary,
                "\">>,{already_exists,<<\"", ShopID/binary, "\">>}}}">>,
     {exception, #claim_management_InvalidChangeset{
@@ -450,7 +454,7 @@ shop_already_exists(C) ->
 
 %%% Internal functions
 
-claim(PartyModifications) ->
+claim(PartyModifications, PartyID) ->
     UserInfo = #claim_management_UserInfo{
         id = <<"test">>,
         email = <<"test@localhost">>,
@@ -459,6 +463,7 @@ claim(PartyModifications) ->
     },
     #claim_management_Claim{
         id         = id(),
+        party_id   = PartyID,
         status     = {pending, #claim_management_ClaimPending{}},
         changeset  = [?cm_party_modification(id(), ts(), Mod, UserInfo) || Mod <- PartyModifications],
         revision   = 1,
