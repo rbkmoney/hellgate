@@ -131,23 +131,43 @@ start_app(hellgate = AppName) ->
         {services, #{
             accounter           => <<"http://shumway:8022/shumpune">>,
             automaton           => <<"http://machinegun:8022/v1/automaton">>,
-            customer_management => <<"http://hellgate:8022/v1/processing/customer_management">>,
+            customer_management => #{
+                url => <<"http://hellgate:8022/v1/processing/customer_management">>,
+                transport_opts => #{
+                    pool => customer_management,
+                    max_connections => 300
+                }
+            },
             eventsink           => <<"http://machinegun:8022/v1/event_sink">>,
             fault_detector      => <<"http://127.0.0.1:20001/">>,
             invoice_templating  => #{
                 url => <<"http://hellgate:8022/v1/processing/invoice_templating">>,
                 transport_opts => #{
+                    pool => invoice_templating,
                     max_connections => 300
                 }
             },
             invoicing           => #{
                 url => <<"http://hellgate:8022/v1/processing/invoicing">>,
                 transport_opts => #{
+                    pool => invoicing,
                     max_connections => 300
                 }
             },
-            party_management    => <<"http://hellgate:8022/v1/processing/partymgmt">>,
-            recurrent_paytool   => <<"http://hellgate:8022/v1/processing/recpaytool">>
+            party_management    => #{
+                url => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+                transport_opts => #{
+                    pool => party_management,
+                    max_connections => 300
+                }
+            },
+            recurrent_paytool   => #{
+                url => <<"http://hellgate:8022/v1/processing/recpaytool">>,
+                transport_opts => #{
+                    pool => recurrent_paytool,
+                    max_connections => 300
+                }
+            }
         }},
         {proxy_opts, #{
             transport_opts => #{

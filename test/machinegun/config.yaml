@@ -1,4 +1,6 @@
 service_name: machinegun
+erlang:
+    secret_cookie_file: "/opt/machinegun/etc/cookie"
 namespaces:
     invoice:
         event_sinks:

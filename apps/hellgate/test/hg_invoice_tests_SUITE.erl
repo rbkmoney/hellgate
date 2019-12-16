@@ -156,6 +156,7 @@ all() ->
 
         % With variable domain config
         {group, adjustments},
+        {group, holds_management_with_custom_config},
         {group, refunds},
         rounding_cashflow_volume,
         terms_retrieval,
@@ -266,8 +267,7 @@ groups() ->
             payment_hold_partial_capturing,
             payment_hold_partial_capturing_with_cart,
             payment_hold_partial_capturing_with_cart_missing_cash,
-            payment_hold_auto_capturing,
-            {group, holds_management_with_custom_config}
+            payment_hold_auto_capturing
         ]},
 
         {holds_management_with_custom_config, [], [
@@ -1286,7 +1286,7 @@ payment_risk_score_check(C) ->
     [
         ?payment_ev(PaymentID2, ?risk_score_changed(high)), % high risk score...
         % ...covered with the same terminal
-        ?payment_ev(PaymentID2, ?route_changed(?route(?prv(101), ?trm(1)))),
+        ?payment_ev(PaymentID2, ?route_changed(?route(?prv(1), ?trm(1)))),
         ?payment_ev(PaymentID2, ?cash_flow_changed(_))
     ] = next_event(InvoiceID2, Client),
     [
@@ -1783,7 +1783,7 @@ payment_refund_success(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params({hold, capture}), Client),
     RefundParams = make_refund_params(),
     % not finished yet
     ?invalid_payment_status(?processed()) =
@@ -1832,7 +1832,7 @@ deadline_doesnt_affect_payment_refund(C) ->
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     ProcessingDeadline = 4000, % ms
-    PaymentParams = set_processing_deadline(ProcessingDeadline, make_payment_params()),
+    PaymentParams = set_processing_deadline(ProcessingDeadline, make_payment_params({hold, capture})),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     RefundParams = make_refund_params(),
     % not finished yet
@@ -4234,6 +4234,16 @@ construct_domain_fixture() ->
                             ?share(16, 1000, operation_amount)
                         )
                     ]},
+                    holds = #domain_PaymentHoldsProvisionTerms{
+                        lifetime = {decisions, [
+                            #domain_HoldLifetimeDecision{
+                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                    definition = {payment_system_is, visa}
+                                }}}},
+                                then_ = {value, ?hold_lifetime(5)}
+                            }
+                        ]}
+                    },
                     refunds = #domain_PaymentRefundsProvisionTerms{
                         cash_flow = {value, [
                             ?cfpost(
