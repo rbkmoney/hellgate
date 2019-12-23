@@ -19,7 +19,8 @@ BASE_IMAGE_TAG := da0ab769f01b650b389d18fc85e7418e727cbe96
 # Build image tag to be used
 BUILD_IMAGE_TAG := 4536c31941b9c27c134e8daf0fd18848809219c9
 
-CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze start devrel release clean distclean
+CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze plt_update \
+				start devrel release clean distclean
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
@@ -51,6 +52,9 @@ lint:
 
 dialyze: submodules
 	$(REBAR) dialyzer
+
+plt_update:
+	$(REBAR) dialyzer -u true -s false
 
 start: submodules
 	$(REBAR) run
