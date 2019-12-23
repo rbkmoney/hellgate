@@ -1902,6 +1902,8 @@ fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig) ->
             Result
     end.
 
+process_fatal_payment_failure(?cancelled(), Events, Action, _Failure, _St) ->
+    {done, {Events, Action}};
 process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
     error({invalid_capture_failure, Failure});
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
@@ -2567,6 +2569,14 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
                     {payment, processing_accounter};
                 {payment, finalizing_session} ->
                     {payment, finalizing_accounter};
+                _ ->
+                    Activity
+            end,
+            St2#st{activity = NextActivity};
+        #{status := finished, result := ?session_failed(_)} ->
+            NextActivity = case Activity of
+                {payment, finalizing_session} ->
+                    {payment, flow_waiting};
                 _ ->
                     Activity
             end,
