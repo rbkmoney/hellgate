@@ -356,7 +356,12 @@ process_payment(
     end;
 
 process_payment(?cancelled(), _, PaymentInfo, _) ->
-    finish(success(PaymentInfo), get_payment_id(PaymentInfo)).
+    case get_payment_info_scenario(PaymentInfo) of
+        {temporary_unavailability, Scenario} ->
+            process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
+        _ ->
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+    end.
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
