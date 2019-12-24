@@ -103,6 +103,7 @@
 -export([payment_capture_failed/1]).
 -export([payment_capture_retries_exceeded/1]).
 -export([payment_error_in_cancel_session_does_not_cause_payment_failure/1]).
+-export([payment_error_in_capture_session_does_not_cause_payment_failure/1]).
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
@@ -228,7 +229,8 @@ groups() ->
             invoice_success_on_third_payment,
             payment_capture_failed,
             payment_capture_retries_exceeded,
-            payment_error_in_cancel_session_does_not_cause_payment_failure
+            payment_error_in_cancel_session_does_not_cause_payment_failure,
+            payment_error_in_capture_session_does_not_cause_payment_failure
         ]},
 
         {adjustments, [parallel], [
@@ -983,6 +985,44 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(_)))
     ] = next_event(InvoiceID, Client),
     ?assertMatch(#{max_available_amount := 0}, hg_ct_helper:get_balance(SettlementID)).
+
+-spec payment_error_in_capture_session_does_not_cause_payment_failure(config()) -> test_return().
+
+payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
+    Client        = cfg(client, C),
+    PartyClient   = cfg(party_client, C),
+    ShopID        = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    Amount        = 42000,
+    Party         = hg_client_party:get(PartyClient),
+    Shop          = maps:get(ShopID, Party#domain_Party.shops),
+    Account       = Shop#domain_Shop.account,
+    SettlementID  = Account#domain_ShopAccount.settlement,
+    InvoiceID     = start_invoice(ShopID, <<"rubberduck">>, make_due_date(1000), Amount, C),
+    PaymentParams = make_scenario_payment_params([good, fail, good], {hold, cancel}),
+    PaymentID     = process_payment(InvoiceID, PaymentParams, Client),
+    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"capture">>, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_finished(?session_failed(_))))
+    ] = next_event(InvoiceID, Client),
+    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"capture">>, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?captured(Reason, Cost))),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client),
+    ?assertMatch(#{min_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)).
 
 repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
     Target = ?captured(Reason, Cost),
