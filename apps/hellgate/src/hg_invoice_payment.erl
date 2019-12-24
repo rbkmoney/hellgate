@@ -105,7 +105,8 @@
     recurrent_token        :: undefined | recurrent_token(),
     opts                   :: undefined | opts(),
     repair_scenario        :: undefined | hg_invoice_repair:scenario(),
-    capture_params         :: undefined | capture_params()
+    capture_params         :: undefined | capture_params(),
+    timings                :: undefined | hg_timings:t()
 }).
 
 -record(refund_st, {
@@ -164,7 +165,8 @@
     tags              := [tag()],
     timeout_behaviour := timeout_behaviour(),
     result            => session_result(),
-    proxy_state       => proxy_state()
+    proxy_state       => proxy_state(),
+    timings           => hg_timings:t()
 }.
 
 -type opts() :: #{
@@ -2377,8 +2379,12 @@ throw_invalid_recurrent_parent(Details) ->
     throw(#payproc_InvalidRecurrentParentPayment{details = Details}).
 %%
 
--spec merge_change(change(), st() | undefined, Opts) -> st() when
-    Opts :: #{validation => strict}.
+-type change_opts() :: #{
+    timestamp  => hg_datetime:timestamp(),
+    validation => strict
+}.
+
+-spec merge_change(change(), st() | undefined, change_opts()) -> st().
 
 merge_change(Change, undefined, Opts) ->
     merge_change(Change, #st{activity = {payment, new}}, Opts);
@@ -2387,7 +2393,8 @@ merge_change(Change = ?payment_started(Payment), #st{} = St, Opts) ->
     St#st{
         target     = ?processed(),
         payment    = Payment,
-        activity   = {payment, risk_scoring}
+        activity   = {payment, risk_scoring},
+        timings    = hg_timings:mark(started, define_event_timestamp(Opts))
     };
 merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
     _ = validate_transition({payment, risk_scoring}, Change, St, Opts),
@@ -2437,13 +2444,15 @@ merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment
     ]], Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
-        activity   = idle
+        activity   = idle,
+        timings    = accrue_status_timing(failed, Opts, St)
     };
 merge_change(Change = ?payment_status_changed({cancelled, _} = Status), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition({payment, finalizing_accounter}, Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
-        activity   = idle
+        activity   = idle,
+        timings    = accrue_status_timing(cancelled, Opts, St)
     };
 merge_change(Change = ?payment_status_changed({captured, Captured} = Status), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition({payment, finalizing_accounter}, Change, St, Opts),
@@ -2452,13 +2461,15 @@ merge_change(Change = ?payment_status_changed({captured, Captured} = Status), #s
             status = Status,
             cost   = get_captured_cost(Captured, Payment)
         },
-        activity   = idle
+        activity   = idle,
+        timings    = accrue_status_timing(captured, Opts, St)
     };
 merge_change(Change = ?payment_status_changed({processed, _} = Status), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition({payment, processing_accounter}, Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
-        activity   = {payment, flow_waiting}
+        activity   = {payment, flow_waiting},
+        timings    = accrue_status_timing(processed, Opts, St)
     };
 merge_change(Change = ?payment_status_changed({refunded, _} = Status), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition(idle, Change, St, Opts),
@@ -2530,14 +2541,20 @@ merge_change(
         finalizing_session
     ]], Change, St, Opts),
     % FIXME why the hell dedicated handling
-    St1 = add_session(Target, create_session(Target, get_trx(St)), St#st{target = Target}),
+    Session = mark_session_timing_event(started, Opts, create_session(Target, get_trx(St))),
+    St1 = add_session(Target, Session, St#st{target = Target}),
     St2 = save_retry_attempt(Target, St1),
     case Activity of
         {payment, processing_session} ->
             %% session retrying
             St2#st{activity = {payment, processing_session}};
+        {payment, flow_waiting} ->
+            %% session flow
+            St2#st{
+                activity = {payment, finalizing_session},
+                timings  = try_accrue_waiting_timing(Opts, St2)
+            };
         {payment, PaymentActivity} when
-            PaymentActivity =:= flow_waiting orelse
             PaymentActivity =:= processing_capture orelse
             PaymentActivity =:= updating_accounter
         ->
@@ -2552,7 +2569,7 @@ merge_change(
 
 merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity}, Opts) ->
     _ = validate_transition([{payment, S} || S <- [processing_session, finalizing_session]], Change, St, Opts),
-    Session = merge_session_change(Event, get_session(Target, St)),
+    Session = merge_session_change(Event, get_session(Target, St), Opts),
     St1 = update_session(Target, Session, St),
     % FIXME leaky transactions
     St2 = set_trx(get_session_trx(Session), St1),
@@ -2589,7 +2606,7 @@ merge_refund_change(?refund_status_changed(Status), RefundSt) ->
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
     add_refund_session(create_session(?refunded(), undefined), St);
 merge_refund_change(?session_ev(?refunded(), Change), St) ->
-    update_refund_session(merge_session_change(Change, get_refund_session(St)), St).
+    update_refund_session(merge_session_change(Change, get_refund_session(St), #{}), St).
 
 merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
     Adjustment;
@@ -2614,6 +2631,18 @@ is_transition_valid(Allowed, St) when is_list(Allowed) ->
     lists:any(fun (A) -> is_transition_valid(A, St) end, Allowed);
 is_transition_valid(Allowed, #st{activity = Activity}) ->
     Activity =:= Allowed.
+
+accrue_status_timing(Name, Opts, #st{timings = Timings}) ->
+    EventTime = define_event_timestamp(Opts),
+    hg_timings:mark(Name, EventTime, hg_timings:accrue(Name, started, EventTime, Timings)).
+
+try_accrue_waiting_timing(Opts, #st{payment = Payment, timings = Timings}) ->
+    case get_payment_flow(Payment) of
+        ?invoice_payment_flow_instant() ->
+            Timings;
+        ?invoice_payment_flow_hold(_, _) ->
+            hg_timings:accrue(waiting, processed, define_event_timestamp(Opts), Timings)
+    end.
 
 -spec get_cashflow(st()) -> cash_flow().
 
@@ -2707,21 +2736,24 @@ try_get_adjustment(ID, #st{adjustments = As}) ->
 set_adjustment(ID, Adjustment, St = #st{adjustments = As}) ->
     St#st{adjustments = lists:keystore(ID, #domain_InvoicePaymentAdjustment.id, As, Adjustment)}.
 
-merge_session_change(?session_finished(Result), Session) ->
-    Session#{status := finished, result => Result};
-merge_session_change(?session_activated(), Session) ->
-    Session#{status := active};
+merge_session_change(?session_finished(Result), Session, Opts) ->
+    Session2 = Session#{status := finished, result => Result},
+    accrue_session_timing(finished, started, Opts, Session2);
+merge_session_change(?session_activated(), Session, Opts) ->
+    Session2 = Session#{status := active},
+    accrue_session_timing(suspended, suspended, Opts, Session2);
 
-merge_session_change(?session_suspended(Tag, TimeoutBehaviour), Session) ->
+merge_session_change(?session_suspended(Tag, TimeoutBehaviour), Session, Opts) ->
     Session2 = set_session_tag(Tag, Session),
     Session3 = set_timeout_behaviour(TimeoutBehaviour, Session2),
-    Session3#{status := suspended};
+    Session4 = mark_session_timing_event(suspended, Opts, Session3),
+    Session4#{status := suspended};
 
-merge_session_change(?trx_bound(Trx), Session) ->
+merge_session_change(?trx_bound(Trx), Session, _Opts) ->
     Session#{trx := Trx};
-merge_session_change(?proxy_st_changed(ProxyState), Session) ->
+merge_session_change(?proxy_st_changed(ProxyState), Session, _Opts) ->
     Session#{proxy_state => ProxyState};
-merge_session_change(?interaction_requested(_), Session) ->
+merge_session_change(?interaction_requested(_), Session, _Opts) ->
     Session.
 
 set_timeout_behaviour(undefined, Session) ->
@@ -2733,6 +2765,19 @@ set_session_tag(undefined, Session) ->
     Session;
 set_session_tag(Tag, Session) ->
     Session#{tags := [Tag | get_session_tags(Session)]}.
+
+set_session_timings(Timings, Session) ->
+    Session#{timings => Timings}.
+get_session_timings(Session) ->
+    maps:get(timings, Session, hg_timings:new()).
+
+accrue_session_timing(Name, Event, Opts, Session) ->
+    Timings = get_session_timings(Session),
+    set_session_timings(hg_timings:accrue(Name, Event, define_event_timestamp(Opts), Timings), Session).
+
+mark_session_timing_event(Event, Opts, Session) ->
+    Timings = get_session_timings(Session),
+    set_session_timings(hg_timings:mark(Event, define_event_timestamp(Opts), Timings), Session).
 
 create_session(Target, Trx) ->
     #{
@@ -2907,6 +2952,15 @@ get_st_meta(_) ->
 issue_customer_call(Func, Args) ->
     hg_woody_wrapper:call(customer_management, Func, Args).
 
+%% Timings
+
+-spec define_event_timestamp(change_opts()) -> integer().
+
+define_event_timestamp(#{timestamp := Dt}) ->
+    hg_datetime:parse(Dt, millisecond);
+define_event_timestamp(#{}) ->
+    erlang:system_time(millisecond).
+
 %% Business metrics logging
 
 -spec get_log_params(change(), st()) ->
@@ -2951,6 +3005,7 @@ get_log_params(?payment_status_changed(Status), State) ->
             status     => Status,
             payment    => get_payment(State),
             cashflow   => get_cashflow(State),
+            timings    => State,
             event_type => invoice_payment_status_changed
         }
     );
@@ -2960,7 +3015,7 @@ get_log_params(_, _) ->
 make_log_params(Params) ->
     LogParams = maps:fold(
         fun(K, V, Acc) ->
-            Acc ++ make_log_params(K, V)
+            make_log_params(K, V) ++ Acc
         end,
         [],
         Params
@@ -2990,15 +3045,34 @@ make_log_params(flow, ?invoice_payment_flow_hold(OnHoldExpiration, _)) ->
 make_log_params(cashflow, undefined) ->
     [];
 make_log_params(cashflow, CashFlow) ->
-    Reminders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
+    Remainders = maps:to_list(hg_cashflow:get_partial_remainders(CashFlow)),
     Accounts = lists:map(
         fun ({Account, ?cash(Amount, SymCode)}) ->
             Remainder = [{remainder, [{amount, Amount}, {currency, SymCode}]}],
             {get_account_key(Account), Remainder}
         end,
-        Reminders
+        Remainders
     ),
     [{accounts, Accounts}];
+make_log_params(timings, #st{timings = Timings, sessions = Sessions}) ->
+    Params1 = maps:fold(
+        fun (N, T, Acc) -> [{hg_utils:join(<<"payment">>, $., N), T} | Acc] end,
+        [],
+        hg_timings:to_map(Timings)
+    ),
+    Params2 = maps:fold(
+        fun (Target, Ss, Acc) ->
+            TargetTimings = hg_timings:merge([get_session_timings(S) || S <- Ss]),
+            maps:fold(
+                fun (N, T, Acc1) -> [{hg_utils:join($., [<<"session">>, Target, N]), T} | Acc1] end,
+                Acc,
+                hg_timings:to_map(TargetTimings)
+            )
+        end,
+        Params1,
+        Sessions
+    ),
+    [{timings, Params2}];
 make_log_params(risk_score, Score) ->
     [{risk_score, Score}];
 make_log_params(route, _Route) ->
@@ -3022,7 +3096,7 @@ format_domain_failure(Failure) ->
     payproc_errors:format_raw(Failure).
 
 get_account_key({AccountParty, AccountType}) ->
-    list_to_binary(lists:concat([atom_to_list(AccountParty), ".", atom_to_list(AccountType)])).
+    hg_utils:join(AccountParty, $., AccountType).
 
 get_message(invoice_payment_started) ->
     "Invoice payment is started";

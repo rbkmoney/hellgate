@@ -32,10 +32,13 @@ build('hellgate', 'docker-host', finalHook) {
       runStage('xref') {
         sh 'make wc_xref'
       }
-      runStage('dialyze') {
+      runStage('pre-dialyze') {
         withWsCache("_build/default/rebar3_21.3.8.7_plt") {
-          sh 'make wc_dialyze'
+          sh 'make wc_plt_update'
         }
+      }
+      runStage('dialyze') {
+        sh 'make wc_dialyze'
       }
       runStage('test') {
         sh "make wdeps_test"
