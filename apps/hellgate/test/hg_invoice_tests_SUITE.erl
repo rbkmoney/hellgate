@@ -960,7 +960,7 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
     Shop          = maps:get(ShopID, Party#domain_Party.shops),
     Account       = Shop#domain_Shop.account,
     SettlementID  = Account#domain_ShopAccount.settlement,
-    InvoiceID     = start_invoice(ShopID,<<"rubberduck">>, make_due_date(1000), Amount, C),
+    InvoiceID     = start_invoice(ShopID, <<"rubberduck">>, make_due_date(1000), Amount, C),
     PaymentParams = make_scenario_payment_params([good, fail, good], {hold, capture}),
     PaymentID     = process_payment(InvoiceID, PaymentParams, Client),
     ?assertMatch(#{max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
@@ -978,6 +978,9 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(_), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(_)))
     ] = next_event(InvoiceID, Client),
     ?assertMatch(#{max_available_amount := 0}, hg_ct_helper:get_balance(SettlementID)).
 
