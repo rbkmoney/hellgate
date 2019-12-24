@@ -9,6 +9,7 @@
 -export([between/2]).
 -export([between/3]).
 -export([add_interval/2]).
+-export([parse/2]).
 -export([parse_ts/1]).
 -export([add_time_span/2]).
 
@@ -74,7 +75,12 @@ add_interval(Timestamp, {YY, MM, DD}) ->
 -spec parse_ts(binary()) -> integer().
 
 parse_ts(Bin) when is_binary(Bin) ->
-    hg_utils:unwrap_result(rfc3339:to_time(Bin, seconds)).
+    parse(Bin, second).
+
+-spec parse(binary(), erlang:time_unit()) -> integer().
+
+parse(Bin, Precision) when is_binary(Bin) ->
+    hg_utils:unwrap_result(rfc3339:to_time(Bin, Precision)).
 
 -spec add_time_span(time_span(), timestamp()) -> timestamp().
 
@@ -135,4 +141,3 @@ nvl(undefined, Default) ->
 
 nvl(Val, _) ->
     Val.
-

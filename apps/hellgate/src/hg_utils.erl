@@ -5,6 +5,8 @@
 -export([logtag_process/2]).
 -export([unwrap_result/1]).
 -export([construct_complex_id/1]).
+-export([join/3]).
+-export([join/2]).
 
 -export([select_defined/2]).
 -export([select_defined/1]).
@@ -45,6 +47,22 @@ construct_complex_id(L) ->
         end,
         L
     )).
+
+-spec join(V, char(), V) -> binary() when V :: atom() | number() | string() | binary().
+
+join(V1, Sep, V2) ->
+    <<(genlib:to_binary(V1))/binary, Sep, (genlib:to_binary(V2))/binary>>.
+
+-spec join(char(), [V]) -> binary() when V :: atom() | number() | string() | binary().
+
+join(_Sep, []) ->
+    <<>>;
+join(Sep, [V0 | Vs]) ->
+    lists:foldl(
+        fun (V, Acc) -> join(Acc, Sep, V) end,
+        genlib:to_binary(V0),
+        Vs
+    ).
 
 %%
 
