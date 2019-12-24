@@ -1904,8 +1904,13 @@ fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig) ->
 
 process_fatal_payment_failure(?cancelled(), Events, Action, _Failure, _St) ->
     {done, {Events, Action}};
-process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
-    error({invalid_capture_failure, Failure});
+process_fatal_payment_failure(?captured(), Events, Action, Failure, St) ->
+    case get_payment_flow(get_payment(St)) of
+        ?invoice_payment_flow_instant() ->
+            error({invalid_capture_failure, Failure});
+        ?invoice_payment_flow_hold(_, HeldUntil) ->
+            {next, {Events, hg_machine_action:set_deadline(HeldUntil, Action)}}
+    end;
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
     _Clocks = rollback_payment_cashflow(St),
     {done, {Events ++ [?payment_status_changed(?failed(Failure))], Action}}.
@@ -2040,8 +2045,6 @@ handle_proxy_intent(#prxprv_FinishIntent{status = {success, Success}}, Action, S
             [?rec_token_acquired(Token) | Events0]
     end,
     {Events1, Action};
-handle_proxy_intent(#prxprv_FinishIntent{status = {failure, Failure}}, Action, Session = #{target := {captured, _}}) ->
-    handle_proxy_capture_failure(Action, Failure, Session);
 handle_proxy_intent(#prxprv_FinishIntent{status = {failure, Failure}}, Action, Session) ->
     Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
     {Events, Action};
@@ -2062,15 +2065,6 @@ handle_proxy_intent(
     Action = set_timer(Timer, hg_machine_action:set_tag(Tag, Action0)),
     Events = [?session_suspended(Tag, TimeoutBehaviour) | try_request_interaction(UserInteraction)],
     {wrap_session_events(Events, Session), Action}.
-
-handle_proxy_capture_failure(Action, Failure, Session = #{target := Target}) ->
-    case check_failure_type(Target, {failure, Failure}) of
-        transient ->
-            Events = [wrap_session_event(?session_finished(?session_failed({failure, Failure})), Session)],
-            {Events, Action};
-        _ ->
-            error({invalid_capture_failure, Failure})
-    end.
 
 set_timer(Timer, Action) ->
     hg_machine_action:set_timer(Timer, Action).
