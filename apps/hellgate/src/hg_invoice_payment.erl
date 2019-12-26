@@ -2590,14 +2590,6 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
                     Activity
             end,
             St2#st{activity = NextActivity};
-        #{status := finished, result := ?session_failed(_)} ->
-            NextActivity = case Activity of
-                {payment, finalizing_session} ->
-                    {payment, flow_waiting};
-                _ ->
-                    Activity
-            end,
-            St2#st{activity = NextActivity};
         _ ->
             St2
     end.
