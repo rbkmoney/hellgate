@@ -1904,8 +1904,8 @@ fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig) ->
             Result
     end.
 
-process_fatal_payment_failure(?cancelled(), Events, Action, _Failure, _St) ->
-    {done, {Events, Action}};
+process_fatal_payment_failure(?cancelled(), _Events, _Action, Failure, _St) ->
+    error({invalid_cancel_failure, Failure});
 process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
     error({invalid_capture_failure, Failure});
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
