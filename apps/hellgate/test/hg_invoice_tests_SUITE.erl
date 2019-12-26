@@ -968,23 +968,16 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
     ?assertMatch(#{max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"cancel">>, Client),
     [
-        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(_), ?session_started()))
+        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(Reason), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(_), ?session_finished(?session_failed(_))))
-    ] = next_event(InvoiceID, Client),
-    ?assertMatch(#{max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
-    ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"cancel">>, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(_), ?session_started()))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(_), ?session_finished(?session_succeeded())))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(_)))
-    ] = next_event(InvoiceID, Client),
-    ?assertMatch(#{max_available_amount := 0}, hg_ct_helper:get_balance(SettlementID)).
+    timeout = next_event(InvoiceID, Client),
+    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ?assertException(
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
+    ),
+    PaymentID = repair_failed_cancel(InvoiceID, PaymentID, Reason, Client).
 
 -spec payment_error_in_capture_session_does_not_cause_payment_failure(config()) -> test_return().
 
@@ -993,6 +986,7 @@ payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
     PartyClient   = cfg(party_client, C),
     ShopID        = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     Amount        = 42000,
+    Cost          = ?cash(Amount, <<"RUB">>),
     Party         = hg_client_party:get(PartyClient),
     Shop          = maps:get(ShopID, Party#domain_Party.shops),
     Account       = Shop#domain_Shop.account,
@@ -1006,23 +1000,14 @@ payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
         ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_finished(?session_failed(_))))
-    ] = next_event(InvoiceID, Client),
+    timeout = next_event(InvoiceID, Client),
     ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
-    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"capture">>, Client),
-    [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
-        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_finished(?session_succeeded())))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?payment_status_changed(?captured(Reason, Cost))),
-        ?invoice_status_changed(?invoice_paid())
-    ] = next_event(InvoiceID, Client),
-    ?assertMatch(#{min_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)).
+    ?assertException(
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
+    ),
+    PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
 
 repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
     Target = ?captured(Reason, Cost),
@@ -1031,6 +1016,20 @@ repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
     ],
     ok = repair_invoice(InvoiceID, Changes, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0).
+
+repair_failed_cancel(InvoiceID, PaymentID, Reason, Client) ->
+    Target = ?cancelled_with_reason(Reason),
+    Changes = [
+        ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
+    ],
+    ok = repair_invoice(InvoiceID, Changes, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(Reason), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(Reason)))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
 
 -spec payment_w_terminal_success(config()) -> _ | no_return().
 
