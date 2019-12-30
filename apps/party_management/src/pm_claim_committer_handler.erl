@@ -1,4 +1,4 @@
--module(hg_claim_committer_handler).
+-module(pm_claim_committer_handler).
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
@@ -23,7 +23,7 @@ handle_function_(Fun, [PartyID, _Claim] = Args, _Opts) when Fun == 'Accept'; Fun
 call(PartyID, FunctionName, Args) ->
     ok = scoper:add_meta(#{party_id => PartyID}),
     try
-        hg_party_machine:call(PartyID, claim_committer, {'ClaimCommitter', FunctionName}, Args)
+        pm_party_machine:call(PartyID, claim_committer, {'ClaimCommitter', FunctionName}, Args)
     catch
         throw:#payproc_PartyNotFound{} ->
             erlang:throw(#claim_management_PartyNotFound{})

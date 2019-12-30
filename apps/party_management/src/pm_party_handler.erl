@@ -1,4 +1,4 @@
--module(hg_party_woody_handler).
+-module(pm_party_handler).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
@@ -25,7 +25,7 @@ handle_function(Func, Args, Opts) ->
 
 handle_function_('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:start(PartyID, PartyParams);
+    pm_party_machine:start(PartyID, PartyParams);
 
 handle_function_('Checkout', [UserInfo, PartyID, RevisionParam], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
@@ -33,15 +33,15 @@ handle_function_('Checkout', [UserInfo, PartyID, RevisionParam], _Opts) ->
 
 handle_function_('Get', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:get_party(PartyID);
+    pm_party_machine:get_party(PartyID);
 
 handle_function_('GetRevision', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:get_last_revision(PartyID);
+    pm_party_machine:get_last_revision(PartyID);
 
 handle_function_('GetStatus', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:get_status(PartyID);
+    pm_party_machine:get_status(PartyID);
 
 handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
     Fun =:= 'Block' orelse
@@ -56,35 +56,35 @@ handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
 
 handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = hg_party_machine:get_party(PartyID),
-    ensure_contract(hg_party:get_contract(ContractID, Party));
+    Party = pm_party_machine:get_party(PartyID),
+    ensure_contract(pm_party:get_contract(ContractID, Party));
 
 handle_function_('ComputeContractTerms', Args, _Opts) ->
     [UserInfo, PartyID, ContractID, Timestamp, PartyRevisionParams, DomainRevision, Varset] = Args,
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, PartyRevisionParams),
-    Contract = ensure_contract(hg_party:get_contract(ContractID, Party)),
+    Contract = ensure_contract(pm_party:get_contract(ContractID, Party)),
     VS0 = #{
         party_id => PartyID,
         identification_level => get_identification_level(Contract, Party)
     },
     VS1 = prepare_varset(PartyID, Varset, VS0),
-    Terms = hg_party:get_terms(Contract, Timestamp, DomainRevision),
-    hg_party:reduce_terms(Terms, VS1, DomainRevision);
+    Terms = pm_party:get_terms(Contract, Timestamp, DomainRevision),
+    pm_party:reduce_terms(Terms, VS1, DomainRevision);
 
 %% Shop
 
 handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = hg_party_machine:get_party(PartyID),
-    ensure_shop(hg_party:get_shop(ID, Party));
+    Party = pm_party_machine:get_party(PartyID),
+    ensure_shop(pm_party:get_shop(ID, Party));
 
 handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp, PartyRevision], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = checkout_party(PartyID, hg_maybe:get_defined(PartyRevision, {timestamp, Timestamp})),
-    Shop = ensure_shop(hg_party:get_shop(ShopID, Party)),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    Revision = hg_domain:head(),
+    Party = checkout_party(PartyID, pm_maybe:get_defined(PartyRevision, {timestamp, Timestamp})),
+    Shop = ensure_shop(pm_party:get_shop(ShopID, Party)),
+    Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    Revision = pm_domain:head(),
     VS = #{
         party_id => PartyID,
         shop_id  => ShopID,
@@ -92,7 +92,7 @@ handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp, Part
         currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
         identification_level => get_identification_level(Contract, Party)
     },
-    hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
+    pm_party:reduce_terms(pm_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
 
 handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
     Fun =:= 'BlockShop' orelse
@@ -108,23 +108,23 @@ handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
 handle_function_('ComputeWalletTermsNew', [UserInfo, PartyID, ContractID, Timestamp, Varset], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
-    Contract = hg_party:get_contract(ContractID, Party),
-    Revision = hg_domain:head(),
+    Contract = pm_party:get_contract(ContractID, Party),
+    Revision = pm_domain:head(),
     VS0 = #{
         identification_level => get_identification_level(Contract, Party)
     },
     VS1 = prepare_varset(PartyID, Varset, VS0),
-    hg_party:reduce_terms(hg_party:get_terms(Contract, Timestamp, Revision), VS1, Revision);
+    pm_party:reduce_terms(pm_party:get_terms(Contract, Timestamp, Revision), VS1, Revision);
 
 %% Claim
 
 handle_function_('GetClaim', [UserInfo, PartyID, ID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:get_claim(ID, PartyID);
+    pm_party_machine:get_claim(ID, PartyID);
 
 handle_function_('GetClaims', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:get_claims(PartyID);
+    pm_party_machine:get_claims(PartyID);
 
 handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
     Fun =:= 'CreateClaim' orelse
@@ -141,29 +141,29 @@ handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
 handle_function_('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
-    hg_party_machine:get_public_history(PartyID, AfterID, Limit);
+    pm_party_machine:get_public_history(PartyID, AfterID, Limit);
 
 %% ShopAccount
 
 handle_function_('GetAccountState', [UserInfo, PartyID, AccountID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = hg_party_machine:get_party(PartyID),
-    hg_party:get_account_state(AccountID, Party);
+    Party = pm_party_machine:get_party(PartyID),
+    pm_party:get_account_state(AccountID, Party);
 
 handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = hg_party_machine:get_party(PartyID),
-    hg_party:get_shop_account(ShopID, Party);
+    Party = pm_party_machine:get_party(PartyID),
+    pm_party:get_shop_account(ShopID, Party);
 
 %% PartyMeta
 
 handle_function_('GetMeta', [UserInfo, PartyID], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:get_meta(PartyID);
+    pm_party_machine:get_meta(PartyID);
 
 handle_function_('GetMetaData', [UserInfo, PartyID, NS], _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    hg_party_machine:get_metadata(NS, PartyID);
+    pm_party_machine:get_metadata(NS, PartyID);
 
 handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
     Fun =:= 'SetMetaData' orelse
@@ -180,12 +180,12 @@ handle_function_(
     _Opts
 ) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Revision = hg_domain:head(),
+    Revision = pm_domain:head(),
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
     VS = prepare_varset(PartyID, Varset),
     ContractTemplate = get_default_contract_template(PaymentInstitution, VS, Revision),
-    Terms = hg_party:get_terms(ContractTemplate, hg_datetime:format_now(), Revision),
-    hg_party:reduce_terms(Terms, VS, Revision);
+    Terms = pm_party:get_terms(ContractTemplate, pm_datetime:format_now(), Revision),
+    pm_party:reduce_terms(Terms, VS, Revision);
 
 %% Payouts adhocs
 
@@ -196,10 +196,10 @@ handle_function_(
 ) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
-    Shop = ensure_shop(hg_party:get_shop(ShopID, Party)),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    Shop = ensure_shop(pm_party:get_shop(ShopID, Party)),
+    Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Currency = Amount#domain_Cash.currency,
-    ok = hg_invoice_utils:validate_currency(Currency, Shop),
+    ok = pm_invoice_utils:validate_currency(Currency, Shop),
     PayoutTool = get_payout_tool(Shop, Contract, PayoutParams),
     VS = #{
         party_id => PartyID,
@@ -207,10 +207,10 @@ handle_function_(
         category => Shop#domain_Shop.category,
         currency => Currency,
         cost     => Amount,
-        payout_method => hg_payout_tool:get_method(PayoutTool)
+        payout_method => pm_payout_tool:get_method(PayoutTool)
     },
-    Revision = hg_domain:head(),
-    case hg_party:get_terms(Contract, Timestamp, Revision) of
+    Revision = pm_domain:head(),
+    case pm_party:get_terms(Contract, Timestamp, Revision) of
         #domain_TermSet{payouts = PayoutsTerms} when PayoutsTerms /= undefined ->
             compute_payout_cash_flow(Amount, PayoutsTerms, Shop, Contract, VS, Revision);
         #domain_TermSet{payouts = undefined} ->
@@ -220,21 +220,21 @@ handle_function_(
 %%
 
 call(PartyID, FunctionName, Args) ->
-    hg_party_machine:call(PartyID, party_management, {'PartyManagement', FunctionName}, Args).
+    pm_party_machine:call(PartyID, party_management, {'PartyManagement', FunctionName}, Args).
 
 %%
 
 get_payout_tool(_Shop, Contract, #payproc_PayoutParams{payout_tool_id = ToolID})
     when ToolID =/= undefined
 ->
-    case hg_contract:get_payout_tool(ToolID, Contract) of
+    case pm_contract:get_payout_tool(ToolID, Contract) of
         undefined ->
             throw(#payproc_PayoutToolNotFound{});
         PayoutTool ->
             PayoutTool
     end;
 get_payout_tool(Shop, Contract, _PayoutParams) ->
-    hg_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract).
+    pm_contract:get_payout_tool(Shop#domain_Shop.payout_tool_id, Contract).
 
 set_meta_and_check_access(UserInfo, PartyID) ->
     ok = assume_user_identity(UserInfo),
@@ -247,8 +247,8 @@ set_meta_and_check_access(UserInfo, PartyID) ->
     ok | no_return().
 
 assert_party_accessible(PartyID) ->
-    UserIdentity = hg_woody_handler_utils:get_user_identity(),
-    case hg_access_control:check_user(UserIdentity, PartyID) of
+    UserIdentity = pm_woody_handler_utils:get_user_identity(),
+    case pm_access_control:check_user(UserIdentity, PartyID) of
         ok ->
             ok;
         invalid_user ->
@@ -259,14 +259,14 @@ set_party_mgmt_meta(PartyID) ->
     scoper:add_meta(#{party_id => PartyID}).
 
 assume_user_identity(UserInfo) ->
-    hg_woody_handler_utils:assume_user_identity(UserInfo).
+    pm_woody_handler_utils:assume_user_identity(UserInfo).
 
 checkout_party(PartyID, RevisionParam) ->
     checkout_party(PartyID, RevisionParam, #payproc_PartyNotExistsYet{}).
 
 checkout_party(PartyID, RevisionParam, Exception) ->
     try
-        hg_party_machine:checkout(PartyID, RevisionParam)
+        pm_party_machine:checkout(PartyID, RevisionParam)
     catch
         error:revision_not_found ->
             throw(Exception)
@@ -283,7 +283,7 @@ ensure_shop(undefined) ->
     throw(#payproc_ShopNotFound{}).
 
 get_payment_institution(PaymentInstitutionRef, Revision) ->
-    case hg_domain:find(Revision, {payment_institution, PaymentInstitutionRef}) of
+    case pm_domain:find(Revision, {payment_institution, PaymentInstitutionRef}) of
         #domain_PaymentInstitution{} = P ->
             P;
         notfound ->
@@ -291,8 +291,8 @@ get_payment_institution(PaymentInstitutionRef, Revision) ->
     end.
 
 get_default_contract_template(#domain_PaymentInstitution{default_contract_template = ContractSelector}, VS, Revision) ->
-    ContractTemplateRef = hg_selector:reduce_to_value(ContractSelector, VS, Revision),
-    hg_domain:get(Revision, {contract_template, ContractTemplateRef}).
+    ContractTemplateRef = pm_selector:reduce_to_value(ContractSelector, VS, Revision),
+    pm_domain:get(Revision, {contract_template, ContractTemplateRef}).
 
 compute_payout_cash_flow(
     Amount,
@@ -302,11 +302,11 @@ compute_payout_cash_flow(
     VS,
     Revision
 ) ->
-    Cashflow = hg_selector:reduce_to_value(CashFlowSelector, VS, Revision),
+    Cashflow = pm_selector:reduce_to_value(CashFlowSelector, VS, Revision),
     CashFlowContext = #{operation_amount => Amount},
     Currency = Amount#domain_Cash.currency,
     AccountMap = collect_payout_account_map(Currency, Shop, Contract, VS, Revision),
-    hg_cashflow:finalize(Cashflow, CashFlowContext, AccountMap).
+    pm_cashflow:finalize(Cashflow, CashFlowContext, AccountMap).
 
 collect_payout_account_map(
     Currency,
@@ -316,7 +316,7 @@ collect_payout_account_map(
     Revision
 ) ->
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    SystemAccount = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
+    SystemAccount = pm_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
     #{
         {merchant , settlement} => ShopAccount#domain_ShopAccount.settlement,
         {merchant , guarantee } => ShopAccount#domain_ShopAccount.guarantee,
@@ -341,7 +341,7 @@ prepare_varset(PartyID, #payproc_Varset{} = V, VS0) ->
     }).
 
 prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->
-    hg_payment_tool:create_from_method(PaymentMethodRef);
+    pm_payment_tool:create_from_method(PaymentMethodRef);
 prepare_payment_tool_var(undefined) ->
     undefined.
 
@@ -354,5 +354,5 @@ get_identification_level(#domain_Contract{contractor_id = undefined, contractor 
             none
     end;
 get_identification_level(#domain_Contract{contractor_id = ContractorID}, Party) ->
-    Contractor = hg_party:get_contractor(ContractorID, Party),
+    Contractor = pm_party:get_contractor(ContractorID, Party),
     Contractor#domain_PartyContractor.status.

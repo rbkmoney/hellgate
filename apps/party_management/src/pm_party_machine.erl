@@ -1,4 +1,4 @@
--module(hg_party_machine).
+-module(pm_party_machine).
 
 -include("party_events.hrl").
 -include("legacy_party_structures.hrl").
@@ -7,7 +7,7 @@
 
 %% Machine callbacks
 
--behaviour(hg_machine).
+-behaviour(pm_machine).
 
 -export([namespace/0]).
 -export([init/2]).
@@ -16,7 +16,7 @@
 
 %% Event provider callbacks
 
--behaviour(hg_event_provider).
+-behaviour(pm_event_provider).
 
 -export([publish_event/2]).
 
@@ -52,18 +52,18 @@
 
 -type st() :: #st{}.
 
--type call()            :: hg_machine:thrift_call().
+-type call()            :: pm_machine:thrift_call().
 -type service_name()    :: atom().
 
 -type call_target()     :: party | {shop, shop_id()}.
 
--type party()           :: hg_party:party().
+-type party()           :: pm_party:party().
 -type party_id()        :: dmsl_domain_thrift:'PartyID'().
--type party_status()    :: hg_party:party_status().
+-type party_status()    :: pm_party:party_status().
 -type shop_id()         :: dmsl_domain_thrift:'ShopID'().
 -type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim()           :: dmsl_payment_processing_thrift:'Claim'().
--type timestamp()       :: hg_datetime:timestamp().
+-type timestamp()       :: pm_datetime:timestamp().
 -type meta()            :: dmsl_domain_thrift:'PartyMeta'().
 -type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
@@ -89,13 +89,13 @@
 -export_type([party_revision/0]).
 
 -spec namespace() ->
-    hg_machine:ns().
+    pm_machine:ns().
 
 namespace() ->
     ?NS.
 
--spec init(binary(), hg_machine:machine()) ->
-    hg_machine:result().
+-spec init(binary(), pm_machine:machine()) ->
+    pm_machine:result().
 
 init(EncodedPartyParams, #{id := ID}) ->
     ParamsType = {struct, struct, {dmsl_payment_processing_thrift, 'PartyParams'}},
@@ -110,7 +110,7 @@ init(EncodedPartyParams, #{id := ID}) ->
     ).
 
 process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = pm_datetime:format_now(),
     Changes = [?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)],
     #{
         events  => [wrap_event_payload(?party_ev(Changes))],
@@ -120,8 +120,8 @@ process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
         })
     }.
 
--spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
-    hg_machine:result().
+-spec process_signal(pm_machine:signal(), pm_machine:machine()) ->
+    pm_machine:result().
 
 process_signal(timeout, _Machine) ->
     #{};
@@ -129,8 +129,8 @@ process_signal(timeout, _Machine) ->
 process_signal({repair, _}, _Machine) ->
     #{}.
 
--spec process_call(call(), hg_machine:machine()) ->
-    {hg_machine:response(), hg_machine:result()}.
+-spec process_call(call(), pm_machine:machine()) ->
+    {pm_machine:response(), pm_machine:result()}.
 
 process_call({{'PartyManagement', Fun}, FunArgs}, Machine) ->
     [_UserInfo, PartyID | Args] = FunArgs,
@@ -230,11 +230,11 @@ handle_call('UpdateClaim', [ID, ClaimRevision, Changeset], AuxSt, St) ->
 
 handle_call('AcceptClaim', [ID, ClaimRevision], AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = pm_datetime:format_now(),
     Revision = get_next_party_revision(St),
-    Claim = hg_claim:accept(
+    Claim = pm_claim:accept(
         Timestamp,
-        hg_domain:head(),
+        pm_domain:head(),
         get_st_party(St),
         get_st_claim(ID, St)
     ),
@@ -247,8 +247,8 @@ handle_call('AcceptClaim', [ID, ClaimRevision], AuxSt, St) ->
 
 handle_call('DenyClaim', [ID, ClaimRevision, Reason], AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
-    Timestamp = hg_datetime:format_now(),
-    Claim = hg_claim:deny(Reason, Timestamp, get_st_claim(ID, St)),
+    Timestamp = pm_datetime:format_now(),
+    Claim = pm_claim:deny(Reason, Timestamp, get_st_claim(ID, St)),
     respond(
         ok,
         [finalize_claim(Claim, Timestamp)],
@@ -259,8 +259,8 @@ handle_call('DenyClaim', [ID, ClaimRevision, Reason], AuxSt, St) ->
 handle_call('RevokeClaim', [ID, ClaimRevision, Reason], AuxSt, St) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
-    Timestamp = hg_datetime:format_now(),
-    Claim = hg_claim:revoke(Reason, Timestamp, get_st_claim(ID, St)),
+    Timestamp = pm_datetime:format_now(),
+    Claim = pm_claim:revoke(Reason, Timestamp, get_st_claim(ID, St)),
     respond(
         ok,
         [finalize_claim(Claim, Timestamp)],
@@ -274,13 +274,13 @@ handle_call('Accept', [Claim], AuxSt, St) ->
     #claim_management_Claim{
         changeset = Changeset
     } = Claim,
-    PayprocClaim = hg_claim_committer:from_claim_mgmt(Claim),
-    Timestamp = hg_datetime:format_now(),
-    Revision = hg_domain:head(),
+    PayprocClaim = pm_claim_committer:from_claim_mgmt(Claim),
+    Timestamp = pm_datetime:format_now(),
+    Revision = pm_domain:head(),
     Party = get_st_party(St),
     try
-        ok = hg_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
-        ok = hg_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party),
+        ok = pm_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
+        ok = pm_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party),
         respond(
             ok,
             [],
@@ -295,11 +295,11 @@ handle_call('Accept', [Claim], AuxSt, St) ->
     end;
 
 handle_call('Commit', [CmClaim], AuxSt, St) ->
-    PayprocClaim = hg_claim_committer:from_claim_mgmt(CmClaim),
-    Timestamp = hg_datetime:format_now(),
-    Revision = hg_domain:head(),
+    PayprocClaim = pm_claim_committer:from_claim_mgmt(CmClaim),
+    Timestamp = pm_datetime:format_now(),
+    Revision = pm_domain:head(),
     Party = get_st_party(St),
-    AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, PayprocClaim),
+    AcceptedClaim = pm_claim:accept(Timestamp, Revision, Party, PayprocClaim),
     PartyRevision = get_next_party_revision(St),
     Changes = [
         ?claim_created(PayprocClaim),
@@ -316,11 +316,11 @@ handle_call('Commit', [CmClaim], AuxSt, St) ->
 %% Generic handlers
 
 -spec handle_block(call_target(), binary(), party_aux_st(), st()) ->
-    {hg_machine:response(), hg_machine:result()}.
+    {pm_machine:response(), pm_machine:result()}.
 
 handle_block(Target, Reason, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = pm_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(
         ok,
@@ -330,11 +330,11 @@ handle_block(Target, Reason, AuxSt, St) ->
     ).
 
 -spec handle_unblock(call_target(), binary(), party_aux_st(), st()) ->
-    {hg_machine:response(), hg_machine:result()}.
+    {pm_machine:response(), pm_machine:result()}.
 
 handle_unblock(Target, Reason, AuxSt, St) ->
     ok = assert_blocked(Target, St),
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = pm_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(
         ok,
@@ -344,12 +344,12 @@ handle_unblock(Target, Reason, AuxSt, St) ->
     ).
 
 -spec handle_suspend(call_target(), party_aux_st(), st()) ->
-    {hg_machine:response(), hg_machine:result()}.
+    {pm_machine:response(), pm_machine:result()}.
 
 handle_suspend(Target, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
     ok = assert_active(Target, St),
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = pm_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(
         ok,
@@ -359,12 +359,12 @@ handle_suspend(Target, AuxSt, St) ->
     ).
 
 -spec handle_activate(call_target(), party_aux_st(), st()) ->
-    {hg_machine:response(), hg_machine:result()}.
+    {pm_machine:response(), pm_machine:result()}.
 
 handle_activate(Target, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
     ok = assert_suspended(Target, St),
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = pm_datetime:format_now(),
     Revision = get_next_party_revision(St),
     respond(
         ok,
@@ -376,8 +376,8 @@ handle_activate(Target, AuxSt, St) ->
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
 
--spec publish_event(party_id(), hg_machine:event_payload()) ->
-    hg_event_provider:public_event().
+-spec publish_event(party_id(), pm_machine:event_payload()) ->
+    pm_event_provider:public_event().
 
 publish_event(PartyID, Ev) ->
     {{party_id, PartyID}, unwrap_event_payload(Ev)}.
@@ -389,7 +389,7 @@ publish_event(PartyID, Ev) ->
 start(PartyID, PartyParams) ->
     ParamsType = {struct, struct, {dmsl_payment_processing_thrift, 'PartyParams'}},
     EncodedPartyParams = hg_proto_utils:serialize(ParamsType, PartyParams),
-    case hg_machine:start(?NS, PartyID, EncodedPartyParams) of
+    case pm_machine:start(?NS, PartyID, EncodedPartyParams) of
         {ok, _} ->
             ok;
         {error, exists} ->
@@ -434,7 +434,7 @@ get_state_for_call(_, {St0, Events}, EventsAcc, AuxSt0) ->
     {St1, PartyRevisionIndex1} = build_revision_index(
         Events ++ EventsAcc,
         PartyRevisionIndex0,
-        hg_utils:select_defined(St0, #st{})
+        pm_utils:select_defined(St0, #st{})
     ),
     AuxSt1 = set_party_revision_index(PartyRevisionIndex1, AuxSt0),
     {St1, AuxSt1}.
@@ -458,7 +458,7 @@ parse_history([], EventsAcc) ->
 
 checkout(PartyID, RevisionParam) ->
     get_st_party(
-        hg_utils:unwrap_result(
+        pm_utils:unwrap_result(
             checkout_party(PartyID, RevisionParam)
         )
     ).
@@ -500,7 +500,7 @@ get_last_revision_old_way(PartyID) ->
     party_status() | no_return().
 
 get_status(PartyID) ->
-    hg_party:get_status(
+    pm_party:get_status(
         get_party(PartyID)
     ).
 
@@ -508,7 +508,7 @@ get_status(PartyID) ->
     term() | no_return().
 
 call(PartyID, ServiceName, FucntionRef, Args) ->
-    map_error(hg_machine:thrift_call(
+    map_error(pm_machine:thrift_call(
         ?NS,
         PartyID,
         ServiceName,
@@ -567,13 +567,13 @@ get_history(PartyID, AfterID, Limit) ->
     get_history(PartyID, AfterID, Limit, forward).
 
 get_history(PartyID, AfterID, Limit, Direction) ->
-    map_history_error(hg_machine:get_history(?NS, PartyID, AfterID, Limit, Direction)).
+    map_history_error(pm_machine:get_history(?NS, PartyID, AfterID, Limit, Direction)).
 
 -spec get_aux_state(party_id()) ->
     party_aux_st().
 
 get_aux_state(PartyID) ->
-    #{aux_state := AuxSt, history := History} = map_history_error(hg_machine:get_machine(
+    #{aux_state := AuxSt, history := History} = map_history_error(pm_machine:get_machine(
         ?NS,
         PartyID,
         undefined,
@@ -650,7 +650,7 @@ get_st_pending_claims(#st{claims = Claims})->
     % but I hope for small amount of pending claims simultaniously.
     maps:values(maps:filter(
         fun(_ID, Claim) ->
-            hg_claim:is_pending(Claim)
+            pm_claim:is_pending(Claim)
         end,
         Claims
     )).
@@ -679,14 +679,14 @@ assert_claim_exists(undefined) ->
 
 assert_claim_modification_allowed(ID, Revision, St) ->
     Claim = get_st_claim(ID, St),
-    ok = hg_claim:assert_revision(Claim, Revision),
-    ok = hg_claim:assert_pending(Claim).
+    ok = pm_claim:assert_revision(Claim, Revision),
+    ok = pm_claim:assert_pending(Claim).
 
 assert_claims_not_conflict(Claim, ClaimsPending, Timestamp, Revision, Party) ->
     ConflictedClaims = lists:dropwhile(
         fun(PendingClaim) ->
-            hg_claim:get_id(Claim) =:= hg_claim:get_id(PendingClaim) orelse
-                not hg_claim:is_conflicting(Claim, PendingClaim, Timestamp, Revision, Party)
+            pm_claim:get_id(Claim) =:= pm_claim:get_id(PendingClaim) orelse
+                not pm_claim:is_conflicting(Claim, PendingClaim, Timestamp, Revision, Party)
         end,
         ClaimsPending
     ),
@@ -700,19 +700,19 @@ assert_claims_not_conflict(Claim, ClaimsPending, Timestamp, Revision, Party) ->
 %%
 
 create_claim(Changeset, St) ->
-    Timestamp = hg_datetime:format_now(),
-    Revision = hg_domain:head(),
+    Timestamp = pm_datetime:format_now(),
+    Revision = pm_domain:head(),
     Party = get_st_party(St),
-    Claim = hg_claim:create(get_next_claim_id(St), Changeset, Party, Timestamp, Revision),
+    Claim = pm_claim:create(get_next_claim_id(St), Changeset, Party, Timestamp, Revision),
     ClaimsPending = get_st_pending_claims(St),
     % Check for conflicts with other pending claims
     ok = assert_claims_not_conflict(Claim, ClaimsPending, Timestamp, Revision, Party),
     % Test if we can safely accept proposed changes.
-    case hg_claim:is_need_acceptance(Claim, Party, Revision) of
+    case pm_claim:is_need_acceptance(Claim, Party, Revision) of
         false ->
             % Try to submit new accepted claim
             try
-                AcceptedClaim = hg_claim:accept(Timestamp, Revision, Party, Claim),
+                AcceptedClaim = pm_claim:accept(Timestamp, Revision, Party, Claim),
                 PartyRevision = get_next_party_revision(St),
                 {
                     AcceptedClaim,
@@ -732,10 +732,10 @@ create_claim(Changeset, St) ->
     end.
 
 update_claim(ID, Changeset, St) ->
-    Timestamp = hg_datetime:format_now(),
-    Revision = hg_domain:head(),
+    Timestamp = pm_datetime:format_now(),
+    Revision = pm_domain:head(),
     Party = get_st_party(St),
-    Claim = hg_claim:update(
+    Claim = pm_claim:update(
         Changeset,
         get_st_claim(ID, St),
         Party,
@@ -744,13 +744,13 @@ update_claim(ID, Changeset, St) ->
     ),
     ClaimsPending = get_st_pending_claims(St),
     ok = assert_claims_not_conflict(Claim, ClaimsPending, Timestamp, Revision, Party),
-    [?claim_updated(ID, Changeset, hg_claim:get_revision(Claim), Timestamp)].
+    [?claim_updated(ID, Changeset, pm_claim:get_revision(Claim), Timestamp)].
 
 finalize_claim(Claim, Timestamp) ->
     ?claim_status_changed(
-        hg_claim:get_id(Claim),
-        hg_claim:get_status(Claim),
-        hg_claim:get_revision(Claim),
+        pm_claim:get_id(Claim),
+        pm_claim:get_status(Claim),
+        pm_claim:get_revision(Claim),
         Timestamp
     ).
 
@@ -759,9 +759,9 @@ get_next_claim_id(#st{claims = Claims}) ->
     lists:max([0| maps:keys(Claims)]) + 1.
 
 apply_accepted_claim(Claim, St) ->
-    case hg_claim:is_accepted(Claim) of
+    case pm_claim:is_accepted(Claim) of
         true ->
-            Party = hg_claim:apply(Claim, hg_datetime:format_now(), get_st_party(St)),
+            Party = pm_claim:apply(Claim, pm_datetime:format_now(), get_st_party(St)),
             St#st{party = Party};
         false ->
             St
@@ -800,8 +800,8 @@ update_party_revision_index(St, PartyRevisionIndex) ->
     {FromEventID, ToEventID} = get_party_revision_range(PartyRevision, PartyRevisionIndex),
     PartyRevisionIndex#{
         PartyRevision => {
-            hg_utils:select_defined(FromEventID, EventID),
-            max(hg_utils:select_defined(ToEventID, EventID), EventID)
+            pm_utils:select_defined(FromEventID, EventID),
+            max(pm_utils:select_defined(ToEventID, EventID), EventID)
         }
     }.
 
@@ -855,7 +855,7 @@ checkout_party(PartyID, {revision, Revision}) ->
 checkout_history_by_timestamp([Ev | Rest], Timestamp, #st{timestamp = PrevTimestamp} = St) ->
     St1 = merge_event(Ev, St),
     EventTimestamp = St1#st.timestamp,
-    case hg_datetime:compare(EventTimestamp, Timestamp) of
+    case pm_datetime:compare(EventTimestamp, Timestamp) of
         later when PrevTimestamp =/= undefined ->
             {ok, St#st{timestamp = Timestamp}};
         later when PrevTimestamp == undefined ->
@@ -913,11 +913,11 @@ merge_party_changes(Changes, St) ->
 merge_party_change(?party_created(PartyID, ContactInfo, Timestamp), St) ->
     St#st{
         timestamp = Timestamp,
-        party = hg_party:create_party(PartyID, ContactInfo, Timestamp)
+        party = pm_party:create_party(PartyID, ContactInfo, Timestamp)
     };
 merge_party_change(?party_blocking(Blocking), St) ->
     Party = get_st_party(St),
-    St#st{party = hg_party:blocking(Blocking, Party)};
+    St#st{party = pm_party:blocking(Blocking, Party)};
 merge_party_change(?revision_changed(Timestamp, Revision), St) ->
     Party = get_st_party(St),
     St#st{
@@ -926,7 +926,7 @@ merge_party_change(?revision_changed(Timestamp, Revision), St) ->
     };
 merge_party_change(?party_suspension(Suspension), St) ->
     Party = get_st_party(St),
-    St#st{party = hg_party:suspension(Suspension, Party)};
+    St#st{party = pm_party:suspension(Suspension, Party)};
 merge_party_change(?party_meta_set(NS, Data), #st{meta = Meta} = St) ->
     NewMeta = Meta#{NS => Data},
     St#st{meta = NewMeta};
@@ -935,26 +935,26 @@ merge_party_change(?party_meta_removed(NS), #st{meta = Meta} = St) ->
     St#st{meta = NewMeta};
 merge_party_change(?shop_blocking(ID, Blocking), St) ->
     Party = get_st_party(St),
-    St#st{party = hg_party:shop_blocking(ID, Blocking, Party)};
+    St#st{party = pm_party:shop_blocking(ID, Blocking, Party)};
 merge_party_change(?shop_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
-    St#st{party = hg_party:shop_suspension(ID, Suspension, Party)};
+    St#st{party = pm_party:shop_suspension(ID, Suspension, Party)};
 merge_party_change(?wallet_blocking(ID, Blocking), St) ->
     Party = get_st_party(St),
-    St#st{party = hg_party:wallet_blocking(ID, Blocking, Party)};
+    St#st{party = pm_party:wallet_blocking(ID, Blocking, Party)};
 merge_party_change(?wallet_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
-    St#st{party = hg_party:wallet_suspension(ID, Suspension, Party)};
+    St#st{party = pm_party:wallet_suspension(ID, Suspension, Party)};
 merge_party_change(?claim_created(Claim0), St) ->
     Claim = ensure_claim(Claim0),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1);
 merge_party_change(?claim_updated(ID, Changeset, Revision, UpdatedAt), St) ->
-    Claim0 = hg_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim0 = pm_claim:update_changeset(Changeset, Revision, UpdatedAt, get_st_claim(ID, St)),
     Claim = ensure_claim(Claim0),
     set_claim(Claim, St);
 merge_party_change(?claim_status_changed(ID, Status, Revision, UpdatedAt), St) ->
-    Claim0 = hg_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
+    Claim0 = pm_claim:set_status(Status, Revision, UpdatedAt, get_st_claim(ID, St)),
     Claim = ensure_claim(Claim0),
     St1 = set_claim(Claim, St),
     apply_accepted_claim(Claim, St1).
@@ -988,7 +988,7 @@ assert_unblocked(party, St) ->
 assert_unblocked({shop, ID}, St) ->
     Party = get_st_party(St),
     ok = assert_blocking(Party, unblocked),
-    Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
+    Shop = assert_shop_found(pm_party:get_shop(ID, Party)),
     assert_shop_blocking(Shop, unblocked).
 
 assert_blocked(party, St) ->
@@ -996,7 +996,7 @@ assert_blocked(party, St) ->
 assert_blocked({shop, ID}, St) ->
     Party = get_st_party(St),
     ok = assert_blocking(Party, unblocked),
-    Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
+    Shop = assert_shop_found(pm_party:get_shop(ID, Party)),
     assert_shop_blocking(Shop, blocked).
 
 assert_blocking(#domain_Party{blocking = {Status, _}}, Status) ->
@@ -1009,7 +1009,7 @@ assert_active(party, St) ->
 assert_active({shop, ID}, St) ->
     Party = get_st_party(St),
     ok = assert_suspension(Party, active),
-    Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
+    Shop = assert_shop_found(pm_party:get_shop(ID, Party)),
     assert_shop_suspension(Shop, active).
 
 assert_suspended(party, St) ->
@@ -1017,7 +1017,7 @@ assert_suspended(party, St) ->
 assert_suspended({shop, ID}, St) ->
     Party = get_st_party(St),
     ok = assert_suspension(Party, active),
-    Shop = assert_shop_found(hg_party:get_shop(ID, Party)),
+    Shop = assert_shop_found(pm_party:get_shop(ID, Party)),
     assert_shop_suspension(Shop, suspended).
 
 assert_suspension(#domain_Party{suspension = {Status, _}}, Status) ->
@@ -1081,7 +1081,7 @@ ensure_contract_effect(E, _) ->
     E.
 
 ensure_payment_institution(#domain_Contract{payment_institution = undefined} = Contract, Timestamp) ->
-    Revision = hg_domain:head(),
+    Revision = pm_domain:head(),
     PaymentInstitutionRef = get_default_payment_institution(
         get_realm(Contract, Timestamp, Revision),
         Revision
@@ -1096,7 +1096,7 @@ ensure_payment_institution(
     } = ContractParams,
     Timestamp
 ) ->
-    Revision = hg_domain:head(),
+    Revision = pm_domain:head(),
     Realm = case TemplateRef of
         undefined ->
             % use default live payment institution
@@ -1112,10 +1112,10 @@ ensure_payment_institution(#payproc_ContractParams{} = ContractParams, _) ->
     ContractParams.
 
 get_realm(C, Timestamp, Revision) ->
-    Categories = hg_contract:get_categories(C, Timestamp, Revision),
+    Categories = pm_contract:get_categories(C, Timestamp, Revision),
     {Test, Live} = lists:foldl(
         fun(CategoryRef, {TestFound, LiveFound}) ->
-            case hg_domain:get(Revision, {category, CategoryRef}) of
+            case pm_domain:get(Revision, {category, CategoryRef}) of
                 #domain_Category{type = test} ->
                     {true, LiveFound};
                 #domain_Category{type = live} ->
@@ -1138,7 +1138,7 @@ get_realm(C, Timestamp, Revision) ->
     end.
 
 get_default_payment_institution(Realm, Revision) ->
-    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    Globals = pm_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     Defaults = Globals#domain_Globals.contract_payment_institution_defaults,
     case Realm of
         test ->
@@ -1148,7 +1148,7 @@ get_default_payment_institution(Realm, Revision) ->
     end.
 
 get_template(TemplateRef, Revision) ->
-    hg_domain:get(Revision, {contract_template, TemplateRef}).
+    pm_domain:get(Revision, {contract_template, TemplateRef}).
 
 %%
 
@@ -1211,7 +1211,7 @@ unwrap_event_payload(undefined, [
     transmute([Version, decode_event(ContentType, EncodedEvent)]);
 %% TODO legacy support, will be removed after migration
 unwrap_event_payload(undefined, Event) when is_list(Event) ->
-    transmute(hg_party_marshalling:unmarshal(Event));
+    transmute(pm_party_marshalling:unmarshal(Event));
 unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
     transmute([1, binary_to_term(Bin)]).
 
@@ -1251,13 +1251,13 @@ decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
 
--spec wrap_aux_state(party_aux_st()) -> hg_msgpack_marshalling:msgpack_value().
+-spec wrap_aux_state(party_aux_st()) -> pm_msgpack_marshalling:msgpack_value().
 
 wrap_aux_state(AuxSt) ->
     ContentType = ?CT_ERLANG_BINARY,
     #{<<"ct">> => ContentType, <<"aux_state">> => encode_aux_state(ContentType, AuxSt)}.
 
--spec unwrap_aux_state(hg_msgpack_marshalling:msgpack_value()) -> party_aux_st().
+-spec unwrap_aux_state(pm_msgpack_marshalling:msgpack_value()) -> party_aux_st().
 
 unwrap_aux_state(#{<<"ct">> := ContentType, <<"aux_state">> := AuxSt}) ->
     decode_aux_state(ContentType, AuxSt);

@@ -1,4 +1,4 @@
--module(hg_claim_committer).
+-module(pm_claim_committer).
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 -include("claim_management.hrl").

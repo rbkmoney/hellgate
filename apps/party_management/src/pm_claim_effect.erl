@@ -1,4 +1,4 @@
--module(hg_claim_effect).
+-module(pm_claim_effect).
 
 -include("party_events.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
@@ -12,8 +12,8 @@
 
 -type change()      :: dmsl_payment_processing_thrift:'PartyModification'().
 -type effect()      :: dmsl_payment_processing_thrift:'ClaimEffect'().
--type timestamp()   :: hg_datetime:timestamp().
--type revision()    :: hg_domain:revision().
+-type timestamp()   :: pm_datetime:timestamp().
+-type revision()    :: pm_domain:revision().
 
 -spec make(change(), timestamp(), revision()) -> effect() | no_return().
 
@@ -52,14 +52,14 @@ make_safe(
         }}
     );
 make_safe(?wallet_modification(ID, {account_creation, Params}), _, _) ->
-    ?wallet_effect(ID, {account_created, hg_wallet:create_fake_account(Params)});
+    ?wallet_effect(ID, {account_created, pm_wallet:create_fake_account(Params)});
 make_safe(Change, Timestamp, Revision) ->
     make(Change, Timestamp, Revision).
 
 %% Implementation
 
 make_contractor_effect(ID, {creation, Contractor}, _, _) ->
-    {created, hg_party_contractor:create(ID, Contractor)};
+    {created, pm_party_contractor:create(ID, Contractor)};
 make_contractor_effect(_, {identification_level_modification, Level}, _, _) ->
     {identification_level_changed, Level};
 make_contractor_effect(_, ?identity_documents_modification(Docs), _, _) ->
@@ -68,13 +68,13 @@ make_contractor_effect(_, ?identity_documents_modification(Docs), _, _) ->
     }}.
 
 make_contract_effect(ID, {creation, ContractParams}, Timestamp, Revision) ->
-    {created, hg_contract:create(ID, ContractParams, Timestamp, Revision)};
+    {created, pm_contract:create(ID, ContractParams, Timestamp, Revision)};
 make_contract_effect(_, ?contract_termination(_), Timestamp, _) ->
     {status_changed, {terminated, #domain_ContractTerminated{terminated_at = Timestamp}}};
 make_contract_effect(_, ?adjustment_creation(AdjustmentID, Params), Timestamp, Revision) ->
-    {adjustment_created, hg_contract:create_adjustment(AdjustmentID, Params, Timestamp, Revision)};
+    {adjustment_created, pm_contract:create_adjustment(AdjustmentID, Params, Timestamp, Revision)};
 make_contract_effect(_, ?payout_tool_creation(PayoutToolID, Params), Timestamp, _) ->
-    {payout_tool_created, hg_payout_tool:create(PayoutToolID, Params, Timestamp)};
+    {payout_tool_created, pm_payout_tool:create(PayoutToolID, Params, Timestamp)};
 make_contract_effect(_, ?payout_tool_info_modification(PayoutToolID, Info), _, _) ->
     {payout_tool_info_changed, #payproc_PayoutToolInfoChanged{
         payout_tool_id = PayoutToolID,
@@ -89,7 +89,7 @@ make_contract_effect(_, {contractor_modification, ContractorID}, _, _) ->
     {contractor_changed, ContractorID}.
 
 make_shop_effect(ID, {creation, ShopParams}, Timestamp, _) ->
-    {created, hg_party:create_shop(ID, ShopParams, Timestamp)};
+    {created, pm_party:create_shop(ID, ShopParams, Timestamp)};
 make_shop_effect(_, {category_modification, Category}, _, _) ->
     {category_changed, Category};
 make_shop_effect(_, {details_modification, Details}, _, _) ->
@@ -112,9 +112,9 @@ make_shop_effect(ID, ?payout_schedule_modification(PayoutScheduleRef), _, Revisi
     ?payout_schedule_changed(PayoutScheduleRef).
 
 make_wallet_effect(ID, {creation, Params}, Timestamp) ->
-    {created, hg_wallet:create(ID, Params, Timestamp)};
+    {created, pm_wallet:create(ID, Params, Timestamp)};
 make_wallet_effect(_, {account_creation, Params}, _) ->
-    {account_created, hg_wallet:create_account(Params)}.
+    {account_created, pm_wallet:create_account(Params)}.
 
 assert_report_schedule_valid(_, #domain_ReportPreferences{service_acceptance_act_preferences = undefined}, _) ->
     ok;
@@ -135,7 +135,7 @@ assert_payout_schedule_valid(_, undefined, _) ->
     ok.
 
 assert_valid_object_ref(Prefix, Ref, Revision) ->
-    case hg_domain:exists(Revision, Ref) of
+    case pm_domain:exists(Revision, Ref) of
         true ->
             ok;
         false ->
@@ -144,7 +144,7 @@ assert_valid_object_ref(Prefix, Ref, Revision) ->
 
 -spec raise_invalid_object_ref(
     {shop, dmsl_domain_thrift:'ShopID'()} | {contract, dmsl_domain_thrift:'ContractID'()},
-    hg_domain:ref()
+    pm_domain:ref()
 ) ->
     no_return().
 
@@ -155,16 +155,16 @@ raise_invalid_object_ref(Prefix, Ref) ->
 -spec raise_invalid_object_ref_(term(), term()) -> no_return().
 
 raise_invalid_object_ref_({shop, ID}, Ex) ->
-    hg_claim:raise_invalid_changeset(?invalid_shop(ID, Ex));
+    pm_claim:raise_invalid_changeset(?invalid_shop(ID, Ex));
 raise_invalid_object_ref_({contract, ID}, Ex) ->
-    hg_claim:raise_invalid_changeset(?invalid_contract(ID, Ex)).
+    pm_claim:raise_invalid_changeset(?invalid_contract(ID, Ex)).
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);
 create_shop_account(#domain_CurrencyRef{symbolic_code = SymbolicCode} = CurrencyRef) ->
-    GuaranteeID = hg_accounting:create_account(SymbolicCode),
-    SettlementID = hg_accounting:create_account(SymbolicCode),
-    PayoutID = hg_accounting:create_account(SymbolicCode),
+    GuaranteeID = pm_accounting:create_account(SymbolicCode),
+    SettlementID = pm_accounting:create_account(SymbolicCode),
+    PayoutID = pm_accounting:create_account(SymbolicCode),
     #domain_ShopAccount{
         currency = CurrencyRef,
         settlement = SettlementID,

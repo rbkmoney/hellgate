@@ -186,7 +186,7 @@
 
 %%
 
--spec get_party_revision(st()) -> {hg_party:party_revision(), hg_datetime:timestamp()}.
+-spec get_party_revision(st()) -> {pm_party:party_revision(), hg_datetime:timestamp()}.
 
 get_party_revision(#st{activity = {payment, _}} = St) ->
     #domain_InvoicePayment{party_revision = Revision, created_at = Timestamp} = get_payment(St),
@@ -352,10 +352,10 @@ get_merchant_terms(Opts, Revision) ->
 get_merchant_terms(Opts, Revision, Timestamp) ->
     Invoice = get_invoice(Opts),
     Party = get_party(Opts),
-    Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    Shop = pm_party:get_shop(get_invoice_shop_id(Invoice), Party),
+    Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    hg_party:get_terms(Contract, Timestamp, Revision).
+    pm_party:get_terms(Contract, Timestamp, Revision).
 
 get_provider_payments_terms(Route, Revision) ->
     hg_routing:get_payments_terms(Route, Revision).
@@ -2310,11 +2310,11 @@ get_party(#{party := Party}) ->
     Party.
 
 get_shop(#{party := Party, invoice := Invoice}) ->
-    hg_party:get_shop(get_invoice_shop_id(Invoice), Party).
+    pm_party:get_shop(get_invoice_shop_id(Invoice), Party).
 
 get_contract(#{party := Party, invoice := Invoice}) ->
-    Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
-    hg_party:get_contract(Shop#domain_Shop.contract_id, Party).
+    Shop = pm_party:get_shop(get_invoice_shop_id(Invoice), Party),
+    pm_party:get_contract(Shop#domain_Shop.contract_id, Party).
 
 get_payment_institution(Opts, Revision) ->
     Contract = get_contract(Opts),

@@ -113,7 +113,7 @@ contractor_one_creation(C) ->
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, Party} = get_party(PartyID, C),
-    #domain_PartyContractor{} = hg_party:get_contractor(ContractorID, Party).
+    #domain_PartyContractor{} = pm_party:get_contractor(ContractorID, Party).
 
 -spec contractor_two_creation(config()) -> _.
 
@@ -128,7 +128,7 @@ contractor_two_creation(C) ->
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, Party} = get_party(PartyID, C),
-    #domain_PartyContractor{} = hg_party:get_contractor(ContractorID, Party).
+    #domain_PartyContractor{} = pm_party:get_contractor(ContractorID, Party).
 
 -spec contractor_modification(config()) -> _.
 
@@ -136,7 +136,7 @@ contractor_modification(C) ->
     ContractorID = ?REAL_CONTRACTOR_ID1,
     PartyID = cfg(party_id, C),
     {ok, Party1} = get_party(PartyID, C),
-    #domain_PartyContractor{} = C1 = hg_party:get_contractor(ContractorID, Party1),
+    #domain_PartyContractor{} = C1 = pm_party:get_contractor(ContractorID, Party1),
     Modifications = [
         ?cm_contractor_identification_level_modification(ContractorID, full)
     ],
@@ -144,7 +144,7 @@ contractor_modification(C) ->
     ok = accept_claim(Claim, C),
     ok = commit_claim(Claim, C),
     {ok, Party2} = get_party(PartyID, C),
-    #domain_PartyContractor{} = C2 = hg_party:get_contractor(ContractorID, Party2),
+    #domain_PartyContractor{} = C2 = pm_party:get_contractor(ContractorID, Party2),
     C1 /= C2 orelse error(same_contractor).
 
 -spec contract_one_creation(config()) -> _.

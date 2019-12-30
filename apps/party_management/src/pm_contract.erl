@@ -1,4 +1,4 @@
--module(hg_contract).
+-module(pm_contract).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
@@ -31,8 +31,8 @@
 -type contract_template_ref() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type payment_inst_ref()      :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 
--type timestamp()             :: hg_datetime:timestamp().
--type revision()              :: hg_domain:revision().
+-type timestamp()             :: pm_datetime:timestamp().
+-type revision()              :: pm_domain:revision().
 
 %%
 
@@ -76,7 +76,7 @@ update_status(
     } = Contract,
     Timestamp
 ) ->
-    case hg_datetime:between(Timestamp, ValidSince, ValidUntil) of
+    case pm_datetime:between(Timestamp, ValidSince, ValidUntil) of
         true ->
             Contract;
         false ->
@@ -117,7 +117,7 @@ get_categories(Contract, Timestamp, Revision) ->
             categories = CategorySelector
         }
     } = pm_party:get_terms(Contract, Timestamp, Revision),
-    Value = hg_selector:reduce_to_value(CategorySelector, #{}, Revision),
+    Value = pm_selector:reduce_to_value(CategorySelector, #{}, Revision),
     case ordsets:size(Value) > 0 of
         true ->
             Value;
@@ -169,7 +169,7 @@ is_active(_) ->
 is_live(Contract, Revision) ->
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    hg_payment_institution:is_live(PaymentInstitution).
+    pm_payment_institution:is_live(PaymentInstitution).
 
 %% Internals
 
@@ -207,7 +207,7 @@ ensure_payment_institution(undefined) ->
 
 get_template(TemplateRef, Revision) ->
     try
-        hg_domain:get(Revision, {contract_template, TemplateRef})
+        pm_domain:get(Revision, {contract_template, TemplateRef})
     catch
         error:{object_not_found, _} ->
             throw({template_invalid, TemplateRef})
@@ -215,7 +215,7 @@ get_template(TemplateRef, Revision) ->
 
 get_payment_institution(PaymentInstitutionRef, Revision) ->
     try
-        hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef})
+        pm_domain:get(Revision, {payment_institution, PaymentInstitutionRef})
     catch
         error:{object_not_found, _} ->
             throw({payment_institution_invalid, PaymentInstitutionRef})
@@ -225,7 +225,7 @@ get_default_template_ref(PaymentInstitutionRef, Revision) ->
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
     ContractTemplateSelector = PaymentInstitution#domain_PaymentInstitution.default_contract_template,
     % TODO fill varset properly
-    hg_selector:reduce_to_value(ContractTemplateSelector, #{}, Revision).
+    pm_selector:reduce_to_value(ContractTemplateSelector, #{}, Revision).
 
 instantiate_contract_lifetime_bound(undefined, _) ->
     undefined;
@@ -240,4 +240,4 @@ add_interval(Timestamp, Interval) ->
         months = MM,
         days = DD
     } = Interval,
-    hg_datetime:add_interval(Timestamp, {YY, MM, DD}).
+    pm_datetime:add_interval(Timestamp, {YY, MM, DD}).

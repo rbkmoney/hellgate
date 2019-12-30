@@ -1,11 +1,11 @@
--module(hg_party_marshalling).
+-module(pm_party_marshalling).
 
 -include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 
 -export([marshal/1]).
 -export([unmarshal/1]).
 
--spec marshal(term()) -> hg_msgpack_marshalling:msgpack_value().
+-spec marshal(term()) -> pm_msgpack_marshalling:msgpack_value().
 
 marshal(undefined) ->
     undefined;
@@ -30,7 +30,7 @@ marshal(Map) when is_map(Map) ->
 marshal(V) when is_integer(V); is_float(V); is_binary(V) ->
     V.
 
--spec unmarshal(hg_msgpack_marshalling:msgpack_value()) -> term().
+-spec unmarshal(pm_msgpack_marshalling:msgpack_value()) -> term().
 
 unmarshal([<<":atom:">>, Atom]) ->
     binary_to_existing_atom(Atom, utf8);

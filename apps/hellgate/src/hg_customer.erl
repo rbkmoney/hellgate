@@ -65,8 +65,8 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     PartyID = CustomerParams#payproc_CustomerParams.party_id,
     ShopID = CustomerParams#payproc_CustomerParams.shop_id,
     ok = assert_party_accessible(PartyID),
-    Party = hg_party:get_party(PartyID),
-    Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
+    Party = pm_party:get_party(PartyID),
+    Shop = ensure_shop_exists(pm_party:get_shop(ShopID, Party)),
     ok = assert_party_shop_operable(Shop, Party),
     _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party, DomainRevison),
     ok = start(CustomerID, CustomerParams),
@@ -321,7 +321,7 @@ start_binding(BindingParams, St) ->
     PaytoolID = hg_utils:unique_id(),
     DomainRevision = hg_domain:head(),
     PartyID = get_party_id(St),
-    PartyRevision = hg_party:get_party_revision(PartyID),
+    PartyRevision = pm_party:get_party_revision(PartyID),
     Binding = construct_binding(BindingID, PaytoolID, PaymentResource, PartyRevision, DomainRevision),
     PaytoolParams = create_paytool_params(Binding, St),
     _ = validate_paytool_params(PaytoolParams),
@@ -682,8 +682,8 @@ assert_party_accessible(PartyID) ->
 
 assert_customer_operable(St = #st{}) ->
     ok    = assert_customer_accessible(St),
-    Party = hg_party:get_party(get_party_id(St)),
-    Shop  = hg_party:get_shop(get_shop_id(St), Party),
+    Party = pm_party:get_party(get_party_id(St)),
+    Shop  = pm_party:get_shop(get_shop_id(St), Party),
     ok    = assert_party_shop_operable(Shop, Party),
     ok.
 

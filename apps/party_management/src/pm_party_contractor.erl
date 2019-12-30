@@ -1,4 +1,4 @@
--module(hg_party_contractor).
+-module(pm_party_contractor).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 

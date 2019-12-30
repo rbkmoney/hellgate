@@ -107,7 +107,7 @@ handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp, PartyRevision0], _
     case Tpl#domain_InvoiceTemplate.details of
         {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
             Revision = hg_domain:head(),
-            hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+            pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
         _ ->
             ShopTerms
     end.
@@ -117,12 +117,12 @@ assume_user_identity(UserInfo) ->
 
 get_party(PartyID) ->
     _     = hg_invoice_utils:assert_party_accessible(PartyID),
-    Party = hg_party:get_party(PartyID),
+    Party = pm_party:get_party(PartyID),
     _     = hg_invoice_utils:assert_party_operable(Party),
     Party.
 
 get_shop(ShopID, Party) ->
-    Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
+    Shop = hg_invoice_utils:assert_shop_exists(pm_party:get_shop(ShopID, Party)),
     _    = hg_invoice_utils:assert_shop_operable(Shop),
     Shop.
 

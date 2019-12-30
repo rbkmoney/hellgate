@@ -753,7 +753,7 @@ contract_adjustment_expiration(C) ->
     ContractID = ?REAL_CONTRACT_ID,
     ID = <<"ADJ2">>,
     Revision = hg_domain:head(),
-    Terms = hg_party:get_terms(
+    Terms = pm_party:get_terms(
         hg_client_party:get_contract(ContractID, Client),
         hg_datetime:format_now(),
         Revision
@@ -769,13 +769,13 @@ contract_adjustment_expiration(C) ->
         adjustments = Adjustments
     } = hg_client_party:get_contract(ContractID, Client),
     true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments),
-    true = Terms /= hg_party:get_terms(
+    true = Terms /= pm_party:get_terms(
         hg_client_party:get_contract(ContractID, Client),
         hg_datetime:format_now(),
         Revision
     ),
     AfterExpiration = hg_datetime:add_interval(hg_datetime:format_now(), {0, 1, 1}),
-    Terms = hg_party:get_terms(hg_client_party:get_contract(ContractID, Client), AfterExpiration, Revision),
+    Terms = pm_party:get_terms(hg_client_party:get_contract(ContractID, Client), AfterExpiration, Revision),
     hg_context:cleanup().
 
 compute_payment_institution_terms(C) ->
@@ -974,7 +974,7 @@ shop_update_before_confirm(C) ->
         ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
     ],
     ok = update_claim(Claim0, Changeset2, Client),
-    Claim1 = hg_client_party:get_claim(hg_claim:get_id(Claim0), Client),
+    Claim1 = hg_client_party:get_claim(pm_claim:get_id(Claim0), Client),
     ok = accept_claim(Claim1, Client),
     #domain_Shop{category = NewCategory, details = NewDetails} = hg_client_party:get_shop(ShopID, Client).
 
@@ -1075,7 +1075,7 @@ complex_claim_acceptance(C) ->
     [?party_suspension(?suspended(_)), ?revision_changed(_, _)] = next_event(Client),
     ok = hg_client_party:activate(Client),
     [?party_suspension(?active(_)), ?revision_changed(_, _)] = next_event(Client),
-    Claim1 = hg_client_party:get_claim(hg_claim:get_id(Claim1), Client),
+    Claim1 = hg_client_party:get_claim(pm_claim:get_id(Claim1), Client),
 
     Claim2 = assert_claim_pending(
         hg_client_party:create_claim(
@@ -1088,7 +1088,7 @@ complex_claim_acceptance(C) ->
         Client
     ),
     ok = update_claim(Claim1, [?shop_modification(ShopID1, {category_modification, ?cat(3)})], Client),
-    Claim1_1 = hg_client_party:get_claim(hg_claim:get_id(Claim1), Client),
+    Claim1_1 = hg_client_party:get_claim(pm_claim:get_id(Claim1), Client),
     true = Claim1#payproc_Claim.changeset =/= Claim1_1#payproc_Claim.changeset,
     true = Claim1#payproc_Claim.revision =/= Claim1_1#payproc_Claim.revision,
     ok = accept_claim(Claim2, Client),
@@ -1101,8 +1101,8 @@ claim_already_accepted_on_revoke(C) ->
     Reason = <<"The End is near">>,
     Claim = get_first_accepted_claim(Client),
     ?invalid_claim_status(?accepted(_)) = hg_client_party:revoke_claim(
-        hg_claim:get_id(Claim),
-        hg_claim:get_revision(Claim),
+        pm_claim:get_id(Claim),
+        pm_claim:get_revision(Claim),
         Reason,
         Client
     ).
@@ -1111,8 +1111,8 @@ claim_already_accepted_on_accept(C) ->
     Client = cfg(client, C),
     Claim = get_first_accepted_claim(Client),
     ?invalid_claim_status(?accepted(_)) = hg_client_party:accept_claim(
-        hg_claim:get_id(Claim),
-        hg_claim:get_revision(Claim),
+        pm_claim:get_id(Claim),
+        pm_claim:get_revision(Claim),
         Client
     ).
 
@@ -1121,8 +1121,8 @@ claim_already_accepted_on_deny(C) ->
     Reason = <<"I am about to destroy them">>,
     Claim = get_first_accepted_claim(Client),
     ?invalid_claim_status(?accepted(_)) = hg_client_party:deny_claim(
-        hg_claim:get_id(Claim),
-        hg_claim:get_revision(Claim),
+        pm_claim:get_id(Claim),
+        pm_claim:get_revision(Claim),
         Reason,
         Client
     ).
@@ -1338,13 +1338,13 @@ contractor_creation(C) ->
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
     Party = hg_client_party:get(Client),
-    #domain_PartyContractor{} = hg_party:get_contractor(ContractorID, Party).
+    #domain_PartyContractor{} = pm_party:get_contractor(ContractorID, Party).
 
 contractor_modification(C) ->
     Client = cfg(client, C),
     ContractorID = ?REAL_CONTRACTOR_ID,
     Party1 = hg_client_party:get(Client),
-    #domain_PartyContractor{} = C1 = hg_party:get_contractor(ContractorID, Party1),
+    #domain_PartyContractor{} = C1 = pm_party:get_contractor(ContractorID, Party1),
     Changeset = [
         ?contractor_modification(ContractorID, {identification_level_modification, full}),
         ?contractor_modification(ContractorID, {
@@ -1357,7 +1357,7 @@ contractor_modification(C) ->
     Claim = assert_claim_pending(hg_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
     Party2 = hg_client_party:get(Client),
-    #domain_PartyContractor{} = C2 = hg_party:get_contractor(ContractorID, Party2),
+    #domain_PartyContractor{} = C2 = pm_party:get_contractor(ContractorID, Party2),
     C1 /= C2 orelse error(same_contractor).
 
 contract_w_contractor_creation(C) ->
