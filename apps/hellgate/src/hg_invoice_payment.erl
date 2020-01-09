@@ -1667,8 +1667,6 @@ process_session(Action, St) ->
 process_session(undefined, Action, St0) ->
     Target     = get_target(St0),
     TargetType = get_target_type(Target),
-    Activity   = get_activity(St0),
-    _ = maybe_notify_fault_detector(Activity, TargetType, start, St0),
     case validate_processing_deadline(get_payment(St0), TargetType) of
         ok ->
             Events = start_session(Target),
@@ -1768,6 +1766,7 @@ finish_session_processing({payment, Step} = Activity, {Events, Action}, St) when
     case get_session(Target, St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
             TargetType = get_target_type(Target),
+            _ = maybe_notify_fault_detector(Activity, TargetType, start, St),
             _ = maybe_notify_fault_detector(Activity, TargetType, finish, St),
             NewAction = hg_machine_action:set_timeout(0, Action),
             {next, {Events, NewAction}};
@@ -1847,7 +1846,9 @@ process_failure({payment, Step} = Activity, Events, Action, Failure, St, _Refund
             {next, {Events ++ SessionEvents, SessionAction}};
         fatal ->
             TargetType = get_target_type(Target),
-            _ = maybe_notify_fault_detector(Activity, TargetType, error, St),
+            OperationStatus = choose_fd_operation_status_for_failure(Failure),
+            _ = maybe_notify_fault_detector(Activity, TargetType, start, St),
+            _ = maybe_notify_fault_detector(Activity, TargetType, OperationStatus, St),
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
 process_failure({refund_new, ID}, Events, Action, Failure, St, RefundSt) ->
@@ -1869,6 +1870,27 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             {done, {Events ++ Events1, Action}}
     end.
 
+choose_fd_operation_status_for_failure({failure, Failure}) ->
+    payproc_errors:match('PaymentFailure', Failure, fun do_choose_fd_operation_status_for_failure/1);
+choose_fd_operation_status_for_failure(_Failure) ->
+    finish.
+
+do_choose_fd_operation_status_for_failure({authorization_failed, {FailType, _}}) ->
+    DefaultBenignFailures = [
+        insufficient_funds,
+        rejected_by_issuer,
+        processing_deadline_reached
+    ],
+    FDConfig = genlib_app:env(hellgate, fault_detector, #{}),
+    Config = genlib_map:get(conversion, FDConfig, #{}),
+    BenignFailures = genlib_map:get(benign_failures, Config, DefaultBenignFailures),
+    case lists:member(FailType, BenignFailures) of
+        false -> error;
+        true  -> finish
+    end;
+do_choose_fd_operation_status_for_failure(_Failure) ->
+    finish.
+
 maybe_notify_fault_detector({payment, processing_session}, processed, Status, St) ->
     notify_fault_detector(Status, St);
 maybe_notify_fault_detector(_Activity, _TargetType, _Status, _St) ->
@@ -1882,7 +1904,7 @@ notify_fault_detector(Status, St) ->
     InvoiceID     = get_invoice_id(get_invoice(get_opts(St))),
     FDConfig      = genlib_app:env(hellgate, fault_detector, #{}),
     Config        = genlib_map:get(conversion, FDConfig, #{}),
-    SlidingWindow = genlib_map:get(sliding_window,       Config, 6000000),
+    SlidingWindow = genlib_map:get(sliding_window,       Config, 60000),
     OpTimeLimit   = genlib_map:get(operation_time_limit, Config, 1200000),
     PreAggrSize   = genlib_map:get(pre_aggregation_size, Config, 2),
     ServiceConfig = hg_fault_detector_client:build_config(SlidingWindow, OpTimeLimit, PreAggrSize),
@@ -1904,6 +1926,8 @@ fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig) ->
             Result
     end.
 
+process_fatal_payment_failure(?cancelled(), _Events, _Action, Failure, _St) ->
+    error({invalid_cancel_failure, Failure});
 process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
     error({invalid_capture_failure, Failure});
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
