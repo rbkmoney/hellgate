@@ -7,6 +7,7 @@
 -export([gather_routes/4]).
 -export([gather_fail_rates/1]).
 -export([choose_route/3]).
+-export([validate_recurrent_route/2]).
 
 -export([get_payments_terms/2]).
 -export([get_rec_paytools_terms/2]).
@@ -132,6 +133,22 @@ gather_fail_rates(Routes) ->
 
 choose_route(FailRatedRoutes, RejectContext, VS) ->
     do_choose_route(FailRatedRoutes, VS, RejectContext).
+
+-spec validate_recurrent_route(route(), [non_fail_rated_route()]) ->
+    {ok, route()} |
+    {error, {recurrent_route_invalid, route()}}.
+
+validate_recurrent_route(Route, Routes) ->
+    case lists:filter(fun ({{ProviderRef, _Provider}, {TerminalRef, _Terminal, _TerminalPriority}}) ->
+            Route =:= ?route(ProviderRef, TerminalRef)
+        end,
+        Routes
+    ) of
+        [] ->
+            {error, {recurrent_route_invalid, Route}};
+        _ ->
+            {ok, Route}
+    end.
 
 -spec select_providers(
     route_predestination(),

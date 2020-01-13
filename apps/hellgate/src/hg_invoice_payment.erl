@@ -660,8 +660,14 @@ validate_limit(Cash, CashRange) ->
 choose_route(PaymentInstitution, VS, Revision, St) ->
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
-        {ok, _Route} = Result ->
-            Result;
+        {ok, Route} ->
+            {Routes, _RejectContext} = hg_routing:gather_routes(
+                recurrent_payment,
+                PaymentInstitution,
+                VS,
+                Revision
+            ),
+            hg_routing:validate_recurrent_route(Route, Routes);
         undefined ->
             Payment        = get_payment(St),
             Predestination = choose_routing_predestination(Payment),
@@ -1569,6 +1575,11 @@ process_routing(Action, St) ->
         {error, {no_route_found, {Reason, _Details}}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',
                 {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
+            )},
+            process_failure(get_activity(St), Events0, Action, Failure, St);
+        {error, {recurrent_route_invalid, _Route}} ->
+            Failure = {failure, payproc_errors:construct('PaymentFailure',
+                {recurrent_route_invalid, #payprocerr_GeneralFailure{}}
             )},
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
