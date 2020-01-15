@@ -135,20 +135,15 @@ choose_route(FailRatedRoutes, RejectContext, VS) ->
     do_choose_route(FailRatedRoutes, VS, RejectContext).
 
 -spec validate_recurrent_route(route(), [non_fail_rated_route()]) ->
-    {ok, route()} |
-    {error, {recurrent_route_invalid, route()}}.
+    boolean().
 
 validate_recurrent_route(Route, Routes) ->
-    case lists:filter(fun ({{ProviderRef, _Provider}, {TerminalRef, _Terminal, _TerminalPriority}}) ->
+    lists:any(
+        fun ({{ProviderRef, _Provider}, {TerminalRef, _Terminal, _TerminalPriority}}) ->
             Route =:= ?route(ProviderRef, TerminalRef)
         end,
         Routes
-    ) of
-        [] ->
-            {error, {recurrent_route_invalid, Route}};
-        _ ->
-            {ok, Route}
-    end.
+    ).
 
 -spec select_providers(
     route_predestination(),

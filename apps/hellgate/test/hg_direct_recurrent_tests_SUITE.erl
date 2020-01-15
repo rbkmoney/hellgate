@@ -27,6 +27,7 @@
 -export([not_exists_invoice_test/1]).
 -export([not_exists_payment_test/1]).
 -export([recurrent_risk_score_always_high/1]).
+-export([forbidden_recurrent_payment_route_test/1]).
 
 %% Internal types
 
@@ -82,7 +83,8 @@ groups() ->
             cancelled_first_payment_test,
             not_exists_invoice_test,
             not_exists_payment_test,
-            recurrent_risk_score_always_high
+            recurrent_risk_score_always_high,
+            forbidden_recurrent_payment_route_test
         ]},
         {domain_affecting_operations, [], [
             not_permitted_recurrent_test
@@ -281,6 +283,32 @@ recurrent_risk_score_always_high(C) ->
     ],
     {ok, [?payment_ev(PaymentID, ?risk_score_changed(Score))]} = await_events(InvoiceID, Pattern, Client),
     high = Score.
+
+-spec forbidden_recurrent_payment_route_test(config()) -> test_result().
+forbidden_recurrent_payment_route_test(C) ->
+    Client = cfg(client, C),
+    Invoice1ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    %% first payment in recurrent session
+    Payment1Params = make_payment_params(),
+    {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),
+    Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
+    %% second recurrent payment
+    Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 52000, C), %% out of provider cash range
+    RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
+    {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
+    [
+        ?payment_ev(Payment2ID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(Invoice2ID, 12000, Client),
+    [
+        ?payment_ev(Payment2ID, ?risk_score_changed(high)),
+        ?payment_ev(Payment2ID, ?payment_status_changed(?failed({failure, Failure})))
+    ] = next_event(Invoice2ID, 12000, Client),
+    ok = payproc_errors:match(
+        'PaymentFailure',
+        Failure,
+        fun({no_route_found, _}) -> ok end
+    ).
 
 %% Internal functions
 
@@ -592,9 +620,22 @@ construct_domain_fixture(TermSet) ->
                 name = <<"Test Inc.">>,
                 system_account_set = {value, ?sas(1)},
                 default_contract_template = {value, ?tmpl(1)},
-                providers = {value, ?ordset([
-                    ?prv(1)
-                ])},
+                providers = {decisions, [
+                    #domain_ProviderDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                            {inclusive, ?cash(        0, <<"RUB">>)},
+                            {exclusive, ?cash(    50000, <<"RUB">>)}
+                        )}},
+                        then_ = {value, ?ordset([?prv(1)])}
+                    },
+                    #domain_ProviderDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                            {inclusive, ?cash(    50000, <<"RUB">>)},
+                            {exclusive, ?cash(   100000, <<"RUB">>)}
+                        )}},
+                        then_ = {value, ?ordset([?prv(2)])}
+                    }
+                ]},
                 inspector = {decisions, [
                     #domain_InspectorDecision{
                         if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
@@ -625,6 +666,58 @@ construct_domain_fixture(TermSet) ->
         }},
         {provider, #domain_ProviderObject{
             ref = ?prv(1),
+            data = #domain_Provider{
+                name = <<"Brovider">>,
+                description = <<"A provider but bro">>,
+                terminal = {value, [?prvtrm(1)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                abs_account = <<"1234567890">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                payment_terms = #domain_PaymentsProvisionTerms{
+                    currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                    categories = {value, ?ordset([?cat(1)])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa),
+                        ?pmt(bank_card, mastercard)
+                    ])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(      1000, <<"RUB">>)},
+                        {exclusive, ?cash(1000000000, <<"RUB">>)}
+                    )},
+                    cash_flow = {value, [
+                        ?cfpost(
+                            {provider, settlement},
+                            {merchant, settlement},
+                            ?share(1, 1, operation_amount)
+                        ),
+                        ?cfpost(
+                            {system, settlement},
+                            {provider, settlement},
+                            ?share(18, 1000, operation_amount)
+                        )
+                    ]},
+                    holds = #domain_PaymentHoldsProvisionTerms{
+                        lifetime = {decisions, [
+                            #domain_HoldLifetimeDecision{
+                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                    definition = {payment_system_is, visa}
+                                }}}},
+                                then_ = {value, ?hold_lifetime(12)}
+                            }
+                        ]}
+                    }
+                },
+                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
+                    categories = {value, ?ordset([?cat(1)])},
+                    payment_methods = {value, ?ordset([
+                        ?pmt(bank_card, visa)
+                    ])},
+                    cash_value = {value, ?cash(1000, <<"RUB">>)}
+                }
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(2),
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,

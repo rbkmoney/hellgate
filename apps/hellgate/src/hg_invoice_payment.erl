@@ -661,13 +661,19 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
         {ok, Route} ->
-            {Routes, _RejectContext} = hg_routing:gather_routes(
+            {Routes, RejectContext} = hg_routing:gather_routes(
                 recurrent_payment,
                 PaymentInstitution,
                 VS,
                 Revision
             ),
-            hg_routing:validate_recurrent_route(Route, Routes);
+            case hg_routing:validate_recurrent_route(Route, Routes) of
+                true ->
+                    {ok, Route};
+                false ->
+                    _ = log_reject_context(no_route_found, RejectContext),
+                    {error, {no_route_found, {forbidden, RejectContext}}}
+            end;
         undefined ->
             Payment        = get_payment(St),
             Predestination = choose_routing_predestination(Payment),
@@ -1575,11 +1581,6 @@ process_routing(Action, St) ->
         {error, {no_route_found, {Reason, _Details}}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',
                 {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
-            )},
-            process_failure(get_activity(St), Events0, Action, Failure, St);
-        {error, {recurrent_route_invalid, _Route}} ->
-            Failure = {failure, payproc_errors:construct('PaymentFailure',
-                {recurrent_route_invalid, #payprocerr_GeneralFailure{}}
             )},
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
