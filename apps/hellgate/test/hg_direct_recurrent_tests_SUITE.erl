@@ -83,10 +83,10 @@ groups() ->
             cancelled_first_payment_test,
             not_exists_invoice_test,
             not_exists_payment_test,
-            recurrent_risk_score_always_high,
-            forbidden_recurrent_payment_route_test
+            recurrent_risk_score_always_high
         ]},
         {domain_affecting_operations, [], [
+            forbidden_recurrent_payment_route_test,
             not_permitted_recurrent_test
         ]}
     ].
@@ -293,6 +293,7 @@ forbidden_recurrent_payment_route_test(C) ->
     {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),
     Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
     %% second recurrent payment
+    ok = hg_domain:update(construct_payment_institution({value, ?ordset([?prv(2)])})),
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 52000, C), %% out of provider cash range
     RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
     Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
@@ -539,6 +540,25 @@ next_event(InvoiceID, Timeout, Client) ->
 
 %% Domain helper
 
+construct_payment_institution(Providers) ->
+    {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = #domain_PaymentInstitution{
+                name = <<"Test Inc.">>,
+                system_account_set = {value, ?sas(1)},
+                default_contract_template = {value, ?tmpl(1)},
+                providers = Providers,
+                inspector = {decisions, [
+                    #domain_InspectorDecision{
+                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, ?insp(1)}
+                    }
+                ]},
+                residences = [],
+                realm = test
+            }
+        }}.
+
 -spec construct_term_set_w_recurrent_paytools() -> term().
 construct_term_set_w_recurrent_paytools() ->
     TermSet = construct_simple_term_set(),
@@ -614,38 +634,7 @@ construct_domain_fixture(TermSet) ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
-        {payment_institution, #domain_PaymentInstitutionObject{
-            ref = ?pinst(1),
-            data = #domain_PaymentInstitution{
-                name = <<"Test Inc.">>,
-                system_account_set = {value, ?sas(1)},
-                default_contract_template = {value, ?tmpl(1)},
-                providers = {decisions, [
-                    #domain_ProviderDecision{
-                        if_ = {condition, {cost_in, ?cashrng(
-                            {inclusive, ?cash(        0, <<"RUB">>)},
-                            {exclusive, ?cash(    50000, <<"RUB">>)}
-                        )}},
-                        then_ = {value, ?ordset([?prv(1)])}
-                    },
-                    #domain_ProviderDecision{
-                        if_ = {condition, {cost_in, ?cashrng(
-                            {inclusive, ?cash(    50000, <<"RUB">>)},
-                            {exclusive, ?cash(   100000, <<"RUB">>)}
-                        )}},
-                        then_ = {value, ?ordset([?prv(2)])}
-                    }
-                ]},
-                inspector = {decisions, [
-                    #domain_InspectorDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, ?insp(1)}
-                    }
-                ]},
-                residences = [],
-                realm = test
-            }
-        }},
+        construct_payment_institution({value, ?ordset([?prv(1)])}),
 
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
