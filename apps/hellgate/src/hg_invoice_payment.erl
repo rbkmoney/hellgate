@@ -661,38 +661,9 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
         {ok, Route} ->
-            {Routes, RejectContext} = hg_routing:gather_routes(
-                recurrent_payment,
-                PaymentInstitution,
-                VS,
-                Revision
-            ),
-            case hg_routing:validate_recurrent_route(Route, Routes) of
-                true ->
-                    {ok, Route};
-                false ->
-                    _ = log_reject_context(no_route_found, RejectContext),
-                    {error, {no_route_found, {forbidden, RejectContext}}}
-            end;
+            validate_recurrent_route(Route, PaymentInstitution, VS, Revision);
         undefined ->
-            Payment        = get_payment(St),
-            Predestination = choose_routing_predestination(Payment),
-            {Routes, RejectContext} = hg_routing:gather_routes(
-                Predestination,
-                PaymentInstitution,
-                VS,
-                Revision
-            ),
-            FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
-            case hg_routing:choose_route(FailRatedRoutes, RejectContext, VS) of
-                {ok, Route, ChoiceMeta} ->
-                    _ = log_route_choice_meta(ChoiceMeta),
-                    _ = log_misconfigurations(RejectContext),
-                    {ok, Route};
-                {error, {no_route_found, {RejectReason, RejectContext1}}} = Error ->
-                    _ = log_reject_context(RejectReason, RejectContext1),
-                    Error
-            end
+            do_choose_route(PaymentInstitution, VS, Revision, St)
     end.
 
 -spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().
@@ -700,6 +671,41 @@ choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
     recurrent_payment;
 choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
     payment.
+
+do_choose_route(PaymentInstitution, VS, Revision, St) ->
+    Payment        = get_payment(St),
+    Predestination = choose_routing_predestination(Payment),
+    {Routes, RejectContext} = hg_routing:gather_routes(
+        Predestination,
+        PaymentInstitution,
+        VS,
+        Revision
+    ),
+    FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
+    case hg_routing:choose_route(FailRatedRoutes, RejectContext, VS) of
+        {ok, Route, ChoiceMeta} ->
+            _ = log_route_choice_meta(ChoiceMeta),
+            _ = log_misconfigurations(RejectContext),
+            {ok, Route};
+        {error, {no_route_found, {RejectReason, RejectContext1}}} = Error ->
+            _ = log_reject_context(RejectReason, RejectContext1),
+            Error
+    end.
+
+validate_recurrent_route(Route, PaymentInstitution, VS, Revision) ->
+    {Routes, RejectContext} = hg_routing:gather_routes(
+        recurrent_payment,
+        PaymentInstitution,
+        VS,
+        Revision
+    ),
+    case hg_routing:validate_recurrent_route(Route, Routes) of
+        true ->
+            {ok, Route};
+        false ->
+            _ = log_reject_context(no_route_found, RejectContext),
+            {error, {no_route_found, {forbidden, RejectContext}}}
+    end.
 
 % Other payers has predefined routes
 

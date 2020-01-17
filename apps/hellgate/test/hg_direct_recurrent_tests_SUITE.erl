@@ -307,7 +307,7 @@ forbidden_recurrent_payment_route_test(C) ->
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
-        fun({no_route_found, _}) -> ok end
+        fun({no_route_found, {forbidden, _}}) -> ok end
     ).
 
 %% Internal functions
