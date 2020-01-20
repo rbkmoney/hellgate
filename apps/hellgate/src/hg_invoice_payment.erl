@@ -659,28 +659,25 @@ validate_limit(Cash, CashRange) ->
 
 choose_route(PaymentInstitution, VS, Revision, St) ->
     Payer = get_payment_payer(St),
-    case get_predefined_route(Payer) of
-        {ok, Route} ->
-            validate_recurrent_route(Route, PaymentInstitution, VS, Revision);
-        undefined ->
-            do_choose_route(PaymentInstitution, VS, Revision, St)
-    end.
-
--spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().
-choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
-    recurrent_payment;
-choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
-    payment.
-
-do_choose_route(PaymentInstitution, VS, Revision, St) ->
     Payment        = get_payment(St),
     Predestination = choose_routing_predestination(Payment),
-    {Routes, RejectContext} = hg_routing:gather_routes(
+    GatheredRoutes = hg_routing:gather_routes(
         Predestination,
         PaymentInstitution,
         VS,
         Revision
     ),
+    do_choose_route(get_predefined_route(Payer), GatheredRoutes, VS).
+
+do_choose_route({ok, Route}, {Routes, RejectContext}, _VS) ->
+    case hg_routing:validate_route(Route, Routes) of
+        true ->
+            {ok, Route};
+        false ->
+            _ = log_reject_context(no_route_found, RejectContext),
+            {error, {no_route_found, {forbidden, RejectContext}}}
+    end;
+do_choose_route(undefined, {Routes, RejectContext}, VS) ->
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
     case hg_routing:choose_route(FailRatedRoutes, RejectContext, VS) of
         {ok, Route, ChoiceMeta} ->
@@ -692,20 +689,13 @@ do_choose_route(PaymentInstitution, VS, Revision, St) ->
             Error
     end.
 
-validate_recurrent_route(Route, PaymentInstitution, VS, Revision) ->
-    {Routes, RejectContext} = hg_routing:gather_routes(
-        recurrent_payment,
-        PaymentInstitution,
-        VS,
-        Revision
-    ),
-    case hg_routing:validate_recurrent_route(Route, Routes) of
-        true ->
-            {ok, Route};
-        false ->
-            _ = log_reject_context(no_route_found, RejectContext),
-            {error, {no_route_found, {forbidden, RejectContext}}}
-    end.
+-spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().
+choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
+    recurrent_payment;
+choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
+    payment;
+choose_routing_predestination(#domain_InvoicePayment{payer = ?customer_payer()}) ->
+    recurrent_paytool.
 
 % Other payers has predefined routes
 
