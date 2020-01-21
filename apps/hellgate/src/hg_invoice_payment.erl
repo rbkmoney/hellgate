@@ -695,7 +695,7 @@ choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
 choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
     payment;
 choose_routing_predestination(#domain_InvoicePayment{payer = ?customer_payer()}) ->
-    recurrent_paytool.
+    recurrent_payment.
 
 % Other payers has predefined routes
 
