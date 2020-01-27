@@ -9,18 +9,22 @@
 -module(hg_cashflow).
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
--type account()         :: dmsl_domain_thrift:'CashFlowAccount'().
--type account_id()      :: dmsl_domain_thrift:'AccountID'().
--type account_map()     :: #{account() => account_id()}.
--type context()         :: dmsl_domain_thrift:'CashFlowContext'().
--type cash_flow()       :: dmsl_domain_thrift:'CashFlow'().
--type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
--type cash()            :: dmsl_domain_thrift:'Cash'().
+-type account()                 :: dmsl_domain_thrift:'CashFlowAccount'().
+-type account_id()              :: dmsl_domain_thrift:'AccountID'().
+-type account_map()             :: #{account() => account_id()}.
+-type context()                 :: dmsl_domain_thrift:'CashFlowContext'().
+-type cash_flow()               :: dmsl_domain_thrift:'CashFlow'().
+-type final_cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
+-type cash()                    :: dmsl_domain_thrift:'Cash'().
+-type cash_volume()             :: dmsl_domain_thrift:'CashVolume'().
+-type final_cash_flow_account() :: dmsl_domain_thrift:'FinalCashFlowAccount'().
 
 %%
 
 -export([finalize/3]).
 -export([revert/1]).
+
+-export([compute_volume/2]).
 
 -export([get_partial_remainders/1]).
 
@@ -51,6 +55,9 @@
 finalize(CF, Context, AccountMap) ->
     compute_postings(CF, Context, AccountMap).
 
+-spec compute_postings(cash_flow(), context(), account_map()) ->
+    final_cash_flow() | no_return().
+
 compute_postings(CF, Context, AccountMap) ->
     [
         ?final_posting(
@@ -62,11 +69,17 @@ compute_postings(CF, Context, AccountMap) ->
             ?posting(Source, Destination, Volume, Details) <- CF
     ].
 
+-spec construct_final_account(account(), account_map()) ->
+    final_cash_flow_account() | no_return().
+
 construct_final_account(AccountType, AccountMap) ->
     #domain_FinalCashFlowAccount{
         account_type = AccountType,
         account_id   = resolve_account(AccountType, AccountMap)
     }.
+
+-spec resolve_account(account(), account_map()) ->
+    account_id() | no_return().
 
 resolve_account(AccountType, AccountMap) ->
     case AccountMap of
@@ -100,6 +113,9 @@ revert_details(Details) ->
     {product, {Fun, CVs}}).
 -define(rational(P, Q),
     #'Rational'{p = P, q = Q}).
+
+-spec compute_volume(cash_volume(), context()) ->
+    cash() | no_return().
 
 compute_volume(?fixed(Cash), _Context) ->
     Cash;

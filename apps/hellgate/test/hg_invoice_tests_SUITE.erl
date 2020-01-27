@@ -59,6 +59,8 @@
 -export([payment_risk_score_check_timeout/1]).
 -export([invalid_payment_adjustment/1]).
 -export([payment_adjustment_success/1]).
+-export([partial_captured_payment_adjustment/1]).
+-export([payment_adjustment_captured_from_failed/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
 -export([terminal_cashflow_overrides_provider/1]).
@@ -233,9 +235,11 @@ groups() ->
             payment_error_in_capture_session_does_not_cause_payment_failure
         ]},
 
-        {adjustments, [parallel], [
+        {adjustments, [], [
             invalid_payment_adjustment,
-            payment_adjustment_success
+            payment_adjustment_success,
+            partial_captured_payment_adjustment,
+            payment_adjustment_captured_from_failed
         ]},
 
         {refunds, [], [
@@ -386,6 +390,10 @@ end_per_suite(C) ->
 
 -define(invalid_payment_status(Status),
     {exception, #payproc_InvalidPaymentStatus{status = Status}}).
+-define(invalid_payment_target_status(Status),
+    {exception, #payproc_InvalidPaymentTargetStatus{status = Status}}).
+-define(payment_already_has_status(Status),
+    {exception, #payproc_InvoicePaymentAlreadyHasStatus{status = Status}}).
 -define(invalid_adjustment_status(Status),
     {exception, #payproc_InvalidPaymentAdjustmentStatus{status = Status}}).
 -define(invalid_adjustment_pending(ID),
@@ -403,6 +411,12 @@ end_per_suite(C) ->
 -define(amount_exceeded_capture_balance(Amount),
     {exception, #payproc_AmountExceededCaptureBalance{payment_amount = Amount}}).
 
+-define(merchant_to_system_share_1, ?share(45, 1000, operation_amount)).
+-define(merchant_to_system_share_3, ?share(40, 1000, operation_amount)).
+-define(system_to_provider_share_initial, ?share(21, 1000, operation_amount)).
+-define(system_to_provider_share_actual, ?share(16, 1000, operation_amount)).
+-define(system_to_external_fixed, ?fixed(20, <<"RUB">>)).
+
 -spec init_per_group(group_name(), config()) -> config().
 
 init_per_group(_, C) ->
@@ -417,6 +431,14 @@ end_per_group(_Group, _C) ->
 
 init_per_testcase(Name, C) when
     Name == payment_adjustment_success;
+    Name == partial_captured_payment_adjustment;
+    Name == payment_adjustment_captured_from_failed
+->
+    Revision = hg_domain:head(),
+    Fixture = get_adjustment_fixture(Revision),
+    ok = hg_domain:upsert(Fixture),
+    [{original_domain_revision, Revision} | init_per_testcase(C)];
+init_per_testcase(Name, C) when
     Name == rounding_cashflow_volume;
     Name == payments_w_bank_card_issuer_conditions;
     Name == payments_w_bank_conditions;
@@ -426,8 +448,6 @@ init_per_testcase(Name, C) when
 ->
     Revision = hg_domain:head(),
     Fixture = case Name of
-        payment_adjustment_success ->
-            get_adjustment_fixture(Revision);
         rounding_cashflow_volume ->
             get_cashflow_rounding_fixture(Revision);
         payments_w_bank_card_issuer_conditions ->
@@ -1524,6 +1544,164 @@ payment_adjustment_success(C) ->
     SysDiff = MrcDiff + PrvDiff - 20,
     SysDiff = maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1).
 
+ -spec partial_captured_payment_adjustment(config()) -> _ | no_return().
+
+partial_captured_payment_adjustment(C) ->
+    InitialCost = 1000 * 100,
+    PartialCost = 700 * 100,
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), InitialCost, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    % start payment
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF1))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    % do a partial capture
+    Cash = ?cash(PartialCost, <<"RUB">>),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
+    PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
+    % get balances
+    PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
+    SysAccount1 = get_cashflow_account({system, settlement}, CF1),
+    MrcAccount1 = get_cashflow_account({merchant, settlement}, CF1),
+    % update terminal cashflow
+    ProviderRef = ?prv(100),
+    Provider = hg_domain:get(hg_domain:head(), {provider, ProviderRef}),
+    ProviderTerms = Provider#domain_Provider.payment_terms,
+    ok = hg_domain:upsert(
+        {provider, #domain_ProviderObject{
+            ref = ProviderRef,
+            data = Provider#domain_Provider{
+                payment_terms = ProviderTerms#domain_PaymentsProvisionTerms{
+                    cash_flow = {value,
+                        get_adjustment_provider_cashflow(actual)
+                    }
+                }
+            }
+        }}
+    ),
+    % update merchant fees
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
+    % make an adjustment
+    Params = make_adjustment_params(AdjReason = <<"because punk you that's why">>),
+    ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, Params, Client),
+    Adjustment = #domain_InvoicePaymentAdjustment{id = AdjustmentID, reason = AdjReason} =
+        hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
+    ] = next_event(InvoiceID, Client),
+    ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+    ] = next_event(InvoiceID, Client),
+    % verify that cash deposited correctly everywhere
+    #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} = Adjustment,
+    PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
+    SysAccount2 = get_cashflow_account({system, settlement}, CF2),
+    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
+    Context = #{operation_amount => Cash},
+    #domain_Cash{amount = MrcAmount1} = hg_cashflow:compute_volume(?merchant_to_system_share_1, Context),
+    #domain_Cash{amount = MrcAmount2} = hg_cashflow:compute_volume(?merchant_to_system_share_3, Context),
+    MrcDiff = MrcAmount1 - MrcAmount2, % fees after adjustment are less than before, so own amount is greater
+    ?assertEqual(MrcDiff, maps:get(own_amount, MrcAccount2) - maps:get(own_amount, MrcAccount1)),
+    #domain_Cash{amount = PrvAmount1} = hg_cashflow:compute_volume(?system_to_provider_share_initial, Context),
+    #domain_Cash{amount = PrvAmount2} = hg_cashflow:compute_volume(?system_to_provider_share_actual, Context),
+    PrvDiff = PrvAmount2 - PrvAmount1, % inversed in opposite of merchant fees
+    ?assertEqual(PrvDiff, maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1)),
+    #domain_Cash{amount = SysAmount2} = hg_cashflow:compute_volume(?system_to_external_fixed, Context),
+    SysDiff = MrcDiff + PrvDiff - SysAmount2,
+    ?assertEqual(SysDiff, maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1)).
+
+-spec payment_adjustment_captured_from_failed(config()) -> test_return().
+
+payment_adjustment_captured_from_failed(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
+    Cpatured = ?captured(),
+    AdjustmentParams = make_status_adjustment_params(Cpatured, AdjReason = <<"manual">>),
+    Amount = 42000,
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), Amount, C),
+    PaymentParams = make_scenario_payment_params([temp, temp, temp, temp]),
+    % start payment
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    ?invalid_payment_status(?pending()) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, AdjustmentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF1))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    {failed, PaymentID, {failure, _Failure}} =
+        await_payment_process_failure(InvoiceID, PaymentID, Client, 3),
+    % get balances
+    PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
+    SysAccount1 = get_cashflow_account({system, settlement}, CF1),
+    MrcAccount1 = get_cashflow_account({merchant, settlement}, CF1),
+    % try invalid adjustments
+    InvalidAdjustmentParams1 = make_status_adjustment_params({processed, #domain_InvoicePaymentProcessed{}}),
+    ?invalid_payment_target_status(?processed()) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, InvalidAdjustmentParams1, Client),
+    FailedTargetStatus = {failed, #domain_InvoicePaymentFailed{
+        failure = {failure, #domain_Failure{code = <<"404">>}}
+    }},
+    InvalidAdjustmentParams2 = make_status_adjustment_params(FailedTargetStatus),
+    ?payment_already_has_status(?failed(_)) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, InvalidAdjustmentParams2, Client),
+    % make a valid adjustment
+    ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, AdjustmentParams, Client),
+    Adjustment = #domain_InvoicePaymentAdjustment{id = AdjustmentID, reason = AdjReason} =
+        hg_client_invoicing:get_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
+    ] = next_event(InvoiceID, Client),
+    ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(Cpatured)),
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+    ] = next_event(InvoiceID, Client),
+    % verify that cash deposited correctly everywhere
+    #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} = Adjustment,
+    PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
+    SysAccount2 = get_cashflow_account({system, settlement}, CF2),
+    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
+    Context = #{operation_amount => ?cash(Amount, <<"RUB">>)},
+    #domain_Cash{amount = MrcAmount1} = hg_cashflow:compute_volume(?merchant_to_system_share_1, Context),
+    MrcDiff = Amount - MrcAmount1,
+    ?assertEqual(MrcDiff, maps:get(own_amount, MrcAccount2) - maps:get(own_amount, MrcAccount1)),
+    #domain_Cash{amount = PrvAmount1} = hg_cashflow:compute_volume(?system_to_provider_share_initial, Context),
+    PrvDiff = PrvAmount1 - Amount,
+    ?assertEqual(PrvDiff, maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1)),
+    SysDiff = MrcAmount1 - PrvAmount1,
+    ?assertEqual(SysDiff, maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1)).
+
 -spec payment_temporary_unavailability_retry_success(config()) -> test_return().
 
 payment_temporary_unavailability_retry_success(C) ->
@@ -1577,7 +1755,7 @@ get_adjustment_fixture(Revision) ->
                                 ?cfpost(
                                     {merchant, settlement},
                                     {system, settlement},
-                                    ?share(40, 1000, operation_amount)
+                                    ?merchant_to_system_share_3
                                 )
                             ]}
                         }
@@ -1620,6 +1798,16 @@ get_adjustment_fixture(Revision) ->
                     cash_flow = {value,
                         get_adjustment_provider_cashflow(initial)
                     },
+                    holds = #domain_PaymentHoldsProvisionTerms{
+                        lifetime = {decisions, [
+                            #domain_HoldLifetimeDecision{
+                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                    definition = {payment_system_is, visa}
+                                }}}},
+                                then_ = {value, ?hold_lifetime(10)}
+                            }
+                        ]}
+                    },
                     refunds = #domain_PaymentRefundsProvisionTerms{
                         cash_flow = {value, [
                             ?cfpost(
@@ -1659,7 +1847,7 @@ get_adjustment_provider_cashflow(initial) ->
         ?cfpost(
             {system, settlement},
             {provider, settlement},
-            ?share(21, 1000, operation_amount)
+            ?system_to_provider_share_initial
         )
     ];
 get_adjustment_provider_cashflow(actual) ->
@@ -1672,12 +1860,12 @@ get_adjustment_provider_cashflow(actual) ->
         ?cfpost(
             {system, settlement},
             {provider, settlement},
-            ?share(16, 1000, operation_amount)
+            ?system_to_provider_share_actual
         ),
         ?cfpost(
             {system, settlement},
             {external, outcome},
-            ?fixed(20, <<"RUB">>)
+            ?system_to_external_fixed
         )
     ].
 
@@ -3298,8 +3486,19 @@ make_adjustment_params(Reason) ->
 
 make_adjustment_params(Reason, Revision) ->
     #payproc_InvoicePaymentAdjustmentParams{
-        domain_revision = Revision,
+        legacy_domain_revision = Revision,
         reason = Reason
+    }.
+
+make_status_adjustment_params(Status) ->
+    make_status_adjustment_params(Status, <<>>).
+
+make_status_adjustment_params(Status, Reason) ->
+    #payproc_InvoicePaymentAdjustmentParams{
+        reason = Reason,
+        scenario = {status_change, #domain_InvoicePaymentAdjustmentStatusChange{
+            target_status = Status
+        }}
     }.
 
 make_due_date(LifetimeSeconds) ->
@@ -3743,7 +3942,7 @@ construct_domain_fixture() ->
                         ?cfpost(
                             {merchant, settlement},
                             {system, settlement},
-                            ?share(45, 1000, operation_amount)
+                            ?merchant_to_system_share_1
                         )
                     ]}
                 }
