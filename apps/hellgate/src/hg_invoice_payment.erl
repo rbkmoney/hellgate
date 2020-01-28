@@ -140,7 +140,7 @@
 -type adjustment()          :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
 -type adjustment_id()       :: dmsl_domain_thrift:'InvoicePaymentAdjustmentID'().
 -type adjustment_params()   :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentParams'().
--type adjustment_state()    :: dmsl_payment_processing_thrift:'InvoicePaymentAdjustmentState'().
+-type adjustment_state()    :: dmsl_domain_thrift:'InvoicePaymentAdjustmentState'().
 -type adjustment_status_change() :: dmsl_domain_thrift:'InvoicePaymentAdjustmentStatusChange'().
 -type target()              :: dmsl_domain_thrift:'TargetInvoicePaymentStatus'().
 -type target_type()         :: 'processed' | 'captured' | 'cancelled' | 'refunded'.
