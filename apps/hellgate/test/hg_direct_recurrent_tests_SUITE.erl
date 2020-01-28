@@ -27,6 +27,7 @@
 -export([not_exists_invoice_test/1]).
 -export([not_exists_payment_test/1]).
 -export([recurrent_risk_score_always_high/1]).
+-export([forbidden_recurrent_payment_route_test/1]).
 
 %% Internal types
 
@@ -85,6 +86,7 @@ groups() ->
             recurrent_risk_score_always_high
         ]},
         {domain_affecting_operations, [], [
+            forbidden_recurrent_payment_route_test,
             not_permitted_recurrent_test
         ]}
     ].
@@ -250,7 +252,9 @@ not_permitted_recurrent_test(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     ExpectedError = #payproc_OperationNotPermitted{},
-    {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
+    {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client),
+    ok = hg_domain:cleanup(),
+    ok = hg_domain:upsert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())).
 
 -spec not_exists_invoice_test(config()) -> test_result().
 not_exists_invoice_test(C) ->
@@ -281,6 +285,35 @@ recurrent_risk_score_always_high(C) ->
     ],
     {ok, [?payment_ev(PaymentID, ?risk_score_changed(Score))]} = await_events(InvoiceID, Pattern, Client),
     high = Score.
+
+-spec forbidden_recurrent_payment_route_test(config()) -> test_result().
+forbidden_recurrent_payment_route_test(C) ->
+    Client = cfg(client, C),
+    Invoice1ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    %% first payment in recurrent session
+    Payment1Params = make_payment_params(),
+    {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),
+    Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
+    %% second recurrent payment
+    ok = hg_domain:update(construct_payment_institution({value, ?ordset([?prv(2)])})),
+    Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 52000, C), %% out of provider cash range
+    RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent),
+    {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
+    [
+        ?payment_ev(Payment2ID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(Invoice2ID, 12000, Client),
+    [
+        ?payment_ev(Payment2ID, ?risk_score_changed(high)),
+        ?payment_ev(Payment2ID, ?payment_status_changed(?failed({failure, Failure})))
+    ] = next_event(Invoice2ID, 12000, Client),
+    ok = payproc_errors:match(
+        'PaymentFailure',
+        Failure,
+        fun({no_route_found, {forbidden, _}}) -> ok end
+    ),
+    ok = hg_domain:cleanup(),
+    ok = hg_domain:upsert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())).
 
 %% Internal functions
 
@@ -511,6 +544,79 @@ next_event(InvoiceID, Timeout, Client) ->
 
 %% Domain helper
 
+construct_payment_institution(Providers) ->
+    {payment_institution, #domain_PaymentInstitutionObject{
+        ref = ?pinst(1),
+        data = #domain_PaymentInstitution{
+            name = <<"Test Inc.">>,
+            system_account_set = {value, ?sas(1)},
+            default_contract_template = {value, ?tmpl(1)},
+            providers = Providers,
+            inspector = {decisions, [
+                #domain_InspectorDecision{
+                    if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, ?insp(1)}
+                }
+            ]},
+            residences = [],
+            realm = test
+        }
+    }}.
+
+construct_provider(ProviderRef) ->
+    {provider, #domain_ProviderObject{
+        ref = ProviderRef,
+        data = #domain_Provider{
+            name = <<"Brovider">>,
+            description = <<"A provider but bro">>,
+            terminal = {value, [?prvtrm(1)]},
+            proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+            abs_account = <<"1234567890">>,
+            accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+            payment_terms = #domain_PaymentsProvisionTerms{
+                currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                categories = {value, ?ordset([?cat(1)])},
+                payment_methods = {value, ?ordset([
+                    ?pmt(bank_card, visa),
+                    ?pmt(bank_card, mastercard)
+                ])},
+                cash_limit = {value, ?cashrng(
+                    {inclusive, ?cash(      1000, <<"RUB">>)},
+                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                )},
+                cash_flow = {value, [
+                    ?cfpost(
+                        {provider, settlement},
+                        {merchant, settlement},
+                        ?share(1, 1, operation_amount)
+                    ),
+                    ?cfpost(
+                        {system, settlement},
+                        {provider, settlement},
+                        ?share(18, 1000, operation_amount)
+                    )
+                ]},
+                holds = #domain_PaymentHoldsProvisionTerms{
+                    lifetime = {decisions, [
+                        #domain_HoldLifetimeDecision{
+                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                definition = {payment_system_is, visa}
+                            }}}},
+                            then_ = {value, ?hold_lifetime(12)}
+                        }
+                    ]}
+                }
+            },
+            recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
+                categories = {value, ?ordset([?cat(1)])},
+                payment_methods = {value, ?ordset([
+                    ?pmt(bank_card, visa)
+                ])},
+                cash_value = {value, ?cash(1000, <<"RUB">>)}
+            }
+        }
+    }}.
+
 -spec construct_term_set_w_recurrent_paytools() -> term().
 construct_term_set_w_recurrent_paytools() ->
     TermSet = construct_simple_term_set(),
@@ -586,25 +692,7 @@ construct_domain_fixture(TermSet) ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
-        {payment_institution, #domain_PaymentInstitutionObject{
-            ref = ?pinst(1),
-            data = #domain_PaymentInstitution{
-                name = <<"Test Inc.">>,
-                system_account_set = {value, ?sas(1)},
-                default_contract_template = {value, ?tmpl(1)},
-                providers = {value, ?ordset([
-                    ?prv(1)
-                ])},
-                inspector = {decisions, [
-                    #domain_InspectorDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, ?insp(1)}
-                    }
-                ]},
-                residences = [],
-                realm = test
-            }
-        }},
+        construct_payment_institution({value, ?ordset([?prv(1)])}),
 
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
@@ -623,58 +711,8 @@ construct_domain_fixture(TermSet) ->
                 }]
             }
         }},
-        {provider, #domain_ProviderObject{
-            ref = ?prv(1),
-            data = #domain_Provider{
-                name = <<"Brovider">>,
-                description = <<"A provider but bro">>,
-                terminal = {value, [?prvtrm(1)]},
-                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
-                abs_account = <<"1234567890">>,
-                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([?cur(<<"RUB">>)])},
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(      1000, <<"RUB">>)},
-                        {exclusive, ?cash(1000000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(18, 1000, operation_amount)
-                        )
-                    ]},
-                    holds = #domain_PaymentHoldsProvisionTerms{
-                        lifetime = {decisions, [
-                            #domain_HoldLifetimeDecision{
-                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                    definition = {payment_system_is, visa}
-                                }}}},
-                                then_ = {value, ?hold_lifetime(12)}
-                            }
-                        ]}
-                    }
-                },
-                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
-                    ])},
-                    cash_value = {value, ?cash(1000, <<"RUB">>)}
-                }
-            }
-        }},
+        construct_provider(?prv(1)),
+        construct_provider(?prv(2)),
         {terminal, #domain_TerminalObject{
             ref = ?trm(1),
             data = #domain_Terminal{

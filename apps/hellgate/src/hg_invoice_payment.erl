@@ -662,35 +662,43 @@ validate_limit(Cash, CashRange) ->
 
 choose_route(PaymentInstitution, VS, Revision, St) ->
     Payer = get_payment_payer(St),
-    case get_predefined_route(Payer) of
-        {ok, _Route} = Result ->
-            Result;
-        undefined ->
-            Payment        = get_payment(St),
-            Predestination = choose_routing_predestination(Payment),
-            {Routes, RejectContext} = hg_routing:gather_routes(
-                Predestination,
-                PaymentInstitution,
-                VS,
-                Revision
-            ),
-            FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
-            case hg_routing:choose_route(FailRatedRoutes, RejectContext, VS) of
-                {ok, Route, ChoiceMeta} ->
-                    _ = log_route_choice_meta(ChoiceMeta),
-                    _ = log_misconfigurations(RejectContext),
-                    {ok, Route};
-                {error, {no_route_found, {RejectReason, RejectContext1}}} = Error ->
-                    _ = log_reject_context(RejectReason, RejectContext1),
-                    Error
-            end
+    Payment        = get_payment(St),
+    Predestination = choose_routing_predestination(Payment),
+    GatheredRoutes = hg_routing:gather_routes(
+        Predestination,
+        PaymentInstitution,
+        VS,
+        Revision
+    ),
+    do_choose_route(get_predefined_route(Payer), GatheredRoutes, VS).
+
+do_choose_route({ok, Route}, {Routes, RejectContext}, _VS) ->
+    case hg_routing:validate_route(Route, Routes) of
+        true ->
+            {ok, Route};
+        false ->
+            _ = log_reject_context(no_route_found, RejectContext),
+            {error, {no_route_found, {forbidden, RejectContext}}}
+    end;
+do_choose_route(undefined, {Routes, RejectContext}, VS) ->
+    FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
+    case hg_routing:choose_route(FailRatedRoutes, RejectContext, VS) of
+        {ok, Route, ChoiceMeta} ->
+            _ = log_route_choice_meta(ChoiceMeta),
+            _ = log_misconfigurations(RejectContext),
+            {ok, Route};
+        {error, {no_route_found, {RejectReason, RejectContext1}}} = Error ->
+            _ = log_reject_context(RejectReason, RejectContext1),
+            Error
     end.
 
 -spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().
 choose_routing_predestination(#domain_InvoicePayment{make_recurrent = true}) ->
     recurrent_payment;
 choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_payer()}) ->
-    payment.
+    payment;
+choose_routing_predestination(#domain_InvoicePayment{payer = ?customer_payer()}) ->
+    recurrent_payment.
 
 % Other payers has predefined routes
 
@@ -2730,16 +2738,16 @@ merge_change(
         {payment, processing_session} ->
             %% session retrying
             St2#st{activity = {payment, processing_session}};
-        {payment, flow_waiting} ->
+        {payment, PaymentActivity} when
+            PaymentActivity == flow_waiting;
+            PaymentActivity == processing_capture
+        ->
             %% session flow
             St2#st{
                 activity = {payment, finalizing_session},
                 timings  = try_accrue_waiting_timing(Opts, St2)
             };
-        {payment, PaymentActivity} when
-            PaymentActivity =:= processing_capture orelse
-            PaymentActivity =:= updating_accounter
-        ->
+        {payment, updating_accounter} ->
             %% session flow
             St2#st{activity = {payment, finalizing_session}};
         {payment, finalizing_session} ->
