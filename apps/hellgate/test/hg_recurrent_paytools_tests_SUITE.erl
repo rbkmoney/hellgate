@@ -216,7 +216,7 @@ invalid_payment_method(C) ->
         token          = <<"TOKEN">>,
         payment_system = mastercard,
         bin            = <<"666666">>,
-        masked_pan     = <<"666">>
+        last_digits    = <<"666">>
     }},
     PaymentResource = make_disposable_payment_resource(PaymentTool, <<"SESSION0">>),
     Params = #payproc_RecurrentPaymentToolParams{

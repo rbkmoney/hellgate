@@ -3298,7 +3298,7 @@ make_adjustment_params(Reason) ->
 
 make_adjustment_params(Reason, Revision) ->
     #payproc_InvoicePaymentAdjustmentParams{
-        domain_revision = Revision,
+        legacy_domain_revision = Revision,
         reason = Reason
     }.
 

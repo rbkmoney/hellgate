@@ -1377,7 +1377,7 @@ create_adjustment(Timestamp, Params, St, Opts) ->
 
 get_adjustment_revision(Params) ->
     hg_utils:select_defined(
-        Params#payproc_InvoicePaymentAdjustmentParams.domain_revision,
+        Params#payproc_InvoicePaymentAdjustmentParams.legacy_domain_revision,
         hg_domain:head()
     ).
 

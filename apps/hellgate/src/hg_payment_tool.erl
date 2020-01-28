@@ -46,7 +46,7 @@ create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSy
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
-        masked_pan = <<"">>,
+        last_digits = <<"">>,
         is_cvv_empty = true
     }};
 create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
@@ -54,7 +54,7 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
-        masked_pan = <<"">>
+        last_digits = <<"">>
     }};
 create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
@@ -64,7 +64,7 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_T
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
-        masked_pan = <<"">>,
+        last_digits = <<"">>,
         token_provider = TokenProvider
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->
@@ -204,7 +204,7 @@ marshal(bank_card = T, #domain_BankCard{} = BankCard) ->
         <<"token">>             => marshal(str, BankCard#domain_BankCard.token),
         <<"payment_system">>    => marshal({T, payment_system}, BankCard#domain_BankCard.payment_system),
         <<"bin">>               => marshal(str, BankCard#domain_BankCard.bin),
-        <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.masked_pan),
+        <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.last_digits),
         <<"token_provider">>    => marshal({T, token_provider}, BankCard#domain_BankCard.token_provider),
         <<"issuer_country">>    => marshal({T, issuer_country}, BankCard#domain_BankCard.issuer_country),
         <<"bank_name">>         => marshal({T, bank_name}, BankCard#domain_BankCard.bank_name),
@@ -350,7 +350,7 @@ unmarshal(bank_card = T, #{
         token            = unmarshal(str, Token),
         payment_system   = unmarshal({T, payment_system}, PaymentSystem),
         bin              = unmarshal(str, Bin),
-        masked_pan       = unmarshal(str, MaskedPan),
+        last_digits      = unmarshal(str, MaskedPan),
         token_provider   = unmarshal({T, token_provider}, TokenProvider),
         issuer_country   = unmarshal({T, issuer_country}, IssuerCountry),
         bank_name        = unmarshal({T, bank_name}, BankName),
@@ -395,7 +395,7 @@ unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedP
         token               = unmarshal(str, Token),
         payment_system      = unmarshal({bank_card, payment_system}, PaymentSystem),
         bin                 = unmarshal(str, Bin),
-        masked_pan          = unmarshal(str, MaskedPan)
+        last_digits         = unmarshal(str, MaskedPan)
     }};
 
 unmarshal(payment_method, <<"card">>) ->
@@ -514,7 +514,7 @@ legacy_unmarshalling_test_() ->
         token          = <<"abcdefabcdefabcdefabcdef">>,
         payment_system = nspkmir,
         bin            = <<"22002201">>,
-        masked_pan     = <<"11">>
+        last_digits    = <<"11">>
     }},
     PT2 = {payment_terminal, #domain_PaymentTerminal{
         terminal_type  = euroset
@@ -529,7 +529,7 @@ legacy_marshal(_Vsn = 2, {bank_card, #domain_BankCard{} = BankCard}) ->
         <<"token">>          => marshal(str, BankCard#domain_BankCard.token),
         <<"payment_system">> => marshal({bank_card, payment_system}, BankCard#domain_BankCard.payment_system),
         <<"bin">>            => marshal(str, BankCard#domain_BankCard.bin),
-        <<"masked_pan">>     => marshal(str, BankCard#domain_BankCard.masked_pan)
+        <<"masked_pan">>     => marshal(str, BankCard#domain_BankCard.last_digits)
     }];
 legacy_marshal(_Vsn = 2, {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
     [2, marshal({payment_terminal, type}, TerminalType)].
