@@ -589,7 +589,7 @@ make_payment_tool(empty_cvv) ->
             token          = <<"empty_cvv">>,
             payment_system = visa,
             bin            = <<"424242">>,
-            masked_pan     = <<"4242">>,
+            last_digits    = <<"4242">>,
             token_provider = undefined,
             is_cvv_empty   = true
         }},
@@ -670,7 +670,7 @@ construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider
             token          = Token,
             payment_system = PaymentSystem,
             bin            = Bin,
-            masked_pan     = Pan,
+            last_digits    = Pan,
             token_provider = TokenProvider
         }},
         Session

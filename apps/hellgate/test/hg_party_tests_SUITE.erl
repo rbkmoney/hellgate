@@ -837,7 +837,7 @@ contract_p2p_terms(C) ->
         token = <<"1OleNyeXogAKZBNTgxBGQE">>,
         payment_system = visa,
         bin = <<"415039">>,
-        masked_pan = <<"0900">>,
+        last_digits = <<"0900">>,
         issuer_country = rus
     },
     Varset = #payproc_Varset{

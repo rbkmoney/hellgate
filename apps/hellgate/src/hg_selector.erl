@@ -201,14 +201,14 @@ p2p_provider_test() ->
         token          = <<"TOKEN1">>,
         payment_system = mastercard,
         bin            = <<"888888">>,
-        masked_pan     = <<"888">>,
+        last_digits    = <<"888">>,
         issuer_country = rus
     },
     BankCard2 = #domain_BankCard{
         token          = <<"TOKEN2">>,
         payment_system = mastercard,
         bin            = <<"777777">>,
-        masked_pan     = <<"777">>,
+        last_digits    = <<"777">>,
         issuer_country = rus
     },
     Vs = #{
@@ -225,7 +225,7 @@ p2p_allow_test() ->
         token          = <<"TOKEN1">>,
         payment_system = PS,
         bin            = <<"888888">>,
-        masked_pan     = <<"888">>,
+        last_digits    = <<"888">>,
         issuer_country = Country}
     end,
     FunGenVS = fun(PS1, PS2) -> #{p2p_tool => #domain_P2PTool{
