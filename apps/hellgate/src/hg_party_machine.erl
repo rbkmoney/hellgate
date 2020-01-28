@@ -291,7 +291,16 @@ handle_call('Accept', [Claim], AuxSt, St) ->
         throw:#payproc_InvalidChangeset{reason = Reason0} ->
             Reason1 = io_lib:format("~0tp", [Reason0]),
             Reason2 = unicode:characters_to_binary(Reason1),
-            erlang:throw(#claim_management_InvalidChangeset{reason = Reason2, invalid_changeset = Changeset})
+            InvalidModificationChangeset = [
+                Modification ||
+                #claim_management_ModificationUnit{
+                    modification = Modification
+                } <- Changeset
+            ],
+            erlang:throw(#claim_management_InvalidChangeset{
+                reason = Reason2,
+                invalid_changeset = InvalidModificationChangeset
+            })
     end;
 
 handle_call('Commit', [CmClaim], AuxSt, St) ->
