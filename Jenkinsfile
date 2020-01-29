@@ -48,7 +48,7 @@ build('hellgate', 'docker-host', finalHook) {
             sh "make wdeps_test"
           }
         }
-      ],
+      ]
       parallel hg_stages
     }
     runStage('make release') {
