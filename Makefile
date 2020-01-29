@@ -51,7 +51,7 @@ lint:
 	elvis rock
 
 dialyze: submodules
-	$(REBAR) dialyzer
+	$(REBAR) dialyzer -u false -s true
 
 plt_update:
 	$(REBAR) dialyzer -u true -s false
