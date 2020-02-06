@@ -356,7 +356,12 @@ process_payment(
     end;
 
 process_payment(?cancelled(), _, PaymentInfo, _) ->
-    finish(success(PaymentInfo), get_payment_id(PaymentInfo)).
+    case get_payment_info_scenario(PaymentInfo) of
+        {temporary_unavailability, Scenario} ->
+            process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
+        _ ->
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+    end.
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
@@ -584,7 +589,7 @@ make_payment_tool(empty_cvv) ->
             token          = <<"empty_cvv">>,
             payment_system = visa,
             bin            = <<"424242">>,
-            masked_pan     = <<"4242">>,
+            last_digits    = <<"4242">>,
             token_provider = undefined,
             is_cvv_empty   = true
         }},
@@ -665,7 +670,7 @@ construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider
             token          = Token,
             payment_system = PaymentSystem,
             bin            = Bin,
-            masked_pan     = Pan,
+            last_digits    = Pan,
             token_provider = TokenProvider
         }},
         Session

@@ -96,10 +96,10 @@ handle_function(Func, Args, Opts) ->
     ).
 
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
-    RecurrentPaymentToolParams0 = ensure_paytool_id_defined(RecurrentPaymentToolParams),
+    RecurrentPaymentToolParams0 = ensure_params_paytool_id_defined(RecurrentPaymentToolParams),
     RecPaymentToolID = get_paytool_id(RecurrentPaymentToolParams0),
     ok = set_meta(RecPaymentToolID),
-    RecurrentPaymentToolParams1 = ensure_domain_revision_defined(RecurrentPaymentToolParams0),
+    RecurrentPaymentToolParams1 = ensure_params_domain_revision_defined(RecurrentPaymentToolParams0),
     _ = validate_paytool_params(RecurrentPaymentToolParams1),
     ok = start(RecPaymentToolID, RecurrentPaymentToolParams1),
     get_rec_payment_tool(get_state(RecPaymentToolID));
@@ -129,14 +129,17 @@ validate_paytool_params(RecurrentPaymentToolParams) ->
     ),
     ok.
 
-ensure_domain_revision_defined(#payproc_RecurrentPaymentToolParams{domain_revision = undefined} = Params) ->
-    Params#payproc_RecurrentPaymentToolParams{domain_revision = hg_domain:head()};
-ensure_domain_revision_defined(Params) ->
-    Params.
+-spec ensure_params_domain_revision_defined(rec_payment_tool_params()) ->
+    rec_payment_tool_params().
+ensure_params_domain_revision_defined(Params) ->
+    DomainRevision0 = Params#payproc_RecurrentPaymentToolParams.domain_revision,
+    Params#payproc_RecurrentPaymentToolParams{
+        domain_revision = ensure_domain_revision_defined(DomainRevision0)
+    }.
 
-ensure_paytool_id_defined(Params = #payproc_RecurrentPaymentToolParams{id = undefined}) ->
+ensure_params_paytool_id_defined(Params = #payproc_RecurrentPaymentToolParams{id = undefined}) ->
     Params#payproc_RecurrentPaymentToolParams{id = hg_utils:unique_id()};
-ensure_paytool_id_defined(Params) ->
+ensure_params_paytool_id_defined(Params) ->
     Params.
 
 get_paytool_id(#payproc_RecurrentPaymentToolParams{id = ID}) ->
@@ -422,8 +425,45 @@ construct_session(St) ->
 construct_token_info(St) ->
     #prxprv_RecurrentTokenInfo{
         payment_tool = construct_proxy_payment_tool(St),
-        trx          = get_session_trx(get_session(St))
+        trx          = get_session_trx(get_session(St)),
+        shop         = construct_proxy_shop(get_shop(St), get_domain_revision(St))
     }.
+
+construct_proxy_shop(DomainShop, DomainRevision) ->
+    #domain_Shop{
+        id = ShopID,
+        details = ShopDetails,
+        location = Location,
+        category = ShopCategoryRef
+    } = DomainShop,
+    ShopCategory = hg_domain:get(DomainRevision, {category, ShopCategoryRef}),
+    #prxprv_Shop{
+        id = ShopID,
+        category = ShopCategory,
+        details = ShopDetails,
+        location = Location
+    }.
+
+get_shop(St) ->
+    RecPaymentTool = get_rec_payment_tool(St),
+    ShopID = RecPaymentTool#payproc_RecurrentPaymentTool.shop_id,
+    Party = get_party(St),
+    hg_party:get_shop(ShopID, Party).
+
+get_party(St) ->
+    RecPaymentTool = get_rec_payment_tool(St),
+    #payproc_RecurrentPaymentTool{
+        party_id = PartyID,
+        party_revision = PartyRevision
+    } = RecPaymentTool,
+    Revision = ensure_party_revision_defined(PartyID, PartyRevision),
+    Party = hg_party:checkout(PartyID, {revision, Revision}),
+    Party.
+
+get_domain_revision(St) ->
+    RecPaymentTool = get_rec_payment_tool(St),
+    DomainRevison = RecPaymentTool#payproc_RecurrentPaymentTool.domain_revision,
+    ensure_domain_revision_defined(DomainRevison).
 
 get_session_trx(#{trx := Trx}) ->
     Trx;
@@ -789,6 +829,13 @@ get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) 
 ensure_party_revision_defined(PartyID, undefined) ->
     pm_party:get_party_revision(PartyID);
 ensure_party_revision_defined(_PartyID, Revision) ->
+    Revision.
+
+-spec ensure_domain_revision_defined(dmsl_domain_thrift:'DataRevision'() | undefined) ->
+    dmsl_domain_thrift:'DataRevision'().
+ensure_domain_revision_defined(undefined) ->
+    hg_domain:head();
+ensure_domain_revision_defined(Revision) ->
     Revision.
 
 %%

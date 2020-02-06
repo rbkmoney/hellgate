@@ -102,6 +102,8 @@
 -export([payment_has_optional_fields/1]).
 -export([payment_capture_failed/1]).
 -export([payment_capture_retries_exceeded/1]).
+-export([payment_error_in_cancel_session_does_not_cause_payment_failure/1]).
+-export([payment_error_in_capture_session_does_not_cause_payment_failure/1]).
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
@@ -226,7 +228,9 @@ groups() ->
             payment_has_optional_fields,
             invoice_success_on_third_payment,
             payment_capture_failed,
-            payment_capture_retries_exceeded
+            payment_capture_retries_exceeded,
+            payment_error_in_cancel_session_does_not_cause_payment_failure,
+            payment_error_in_capture_session_does_not_cause_payment_failure
         ]},
 
         {adjustments, [parallel], [
@@ -947,6 +951,64 @@ payment_capture_retries_exceeded(C) ->
     ),
     PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
 
+-spec payment_error_in_cancel_session_does_not_cause_payment_failure(config()) -> test_return().
+
+payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
+    Client        = cfg(client, C),
+    PartyClient   = cfg(party_client, C),
+    ShopID        = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    Amount        = 42000,
+    Party         = hg_client_party:get(PartyClient),
+    Shop          = maps:get(ShopID, Party#domain_Party.shops),
+    Account       = Shop#domain_Shop.account,
+    SettlementID  = Account#domain_ShopAccount.settlement,
+    InvoiceID     = start_invoice(ShopID, <<"rubberduck">>, make_due_date(1000), Amount, C),
+    PaymentParams = make_scenario_payment_params([good, fail, good], {hold, capture}),
+    PaymentID     = process_payment(InvoiceID, PaymentParams, Client),
+    ?assertMatch(#{max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"cancel">>, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(Reason), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    timeout = next_event(InvoiceID, Client),
+    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ?assertException(
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
+    ),
+    PaymentID = repair_failed_cancel(InvoiceID, PaymentID, Reason, Client).
+
+-spec payment_error_in_capture_session_does_not_cause_payment_failure(config()) -> test_return().
+
+payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
+    Client        = cfg(client, C),
+    PartyClient   = cfg(party_client, C),
+    ShopID        = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    Amount        = 42000,
+    Cost          = ?cash(Amount, <<"RUB">>),
+    Party         = hg_client_party:get(PartyClient),
+    Shop          = maps:get(ShopID, Party#domain_Party.shops),
+    Account       = Shop#domain_Shop.account,
+    SettlementID  = Account#domain_ShopAccount.settlement,
+    InvoiceID     = start_invoice(ShopID, <<"rubberduck">>, make_due_date(1000), Amount, C),
+    PaymentParams = make_scenario_payment_params([good, fail, good], {hold, cancel}),
+    PaymentID     = process_payment(InvoiceID, PaymentParams, Client),
+    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"capture">>, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    timeout = next_event(InvoiceID, Client),
+    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ?assertException(
+        error,
+        {{woody_error, _}, _},
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
+    ),
+    PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
+
 repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
     Target = ?captured(Reason, Cost),
     Changes = [
@@ -954,6 +1016,20 @@ repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client) ->
     ],
     ok = repair_invoice(InvoiceID, Changes, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0).
+
+repair_failed_cancel(InvoiceID, PaymentID, Reason, Client) ->
+    Target = ?cancelled_with_reason(Reason),
+    Changes = [
+        ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
+    ],
+    ok = repair_invoice(InvoiceID, Changes, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(Reason), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(Reason)))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
 
 -spec payment_w_terminal_success(config()) -> _ | no_return().
 
@@ -3160,6 +3236,10 @@ make_scenario_payment_params(Scenario) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}),
     make_payment_params(PaymentTool, Session, instant).
 
+make_scenario_payment_params(Scenario, FlowType) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}),
+    make_payment_params(PaymentTool, Session, FlowType).
+
 make_payment_params() ->
     make_payment_params(instant).
 
@@ -3218,7 +3298,7 @@ make_adjustment_params(Reason) ->
 
 make_adjustment_params(Reason, Revision) ->
     #payproc_InvoicePaymentAdjustmentParams{
-        domain_revision = Revision,
+        legacy_domain_revision = Revision,
         reason = Reason
     }.
 
@@ -3489,7 +3569,7 @@ make_customer_w_rec_tool(PartyID, ShopID, Client) ->
     CustomerID.
 
 wait_for_binding_success(CustomerID, BindingID, Client) ->
-    wait_for_binding_success(CustomerID, BindingID, 15000, Client).
+    wait_for_binding_success(CustomerID, BindingID, 20000, Client).
 
 wait_for_binding_success(CustomerID, BindingID, TimeLeft, Client) when TimeLeft > 0 ->
     Target = ?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_succeeded())),
