@@ -49,8 +49,6 @@
 
 -export_type([varset/0]).
 
--export([fold/3]).
--export([collect/1]).
 -export([reduce/3]).
 -export([reduce_to_value/3]).
 -export([reduce_predicate/3]).
@@ -58,27 +56,6 @@
 -define(const(Bool), {constant, Bool}).
 
 %%
-
--spec fold(FoldWith :: fun((Value :: _, Acc) -> Acc), Acc, t()) ->
-    Acc when
-        Acc :: term().
-
-fold(FoldWith, Acc, {value, V}) ->
-    FoldWith(V, Acc);
-fold(FoldWith, Acc, {decisions, Ps}) ->
-    fold_decisions(FoldWith, Acc, Ps).
-
-fold_decisions(FoldWith, Acc, [{_Type, _, S} | Rest]) ->
-    fold_decisions(FoldWith, fold(FoldWith, Acc, S), Rest);
-fold_decisions(_, Acc, []) ->
-    Acc.
-
--spec collect(t()) ->
-    [value()].
-
-collect(S) ->
-    fold(fun (V, Acc) -> [V | Acc] end, [], S).
-
 
 -spec reduce_to_value(t(), varset(), pm_domain:revision()) -> value() | no_return().
 
@@ -201,14 +178,14 @@ p2p_provider_test() ->
         token          = <<"TOKEN1">>,
         payment_system = mastercard,
         bin            = <<"888888">>,
-        masked_pan     = <<"888">>,
+        last_digits    = <<"888">>,
         issuer_country = rus
     },
     BankCard2 = #domain_BankCard{
         token          = <<"TOKEN2">>,
         payment_system = mastercard,
         bin            = <<"777777">>,
-        masked_pan     = <<"777">>,
+        last_digits    = <<"777">>,
         issuer_country = rus
     },
     Vs = #{
@@ -225,7 +202,7 @@ p2p_allow_test() ->
         token          = <<"TOKEN1">>,
         payment_system = PS,
         bin            = <<"888888">>,
-        masked_pan     = <<"888">>,
+        last_digits    = <<"888">>,
         issuer_country = Country}
     end,
     FunGenVS = fun(PS1, PS2) -> #{p2p_tool => #domain_P2PTool{

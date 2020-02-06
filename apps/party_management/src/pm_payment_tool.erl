@@ -5,38 +5,14 @@
 
 %%
 
--export([get_method/1]).
 -export([create_from_method/1]).
 -export([test_condition/3]).
-
--export([marshal/1]).
--export([unmarshal/1]).
 
 %%
 
 -type t() :: dmsl_domain_thrift:'PaymentTool'().
 -type method() :: dmsl_domain_thrift:'PaymentMethodRef'().
 -type condition() :: dmsl_domain_thrift:'PaymentToolCondition'().
-
--spec get_method(t()) -> method().
-
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
-    #domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSystem}};
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
-    #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}};
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider}}) ->
-    #domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
-        payment_system = PaymentSystem,
-        token_provider = TokenProvider
-    }}};
-get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
-    #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
-get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
-    #domain_PaymentMethodRef{id = {digital_wallet, Provider}};
-get_method({crypto_currency, CC}) ->
-    #domain_PaymentMethodRef{id = {crypto_currency, CC}};
-get_method({mobile_commerce, #domain_MobileCommerce{operator = Operator}}) ->
-    #domain_PaymentMethodRef{id = {mobile, Operator}}.
 
 -spec create_from_method(method()) -> t().
 
@@ -46,7 +22,7 @@ create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSy
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
-        masked_pan = <<"">>,
+        last_digits = <<"">>,
         is_cvv_empty = true
     }};
 create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
@@ -54,7 +30,7 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
-        masked_pan = <<"">>
+        last_digits = <<"">>
     }};
 create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
@@ -64,7 +40,7 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_T
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
-        masked_pan = <<"">>,
+        last_digits = <<"">>,
         token_provider = TokenProvider
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->
@@ -185,295 +161,3 @@ test_mobile_commerce_condition(#domain_MobileCommerceCondition{definition = Def}
 
 test_mobile_commerce_condition_def({operator_is, C1}, #domain_MobileCommerce{operator = C2}, _Rev) ->
     C1 =:= C2.
-
-%% Marshalling
-
--spec marshal(t()) ->
-    pm_msgpack_marshalling:value().
-
-marshal(PaymentTool) ->
-    marshal(payment_tool, PaymentTool).
-
-marshal(payment_tool, {PaymentMethod, V}) ->
-    [3, marshal(payment_method, PaymentMethod), marshal(PaymentMethod, V)];
-
-marshal(bank_card = T, #domain_BankCard{} = BankCard) ->
-    genlib_map:compact(#{
-        <<"token">>             => marshal(str, BankCard#domain_BankCard.token),
-        <<"payment_system">>    => marshal({T, payment_system}, BankCard#domain_BankCard.payment_system),
-        <<"bin">>               => marshal(str, BankCard#domain_BankCard.bin),
-        <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.masked_pan),
-        <<"token_provider">>    => marshal({T, token_provider}, BankCard#domain_BankCard.token_provider),
-        <<"issuer_country">>    => marshal({T, issuer_country}, BankCard#domain_BankCard.issuer_country),
-        <<"bank_name">>         => marshal({T, bank_name}, BankCard#domain_BankCard.bank_name),
-        <<"metadata">>          => marshal({T, metadata}, BankCard#domain_BankCard.metadata),
-        <<"is_cvv_empty">>      => marshal({T, boolean}, BankCard#domain_BankCard.is_cvv_empty)
-    });
-marshal(payment_terminal = T, #domain_PaymentTerminal{terminal_type = TerminalType}) ->
-    marshal({T, type}, TerminalType);
-marshal(digital_wallet = T, #domain_DigitalWallet{} = DigitalWallet) ->
-    #{
-        <<"provider">> => marshal({T, provider}, DigitalWallet#domain_DigitalWallet.provider),
-        <<"id">>       => marshal(str, DigitalWallet#domain_DigitalWallet.id)
-    };
-marshal(crypto_currency = T, CC) ->
-    marshal({T, currency}, CC);
-
-marshal(payment_method, bank_card) ->
-    <<"card">>;
-marshal(payment_method, payment_terminal) ->
-    <<"payterm">>;
-marshal(payment_method, digital_wallet) ->
-    <<"wallet">>;
-marshal(payment_method, crypto_currency) ->
-    <<"crypto_currency">>;
-marshal(payment_method, mobile_commerce) ->
-    <<"mobile_commerce">>;
-
-marshal({bank_card, payment_system}, visa) ->
-    <<"visa">>;
-marshal({bank_card, payment_system}, mastercard) ->
-    <<"mastercard">>;
-marshal({bank_card, payment_system}, visaelectron) ->
-    <<"visaelectron">>;
-marshal({bank_card, payment_system}, maestro) ->
-    <<"maestro">>;
-marshal({bank_card, payment_system}, forbrugsforeningen) ->
-    <<"forbrugsforeningen">>;
-marshal({bank_card, payment_system}, dankort) ->
-    <<"dankort">>;
-marshal({bank_card, payment_system}, amex) ->
-    <<"amex">>;
-marshal({bank_card, payment_system}, dinersclub) ->
-    <<"dinersclub">>;
-marshal({bank_card, payment_system}, discover) ->
-    <<"discover">>;
-marshal({bank_card, payment_system}, unionpay) ->
-    <<"unionpay">>;
-marshal({bank_card, payment_system}, jcb) ->
-    <<"jcb">>;
-marshal({bank_card, payment_system}, nspkmir) ->
-    <<"nspkmir">>;
-
-marshal({bank_card, token_provider}, applepay) ->
-    <<"applepay">>;
-marshal({bank_card, token_provider}, googlepay) ->
-    <<"googlepay">>;
-marshal({bank_card, token_provider}, samsungpay) ->
-    <<"samsungpay">>;
-
-marshal({bank_card, issuer_country}, Residence) when is_atom(Residence), Residence /= undefined ->
-    marshal(str, atom_to_binary(Residence, utf8));
-
-marshal({bank_card, bank_name}, Name) when is_binary(Name) ->
-    marshal(str, Name);
-
-marshal({bank_card, metadata}, MD) when is_map(MD) ->
-    maps:map(fun (_, V) -> pm_msgpack_marshalling:unmarshal(V) end, MD);
-
-marshal({payment_terminal, type}, euroset) ->
-    <<"euroset">>;
-
-marshal({payment_terminal, type}, wechat) ->
-    <<"wechat">>;
-
-marshal({payment_terminal, type}, alipay) ->
-    <<"alipay">>;
-
-marshal({digital_wallet, provider}, qiwi) ->
-    <<"qiwi">>;
-
-marshal({bank_card, boolean}, true) ->
-    <<"true">>;
-marshal({bank_card, boolean}, false) ->
-    <<"false">>;
-
-marshal({mobile_commerce, operator}, mts) ->
-    <<"mts">>;
-marshal({mobile_commerce, operator}, megafone) ->
-    <<"megafone">>;
-marshal({mobile_commerce, operator}, yota) ->
-    <<"yota">>;
-marshal({mobile_commerce, operator}, tele2) ->
-    <<"tele2">>;
-marshal({mobile_commerce, operator}, beeline) ->
-    <<"beeline">>;
-
-marshal({crypto_currency, currency}, bitcoin) ->
-    <<"bitcoin">>;
-marshal({crypto_currency, currency}, litecoin) ->
-    <<"litecoin">>;
-marshal({crypto_currency, currency}, bitcoin_cash) ->
-    <<"bitcoin_cash">>;
-marshal({crypto_currency, currency}, ripple) ->
-    <<"ripple">>;
-marshal({crypto_currency, currency}, ethereum) ->
-    <<"ethereum">>;
-marshal({crypto_currency, currency}, zcash) ->
-    <<"zcash">>;
-
-marshal(_, Other) ->
-    Other.
-
-%% Unmarshalling
-
--spec unmarshal(pm_msgpack_marshalling:value()) ->
-    t().
-
-unmarshal(PaymentTool) ->
-    unmarshal(payment_tool, PaymentTool).
-
-unmarshal(payment_tool, [3, PMV, V]) ->
-    PaymentMethod = unmarshal(payment_method, PMV),
-    {PaymentMethod, unmarshal(PaymentMethod, V)};
-
-unmarshal(bank_card = T, #{
-    <<"token">>          := Token,
-    <<"payment_system">> := PaymentSystem,
-    <<"bin">>            := Bin,
-    <<"masked_pan">>     := MaskedPan
-} = V) ->
-    TokenProvider = genlib_map:get(<<"token_provider">>, V),
-    IssuerCountry = genlib_map:get(<<"issuer_country">>, V),
-    BankName      = genlib_map:get(<<"bank_name">>, V),
-    MD            = genlib_map:get(<<"metadata">>, V),
-    IsCVVEmpty    = genlib_map:get(<<"is_cvv_empty">>, V),
-    #domain_BankCard{
-        token            = unmarshal(str, Token),
-        payment_system   = unmarshal({T, payment_system}, PaymentSystem),
-        bin              = unmarshal(str, Bin),
-        masked_pan       = unmarshal(str, MaskedPan),
-        token_provider   = unmarshal({T, token_provider}, TokenProvider),
-        issuer_country   = unmarshal({T, issuer_country}, IssuerCountry),
-        bank_name        = unmarshal({T, bank_name}, BankName),
-        metadata         = unmarshal({T, metadata}, MD),
-        is_cvv_empty     = unmarshal({T, boolean}, IsCVVEmpty)
-    };
-unmarshal(payment_terminal = T, TerminalType) ->
-    #domain_PaymentTerminal{
-        terminal_type    = unmarshal({T, type}, TerminalType)
-    };
-unmarshal(digital_wallet = T, #{
-    <<"provider">>       := Provider,
-    <<"id">>             := ID
-}) ->
-    #domain_DigitalWallet{
-        provider         = unmarshal({T, provider}, Provider),
-        id               = unmarshal(str, ID)
-    };
-unmarshal(crypto_currency = T, CC) ->
-    {crypto_currency, unmarshal({T, currency}, CC)};
-unmarshal(mobile_commerce = T, #{
-    <<"operator">> := Operator,
-    <<"phone">>    := #{cc := CC, ctn := Ctn}
-}) ->
-    #domain_MobileCommerce{
-        operator = unmarshal({T, operator}, Operator),
-        phone = #domain_MobilePhone{
-            cc = unmarshal(str, CC),
-            ctn = unmarshal(str, Ctn)
-        }
-    };
-
-unmarshal(payment_tool, [2, #{<<"token">>:= _} = BankCard]) ->
-    {bank_card, unmarshal(bank_card, BankCard)};
-unmarshal(payment_tool, [2, TerminalType]) ->
-    {payment_terminal, #domain_PaymentTerminal{
-        terminal_type = unmarshal({payment_terminal, type}, TerminalType)
-    }};
-
-unmarshal(payment_method, <<"card">>) ->
-    bank_card;
-unmarshal(payment_method, <<"payterm">>) ->
-    payment_terminal;
-unmarshal(payment_method, <<"wallet">>) ->
-    digital_wallet;
-unmarshal(payment_method, <<"crypto_currency">>) ->
-    crypto_currency;
-unmarshal(payment_method, <<"mobile_commerce">>) ->
-    mobile_commerce;
-
-unmarshal({bank_card, payment_system}, <<"visa">>) ->
-    visa;
-unmarshal({bank_card, payment_system}, <<"mastercard">>) ->
-    mastercard;
-unmarshal({bank_card, payment_system}, <<"visaelectron">>) ->
-    visaelectron;
-unmarshal({bank_card, payment_system}, <<"maestro">>) ->
-    maestro;
-unmarshal({bank_card, payment_system}, <<"forbrugsforeningen">>) ->
-    forbrugsforeningen;
-unmarshal({bank_card, payment_system}, <<"dankort">>) ->
-    dankort;
-unmarshal({bank_card, payment_system}, <<"amex">>) ->
-    amex;
-unmarshal({bank_card, payment_system}, <<"dinersclub">>) ->
-    dinersclub;
-unmarshal({bank_card, payment_system}, <<"discover">>) ->
-    discover;
-unmarshal({bank_card, payment_system}, <<"unionpay">>) ->
-    unionpay;
-unmarshal({bank_card, payment_system}, <<"jcb">>) ->
-    jcb;
-unmarshal({bank_card, payment_system}, <<"nspkmir">>) ->
-    nspkmir;
-
-unmarshal({bank_card, token_provider}, <<"applepay">>) ->
-    applepay;
-unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
-    googlepay;
-unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
-    samsungpay;
-
-unmarshal({bank_card, issuer_country}, Residence) when is_binary(Residence) ->
-    binary_to_existing_atom(unmarshal(str, Residence), utf8);
-
-unmarshal({bank_card, bank_name}, Name) when is_binary(Name) ->
-    unmarshal(str, Name);
-
-unmarshal({bank_card, metadata}, MD) when is_map(MD) ->
-    maps:map(fun (_, V) -> pm_msgpack_marshalling:marshal(V) end, MD);
-
-unmarshal({payment_terminal, type}, <<"euroset">>) ->
-    euroset;
-
-unmarshal({payment_terminal, type}, <<"wechat">>) ->
-    wechat;
-
-unmarshal({payment_terminal, type}, <<"alipay">>) ->
-    alipay;
-
-unmarshal({digital_wallet, provider}, <<"qiwi">>) ->
-    qiwi;
-
-unmarshal({bank_card, boolean}, <<"true">>) ->
-    true;
-unmarshal({bank_card, boolean}, <<"false">>) ->
-    false;
-
-unmarshal({crypto_currency, currency}, <<"bitcoin">>) ->
-    bitcoin;
-unmarshal({crypto_currency, currency}, <<"litecoin">>) ->
-    litecoin;
-unmarshal({crypto_currency, currency}, <<"bitcoin_cash">>) ->
-    bitcoin_cash;
-unmarshal({crypto_currency, currency}, <<"ripple">>) ->
-    ripple;
-unmarshal({crypto_currency, currency}, <<"ethereum">>) ->
-    ethereum;
-unmarshal({crypto_currency, currency}, <<"zcash">>) ->
-    zcash;
-
-unmarshal({mobile_commerce, operator}, <<"mts">>) ->
-    mts;
-unmarshal({mobile_commerce, operator}, <<"megafone">>) ->
-    megafone;
-unmarshal({mobile_commerce, operator}, <<"yota">>) ->
-    yota;
-unmarshal({mobile_commerce, operator}, <<"tele2">>) ->
-    tele2;
-unmarshal({mobile_commerce, operator}, <<"beeline">>) ->
-    beeline;
-
-unmarshal(_, Other) ->
-    Other.
