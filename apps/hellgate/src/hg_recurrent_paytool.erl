@@ -448,7 +448,7 @@ get_shop(St) ->
     RecPaymentTool = get_rec_payment_tool(St),
     ShopID = RecPaymentTool#payproc_RecurrentPaymentTool.shop_id,
     Party = get_party(St),
-    hg_party:get_shop(ShopID, Party).
+    pm_party:get_shop(ShopID, Party).
 
 get_party(St) ->
     RecPaymentTool = get_rec_payment_tool(St),
@@ -457,7 +457,7 @@ get_party(St) ->
         party_revision = PartyRevision
     } = RecPaymentTool,
     Revision = ensure_party_revision_defined(PartyID, PartyRevision),
-    Party = hg_party:checkout(PartyID, {revision, Revision}),
+    Party = pm_party:checkout(PartyID, {revision, Revision}),
     Party.
 
 get_domain_revision(St) ->

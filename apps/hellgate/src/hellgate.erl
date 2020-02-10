@@ -57,6 +57,7 @@ init([]) ->
         [
             party_client:child_spec(party_client, PartyClient),
             hg_machine:get_child_spec(MachineHandlers),
+            pm_machine:get_child_spec(PMMachineHandlers),
             get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts)
         ]
     }}.
@@ -76,7 +77,7 @@ get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts) ->
             handlers      => hg_machine:get_service_handlers(MachineHandlers, Opts) ++
                              pm_machine:get_service_handlers(PMMachineHandlers, Opts) ++ [
                 construct_service_handler(claim_committer              , pm_claim_committer_handler, Opts),
-                construct_service_handler(party_management             , pm_party_handler    , Opts),
+                construct_service_handler(party_management             , pm_party_handler          , Opts),
                 construct_service_handler(invoicing                    , hg_invoice                , Opts),
                 construct_service_handler(invoice_templating           , hg_invoice_template       , Opts),
                 construct_service_handler(customer_management          , hg_customer               , Opts),

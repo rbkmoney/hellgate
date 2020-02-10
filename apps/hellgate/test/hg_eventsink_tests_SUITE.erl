@@ -111,11 +111,9 @@ no_events(C) ->
 events_observed(C) ->
     EventsinkClient = ?c(eventsink_client, C),
     PartyMgmtClient = ?c(partymgmt_client, C),
-    PartyID = ?c(party_id, C),
     _History = hg_client_eventsink:pull_history(EventsinkClient),
     _ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyMgmtClient),
     Events = hg_client_eventsink:pull_events(10, EventsinkClient),
-    [?party_event(_ID, PartyID, 1, ?party_ev([?party_created(_, _, _) | _])) | _] = Events,
     Seqs = [Seq || ?event(_, _, Seq, _) <- Events],
     Seqs = lists:sort(Seqs),
     IDs = [ID || ?event(ID, _, _, _) <- Events],
