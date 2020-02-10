@@ -33,7 +33,7 @@ build('hellgate', 'docker-host', finalHook) {
         sh 'make wc_xref'
       }
       runStage('pre-dialyze') {
-        withWsCache("_build/default/rebar3_21.3.8.7_plt") {
+        withWsCache("_build/default/rebar3_22.2.6_plt") {
           sh 'make wc_plt_update'
         }
       }
