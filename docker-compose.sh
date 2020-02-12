@@ -57,7 +57,7 @@ services:
       retries: 20
 
   shumway-db:
-    image: dr.rbkmoney.com/rbkmoney/postgres:9.6
+    image: dr2.rbkmoney.com/rbkmoney/postgres:9.6
     environment:
       - POSTGRES_DB=shumway
       - POSTGRES_USER=postgres
