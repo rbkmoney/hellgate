@@ -17,7 +17,7 @@ BASE_IMAGE_NAME := service-erlang
 BASE_IMAGE_TAG := da0ab769f01b650b389d18fc85e7418e727cbe96
 
 # Build image tag to be used
-BUILD_IMAGE_TAG := 4536c31941b9c27c134e8daf0fd18848809219c9
+BUILD_IMAGE_TAG := e7eb72b7721443d88a948546da815528a96c6de9
 
 CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze plt_update \
 				start devrel release clean distclean
@@ -51,7 +51,7 @@ lint:
 	elvis rock
 
 dialyze: submodules
-	$(REBAR) dialyzer -u false -s true
+	$(REBAR) dialyzer
 
 plt_update:
 	$(REBAR) dialyzer -u true -s false

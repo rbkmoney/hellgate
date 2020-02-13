@@ -32,24 +32,17 @@ build('hellgate', 'docker-host', finalHook) {
       runStage('xref') {
         sh 'make wc_xref'
       }
-      hg_stages = [
-        "dialyzer": {
-          runStage('pre-dialyze') {
-            withWsCache("_build/default/rebar3_21.3.8.7_plt") {
-              sh 'make wc_plt_update'
-            }
-          }
-          runStage('dialyze') {
-            sh 'make wc_dialyze'
-          }
-        },
-        "tests": {
-          runStage('test') {
-            sh "make wdeps_test"
-          }
+      runStage('pre-dialyze') {
+        withWsCache("_build/default/rebar3_22.2.6_plt") {
+          sh 'make wc_plt_update'
         }
-      ]
-      parallel hg_stages
+      }
+      runStage('dialyze') {
+        sh 'make wc_dialyze'
+      }
+      runStage('test') {
+        sh "make wdeps_test"
+      }
     }
     runStage('make release') {
       withGithubPrivkey {
