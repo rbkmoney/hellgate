@@ -1,6 +1,6 @@
--module(hg_party_tests_SUITE).
+-module(pm_party_tests_SUITE).
 
--include("hg_ct_domain.hrl").
+-include("pm_ct_domain.hrl").
 -include("party_events.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
@@ -93,12 +93,12 @@
 
 %% tests descriptions
 
--type config() :: hg_ct_helper:config().
--type test_case_name() :: hg_ct_helper:test_case_name().
--type group_name() :: hg_ct_helper:group_name().
+-type config() :: pm_ct_helper:config().
+-type test_case_name() :: pm_ct_helper:test_case_name().
+-type group_name() :: pm_ct_helper:group_name().
 
 cfg(Key, C) ->
-    hg_ct_helper:cfg(Key, C).
+    pm_ct_helper:cfg(Key, C).
 
 -spec all() -> [{group, group_name()}].
 
@@ -239,14 +239,14 @@ groups() ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
-    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate]),
-    ok = hg_domain:insert(construct_domain_fixture()),
+    {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate]),
+    ok = pm_domain:insert(construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    ok = pm_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 %% tests
@@ -257,7 +257,7 @@ init_per_group(shop_blocking_suspension, C) ->
     C;
 init_per_group(Group, C) ->
     PartyID = list_to_binary(lists:concat([Group, ".", erlang:system_time()])),
-    ApiClient = hg_ct_helper:create_client(cfg(root_url, C), PartyID),
+    ApiClient = pm_ct_helper:create_client(cfg(root_url, C), PartyID),
     Client = pm_client_party:start(PartyID, ApiClient),
     [{party_id, PartyID}, {client, Client} | C].
 
@@ -465,22 +465,22 @@ party_retrieval(C) ->
 
 party_revisioning(C) ->
     Client = cfg(client, C),
-    T0 = hg_datetime:add_interval(hg_datetime:format_now(), {undefined, undefined, -1}), % yesterday
+    T0 = pm_datetime:add_interval(pm_datetime:format_now(), {undefined, undefined, -1}), % yesterday
     ?invalid_party_revision() = pm_client_party:checkout({timestamp, T0}, Client),
     Party1 = pm_client_party:get(Client),
     R1 = Party1#domain_Party.revision,
-    T1 = hg_datetime:format_now(),
+    T1 = pm_datetime:format_now(),
     Party2 = party_suspension(C),
     R2 = Party2#domain_Party.revision,
     Party1 = pm_client_party:checkout({timestamp, T1}, Client),
     Party1 = pm_client_party:checkout({revision, R1}, Client),
-    T2 = hg_datetime:format_now(),
+    T2 = pm_datetime:format_now(),
     _ = party_activation(C),
     Party2 = pm_client_party:checkout({timestamp, T2}, Client),
     Party2 = pm_client_party:checkout({revision, R2}, Client),
     Party3 = pm_client_party:get(Client),
     R3 = Party3#domain_Party.revision,
-    T3 = hg_datetime:add_interval(T2, {undefined, undefined, 1}), % tomorrow
+    T3 = pm_datetime:add_interval(T2, {undefined, undefined, 1}), % tomorrow
     Party3 = pm_client_party:checkout({timestamp, T3}, Client),
     Party3 = pm_client_party:checkout({revision, R3}, Client),
     ?invalid_party_revision() = pm_client_party:checkout({revision, R3 + 1}, Client).
@@ -507,7 +507,7 @@ party_get_revision(C) ->
 
 create_change_set(ID) ->
     ContractParams = make_contract_params(),
-    PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
+    PayoutToolParams = pm_ct_helper:make_battle_ready_payout_tool_params(),
     BinaryID = erlang:integer_to_binary(ID),
     ContractID = <<?REAL_CONTRACT_ID/binary, BinaryID/binary>>,
     PayoutToolID = <<"1">>,
@@ -523,7 +523,7 @@ contract_not_found(C) ->
 contract_creation(C) ->
     Client = cfg(client, C),
     ContractParams = make_contract_params(),
-    PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
+    PayoutToolParams = pm_ct_helper:make_battle_ready_payout_tool_params(),
     ContractID = ?REAL_CONTRACT_ID,
     PayoutToolID = <<"1">>,
     Changeset = [
@@ -541,17 +541,17 @@ contract_terms_retrieval(C) ->
     ContractID = ?REAL_CONTRACT_ID,
     Varset = #payproc_Varset{},
     PartyRevision = pm_client_party:get_revision(Client),
-    DomainRevision1 = hg_domain:head(),
-    Timstamp1 = hg_datetime:format_now(),
+    DomainRevision1 = pm_domain:head(),
+    Timstamp1 = pm_datetime:format_now(),
     TermSet1 = pm_client_party:compute_contract_terms(
         ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
     ),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet1,
-    ok = hg_domain:update(construct_term_set_for_party(PartyID, undefined)),
-    DomainRevision2 = hg_domain:head(),
-    Timstamp2 = hg_datetime:format_now(),
+    ok = pm_domain:update(construct_term_set_for_party(PartyID, undefined)),
+    DomainRevision2 = pm_domain:head(),
+    Timstamp2 = pm_datetime:format_now(),
     TermSet2 = pm_client_party:compute_contract_terms(
         ContractID, Timstamp2, {revision, PartyRevision}, DomainRevision2, Varset, Client
     ),
@@ -594,7 +594,7 @@ contract_already_terminated(C) ->
 contract_expiration(C) ->
     Client = cfg(client, C),
     ContractParams = make_contract_params(?tmpl(3)),
-    PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
+    PayoutToolParams = pm_ct_helper:make_battle_ready_payout_tool_params(),
     ContractID = <<"CONTRACT_EXPIRED">>,
     Changeset = [
         ?contract_modification(ContractID, {creation, ContractParams}),
@@ -612,7 +612,7 @@ contract_legal_agreement_binding(C) ->
     Client = cfg(client, C),
     ContractID = ?REAL_CONTRACT_ID,
     LA = #domain_LegalAgreement{
-        signed_at = hg_datetime:format_now(),
+        signed_at = pm_datetime:format_now(),
         legal_agreement_id = <<"20160123-0031235-OGM/GDM">>
     },
     Changeset = [?contract_modification(ContractID, {legal_agreement_binding, LA})],
@@ -742,13 +742,13 @@ contract_adjustment_creation(C) ->
 
 contract_adjustment_expiration(C) ->
     Client = cfg(client, C),
-    ok = hg_context:save(hg_context:create()),
+    ok = pm_context:save(pm_context:create()),
     ContractID = ?REAL_CONTRACT_ID,
     ID = <<"ADJ2">>,
-    Revision = hg_domain:head(),
+    Revision = pm_domain:head(),
     Terms = pm_party:get_terms(
         pm_client_party:get_contract(ContractID, Client),
-        hg_datetime:format_now(),
+        pm_datetime:format_now(),
         Revision
     ),
     AdjustmentParams = #payproc_ContractAdjustmentParams{
@@ -764,12 +764,12 @@ contract_adjustment_expiration(C) ->
     true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments),
     true = Terms /= pm_party:get_terms(
         pm_client_party:get_contract(ContractID, Client),
-        hg_datetime:format_now(),
+        pm_datetime:format_now(),
         Revision
     ),
-    AfterExpiration = hg_datetime:add_interval(hg_datetime:format_now(), {0, 1, 1}),
+    AfterExpiration = pm_datetime:add_interval(pm_datetime:format_now(), {0, 1, 1}),
     Terms = pm_party:get_terms(pm_client_party:get_contract(ContractID, Client), AfterExpiration, Revision),
-    hg_context:cleanup().
+    pm_context:cleanup().
 
 compute_payment_institution_terms(C) ->
     Client = cfg(client, C),
@@ -805,7 +805,7 @@ compute_payout_cash_flow(C) ->
     Params = #payproc_PayoutParams{
         id = ?REAL_SHOP_ID,
         amount = #domain_Cash{amount = 10000, currency = ?cur(<<"RUB">>)},
-        timestamp = hg_datetime:format_now()
+        timestamp = pm_datetime:format_now()
     },
     [
         #domain_FinalCashFlowPosting{
@@ -824,8 +824,8 @@ contract_p2p_terms(C) ->
     Client = cfg(client, C),
     ContractID = ?REAL_CONTRACT_ID,
     PartyRevision = pm_client_party:get_revision(Client),
-    DomainRevision1 = hg_domain:head(),
-    Timstamp1 = hg_datetime:format_now(),
+    DomainRevision1 = pm_domain:head(),
+    Timstamp1 = pm_datetime:format_now(),
     BankCard = #domain_BankCard{
         token = <<"1OleNyeXogAKZBNTgxBGQE">>,
         payment_system = visa,
@@ -859,7 +859,7 @@ shop_not_found_on_retrieval(C) ->
 
 shop_creation(C) ->
     Client = cfg(client, C),
-    Details = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
+    Details = pm_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
     ContractID = ?REAL_CONTRACT_ID,
     ShopID = ?REAL_SHOP_ID,
     Params = #payproc_ShopParams{
@@ -867,7 +867,7 @@ shop_creation(C) ->
         location = {url, <<"https://somename.somedomain/p/123?redirect=1">>},
         details  = Details,
         contract_id = ContractID,
-        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
+        payout_tool_id = pm_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
     ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(<<"RUB">>)},
     Changeset = [
@@ -887,20 +887,20 @@ shop_terms_retrieval(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = ?REAL_SHOP_ID,
-    Timestamp = hg_datetime:format_now(),
+    Timestamp = pm_datetime:format_now(),
     TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [?pmt(bank_card, visa)]}
     }} = TermSet1,
-    ok = hg_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
-    TermSet2 = pm_client_party:compute_shop_terms(ShopID, hg_datetime:format_now(), {timestamp, Timestamp}, Client),
+    ok = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
+    TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
     }} = TermSet2.
 
 shop_already_exists(C) ->
     Client = cfg(client, C),
-    Details = hg_ct_helper:make_shop_details(<<"THRlFT SHOP">>, <<"Hot. Fancy. Almost like thrift.">>),
+    Details = pm_ct_helper:make_shop_details(<<"THRlFT SHOP">>, <<"Hot. Fancy. Almost like thrift.">>),
     ContractID = ?REAL_CONTRACT_ID,
     ShopID = ?REAL_SHOP_ID,
     Params = #payproc_ShopParams{
@@ -908,7 +908,7 @@ shop_already_exists(C) ->
         location = {url, <<"https://s0mename.s0med0main">>},
         details  = Details,
         contract_id = ContractID,
-        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
+        payout_tool_id = pm_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
     Changeset = [?shop_modification(ShopID, {creation, Params})],
     ?invalid_changeset(?invalid_shop(ShopID, {already_exists, _})) = pm_client_party:create_claim(Changeset, Client).
@@ -916,7 +916,7 @@ shop_already_exists(C) ->
 shop_update(C) ->
     Client = cfg(client, C),
     ShopID = ?REAL_SHOP_ID,
-    Details = hg_ct_helper:make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
+    Details = pm_ct_helper:make_shop_details(<<"BARBER SHOP">>, <<"Nice. Short. Clean.">>),
     Changeset1 = [?shop_modification(ShopID, {details_modification, Details})],
     Claim1 = assert_claim_pending(pm_client_party:create_claim(Changeset1, Client), Client),
     ok = accept_claim(Claim1, Client),
@@ -928,7 +928,7 @@ shop_update(C) ->
     ok = accept_claim(Claim2, Client),
     #domain_Shop{location = Location, details = Details} = pm_client_party:get_shop(ShopID, Client),
 
-    PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
+    PayoutToolParams = pm_ct_helper:make_battle_ready_payout_tool_params(),
     ContractID = <<"CONTRACT_IN_DIFFERENT_PAYMENT_INST">>,
     PayoutToolID = <<"1">>,
     Changeset3 = [
@@ -951,15 +951,15 @@ shop_update_before_confirm(C) ->
     ShopID = <<"SHOP2">>,
     Params = #payproc_ShopParams{
         location = {url, <<"">>},
-        details  = hg_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
+        details  = pm_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
         contract_id = ContractID,
-        payout_tool_id = hg_ct_helper:get_first_payout_tool_id(ContractID, Client)
+        payout_tool_id = pm_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
     Changeset1 = [?shop_modification(ShopID, {creation, Params})],
     Claim0 = assert_claim_pending(pm_client_party:create_claim(Changeset1, Client), Client),
     ?shop_not_found() = pm_client_party:get_shop(ShopID, Client),
     NewCategory = ?cat(3),
-    NewDetails = hg_ct_helper:make_shop_details(<<"BARBIES SHOP">>, <<"Hot. Short. Clean.">>),
+    NewDetails = pm_ct_helper:make_shop_details(<<"BARBIES SHOP">>, <<"Hot. Short. Clean.">>),
     ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(<<"RUB">>)},
     Changeset2 = [
         ?shop_modification(ShopID, {category_modification, NewCategory}),
@@ -977,7 +977,7 @@ shop_update_with_bad_params(C) ->
     ShopID = <<"SHOP2">>,
     ContractID = <<"CONTRACT3">>,
     ContractParams = make_contract_params(#domain_ContractTemplateRef{id = 5}),
-    PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
+    PayoutToolParams = pm_ct_helper:make_battle_ready_payout_tool_params(),
     Changeset = [
         ?contract_modification(ContractID, {creation, ContractParams}),
         ?contract_modification(ContractID, ?payout_tool_creation(<<"1">>, PayoutToolParams))
@@ -998,7 +998,7 @@ shop_update_with_bad_params(C) ->
 claim_acceptance(C) ->
     Client = cfg(client, C),
     ShopID = ?REAL_SHOP_ID,
-    Details = hg_ct_helper:make_shop_details(<<"McDolan">>),
+    Details = pm_ct_helper:make_shop_details(<<"McDolan">>),
     Location = {url, <<"very_suspicious_url">>},
     Changeset = [
         ?shop_modification(ShopID, {details_modification, Details}),
@@ -1025,7 +1025,7 @@ claim_revocation(C) ->
     ContractID = ?REAL_CONTRACT_ID,
     Params = #payproc_ShopParams{
         location = {url, <<"https://url3">>},
-        details  = hg_ct_helper:make_shop_details(<<"OOPS">>),
+        details  = pm_ct_helper:make_shop_details(<<"OOPS">>),
         contract_id = ContractID,
         payout_tool_id = <<"1">>
     },
@@ -1042,7 +1042,7 @@ complex_claim_acceptance(C) ->
     Params1 = #payproc_ShopParams{
         location = {url, <<"https://url4">>},
         category = ?cat(2),
-        details  = Details1 = hg_ct_helper:make_shop_details(<<"SHOP4">>),
+        details  = Details1 = pm_ct_helper:make_shop_details(<<"SHOP4">>),
         contract_id = ContractID,
         payout_tool_id = <<"1">>
     },
@@ -1050,7 +1050,7 @@ complex_claim_acceptance(C) ->
     Params2 = #payproc_ShopParams{
         location = {url, <<"http://url5">>},
         category = ?cat(3),
-        details  = Details2 = hg_ct_helper:make_shop_details(<<"SHOP5">>),
+        details  = Details2 = pm_ct_helper:make_shop_details(<<"SHOP5">>),
         contract_id = ContractID,
         payout_tool_id = <<"1">>
     },
@@ -1208,8 +1208,8 @@ party_already_active(C) ->
 
 party_metadata_setting(C) ->
     Client = cfg(client, C),
-    NS = hg_ct_helper:make_meta_ns(),
-    Data = hg_ct_helper:make_meta_data(NS),
+    NS = pm_ct_helper:make_meta_ns(),
+    Data = pm_ct_helper:make_meta_data(NS),
     ok = pm_client_party:set_metadata(NS, Data, Client),
     % lets check for idempotency
     ok = pm_client_party:set_metadata(NS, Data, Client).
@@ -1217,28 +1217,28 @@ party_metadata_setting(C) ->
 party_metadata_retrieval(C) ->
     Client = cfg(client, C),
     ?namespace_not_found() = pm_client_party:get_metadata(<<"NoSuchNamespace">>, Client),
-    NS = hg_ct_helper:make_meta_ns(),
-    Data0 = hg_ct_helper:make_meta_data(),
+    NS = pm_ct_helper:make_meta_ns(),
+    Data0 = pm_ct_helper:make_meta_data(),
     ok = pm_client_party:set_metadata(NS, Data0, Client),
     Data0 = pm_client_party:get_metadata(NS, Client),
     % lets change it and check again
-    Data1 = hg_ct_helper:make_meta_data(NS),
+    Data1 = pm_ct_helper:make_meta_data(NS),
     ok = pm_client_party:set_metadata(NS, Data1, Client),
     Data1 = pm_client_party:get_metadata(NS, Client).
 
 party_metadata_removing(C) ->
     Client = cfg(client, C),
     ?namespace_not_found() = pm_client_party:remove_metadata(<<"NoSuchNamespace">>, Client),
-    NS = hg_ct_helper:make_meta_ns(),
-    ok = pm_client_party:set_metadata(NS, hg_ct_helper:make_meta_data(), Client),
+    NS = pm_ct_helper:make_meta_ns(),
+    ok = pm_client_party:set_metadata(NS, pm_ct_helper:make_meta_data(), Client),
     ok = pm_client_party:remove_metadata(NS, Client),
     ?namespace_not_found() = pm_client_party:remove_metadata(NS, Client).
 
 party_meta_retrieval(C) ->
     Client = cfg(client, C),
     Meta0 = pm_client_party:get_meta(Client),
-    NS = hg_ct_helper:make_meta_ns(),
-    ok = pm_client_party:set_metadata(NS, hg_ct_helper:make_meta_data(), Client),
+    NS = pm_ct_helper:make_meta_ns(),
+    ok = pm_client_party:set_metadata(NS, pm_ct_helper:make_meta_data(), Client),
     Meta1 = pm_client_party:get_meta(Client),
     Meta0 =/= Meta1.
 
@@ -1467,7 +1467,7 @@ make_contract_params(TemplateRef) ->
     make_contract_params(TemplateRef, ?pinst(2)).
 
 make_contract_params(TemplateRef, PaymentInstitutionRef) ->
-    hg_ct_helper:make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef).
+    pm_ct_helper:make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef).
 
 make_contract_w_contractor_params(ContractorID) ->
     #payproc_ContractParams{
@@ -1477,7 +1477,7 @@ make_contract_w_contractor_params(ContractorID) ->
     }.
 
 make_contractor_params() ->
-    hg_ct_helper:make_battle_ready_contractor().
+    pm_ct_helper:make_battle_ready_contractor().
 
 construct_term_set_for_party(PartyID, Def) ->
     TermSet = #domain_TermSet{
@@ -1696,29 +1696,29 @@ construct_domain_fixture() ->
         }
     },
     [
-        hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
-        hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
+        pm_ct_fixture:construct_currency(?cur(<<"RUB">>)),
+        pm_ct_fixture:construct_currency(?cur(<<"USD">>)),
 
-        hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
-        hg_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
-        hg_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
+        pm_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
+        pm_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
+        pm_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
-        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+        pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
 
-        hg_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
-        hg_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
+        pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
+        pm_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
 
-        hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
-        hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
-        hg_ct_fixture:construct_system_account_set(?sas(1)),
-        hg_ct_fixture:construct_system_account_set(?sas(2)),
-        hg_ct_fixture:construct_external_account_set(?eas(1)),
+        pm_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
+        pm_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
+        pm_ct_fixture:construct_system_account_set(?sas(1)),
+        pm_ct_fixture:construct_system_account_set(?sas(2)),
+        pm_ct_fixture:construct_external_account_set(?eas(1)),
 
-        hg_ct_fixture:construct_business_schedule(?bussched(1)),
+        pm_ct_fixture:construct_business_schedule(?bussched(1)),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
@@ -1766,27 +1766,27 @@ construct_domain_fixture() ->
                 payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(1),
             ?trms(1)
         ),
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(2),
             ?trms(3)
         ),
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(3),
             ?trms(2),
             {interval, #domain_LifetimeInterval{years = -1}},
             {interval, #domain_LifetimeInterval{days = -1}}
         ),
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(4),
             ?trms(1),
             undefined,
             {interval, #domain_LifetimeInterval{months = 1}}
         ),
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(5),
             ?trms(4)
         ),

@@ -1,9 +1,16 @@
 -module(pm_utils).
 
+-export([unique_id/0]).
 -export([unwrap_result/1]).
 -export([select_defined/2]).
 
 %%
+
+-spec unique_id() -> dmsl_base_thrift:'ID'().
+
+unique_id() ->
+    <<ID:64>> = snowflake:new(),
+    genlib_format:format_int_base(ID, 62).
 
 -spec select_defined(T | undefined, T | undefined) -> T | undefined.
 

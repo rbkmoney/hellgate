@@ -1,7 +1,7 @@
--module(hg_claim_committer_SUITE).
+-module(pm_claim_committer_SUITE).
 
 -include("claim_management.hrl").
--include("hg_ct_domain.hrl").
+-include("pm_ct_domain.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([all/0]).
@@ -27,8 +27,8 @@
 -export([contract_already_terminated/1]).
 -export([shop_already_exists/1]).
 
--type config() :: hg_ct_helper:config().
--type test_case_name() :: hg_ct_helper:test_case_name().
+-type config() :: pm_ct_helper:config().
+-type test_case_name() :: pm_ct_helper:test_case_name().
 
 -define(REAL_CONTRACTOR_ID1,  <<"CONTRACTOR2">>).
 -define(REAL_CONTRACTOR_ID2,  <<"CONTRACTOR3">>).
@@ -67,17 +67,17 @@ all() ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
-    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate]),
+    {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate]),
     RootUrl     = maps:get(hellgate_root_url, Ret),
-    ok          = hg_domain:insert(construct_domain_fixture()),
+    ok          = pm_domain:insert(construct_domain_fixture()),
     PartyID     = erlang:list_to_binary([?MODULE_STRING, ".", erlang:integer_to_list(erlang:system_time())]),
-    ApiClient   = hg_ct_helper:create_client(RootUrl, PartyID),
+    ApiClient   = pm_ct_helper:create_client(RootUrl, PartyID),
     [{root_url, RootUrl}, {apps, Apps}, {party_id, PartyID}, {api_client, ApiClient} | C].
 
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    ok = pm_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 %%% Tests
@@ -103,7 +103,7 @@ party_creation(C) ->
 -spec contractor_one_creation(config()) -> _.
 
 contractor_one_creation(C) ->
-    ContractorParams = hg_ct_helper:make_battle_ready_contractor(),
+    ContractorParams = pm_ct_helper:make_battle_ready_contractor(),
     ContractorID = ?REAL_CONTRACTOR_ID1,
     Modifications = [
         ?cm_contractor_creation(ContractorID, ContractorParams)
@@ -118,7 +118,7 @@ contractor_one_creation(C) ->
 -spec contractor_two_creation(config()) -> _.
 
 contractor_two_creation(C) ->
-    ContractorParams = hg_ct_helper:make_battle_ready_contractor(),
+    ContractorParams = pm_ct_helper:make_battle_ready_contractor(),
     ContractorID = ?REAL_CONTRACTOR_ID2,
     Modifications = [
         ?cm_contractor_creation(ContractorID, ContractorParams)
@@ -232,7 +232,7 @@ contract_legal_agreement_binding(C) ->
     PartyID = cfg(party_id, C),
     ContractID = ?REAL_CONTRACT_ID1,
     LA = #domain_LegalAgreement{
-        signed_at = hg_datetime:format_now(),
+        signed_at = pm_datetime:format_now(),
         legal_agreement_id = <<"20160123-0031235-OGM/GDM">>
     },
     Changeset = [?cm_contract_modification(ContractID, {legal_agreement_binding, LA})],
@@ -383,7 +383,7 @@ contract_termination(C) ->
 -spec contractor_already_exists(config()) -> _.
 
 contractor_already_exists(C) ->
-    ContractorParams = hg_ct_helper:make_battle_ready_contractor(),
+    ContractorParams = pm_ct_helper:make_battle_ready_contractor(),
     PartyID = cfg(party_id, C),
     ContractorID = ?REAL_CONTRACTOR_ID1,
     Modifications = [?cm_contractor_creation(ContractorID, ContractorParams)],
@@ -474,10 +474,10 @@ id() ->
     erlang:unique_integer([positive, monotonic]).
 
 ts() ->
-    hg_datetime:format_now().
+    pm_datetime:format_now().
 
 cfg(Key, C) ->
-    hg_ct_helper:cfg(Key, C).
+    pm_ct_helper:cfg(Key, C).
 
 call(Function, Args, C) ->
     ApiClient   = cfg(api_client, C),
@@ -623,30 +623,30 @@ construct_domain_fixture() ->
         }
     },
     [
-        hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
-        hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
+        pm_ct_fixture:construct_currency(?cur(<<"RUB">>)),
+        pm_ct_fixture:construct_currency(?cur(<<"USD">>)),
 
-        hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
-        hg_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
-        hg_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
+        pm_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
+        pm_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
+        pm_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
-        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+        pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
 
-        hg_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
-        hg_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
+        pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
+        pm_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
 
-        hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
-        hg_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
-        hg_ct_fixture:construct_system_account_set(?sas(1)),
-        hg_ct_fixture:construct_system_account_set(?sas(2)),
-        hg_ct_fixture:construct_external_account_set(?eas(1)),
+        pm_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
+        pm_ct_fixture:construct_inspector(?insp(1), <<"Dummy Inspector">>, ?prx(1)),
+        pm_ct_fixture:construct_system_account_set(?sas(1)),
+        pm_ct_fixture:construct_system_account_set(?sas(2)),
+        pm_ct_fixture:construct_external_account_set(?eas(1)),
 
-        hg_ct_fixture:construct_business_schedule(?bussched(1)),
-        hg_ct_fixture:construct_business_schedule(?bussched(2)),
+        pm_ct_fixture:construct_business_schedule(?bussched(1)),
+        pm_ct_fixture:construct_business_schedule(?bussched(2)),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
@@ -694,27 +694,27 @@ construct_domain_fixture() ->
                 payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(1),
             ?trms(1)
         ),
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(2),
             ?trms(3)
         ),
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(3),
             ?trms(2),
             {interval, #domain_LifetimeInterval{years = -1}},
             {interval, #domain_LifetimeInterval{days = -1}}
         ),
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(4),
             ?trms(1),
             undefined,
             {interval, #domain_LifetimeInterval{months = 1}}
         ),
-        hg_ct_fixture:construct_contract_template(
+        pm_ct_fixture:construct_contract_template(
             ?tmpl(5),
             ?trms(4)
         ),
