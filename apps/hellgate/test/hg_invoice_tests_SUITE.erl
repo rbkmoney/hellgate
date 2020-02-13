@@ -1547,7 +1547,7 @@ payment_adjustment_success(C) ->
     SysDiff = MrcDiff + PrvDiff - 20,
     SysDiff = maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1).
 
- -spec partial_captured_payment_adjustment(config()) -> _ | no_return().
+ -spec partial_captured_payment_adjustment(config()) -> test_return().
 
 partial_captured_payment_adjustment(C) ->
     InitialCost = 1000 * 100,
@@ -1670,17 +1670,30 @@ payment_adjustment_captured_from_failed(C) ->
     ),
     % update merchant fees
     ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
-    % try invalid adjustments
+
     InvalidAdjustmentParams1 = make_status_adjustment_params({processed, #domain_InvoicePaymentProcessed{}}),
     ?invalid_payment_target_status(?processed()) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, InvalidAdjustmentParams1, Client),
-    FailedTargetStatus = {failed, #domain_InvoicePaymentFailed{
-        failure = {failure, #domain_Failure{code = <<"404">>}}
-    }},
-    InvalidAdjustmentParams2 = make_status_adjustment_params(FailedTargetStatus),
-    ?payment_already_has_status(?failed(_)) =
-        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, InvalidAdjustmentParams2, Client),
-    % make a valid adjustment
+
+    FailedTargetStatus = ?failed({failure, #domain_Failure{code = <<"404">>}}),
+    FailedAdjustmentParams = make_status_adjustment_params(FailedTargetStatus),
+    ?adjustment(FailedAdjustmentID, ?adjustment_pending()) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, FailedAdjustmentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_created(_)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
+    ] = next_event(InvoiceID, Client),
+    ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, FailedAdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(FailedTargetStatus)),
+        ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+    ] = next_event(InvoiceID, Client),
+
+    ?payment_already_has_status(FailedTargetStatus) =
+        hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, FailedAdjustmentParams, Client),
+
     ?adjustment(AdjustmentID, ?adjustment_pending()) = Adjustment =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, AdjustmentParams, Client),
     Adjustment = #domain_InvoicePaymentAdjustment{id = AdjustmentID, reason = AdjReason} =
@@ -1696,6 +1709,7 @@ payment_adjustment_captured_from_failed(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(Cpatured)),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
+
     % verify that cash deposited correctly everywhere
     % new cash flow must be calculated using initial domain and party revisions
     #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} = Adjustment,
@@ -1711,6 +1725,7 @@ payment_adjustment_captured_from_failed(C) ->
     ?assertEqual(PrvDiff, maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1)),
     SysDiff = MrcAmount1 - PrvAmount1,
     ?assertEqual(SysDiff, maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1)).
+    % FIXME: check that invoice status is paid
 
 -spec payment_adjustment_failed_from_captured(config()) -> test_return().
 
