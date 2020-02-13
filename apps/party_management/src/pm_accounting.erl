@@ -46,7 +46,7 @@ get_account(AccountID) ->
         {ok, Result} ->
             construct_account(AccountID, Result);
         {exception, #shumpune_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
+            pm_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 -spec get_balance(account_id()) ->
@@ -63,7 +63,7 @@ get_balance(AccountID, Clock) ->
         {ok, Result} ->
             construct_balance(AccountID, Result);
         {exception, #shumpune_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
+            pm_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 -spec create_account(currency_code()) ->
@@ -120,4 +120,4 @@ construct_balance(
 %%
 
 call_accounter(Function, Args) ->
-    hg_woody_wrapper:call(accounter, Function, Args).
+    pm_woody_wrapper:call(accounter, Function, Args).

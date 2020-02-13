@@ -69,7 +69,7 @@ init_per_suite(C) ->
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = pm_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
@@ -190,12 +190,12 @@ invalid_party_status(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
-    ok = hg_client_party:block(<<>>, PartyClient),
+    ok = pm_client_party:block(<<>>, PartyClient),
     {exception, ?invalid_party_status({blocking, _})} = hg_client_customer:create(Params, Client),
-    ok = hg_client_party:unblock(<<>>, PartyClient),
-    ok = hg_client_party:suspend(PartyClient),
+    ok = pm_client_party:unblock(<<>>, PartyClient),
+    ok = pm_client_party:suspend(PartyClient),
     {exception, ?invalid_party_status({suspension, _})} = hg_client_customer:create(Params, Client),
-    ok = hg_client_party:activate(PartyClient).
+    ok = pm_client_party:activate(PartyClient).
 
 invalid_shop_status(C) ->
     Client = cfg(client, C),
@@ -203,12 +203,12 @@ invalid_shop_status(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
-    ok = hg_client_party:block_shop(ShopID, <<>>, PartyClient),
+    ok = pm_client_party:block_shop(ShopID, <<>>, PartyClient),
     {exception, ?invalid_shop_status({blocking, _})} = hg_client_customer:create(Params, Client),
-    ok = hg_client_party:unblock_shop(ShopID, <<>>, PartyClient),
-    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    ok = pm_client_party:unblock_shop(ShopID, <<>>, PartyClient),
+    ok = pm_client_party:suspend_shop(ShopID, PartyClient),
     {exception, ?invalid_shop_status({suspension, _})} = hg_client_customer:create(Params, Client),
-    ok = hg_client_party:activate_shop(ShopID, PartyClient).
+    ok = pm_client_party:activate_shop(ShopID, PartyClient).
 
 %%
 

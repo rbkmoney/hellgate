@@ -316,10 +316,10 @@ init_per_suite(C) ->
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = pm_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
     AnotherPartyID = hg_utils:unique_id(),
-    AnotherPartyClient = hg_client_party:start(AnotherPartyID, hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
+    AnotherPartyClient = pm_client_party:start(AnotherPartyID, hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
     AnotherCustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
@@ -530,23 +530,23 @@ invalid_party_status(C) ->
     TplID = create_invoice_tpl(C),
     InvoiceParamsWithTpl = make_invoice_params_tpl(TplID),
 
-    ok = hg_client_party:suspend(PartyClient),
+    ok = pm_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoicing:create(InvoiceParams, Client),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoicing:create_with_tpl(InvoiceParamsWithTpl, Client),
-    ok = hg_client_party:activate(PartyClient),
+    ok = pm_client_party:activate(PartyClient),
 
-    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = pm_client_party:block(<<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoicing:create(InvoiceParams, Client),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoicing:create_with_tpl(InvoiceParamsWithTpl, Client),
-    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+    ok = pm_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec invalid_shop_status(config()) -> test_return().
 
@@ -559,23 +559,23 @@ invalid_shop_status(C) ->
     TplID = create_invoice_tpl(C),
     InvoiceParamsWithTpl = make_invoice_params_tpl(TplID),
 
-    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    ok = pm_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoicing:create(InvoiceParams, Client),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoicing:create_with_tpl(InvoiceParamsWithTpl, Client),
-    ok = hg_client_party:activate_shop(ShopID, PartyClient),
+    ok = pm_client_party:activate_shop(ShopID, PartyClient),
 
-    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = pm_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoicing:create(InvoiceParams, Client),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoicing:create_with_tpl(InvoiceParamsWithTpl, Client),
-    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
+    ok = pm_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec invalid_invoice_template_cost(config()) -> _ | no_return().
 
@@ -958,7 +958,7 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
     PartyClient   = cfg(party_client, C),
     ShopID        = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     Amount        = 42000,
-    Party         = hg_client_party:get(PartyClient),
+    Party         = pm_client_party:get(PartyClient),
     Shop          = maps:get(ShopID, Party#domain_Party.shops),
     Account       = Shop#domain_Shop.account,
     SettlementID  = Account#domain_ShopAccount.settlement,
@@ -987,7 +987,7 @@ payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
     ShopID        = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     Amount        = 42000,
     Cost          = ?cash(Amount, <<"RUB">>),
-    Party         = hg_client_party:get(PartyClient),
+    Party         = pm_client_party:get(PartyClient),
     Shop          = maps:get(ShopID, Party#domain_Party.shops),
     Account       = Shop#domain_Shop.account,
     SettlementID  = Account#domain_ShopAccount.settlement,
@@ -1488,7 +1488,7 @@ payment_adjustment_success(C) ->
     ),
     %% update merchant fees
     PartyClient = cfg(party_client, C),
-    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    Shop = pm_client_party:get_shop(cfg(shop_id, C), PartyClient),
     ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
     %% make an adjustment
     Params = make_adjustment_params(Reason = <<"imdrunk">>),
@@ -1686,7 +1686,7 @@ get_adjustment_provider_cashflow(actual) ->
 invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = pm_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
@@ -1701,7 +1701,7 @@ invalid_payment_w_deprived_party(C) ->
 external_account_posting(C) ->
     PartyID = <<"LGBT">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = pm_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
@@ -1743,7 +1743,7 @@ external_account_posting(C) ->
 terminal_cashflow_overrides_provider(C) ->
     PartyID = <<"LGBT">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = pm_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
@@ -1779,16 +1779,16 @@ invalid_refund_party_status(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ok = hg_client_party:suspend(PartyClient),
+    ok = pm_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
-    ok = hg_client_party:activate(PartyClient),
-    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = pm_client_party:activate(PartyClient),
+    ok = pm_client_party:block(<<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
-    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+    ok = pm_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec invalid_refund_shop_status(config()) -> _ | no_return().
 
@@ -1799,16 +1799,16 @@ invalid_refund_shop_status(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    ok = pm_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
-    ok = hg_client_party:activate_shop(ShopID, PartyClient),
-    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = pm_client_party:activate_shop(ShopID, PartyClient),
+    ok = pm_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(), Client),
-    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
+    ok = pm_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 
 -spec payment_refund_idempotency(config()) -> _ | no_return().
@@ -3029,7 +3029,7 @@ repair_complex_succeeded_second(C) ->
 
 consistent_account_balances(C) ->
     PartyClient = cfg(party_client, C),
-    Party = hg_client_party:get(PartyClient),
+    Party = pm_client_party:get(PartyClient),
     Shops = maps:values(Party#domain_Party.shops),
     _ = [
         consistent_account_balance(AccountID, Shop) ||
@@ -3596,7 +3596,7 @@ wait_for_binding_success(_, _, _, _) ->
 party_revision_check_init_params(C) ->
     PartyID = <<"RevChecker">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = pm_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {PartyID, PartyClient, Client, ShopID}.
@@ -3671,7 +3671,7 @@ make_payment_refund_and_get_revision(PaymentID, InvoiceID, Client) ->
     RefundRev.
 
 party_revision_increment(ShopID, PartyClient) ->
-    Shop = hg_client_party:get_shop(ShopID, PartyClient),
+    Shop = pm_client_party:get_shop(ShopID, PartyClient),
     ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient).
 
 payment_risk_score_check(Cat, C) ->

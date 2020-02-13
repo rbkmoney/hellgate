@@ -7,8 +7,7 @@
         stdlib,
         genlib,
         rfc3339,
-        fault_detector_proto,
-        hg_proto,
+        pm_proto,
         shumpune_proto,
         cowboy,
         how_are_you,  % must be after ranch and before any woody usage

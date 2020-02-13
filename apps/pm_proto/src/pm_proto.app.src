@@ -1,0 +1,12 @@
+{application, pm_proto, [
+    {description, "Processing protocol definitions"},
+    {vsn, "0"},
+    {registered, []},
+    {applications, [
+        kernel,
+        stdlib,
+        thrift,
+        damsel,
+        mg_proto
+    ]}
+]}.

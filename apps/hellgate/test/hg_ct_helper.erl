@@ -326,8 +326,8 @@ make_user_identity(UserID) ->
     shop_id().
 
 create_party_and_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client) ->
-    _ = hg_client_party:create(make_party_params(), Client),
-    #domain_Party{} = hg_client_party:get(Client),
+    _ = pm_client_party:create(make_party_params(), Client),
+    #domain_Party{} = pm_client_party:get(Client),
     create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client).
 
 make_party_params() ->
@@ -375,22 +375,22 @@ create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef,
         ?shop_modification(ShopID, {creation, ShopParams}),
         ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
     ],
-    ok = ensure_claim_accepted(hg_client_party:create_claim(Changeset, Client), Client),
-    _Shop = hg_client_party:get_shop(ShopID, Client),
+    ok = ensure_claim_accepted(pm_client_party:create_claim(Changeset, Client), Client),
+    _Shop = pm_client_party:get_shop(ShopID, Client),
     ShopID.
 
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().
 
 get_first_contract_id(Client) ->
-    #domain_Party{contracts = Contracts} = hg_client_party:get(Client),
+    #domain_Party{contracts = Contracts} = pm_client_party:get(Client),
     lists:min(maps:keys(Contracts)).
 
 -spec get_first_battle_ready_contract_id(Client :: pid()) ->
     contract_id().
 
 get_first_battle_ready_contract_id(Client) ->
-    #domain_Party{contracts = Contracts} = hg_client_party:get(Client),
+    #domain_Party{contracts = Contracts} = pm_client_party:get(Client),
     IDs = lists:foldl(fun({ID, Contract}, Acc) ->
             case Contract of
                 #domain_Contract{
@@ -415,7 +415,7 @@ get_first_battle_ready_contract_id(Client) ->
 -spec adjust_contract(contract_id(), contract_tpl(), Client :: pid()) -> ok.
 
 adjust_contract(ContractID, TemplateRef, Client) ->
-    ensure_claim_accepted(hg_client_party:create_claim([
+    ensure_claim_accepted(pm_client_party:create_claim([
         {contract_modification, #payproc_ContractModificationUnit{
             id           = ContractID,
             modification = {adjustment_modification, #payproc_ContractAdjustmentModificationUnit{
@@ -432,7 +432,7 @@ ensure_claim_accepted(#payproc_Claim{id = ClaimID, revision = ClaimRevision, sta
         {accepted, _} ->
             ok;
         _ ->
-            ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client)
+            ok = pm_client_party:accept_claim(ClaimID, ClaimRevision, Client)
     end.
 
 -spec get_account(account_id()) -> account().
@@ -451,7 +451,7 @@ get_balance(AccountID) ->
     dmsl_domain_thrift:'PayoutToolID'().
 
 get_first_payout_tool_id(ContractID, Client) ->
-    #domain_Contract{payout_tools = PayoutTools} = hg_client_party:get_contract(ContractID, Client),
+    #domain_Contract{payout_tools = PayoutTools} = pm_client_party:get_contract(ContractID, Client),
     case PayoutTools of
         [Tool | _] ->
             Tool#domain_PayoutTool.id;

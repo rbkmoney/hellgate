@@ -2,15 +2,15 @@
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
-%% Woody handler called by hg_woody_wrapper
+%% Woody handler called by pm_woody_wrapper
 
--behaviour(hg_woody_wrapper).
+-behaviour(pm_woody_wrapper).
 
 -export([handle_function/3]).
 
 %%
 
--spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function(woody:func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
 handle_function(Func, Args, Opts) ->
@@ -18,7 +18,7 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
--spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function_(woody:func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
 %% Party

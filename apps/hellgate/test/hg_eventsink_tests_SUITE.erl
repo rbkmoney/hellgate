@@ -66,7 +66,7 @@ init_per_testcase(_Name, C) ->
     [
         {party_id, PartyID},
         {eventsink_client, hg_client_eventsink:start_link(create_api(RootUrl, PartyID))},
-        {partymgmt_client, hg_client_party:start_link(PartyID, create_api(RootUrl, PartyID))} | C
+        {partymgmt_client, pm_client_party:start_link(PartyID, create_api(RootUrl, PartyID))} | C
     ].
 
 create_api(RootUrl, PartyID) ->

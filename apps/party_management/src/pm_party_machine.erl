@@ -99,7 +99,7 @@ namespace() ->
 
 init(EncodedPartyParams, #{id := ID}) ->
     ParamsType = {struct, struct, {dmsl_payment_processing_thrift, 'PartyParams'}},
-    PartyParams = hg_proto_utils:deserialize(ParamsType, EncodedPartyParams),
+    PartyParams = pm_proto_utils:deserialize(ParamsType, EncodedPartyParams),
     scoper:scope(
         party,
         #{
@@ -397,7 +397,7 @@ publish_event(PartyID, Ev) ->
 
 start(PartyID, PartyParams) ->
     ParamsType = {struct, struct, {dmsl_payment_processing_thrift, 'PartyParams'}},
-    EncodedPartyParams = hg_proto_utils:serialize(ParamsType, PartyParams),
+    EncodedPartyParams = pm_proto_utils:serialize(ParamsType, PartyParams),
     case pm_machine:start(?NS, PartyID, EncodedPartyParams) of
         {ok, _} ->
             ok;
@@ -513,7 +513,7 @@ get_status(PartyID) ->
         get_party(PartyID)
     ).
 
--spec call(party_id(), service_name(), hg_proto_utils:thrift_fun_ref(), Args :: [term()]) ->
+-spec call(party_id(), service_name(), pm_proto_utils:thrift_fun_ref(), Args :: [term()]) ->
     term() | no_return().
 
 call(PartyID, ServiceName, FucntionRef, Args) ->
@@ -1190,7 +1190,7 @@ wrap_event_payload_w_snapshot(Changes, St) ->
 
 marshal_event_payload(?party_ev(Changes), StateSnapshot) ->
    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-   Bin = hg_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
+   Bin = pm_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
    #{
        format_version => 1,
        data => {bin, Bin}
@@ -1207,7 +1207,7 @@ unwrap_event_payload(#{format_version := Format, data := Changes}) ->
 
 unwrap_event_payload(1, {bin, ThriftEncodedBin}) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-    #payproc_PartyEventData{changes = Changes} = hg_proto_utils:deserialize(Type, ThriftEncodedBin),
+    #payproc_PartyEventData{changes = Changes} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
     ?party_ev(Changes);
 
 unwrap_event_payload(undefined, [
@@ -1233,7 +1233,7 @@ unwrap_state({
     }
 }) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-    #payproc_PartyEventData{state_snapshot = StateSnapshot} = hg_proto_utils:deserialize(Type, ThriftEncodedBin),
+    #payproc_PartyEventData{state_snapshot = StateSnapshot} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
     decode_state(?CT_ERLANG_BINARY, StateSnapshot);
 unwrap_state({
     _ID,

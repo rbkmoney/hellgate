@@ -1,4 +1,4 @@
--module(hg_client_party).
+-module(pm_client_party).
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([start/2]).
@@ -78,17 +78,17 @@
 -type payment_intitution_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 -type varset() :: dmsl_payment_processing_thrift:'Varset'().
 
--spec start(party_id(), hg_client_api:t()) -> pid().
+-spec start(party_id(), pm_client_api:t()) -> pid().
 
 start(PartyID, ApiClient) ->
     start(start, undefined, PartyID, ApiClient).
 
--spec start(user_info(), party_id(), hg_client_api:t()) -> pid().
+-spec start(user_info(), party_id(), pm_client_api:t()) -> pid().
 
 start(UserInfo, PartyID, ApiClient) ->
     start(start, UserInfo, PartyID, ApiClient).
 
--spec start_link(party_id(), hg_client_api:t()) -> pid().
+-spec start_link(party_id(), pm_client_api:t()) -> pid().
 
 start_link(PartyID, ApiClient) ->
     start(start_link, undefined, PartyID, ApiClient).
@@ -326,14 +326,14 @@ map_result_error({error, Error}) ->
 -record(st, {
     user_info :: user_info(),
     party_id  :: party_id(),
-    poller    :: hg_client_event_poller:st(event()),
-    client    :: hg_client_api:t()
+    poller    :: pm_client_event_poller:st(event()),
+    client    :: pm_client_api:t()
 }).
 
 -type st() :: #st{}.
 -type callref() :: {pid(), Tag :: reference()}.
 
--spec init({user_info(), party_id(), hg_client_api:t()}) ->
+-spec init({user_info(), party_id(), pm_client_api:t()}) ->
     {ok, st()}.
 
 init({UserInfo, PartyID, ApiClient}) ->
@@ -341,7 +341,7 @@ init({UserInfo, PartyID, ApiClient}) ->
         user_info = UserInfo,
         party_id = PartyID,
         client = ApiClient,
-        poller = hg_client_event_poller:new(
+        poller = pm_client_event_poller:new(
             {party_management, 'GetEvents', [UserInfo, PartyID]},
             fun (Event) -> Event#payproc_Event.id end
         )
@@ -352,11 +352,11 @@ init({UserInfo, PartyID, ApiClient}) ->
 
 handle_call({call, Function, Args0}, _From, St = #st{client = Client}) ->
     Args = [St#st.user_info, St#st.party_id | Args0],
-    {Result, ClientNext} = hg_client_api:call(party_management, Function, Args, Client),
+    {Result, ClientNext} = pm_client_api:call(party_management, Function, Args, Client),
     {reply, Result, St#st{client = ClientNext}};
 
 handle_call({pull_event, Timeout}, _From, St = #st{poller = Poller, client = Client}) ->
-    {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(1, Timeout, Client, Poller),
+    {Result, ClientNext, PollerNext} = pm_client_event_poller:poll(1, Timeout, Client, Poller),
     StNext = St#st{poller = PollerNext, client = ClientNext},
     case Result of
         [] ->

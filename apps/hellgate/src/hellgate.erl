@@ -76,8 +76,8 @@ get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts) ->
             event_handler => {scoper_woody_event_handler, EventHandlerOpts},
             handlers      => hg_machine:get_service_handlers(MachineHandlers, Opts) ++
                              pm_machine:get_service_handlers(PMMachineHandlers, Opts) ++ [
-                construct_service_handler(claim_committer              , pm_claim_committer_handler, Opts),
-                construct_service_handler(party_management             , pm_party_handler          , Opts),
+                construct_service_handler_pm(claim_committer           , pm_claim_committer_handler, Opts),
+                construct_service_handler_pm(party_management          , pm_party_handler          , Opts),
                 construct_service_handler(invoicing                    , hg_invoice                , Opts),
                 construct_service_handler(invoice_templating           , hg_invoice_template       , Opts),
                 construct_service_handler(customer_management          , hg_customer               , Opts),
@@ -102,6 +102,11 @@ construct_service_handler(Name, Module, Opts) ->
     FullOpts = maps:merge(#{handler => Module}, Opts),
     {Path, Service} = hg_proto:get_service_spec(Name),
     {Path, {Service, {hg_woody_wrapper, FullOpts}}}.
+
+construct_service_handler_pm(Name, Module, Opts) ->
+    FullOpts = maps:merge(#{handler => Module}, Opts),
+    {Path, Service} = pm_proto:get_service_spec(Name),
+    {Path, {Service, {pm_woody_wrapper, FullOpts}}}.
 
 %% Application callbacks
 

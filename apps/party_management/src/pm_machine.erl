@@ -50,7 +50,7 @@
     result().
 
 -type call() :: _.
--type thrift_call() :: {hg_proto_utils:thrift_fun_ref(), Args :: [term()]}.
+-type thrift_call() :: {pm_proto_utils:thrift_fun_ref(), Args :: [term()]}.
 -type response() :: ok | {ok, term()} | {exception, term()}.
 
 -callback process_call(call(), machine()) ->
@@ -98,9 +98,9 @@
 -export([start_link/1]).
 -export([init/1]).
 
-%% Woody handler called by hg_woody_wrapper
+%% Woody handler called by pm_woody_wrapper
 
--behaviour(hg_woody_wrapper).
+-behaviour(pm_woody_wrapper).
 
 -export([handle_function/3]).
 
@@ -108,7 +108,7 @@
 
 -type mg_event() :: mg_proto_state_processing_thrift:'Event'().
 -type mg_event_payload() :: mg_proto_state_processing_thrift:'EventBody'().
--type function_ref() :: hg_proto_utils:thrift_fun_ref().
+-type function_ref() :: pm_proto_utils:thrift_fun_ref().
 -type service_name() :: atom().
 
 %%
@@ -233,7 +233,7 @@ do_call(Ns, Ref, Args, After, Limit, Direction) ->
     end.
 
 call_automaton(Function, Args) ->
-    case hg_woody_wrapper:call(automaton, Function, Args) of
+    case pm_woody_wrapper:call(automaton, Function, Args) of
         {ok, _} = Result ->
             Result;
         {exception, #mg_stateproc_MachineAlreadyExists{}} ->
@@ -250,7 +250,7 @@ call_automaton(Function, Args) ->
 
 -type func() :: 'ProcessSignal' | 'ProcessCall'.
 
--spec handle_function(func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function(func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
@@ -356,7 +356,7 @@ marshal_call_result(Response, Result, #{aux_state := AuxStWas}) ->
 %%
 
 -type service_handler() ::
-    {Path :: string(), {woody:service(), {module(), hg_woody_wrapper:handler_opts()}}}.
+    {Path :: string(), {woody:service(), {module(), pm_woody_wrapper:handler_opts()}}}.
 
 -spec get_child_spec([MachineHandler :: module()]) ->
     supervisor:child_spec().
@@ -377,8 +377,8 @@ get_service_handlers(MachineHandlers, Opts) ->
 get_service_handler(MachineHandler, Opts) ->
     Ns = MachineHandler:namespace(),
     FullOpts = maps:merge(#{ns => Ns, handler => ?MODULE}, Opts),
-    {Path, Service} = hg_proto:get_service_spec(processor, #{namespace => Ns}),
-    {Path, {Service, {hg_woody_wrapper, FullOpts}}}.
+    {Path, Service} = pm_proto:get_service_spec(processor, #{namespace => Ns}),
+    {Path, {Service, {pm_woody_wrapper, FullOpts}}}.
 
 %%
 
@@ -448,32 +448,32 @@ marshal_aux_st_format(AuxSt) ->
     binary().
 marshal_thrift_args(ServiceName, FunctionRef, Args) ->
     {Service, _Function} = FunctionRef,
-    {Module, Service} = hg_proto:get_service(ServiceName),
+    {Module, Service} = pm_proto:get_service(ServiceName),
     FullFunctionRef = {Module, FunctionRef},
-    hg_proto_utils:serialize_function_args(FullFunctionRef, Args).
+    pm_proto_utils:serialize_function_args(FullFunctionRef, Args).
 
 -spec unmarshal_thrift_args(service_name(), function_ref(), binary()) ->
     args().
 unmarshal_thrift_args(ServiceName, FunctionRef, Args) ->
     {Service, _Function} = FunctionRef,
-    {Module, Service} = hg_proto:get_service(ServiceName),
+    {Module, Service} = pm_proto:get_service(ServiceName),
     FullFunctionRef = {Module, FunctionRef},
-    hg_proto_utils:deserialize_function_args(FullFunctionRef, Args).
+    pm_proto_utils:deserialize_function_args(FullFunctionRef, Args).
 
 -spec marshal_thrift_response(service_name(), function_ref(), response()) ->
     response().
 marshal_thrift_response(ServiceName, FunctionRef, Response) ->
     {Service, _Function} = FunctionRef,
-    {Module, Service} = hg_proto:get_service(ServiceName),
+    {Module, Service} = pm_proto:get_service(ServiceName),
     FullFunctionRef = {Module, FunctionRef},
     case Response of
         ok ->
             ok;
         {ok, Reply} ->
-            EncodedReply = hg_proto_utils:serialize_function_reply(FullFunctionRef, Reply),
+            EncodedReply = pm_proto_utils:serialize_function_reply(FullFunctionRef, Reply),
             {ok, EncodedReply};
         {exception, Exception} ->
-            EncodedException = hg_proto_utils:serialize_function_exception(FullFunctionRef, Exception),
+            EncodedException = pm_proto_utils:serialize_function_exception(FullFunctionRef, Exception),
             {exception, EncodedException}
     end.
 
@@ -481,16 +481,16 @@ marshal_thrift_response(ServiceName, FunctionRef, Response) ->
     response().
 unmarshal_thrift_response(ServiceName, FunctionRef, Response) ->
     {Service, _Function} = FunctionRef,
-    {Module, Service} = hg_proto:get_service(ServiceName),
+    {Module, Service} = pm_proto:get_service(ServiceName),
     FullFunctionRef = {Module, FunctionRef},
     case Response of
         ok ->
             ok;
         {ok, EncodedReply} ->
-            Reply = hg_proto_utils:deserialize_function_reply(FullFunctionRef, EncodedReply),
+            Reply = pm_proto_utils:deserialize_function_reply(FullFunctionRef, EncodedReply),
             {ok, Reply};
         {exception, EncodedException} ->
-            Exception = hg_proto_utils:deserialize_function_exception(FullFunctionRef, EncodedException),
+            Exception = pm_proto_utils:deserialize_function_exception(FullFunctionRef, EncodedException),
             {exception, Exception}
     end.
 

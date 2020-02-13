@@ -2,11 +2,11 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
--behaviour(hg_woody_wrapper).
+-behaviour(pm_woody_wrapper).
 
 -export([handle_function/3]).
 
--spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function(woody:func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
 handle_function(Func, Args, Opts) ->
@@ -14,7 +14,7 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, Args, Opts) end
     ).
 
--spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function_(woody:func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
 handle_function_(Fun, [PartyID, _Claim] = Args, _Opts) when Fun == 'Accept'; Fun == 'Commit' ->

@@ -482,7 +482,7 @@ cfg(Key, C) ->
 call(Function, Args, C) ->
     ApiClient   = cfg(api_client, C),
     PartyID     = cfg(party_id, C),
-    {Result, _} = hg_client_api:call(claim_committer, Function, [PartyID | Args], ApiClient),
+    {Result, _} = pm_client_api:call(claim_committer, Function, [PartyID | Args], ApiClient),
     map_call_result(Result).
 
 accept_claim(Claim, C) ->
@@ -498,7 +498,7 @@ map_call_result(Other) ->
 
 call_pm(Fun, Args, C) ->
     ApiClient   = cfg(api_client, C),
-    {Result, _} = hg_client_api:call(party_management, Fun, [undefined | Args], ApiClient),
+    {Result, _} = pm_client_api:call(party_management, Fun, [undefined | Args], ApiClient),
     map_call_result(Result).
 
 create_party(PartyID, ContactInfo, C) ->
@@ -538,7 +538,7 @@ make_payout_tool_params() ->
         }}
     }.
 
--spec construct_domain_fixture() -> [hg_domain:object()].
+-spec construct_domain_fixture() -> [pm_domain:object()].
 
 construct_domain_fixture() ->
     TestTermSet = #domain_TermSet{
