@@ -1,5 +1,5 @@
--ifndef(__hellgate_legacy_party_structures__).
--define(__hellgate_legacy_party_structures__, 42).
+-ifndef(__pm_legacy_party_structures_hrl__).
+-define(__pm_legacy_party_structures_hrl__, included).
 
 -define(legacy_party_created(Party),
     {party_created, Party}).

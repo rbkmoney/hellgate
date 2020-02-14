@@ -1,5 +1,5 @@
--ifndef(__hellgate_claim_management__).
--define(__hellgate_claim_management__, included).
+-ifndef(__pm_claim_management_hrl__).
+-define(__pm_claim_management_hrl__, included).
 
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 

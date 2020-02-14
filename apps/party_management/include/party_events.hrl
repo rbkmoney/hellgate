@@ -1,5 +1,5 @@
--ifndef(__hellgate_party_events__).
--define(__hellgate_party_events__, 42).
+-ifndef(__pm_party_events_hrl__).
+-define(__pm_party_events_hrl__, included).
 
 -define(party_ev(PartyChanges), {party_changes, PartyChanges}).
 
