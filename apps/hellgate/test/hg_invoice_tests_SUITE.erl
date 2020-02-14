@@ -1707,7 +1707,8 @@ payment_adjustment_captured_from_failed(C) ->
     ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
         ?payment_ev(PaymentID, ?payment_status_changed(Cpatured)),
-        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_)))),
+        ?invoice_status_changed(?invoice_paid())
     ] = next_event(InvoiceID, Client),
 
     % verify that cash deposited correctly everywhere
@@ -1725,7 +1726,6 @@ payment_adjustment_captured_from_failed(C) ->
     ?assertEqual(PrvDiff, maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1)),
     SysDiff = MrcAmount1 - PrvAmount1,
     ?assertEqual(SysDiff, maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1)).
-    % FIXME: check that invoice status is paid
 
 -spec payment_adjustment_failed_from_captured(config()) -> test_return().
 
@@ -1782,7 +1782,8 @@ payment_adjustment_failed_from_captured(C) ->
     ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
         ?payment_ev(PaymentID, ?payment_status_changed(Failed)),
-        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_)))),
+        ?invoice_status_changed(?invoice_unpaid())
     ] = next_event(InvoiceID, Client),
     % verify that cash deposited correctly everywhere
     % new cash flow must be calculated using initial domain and party revisions
