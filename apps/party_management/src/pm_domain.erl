@@ -116,10 +116,8 @@ update(NewObjects) ->
     },
     commit(Revision, Commit).
 
--spec remove(object() | [object()]) -> ok | no_return().
+-spec remove([object()]) -> ok | no_return().
 
-remove(Object) when not is_list(Object) ->
-    remove([Object]);
 remove(Objects) ->
     Commit = #'Commit'{
         ops = [
