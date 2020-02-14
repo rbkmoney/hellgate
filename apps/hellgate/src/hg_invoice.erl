@@ -623,7 +623,7 @@ handle_call({{'Invoicing', 'CreatePaymentAdjustment'}, [_UserInfo, _InvoiceID, P
         St
     );
 
-handle_call({{'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID]}, #st{invoice = Invoice} = St) ->
+handle_call({{'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Adjustment = hg_invoice_payment:get_adjustment(ID, PaymentSession),
@@ -635,6 +635,7 @@ handle_call({{'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, 
     Impact = {_Response, {PaymentChanges, _Action}} =
         hg_invoice_payment:capture_adjustment(ID, PaymentSession, PaymentOpts),
     Result = #{changes := Changes} = wrap_payment_impact(PaymentID, Impact, St),
+    #st{invoice = Invoice} = St,
     case wrap_adjustment_changes(PaymentChanges) of
         [Status] when Status /= Invoice#domain_Invoice.status ->
             Result#{changes => Changes ++ [?invoice_status_changed(Status)]};
