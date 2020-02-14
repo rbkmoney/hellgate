@@ -1,5 +1,5 @@
--ifndef(__hellgate_ct_domain__).
--define(__hellgate_ct_domain__, 42).
+-ifndef(__pm_ct_domain__).
+-define(__pm_ct_domain__, 42).
 
 -include("domain.hrl").
 
