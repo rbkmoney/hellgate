@@ -22,6 +22,12 @@
 -type timestamp_interval_bound() :: dmsl_base_thrift:'TimestampIntervalBound'().
 -type time_span() :: dmsl_base_thrift:'TimeSpan'().
 
+%% not exported from calendar module
+-type rfc3339_time_unit() :: microsecond
+                           | millisecond
+                           | nanosecond
+                           | second.
+
 -export_type([timestamp/0]).
 
 %%
@@ -29,17 +35,19 @@
 -spec format_dt(datetime()) -> timestamp().
 
 format_dt(Dt = {_, _}) ->
-    hg_utils:unwrap_result(rfc3339:format(Dt)).
+    Ts = genlib_time:daytime_to_unixtime(Dt),
+    format_ts(Ts).
 
 -spec format_ts(unix_timestamp()) -> timestamp().
 
 format_ts(Ts) when is_integer(Ts) ->
-    hg_utils:unwrap_result(rfc3339:format(Ts, seconds)).
+    format_ts(Ts, second).
 
 -spec format_now() -> timestamp().
 
 format_now() ->
-    hg_utils:unwrap_result(rfc3339:format(erlang:system_time())).
+    USec = erlang:system_time(microsecond),
+    format_ts(USec, microsecond).
 
 -spec compare(timestamp(), timestamp()) -> later | earlier | simultaneously.
 
@@ -67,7 +75,7 @@ between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}) ->
     Days :: integer() | undefined.
 
 add_interval(Timestamp, {YY, MM, DD}) ->
-    TSSeconds = erlang:convert_time_unit(to_integer(Timestamp), native, seconds),
+    TSSeconds = erlang:convert_time_unit(to_integer(Timestamp), nanosecond, second),
     {Date, Time} = genlib_time:unixtime_to_daytime(TSSeconds),
     NewDate = genlib_time:shift_date(Date, {nvl(YY), nvl(MM), nvl(DD)}),
     format_ts(genlib_time:daytime_to_unixtime({NewDate, Time})).
@@ -77,10 +85,11 @@ add_interval(Timestamp, {YY, MM, DD}) ->
 parse_ts(Bin) when is_binary(Bin) ->
     parse(Bin, second).
 
--spec parse(binary(), erlang:time_unit()) -> integer().
+-spec parse(binary(), rfc3339_time_unit()) -> integer().
 
 parse(Bin, Precision) when is_binary(Bin) ->
-    hg_utils:unwrap_result(rfc3339:to_time(Bin, Precision)).
+    Str = erlang:binary_to_list(Bin),
+    calendar:rfc3339_to_system_time(Str, [{unit, Precision}]).
 
 -spec add_time_span(time_span(), timestamp()) -> timestamp().
 
@@ -99,10 +108,16 @@ add_time_span(#'TimeSpan'{} = TimeSpan, Timestamp0) ->
 
 %% Internal functions
 
+-spec format_ts(integer(), rfc3339_time_unit()) -> timestamp().
+
+format_ts(Ts, Unit) ->
+    Str = calendar:system_time_to_rfc3339(Ts, [{unit, Unit}, {offset, "Z"}]),
+    erlang:list_to_binary(Str).
+
 -spec to_integer(timestamp()) -> integer().
 
 to_integer(Timestamp) ->
-    hg_utils:unwrap_result(rfc3339:to_time(Timestamp)).
+    parse(Timestamp, nanosecond).
 
 to_interval_bound(undefined, _) ->
     undefined;

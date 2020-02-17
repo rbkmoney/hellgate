@@ -9,7 +9,6 @@
         kernel,
         stdlib,
         genlib,
-        rfc3339,
         fault_detector_proto,
         hg_proto,
         shumpune_proto,
