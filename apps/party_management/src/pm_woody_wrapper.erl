@@ -10,7 +10,6 @@
 
 -type handler_opts() :: #{
     handler := module(),
-    party_client => party_client:client(),
     default_handling_timeout => timeout(),
     user_identity => undefined | woody_user_identity:user_identity()
 }.
@@ -41,7 +40,7 @@
 
 handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
     WoodyContext = ensure_woody_deadline_set(WoodyContext0, Opts),
-    ok = pm_context:save(create_context(WoodyContext, Opts)),
+    ok = pm_context:save(create_context(WoodyContext)),
     try
         Result = Handler:handle_function(
             Func,
@@ -118,29 +117,11 @@ construct_opts(Url) ->
 get_service_modname(ServiceName) ->
     pm_proto:get_service(ServiceName).
 
-create_context(WoodyContext, Opts) ->
+create_context(WoodyContext) ->
     ContextOptions = #{
         woody_context => WoodyContext
     },
-    Context = pm_context:create(ContextOptions),
-    configure_party_client(Context, Opts).
-
-configure_party_client(Context0, #{party_client := PartyClient}) ->
-    DefaultUserInfo = #{id => <<"hellgate">>, realm => <<"service">>},
-    Context1 = set_default_party_user_identity(DefaultUserInfo, Context0),
-    pm_context:set_party_client(PartyClient, Context1);
-configure_party_client(Context, _Opts) ->
-    Context.
-
-set_default_party_user_identity(UserInfo, Context) ->
-    PartyClientContext0 = pm_context:get_party_client_context(Context),
-    PartyClientContext1 = case party_client_context:get_user_info(PartyClientContext0) of
-        undefined ->
-            party_client_context:set_user_info(UserInfo, PartyClientContext0);
-        _UserInfo ->
-            PartyClientContext0
-    end,
-    pm_context:set_party_client_context(PartyClientContext1, Context).
+    pm_context:create(ContextOptions).
 
 -spec ensure_woody_deadline_set(woody_context:ctx(), handler_opts()) ->
     woody_context:ctx().
