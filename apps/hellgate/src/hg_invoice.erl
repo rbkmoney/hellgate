@@ -101,21 +101,21 @@ get_payment_tags(PaymentSession) ->
 
 get_payment_opts(St = #st{invoice = Invoice}) ->
     #{
-        party => pm_party:get_party(get_party_id(St)),
+        party => hg_party:get_party(get_party_id(St)),
         invoice => Invoice
     }.
 
--spec get_payment_opts(pm_party:party_revision() | undefined, hg_datetime:timestamp(), st()) ->
+-spec get_payment_opts(hg_party:party_revision() | undefined, hg_datetime:timestamp(), st()) ->
     hg_invoice_payment:opts().
 
 get_payment_opts(undefined, Timestamp, St = #st{invoice = Invoice}) ->
     #{
-        party => pm_party:checkout(get_party_id(St), {timestamp, Timestamp}),
+        party => hg_party:checkout(get_party_id(St), {timestamp, Timestamp}),
         invoice => Invoice
     };
 get_payment_opts(Revision, _, St = #st{invoice = Invoice}) ->
     #{
-        party => pm_party:checkout(get_party_id(St), {revision, Revision}),
+        party => hg_party:checkout(get_party_id(St), {revision, Revision}),
         invoice => Invoice
     }.
 
@@ -139,8 +139,8 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
     ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
     _ = assert_party_accessible(PartyID),
-    Party = pm_party:get_party(PartyID),
-    Shop = assert_shop_exists(pm_party:get_shop(ShopID, Party)),
+    Party = hg_party:get_party(PartyID),
+    Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     ok = validate_invoice_params(InvoiceParams, Shop),
     ok = ensure_started(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
@@ -212,7 +212,7 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID, PartyRevision0], _Opts) -
     ),
     Revision = hg_domain:head(),
     Cash = get_cost(St),
-    pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+    hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
 
 handle_function_(Fun, [UserInfo, InvoiceID | _Tail] = Args, _Opts) when
     Fun =:= 'StartPayment' orelse
@@ -244,8 +244,8 @@ handle_function_('RepairWithScenario', [UserInfo, InvoiceID, Scenario], _Opts) -
 
 assert_invoice_operable(St) ->
     % FIXME do not lose party here
-    Party = pm_party:get_party(get_party_id(St)),
-    Shop  = pm_party:get_shop(get_shop_id(St), Party),
+    Party = hg_party:get_party(get_party_id(St)),
+    Shop  = hg_party:get_shop(get_shop_id(St), Party),
     assert_party_shop_operable(Shop, Party).
 
 assert_party_shop_operable(Shop, Party) ->
@@ -1046,8 +1046,8 @@ make_invoice_params(Params) ->
         details = TplDetails,
         context = TplContext
     } = hg_invoice_template:get(TplID),
-    Party = pm_party:get_party(PartyID),
-    Shop = assert_shop_exists(pm_party:get_shop(ShopID, Party)),
+    Party = hg_party:get_party(PartyID),
+    Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_accessible(PartyID),
     _ = assert_party_shop_operable(Shop, Party),
     Cart = make_invoice_cart(Cost, TplDetails, Shop),

@@ -7,8 +7,6 @@
 -export([cleanup/0]).
 
 -export([get_woody_context/1]).
--export([set_woody_context/2]).
--export([get_user_identity/1]).
 -export([set_user_identity/2]).
 -export([get_party_client_context/1]).
 -export([set_party_client_context/2]).
@@ -75,10 +73,6 @@ get_woody_context(Context) ->
     #{woody_context := WoodyContext} = ensure_woody_user_info_set(Context),
     WoodyContext.
 
--spec set_woody_context(woody_context(), context()) -> context().
-set_woody_context(WoodyContext, Context) ->
-    Context#{woody_context => WoodyContext}.
-
 -spec get_party_client(context()) -> party_client().
 get_party_client(#{party_client := PartyClient}) ->
     PartyClient;
@@ -97,13 +91,6 @@ get_party_client_context(Context) ->
 -spec set_party_client_context(party_client_context(), context()) -> context().
 set_party_client_context(PartyContext, Context) ->
     Context#{party_client_context := PartyContext}.
-
--spec get_user_identity(context()) -> user_identity() | no_return().
-get_user_identity(#{user_identity := Identity}) ->
-    Identity;
-get_user_identity(Context) ->
-    WoodyContext = get_woody_context(Context),
-    woody_user_identity:get(WoodyContext).
 
 -spec set_user_identity(user_identity(), context()) -> context().
 set_user_identity(Identity, Context) ->

@@ -273,19 +273,19 @@ get_party_shop(Params) ->
         shop_id = ShopID
     } = Params,
     PartyRevision = ensure_party_revision_defined(PartyID, ParamsPartyRevision),
-    Party = pm_party:checkout(PartyID, {revision, PartyRevision}),
-    Shop = pm_party:get_shop(ShopID, Party),
+    Party = hg_party:checkout(PartyID, {revision, PartyRevision}),
+    Shop = hg_party:get_shop(ShopID, Party),
     {Party, Shop}.
 
 get_payment_institution(Shop, Party, Revision) ->
-    Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
 
 get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision) ->
-    Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    #domain_TermSet{recurrent_paytools = Terms} = pm_party:get_terms(Contract, CreatedAt, Revision),
+    #domain_TermSet{recurrent_paytools = Terms} = hg_party:get_terms(Contract, CreatedAt, Revision),
     Terms.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
@@ -323,8 +323,8 @@ collect_rec_payment_tool_varset(RecPaymentTool) ->
     #domain_DisposablePaymentResource{
         payment_tool = PaymentTool
     } = PaymentResource,
-    Party = pm_party:checkout(PartyID, {revision, PartyRevision}),
-    Shop = pm_party:get_shop(ShopID, Party),
+    Party = hg_party:checkout(PartyID, {revision, PartyRevision}),
+    Shop = hg_party:get_shop(ShopID, Party),
     collect_varset(Party, Shop, #{payment_tool => PaymentTool}).
 
 inspect(_RecPaymentTool, _VS) ->
@@ -448,7 +448,7 @@ get_shop(St) ->
     RecPaymentTool = get_rec_payment_tool(St),
     ShopID = RecPaymentTool#payproc_RecurrentPaymentTool.shop_id,
     Party = get_party(St),
-    pm_party:get_shop(ShopID, Party).
+    hg_party:get_shop(ShopID, Party).
 
 get_party(St) ->
     RecPaymentTool = get_rec_payment_tool(St),
@@ -457,7 +457,7 @@ get_party(St) ->
         party_revision = PartyRevision
     } = RecPaymentTool,
     Revision = ensure_party_revision_defined(PartyID, PartyRevision),
-    Party = pm_party:checkout(PartyID, {revision, Revision}),
+    Party = hg_party:checkout(PartyID, {revision, Revision}),
     Party.
 
 get_domain_revision(St) ->
@@ -729,11 +729,11 @@ handle_result_action(#{}, Acc) ->
 ensure_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID, party_revision = Revision0}) ->
     _ = hg_invoice_utils:assert_party_accessible(PartyID),
     Revision = ensure_party_revision_defined(PartyID, Revision0),
-    Party = pm_party:checkout(PartyID, {revision, Revision}),
+    Party = hg_party:checkout(PartyID, {revision, Revision}),
     Party.
 
 ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID}, Party) ->
-    Shop = hg_invoice_utils:assert_shop_exists(pm_party:get_shop(ShopID, Party)),
+    Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     Shop.
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, DomainRevison) ->
@@ -824,10 +824,10 @@ reduce_selector(Name, Selector, VS, Revision) ->
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.
 
--spec ensure_party_revision_defined(dmsl_domain_thrift:'PartyID'(), pm_party:party_revision() | undefined) ->
-    pm_party:party_revision().
+-spec ensure_party_revision_defined(dmsl_domain_thrift:'PartyID'(), hg_party:party_revision() | undefined) ->
+    hg_party:party_revision().
 ensure_party_revision_defined(PartyID, undefined) ->
-    pm_party:get_party_revision(PartyID);
+    hg_party:get_party_revision(PartyID);
 ensure_party_revision_defined(_PartyID, Revision) ->
     Revision.
 
