@@ -560,16 +560,6 @@ make_shop_details(Name, Description) ->
         description = Description
     }.
 
--spec make_disposable_payment_resource({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'SessionID'()}) ->
-    pm_domain_thrift:'DisposablePaymentResource'().
-
-make_disposable_payment_resource({PaymentTool, SessionID}) ->
-    #domain_DisposablePaymentResource{
-        payment_tool = PaymentTool,
-        payment_session_id = SessionID,
-        client_info = #domain_ClientInfo{}
-    }.
-
 -spec make_meta_ns() -> dmsl_domain_thrift:'PartyMetaNamespace'().
 
 make_meta_ns() ->
