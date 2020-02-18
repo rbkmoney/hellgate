@@ -107,7 +107,7 @@ unwrap_party_result({ok, Result}) ->
 unwrap_party_result({error, Error}) ->
     erlang:throw(Error).
 
--spec reduce_terms(dmsl_domain_thrift:'TermSet'(), hg_selector:varset(), revision()) ->
+-spec reduce_terms(dmsl_domain_thrift:'TermSet'(), pm_selector:varset(), revision()) ->
     dmsl_domain_thrift:'TermSet'().
 
 %% TODO rework this part for more generic approach
@@ -217,7 +217,7 @@ reduce_withdrawals_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
 reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
     #domain_P2PServiceTerms{
         allow = hg_maybe:apply(fun(X) ->
-            hg_selector:reduce_predicate(X, VS, Rev)
+            pm_selector:reduce_predicate(X, VS, Rev)
         end, Terms#domain_P2PServiceTerms.allow),
         currencies = reduce_if_defined(Terms#domain_P2PServiceTerms.currencies, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_limit, VS, Rev),
@@ -227,7 +227,7 @@ reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
     }.
 
 reduce_if_defined(Selector, VS, Rev) ->
-    hg_maybe:apply(fun(X) -> hg_selector:reduce(X, VS, Rev) end, Selector).
+    hg_maybe:apply(fun(X) -> pm_selector:reduce(X, VS, Rev) end, Selector).
 
 compute_terms(#domain_Contract{terms = TermsRef, adjustments = Adjustments}, Timestamp, Revision) ->
     ActiveAdjustments = lists:filter(fun(A) -> is_adjustment_active(A, Timestamp) end, Adjustments),

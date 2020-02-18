@@ -311,7 +311,7 @@ collect_varset(
     }.
 
 -spec collect_rec_payment_tool_varset(rec_payment_tool()) ->
-    hg_selector:varset().
+    pm_selector:varset().
 collect_rec_payment_tool_varset(RecPaymentTool) ->
     #payproc_RecurrentPaymentTool{
         party_id = PartyID,
@@ -814,7 +814,7 @@ validate_cost(CashValueSelector, VS, Revision) ->
     {Cash, VS#{cash_value => Cash}}.
 
 reduce_selector(Name, Selector, VS, Revision) ->
-    case hg_selector:reduce(Selector, VS, Revision) of
+    case pm_selector:reduce(Selector, VS, Revision) of
         {value, V} ->
             V;
         Ambiguous ->

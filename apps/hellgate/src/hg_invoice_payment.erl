@@ -889,7 +889,7 @@ choose_provider_account(Currency, Accounts) ->
 choose_external_account(Currency, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     ExternalAccountSetSelector = Globals#domain_Globals.external_account_set,
-    case hg_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
+    case pm_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
         {value, ExternalAccountSetRef} ->
             ExternalAccountSet = hg_domain:get(Revision, {external_account_set, ExternalAccountSetRef}),
             genlib_map:get(
@@ -926,7 +926,7 @@ construct_payment_plan_id(Invoice, Payment) ->
     ]).
 
 reduce_selector(Name, Selector, VS, Revision) ->
-    case hg_selector:reduce(Selector, VS, Revision) of
+    case pm_selector:reduce(Selector, VS, Revision) of
         {value, V} ->
             V;
         Ambiguous ->

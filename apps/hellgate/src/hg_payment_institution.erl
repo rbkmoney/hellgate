@@ -10,7 +10,7 @@
 %%
 
 -type currency()        :: dmsl_domain_thrift:'CurrencyRef'().
--type varset()          :: hg_selector:varset().
+-type varset()          :: pm_selector:varset().
 -type revision()        :: hg_domain:revision().
 -type payment_inst()    :: dmsl_domain_thrift:'PaymentInstitution'().
 -type realm()           :: dmsl_domain_thrift:'PaymentInstitutionRealm'().
@@ -21,7 +21,7 @@
     dmsl_domain_thrift:'SystemAccount'() | no_return().
 
 get_system_account(Currency, VS, Revision, #domain_PaymentInstitution{system_account_set = S}) ->
-    SystemAccountSetRef = hg_selector:reduce_to_value(S, VS, Revision),
+    SystemAccountSetRef = pm_selector:reduce_to_value(S, VS, Revision),
     SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
     case maps:find(Currency, SystemAccountSet#domain_SystemAccountSet.accounts) of
         {ok, Account} ->
