@@ -405,12 +405,14 @@ reduce_acts_terms(#domain_ServiceAcceptanceActsTerms{schedules = Schedules}, VS,
 reduce_wallets_terms(#domain_WalletServiceTerms{} = Terms, VS, Rev) ->
     WithdrawalTerms = Terms#domain_WalletServiceTerms.withdrawals,
     P2PTerms = Terms#domain_WalletServiceTerms.p2p,
+    W2WTerms = Terms#domain_WalletServiceTerms.w2w,
     #domain_WalletServiceTerms{
         currencies = reduce_if_defined(Terms#domain_WalletServiceTerms.currencies, VS, Rev),
         wallet_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.wallet_limit, VS, Rev),
         turnover_limit = reduce_if_defined(Terms#domain_WalletServiceTerms.turnover_limit, VS, Rev),
         withdrawals = hg_maybe:apply(fun(X) -> reduce_withdrawals_terms(X, VS, Rev) end, WithdrawalTerms),
-        p2p = hg_maybe:apply(fun(X) -> reduce_p2p_terms(X, VS, Rev) end, P2PTerms)
+        p2p = hg_maybe:apply(fun(X) -> reduce_p2p_terms(X, VS, Rev) end, P2PTerms),
+        w2w = hg_maybe:apply(fun(X) -> reduce_w2w_terms(X, VS, Rev) end, W2WTerms)
     }.
 
 reduce_withdrawals_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
@@ -430,6 +432,17 @@ reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
         cash_flow = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_flow, VS, Rev),
         fees = reduce_if_defined(Terms#domain_P2PServiceTerms.fees, VS, Rev),
         quote_lifetime = reduce_if_defined(Terms#domain_P2PServiceTerms.quote_lifetime, VS, Rev)
+    }.
+
+reduce_w2w_terms(#domain_W2WServiceTerms{} = Terms, VS, Rev) ->
+    #domain_W2WServiceTerms{
+        allow = hg_maybe:apply(fun(X) ->
+            hg_selector:reduce_predicate(X, VS, Rev)
+        end, Terms#domain_W2WServiceTerms.allow),
+        currencies = reduce_if_defined(Terms#domain_W2WServiceTerms.currencies, VS, Rev),
+        cash_limit = reduce_if_defined(Terms#domain_W2WServiceTerms.cash_limit, VS, Rev),
+        cash_flow = reduce_if_defined(Terms#domain_W2WServiceTerms.cash_flow, VS, Rev),
+        fees = reduce_if_defined(Terms#domain_W2WServiceTerms.fees, VS, Rev)
     }.
 
 reduce_if_defined(Selector, VS, Rev) ->
@@ -665,14 +678,16 @@ merge_wallets_terms(
         wallet_limit = CashLimit0,
         turnover_limit = TurnoverLimit0,
         withdrawals = Withdrawals0,
-        p2p = PeerToPeer0
+        p2p = PeerToPeer0,
+        w2w = WalletToWallet0
     },
     #domain_WalletServiceTerms{
         currencies = Currencies1,
         wallet_limit = CashLimit1,
         turnover_limit = TurnoverLimit1,
         withdrawals = Withdrawals1,
-        p2p = PeerToPeer1
+        p2p = PeerToPeer1,
+        w2w = WalletToWallet1
     }
 ) ->
     #domain_WalletServiceTerms{
@@ -680,7 +695,8 @@ merge_wallets_terms(
         wallet_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
         turnover_limit = hg_utils:select_defined(TurnoverLimit1, TurnoverLimit0),
         withdrawals = merge_withdrawals_terms(Withdrawals0, Withdrawals1),
-        p2p = merge_p2p_terms(PeerToPeer0, PeerToPeer1)
+        p2p = merge_p2p_terms(PeerToPeer0, PeerToPeer1),
+        w2w = merge_w2w_terms(WalletToWallet0, WalletToWallet1)
     };
 merge_wallets_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
@@ -707,25 +723,57 @@ merge_withdrawals_terms(Terms0, Terms1) ->
 
 merge_p2p_terms(
     #domain_P2PServiceTerms{
+        allow = Allow0,
+        currencies = Currencies0,
+        cash_limit = CashLimit0,
+        cash_flow = CashFlow0,
+        fees = Fees0,
+        quote_lifetime = QuoteLifetime0
+    },
+    #domain_P2PServiceTerms{
+        allow = Allow1,
+        currencies = Currencies1,
+        cash_limit = CashLimit1,
+        cash_flow = CashFlow1,
+        fees = Fees1,
+        quote_lifetime = QuoteLifetime1
+    }
+) ->
+    #domain_P2PServiceTerms{
+        allow = hg_utils:select_defined(Allow0, Allow1),
+        currencies = hg_utils:select_defined(Currencies1, Currencies0),
+        cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
+        cash_flow = hg_utils:select_defined(CashFlow1, CashFlow0),
+        fees = hg_utils:select_defined(Fees1, Fees0),
+        quote_lifetime = hg_utils:select_defined(QuoteLifetime0, QuoteLifetime1)
+    };
+merge_p2p_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_w2w_terms(
+    #domain_W2WServiceTerms{
+        allow = Allow0,
         currencies = Currencies0,
         cash_limit = CashLimit0,
         cash_flow = CashFlow0,
         fees = Fees0
     },
-    #domain_P2PServiceTerms{
+    #domain_W2WServiceTerms{
+        allow = Allow1,
         currencies = Currencies1,
         cash_limit = CashLimit1,
         cash_flow = CashFlow1,
         fees = Fees1
     }
 ) ->
-    #domain_P2PServiceTerms{
+    #domain_W2WServiceTerms{
+        allow = hg_utils:select_defined(Allow0, Allow1),
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
         cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
         cash_flow = hg_utils:select_defined(CashFlow1, CashFlow0),
         fees = hg_utils:select_defined(Fees1, Fees0)
     };
-merge_p2p_terms(Terms0, Terms1) ->
+merge_w2w_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 ensure_account(AccountID, #domain_Party{shops = Shops}) ->
