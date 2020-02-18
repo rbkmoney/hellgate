@@ -17,6 +17,10 @@
 
 -spec get_service(Name :: atom()) -> service().
 
+get_service(claim_committer) ->
+    {dmsl_claim_management_thrift, 'ClaimCommitter'};
+get_service(party_management) ->
+    {dmsl_payment_processing_thrift, 'PartyManagement'};
 get_service(invoicing) ->
     {dmsl_payment_processing_thrift, 'Invoicing'};
 get_service(invoice_templating) ->

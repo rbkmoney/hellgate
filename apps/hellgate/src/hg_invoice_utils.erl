@@ -93,7 +93,7 @@ assert_shop_exists(undefined) ->
 -spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param()) -> term_set().
 compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision) ->
     Args = [UserInfo, PartyID, ShopID, Timestamp, PartyRevision],
-    {ok, TermSet} = pm_woody_wrapper:call(party_management, 'ComputeShopTerms', Args),
+    {ok, TermSet} = hg_woody_wrapper:call(party_management, 'ComputeShopTerms', Args),
     TermSet.
 
 validate_currency_(Currency, Currency) ->

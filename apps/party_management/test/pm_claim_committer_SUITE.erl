@@ -67,7 +67,7 @@ all() ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
-    {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate]),
+    {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate, party_management]),
     RootUrl     = maps:get(hellgate_root_url, Ret),
     ok          = pm_domain:insert(construct_domain_fixture()),
     PartyID     = erlang:list_to_binary([?MODULE_STRING, ".", erlang:integer_to_list(erlang:system_time())]),

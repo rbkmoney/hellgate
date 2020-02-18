@@ -81,7 +81,7 @@ call(ServiceName, Function, Args, Opts, Deadline) ->
         Request,
         Opts#{event_handler => {
             scoper_woody_event_handler,
-            genlib_app:env(hellgate, scoper_event_handler_options, #{})
+            genlib_app:env(party_management, scoper_event_handler_options, #{})
         }},
         attach_deadline(Deadline, Context)
     ).
@@ -89,7 +89,7 @@ call(ServiceName, Function, Args, Opts, Deadline) ->
 -spec get_service_options(atom()) ->
     client_opts().
 get_service_options(ServiceName) ->
-    construct_opts(maps:get(ServiceName, genlib_app:env(hellgate, services))).
+    construct_opts(maps:get(ServiceName, genlib_app:env(party_management, services))).
 
 -spec attach_deadline(woody_deadline:deadline(), woody_context:ctx()) -> woody_context:ctx().
 

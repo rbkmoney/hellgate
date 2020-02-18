@@ -40,12 +40,12 @@ call(ServiceName, Function, Args, {RootUrl, Context}) ->
 
 get_opts(ServiceName, RootUrl, Path) ->
     Url = iolist_to_binary([RootUrl, Path]),
-    EventHandlerOpts = genlib_app:env(hellgate, scoper_event_handler_options, #{}),
+    EventHandlerOpts = genlib_app:env(party_management, scoper_event_handler_options, #{}),
     Opts0 = #{
         url           => Url,
         event_handler => {scoper_woody_event_handler, EventHandlerOpts}
     },
-    case maps:get(ServiceName, genlib_app:env(hellgate, services), undefined) of
+    case maps:get(ServiceName, genlib_app:env(party_management, services), undefined) of
         #{} = Opts ->
             maps:merge(Opts, Opts0);
         _ ->
