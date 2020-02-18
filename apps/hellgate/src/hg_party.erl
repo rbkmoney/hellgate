@@ -740,12 +740,12 @@ merge_p2p_terms(
     }
 ) ->
     #domain_P2PServiceTerms{
-        allow = hg_utils:select_defined(Allow0, Allow1),
+        allow = hg_utils:select_defined(Allow1, Allow0),
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
         cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
         cash_flow = hg_utils:select_defined(CashFlow1, CashFlow0),
         fees = hg_utils:select_defined(Fees1, Fees0),
-        quote_lifetime = hg_utils:select_defined(QuoteLifetime0, QuoteLifetime1)
+        quote_lifetime = hg_utils:select_defined(QuoteLifetime1, QuoteLifetime0)
     };
 merge_p2p_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
@@ -767,7 +767,7 @@ merge_w2w_terms(
     }
 ) ->
     #domain_W2WServiceTerms{
-        allow = hg_utils:select_defined(Allow0, Allow1),
+        allow = hg_utils:select_defined(Allow1, Allow0),
         currencies = hg_utils:select_defined(Currencies1, Currencies0),
         cash_limit = hg_utils:select_defined(CashLimit1, CashLimit0),
         cash_flow = hg_utils:select_defined(CashFlow1, CashFlow0),
