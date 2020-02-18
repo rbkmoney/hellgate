@@ -37,14 +37,8 @@ stop() ->
     {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 
 init([]) ->
-%%    PMMachineHandlers = [
-%%        pm_party_machine
-%%    ],
     {ok, {
-        #{strategy => one_for_all, intensity => 6, period => 30},
-        [
-%%            pm_machine:get_child_spec(PMMachineHandlers)
-        ]
+        #{strategy => one_for_all, intensity => 6, period => 30}, []
     }}.
 
 %% Application callbacks

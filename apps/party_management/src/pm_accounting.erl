@@ -9,9 +9,7 @@
 
 -export([get_account/1]).
 -export([get_balance/1]).
--export([get_balance/2]).
 -export([create_account/1]).
--export([create_account/2]).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("shumpune_proto/include/shumpune_shumpune_thrift.hrl").

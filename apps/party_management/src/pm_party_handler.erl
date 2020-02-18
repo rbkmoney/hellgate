@@ -199,7 +199,7 @@ handle_function_(
     Shop = ensure_shop(pm_party:get_shop(ShopID, Party)),
     Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Currency = Amount#domain_Cash.currency,
-    ok = pm_invoice_utils:validate_currency(Currency, Shop),
+    ok = pm_currency:validate_currency(Currency, Shop),
     PayoutTool = get_payout_tool(Shop, Contract, PayoutParams),
     VS = #{
         party_id => PartyID,

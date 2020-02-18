@@ -1,7 +1,7 @@
-%%% Invoice utils
+%%% Currency related functions
 %%%
 
--module(pm_invoice_utils).
+-module(pm_currency).
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([validate_currency/2]).
