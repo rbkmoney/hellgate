@@ -85,6 +85,7 @@
 -export([contract_adjustment_creation/1]).
 -export([contract_adjustment_expiration/1]).
 -export([contract_p2p_terms/1]).
+-export([contract_w2w_terms/1]).
 
 -export([compute_payment_institution_terms/1]).
 -export([compute_payout_cash_flow/1]).
@@ -182,7 +183,8 @@ groups() ->
             contract_adjustment_creation,
             contract_adjustment_expiration,
             compute_payment_institution_terms,
-            contract_p2p_terms
+            contract_p2p_terms,
+            contract_w2w_terms
         ]},
         {shop_management, [sequence], [
             party_creation,
@@ -438,6 +440,7 @@ end_per_testcase(_Name, _C) ->
 -spec compute_payment_institution_terms(config()) -> _ | no_return().
 -spec compute_payout_cash_flow(config()) -> _ | no_return().
 -spec contract_p2p_terms(config()) -> _ | no_return().
+-spec contract_w2w_terms(config()) -> _ | no_return().
 -spec contractor_creation(config()) -> _ | no_return().
 -spec contractor_modification(config()) -> _ | no_return().
 -spec contract_w_contractor_creation(config()) -> _ | no_return().
@@ -856,6 +859,28 @@ contract_p2p_terms(C) ->
         ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
     ),
     #domain_P2PServiceTerms{fees = Fees} = P2PServiceTerms,
+    {value, #domain_Fees{
+        fees = #{surplus := {fixed, #domain_CashVolumeFixed{cash = ?cash(50, <<"RUB">>)}}}
+    }} = Fees.
+
+contract_w2w_terms(C) ->
+    Client = cfg(client, C),
+    ContractID = ?REAL_CONTRACT_ID,
+    PartyRevision = hg_client_party:get_revision(Client),
+    DomainRevision1 = hg_domain:head(),
+    Timstamp1 = hg_datetime:format_now(),
+    Varset = #payproc_Varset{
+        currency = ?cur(<<"RUB">>),
+        amount = ?cash(2500, <<"RUB">>)
+    },
+    #domain_TermSet{
+        wallets = #domain_WalletServiceTerms{
+            w2w = W2WServiceTerms
+        }
+    } = hg_client_party:compute_contract_terms(
+        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+    ),
+    #domain_W2WServiceTerms{fees = Fees} = W2WServiceTerms,
     {value, #domain_Fees{
         fees = #{surplus := {fixed, #domain_CashVolumeFixed{cash = ?cash(50, <<"RUB">>)}}}
     }} = Fees.
@@ -1688,6 +1713,75 @@ construct_domain_fixture() ->
                                 }}
                             }}
                         }}},
+                        then_ = {decisions, [
+                            #domain_FeeDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(   0, <<"RUB">>)},
+                                        {exclusive, ?cash(3000, <<"RUB">>)}
+                                    )}
+                                },
+                                then_ = {value, #domain_Fees{fees = #{surplus => ?fixed(50, <<"RUB">>)}}}
+                            },
+                            #domain_FeeDecision{
+                                if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(3000, <<"RUB">>)},
+                                        {exclusive, ?cash(300000, <<"RUB">>)}
+                                    )}
+                                },
+                                then_ = {value, #domain_Fees{fees = #{surplus => ?share(4, 100, operation_amount)}}}
+                            }
+                        ]}
+                    }
+                ]}
+            },
+            w2w = #domain_W2WServiceTerms{
+                currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                cash_limit = {decisions, [
+                    #domain_CashLimitDecision{
+                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, ?cashrng(
+                            {inclusive, ?cash(       0, <<"RUB">>)},
+                            {exclusive, ?cash(10000001, <<"RUB">>)}
+                        )}
+                    }
+                ]},
+                cash_flow = {decisions, [
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                                {inclusive, ?cash(   0, <<"RUB">>)},
+                                {exclusive, ?cash(3000, <<"RUB">>)}
+                            )}
+                        },
+                        then_ = {
+                            value, [
+                                #domain_CashFlowPosting{
+                                    source = {wallet, receiver_destination},
+                                    destination = {system, settlement},
+                                    volume = ?fixed(50, <<"RUB">>)
+                                }
+                            ]
+                        }
+                    },
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {cost_in, ?cashrng(
+                                {inclusive, ?cash(3001, <<"RUB">>)},
+                                {exclusive, ?cash(10000, <<"RUB">>)}
+                            )}
+                        },
+                        then_ = {
+                            value, [
+                                #domain_CashFlowPosting{
+                                    source = {wallet, receiver_destination},
+                                    destination = {system, settlement},
+                                    volume = ?share(1, 100, operation_amount)
+                                }
+                            ]
+                        }
+                    }
+                ]},
+                fees = {decisions, [
+                    #domain_FeeDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                         then_ = {decisions, [
                             #domain_FeeDecision{
                                 if_ = {condition, {cost_in, ?cashrng(
