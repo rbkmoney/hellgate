@@ -57,7 +57,7 @@
  {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"3.3.0">>},3},
  {<<"party_client">>,
   {git,"git@github.com:rbkmoney/party_client_erlang.git",
-       {ref,"89403b17dbcef82b6be49f279aa813f511c40843"}},
+       {ref,"b6e0f3087599c1a2623d9465d612b644294e4fa3"}},
   0},
  {<<"payproc_errors">>,
   {git,"git@github.com:rbkmoney/payproc-errors-erlang.git",
