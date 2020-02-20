@@ -71,7 +71,7 @@ init_per_suite(C) ->
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    PartyClient = pm_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
@@ -188,12 +188,12 @@ invalid_party_status(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = make_recurrent_paytool_params(PartyID, ShopID),
-    ok = pm_client_party:block(<<>>, PartyClient),
+    ok = hg_client_party:block(<<>>, PartyClient),
     {exception, ?invalid_party_status({blocking, _})} = hg_client_recurrent_paytool:create(Params, Client),
-    ok = pm_client_party:unblock(<<>>, PartyClient),
-    ok = pm_client_party:suspend(PartyClient),
+    ok = hg_client_party:unblock(<<>>, PartyClient),
+    ok = hg_client_party:suspend(PartyClient),
     {exception, ?invalid_party_status({suspension, _})} = hg_client_recurrent_paytool:create(Params, Client),
-    ok = pm_client_party:activate(PartyClient).
+    ok = hg_client_party:activate(PartyClient).
 
 invalid_shop_status(C) ->
     Client = cfg(client, C),
@@ -201,12 +201,12 @@ invalid_shop_status(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = make_recurrent_paytool_params(PartyID, ShopID),
-    ok = pm_client_party:block_shop(ShopID, <<>>, PartyClient),
+    ok = hg_client_party:block_shop(ShopID, <<>>, PartyClient),
     {exception, ?invalid_shop_status({blocking, _})} = hg_client_recurrent_paytool:create(Params, Client),
-    ok = pm_client_party:unblock_shop(ShopID, <<>>, PartyClient),
-    ok = pm_client_party:suspend_shop(ShopID, PartyClient),
+    ok = hg_client_party:unblock_shop(ShopID, <<>>, PartyClient),
+    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, ?invalid_shop_status({suspension, _})} = hg_client_recurrent_paytool:create(Params, Client),
-    ok = pm_client_party:activate_shop(ShopID, PartyClient).
+    ok = hg_client_party:activate_shop(ShopID, PartyClient).
 
 invalid_payment_method(C) ->
     Client = cfg(client, C),

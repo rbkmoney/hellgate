@@ -83,7 +83,7 @@ init_per_suite(C) ->
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    Client = pm_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), Client),
     [
         {party_id, PartyID},
@@ -138,17 +138,17 @@ create_invalid_shop(C) ->
 create_invalid_party_status(C) ->
     PartyClient = cfg(party_client, C),
 
-    ok = pm_client_party:suspend(PartyClient),
+    ok = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = create_invoice_tpl(C),
-    ok = pm_client_party:activate(PartyClient),
+    ok = hg_client_party:activate(PartyClient),
 
-    ok = pm_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = create_invoice_tpl(C),
-    ok = pm_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec create_invalid_shop_status(config()) -> _ | no_return().
 
@@ -156,17 +156,17 @@ create_invalid_shop_status(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
 
-    ok = pm_client_party:suspend_shop(ShopID, PartyClient),
+    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = create_invoice_tpl(C),
-    ok = pm_client_party:activate_shop(ShopID, PartyClient),
+    ok = hg_client_party:activate_shop(ShopID, PartyClient),
 
-    ok = pm_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = create_invoice_tpl(C),
-    ok = pm_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
+    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec create_invalid_cost_fixed_amount(config()) -> _ | no_return().
 
@@ -226,21 +226,21 @@ get_invoice_template_anyhow(C) ->
     ShopID = cfg(shop_id, C),
     InvoiceTpl = ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
-    ok = pm_client_party:suspend(PartyClient),
+    ok = hg_client_party:suspend(PartyClient),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
-    ok = pm_client_party:activate(PartyClient),
+    ok = hg_client_party:activate(PartyClient),
 
-    ok = pm_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
-    ok = pm_client_party:unblock(<<"UNBLOOOCK">>, PartyClient),
+    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient),
 
-    ok = pm_client_party:suspend_shop(ShopID, PartyClient),
+    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
-    ok = pm_client_party:activate_shop(ShopID, PartyClient),
+    ok = hg_client_party:activate_shop(ShopID, PartyClient),
 
-    ok = pm_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
-    ok = pm_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient),
+    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client).
 
 -spec update_invalid_party_status(config()) -> _ | no_return().
@@ -252,17 +252,17 @@ update_invalid_party_status(C) ->
     Diff = make_invoice_tpl_update_params(
         #{details => hg_ct_helper:make_invoice_tpl_details(<<"teddy bear">>, make_cost(fixed, 42, <<"RUB">>))}
     ),
-    ok = pm_client_party:suspend(PartyClient),
+    ok = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
-    ok = pm_client_party:activate(PartyClient),
+    ok = hg_client_party:activate(PartyClient),
 
-    ok = pm_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
-    ok = pm_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec update_invalid_shop_status(config()) -> _ | no_return().
 
@@ -274,17 +274,17 @@ update_invalid_shop_status(C) ->
     Diff = make_invoice_tpl_update_params(
         #{details => hg_ct_helper:make_invoice_tpl_details(<<"teddy bear">>, make_cost(fixed, 42, <<"RUB">>))}
     ),
-    ok = pm_client_party:suspend_shop(ShopID, PartyClient),
+    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
-    ok = pm_client_party:activate_shop(ShopID, PartyClient),
+    ok = hg_client_party:activate_shop(ShopID, PartyClient),
 
-    ok = pm_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
-    ok = pm_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
+    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec update_invalid_cost_fixed_amount(config()) -> _ | no_return().
 
@@ -401,17 +401,17 @@ delete_invalid_party_status(C) ->
     PartyClient = cfg(party_client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
-    ok = pm_client_party:suspend(PartyClient),
+    ok = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoice_templating:delete(TplID, Client),
-    ok = pm_client_party:activate(PartyClient),
+    ok = hg_client_party:activate(PartyClient),
 
-    ok = pm_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoice_templating:delete(TplID, Client),
-    ok = pm_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec delete_invalid_shop_status(config()) -> _ | no_return().
 
@@ -421,17 +421,17 @@ delete_invalid_shop_status(C) ->
     ShopID = cfg(shop_id, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
-    ok = pm_client_party:suspend_shop(ShopID, PartyClient),
+    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoice_templating:delete(TplID, Client),
-    ok = pm_client_party:activate_shop(ShopID, PartyClient),
+    ok = hg_client_party:activate_shop(ShopID, PartyClient),
 
-    ok = pm_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoice_templating:delete(TplID, Client),
-    ok = pm_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
+    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec delete_invoice_template(config()) -> _ | no_return().
 
