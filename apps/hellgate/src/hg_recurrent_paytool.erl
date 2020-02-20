@@ -285,7 +285,7 @@ get_payment_institution(Shop, Party, Revision) ->
 get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    #domain_TermSet{recurrent_paytools = Terms} = hg_party:get_terms(Contract, CreatedAt, Revision),
+    #domain_TermSet{recurrent_paytools = Terms} = pm_party:get_terms(Contract, CreatedAt, Revision),
     Terms.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
