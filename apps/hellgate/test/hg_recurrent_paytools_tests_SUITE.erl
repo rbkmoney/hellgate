@@ -66,7 +66,7 @@ init_per_suite(C) ->
     % _ = dbg:tpl({woody_client, '_', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([
-        woody, scoper, dmt_client, party_client, hellgate, party_management, {cowboy, CowboySpec}
+        woody, scoper, dmt_client, party_client, party_management, hellgate, {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
