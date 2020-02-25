@@ -27,22 +27,21 @@ construct_context() ->
     {{ok, _Response} | {exception, _} | {error, _}, t()}.
 
 call(ServiceName, Function, Args, {RootUrl, Context}) ->
-    {Path, Service} = pm_proto:get_service_spec(ServiceName),
+    Service = pm_proto:get_service(ServiceName),
     Request = {Service, Function, Args},
-    Opts = get_opts(ServiceName, RootUrl, Path),
-    Result = try
-        woody_client:call(Request, Opts, Context)
-    catch
-        error:Error:ST ->
-            {error, {Error, ST}}
-    end,
+    Opts = get_opts(ServiceName),
+    Result =
+        try
+            woody_client:call(Request, Opts, Context)
+        catch
+            error:Error:ST ->
+                {error, {Error, ST}}
+        end,
     {Result, {RootUrl, Context}}.
 
-get_opts(ServiceName, RootUrl, Path) ->
-    Url = iolist_to_binary([RootUrl, Path]),
+get_opts(ServiceName) ->
     EventHandlerOpts = genlib_app:env(party_management, scoper_event_handler_options, #{}),
     Opts0 = #{
-        url           => Url,
         event_handler => {scoper_woody_event_handler, EventHandlerOpts}
     },
     case maps:get(ServiceName, genlib_app:env(party_management, services), undefined) of

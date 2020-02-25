@@ -27,9 +27,9 @@ construct_context() ->
     {{ok, _Response} | {exception, _} | {error, _}, t()}.
 
 call(ServiceName, Function, Args, {RootUrl, Context}) ->
-    {Path, Service} = hg_proto:get_service_spec(ServiceName),
+    Service = hg_proto:get_service(ServiceName),
     Request = {Service, Function, Args},
-    Opts = get_opts(ServiceName, RootUrl, Path),
+    Opts = get_opts(ServiceName),
     Result = try
         woody_client:call(Request, Opts, Context)
     catch
@@ -38,11 +38,9 @@ call(ServiceName, Function, Args, {RootUrl, Context}) ->
     end,
     {Result, {RootUrl, Context}}.
 
-get_opts(ServiceName, RootUrl, Path) ->
-    Url = iolist_to_binary([RootUrl, Path]),
+get_opts(ServiceName) ->
     EventHandlerOpts = genlib_app:env(hellgate, scoper_event_handler_options, #{}),
     Opts0 = #{
-        url           => Url,
         event_handler => {scoper_woody_event_handler, EventHandlerOpts}
     },
     case maps:get(ServiceName, genlib_app:env(hellgate, services), undefined) of

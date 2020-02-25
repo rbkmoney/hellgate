@@ -175,12 +175,19 @@ start_app(party_management = AppName) ->
                 }
         }}},
         {services, #{
-            accounter           => <<"http://shumway:8022/shumpune">>,
-            automaton           => <<"http://machinegun:8022/v1/automaton">>,
-            party_management    => #{
+            accounter        => <<"http://shumway:8022/shumpune">>,
+            automaton        => <<"http://machinegun:8022/v1/automaton">>,
+            party_management => #{
                 url => <<"http://hellgate:8022/v1/processing/partymgmt">>,
                 transport_opts => #{
                     pool => party_management,
+                    max_connections => 300
+                }
+            },
+            claim_committer  => #{
+                url => <<"http://hellgate:8022/v1/processing/claim_committer">>,
+                transport_opts => #{
+                    pool => claim_committer,
                     max_connections => 300
                 }
             }

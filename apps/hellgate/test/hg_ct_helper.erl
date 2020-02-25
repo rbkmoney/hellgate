@@ -167,6 +167,27 @@ start_app(hellgate = AppName) ->
                     pool => recurrent_paytool,
                     max_connections => 300
                 }
+            },
+            proxy_host_provider => #{
+                url => <<"http://hellgate:8022/v1/proxyhost/provider">>,
+                transport_opts => #{
+                    pool => proxy_host_provider,
+                    max_connections => 300
+                }
+            },
+            payment_processing_eventsink => #{
+                url => <<"http://hellgate:8022/v1/processing/eventsink">>,
+                transport_opts => #{
+                    pool => payment_processing_eventsink,
+                    max_connections => 300
+                }
+            },
+            recurrent_paytool_eventsink => #{
+                url => <<"http://hellgate:8022/v1/processing/recpaytool/eventsink">>,
+                transport_opts => #{
+                    pool => recurrent_paytool_eventsink,
+                    max_connections => 300
+                }
             }
         }},
         {proxy_opts, #{
