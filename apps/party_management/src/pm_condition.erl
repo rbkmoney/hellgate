@@ -1,6 +1,5 @@
 -module(pm_condition).
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
--include_lib("domain.hrl").
 
 %%
 

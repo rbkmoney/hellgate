@@ -31,7 +31,6 @@
 
 -include("pm_ct_domain.hrl").
 -include("pm_ct_json.hrl").
--include_lib("party_management/include/domain.hrl").
 -include_lib("damsel/include/dmsl_base_thrift.hrl").
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
