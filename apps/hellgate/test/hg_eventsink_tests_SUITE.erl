@@ -2,7 +2,7 @@
 
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
--include("../include/party_events.hrl").
+-include("party_events.hrl").
 
 -export([all/0]).
 -export([groups/0]).
