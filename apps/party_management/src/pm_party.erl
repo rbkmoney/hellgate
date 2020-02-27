@@ -388,9 +388,9 @@ reduce_withdrawals_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
 
 reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
     #domain_P2PServiceTerms{
-        allow = pm_maybe:apply(fun(X) ->
-            pm_selector:reduce_predicate(X, VS, Rev)
-                               end, Terms#domain_P2PServiceTerms.allow),
+        allow = pm_maybe:apply(
+            fun(X) -> pm_selector:reduce_predicate(X, VS, Rev) end,
+            Terms#domain_P2PServiceTerms.allow),
         currencies = reduce_if_defined(Terms#domain_P2PServiceTerms.currencies, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_limit, VS, Rev),
         cash_flow = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_flow, VS, Rev),
@@ -400,9 +400,9 @@ reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
 
 reduce_w2w_terms(#domain_W2WServiceTerms{} = Terms, VS, Rev) ->
     #domain_W2WServiceTerms{
-        allow = pm_maybe:apply(fun(X) ->
-            pm_selector:reduce_predicate(X, VS, Rev)
-                               end, Terms#domain_W2WServiceTerms.allow),
+        allow = pm_maybe:apply(
+            fun(X) -> pm_selector:reduce_predicate(X, VS, Rev) end,
+            Terms#domain_W2WServiceTerms.allow),
         currencies = reduce_if_defined(Terms#domain_W2WServiceTerms.currencies, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_W2WServiceTerms.cash_limit, VS, Rev),
         cash_flow = reduce_if_defined(Terms#domain_W2WServiceTerms.cash_flow, VS, Rev),
