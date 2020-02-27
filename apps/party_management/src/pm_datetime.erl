@@ -15,6 +15,12 @@
 -type timestamp_interval() :: dmsl_base_thrift:'TimestampInterval'().
 -type timestamp_interval_bound() :: dmsl_base_thrift:'TimestampIntervalBound'().
 
+%% not exported from calendar module
+-type rfc3339_time_unit() :: microsecond
+                           | millisecond
+                           | nanosecond
+                           | second.
+
 -export_type([timestamp/0]).
 
 %%
@@ -22,12 +28,13 @@
 -spec format_ts(unix_timestamp()) -> timestamp().
 
 format_ts(Ts) when is_integer(Ts) ->
-    pm_utils:unwrap_result(rfc3339:format(Ts, seconds)).
+    format_ts(Ts, second).
 
 -spec format_now() -> timestamp().
 
 format_now() ->
-    pm_utils:unwrap_result(rfc3339:format(erlang:system_time())).
+    USec = erlang:system_time(microsecond),
+    format_ts(USec, microsecond).
 
 -spec compare(timestamp(), timestamp()) -> later | earlier | simultaneously.
 
@@ -55,17 +62,29 @@ between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}) ->
     Days :: integer() | undefined.
 
 add_interval(Timestamp, {YY, MM, DD}) ->
-    TSSeconds = erlang:convert_time_unit(to_integer(Timestamp), native, seconds),
+    TSSeconds = erlang:convert_time_unit(to_integer(Timestamp), microsecond, second),
     {Date, Time} = genlib_time:unixtime_to_daytime(TSSeconds),
     NewDate = genlib_time:shift_date(Date, {nvl(YY), nvl(MM), nvl(DD)}),
     format_ts(genlib_time:daytime_to_unixtime({NewDate, Time})).
 
+-spec parse(binary(), rfc3339_time_unit()) -> integer().
+
+parse(Bin, Precision) when is_binary(Bin) ->
+    Str = erlang:binary_to_list(Bin),
+    calendar:rfc3339_to_system_time(Str, [{unit, Precision}]).
+
 %% Internal functions
+
+-spec format_ts(integer(), rfc3339_time_unit()) -> timestamp().
+
+format_ts(Ts, Unit) ->
+    Str = calendar:system_time_to_rfc3339(Ts, [{unit, Unit}, {offset, "Z"}]),
+    erlang:list_to_binary(Str).
 
 -spec to_integer(timestamp()) -> integer().
 
 to_integer(Timestamp) ->
-    pm_utils:unwrap_result(rfc3339:to_time(Timestamp)).
+    parse(Timestamp, microsecond).
 
 to_interval_bound(undefined, _) ->
     undefined;

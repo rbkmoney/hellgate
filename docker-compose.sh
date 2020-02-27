@@ -18,7 +18,7 @@ services:
     mem_limit: 256M
 
   dominant:
-    image: dr2.rbkmoney.com/rbkmoney/dominant:e449c0f36a973f79656ce60104101f5395ddb864
+    image: dr2.rbkmoney.com/rbkmoney/dominant:631f9848eceec4dd3117b375845f5c82da56e85b
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
@@ -57,7 +57,7 @@ services:
       retries: 20
 
   shumway-db:
-    image: dr.rbkmoney.com/rbkmoney/postgres:9.6
+    image: dr2.rbkmoney.com/rbkmoney/postgres:9.6
     environment:
       - POSTGRES_DB=shumway
       - POSTGRES_USER=postgres

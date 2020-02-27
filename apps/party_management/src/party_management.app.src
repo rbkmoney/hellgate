@@ -6,7 +6,6 @@
         kernel,
         stdlib,
         genlib,
-        rfc3339,
         pm_proto,
         shumpune_proto,
         cowboy,
