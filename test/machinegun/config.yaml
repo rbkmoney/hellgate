@@ -35,6 +35,10 @@ namespaces:
             url: http://hellgate:8022/v1/stateproc/recurrent_paytools
             pool_size: 300
     party:
+        event_sinks:
+            machine:
+                type: machine
+                machine_id: payproc
         processor:
             url: http://hellgate:8022/v1/stateproc/party
             pool_size: 300
