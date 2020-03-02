@@ -359,7 +359,7 @@ get_merchant_terms(Opts, Revision, Timestamp) ->
     Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    hg_party:get_terms(Contract, Timestamp, Revision).
+    pm_party:get_terms(Contract, Timestamp, Revision).
 
 get_provider_payments_terms(Route, Revision) ->
     hg_routing:get_payments_terms(Route, Revision).
@@ -893,7 +893,7 @@ choose_provider_account(Currency, Accounts) ->
 choose_external_account(Currency, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     ExternalAccountSetSelector = Globals#domain_Globals.external_account_set,
-    case hg_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
+    case pm_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
         {value, ExternalAccountSetRef} ->
             ExternalAccountSet = hg_domain:get(Revision, {external_account_set, ExternalAccountSetRef}),
             genlib_map:get(
@@ -930,7 +930,7 @@ construct_payment_plan_id(Invoice, Payment) ->
     ]).
 
 reduce_selector(Name, Selector, VS, Revision) ->
-    case hg_selector:reduce(Selector, VS, Revision) of
+    case pm_selector:reduce(Selector, VS, Revision) of
         {value, V} ->
             V;
         Ambiguous ->

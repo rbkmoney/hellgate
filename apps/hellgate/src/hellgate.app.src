@@ -9,7 +9,6 @@
         kernel,
         stdlib,
         genlib,
-        rfc3339,
         fault_detector_proto,
         hg_proto,
         shumpune_proto,
@@ -22,7 +21,8 @@
         party_client,
         woody_user_identity,
         payproc_errors,
-        erl_health
+        erl_health,
+        party_management
     ]},
     {env, []},
     {modules, []},

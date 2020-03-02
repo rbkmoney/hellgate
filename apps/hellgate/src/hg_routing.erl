@@ -31,7 +31,7 @@
 -define(rejected(Reason), {rejected, Reason}).
 
 -type reject_context() :: #{
-    varset              := hg_selector:varset(),
+    varset              := pm_selector:varset(),
     rejected_providers  := list(rejected_provider()),
     rejected_routes     := list(rejected_route())
 }.
@@ -107,7 +107,7 @@
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
-    hg_selector:varset(),
+    pm_selector:varset(),
     hg_domain:revision()
 ) ->
     {[non_fail_rated_route()], reject_context()}.
@@ -126,7 +126,7 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([fail_rated_route()], reject_context(), hg_selector:varset()) ->
+-spec choose_route([fail_rated_route()], reject_context(), pm_selector:varset()) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 
@@ -136,7 +136,7 @@ choose_route(FailRatedRoutes, RejectContext, VS) ->
 -spec select_providers(
     route_predestination(),
     payment_institution(),
-    hg_selector:varset(),
+    pm_selector:varset(),
     hg_domain:revision(),
     reject_context()
 ) ->
@@ -166,7 +166,7 @@ select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext
 -spec select_routes(
     route_predestination(),
     [provider_with_ref()],
-    hg_selector:varset(),
+    pm_selector:varset(),
     hg_domain:revision(),
     reject_context()
 ) ->
@@ -183,7 +183,7 @@ select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
     ),
     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
--spec do_choose_route([fail_rated_route()], hg_selector:varset(), reject_context()) ->
+-spec do_choose_route([fail_rated_route()], pm_selector:varset(), reject_context()) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 
@@ -383,7 +383,7 @@ calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
             calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes])
     end.
 
--spec score_routes([fail_rated_route()], hg_selector:varset()) ->
+-spec score_routes([fail_rated_route()], pm_selector:varset()) ->
     [scored_route()].
 
 score_routes(Routes, VS) ->
@@ -500,7 +500,7 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
 -spec acceptable_provider(
     route_predestination(),
     provider_ref(),
-    hg_selector:varset(),
+    pm_selector:varset(),
     hg_domain:revision()
 ) ->
     provider_with_ref() | no_return().
@@ -532,7 +532,7 @@ acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
 -spec collect_routes_for_provider(
     route_predestination(),
     provider_with_ref(),
-    hg_selector:varset(),
+    pm_selector:varset(),
     hg_domain:revision()
 ) ->
     {[non_fail_rated_route()], [rejected_route()]}.
@@ -562,7 +562,7 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revisio
     route_predestination(),
     terminal_ref(),
     provider(),
-    hg_selector:varset(),
+    pm_selector:varset(),
     hg_domain:revision()
 ) ->
     unweighted_terminal() | no_return().
@@ -765,7 +765,7 @@ test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
 %%
 
 reduce(Name, S, VS, Revision) ->
-    case hg_selector:reduce(S, VS, Revision) of
+    case pm_selector:reduce(S, VS, Revision) of
         {value, V} ->
             V;
         Ambiguous ->

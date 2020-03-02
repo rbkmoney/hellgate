@@ -212,7 +212,7 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID, PartyRevision0], _Opts) -
     ),
     Revision = hg_domain:head(),
     Cash = get_cost(St),
-    hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+    pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
 
 handle_function_(Fun, [UserInfo, InvoiceID | _Tail] = Args, _Opts) when
     Fun =:= 'StartPayment' orelse

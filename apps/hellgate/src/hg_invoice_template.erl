@@ -107,7 +107,7 @@ handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp, PartyRevision0], _
     case Tpl#domain_InvoiceTemplate.details of
         {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
             Revision = hg_domain:head(),
-            hg_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+            pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
         _ ->
             ShopTerms
     end.

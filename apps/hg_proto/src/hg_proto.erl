@@ -57,10 +57,6 @@ get_service_spec(Name) ->
 
 -spec get_service_spec(Name :: atom(), Opts :: #{namespace => binary()}) -> service_spec().
 
-get_service_spec(Name = claim_committer, #{}) ->
-    {?VERSION_PREFIX ++ "/processing/claim_committer", get_service(Name)};
-get_service_spec(Name = party_management, #{}) ->
-    {?VERSION_PREFIX ++ "/processing/partymgmt", get_service(Name)};
 get_service_spec(Name = invoicing, #{}) ->
     {?VERSION_PREFIX ++ "/processing/invoicing", get_service(Name)};
 get_service_spec(Name = invoice_templating, #{}) ->

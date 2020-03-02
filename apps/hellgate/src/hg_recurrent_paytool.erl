@@ -285,7 +285,7 @@ get_payment_institution(Shop, Party, Revision) ->
 get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    #domain_TermSet{recurrent_paytools = Terms} = hg_party:get_terms(Contract, CreatedAt, Revision),
+    #domain_TermSet{recurrent_paytools = Terms} = pm_party:get_terms(Contract, CreatedAt, Revision),
     Terms.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
@@ -311,7 +311,7 @@ collect_varset(
     }.
 
 -spec collect_rec_payment_tool_varset(rec_payment_tool()) ->
-    hg_selector:varset().
+    pm_selector:varset().
 collect_rec_payment_tool_varset(RecPaymentTool) ->
     #payproc_RecurrentPaymentTool{
         party_id = PartyID,
@@ -814,7 +814,7 @@ validate_cost(CashValueSelector, VS, Revision) ->
     {Cash, VS#{cash_value => Cash}}.
 
 reduce_selector(Name, Selector, VS, Revision) ->
-    case hg_selector:reduce(Selector, VS, Revision) of
+    case pm_selector:reduce(Selector, VS, Revision) of
         {value, V} ->
             V;
         Ambiguous ->

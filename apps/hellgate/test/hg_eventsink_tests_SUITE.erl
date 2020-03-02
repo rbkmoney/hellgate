@@ -2,6 +2,7 @@
 
 -include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
+-include("party_events.hrl").
 
 -export([all/0]).
 -export([groups/0]).
@@ -48,7 +49,7 @@ groups() ->
 -spec init_per_suite(config()) -> config().
 
 init_per_suite(C) ->
-    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate]),
+    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, party_management, hellgate]),
     ok = hg_domain:insert(construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
@@ -78,8 +79,6 @@ end_per_testcase(_Name, _C) ->
     ok.
 
 %% tests
-
--include("party_events.hrl").
 
 -define(event(ID, Source, Seq, Payload),
     #payproc_Event{
