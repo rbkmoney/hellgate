@@ -96,7 +96,7 @@
     route                  :: undefined | route(),
     cash_flow              :: undefined | cash_flow(),
     partial_cash_flow      :: undefined | cash_flow(),
-    effective_cash_flow    :: undefined | cash_flow(),
+    final_cash_flow        :: undefined | cash_flow(),
     trx                    :: undefined | trx_info(),
     target                 :: undefined | target(),
     sessions       = #{}   :: #{target_type() => [session()]},
@@ -1367,7 +1367,7 @@ create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts) ->
     _ = assert_payment_status(captured, Payment),
     NewRevision = maybe_get_domain_revision(DomainRevision),
     PartyRevision = get_opts_party_revision(Opts),
-    OldCashFlow = get_effective_cash_flow(St),
+    OldCashFlow = get_final_cash_flow(St),
     NewCashFlow = calculate_cashflow(Timestamp, NewRevision, St, Opts),
     AdjState = {cash_flow, #domain_InvoicePaymentAdjustmentCashFlowState{
         scenario = #domain_InvoicePaymentAdjustmentCashFlow{domain_revision = DomainRevision}
@@ -1467,7 +1467,7 @@ is_adjustment_payment_status_final(_) ->
     cash_flow().
 
 get_cash_flow_for_status({captured, _}, St) ->
-    get_effective_cash_flow(St);
+    get_final_cash_flow(St);
 get_cash_flow_for_status({cancelled, _}, _St) ->
     [];
 get_cash_flow_for_status({failed, _}, _St) ->
@@ -2660,7 +2660,7 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
         cash_flow_building,
         processing_capture
     ]], Change, St0, Opts),
-    St = St0#st{effective_cash_flow = Cashflow},
+    St = St0#st{final_cash_flow = Cashflow},
     case Activity of
         {payment, cash_flow_building} ->
             St#st{
@@ -2894,12 +2894,12 @@ get_cashflow(#st{cash_flow = FinalCashflow}) ->
 set_cashflow(Cashflow, St = #st{}) ->
     St#st{
         cash_flow = Cashflow,
-        effective_cash_flow = Cashflow
+        final_cash_flow = Cashflow
     }.
 
--spec get_effective_cash_flow(st()) -> cash_flow().
+-spec get_final_cash_flow(st()) -> cash_flow().
 
-get_effective_cash_flow(#st{effective_cash_flow = Cashflow}) ->
+get_final_cash_flow(#st{final_cash_flow = Cashflow}) ->
     Cashflow.
 
 get_trx(#st{trx = Trx}) ->
