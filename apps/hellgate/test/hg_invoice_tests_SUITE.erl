@@ -1707,8 +1707,7 @@ payment_adjustment_captured_from_failed(C) ->
     ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
         ?payment_ev(PaymentID, ?payment_status_changed(Cpatured)),
-        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_)))),
-        ?invoice_status_changed(?invoice_paid())
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
 
     % verify that cash deposited correctly everywhere
@@ -1782,8 +1781,7 @@ payment_adjustment_failed_from_captured(C) ->
     ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
         ?payment_ev(PaymentID, ?payment_status_changed(Failed)),
-        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_)))),
-        ?invoice_status_changed(?invoice_unpaid())
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     % verify that cash deposited correctly everywhere
     % new cash flow must be calculated using initial domain and party revisions

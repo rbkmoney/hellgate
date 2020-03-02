@@ -632,16 +632,8 @@ handle_call({{'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, 
         Adjustment#domain_InvoicePaymentAdjustment.created_at,
         St
     ),
-    Impact = {_Response, {PaymentChanges, _Action}} =
-        hg_invoice_payment:capture_adjustment(ID, PaymentSession, PaymentOpts),
-    Result = #{changes := Changes} = wrap_payment_impact(PaymentID, Impact, St),
-    #st{invoice = Invoice} = St,
-    case wrap_adjustment_changes(PaymentChanges) of
-        [Status] when Status /= Invoice#domain_Invoice.status ->
-            Result#{changes => Changes ++ [?invoice_status_changed(Status)]};
-        _ ->
-            Result
-    end;
+    Impact = hg_invoice_payment:capture_adjustment(ID, PaymentSession, PaymentOpts),
+    wrap_payment_impact(PaymentID, Impact, St);
 
 handle_call({{'Invoicing', 'CancelPaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
@@ -793,16 +785,6 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St) ->
         action   => Action,
         state    => St
     }.
-
-wrap_adjustment_changes(Changes) ->
-    [wrap_adjustment_status(Status) || ?payment_status_changed(Status) <- Changes].
-
-wrap_adjustment_status(?captured()) ->
-    ?invoice_paid();
-wrap_adjustment_status(?cancelled()) ->
-    ?invoice_unpaid();
-wrap_adjustment_status(?failed(_)) ->
-    ?invoice_unpaid().
 
 handle_result(#{} = Result) ->
     St = validate_changes(Result),
