@@ -15,6 +15,7 @@
 %%%    finishes, which could have happened in the past, not just now
 
 -module(hg_invoice_payment).
+-include_lib("damsel/include/dmsl_base_thrift.hrl").
 -include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
@@ -267,6 +268,11 @@ get_refunds(#st{refunds = Rs} = St) ->
         end,
         RefundList
     ).
+
+-spec get_refunds_count(st()) -> non_neg_integer().
+
+get_refunds_count(#st{refunds = Refunds}) ->
+    maps:size(Refunds).
 
 convert_refund_sessions(#{trx := TR}) ->
     #payproc_InvoiceRefundSession{
@@ -1402,6 +1408,7 @@ create_status_adjustment(Timestamp, Params, Change, St, Opts) ->
         party_revision  = PartyRevision
     } = get_payment(St),
     ok = assert_adjustment_payment_status(Status),
+    ok = assert_no_refunds(St),
     ok = assert_adjustment_payment_statuses(TargetStatus, Status),
     OldCashFlow = get_cash_flow_for_status(Status, St),
     NewCashFlow = get_cash_flow_for_target_status(TargetStatus, St, Opts),
@@ -1436,6 +1443,15 @@ assert_adjustment_payment_status(Status) ->
             ok;
         false ->
             erlang:throw(#payproc_InvalidPaymentStatus{status = Status})
+    end.
+
+assert_no_refunds(St) ->
+    case get_refunds_count(St) of
+        0 ->
+            ok;
+        _ ->
+            Details = <<"Cannot change status of payment with refunds.">>,
+            erlang:throw(#'InvalidRequest'{errors = [Details]})
     end.
 
 -spec assert_adjustment_payment_statuses(TargetStatus :: payment_status(), Status :: payment_status()) ->
@@ -2026,17 +2042,17 @@ process_result({payment, finalizing_accounter}, Action, St) ->
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     _Clocks = commit_refund_cashflow(RefundSt, St),
-        Events2 = [
-            ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
-        ],
-        Events3 = case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
-            ?cash(Amount, _) when Amount =:= 0 ->
-                [
-                    ?payment_status_changed(?refunded())
-                ];
-            ?cash(Amount, _) when Amount > 0 ->
-                []
-        end,
+    Events2 = [
+        ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
+    ],
+    Events3 = case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
+        ?cash(Amount, _) when Amount =:= 0 ->
+            [
+                ?payment_status_changed(?refunded())
+            ];
+        ?cash(Amount, _) when Amount > 0 ->
+            []
+    end,
     {done, {Events2 ++ Events3, Action}}.
 
 process_failure(Activity, Events, Action, Failure, St) ->
