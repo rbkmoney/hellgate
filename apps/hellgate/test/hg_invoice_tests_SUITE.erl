@@ -62,6 +62,7 @@
 -export([partial_captured_payment_adjustment/1]).
 -export([payment_adjustment_captured_from_failed/1]).
 -export([payment_adjustment_failed_from_captured/1]).
+-export([status_adjustment_of_partial_refunded_payment/1]).
 -export([invalid_payment_w_deprived_party/1]).
 -export([external_account_posting/1]).
 -export([terminal_cashflow_overrides_provider/1]).
@@ -241,7 +242,8 @@ groups() ->
             payment_adjustment_success,
             partial_captured_payment_adjustment,
             payment_adjustment_captured_from_failed,
-            payment_adjustment_failed_from_captured
+            payment_adjustment_failed_from_captured,
+            status_adjustment_of_partial_refunded_payment
         ]},
 
         {refunds, [], [
@@ -1797,6 +1799,27 @@ payment_adjustment_failed_from_captured(C) ->
     ?assertEqual(PrvDiff, maps:get(own_amount, PrvAccount1) - maps:get(own_amount, PrvAccount2)),
     SysDiff = MrcAmount1 - PrvAmount1,
     ?assertEqual(SysDiff, maps:get(own_amount, SysAccount1) - maps:get(own_amount, SysAccount2)).
+
+-spec status_adjustment_of_partial_refunded_payment(config()) -> test_return().
+
+status_adjustment_of_partial_refunded_payment(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    RefundParams = make_refund_params(10000, <<"RUB">>),
+    Refund1 = #domain_InvoicePaymentRefund{id = RefundID1} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID1, Refund1, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID1, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    FailedTargetStatus = ?failed({failure, #domain_Failure{code = <<"404">>}}),
+    FailedAdjustmentParams = make_status_adjustment_params(FailedTargetStatus),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Cannot change status of payment with refunds.">>]
+    }} = hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, FailedAdjustmentParams, Client).
 
 -spec payment_temporary_unavailability_retry_success(config()) -> test_return().
 
