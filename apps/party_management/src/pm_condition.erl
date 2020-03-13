@@ -48,6 +48,26 @@ test_party_definition({wallet_is, ID1}, #{wallet_id := ID2}) ->
 test_party_definition(_, _) ->
     undefined.
 
+test_p2p_tool(#domain_P2PToolCondition{sender_is = undefined, receiver_is = undefined}, #domain_P2PTool{}, _Rev) ->
+    true;
+test_p2p_tool(
+    #domain_P2PToolCondition{
+        sender_is = SenderIs,
+        receiver_is = undefined
+    },
+    #domain_P2PTool{sender = Sender},
+    Rev
+) ->
+    test({payment_tool, SenderIs}, #{payment_tool => Sender}, Rev);
+test_p2p_tool(
+    #domain_P2PToolCondition{
+        sender_is = undefined,
+        receiver_is = ReceiverIs
+    },
+    #domain_P2PTool{receiver = Receiver},
+    Rev
+) ->
+    test({payment_tool, ReceiverIs}, #{payment_tool => Receiver}, Rev);
 test_p2p_tool(P2PCondition, P2PTool, Rev) ->
     #domain_P2PToolCondition{
         sender_is = SenderIs,
