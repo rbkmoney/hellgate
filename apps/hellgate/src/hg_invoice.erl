@@ -133,6 +133,8 @@ handle_function(Func, Args, Opts) ->
     term() | no_return().
 
 handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
+    TimestampNow = hg_datetime:format_now(),
+    DomainRevision = hg_domain:head(),
     InvoiceID = hg_utils:uid(InvoiceParams#payproc_InvoiceParams.id),
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
@@ -142,7 +144,9 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Party = hg_party:get_party(PartyID),
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
+    MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, TimestampNow),
     ok = validate_invoice_params(InvoiceParams, Shop),
+    ok = assert_invoice_payable(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision),
     ok = ensure_started(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
@@ -1012,11 +1016,6 @@ assert_party_operable(Party) ->
 assert_shop_operable(Shop) ->
     hg_invoice_utils:assert_shop_operable(Shop).
 
-%%
-
-validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Shop) ->
-    hg_invoice_utils:validate_cost(Cost, Shop).
-
 assert_invoice_accessible(St = #st{}) ->
     assert_party_accessible(get_party_id(St)),
     St.
@@ -1068,6 +1067,72 @@ make_invoice_params(Params) ->
             external_id = ExternalID
         }
     ].
+
+validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Shop) ->
+    hg_invoice_utils:validate_cost(Cost, Shop).
+
+assert_invoice_payable(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision) ->
+    #payproc_InvoiceParams{cost = Cost} = InvoiceParams,
+    #domain_TermSet{payments = PaymentTerms} = MerchantTerms,
+    VS = collect_validation_varset(Party, Shop),
+    _ = validate_cost_range(Cost, PaymentTerms, VS, DomainRevision),
+    ok.
+
+validate_cost_range(Cash, #domain_PaymentsServiceTerms{cash_limit = CashLimitSelector}, VS, Revision) ->
+    Limits = reduce_all_limits(CashLimitSelector, VS, Revision),
+    ok = validate_limits(Cash, Limits).
+
+validate_limits(_Cash, []) ->
+    throw(#'InvalidRequest'{errors = [<<"Invalid amount, not within any allowed range">>]});
+validate_limits(Cash, [CashRange | Rest]) ->
+    case hg_cash_range:is_inside(Cash, CashRange) of
+        within ->
+            ok;
+        _ ->
+            validate_limits(Cash, Rest)
+    end.
+
+reduce_all_limits(Selector, VS, Revision) ->
+    reduce_all_limits(Selector, VS, Revision, []).
+
+reduce_all_limits(Selector, VS, Revision, Acc) ->
+    case pm_selector:reduce(Selector, VS, Revision) of
+        {value, V} ->
+            [V | Acc];
+        {decisions, D} ->
+            lists:foldr(
+                fun(#domain_CashLimitDecision{then_ = Value}, Acc0) ->
+                    reduce_all_limits(Value, VS, Revision) ++ Acc0
+                end,
+                Acc,
+                D
+            )
+    end.
+
+collect_validation_varset(Party, Shop) ->
+    #domain_Party{id = PartyID} = Party,
+    #domain_Shop{
+        id = ShopID,
+        category = Category,
+        account = #domain_ShopAccount{currency = Currency}
+    } = Shop,
+    #{
+        party_id => PartyID,
+        shop_id  => ShopID,
+        category => Category,
+        currency => Currency
+    }.
+
+get_merchant_terms(Party, Revision, Shop, Timestamp) ->
+    Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    ok = assert_contract_active(Contract),
+    pm_party:get_terms(Contract, Timestamp, Revision).
+
+assert_contract_active(Contract = #domain_Contract{status = Status}) ->
+    case pm_contract:is_active(Contract) of
+        true -> ok;
+        false -> throw(#payproc_InvalidContractStatus{status = Status})
+    end.
 
 make_invoice_cart(_, {cart, Cart}, _) ->
     Cart;

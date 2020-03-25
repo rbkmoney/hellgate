@@ -39,7 +39,6 @@ validate_cost(#domain_Cash{currency = Currency, amount = Amount}, Shop) ->
 
 -spec validate_amount(amount()) -> ok.
 validate_amount(Amount) when Amount > 0 ->
-    %% TODO FIX THIS ASAP! Amount should be specified in contract terms.
     ok;
 validate_amount(_) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid amount">>]}).

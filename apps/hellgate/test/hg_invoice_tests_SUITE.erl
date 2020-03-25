@@ -528,10 +528,14 @@ invalid_invoice_amount(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount">>]
-    }} = hg_client_invoicing:create(InvoiceParams, Client).
+    }} = hg_client_invoicing:create(InvoiceParams0, Client),
+    InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 42000000000),
+    {exception, #'InvalidRequest'{
+        errors = [<<"Invalid amount, not within any allowed range">>]
+    }} = hg_client_invoicing:create(InvoiceParams1, Client).
 
 -spec invalid_invoice_currency(config()) -> test_return().
 
@@ -794,7 +798,7 @@ invalid_payment_amount(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, less", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
-    InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 100000000000000, C),
+    InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 430000000, C),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
@@ -4060,6 +4064,17 @@ construct_domain_fixture() ->
                 }
             ]},
             cash_limit = {decisions, [
+                #domain_CashLimitDecision {
+                    if_ = {condition, {payment_tool, {crypto_currency, #domain_CryptoCurrencyCondition{
+                        definition = {crypto_currency_is, bitcoin}
+                    }}}},
+                    then_ = {value,
+                        ?cashrng(
+                            {inclusive, ?cash(0, <<"RUB">>)},
+                            {inclusive, ?cash(4200000000, <<"RUB">>)}
+                        )
+                    }
+                },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, ?cashrng(
