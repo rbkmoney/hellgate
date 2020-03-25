@@ -532,9 +532,9 @@ invalid_invoice_amount(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount">>]
     }} = hg_client_invoicing:create(InvoiceParams0, Client),
-    InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 42000000000),
+    InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 5),
     {exception, #'InvalidRequest'{
-        errors = [<<"Invalid amount, not within any allowed range">>]
+        errors = [<<"Invalid amount, less than minimum possible payment">>]
     }} = hg_client_invoicing:create(InvoiceParams1, Client).
 
 -spec invalid_invoice_currency(config()) -> test_return().
@@ -794,10 +794,6 @@ invoice_cancellation_after_payment_timeout(C) ->
 invalid_payment_amount(C) ->
     Client = cfg(client, C),
     PaymentParams = make_payment_params(),
-    InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 1, C),
-    {exception, #'InvalidRequest'{
-        errors = [<<"Invalid amount, less", _/binary>>]
-    }} = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
     InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 430000000, C),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more", _/binary>>]
@@ -4064,17 +4060,6 @@ construct_domain_fixture() ->
                 }
             ]},
             cash_limit = {decisions, [
-                #domain_CashLimitDecision {
-                    if_ = {condition, {payment_tool, {crypto_currency, #domain_CryptoCurrencyCondition{
-                        definition = {crypto_currency_is, bitcoin}
-                    }}}},
-                    then_ = {value,
-                        ?cashrng(
-                            {inclusive, ?cash(0, <<"RUB">>)},
-                            {inclusive, ?cash(4200000000, <<"RUB">>)}
-                        )
-                    }
-                },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, ?cashrng(

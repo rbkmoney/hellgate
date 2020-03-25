@@ -1079,35 +1079,34 @@ assert_invoice_payable(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision
     ok.
 
 validate_cost_range(Cash, #domain_PaymentsServiceTerms{cash_limit = CashLimitSelector}, VS, Revision) ->
-    Limits = reduce_all_limits(CashLimitSelector, VS, Revision),
-    ok = validate_limits(Cash, Limits).
+    Limits = reduce_limits(CashLimitSelector, VS, Revision),
+    ok = match_limits(Cash, Limits).
 
-validate_limits(_Cash, []) ->
-    throw(#'InvalidRequest'{errors = [<<"Invalid amount, not within any allowed range">>]});
-validate_limits(Cash, [CashRange | Rest]) ->
-    case hg_cash_range:is_inside(Cash, CashRange) of
-        within ->
+match_limits(_Cash, []) ->
+    throw(#'InvalidRequest'{errors = [<<"Invalid amount, less than minimum possible payment">>]});
+match_limits(Cash, [CashRange | Rest]) ->
+    case hg_cash_range:below_lower_bound(Cash, CashRange) of
+        false ->
             ok;
         _ ->
-            validate_limits(Cash, Rest)
+            match_limits(Cash, Rest)
     end.
 
-reduce_all_limits(Selector, VS, Revision) ->
-    reduce_all_limits(Selector, VS, Revision, []).
-
-reduce_all_limits(Selector, VS, Revision, Acc) ->
+reduce_limits(Selector, VS, Revision) ->
     case pm_selector:reduce(Selector, VS, Revision) of
         {value, V} ->
-            [V | Acc];
+            [V];
         {decisions, D} ->
-            lists:foldr(
-                fun(#domain_CashLimitDecision{then_ = Value}, Acc0) ->
-                    reduce_all_limits(Value, VS, Revision) ++ Acc0
-                end,
-                Acc,
-                D
-            )
+            gather_possible_values(D, VS, Revision)
     end.
+
+gather_possible_values(Decisions, VS, Revision) ->
+    lists:foldr(
+        fun(#domain_CashLimitDecision{then_ = Value}, Acc) ->
+            reduce_limits(Value, VS, Revision) ++ Acc
+        end,
+        [], Decisions
+    ).
 
 collect_validation_varset(Party, Shop) ->
     #domain_Party{id = PartyID} = Party,
