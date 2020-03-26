@@ -534,7 +534,7 @@ invalid_invoice_amount(C) ->
     }} = hg_client_invoicing:create(InvoiceParams0, Client),
     InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 5),
     {exception, #'InvalidRequest'{
-        errors = [<<"Invalid amount, less than minimum possible payment">>]
+        errors = [<<"Invalid amount, cannot be paid off">>]
     }} = hg_client_invoicing:create(InvoiceParams1, Client).
 
 -spec invalid_invoice_currency(config()) -> test_return().

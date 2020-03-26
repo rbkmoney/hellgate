@@ -5,7 +5,6 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([validate_cost/2]).
--export([assert_cost_payable/5]).
 -export([validate_amount/1]).
 -export([validate_currency/2]).
 -export([validate_cash_range/1]).
@@ -14,6 +13,7 @@
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
 -export([assert_contract_active/1]).
+-export([assert_invoice_payable/5]).
 -export([compute_shop_terms/5]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
@@ -21,6 +21,7 @@
 -type amount()                :: dmsl_domain_thrift:'Amount'().
 -type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
 -type cash()                  :: dmsl_domain_thrift:'Cash'().
+-type invoice()               :: dmsl_domain_thrift:'Invoice'().
 -type cart()                  :: dmsl_domain_thrift:'InvoiceCart'().
 -type cash_range()            :: dmsl_domain_thrift:'CashRange'().
 -type party()                 :: dmsl_domain_thrift:'Party'().
@@ -41,47 +42,6 @@ validate_cost(#domain_Cash{currency = Currency, amount = Amount}, Shop) ->
     _ = validate_amount(Amount),
     _ = validate_currency(Currency, Shop),
     ok.
-
--spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) -> ok.
-
-assert_cost_payable(Cost, Party, Shop, #domain_PaymentsServiceTerms{cash_limit = Selector}, DomainRevision) ->
-    VS = collect_validation_varset(Party, Shop),
-    case reduce_and_match(Cost, Selector, VS, DomainRevision) of
-        true ->
-            ok;
-        _ ->
-            throw(#'InvalidRequest'{errors = [<<"Invalid amount, cannot be paid off">>]})
-    end.
-
-reduce_and_match(Cash, Selector, VS, Revision) ->
-    case pm_selector:reduce(Selector, VS, Revision) of
-        {value, CashRange} ->
-            hg_cash_range:is_inside(Cash, CashRange) =:= within;
-        {decisions, Decisions} ->
-            check_possible_values(Cash, Decisions, VS, Revision)
-    end.
-
-check_possible_values(_Cash, [], _VS, _Revision) ->
-    false;
-check_possible_values(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest], VS, Revision) ->
-    case reduce_and_match(Cash, Value, VS, Revision) of
-        true -> true;
-        _ -> check_possible_values(Cash, Rest, VS, Revision)
-    end.
-
-collect_validation_varset(Party, Shop) ->
-    #domain_Party{id = PartyID} = Party,
-    #domain_Shop{
-        id = ShopID,
-        category = Category,
-        account = #domain_ShopAccount{currency = Currency}
-    } = Shop,
-    #{
-        party_id => PartyID,
-        shop_id  => ShopID,
-        category => Category,
-        currency => Currency
-    }.
 
 -spec validate_amount(amount()) -> ok.
 validate_amount(Amount) when Amount > 0 ->
@@ -141,6 +101,47 @@ assert_contract_active(Contract = #domain_Contract{status = Status}) ->
         true -> Contract;
         false -> throw(#payproc_InvalidContractStatus{status = Status})
     end.
+
+-spec assert_invoice_payable(invoice(), party(), shop(), payment_service_terms(), domain_revision()) -> ok.
+
+assert_invoice_payable(Invoice, Party, Shop, #domain_PaymentsServiceTerms{cash_limit = Selector}, DomainRevision) ->
+    VS = collect_validation_varset(Party, Shop),
+    case any_limit_matches(Invoice#domain_Invoice.cost, Selector, VS, DomainRevision) of
+        true ->
+            ok;
+        _ ->
+            throw(#'InvalidRequest'{errors = [<<"Invalid amount, cannot be paid off">>]})
+    end.
+
+any_limit_matches(Cash, Selector, VS, Revision) ->
+    case pm_selector:reduce(Selector, VS, Revision) of
+        {value, CashRange} ->
+            hg_cash_range:is_inside(Cash, CashRange) =:= within;
+        {decisions, Decisions} ->
+            check_possible_limits(Cash, Decisions, VS, Revision)
+    end.
+
+check_possible_limits(_Cash, [], _VS, _Revision) ->
+    false;
+check_possible_limits(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest], VS, Revision) ->
+    case any_limit_matches(Cash, Value, VS, Revision) of
+        true -> true;
+        _ -> check_possible_limits(Cash, Rest, VS, Revision)
+    end.
+
+collect_validation_varset(Party, Shop) ->
+    #domain_Party{id = PartyID} = Party,
+    #domain_Shop{
+        id = ShopID,
+        category = Category,
+        account = #domain_ShopAccount{currency = Currency}
+    } = Shop,
+    #{
+        party_id => PartyID,
+        shop_id  => ShopID,
+        category => Category,
+        currency => Currency
+    }.
 
 -spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param()) -> term_set().
 compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision) ->
