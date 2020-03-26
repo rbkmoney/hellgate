@@ -1069,9 +1069,9 @@ make_invoice_params(Params) ->
     },
     {Party, Shop, InvoiceParams}.
 
-validate_invoice_params(Invoice, Party, Shop, #domain_TermSet{payments = PaymentTerms}, DomainRevision) ->
-    _ = hg_invoice_utils:validate_cost(Invoice#payproc_InvoiceParams.cost, Shop),
-    _ = hg_invoice_utils:assert_invoice_payable(Invoice, Party, Shop, PaymentTerms, DomainRevision),
+validate_invoice_params(InvoiceParams, Party, Shop, #domain_TermSet{payments = PaymentTerms}, DomainRevision) ->
+    _ = hg_invoice_utils:validate_cost(InvoiceParams#payproc_InvoiceParams.cost, Shop),
+    _ = hg_invoice_utils:assert_invoice_payable(InvoiceParams, Party, Shop, PaymentTerms, DomainRevision),
     ok.
 
 get_merchant_terms(Party, Revision, Shop, Timestamp) ->

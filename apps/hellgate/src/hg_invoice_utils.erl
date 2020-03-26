@@ -21,7 +21,6 @@
 -type amount()                :: dmsl_domain_thrift:'Amount'().
 -type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
 -type cash()                  :: dmsl_domain_thrift:'Cash'().
--type invoice()               :: dmsl_domain_thrift:'Invoice'().
 -type cart()                  :: dmsl_domain_thrift:'InvoiceCart'().
 -type cash_range()            :: dmsl_domain_thrift:'CashRange'().
 -type party()                 :: dmsl_domain_thrift:'Party'().
@@ -35,6 +34,7 @@
 -type timestamp()             :: dmsl_base_thrift:'Timestamp'().
 -type user_info()             :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_revision_param()  :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type invoice_params()        :: dmsl_payment_processing_thrift:'InvoiceParams'().
 
 -spec validate_cost(cash(), shop()) -> ok.
 
@@ -102,11 +102,11 @@ assert_contract_active(Contract = #domain_Contract{status = Status}) ->
         false -> throw(#payproc_InvalidContractStatus{status = Status})
     end.
 
--spec assert_invoice_payable(invoice(), party(), shop(), payment_service_terms(), domain_revision()) -> ok.
+-spec assert_invoice_payable(invoice_params(), party(), shop(), payment_service_terms(), domain_revision()) -> ok.
 
-assert_invoice_payable(Invoice, Party, Shop, #domain_PaymentsServiceTerms{cash_limit = Selector}, DomainRevision) ->
+assert_invoice_payable(InvoiceParams, Party, Shop, #domain_PaymentsServiceTerms{cash_limit = Selector}, DomainRevision) ->
     VS = collect_validation_varset(Party, Shop),
-    case any_limit_matches(Invoice#domain_Invoice.cost, Selector, VS, DomainRevision) of
+    case any_limit_matches(InvoiceParams#payproc_InvoiceParams.cost, Selector, VS, DomainRevision) of
         true ->
             ok;
         _ ->
