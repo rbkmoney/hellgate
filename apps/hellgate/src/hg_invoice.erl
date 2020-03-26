@@ -150,12 +150,16 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
+    TimestampNow = hg_datetime:format_now(),
+    DomainRevision = hg_domain:head(),
     InvoiceID = hg_utils:uid(Params#payproc_InvoiceWithTemplateParams.id),
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
-    InvoiceParams = make_invoice_params(Params),
-    ok = ensure_started(InvoiceID, [TplID | InvoiceParams]),
+    {Party, Shop, InvoiceParams} = make_invoice_params(Params),
+    MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, TimestampNow),
+    ok = validate_invoice_params(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision),
+    ok = ensure_started(InvoiceID, [TplID, Party#domain_Party.revision, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CapturePaymentNew', Args, Opts) ->
@@ -1054,18 +1058,16 @@ make_invoice_params(Params) ->
     InvoiceCost = hg_invoice_utils:get_cart_amount(Cart),
     InvoiceDue = make_invoice_due_date(Lifetime),
     InvoiceContext = make_invoice_context(Context, TplContext),
-    [
-        Party#domain_Party.revision,
-        #payproc_InvoiceParams{
-            party_id = PartyID,
-            shop_id = ShopID,
-            details = InvoiceDetails,
-            due = InvoiceDue,
-            cost = InvoiceCost,
-            context = InvoiceContext,
-            external_id = ExternalID
-        }
-    ].
+    InvoiceParams = #payproc_InvoiceParams{
+        party_id = PartyID,
+        shop_id = ShopID,
+        details = InvoiceDetails,
+        due = InvoiceDue,
+        cost = InvoiceCost,
+        context = InvoiceContext,
+        external_id = ExternalID
+    },
+    {Party, Shop, InvoiceParams}.
 
 validate_invoice_params(
     #payproc_InvoiceParams{cost = Cost},
@@ -1074,61 +1076,16 @@ validate_invoice_params(
     #domain_TermSet{payments = PaymentTerms},
     DomainRevision
 ) ->
-    ok = hg_invoice_utils:validate_cost(Cost, Shop),
-    %@TODO assert_invoice_payable should be moved inside validate_cost later
-    assert_invoice_payable(Cost, Party, Shop, PaymentTerms, DomainRevision).
-
-assert_invoice_payable(Cost, Party, Shop, #domain_PaymentsServiceTerms{cash_limit = Selector}, DomainRevision) ->
-    VS = collect_validation_varset(Party, Shop),
-    case reduce_and_match(Cost, Selector, VS, DomainRevision) of
-        true ->
-            ok;
-        _ ->
-            throw(#'InvalidRequest'{errors = [<<"Invalid amount, less than minimum possible payment">>]})
-    end.
-
-reduce_and_match(Cash, Selector, VS, Revision) ->
-    case pm_selector:reduce(Selector, VS, Revision) of
-        {value, CashRange} ->
-            hg_cash_range:is_inside(Cash, CashRange) =:= within;
-        {decisions, Decisions} ->
-            check_possible_values(Cash, Decisions, VS, Revision)
-    end.
-
-check_possible_values(_Cash, [], _VS, _Revision) ->
-    false;
-check_possible_values(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest], VS, Revision) ->
-    case reduce_and_match(Cash, Value, VS, Revision) of
-        true -> true;
-        _ -> check_possible_values(Cash, Rest, VS, Revision)
-    end.
-
-collect_validation_varset(Party, Shop) ->
-    #domain_Party{id = PartyID} = Party,
-    #domain_Shop{
-        id = ShopID,
-        category = Category,
-        account = #domain_ShopAccount{currency = Currency}
-    } = Shop,
-    #{
-        party_id => PartyID,
-        shop_id  => ShopID,
-        category => Category,
-        currency => Currency
-    }.
+    _ = hg_invoice_utils:validate_cost(Cost, Shop),
+    _ = hg_invoice_utils:assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision),
+    ok.
 
 get_merchant_terms(Party, Revision, Shop, Timestamp) ->
     Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    ok = assert_contract_active(Contract),
+    _ = hg_invoice_utils:assert_contract_active(Contract),
     pm_party:get_terms(Contract, Timestamp, Revision).
 
-assert_contract_active(Contract = #domain_Contract{status = Status}) ->
-    case pm_contract:is_active(Contract) of
-        true -> ok;
-        false -> throw(#payproc_InvalidContractStatus{status = Status})
-    end.
-
-make_invoice_cart(_, {cart, Cart}, _) ->
+make_invoice_cart(_, {cart, Cart}, _Shop) ->
     Cart;
 make_invoice_cart(Cost, {product, TplProduct}, Shop) ->
     #domain_InvoiceTemplateProduct{
@@ -1146,8 +1103,8 @@ make_invoice_cart(Cost, {product, TplProduct}, Shop) ->
     ]}.
 
 get_templated_price(undefined, {fixed, Cost}, Shop) ->
-    get_cost(Cost, Shop);
-get_templated_price(undefined, _, _) ->
+    get_cost(Cost, Shop) ;
+get_templated_price(undefined, _, _Shop) ->
     throw(#'InvalidRequest'{errors = [?INVOICE_TPL_NO_COST]});
 get_templated_price(Cost, {fixed, Cost}, Shop) ->
     get_cost(Cost, Shop);
