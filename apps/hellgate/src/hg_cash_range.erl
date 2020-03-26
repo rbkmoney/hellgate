@@ -6,7 +6,6 @@
 -export([unmarshal/1]).
 
 -export([is_inside/2]).
--export([below_lower_bound/2]).
 -export([is_subrange/2]).
 -export([intersect/2]).
 
@@ -27,17 +26,6 @@ is_inside(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper}) ->
             {exceeds, lower};
         {true, false} ->
             {exceeds, upper};
-        _ ->
-            error({misconfiguration, {'Invalid cash range specified', CashRange, Cash}})
-    end.
-
--spec below_lower_bound(cash(), cash_range()) ->
-    boolean().
-
-below_lower_bound(Cash, CashRange = #domain_CashRange{lower = Lower}) ->
-    case compare_cash_value(fun erlang:'<'/2, Cash, Lower) of
-        Boolean when is_boolean(Boolean) ->
-            Boolean;
         _ ->
             error({misconfiguration, {'Invalid cash range specified', CashRange, Cash}})
     end.
@@ -85,12 +73,9 @@ compare_bound(F, {_, Cash}, Bound) ->
 
 compare_cash(_, V, {inclusive, V}) ->
     true;
-compare_cash(F, Cash, CashRange) ->
-    compare_cash_value(F, Cash, CashRange).
-
-compare_cash_value(F, ?cash(A, C), {_, ?cash(Am, C)}) ->
+compare_cash(F, ?cash(A, C), {_, ?cash(Am, C)}) ->
     F(A, Am);
-compare_cash_value(_, _, _) ->
+compare_cash(_, _, _) ->
     error.
 
 %% Marshalling
