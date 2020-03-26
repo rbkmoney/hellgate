@@ -145,8 +145,7 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, TimestampNow),
-    ok = validate_invoice_params(InvoiceParams, Shop),
-    ok = assert_invoice_payable(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision),
+    ok = validate_invoice_params(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision),
     ok = ensure_started(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
     get_invoice_state(get_state(InvoiceID));
 
@@ -1068,19 +1067,21 @@ make_invoice_params(Params) ->
         }
     ].
 
-validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Shop) ->
-    hg_invoice_utils:validate_cost(Cost, Shop).
+validate_invoice_params(
+    #payproc_InvoiceParams{cost = Cost},
+    Party,
+    Shop,
+    #domain_TermSet{payments = PaymentTerms},
+    DomainRevision
+) ->
+    ok = hg_invoice_utils:validate_cost(Cost, Shop),
+    %@TODO assert_invoice_payable should be moved inside validate_cost later
+    assert_invoice_payable(Cost, Party, Shop, PaymentTerms, DomainRevision).
 
-assert_invoice_payable(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision) ->
-    #payproc_InvoiceParams{cost = Cost} = InvoiceParams,
-    #domain_TermSet{payments = PaymentTerms} = MerchantTerms,
+assert_invoice_payable(Cost, Party, Shop, #domain_PaymentsServiceTerms{cash_limit = Selector}, DomainRevision) ->
     VS = collect_validation_varset(Party, Shop),
-    _ = validate_cost_range(Cost, PaymentTerms, VS, DomainRevision),
-    ok.
-
-validate_cost_range(Cash, #domain_PaymentsServiceTerms{cash_limit = CashLimitSelector}, VS, Revision) ->
-    Limits = reduce_limits(CashLimitSelector, VS, Revision),
-    ok = match_limits(Cash, Limits).
+    Limits = reduce_limits(Selector, VS, DomainRevision),
+    match_limits(Cost, Limits).
 
 match_limits(_Cash, []) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid amount, less than minimum possible payment">>]});
