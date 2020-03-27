@@ -7,13 +7,19 @@
 -export([get_system_account/4]).
 -export([get_realm/1]).
 -export([is_live/1]).
+-export([choose_provider_account/2]).
+-export([choose_external_account/3]).
+
 %%
 
--type currency()        :: dmsl_domain_thrift:'CurrencyRef'().
--type varset()          :: pm_selector:varset().
--type revision()        :: hg_domain:revision().
--type payment_inst()    :: dmsl_domain_thrift:'PaymentInstitution'().
--type realm()           :: dmsl_domain_thrift:'PaymentInstitutionRealm'().
+-type currency()          :: dmsl_domain_thrift:'CurrencyRef'().
+-type varset()            :: pm_selector:varset().
+-type revision()          :: hg_domain:revision().
+-type payment_inst()      :: dmsl_domain_thrift:'PaymentInstitution'().
+-type realm()             :: dmsl_domain_thrift:'PaymentInstitutionRealm'().
+-type accounts()          :: dmsl_domain_thrift:'ProviderAccountSet'().
+-type account()           :: dmsl_domain_thrift:'ProviderAccount'().
+-type external_account()  :: dmsl_domain_thrift:'ExternalAccount'().
 
 %%
 
@@ -39,3 +45,31 @@ get_realm(#domain_PaymentInstitution{realm = Realm}) ->
 
 is_live(#domain_PaymentInstitution{realm = Realm}) ->
     Realm =:= live.
+
+-spec choose_provider_account(currency(), accounts()) ->
+    account() | no_return().
+
+choose_provider_account(Currency, Accounts) ->
+    case maps:find(Currency, Accounts) of
+        {ok, Account} ->
+            Account;
+        error ->
+            error({misconfiguration, {'No provider account for a given currency', Currency}})
+    end.
+
+-spec choose_external_account(currency(), varset(), revision()) ->
+    external_account() | undefined.
+
+choose_external_account(Currency, VS, Revision) ->
+    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    ExternalAccountSetSelector = Globals#domain_Globals.external_account_set,
+    case pm_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
+        {value, ExternalAccountSetRef} ->
+            ExternalAccountSet = hg_domain:get(Revision, {external_account_set, ExternalAccountSetRef}),
+            genlib_map:get(
+                Currency,
+                ExternalAccountSet#domain_ExternalAccountSet.accounts
+            );
+        _ ->
+            undefined
+    end.

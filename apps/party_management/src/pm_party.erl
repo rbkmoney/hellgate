@@ -317,6 +317,10 @@ reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
         refunds         = pm_maybe:apply(
             fun(X) -> reduce_refunds_terms(X, VS, Rev) end,
             Terms#domain_PaymentsServiceTerms.refunds
+        ),
+        chargebacks     = pm_maybe:apply(
+            fun(X) -> reduce_chargeback_terms(X, VS, Rev) end,
+            Terms#domain_PaymentsServiceTerms.chargebacks
         )
     }.
 
@@ -346,6 +350,15 @@ reduce_refunds_terms(#domain_PaymentRefundsServiceTerms{} = Terms, VS, Rev) ->
 reduce_partial_refunds_terms(#domain_PartialRefundsServiceTerms{} = Terms, VS, Rev) ->
     #domain_PartialRefundsServiceTerms{
         cash_limit = reduce_if_defined(Terms#domain_PartialRefundsServiceTerms.cash_limit, VS, Rev)
+    }.
+
+reduce_chargeback_terms(#domain_PaymentChargebackServiceTerms{} = Terms, VS, Rev) ->
+    #domain_PaymentChargebackServiceTerms{
+        allow            = pm_maybe:apply(
+            fun(X) -> pm_selector:reduce_predicate(X, VS, Rev) end,
+            Terms#domain_PaymentChargebackServiceTerms.allow),
+        fees             = reduce_if_defined(Terms#domain_PaymentChargebackServiceTerms.fees, VS, Rev),
+        eligibility_time = reduce_if_defined(Terms#domain_PaymentChargebackServiceTerms.eligibility_time, VS, Rev)
     }.
 
 reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
@@ -496,7 +509,8 @@ merge_payments_terms(
         cash_limit = Al0,
         fees = Fee0,
         holds = Hl0,
-        refunds = Rf0
+        refunds = Rf0,
+        chargebacks = CB0
     },
     #domain_PaymentsServiceTerms{
         currencies = Curr1,
@@ -505,7 +519,8 @@ merge_payments_terms(
         cash_limit = Al1,
         fees = Fee1,
         holds = Hl1,
-        refunds = Rf1
+        refunds = Rf1,
+        chargebacks = CB1
     }
 ) ->
     #domain_PaymentsServiceTerms{
@@ -515,7 +530,8 @@ merge_payments_terms(
         cash_limit      = pm_utils:select_defined(Al1, Al0),
         fees            = pm_utils:select_defined(Fee1, Fee0),
         holds           = merge_holds_terms(Hl0, Hl1),
-        refunds         = merge_refunds_terms(Rf0, Rf1)
+        refunds         = merge_refunds_terms(Rf0, Rf1),
+        chargebacks     = merge_chargeback_terms(CB0, CB1)
     };
 merge_payments_terms(Terms0, Terms1) ->
     pm_utils:select_defined(Terms1, Terms0).
@@ -584,6 +600,26 @@ merge_partial_refunds_terms(
     };
 merge_partial_refunds_terms(Terms0, Terms1) ->
     pm_utils:select_defined(Terms1, Terms0).
+
+merge_chargeback_terms(
+    #domain_PaymentChargebackServiceTerms{
+        allow = Allow0,
+        fees = Fee0,
+        eligibility_time = ElTime0
+    },
+    #domain_PaymentChargebackServiceTerms{
+        allow = Allow1,
+        fees = Fee1,
+        eligibility_time = ElTime1
+    }
+) ->
+    #domain_PaymentChargebackServiceTerms{
+        allow             = hg_utils:select_defined(Allow1, Allow0),
+        fees              = hg_utils:select_defined(Fee1, Fee0),
+        eligibility_time  = hg_utils:select_defined(ElTime1, ElTime0)
+    };
+merge_chargeback_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
 
 merge_payouts_terms(
     #domain_PayoutsServiceTerms{

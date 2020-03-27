@@ -101,11 +101,11 @@ construct_prototype(CurrencyCode, Description) ->
 
 plan(_PlanID, []) ->
     error(badarg);
+plan(_PlanID, Batches) when not is_list(Batches) ->
+    error(badarg);
 plan(PlanID, Batches) ->
     lists:foldl(
-        fun (Batch, _) ->
-           hold(PlanID, Batch)
-        end,
+        fun (Batch, _) -> hold(PlanID, Batch) end,
         undefined,
         Batches
     ).

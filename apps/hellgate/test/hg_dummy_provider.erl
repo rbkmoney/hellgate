@@ -577,6 +577,8 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = 
 
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
+make_payment_tool(no_preauth_mc) ->
+    make_simple_payment_tool(<<"no_preauth">>, mastercard);
 make_payment_tool(no_preauth_timeout) ->
     make_simple_payment_tool(<<"no_preauth_timeout">>, visa);
 make_payment_tool(no_preauth_timeout_failure) ->

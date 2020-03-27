@@ -80,6 +80,8 @@
     {captured, #domain_InvoicePaymentCaptured{}}).
 -define(refunded(),
     {refunded, #domain_InvoicePaymentRefunded{}}).
+-define(charged_back(),
+    {charged_back, #domain_InvoicePaymentChargedBack{}}).
 -define(failed(Failure),
     {failed, #domain_InvoicePaymentFailed{failure = Failure}}).
 -define(captured_with_reason(Reason),
@@ -175,6 +177,152 @@
     {captured, #domain_InvoicePaymentAdjustmentCaptured{at = At}}).
 -define(adjustment_cancelled(At),
     {cancelled, #domain_InvoicePaymentAdjustmentCancelled{at = At}}).
+
+%% Chargebacks
+
+-define(chargeback_params(Levy, Body),
+    #payproc_InvoicePaymentChargebackParams{
+        body   = Body,
+        levy   = Levy
+    }
+).
+-define(chargeback_params(Levy, Body, Reason),
+    #payproc_InvoicePaymentChargebackParams{
+        body   = Body,
+        levy   = Levy,
+        reason = Reason
+    }
+).
+-define(chargeback_params(Levy, Body, Reason, OccurredAt),
+    #payproc_InvoicePaymentChargebackParams{
+        body        = Body,
+        levy        = Levy,
+        reason      = Reason,
+        occurred_at = OccurredAt
+    }
+).
+
+-define(cancel_params(),
+    #payproc_InvoicePaymentChargebackCancelParams{}).
+-define(cancel_params(OccurredAt),
+    #payproc_InvoicePaymentChargebackCancelParams{occurred_at = OccurredAt}).
+
+-define(reject_params(Levy),
+    #payproc_InvoicePaymentChargebackRejectParams{levy = Levy}).
+-define(reject_params(Levy, OccurredAt),
+    #payproc_InvoicePaymentChargebackRejectParams{
+        levy        = Levy,
+        occurred_at = OccurredAt
+    }
+).
+
+-define(accept_params(Levy),
+    #payproc_InvoicePaymentChargebackAcceptParams{levy = Levy}).
+-define(accept_params(Levy, Body),
+    #payproc_InvoicePaymentChargebackAcceptParams{
+        body = Body,
+        levy = Levy
+    }
+).
+-define(accept_params(Levy, Body, OccurredAt),
+    #payproc_InvoicePaymentChargebackAcceptParams{
+        body        = Body,
+        levy        = Levy,
+        occurred_at = OccurredAt
+    }
+).
+
+-define(reopen_params(Levy),
+    #payproc_InvoicePaymentChargebackReopenParams{levy = Levy}).
+-define(reopen_params(Levy, Body),
+    #payproc_InvoicePaymentChargebackReopenParams{
+        body = Body,
+        levy = Levy
+    }
+).
+-define(reopen_params(Levy, Body, OccurredAt),
+    #payproc_InvoicePaymentChargebackReopenParams{
+        body        = Body,
+        levy        = Levy,
+        occurred_at = OccurredAt
+    }
+).
+
+-define(chargeback_ev(ChargebackID, Payload),
+    {invoice_payment_chargeback_change, #payproc_InvoicePaymentChargebackChange{
+        id      = ChargebackID,
+        payload = Payload
+    }}
+).
+
+-define(chargeback_created(Chargeback),
+    {invoice_payment_chargeback_created,
+        #payproc_InvoicePaymentChargebackCreated{
+            chargeback = Chargeback
+        }
+    }
+).
+
+-define(chargeback_created(Chargeback, OccurredAt),
+    {invoice_payment_chargeback_created,
+        #payproc_InvoicePaymentChargebackCreated{
+            chargeback = Chargeback,
+            occurred_at = OccurredAt
+        }
+    }
+).
+
+-define(chargeback_body_changed(Body),
+    {invoice_payment_chargeback_body_changed,
+        #payproc_InvoicePaymentChargebackBodyChanged{body = Body}
+    }
+).
+
+-define(chargeback_levy_changed(Levy),
+    {invoice_payment_chargeback_levy_changed,
+        #payproc_InvoicePaymentChargebackLevyChanged{levy = Levy}
+    }
+).
+
+-define(chargeback_status_changed(Status),
+    {invoice_payment_chargeback_status_changed,
+        #payproc_InvoicePaymentChargebackStatusChanged{status = Status}
+    }
+).
+
+-define(chargeback_target_status_changed(Status),
+    {invoice_payment_chargeback_target_status_changed,
+        #payproc_InvoicePaymentChargebackTargetStatusChanged{status = Status}
+    }
+).
+
+-define(chargeback_stage_changed(Stage),
+    {invoice_payment_chargeback_stage_changed,
+        #payproc_InvoicePaymentChargebackStageChanged{stage = Stage}
+    }
+).
+
+-define(chargeback_cash_flow_changed(CashFlow),
+    {invoice_payment_chargeback_cash_flow_changed,
+        #payproc_InvoicePaymentChargebackCashFlowChanged{cash_flow = CashFlow}
+    }
+).
+
+-define(chargeback_stage_chargeback(),
+    {chargeback,      #domain_InvoicePaymentChargebackStageChargeback{}}).
+-define(chargeback_stage_pre_arbitration(),
+    {pre_arbitration, #domain_InvoicePaymentChargebackStagePreArbitration{}}).
+-define(chargeback_stage_arbitration(),
+    {arbitration,     #domain_InvoicePaymentChargebackStageArbitration{}}).
+
+-define(chargeback_status_pending(),
+    {pending,   #domain_InvoicePaymentChargebackPending{}}).
+-define(chargeback_status_accepted(),
+    {accepted,  #domain_InvoicePaymentChargebackAccepted{}}).
+-define(chargeback_status_rejected(),
+    {rejected,  #domain_InvoicePaymentChargebackRejected{}}).
+-define(chargeback_status_cancelled(),
+    {cancelled, #domain_InvoicePaymentChargebackCancelled{}}).
 
 %% Refunds
 

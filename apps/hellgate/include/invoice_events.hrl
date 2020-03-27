@@ -20,6 +20,14 @@
     }}
 ).
 
+-define(payment_ev(PaymentID, Payload, OccurredAt),
+    {invoice_payment_change, #payproc_InvoicePaymentChange{
+        id = PaymentID,
+        payload = Payload,
+        occurred_at = OccurredAt
+    }}
+).
+
 -define(invoice_paid(),
     {paid, #domain_InvoicePaid{}}).
 -define(invoice_unpaid(),

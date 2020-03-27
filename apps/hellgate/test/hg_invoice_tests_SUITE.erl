@@ -1,4 +1,4 @@
-%%% TODO
+%% TODO
 %%%  - Do not share state between test cases
 %%%  - Run cases in parallel
 
@@ -82,6 +82,34 @@
 -export([invalid_permit_partial_capture_in_service/1]).
 -export([invalid_permit_partial_capture_in_provider/1]).
 -export([payment_hold_auto_capturing/1]).
+
+-export([create_chargeback_not_allowed/1]).
+-export([create_chargeback_inconsistent/1]).
+-export([create_chargeback_exceeded/1]).
+-export([create_chargeback_idempotency/1]).
+-export([cancel_payment_chargeback/1]).
+-export([cancel_partial_payment_chargeback/1]).
+-export([cancel_partial_payment_chargeback_exceeded/1]).
+-export([cancel_payment_chargeback_refund/1]).
+-export([reject_payment_chargeback_inconsistent/1]).
+-export([reject_payment_chargeback/1]).
+-export([reject_payment_chargeback_new_levy/1]).
+-export([accept_payment_chargeback_inconsistent/1]).
+-export([accept_payment_chargeback_exceeded/1]).
+-export([accept_payment_chargeback_empty_params/1]).
+-export([accept_payment_chargeback_twice/1]).
+-export([accept_payment_chargeback_new_body/1]).
+-export([accept_payment_chargeback_new_levy/1]).
+-export([reopen_accepted_payment_chargeback_fails/1]).
+-export([reopen_payment_chargeback_inconsistent/1]).
+-export([reopen_payment_chargeback_exceeded/1]).
+-export([reopen_payment_chargeback_cancel/1]).
+-export([reopen_payment_chargeback_reject/1]).
+-export([reopen_payment_chargeback_accept/1]).
+-export([reopen_payment_chargeback_accept_new_levy/1]).
+-export([reopen_payment_chargeback_arbitration/1]).
+-export([reopen_payment_chargeback_arbitration_reopen_fails/1]).
+
 -export([invalid_refund_party_status/1]).
 -export([invalid_refund_shop_status/1]).
 -export([payment_refund_idempotency/1]).
@@ -164,6 +192,7 @@ all() ->
         {group, adjustments},
         {group, holds_management_with_custom_config},
         {group, refunds},
+        {group, chargebacks},
         rounding_cashflow_volume,
         terms_retrieval,
 
@@ -244,6 +273,35 @@ groups() ->
             payment_adjustment_captured_from_failed,
             payment_adjustment_failed_from_captured,
             status_adjustment_of_partial_refunded_payment
+        ]},
+
+        {chargebacks, [parallel], [
+            create_chargeback_not_allowed,
+            create_chargeback_inconsistent,
+            create_chargeback_exceeded,
+            create_chargeback_idempotency,
+            cancel_payment_chargeback,
+            cancel_partial_payment_chargeback,
+            cancel_partial_payment_chargeback_exceeded,
+            cancel_payment_chargeback_refund,
+            reject_payment_chargeback_inconsistent,
+            reject_payment_chargeback,
+            reject_payment_chargeback_new_levy,
+            accept_payment_chargeback_inconsistent,
+            accept_payment_chargeback_exceeded,
+            accept_payment_chargeback_empty_params,
+            accept_payment_chargeback_twice,
+            accept_payment_chargeback_new_body,
+            accept_payment_chargeback_new_levy,
+            reopen_accepted_payment_chargeback_fails,
+            reopen_payment_chargeback_inconsistent,
+            reopen_payment_chargeback_exceeded,
+            reopen_payment_chargeback_cancel,
+            reopen_payment_chargeback_reject,
+            reopen_payment_chargeback_accept,
+            reopen_payment_chargeback_accept_new_levy,
+            reopen_payment_chargeback_arbitration,
+            reopen_payment_chargeback_arbitration_reopen_fails
         ]},
 
         {refunds, [], [
@@ -404,10 +462,20 @@ end_per_suite(C) ->
     {exception, #payproc_InvoicePaymentAdjustmentPending{id = ID}}).
 -define(operation_not_permitted(),
     {exception, #payproc_OperationNotPermitted{}}).
+-define(chargeback_cannot_reopen_arbitration(),
+    {exception, #payproc_InvoicePaymentChargebackCannotReopenAfterArbitration{}}).
+-define(chargeback_pending(),
+    {exception, #payproc_InvoicePaymentChargebackPending{}}).
+-define(invalid_chargeback_status(Status),
+    {exception, #payproc_InvoicePaymentChargebackInvalidStatus{status = Status}}).
+-define(invalid_chargeback_stage(Stage),
+    {exception, #payproc_InvoicePaymentChargebackInvalidStage{stage = Stage}}).
 -define(insufficient_account_balance(),
     {exception, #payproc_InsufficientAccountBalance{}}).
 -define(invoice_payment_amount_exceeded(Maximum),
     {exception, #payproc_InvoicePaymentAmountExceeded{maximum = Maximum}}).
+-define(inconsistent_chargeback_currency(Currency),
+    {exception, #payproc_InconsistentChargebackCurrency{currency = Currency}}).
 -define(inconsistent_refund_currency(Currency),
     {exception, #payproc_InconsistentRefundCurrency{currency = Currency}}).
 -define(inconsistent_capture_currency(Currency),
@@ -415,6 +483,7 @@ end_per_suite(C) ->
 -define(amount_exceeded_capture_balance(Amount),
     {exception, #payproc_AmountExceededCaptureBalance{payment_amount = Amount}}).
 
+-define(CB_PROVIDER_LEVY, 50).
 -define(merchant_to_system_share_1, ?share(45, 1000, operation_amount)).
 -define(merchant_to_system_share_3, ?share(40, 1000, operation_amount)).
 -define(system_to_provider_share_initial, ?share(21, 1000, operation_amount)).
@@ -2087,7 +2156,1159 @@ terminal_cashflow_overrides_provider(C) ->
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
     } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
 
-%%
+%%  CHARGEBACKS
+
+-spec create_chargeback_not_allowed(config()) -> _ | no_return().
+
+create_chargeback_not_allowed(C) ->
+    Cost        = 42000,
+    Client      = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID      = hg_ct_helper:create_battle_ready_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceID   = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
+    PaymentID   = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID   = await_payment_capture(InvoiceID, PaymentID, Client),
+    CBParams    = make_chargeback_params(?cash(1000, <<"RUB">>)),
+    Result      = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
+    ?assertMatch({exception, #payproc_OperationNotPermitted{}}, Result).
+
+-spec create_chargeback_inconsistent(config()) -> _ | no_return().
+
+create_chargeback_inconsistent(C) ->
+    Cost       = 42000,
+    InconsistentLevy = make_chargeback_params(?cash(10, <<"USD">>)),
+    InconsistentBody = make_chargeback_params(?cash(10, <<"RUB">>), ?cash(10, <<"USD">>)),
+    ?assertMatch({_, _, _, ?inconsistent_chargeback_currency(_)}, start_chargeback(C, Cost, InconsistentLevy)),
+    ?assertMatch({_, _, _, ?inconsistent_chargeback_currency(_)}, start_chargeback(C, Cost, InconsistentBody)).
+
+-spec create_chargeback_exceeded(config()) -> _ | no_return().
+
+create_chargeback_exceeded(C) ->
+    Cost       = 42000,
+    ExceededBody = make_chargeback_params(?cash(100, <<"RUB">>), ?cash(100000, <<"RUB">>)),
+    ?assertMatch({_, _, _, ?invoice_payment_amount_exceeded(_)}, start_chargeback(C, Cost, ExceededBody)).
+
+-spec create_chargeback_idempotency(config()) -> _ | no_return().
+
+create_chargeback_idempotency(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    Fee        = 1890,
+    Paid       = Cost - Fee,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    ?assertMatch(CB, hg_client_invoicing:create_chargeback(IID, PID, CBParams, Client)),
+    NewCBParams   = make_chargeback_params(Levy),
+    ?assertMatch(?chargeback_pending(), hg_client_invoicing:create_chargeback(IID, PID, NewCBParams, Client)),
+    Settlement0 = hg_ct_helper:get_balance(SID),
+    CancelParams = make_chargeback_cancel_params(),
+    ok = hg_client_invoicing:cancel_chargeback(IID, PID, CBID, CancelParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    Settlement1 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount,  maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                      maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid,                      maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid,                      maps:get(max_available_amount, Settlement1)).
+
+-spec cancel_payment_chargeback(config()) -> _ | no_return().
+
+cancel_payment_chargeback(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    Fee        = 1890,
+    Paid       = Cost - Fee,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0 = hg_ct_helper:get_balance(SID),
+    CancelParams = make_chargeback_cancel_params(),
+    ok = hg_client_invoicing:cancel_chargeback(IID, PID, CBID, CancelParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    Settlement1 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount,  maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                      maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid,                      maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid,                      maps:get(max_available_amount, Settlement1)).
+
+-spec cancel_partial_payment_chargeback(config()) -> _ | no_return().
+
+cancel_partial_payment_chargeback(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    Fee        = 450,
+    LevyAmount = 4000,
+    Partial    = 10000,
+    Paid       = Partial - Fee,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback_partial_capture(C, Cost, Partial, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0 = hg_ct_helper:get_balance(SID),
+    CancelParams = make_chargeback_cancel_params(),
+    ok = hg_client_invoicing:cancel_chargeback(IID, PID, CBID, CancelParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    Settlement1 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Partial - LevyAmount,  maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                         maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid,                         maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid,                         maps:get(max_available_amount, Settlement1)).
+
+-spec cancel_partial_payment_chargeback_exceeded(config()) -> _ | no_return().
+
+cancel_partial_payment_chargeback_exceeded(C) ->
+    Cost       = 42000,
+    LevyAmount = 4000,
+    Partial    = 10000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    Body       = ?cash(Cost, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy, Body),
+    {_IID, _PID, _SID, CB} = start_chargeback_partial_capture(C, Cost, Partial, CBParams),
+    ?assertMatch(?invoice_payment_amount_exceeded(?cash(10000, <<"RUB">>)), CB).
+
+-spec cancel_payment_chargeback_refund(config()) -> _ | no_return().
+
+cancel_payment_chargeback_refund(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, _SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    RefundParams = make_refund_params(),
+    RefundError = hg_client_invoicing:refund_payment(IID, PID, RefundParams, Client),
+    CancelParams = make_chargeback_cancel_params(),
+    ok = hg_client_invoicing:cancel_chargeback(IID, PID, CBID, CancelParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    RefundOk = hg_client_invoicing:refund_payment(IID, PID, RefundParams, Client),
+    ?assertMatch(?chargeback_pending(), RefundError),
+    ?assertMatch(#domain_InvoicePaymentRefund{}, RefundOk).
+
+-spec reject_payment_chargeback_inconsistent(config()) -> _ | no_return().
+
+reject_payment_chargeback_inconsistent(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, _SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    InconsistentParams = make_chargeback_reject_params(?cash(10, <<"USD">>)),
+    Inconsistent = hg_client_invoicing:reject_chargeback(IID, PID, CBID, InconsistentParams, Client),
+    CancelParams = make_chargeback_cancel_params(),
+    ok = hg_client_invoicing:cancel_chargeback(IID, PID, CBID, CancelParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    ?assertMatch(?inconsistent_chargeback_currency(_), Inconsistent).
+
+-spec reject_payment_chargeback(config()) -> _ | no_return().
+
+reject_payment_chargeback(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    Fee        = 1890,
+    Paid       = Cost - Fee,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0 = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount, maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                     maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid        - LevyAmount, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid        - LevyAmount, maps:get(max_available_amount, Settlement1)).
+
+-spec reject_payment_chargeback_new_levy(config()) -> _ | no_return().
+
+reject_payment_chargeback_new_levy(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    Fee        = 1890,
+    Paid       = Cost - Fee,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(CF0)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    RejectAmount = 5000,
+    RejectLevy   = ?cash(RejectAmount, <<"RUB">>),
+    RejectParams = make_chargeback_reject_params(RejectLevy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(RejectLevy))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(CF1)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ?assertNotEqual(CF0, CF1),
+    ?assertEqual(Paid - Cost - LevyAmount  , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                       maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid        - RejectAmount, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid        - RejectAmount, maps:get(max_available_amount, Settlement1)).
+
+-spec accept_payment_chargeback_inconsistent(config()) -> _ | no_return().
+
+accept_payment_chargeback_inconsistent(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, _SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    InconsistentLevyParams = make_chargeback_accept_params(?cash(10, <<"USD">>), undefined),
+    InconsistentBodyParams = make_chargeback_accept_params(undefined, ?cash(10, <<"USD">>)),
+    InconsistentLevy = hg_client_invoicing:accept_chargeback(IID, PID, CBID, InconsistentLevyParams, Client),
+    InconsistentBody = hg_client_invoicing:accept_chargeback(IID, PID, CBID, InconsistentBodyParams, Client),
+    CancelParams = make_chargeback_cancel_params(),
+    ok = hg_client_invoicing:cancel_chargeback(IID, PID, CBID, CancelParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    ?assertMatch(?inconsistent_chargeback_currency(_), InconsistentLevy),
+    ?assertMatch(?inconsistent_chargeback_currency(_), InconsistentBody).
+
+-spec accept_payment_chargeback_exceeded(config()) -> _ | no_return().
+
+accept_payment_chargeback_exceeded(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, _SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    ExceedBody   = 200000,
+    ExceedParams = make_chargeback_accept_params(?cash(LevyAmount, <<"RUB">>), ?cash(ExceedBody, <<"RUB">>)),
+    Exceeded = hg_client_invoicing:accept_chargeback(IID, PID, CBID, ExceedParams, Client),
+    CancelParams = make_chargeback_cancel_params(),
+    ok = hg_client_invoicing:cancel_chargeback(IID, PID, CBID, CancelParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    ?assertMatch(?invoice_payment_amount_exceeded(_), Exceeded).
+
+-spec accept_payment_chargeback_empty_params(config()) -> _ | no_return().
+
+accept_payment_chargeback_empty_params(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    Fee        = 1890,
+    Paid       = Cost - Fee,
+    LevyAmount = 4000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    AcceptParams = make_chargeback_accept_params(),
+    ok           = hg_client_invoicing:accept_chargeback(IID, PID, CBID, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_accepted()))),
+        ?payment_ev(PID, ?payment_status_changed(?charged_back()))
+    ]            = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount, maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                     maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid - Cost - LevyAmount, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost - LevyAmount, maps:get(max_available_amount, Settlement1)).
+
+-spec accept_payment_chargeback_twice(config()) -> _ | no_return().
+
+accept_payment_chargeback_twice(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    Fee        = 1890,
+    Paid       = Cost - Fee,
+    LevyAmount = 4000,
+    BodyAmount = 20000,
+    Body       = ?cash(BodyAmount, <<"RUB">>),
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams1  = make_chargeback_params(Levy, Body),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams1),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    AcceptParams = make_chargeback_accept_params(),
+    ok           = hg_client_invoicing:accept_chargeback(IID, PID, CBID, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_accepted())))
+    ]            = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    CBParams2    = make_chargeback_params(Levy),
+    Chargeback   = hg_client_invoicing:create_chargeback(IID, PID, CBParams2, Client),
+    CBID2 = Chargeback#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_created(Chargeback)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement2  = hg_ct_helper:get_balance(SID),
+    AcceptParams = make_chargeback_accept_params(),
+    ok           = hg_client_invoicing:accept_chargeback(IID, PID, CBID2, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_status_changed(?chargeback_status_accepted()))),
+        ?payment_ev(PID, ?payment_status_changed(?charged_back()))
+    ]            = next_event(IID, Client),
+    Settlement3  = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - BodyAmount - LevyAmount    , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                               maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid - BodyAmount - LevyAmount    , maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid - BodyAmount - LevyAmount    , maps:get(max_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost       - LevyAmount * 2, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid - BodyAmount - LevyAmount    , maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost       - LevyAmount * 2, maps:get(min_available_amount, Settlement3)),
+    ?assertEqual(Paid - Cost       - LevyAmount * 2, maps:get(max_available_amount, Settlement3)).
+
+-spec accept_payment_chargeback_new_body(config()) -> _ | no_return().
+
+accept_payment_chargeback_new_body(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    Fee        = 1890,
+    Paid       = Cost - Fee,
+    LevyAmount = 5000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    Body = 40000,
+    AcceptParams = make_chargeback_accept_params(undefined, ?cash(Body, <<"RUB">>)),
+    ok           = hg_client_invoicing:accept_chargeback(IID, PID, CBID, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_body_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ]  = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount, maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                     maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid - Body - LevyAmount, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid - Body - LevyAmount, maps:get(max_available_amount, Settlement1)).
+
+-spec accept_payment_chargeback_new_levy(config()) -> _ | no_return().
+
+accept_payment_chargeback_new_levy(C) ->
+    Client        = cfg(client, C),
+    Cost          = 42000,
+    Fee           = 1890,
+    Paid          = Cost - Fee,
+    LevyAmount    = 5000,
+    NewLevyAmount = 4000,
+    Levy          = ?cash(LevyAmount, <<"RUB">>),
+    CBParams      = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0 = hg_ct_helper:get_balance(SID),
+    AcceptParams = make_chargeback_accept_params(?cash(NewLevyAmount, <<"RUB">>), undefined),
+    ok = hg_client_invoicing:accept_chargeback(IID, PID, CBID, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(?cash(NewLevyAmount, <<"RUB">>)))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_accepted()))),
+        ?payment_ev(PID, ?payment_status_changed(?charged_back()))
+    ] = next_event(IID, Client),
+    Settlement1 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount   , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                        maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid - Cost - NewLevyAmount, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost - NewLevyAmount, maps:get(max_available_amount, Settlement1)).
+
+-spec reopen_accepted_payment_chargeback_fails(config()) -> _ | no_return().
+
+reopen_accepted_payment_chargeback_fails(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    LevyAmount = 5000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, _SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    AcceptParams = make_chargeback_accept_params(),
+    ok = hg_client_invoicing:accept_chargeback(IID, PID, CBID, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_accepted()))),
+        ?payment_ev(PID, ?payment_status_changed(?charged_back()))
+    ] = next_event(IID, Client),
+    ReopenParams = make_chargeback_reopen_params(Levy),
+    Error = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
+    ?assertMatch(?invalid_chargeback_status(_), Error).
+
+-spec reopen_payment_chargeback_inconsistent(config()) -> _ | no_return().
+
+reopen_payment_chargeback_inconsistent(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    LevyAmount = 5000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, _SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    InconsistentLevyParams = make_chargeback_reopen_params(?cash(10, <<"USD">>), undefined),
+    InconsistentBodyParams = make_chargeback_reopen_params(Levy, ?cash(10, <<"USD">>)),
+    InconsistentLevy = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, InconsistentLevyParams, Client),
+    InconsistentBody = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, InconsistentBodyParams, Client),
+    ?assertMatch(?inconsistent_chargeback_currency(_), InconsistentLevy),
+    ?assertMatch(?inconsistent_chargeback_currency(_), InconsistentBody).
+
+-spec reopen_payment_chargeback_exceeded(config()) -> _ | no_return().
+
+reopen_payment_chargeback_exceeded(C) ->
+    Client     = cfg(client, C),
+    Cost       = 42000,
+    LevyAmount = 5000,
+    Levy       = ?cash(LevyAmount, <<"RUB">>),
+    CBParams   = make_chargeback_params(Levy),
+    {IID, PID, _SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    ExceededParams = make_chargeback_reopen_params(Levy, ?cash(50000, <<"RUB">>)),
+    Exceeded = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ExceededParams, Client),
+    ?assertMatch(?invoice_payment_amount_exceeded(_), Exceeded).
+
+-spec reopen_payment_chargeback_cancel(config()) -> _ | no_return().
+
+reopen_payment_chargeback_cancel(C) ->
+    Client           = cfg(client, C),
+    Cost             = 42000,
+    Fee              = 1890,
+    Paid             = Cost - Fee,
+    LevyAmount       = 5000,
+    ReopenLevyAmount = 10000,
+    Levy             = ?cash(LevyAmount, <<"RUB">>),
+    ReopenLevy       = ?cash(ReopenLevyAmount, <<"RUB">>),
+    CBParams         = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ReopenParams = make_chargeback_reopen_params(ReopenLevy),
+    ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(?chargeback_stage_pre_arbitration()))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(ReopenLevy))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    Settlement2  = hg_ct_helper:get_balance(SID),
+    CancelParams = make_chargeback_cancel_params(),
+    ok = hg_client_invoicing:cancel_chargeback(IID, PID, CBID, CancelParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_cancelled())))
+    ] = next_event(IID, Client),
+    Settlement3 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount      , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                           maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid                          , maps:get(min_available_amount, Settlement3)),
+    ?assertEqual(Paid                          , maps:get(max_available_amount, Settlement3)).
+
+-spec reopen_payment_chargeback_reject(config()) -> _ | no_return().
+
+reopen_payment_chargeback_reject(C) ->
+    Client           = cfg(client, C),
+    Cost             = 42000,
+    Fee              = 1890,
+    Paid             = Cost - Fee,
+    LevyAmount       = 5000,
+    ReopenLevyAmount = 10000,
+    Levy             = ?cash(LevyAmount, <<"RUB">>),
+    ReopenLevy       = ?cash(ReopenLevyAmount, <<"RUB">>),
+    CBParams         = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ReopenParams = make_chargeback_reopen_params(ReopenLevy),
+    ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(?chargeback_stage_pre_arbitration()))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(ReopenLevy))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    Settlement2  = hg_ct_helper:get_balance(SID),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(Levy))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement3 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount      , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                           maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement3)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement3)).
+
+-spec reopen_payment_chargeback_accept(config()) -> _ | no_return().
+
+reopen_payment_chargeback_accept(C) ->
+    Client           = cfg(client, C),
+    Cost             = 42000,
+    Fee              = 1890,
+    Paid             = Cost - Fee,
+    LevyAmount       = 4000,
+    ReopenLevyAmount = 4500,
+    Levy             = ?cash(LevyAmount, <<"RUB">>),
+    ReopenLevy       = ?cash(ReopenLevyAmount, <<"RUB">>),
+    CBParams         = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ReopenParams = make_chargeback_reopen_params(ReopenLevy),
+    ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(ReopenLevy))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    Settlement2  = hg_ct_helper:get_balance(SID),
+    AcceptParams = make_chargeback_accept_params(),
+    ok = hg_client_invoicing:accept_chargeback(IID, PID, CBID, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_accepted()))),
+        ?payment_ev(PID, ?payment_status_changed(?charged_back()))
+    ] = next_event(IID, Client),
+    Settlement3 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount      , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                           maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement3)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(max_available_amount, Settlement3)).
+
+-spec reopen_payment_chargeback_accept_new_levy(config()) -> _ | no_return().
+
+reopen_payment_chargeback_accept_new_levy(C) ->
+    Client           = cfg(client, C),
+    Cost             = 42000,
+    Fee              = 1890,
+    Paid             = Cost - Fee,
+    LevyAmount       = 4000,
+    ReopenLevyAmount = 4500,
+    AcceptLevyAmount = 5000,
+    Body             = ?cash(Cost, <<"RUB">>),
+    Levy             = ?cash(LevyAmount, <<"RUB">>),
+    ReopenLevy       = ?cash(ReopenLevyAmount, <<"RUB">>),
+    AcceptLevy       = ?cash(AcceptLevyAmount, <<"RUB">>),
+    CBParams         = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ReopenParams = make_chargeback_reopen_params(ReopenLevy),
+    ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(ReopenLevy))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    Settlement2  = hg_ct_helper:get_balance(SID),
+    AcceptParams = make_chargeback_accept_params(AcceptLevy, Body),
+    ok = hg_client_invoicing:accept_chargeback(IID, PID, CBID, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_accepted()))),
+        ?payment_ev(PID, ?payment_status_changed(?charged_back()))
+    ] = next_event(IID, Client),
+    Settlement3 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount      , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                           maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - AcceptLevyAmount, maps:get(min_available_amount, Settlement3)),
+    ?assertEqual(Paid - Cost - AcceptLevyAmount, maps:get(max_available_amount, Settlement3)).
+
+-spec reopen_payment_chargeback_arbitration(config()) -> _ | no_return().
+
+reopen_payment_chargeback_arbitration(C) ->
+    Client           = cfg(client, C),
+    Cost             = 42000,
+    Fee              = 1890,
+    Paid             = Cost - Fee,
+    LevyAmount       = 5000,
+    ReopenLevyAmount = 10000,
+    ReopenArbAmount  = 15000,
+    Levy             = ?cash(LevyAmount, <<"RUB">>),
+    ReopenLevy       = ?cash(ReopenLevyAmount, <<"RUB">>),
+    ReopenArbLevy    = ?cash(ReopenArbAmount, <<"RUB">>),
+    CBParams         = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ReopenParams = make_chargeback_reopen_params(ReopenLevy),
+    ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(ReopenLevy))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    Settlement2  = hg_ct_helper:get_balance(SID),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement3 = hg_ct_helper:get_balance(SID),
+    ReopenArbParams = make_chargeback_reopen_params(ReopenArbLevy),
+    ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenArbParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    Settlement4 = hg_ct_helper:get_balance(SID),
+    AcceptParams = make_chargeback_accept_params(),
+    ok = hg_client_invoicing:accept_chargeback(IID, PID, CBID, AcceptParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_accepted())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_accepted()))),
+        ?payment_ev(PID, ?payment_status_changed(?charged_back()))
+    ] = next_event(IID, Client),
+    Settlement5 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount      , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                           maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement3)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement3)),
+    ?assertEqual(Paid - Cost - ReopenArbAmount , maps:get(min_available_amount, Settlement4)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement4)),
+    ?assertEqual(Paid - Cost - ReopenArbAmount , maps:get(min_available_amount, Settlement5)),
+    ?assertEqual(Paid - Cost - ReopenArbAmount , maps:get(max_available_amount, Settlement5)).
+
+-spec reopen_payment_chargeback_arbitration_reopen_fails(config()) -> _ | no_return().
+
+reopen_payment_chargeback_arbitration_reopen_fails(C) ->
+    Client           = cfg(client, C),
+    Cost             = 42000,
+    Fee              = 1890,
+    Paid             = Cost - Fee,
+    LevyAmount       = 5000,
+    ReopenLevyAmount = 10000,
+    ReopenArbAmount  = 15000,
+    Levy             = ?cash(LevyAmount, <<"RUB">>),
+    ReopenLevy       = ?cash(ReopenLevyAmount, <<"RUB">>),
+    ReopenArbLevy    = ?cash(ReopenArbAmount, <<"RUB">>),
+    CBParams         = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0  = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SID),
+    ReopenParams = make_chargeback_reopen_params(ReopenLevy),
+    ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(ReopenLevy))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    Settlement2  = hg_ct_helper:get_balance(SID),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement3 = hg_ct_helper:get_balance(SID),
+    ReopenArbParams = make_chargeback_reopen_params(ReopenArbLevy),
+    ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenArbParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
+    ] = next_event(IID, Client),
+    Settlement4 = hg_ct_helper:get_balance(SID),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(_))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement5 = hg_ct_helper:get_balance(SID),
+    Error = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenArbParams, Client),
+    ?assertEqual(Paid - Cost - LevyAmount      , maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid,                           maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement1)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement3)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement3)),
+    ?assertEqual(Paid - Cost - ReopenArbAmount , maps:get(min_available_amount, Settlement4)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement4)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(min_available_amount, Settlement5)),
+    ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement5)),
+    ?assertMatch(?chargeback_cannot_reopen_arbitration(), Error).
+
+%% CHARGEBACK HELPERS
+
+start_chargeback(C, Cost, CBParams) ->
+    Client       = cfg(client, C),
+    PartyClient  = cfg(party_client, C),
+    ShopID       = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    Party        = hg_client_party:get(PartyClient),
+    Shop         = maps:get(ShopID, Party#domain_Party.shops),
+    Account      = Shop#domain_Shop.account,
+    SettlementID = Account#domain_ShopAccount.settlement,
+    Settlement0  = hg_ct_helper:get_balance(SettlementID),
+    Fee          = 1890, % 0.045
+    ?assertEqual(0, maps:get(min_available_amount, Settlement0)),
+    InvoiceID    = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
+    PaymentID    = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID    = await_payment_capture(InvoiceID, PaymentID, Client),
+    Settlement1  = hg_ct_helper:get_balance(SettlementID),
+    ?assertEqual(Cost - Fee, maps:get(min_available_amount, Settlement1)),
+    Chargeback   = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
+    {InvoiceID, PaymentID, SettlementID, Chargeback}.
+
+start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
+    Client       = cfg(client, C),
+    Cash         = ?cash(Partial, <<"RUB">>),
+    PartyClient  = cfg(party_client, C),
+    ShopID       = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    Party        = hg_client_party:get(PartyClient),
+    Shop         = maps:get(ShopID, Party#domain_Party.shops),
+    Account      = Shop#domain_Shop.account,
+    SettlementID = Account#domain_ShopAccount.settlement,
+    Settlement0  = hg_ct_helper:get_balance(SettlementID),
+    % Fee          = 450, % 0.045
+    ?assertEqual(0, maps:get(min_available_amount, Settlement0)),
+    InvoiceID    = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth_mc),
+    PaymentParams = make_payment_params(PaymentTool, Session, {hold, cancel}),
+    PaymentID     = process_payment(InvoiceID, PaymentParams, Client),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Cash, Client),
+    [
+       ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+       ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash),
+    % Settlement1  = hg_ct_helper:get_balance(SettlementID),
+    % ?assertEqual(Partial - Fee, maps:get(min_available_amount, Settlement1)),
+    Chargeback   = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
+    {InvoiceID, PaymentID, SettlementID, Chargeback}.
+
+%% CHARGEBACKS
 
 -spec invalid_refund_party_status(config()) -> _ | no_return().
 
@@ -3378,7 +4599,7 @@ next_event(InvoiceID, Timeout, Client) ->
                     L;
                 [] ->
                     next_event(InvoiceID, Timeout, Client)
-            end;
+                end;
         Result ->
             Result
     end.
@@ -3387,6 +4608,8 @@ filter_changes(Changes) ->
     lists:filtermap(fun filter_change/1, Changes).
 
 filter_change(?payment_ev(_, C)) ->
+    filter_change(C);
+filter_change(?chargeback_ev(_, C)) ->
     filter_change(C);
 filter_change(?refund_ev(_, C)) ->
     filter_change(C);
@@ -3589,6 +4812,54 @@ make_payment_params(PaymentTool, Session, FlowType) ->
 
 set_payment_context(Context, Params = #payproc_InvoicePaymentParams{}) ->
     Params#payproc_InvoicePaymentParams{context = Context}.
+
+make_chargeback_cancel_params() ->
+    #payproc_InvoicePaymentChargebackCancelParams{}.
+
+make_chargeback_reject_params(Levy) ->
+    #payproc_InvoicePaymentChargebackRejectParams{
+        levy = Levy
+    }.
+
+make_chargeback_accept_params() ->
+    #payproc_InvoicePaymentChargebackAcceptParams{}.
+make_chargeback_accept_params(Levy, Body) ->
+    #payproc_InvoicePaymentChargebackAcceptParams{
+        body = Body,
+        levy = Levy
+   }.
+
+make_chargeback_reopen_params(Levy) ->
+    #payproc_InvoicePaymentChargebackReopenParams{
+        levy = Levy
+    }.
+make_chargeback_reopen_params(Levy, Body) ->
+    #payproc_InvoicePaymentChargebackReopenParams{
+        body = Body,
+        levy = Levy
+    }.
+
+make_chargeback_params(Levy) ->
+    #payproc_InvoicePaymentChargebackParams{
+        id = hg_utils:unique_id(),
+        reason = #domain_InvoicePaymentChargebackReason{
+            code = <<"CB.C0DE">>,
+            category = {fraud, #domain_InvoicePaymentChargebackCategoryFraud{}}
+        },
+        levy = Levy,
+        occurred_at = hg_datetime:format_now()
+    }.
+make_chargeback_params(Levy, Body) ->
+    #payproc_InvoicePaymentChargebackParams{
+        id = hg_utils:unique_id(),
+        reason = #domain_InvoicePaymentChargebackReason{
+            code = <<"CB.C0DE">>,
+            category = {fraud, #domain_InvoicePaymentChargebackCategoryFraud{}}
+        },
+        body = Body,
+        levy = Levy,
+        occurred_at = hg_datetime:format_now()
+    }.
 
 make_refund_params() ->
     #payproc_InvoicePaymentRefundParams{
@@ -4223,9 +5494,25 @@ construct_domain_fixture() ->
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
+                        if_ = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                            definition = {payment_system_is, mastercard}
+                        }}}},
+                        then_ = {value, ?hold_lifetime(120)}
+                    },
+                    #domain_HoldLifetimeDecision{
                         if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                         then_ = {value, #domain_HoldLifetime{seconds = 3}}
                     }
+                ]}
+            },
+            chargebacks = #domain_PaymentChargebackServiceTerms{
+                allow = {constant, true},
+                fees = {value, [
+                    ?cfpost(
+                        {merchant, settlement},
+                        {system, settlement},
+                        ?share(1, 1, surplus)
+                    )
                 ]}
             },
             refunds = #domain_PaymentRefundsServiceTerms{
@@ -4603,6 +5890,15 @@ construct_domain_fixture() ->
                                 {exclusive, ?cash(1000000000, <<"RUB">>)}
                             )}
                         }
+                    },
+                    chargebacks = #domain_PaymentChargebackProvisionTerms{
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {merchant, settlement},
+                                {provider, settlement},
+                                ?share(1, 1, operation_amount)
+                            )
+                        ]}
                     }
                 },
                 recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
@@ -4675,6 +5971,12 @@ construct_domain_fixture() ->
                                     definition = {payment_system_is, visa}
                                 }}}},
                                 then_ = {value, ?hold_lifetime(5)}
+                            },
+                            #domain_HoldLifetimeDecision{
+                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                    definition = {payment_system_is, mastercard}
+                                }}}},
+                                then_ = {value, ?hold_lifetime(120)}
                             }
                         ]}
                     },
@@ -4692,6 +5994,25 @@ construct_domain_fixture() ->
                                 {exclusive, ?cash(1000000000, <<"RUB">>)}
                             )}
                         }
+                    },
+                    chargebacks = #domain_PaymentChargebackProvisionTerms{
+                        fees = {value, #domain_Fees{
+                            fees = #{
+                                surplus => ?fixed(?CB_PROVIDER_LEVY, <<"RUB">>)
+                            }
+                        }},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {merchant, settlement},
+                                {provider, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(1, 1, surplus)
+                            )
+                        ]}
                     }
                 }
             }
