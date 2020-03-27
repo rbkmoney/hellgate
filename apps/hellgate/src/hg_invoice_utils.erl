@@ -102,13 +102,15 @@ assert_contract_active(Contract = #domain_Contract{status = Status}) ->
         false -> throw(#payproc_InvalidContractStatus{status = Status})
     end.
 
--spec assert_invoice_payable(invoice_params(), party(), shop(), payment_service_terms(), domain_revision()) -> ok.
-
-assert_invoice_payable(InvoiceParams, Party, Shop, #domain_PaymentsServiceTerms{cash_limit = Selector}, DomainRevision) ->
+-spec assert_invoice_payable(invoice_params(), party(), shop(), payment_service_terms(), domain_revision()) ->
+    invoice_params().
+assert_invoice_payable(InvoiceParams, Party, Shop, PaymentTerms, DomainRevision) ->
+    Cost = InvoiceParams#payproc_InvoiceParams.cost,
+    Selector = PaymentTerms#domain_PaymentsServiceTerms.cash_limit,
     VS = collect_validation_varset(Party, Shop),
-    case any_limit_matches(InvoiceParams#payproc_InvoiceParams.cost, Selector, VS, DomainRevision) of
+    case any_limit_matches(Cost, Selector, VS, DomainRevision) of
         true ->
-            ok;
+            InvoiceParams;
         _ ->
             throw(#'InvalidRequest'{errors = [<<"Invalid amount, cannot be paid off">>]})
     end.
