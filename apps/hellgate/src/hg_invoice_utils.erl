@@ -13,7 +13,7 @@
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
 -export([assert_contract_active/1]).
--export([assert_invoice_payable/5]).
+-export([assert_cost_payable/5]).
 -export([compute_shop_terms/5]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
@@ -34,7 +34,6 @@
 -type timestamp()             :: dmsl_base_thrift:'Timestamp'().
 -type user_info()             :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_revision_param()  :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
--type invoice_params()        :: dmsl_payment_processing_thrift:'InvoiceParams'().
 
 -spec validate_cost(cash(), shop()) -> ok.
 
@@ -102,15 +101,13 @@ assert_contract_active(Contract = #domain_Contract{status = Status}) ->
         false -> throw(#payproc_InvalidContractStatus{status = Status})
     end.
 
--spec assert_invoice_payable(invoice_params(), party(), shop(), payment_service_terms(), domain_revision()) ->
-    invoice_params().
-assert_invoice_payable(InvoiceParams, Party, Shop, PaymentTerms, DomainRevision) ->
-    Cost = InvoiceParams#payproc_InvoiceParams.cost,
-    Selector = PaymentTerms#domain_PaymentsServiceTerms.cash_limit,
+-spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) ->
+    cash().
+assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
     VS = collect_validation_varset(Party, Shop),
-    case any_limit_matches(Cost, Selector, VS, DomainRevision) of
+    case any_limit_matches(Cost, PaymentTerms#domain_PaymentsServiceTerms.cash_limit, VS, DomainRevision) of
         true ->
-            InvoiceParams;
+            Cost;
         _ ->
             throw(#'InvalidRequest'{errors = [<<"Invalid amount, cannot be paid off">>]})
     end.
