@@ -1188,7 +1188,7 @@ make_invoice_cart(Cost, {product, TplProduct}, Shop) ->
     ]}.
 
 get_templated_price(undefined, {fixed, Cost}, Shop) ->
-    get_cost(Cost, Shop) ;
+    get_cost(Cost, Shop);
 get_templated_price(undefined, _, _Shop) ->
     throw(#'InvalidRequest'{errors = [?INVOICE_TPL_NO_COST]});
 get_templated_price(Cost, {fixed, Cost}, Shop) ->

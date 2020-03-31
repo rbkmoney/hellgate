@@ -97,35 +97,37 @@ assert_shop_exists(undefined) ->
 -spec assert_contract_active(contract() | undefined) -> contract().
 assert_contract_active(Contract = #domain_Contract{status = Status}) ->
     case pm_contract:is_active(Contract) of
-        true -> Contract;
-        false -> throw(#payproc_InvalidContractStatus{status = Status})
+        true ->
+            Contract;
+        false ->
+            throw(#payproc_InvalidContractStatus{status = Status})
     end.
 
 -spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) ->
     cash().
 assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
     VS = collect_validation_varset(Party, Shop),
-    case any_limit_matches(Cost, PaymentTerms#domain_PaymentsServiceTerms.cash_limit, VS, DomainRevision) of
+    ReducedTerms = pm_selector:reduce(PaymentTerms#domain_PaymentsServiceTerms.cash_limit, VS, DomainRevision),
+    case any_limit_matches(Cost, ReducedTerms) of
         true ->
             Cost;
-        _ ->
+        false ->
             throw(#'InvalidRequest'{errors = [<<"Invalid amount, cannot be paid off">>]})
     end.
 
-any_limit_matches(Cash, Selector, VS, Revision) ->
-    case pm_selector:reduce(Selector, VS, Revision) of
-        {value, CashRange} ->
-            hg_cash_range:is_inside(Cash, CashRange) =:= within;
-        {decisions, Decisions} ->
-            check_possible_limits(Cash, Decisions, VS, Revision)
-    end.
+any_limit_matches(Cash, {value, CashRange}) ->
+    hg_cash_range:is_inside(Cash, CashRange) =:= within;
+any_limit_matches(Cash, {decisions, Decisions}) ->
+    check_possible_limits(Cash, Decisions).
 
-check_possible_limits(_Cash, [], _VS, _Revision) ->
+check_possible_limits(_Cash, []) ->
     false;
-check_possible_limits(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest], VS, Revision) ->
-    case any_limit_matches(Cash, Value, VS, Revision) of
-        true -> true;
-        _ -> check_possible_limits(Cash, Rest, VS, Revision)
+check_possible_limits(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest]) ->
+    case any_limit_matches(Cash, Value) of
+        true ->
+            true;
+        false ->
+            check_possible_limits(Cash, Rest)
     end.
 
 collect_validation_varset(Party, Shop) ->
