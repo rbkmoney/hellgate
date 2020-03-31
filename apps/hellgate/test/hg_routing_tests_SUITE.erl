@@ -141,6 +141,7 @@ handle_uncomputable_provider_terms(_C) ->
     {Providers0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS0, Revision),
     {[], #{
         rejected_providers := [
+            {?prv(4), {'PaymentsProvisionTerms', currency}},
             {?prv(3), {'Misconfiguration', _}},
             {?prv(2), {'PaymentsProvisionTerms', currency}},
             {?prv(1), {'PaymentsProvisionTerms', currency}}
@@ -196,6 +197,7 @@ fatal_risk_score_for_route_found(_C) ->
     {error, {no_route_found, {risk_score_is_too_high, #{
         varset := VS0,
         rejected_providers := [
+            {?prv(4), {'PaymentsProvisionTerms', currency}},
             {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
@@ -212,6 +214,7 @@ fatal_risk_score_for_route_found(_C) ->
     {error, {no_route_found, {risk_score_is_too_high, #{
         varset := VS1,
         rejected_providers := [
+            {?prv(4), {'PaymentsProvisionTerms', currency}},
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
         ],
@@ -239,6 +242,7 @@ no_route_found_for_payment(_C) ->
     {Routes0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS0, Revision),
     {[], #{
         rejected_providers := [
+            {?prv(4), {'PaymentsProvisionTerms', currency}},
             {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
@@ -251,6 +255,7 @@ no_route_found_for_payment(_C) ->
     Result0 = {error, {no_route_found, {unknown, #{
         varset => VS0,
         rejected_providers => [
+            {?prv(4), {'PaymentsProvisionTerms', currency}},
             {?prv(3), {'PaymentsProvisionTerms', payment_tool}},
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
@@ -981,7 +986,8 @@ construct_domain_fixture() ->
                 providers = {value, ?ordset([
                     ?prv(1),
                     ?prv(2),
-                    ?prv(3)
+                    ?prv(3),
+                    ?prv(4)
                 ])},
 
                 % TODO do we realy need this decision hell here?
@@ -1448,6 +1454,30 @@ construct_domain_fixture() ->
                 name = <<"Payment Terminal Terminal">>,
                 description = <<"Euroset">>,
                 risk_coverage = low
+            }
+        }},
+
+        {provider, #domain_ProviderObject{
+            ref = ?prv(4),
+            data = #domain_Provider{
+                name = <<"Zrovider">>,
+                description = <<"Non-configured provider">>,
+                terminal = {value, []},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"zrovider">>
+                    }
+                },
+                abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                payment_terms = #domain_PaymentsProvisionTerms{
+                    currencies = undefined,
+                    categories = undefined,
+                    payment_methods = undefined,
+                    cash_limit = undefined,
+                    cash_flow = undefined
+                }
             }
         }}
 
