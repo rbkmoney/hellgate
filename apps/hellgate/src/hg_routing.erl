@@ -761,7 +761,9 @@ try_accept_term(ParentName, Name, Selector, VS, Revision) ->
 
 try_accept_term(ParentName, Name, Value, Selector, VS, Revision) when Selector /= undefined ->
     Values = reduce(Name, Selector, VS, Revision),
-    test_term(Name, Value, Values) orelse throw(?rejected({ParentName, Name})).
+    test_term(Name, Value, Values) orelse throw(?rejected({ParentName, Name}));
+try_accept_term(ParentName, Name, _Value, undefined, _VS, _Revision) ->
+    throw(?rejected({ParentName, Name})).
 
 test_term(currency, V, Vs) ->
     ordsets:is_element(V, Vs);
