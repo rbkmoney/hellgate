@@ -603,7 +603,7 @@ invalid_invoice_amount(C) ->
     }} = hg_client_invoicing:create(InvoiceParams0, Client),
     InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 5),
     {exception, #payproc_InvoiceCostOutOfRange{}}
-         = hg_client_invoicing:create(InvoiceParams1, Client),
+        = hg_client_invoicing:create(InvoiceParams1, Client),
     InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 42000000000),
     {exception, #payproc_InvoiceCostOutOfRange{}}
         = hg_client_invoicing:create(InvoiceParams2, Client).
