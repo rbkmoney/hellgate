@@ -106,13 +106,13 @@ assert_contract_active(Contract = #domain_Contract{status = Status}) ->
 -spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) ->
     cash().
 assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
-    VS = collect_validation_varset(Party, Shop),
+    VS = collect_validation_varset(Cost, Party, Shop),
     ReducedTerms = pm_selector:reduce(PaymentTerms#domain_PaymentsServiceTerms.cash_limit, VS, DomainRevision),
     case any_limit_matches(Cost, ReducedTerms) of
         true ->
             Cost;
         false ->
-            throw(#'InvalidRequest'{errors = [<<"Invalid amount, cannot be paid off">>]})
+            throw(#payproc_InvoiceCostOutOfRange{})
     end.
 
 any_limit_matches(Cash, {value, CashRange}) ->
@@ -130,7 +130,7 @@ check_possible_limits(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest]) -
             check_possible_limits(Cash, Rest)
     end.
 
-collect_validation_varset(Party, Shop) ->
+collect_validation_varset(Cost, Party, Shop) ->
     #domain_Party{id = PartyID} = Party,
     #domain_Shop{
         id = ShopID,
@@ -138,6 +138,7 @@ collect_validation_varset(Party, Shop) ->
         account = #domain_ShopAccount{currency = Currency}
     } = Shop,
     #{
+        cost     => Cost,
         party_id => PartyID,
         shop_id  => ShopID,
         category => Category,
