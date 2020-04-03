@@ -112,7 +112,9 @@ assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
         true ->
             Cost;
         false ->
-            throw(#payproc_InvoiceCostOutOfRange{})
+            throw(#payproc_InvoiceTermsViolated{
+                reason = {invoice_unpayable, #payproc_InvoiceUnpayable{}}
+            })
     end.
 
 any_limit_matches(Cash, {value, CashRange}) ->

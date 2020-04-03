@@ -602,10 +602,10 @@ invalid_invoice_amount(C) ->
         errors = [<<"Invalid amount">>]
     }} = hg_client_invoicing:create(InvoiceParams0, Client),
     InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 5),
-    {exception, #payproc_InvoiceCostOutOfRange{}}
+    {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}}
         = hg_client_invoicing:create(InvoiceParams1, Client),
     InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 42000000000),
-    {exception, #payproc_InvoiceCostOutOfRange{}}
+    {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}}
         = hg_client_invoicing:create(InvoiceParams2, Client).
 
 -spec invalid_invoice_currency(config()) -> test_return().
@@ -719,7 +719,7 @@ invalid_invoice_template_cost(C) ->
     Cost4 = make_tpl_cost(fixed, 42000000000, <<"RUB">>),
     _ = update_invoice_tpl(TplID, Cost4, C),
     Params7 = make_invoice_params_tpl(TplID, make_cash(42000000000, <<"RUB">>)),
-    {exception, #payproc_InvoiceCostOutOfRange{}}
+    {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}}
         = hg_client_invoicing:create_with_tpl(Params7, Client).
 
 -spec invalid_invoice_template_id(config()) -> _ | no_return().
