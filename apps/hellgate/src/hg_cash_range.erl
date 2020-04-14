@@ -78,7 +78,6 @@ compare_cash(F, ?cash(A, C), {_, ?cash(Am, C)}) ->
 compare_cash(_, _, _) ->
     error.
 
-
 %% Marshalling
 
 -spec marshal(cash_range()) ->

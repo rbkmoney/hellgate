@@ -134,6 +134,7 @@
 -export([payment_has_optional_fields/1]).
 -export([payment_capture_failed/1]).
 -export([payment_capture_retries_exceeded/1]).
+-export([payment_partial_capture_success/1]).
 -export([payment_error_in_cancel_session_does_not_cause_payment_failure/1]).
 -export([payment_error_in_capture_session_does_not_cause_payment_failure/1]).
 
@@ -262,6 +263,7 @@ groups() ->
             invoice_success_on_third_payment,
             payment_capture_failed,
             payment_capture_retries_exceeded,
+            payment_partial_capture_success,
             payment_error_in_cancel_session_does_not_cause_payment_failure,
             payment_error_in_capture_session_does_not_cause_payment_failure
         ]},
@@ -597,10 +599,16 @@ invalid_invoice_amount(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount">>]
-    }} = hg_client_invoicing:create(InvoiceParams, Client).
+    }} = hg_client_invoicing:create(InvoiceParams0, Client),
+    InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 5),
+    {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}}
+        = hg_client_invoicing:create(InvoiceParams1, Client),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 42000000000),
+    {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}}
+        = hg_client_invoicing:create(InvoiceParams2, Client).
 
 -spec invalid_invoice_currency(config()) -> test_return().
 
@@ -708,7 +716,13 @@ invalid_invoice_template_cost(C) ->
     Params6 = make_invoice_params_tpl(TplID, make_cash(500, <<"KEK">>)),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_BAD_CURRENCY]
-    }} = hg_client_invoicing:create_with_tpl(Params6, Client).
+    }} = hg_client_invoicing:create_with_tpl(Params6, Client),
+
+    Cost4 = make_tpl_cost(fixed, 42000000000, <<"RUB">>),
+    _ = update_invoice_tpl(TplID, Cost4, C),
+    Params7 = make_invoice_params_tpl(TplID, make_cash(42000000000, <<"RUB">>)),
+    {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}}
+        = hg_client_invoicing:create_with_tpl(Params7, Client).
 
 -spec invalid_invoice_template_id(config()) -> _ | no_return().
 
@@ -859,11 +873,7 @@ invoice_cancellation_after_payment_timeout(C) ->
 invalid_payment_amount(C) ->
     Client = cfg(client, C),
     PaymentParams = make_payment_params(),
-    InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 1, C),
-    {exception, #'InvalidRequest'{
-        errors = [<<"Invalid amount, less", _/binary>>]
-    }} = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
-    InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 100000000000000, C),
+    InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 430000000, C),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
@@ -1044,6 +1054,38 @@ payment_capture_retries_exceeded(C) ->
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
     ),
     PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
+
+-spec payment_partial_capture_success(config()) -> test_return().
+
+payment_partial_capture_success(C) ->
+    InitialCost = 1000 * 100,
+    PartialCost = 700 * 100,
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(100), InitialCost, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    % start payment
+    ?payment_state(?payment(PaymentID)) =
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
+    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    % do a partial capture
+    Cash = ?cash(PartialCost, <<"RUB">>),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
+    PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
+    % let's check results
+    InvoiceState = hg_client_invoicing:get(InvoiceID, Client),
+    ?invoice_state(Invoice, [PaymentState]) = InvoiceState,
+    ?assertMatch(?invoice_w_status(?invoice_paid()), Invoice),
+    ?assertMatch(?payment_state(?payment_w_status(PaymentID, ?captured(Reason, Cash))), PaymentState),
+    #payproc_InvoicePayment{cash_flow = CF2} = PaymentState,
+    ?assertNotEqual(undefined, CF2),
+    ?assertNotEqual(CF1, CF2).
 
 -spec payment_error_in_cancel_session_does_not_cause_payment_failure(config()) -> test_return().
 
@@ -5331,10 +5373,21 @@ construct_domain_fixture() ->
                 }
             ]},
             cash_limit = {decisions, [
+                #domain_CashLimitDecision {
+                    if_ = {condition, {payment_tool, {crypto_currency, #domain_CryptoCurrencyCondition{
+                        definition = {crypto_currency_is, bitcoin}
+                    }}}},
+                    then_ = {value,
+                        ?cashrng(
+                            {inclusive, ?cash(        10, <<"RUB">>)},
+                            {inclusive, ?cash(4200000000, <<"RUB">>)}
+                        )
+                    }
+                },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, ?cashrng(
-                        {inclusive, ?cash(     10, <<"RUB">>)},
+                        {inclusive, ?cash(       10, <<"RUB">>)},
                         {exclusive, ?cash(420000000, <<"RUB">>)}
                     )}
                 }

@@ -12,23 +12,28 @@
 -export([assert_party_operable/1]).
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
+-export([assert_contract_active/1]).
+-export([assert_cost_payable/5]).
 -export([compute_shop_terms/5]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
 
--type amount()     :: dmsl_domain_thrift:'Amount'().
--type currency()   :: dmsl_domain_thrift:'CurrencyRef'().
--type cash()       :: dmsl_domain_thrift:'Cash'().
--type cart()       :: dmsl_domain_thrift:'InvoiceCart'().
--type cash_range() :: dmsl_domain_thrift:'CashRange'().
--type party()      :: dmsl_domain_thrift:'Party'().
--type shop()       :: dmsl_domain_thrift:'Shop'().
--type party_id()   :: dmsl_domain_thrift:'PartyID'().
--type shop_id()    :: dmsl_domain_thrift:'ShopID'().
--type term_set()   :: dmsl_domain_thrift:'TermSet'().
--type timestamp()  :: dmsl_base_thrift:'Timestamp'().
--type user_info()  :: dmsl_payment_processing_thrift:'UserInfo'().
--type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type amount()                :: dmsl_domain_thrift:'Amount'().
+-type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
+-type cash()                  :: dmsl_domain_thrift:'Cash'().
+-type cart()                  :: dmsl_domain_thrift:'InvoiceCart'().
+-type cash_range()            :: dmsl_domain_thrift:'CashRange'().
+-type party()                 :: dmsl_domain_thrift:'Party'().
+-type shop()                  :: dmsl_domain_thrift:'Shop'().
+-type contract()              :: dmsl_domain_thrift:'Contract'().
+-type party_id()              :: dmsl_domain_thrift:'PartyID'().
+-type shop_id()               :: dmsl_domain_thrift:'ShopID'().
+-type term_set()              :: dmsl_domain_thrift:'TermSet'().
+-type payment_service_terms() :: dmsl_domain_thrift:'PaymentsServiceTerms'().
+-type domain_revision()       :: dmsl_domain_thrift:'DataRevision'().
+-type timestamp()             :: dmsl_base_thrift:'Timestamp'().
+-type user_info()             :: dmsl_payment_processing_thrift:'UserInfo'().
+-type party_revision_param()  :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
 -spec validate_cost(cash(), shop()) -> ok.
 
@@ -39,7 +44,6 @@ validate_cost(#domain_Cash{currency = Currency, amount = Amount}, Shop) ->
 
 -spec validate_amount(amount()) -> ok.
 validate_amount(Amount) when Amount > 0 ->
-    %% TODO FIX THIS ASAP! Amount should be specified in contract terms.
     ok;
 validate_amount(_) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid amount">>]}).
@@ -89,6 +93,59 @@ assert_shop_exists(#domain_Shop{} = V) ->
     V;
 assert_shop_exists(undefined) ->
     throw(#payproc_ShopNotFound{}).
+
+-spec assert_contract_active(contract() | undefined) -> contract().
+assert_contract_active(Contract = #domain_Contract{status = Status}) ->
+    case pm_contract:is_active(Contract) of
+        true ->
+            Contract;
+        false ->
+            throw(#payproc_InvalidContractStatus{status = Status})
+    end.
+
+-spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) ->
+    cash().
+assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
+    VS = collect_validation_varset(Cost, Party, Shop),
+    ReducedTerms = pm_selector:reduce(PaymentTerms#domain_PaymentsServiceTerms.cash_limit, VS, DomainRevision),
+    case any_limit_matches(Cost, ReducedTerms) of
+        true ->
+            Cost;
+        false ->
+            throw(#payproc_InvoiceTermsViolated{
+                reason = {invoice_unpayable, #payproc_InvoiceUnpayable{}}
+            })
+    end.
+
+any_limit_matches(Cash, {value, CashRange}) ->
+    hg_cash_range:is_inside(Cash, CashRange) =:= within;
+any_limit_matches(Cash, {decisions, Decisions}) ->
+    check_possible_limits(Cash, Decisions).
+
+check_possible_limits(_Cash, []) ->
+    false;
+check_possible_limits(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest]) ->
+    case any_limit_matches(Cash, Value) of
+        true ->
+            true;
+        false ->
+            check_possible_limits(Cash, Rest)
+    end.
+
+collect_validation_varset(Cost, Party, Shop) ->
+    #domain_Party{id = PartyID} = Party,
+    #domain_Shop{
+        id = ShopID,
+        category = Category,
+        account = #domain_ShopAccount{currency = Currency}
+    } = Shop,
+    #{
+        cost     => Cost,
+        party_id => PartyID,
+        shop_id  => ShopID,
+        category => Category,
+        currency => Currency
+    }.
 
 -spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param()) -> term_set().
 compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision) ->
