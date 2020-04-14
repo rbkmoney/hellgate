@@ -36,7 +36,7 @@
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
 
--export([get_cashflow/1]).
+-export([get_final_cashflow/1]).
 -export([get_sessions/1]).
 
 -export([get_party_revision/1]).
@@ -1485,7 +1485,7 @@ create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts) ->
     _ = assert_payment_status(captured, Payment),
     NewRevision = maybe_get_domain_revision(DomainRevision),
     PartyRevision = get_opts_party_revision(Opts),
-    OldCashFlow = get_final_cash_flow(St),
+    OldCashFlow = get_final_cashflow(St),
     NewCashFlow = calculate_cashflow(Timestamp, NewRevision, St, Opts),
     AdjState = {cash_flow, #domain_InvoicePaymentAdjustmentCashFlowState{
         scenario = #domain_InvoicePaymentAdjustmentCashFlow{domain_revision = DomainRevision}
@@ -1595,7 +1595,7 @@ is_adjustment_payment_status_final(_) ->
     cash_flow().
 
 get_cash_flow_for_status({captured, _}, St) ->
-    get_final_cash_flow(St);
+    get_final_cashflow(St);
 get_cash_flow_for_status({cancelled, _}, _St) ->
     [];
 get_cash_flow_for_status({failed, _}, _St) ->
@@ -3114,9 +3114,9 @@ set_cashflow(Cashflow, St = #st{}) ->
         final_cash_flow = Cashflow
     }.
 
--spec get_final_cash_flow(st()) -> cash_flow().
+-spec get_final_cashflow(st()) -> cash_flow().
 
-get_final_cash_flow(#st{final_cash_flow = Cashflow}) ->
+get_final_cashflow(#st{final_cash_flow = Cashflow}) ->
     Cashflow.
 
 get_trx(#st{trx = Trx}) ->
@@ -3481,7 +3481,7 @@ get_log_params(?payment_status_changed(Status), State) ->
         #{
             status     => Status,
             payment    => get_payment(State),
-            cashflow   => get_cashflow(State),
+            cashflow   => get_final_cashflow(State),
             timings    => State,
             event_type => invoice_payment_status_changed
         }

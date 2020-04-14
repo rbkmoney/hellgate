@@ -134,6 +134,7 @@
 -export([payment_has_optional_fields/1]).
 -export([payment_capture_failed/1]).
 -export([payment_capture_retries_exceeded/1]).
+-export([payment_partial_capture_success/1]).
 -export([payment_error_in_cancel_session_does_not_cause_payment_failure/1]).
 -export([payment_error_in_capture_session_does_not_cause_payment_failure/1]).
 
@@ -262,6 +263,7 @@ groups() ->
             invoice_success_on_third_payment,
             payment_capture_failed,
             payment_capture_retries_exceeded,
+            payment_partial_capture_success,
             payment_error_in_cancel_session_does_not_cause_payment_failure,
             payment_error_in_capture_session_does_not_cause_payment_failure
         ]},
@@ -1052,6 +1054,38 @@ payment_capture_retries_exceeded(C) ->
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client)
     ),
     PaymentID = repair_failed_capture(InvoiceID, PaymentID, Reason, Cost, Client).
+
+-spec payment_partial_capture_success(config()) -> test_return().
+
+payment_partial_capture_success(C) ->
+    InitialCost = 1000 * 100,
+    PartialCost = 700 * 100,
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(100), InitialCost, C),
+    PaymentParams = make_payment_params({hold, cancel}),
+    % start payment
+    ?payment_state(?payment(PaymentID)) =
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
+    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    % do a partial capture
+    Cash = ?cash(PartialCost, <<"RUB">>),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
+    PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
+    % let's check results
+    InvoiceState = hg_client_invoicing:get(InvoiceID, Client),
+    ?invoice_state(Invoice, [PaymentState]) = InvoiceState,
+    ?assertMatch(?invoice_w_status(?invoice_paid()), Invoice),
+    ?assertMatch(?payment_state(?payment_w_status(PaymentID, ?captured(Reason, Cash))), PaymentState),
+    #payproc_InvoicePayment{cash_flow = CF2} = PaymentState,
+    ?assertNotEqual(undefined, CF2),
+    ?assertNotEqual(CF1, CF2).
 
 -spec payment_error_in_cancel_session_does_not_cause_payment_failure(config()) -> test_return().
 
