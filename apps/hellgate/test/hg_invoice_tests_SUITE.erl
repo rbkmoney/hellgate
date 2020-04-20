@@ -3632,7 +3632,7 @@ payment_partial_refunds_success(C) ->
             ]
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     % last refund
-    RefundParams4 = make_refund_params(2000, <<"RUB">>),
+    RefundParams4 = make_refund_params(),
     Refund4 = #domain_InvoicePaymentRefund{id = RefundID4} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams4, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID4, Refund4, Client),
