@@ -296,11 +296,11 @@ get_sessions(#st{sessions = S}) ->
 
 -spec get_refunds(st()) -> [payment_refund()].
 
-get_refunds(#st{refunds = Rs} = St) ->
+get_refunds(#st{refunds = Rs, payment = Payment}) ->
     RefundList = lists:map(
         fun (#refund_st{refund = R, sessions = S, cash_flow = C}) ->
             #payproc_InvoicePaymentRefund{
-                refund = enrich_refund_with_cash(R, St),
+                refund = enrich_refund_with_cash(R, Payment),
                 sessions = lists:map(fun convert_refund_sessions/1, S),
                 cash_flow = C
             }
@@ -331,10 +331,10 @@ convert_refund_sessions(#{trx := TR}) ->
 
 -spec get_refund(refund_id(), st()) -> domain_refund() | no_return().
 
-get_refund(ID, St) ->
+get_refund(ID, St = #st{payment = Payment}) ->
     case try_get_refund_state(ID, St) of
         #refund_st{refund = Refund} ->
-            enrich_refund_with_cash(Refund, St);
+            enrich_refund_with_cash(Refund, Payment);
         undefined ->
             throw(#payproc_InvoicePaymentRefundNotFound{})
     end.
@@ -3208,9 +3208,17 @@ get_refund_cash(#domain_InvoicePaymentRefund{cash = Cash}) ->
 get_refund_created_at(#domain_InvoicePaymentRefund{created_at = CreatedAt}) ->
     CreatedAt.
 
-enrich_refund_with_cash(Refund, St) ->
-    Cash = define_refund_cash(Refund#domain_InvoicePaymentRefund.cash, St),
-    Refund#domain_InvoicePaymentRefund{cash = Cash}.
+enrich_refund_with_cash(Refund, #domain_InvoicePayment{cost = PaymentCash}) ->
+    #domain_InvoicePaymentRefund{cash = RefundCash} = Refund,
+    case {RefundCash, PaymentCash} of
+        {undefined, _} ->
+            %% There are some refunds without cash. It is expected that for these refunds we set PaymentCash.
+            Refund#domain_InvoicePaymentRefund{cash = PaymentCash};
+        {?cash(_, SymCode), ?cash(_, SymCode)} ->
+            Refund;
+        {?cash(_, SymCode), _} ->
+            throw(#payproc_InconsistentRefundCurrency{currency = SymCode})
+    end.
 
 try_get_adjustment(ID, #st{adjustments = As}) ->
     case lists:keyfind(ID, #domain_InvoicePaymentAdjustment.id, As) of
