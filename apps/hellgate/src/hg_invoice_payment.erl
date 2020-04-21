@@ -3212,7 +3212,8 @@ enrich_refund_with_cash(Refund, #domain_InvoicePayment{cost = PaymentCash}) ->
     #domain_InvoicePaymentRefund{cash = RefundCash} = Refund,
     case {RefundCash, PaymentCash} of
         {undefined, _} ->
-            %% There are some refunds without cash. It is expected that for these refunds we set PaymentCash.
+            %% Earlier Refunds haven't got field cash and we got this value from PaymentCash.
+            %% There are some refunds without cash in system that's why for compatablity we save this behaviour.
             Refund#domain_InvoicePaymentRefund{cash = PaymentCash};
         {?cash(_, SymCode), ?cash(_, SymCode)} ->
             Refund;
