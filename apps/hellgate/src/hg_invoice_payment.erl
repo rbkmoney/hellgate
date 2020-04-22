@@ -3216,9 +3216,7 @@ enrich_refund_with_cash(Refund, #domain_InvoicePayment{cost = PaymentCash}) ->
             %% There are some refunds without cash in system that's why for compatablity we save this behaviour.
             Refund#domain_InvoicePaymentRefund{cash = PaymentCash};
         {?cash(_, SymCode), ?cash(_, SymCode)} ->
-            Refund;
-        {?cash(_, SymCode), _} ->
-            throw(#payproc_InconsistentRefundCurrency{currency = SymCode})
+            Refund
     end.
 
 try_get_adjustment(ID, #st{adjustments = As}) ->
