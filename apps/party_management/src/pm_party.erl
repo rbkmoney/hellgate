@@ -413,11 +413,11 @@ reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
         templates = pm_maybe:apply(fun(X) -> reduce_p2p_template_terms(X, VS, Rev) end, P2PTemplateTerms)
     }.
 
-reduce_p2p_template_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
+reduce_p2p_template_terms(#domain_P2PTemplateServiceTerms{} = Terms, VS, Rev) ->
     #domain_P2PTemplateServiceTerms{
         allow = pm_maybe:apply(
             fun(X) -> pm_selector:reduce_predicate(X, VS, Rev) end,
-            Terms#domain_P2PServiceTerms.allow)
+            Terms#domain_P2PTemplateServiceTerms.allow)
     }.
 
 reduce_w2w_terms(#domain_W2WServiceTerms{} = Terms, VS, Rev) ->
