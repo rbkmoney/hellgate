@@ -770,7 +770,7 @@ merge_p2p_template_terms(
         allow = Allow1
     }
 ) ->
-    #domain_P2PServiceTerms{
+    #domain_P2PTemplateServiceTerms{
         allow = pm_utils:select_defined(Allow1, Allow0)
     };
 merge_p2p_template_terms(Terms0, Terms1) ->
