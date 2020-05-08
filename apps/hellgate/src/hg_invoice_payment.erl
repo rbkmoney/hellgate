@@ -398,7 +398,7 @@ init_(PaymentID, Params, Opts) ->
     MakeRecurrent = get_make_recurrent_params(Params),
     ExternalID = get_external_id(Params),
     CreatedAt = hg_datetime:format_now(),
-    MerchantTerms = get_merchant_terms(Opts, Revision),
+    MerchantTerms = get_merchant_terms(Opts, Revision, CreatedAt),
     VS1 = collect_validation_varset(Party, Shop, VS0),
     Context = get_context_params(Params),
     Deadline = get_processing_deadline(Params),
@@ -409,15 +409,9 @@ init_(PaymentID, Params, Opts) ->
     Events = [?payment_started(Payment)],
     {collapse_changes(Events, undefined), {Events, hg_machine_action:instant()}}.
 
-get_merchant_payments_terms(Opts, Revision) ->
-    get_merchant_payments_terms(Opts, Revision, get_invoice_created_at(get_invoice(Opts))).
-
 get_merchant_payments_terms(Opts, Revision, Timestamp) ->
     TermSet = get_merchant_terms(Opts, Revision, Timestamp),
     TermSet#domain_TermSet.payments.
-
-get_merchant_terms(Opts, Revision) ->
-    get_merchant_terms(Opts, Revision, get_invoice_created_at(get_invoice(Opts))).
 
 get_merchant_terms(Opts, Revision, Timestamp) ->
     Invoice = get_invoice(Opts),
@@ -886,7 +880,7 @@ collect_routing_varset(Payment, Opts, VS0) ->
         domain_revision = Revision,
         flow            = DomainFlow
     } = Payment,
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt),
     VS2 = reconstruct_payment_flow(DomainFlow, CreatedAt, VS1),
     VS3 = collect_refund_varset(
         MerchantTerms#domain_PaymentsServiceTerms.refunds,
@@ -1185,9 +1179,10 @@ validate_payment_status(_, #domain_InvoicePayment{status = Status}) ->
 refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
+    CreatedAt = hg_datetime:format_now(),
     Payment = get_payment(St),
-    Refund = make_refund(Params, Payment, Revision, St, Opts),
-    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
+    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
     Changes = [?refund_created(Refund, FinalCashflow)],
     Action = hg_machine_action:instant(),
     ID = Refund#domain_InvoicePaymentRefund.id,
@@ -1199,16 +1194,17 @@ refund(Params, St0, Opts) ->
 manual_refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
+    CreatedAt = hg_datetime:format_now(),
     Payment = get_payment(St),
-    Refund = make_refund(Params, Payment, Revision, St, Opts),
-    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
+    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
     Changes = [?refund_created(Refund, FinalCashflow, TransactionInfo)],
     Action = hg_machine_action:instant(),
     ID = Refund#domain_InvoicePaymentRefund.id,
     {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
 
-make_refund(Params, Payment, Revision, St, Opts) ->
+make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     _ = assert_no_pending_chargebacks(St),
     _ = assert_payment_status(captured, Payment),
     PartyRevision = get_opts_party_revision(Opts),
@@ -1219,7 +1215,7 @@ make_refund(Params, Payment, Revision, St, Opts) ->
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
     #domain_InvoicePaymentRefund {
         id              = Params#payproc_InvoicePaymentRefundParams.id,
-        created_at      = hg_datetime:format_now(),
+        created_at      = CreatedAt,
         domain_revision = Revision,
         party_revision  = PartyRevision,
         status          = ?refund_pending(),
@@ -1229,10 +1225,10 @@ make_refund(Params, Payment, Revision, St, Opts) ->
         external_id     = Params#payproc_InvoicePaymentRefundParams.external_id
     }.
 
-make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
+make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     Route = get_route(St),
     Shop = get_shop(Opts),
-    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision)),
+    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt)),
     VS0 = collect_validation_varset(St, Opts),
     VS1 = validate_refund(MerchantTerms, Refund, Payment, VS0, Revision),
     ProviderPaymentsTerms = get_provider_payments_terms(Route, Revision),
@@ -2740,9 +2736,6 @@ get_invoice_cost(#domain_Invoice{cost = Cost}) ->
 
 get_invoice_shop_id(#domain_Invoice{shop_id = ShopID}) ->
     ShopID.
-
-get_invoice_created_at(#domain_Invoice{created_at = Dt}) ->
-    Dt.
 
 get_payment_id(#domain_InvoicePayment{id = ID}) ->
     ID.
