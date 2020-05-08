@@ -155,6 +155,31 @@ handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
     Party = pm_party_machine:get_party(PartyID),
     pm_party:get_shop_account(ShopID, Party);
 
+%% Providers
+
+handle_function_('ComputeP2PProvider', Args, _Opts) ->
+    [UserInfo, P2PProviderRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    Provider = get_p2p_provider(P2PProviderRef, DomainRevision),
+    pm_provider:reduce_p2p_provider(Provider, Varset, DomainRevision);
+
+handle_function_('ComputeWithdrawalProvider', Args, _Opts) ->
+    [UserInfo, WithdrawalProviderRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    Provider = get_withdrawal_provider(WithdrawalProviderRef, DomainRevision),
+    pm_provider:reduce_withdrawal_provider(Provider, Varset, DomainRevision);
+
+handle_function_('ComputePaymentProvider', Args, _Opts) ->
+    [UserInfo, PaymentProviderRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
+    pm_provider:reduce_payment_provider(Provider, Varset, DomainRevision);
+
+handle_function_('ComputePaymentProviderTerminalTerms', Args, _Opts) ->
+    [UserInfo, PaymentProviderRef, TerminalRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    ok;
+
 %% PartyMeta
 
 handle_function_('GetMeta', [UserInfo, PartyID], _Opts) ->
@@ -288,6 +313,30 @@ get_payment_institution(PaymentInstitutionRef, Revision) ->
             P;
         notfound ->
             throw(#payproc_PaymentInstitutionNotFound{})
+    end.
+
+get_p2p_provider(P2PProviderRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {p2p_provider, P2PProviderRef})
+    catch
+        error:{object_not_found, {DomainRevision, P2PProviderRef}} ->
+            throw(#payproc_ProviderNotFound{})
+    end.
+
+get_withdrawal_provider(WithdrawalProviderRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {withdrawal_provider, WithdrawalProviderRef})
+    catch
+        error:{object_not_found, {DomainRevision, WithdrawalProviderRef}} ->
+            throw(#payproc_ProviderNotFound{})
+    end.
+
+get_payment_provider(PaymentProviderRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {provider, PaymentProviderRef})
+    catch
+        error:{object_not_found, {DomainRevision, PaymentProviderRef}} ->
+            throw(#payproc_ProviderNotFound{})
     end.
 
 get_default_contract_template(#domain_PaymentInstitution{default_contract_template = ContractSelector}, VS, Revision) ->
