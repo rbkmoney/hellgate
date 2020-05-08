@@ -175,14 +175,14 @@ groups() ->
             contract_expiration,
             contract_legal_agreement_binding,
             contract_report_preferences_modification,
+            contract_adjustment_creation,
+            contract_adjustment_expiration,
             contract_payout_tool_creation,
             contract_payout_tool_modification,
             compute_payment_institution_terms,
             contract_p2p_terms,
             contract_p2p_template_terms,
-            contract_w2w_terms,
-            contract_adjustment_creation,
-            contract_adjustment_expiration
+            contract_w2w_terms
         ]},
         {shop_management, [sequence], [
             party_creation,

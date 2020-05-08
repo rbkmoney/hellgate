@@ -737,7 +737,8 @@ merge_p2p_terms(
         cash_limit = CashLimit0,
         cash_flow = CashFlow0,
         fees = Fees0,
-        quote_lifetime = QuoteLifetime0
+        quote_lifetime = QuoteLifetime0,
+        templates = Templates0
     },
     #domain_P2PServiceTerms{
         allow = Allow1,
@@ -745,7 +746,8 @@ merge_p2p_terms(
         cash_limit = CashLimit1,
         cash_flow = CashFlow1,
         fees = Fees1,
-        quote_lifetime = QuoteLifetime1
+        quote_lifetime = QuoteLifetime1,
+        templates = Templates1
     }
 ) ->
     #domain_P2PServiceTerms{
@@ -754,9 +756,24 @@ merge_p2p_terms(
         cash_limit = pm_utils:select_defined(CashLimit1, CashLimit0),
         cash_flow = pm_utils:select_defined(CashFlow1, CashFlow0),
         fees = pm_utils:select_defined(Fees1, Fees0),
-        quote_lifetime = pm_utils:select_defined(QuoteLifetime1, QuoteLifetime0)
+        quote_lifetime = pm_utils:select_defined(QuoteLifetime1, QuoteLifetime0),
+        templates = merge_p2p_template_terms(Templates0, Templates1)
     };
 merge_p2p_terms(Terms0, Terms1) ->
+    pm_utils:select_defined(Terms1, Terms0).
+
+merge_p2p_template_terms(
+    #domain_P2PTemplateServiceTerms{
+        allow = Allow0
+    },
+    #domain_P2PTemplateServiceTerms{
+        allow = Allow1
+    }
+) ->
+    #domain_P2PServiceTerms{
+        allow = pm_utils:select_defined(Allow1, Allow0)
+    };
+merge_p2p_template_terms(Terms0, Terms1) ->
     pm_utils:select_defined(Terms1, Terms0).
 
 merge_w2w_terms(
