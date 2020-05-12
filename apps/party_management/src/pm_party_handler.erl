@@ -178,7 +178,9 @@ handle_function_('ComputePaymentProvider', Args, _Opts) ->
 handle_function_('ComputePaymentProviderTerminalTerms', Args, _Opts) ->
     [UserInfo, PaymentProviderRef, TerminalRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
-    ok;
+    Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
+    Terminal = get_terminal(TerminalRef, DomainRevision),
+    pm_provider:reduce_payment_provider_terminal_terms(Provider, Terminal, Varset, DomainRevision);
 
 %% PartyMeta
 
@@ -336,6 +338,14 @@ get_payment_provider(PaymentProviderRef, DomainRevision) ->
         pm_domain:get(DomainRevision, {provider, PaymentProviderRef})
     catch
         error:{object_not_found, {DomainRevision, PaymentProviderRef}} ->
+            throw(#payproc_ProviderNotFound{})
+    end.
+
+get_terminal(TerminalRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {terminal, TerminalRef})
+    catch
+        error:{object_not_found, {DomainRevision, TerminalRef}} ->
             throw(#payproc_ProviderNotFound{})
     end.
 

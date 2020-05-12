@@ -6,12 +6,15 @@
 -export([reduce_p2p_provider/3]).
 -export([reduce_withdrawal_provider/3]).
 -export([reduce_payment_provider/3]).
+-export([reduce_payment_provider_terminal_terms/4]).
 
--type p2p_provider()        :: dmsl_domain_thrift:'P2PProvider'().
--type withdrawal_provider() :: dmsl_domain_thrift:'WithdrawalProvider'().
--type payment_provider()    :: dmsl_domain_thrift:'Provider'().
--type varset()              :: pm_selector:varset().
--type domain_revision()     :: pm_domain:revision().
+-type p2p_provider()            :: dmsl_domain_thrift:'P2PProvider'().
+-type withdrawal_provider()     :: dmsl_domain_thrift:'WithdrawalProvider'().
+-type payment_provider()        :: dmsl_domain_thrift:'Provider'().
+-type terminal()                :: dmsl_domain_thrift:'Terminal'().
+-type payment_provision_terms() :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
+-type varset()                  :: pm_selector:varset().
+-type domain_revision()         :: pm_domain:revision().
 
 -spec reduce_p2p_provider(p2p_provider(), varset(), domain_revision()) -> p2p_provider().
 
@@ -37,6 +40,15 @@ reduce_payment_provider(Provider, VS, DomainRevision) ->
             Provider#domain_Provider.recurrent_paytool_terms, VS, DomainRevision
         )
     }.
+
+-spec reduce_payment_provider_terminal_terms(payment_provider(), terminal(), varset(), domain_revision()) ->
+    payment_provision_terms().
+
+reduce_payment_provider_terminal_terms(Provider, Terminal, VS, DomainRevision) ->
+    ProviderPaymentTerms = Provider#domain_Provider.payment_terms,
+    TerminalPaymentTerms = Terminal#domain_Terminal.terms,
+    MergedPaymentTerms = merge_payment_terms(ProviderPaymentTerms, TerminalPaymentTerms),
+    reduce_payment_terms(MergedPaymentTerms, VS, DomainRevision).
 
 reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
     #domain_P2PServiceTerms{
@@ -130,6 +142,41 @@ reduce_recurrent_paytool_terms(RecurrentPaytoolTerms, VS, DomainRevision) ->
             RecurrentPaytoolTerms#domain_RecurrentPaytoolsProvisionTerms.payment_methods, VS, DomainRevision
         )
     }.
+
+merge_payment_terms(
+    #domain_PaymentsProvisionTerms{
+        currencies      = PCurrencies,
+        categories      = PCategories,
+        payment_methods = PPaymentMethods,
+        cash_limit      = PCashLimit,
+        cash_flow       = PCashflow,
+        holds           = PHolds,
+        refunds         = PRefunds,
+        chargebacks     = PChargebacks
+    },
+    #domain_PaymentsProvisionTerms{
+        currencies      = TCurrencies,
+        categories      = TCategories,
+        payment_methods = TPaymentMethods,
+        cash_limit      = TCashLimit,
+        cash_flow       = TCashflow,
+        holds           = THolds,
+        refunds         = TRefunds,
+        chargebacks     = TChargebacks
+    }
+) ->
+    #domain_PaymentsProvisionTerms{
+        currencies      = pm_utils:select_defined(TCurrencies,     PCurrencies),
+        categories      = pm_utils:select_defined(TCategories,     PCategories),
+        payment_methods = pm_utils:select_defined(TPaymentMethods, PPaymentMethods),
+        cash_limit      = pm_utils:select_defined(TCashLimit,      PCashLimit),
+        cash_flow       = pm_utils:select_defined(TCashflow,       PCashflow),
+        holds           = pm_utils:select_defined(THolds,          PHolds),
+        refunds         = pm_utils:select_defined(TRefunds,        PRefunds),
+        chargebacks     = pm_utils:select_defined(TChargebacks,    PChargebacks)
+    };
+merge_payment_terms(ProviderTerms, TerminalTerms) ->
+    pm_utils:select_defined(TerminalTerms, ProviderTerms).
 
 reduce_if_defined(Selector, VS, Rev) ->
     pm_maybe:apply(fun(X) -> pm_selector:reduce(X, VS, Rev) end, Selector).
