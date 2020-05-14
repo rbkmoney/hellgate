@@ -114,7 +114,7 @@ reduce_payment_refund_terms(PaymentRefundTerms, VS, DomainRevision) ->
             fun(X) -> reduce_partial_refunds_terms(X, VS, DomainRevision) end,
             PaymentRefundTerms#domain_PaymentRefundsProvisionTerms.partial_refunds
         )
-    } = PaymentRefundTerms.
+    }.
 
 reduce_partial_refunds_terms(PartialRefundTerms, VS, DomainRevision) ->
     #domain_PartialRefundsProvisionTerms{

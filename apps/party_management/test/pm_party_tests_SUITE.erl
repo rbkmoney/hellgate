@@ -92,6 +92,11 @@
 -export([contractor_modification/1]).
 -export([contract_w_contractor_creation/1]).
 
+-export([compute_p2p_provider_ok/1]).
+%%-export([compute_withdrawal_provider_ok/1]).
+%%-export([compute_payment_provider_ok/1]).
+%%-export([compute_payment_provider_terminal_terms_ok/1]).
+
 %% tests descriptions
 
 -type config() :: pm_ct_helper:config().
@@ -437,6 +442,8 @@ end_per_testcase(_Name, _C) ->
 -spec contractor_creation(config()) -> _ | no_return().
 -spec contractor_modification(config()) -> _ | no_return().
 -spec contract_w_contractor_creation(config()) -> _ | no_return().
+
+-spec compute_p2p_provider_ok(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -1440,6 +1447,15 @@ party_access_control(C) ->
     pm_client_party:stop(GoodServiceClient),
     ok.
 
+%% Compute providers
+
+compute_p2p_provider_ok(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    ok = pm_client_party:compute_p2p_provider(?p2pprov(1), DomainRevision, #payproc_Varset{}, Client).
+
+%%
+
 update_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Changeset, Client) ->
     ok = pm_client_party:update_claim(ClaimID, Revision, Changeset, Client),
     NextRevision = Revision + 1,
@@ -1942,6 +1958,56 @@ construct_domain_fixture() ->
                 name = <<"Test BIN range">>,
                 description = <<"Test BIN range">>,
                 bins = ordsets:from_list([<<"1234">>, <<"5678">>])
+            }
+        }},
+        {p2p_provider, #domain_P2PProviderObject{
+            ref = ?p2pprov(1),
+            data = #domain_P2PProvider{
+                name = <<"P2PProvider">>,
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                identity = undefined,
+                p2p_terms = #domain_P2PProvisionTerms{
+                    currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                    cash_limit = {value, ?cashrng(
+                        {inclusive, ?cash(       0, <<"RUB">>)},
+                        {exclusive, ?cash(10000000, <<"RUB">>)}
+                    )},
+                    cash_flow = {decisions, [
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    {product, {min_of, ?ordset([
+                                        ?fixed(10, <<"RUB">>),
+                                        ?share(5, 100, operation_amount, round_half_towards_zero)
+                                    ])}}
+                                )
+                            ]}
+                        }
+                    ]},
+                    fees = {decisions, [
+                        #domain_FeeDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ = {value, #domain_Fees{
+                                fees = #{surplus => ?share(1, 1, operation_amount)}
+                            }}
+                        },
+                        #domain_FeeDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                            then_ = {value, #domain_Fees{
+                                fees = #{surplus => ?share(1, 1, operation_amount)}
+                            }}
+                        }#domain_FeeDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"EUR">>)}},
+                            then_ = {value, #domain_Fees{
+                                fees = #{surplus => ?share(1, 1, operation_amount)}
+                            }}
+                        }
+                    ]}
+                },
+                accounts = pm_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)])
             }
         }}
     ].

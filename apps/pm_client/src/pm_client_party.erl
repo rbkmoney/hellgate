@@ -46,6 +46,8 @@
 -export([pull_event/1]).
 -export([pull_event/2]).
 
+-export([compute_p2p_provider/4]).
+
 %% GenServer
 
 -behaviour(gen_server).
@@ -77,6 +79,8 @@
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 -type payment_intitution_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 -type varset() :: dmsl_payment_processing_thrift:'Varset'().
+
+-type p2p_provider_ref() :: dmsl_domain_thrift:'P2PProviderRef'().
 
 -spec start(party_id(), pm_client_api:t()) -> pid().
 
@@ -298,6 +302,13 @@ get_account_state(AccountID, Client) ->
 get_shop_account(ShopID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetShopAccount', [ShopID]})).
 
+-spec compute_p2p_provider(p2p_provider_ref(), domain_revision(), varset(), pid()) ->
+    dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
+
+compute_p2p_provider(P2PProviderRef, Revision, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeP2PProvider',
+        [P2PProviderRef, Revision, Varset]})).
+
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
 -spec pull_event(pid()) ->
@@ -352,6 +363,11 @@ init({UserInfo, PartyID, ApiClient}) ->
 
 handle_call({call, Function, Args0}, _From, St = #st{client = Client}) ->
     Args = [St#st.user_info, St#st.party_id | Args0],
+    {Result, ClientNext} = pm_client_api:call(party_management, Function, Args, Client),
+    {reply, Result, St#st{client = ClientNext}};
+
+handle_call({call_without_party, Function, Args0}, _From, St = #st{client = Client}) ->
+    Args = [St#st.user_info | Args0],
     {Result, ClientNext} = pm_client_api:call(party_management, Function, Args, Client),
     {reply, Result, St#st{client = ClientNext}};
 
