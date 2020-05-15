@@ -50,17 +50,12 @@ reduce_payment_provider_terminal_terms(Provider, Terminal, VS, DomainRevision) -
     MergedPaymentTerms = merge_payment_terms(ProviderPaymentTerms, TerminalPaymentTerms),
     reduce_payment_terms(MergedPaymentTerms, VS, DomainRevision).
 
-reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
-    #domain_P2PServiceTerms{
-        allow = pm_maybe:apply(
-            fun(X) -> pm_selector:reduce_predicate(X, VS, Rev) end,
-            Terms#domain_P2PServiceTerms.allow
-        ),
-        currencies = reduce_if_defined(Terms#domain_P2PServiceTerms.currencies, VS, Rev),
-        cash_limit = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_limit, VS, Rev),
-        cash_flow = reduce_if_defined(Terms#domain_P2PServiceTerms.cash_flow, VS, Rev),
-        fees = reduce_if_defined(Terms#domain_P2PServiceTerms.fees, VS, Rev),
-        quote_lifetime = reduce_if_defined(Terms#domain_P2PServiceTerms.quote_lifetime, VS, Rev)
+reduce_p2p_terms(#domain_P2PProvisionTerms{} = Terms, VS, Rev) ->
+    #domain_P2PProvisionTerms{
+        currencies = reduce_if_defined(Terms#domain_P2PProvisionTerms.currencies, VS, Rev),
+        cash_limit = reduce_if_defined(Terms#domain_P2PProvisionTerms.cash_limit, VS, Rev),
+        cash_flow = reduce_if_defined(Terms#domain_P2PProvisionTerms.cash_flow, VS, Rev),
+        fees = reduce_if_defined(Terms#domain_P2PProvisionTerms.fees, VS, Rev)
     }.
 
 reduce_withdrawal_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->

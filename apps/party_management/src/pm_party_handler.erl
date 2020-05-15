@@ -161,26 +161,30 @@ handle_function_('ComputeP2PProvider', Args, _Opts) ->
     [UserInfo, P2PProviderRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
     Provider = get_p2p_provider(P2PProviderRef, DomainRevision),
-    pm_provider:reduce_p2p_provider(Provider, Varset, DomainRevision);
+    VS = prepare_varset(Varset),
+    pm_provider:reduce_p2p_provider(Provider, VS, DomainRevision);
 
 handle_function_('ComputeWithdrawalProvider', Args, _Opts) ->
     [UserInfo, WithdrawalProviderRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
     Provider = get_withdrawal_provider(WithdrawalProviderRef, DomainRevision),
-    pm_provider:reduce_withdrawal_provider(Provider, Varset, DomainRevision);
+    VS = prepare_varset(Varset),
+    pm_provider:reduce_withdrawal_provider(Provider, VS, DomainRevision);
 
 handle_function_('ComputePaymentProvider', Args, _Opts) ->
     [UserInfo, PaymentProviderRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
     Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
-    pm_provider:reduce_payment_provider(Provider, Varset, DomainRevision);
+    VS = prepare_varset(Varset),
+    pm_provider:reduce_payment_provider(Provider, VS, DomainRevision);
 
 handle_function_('ComputePaymentProviderTerminalTerms', Args, _Opts) ->
     [UserInfo, PaymentProviderRef, TerminalRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
     Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
     Terminal = get_terminal(TerminalRef, DomainRevision),
-    pm_provider:reduce_payment_provider_terminal_terms(Provider, Terminal, Varset, DomainRevision);
+    VS = prepare_varset(Varset),
+    pm_provider:reduce_payment_provider_terminal_terms(Provider, Terminal, VS, DomainRevision);
 
 %% PartyMeta
 
@@ -383,6 +387,9 @@ collect_payout_account_map(
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement,
         {system   , subagent  } => SystemAccount#domain_SystemAccount.subagent
     }.
+
+prepare_varset(#payproc_Varset{} = V) ->
+    prepare_varset(undefined, V).
 
 prepare_varset(PartyID, #payproc_Varset{} = V) ->
     prepare_varset(PartyID, V, #{}).

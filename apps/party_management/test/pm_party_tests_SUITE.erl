@@ -121,7 +121,8 @@ all() ->
         {group, shop_account_lazy_creation},
         {group, contractor_management},
 
-        {group, claim_management}
+        {group, claim_management},
+        {group, providers}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -238,6 +239,9 @@ groups() ->
             no_pending_claims,
             complex_claim_acceptance,
             no_pending_claims
+        ]},
+        {providers, [], [
+            compute_p2p_provider_ok
         ]}
     ].
 
@@ -1996,11 +2000,6 @@ construct_domain_fixture() ->
                         },
                         #domain_FeeDecision{
                             if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                            then_ = {value, #domain_Fees{
-                                fees = #{surplus => ?share(1, 1, operation_amount)}
-                            }}
-                        }#domain_FeeDecision{
-                            if_ = {condition, {currency_is, ?cur(<<"EUR">>)}},
                             then_ = {value, #domain_Fees{
                                 fees = #{surplus => ?share(1, 1, operation_amount)}
                             }}
