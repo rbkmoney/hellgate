@@ -114,10 +114,12 @@
                              | processing_session
                              | processing_accounter
                              | processing_capture
+                             | processing_failure
                              | updating_accounter
                              | flow_waiting
                              | finalizing_session
-                             | finalizing_accounter.
+                             | finalizing_accounter
+                             .
 
 -record(st, {
     activity               :: activity(),
