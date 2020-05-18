@@ -140,6 +140,7 @@
     opts                   :: undefined | opts(),
     repair_scenario        :: undefined | hg_invoice_repair:scenario(),
     capture_params         :: undefined | capture_params(),
+    failure                :: undefined | failure(),
     timings                :: undefined | hg_timings:t()
 }).
 
@@ -192,6 +193,7 @@
 -type retry_strategy()      :: hg_retry:strategy().
 -type capture_params()      :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
 -type payment_session()     :: dmsl_payment_processing_thrift:'InvoicePaymentSession'().
+-type failure()             :: dmsl_domain_thrift:'OperationFailure'().
 
 -type session_status()      :: active | suspended | finished.
 
@@ -1852,6 +1854,7 @@ process_timeout({payment, Step}, Action, St) when
 ->
     process_session(Action, St);
 process_timeout({payment, Step}, Action, St) when
+    Step =:= processing_failure orelse
     Step =:= processing_accounter orelse
     Step =:= finalizing_accounter
 ->
@@ -2176,6 +2179,11 @@ process_result({payment, processing_accounter}, Action, St) ->
     Target = get_target(St),
     NewAction = get_action(Target, Action, St),
     {done, {[?payment_status_changed(Target)], NewAction}};
+
+process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
+    NewAction = hg_machine_action:set_timeout(0, Action),
+    _Clocks = rollback_payment_cashflow(St),
+    {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
@@ -2849,11 +2857,18 @@ merge_change(?payment_status_changed(Status), #st{activity = {adjustment_pending
             cost   = maybe_get_captured_cost(Status, Payment)
         }
     };
+% merge_change(Change = ?payment_failure(Failure), St, Opts) ->
+%     _ = validate_transition({payment, processing_session}, Change, St, Opts),
+%     St#st{
+%         failure    = Failure,
+%         activity   = {payment, processing_failure}
+%     };
 merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [
         risk_scoring,
         routing,
-        processing_session
+        processing_session,
+        processing_failure
     ]], Change, St, Opts),
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
