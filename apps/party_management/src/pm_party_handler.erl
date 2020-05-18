@@ -325,7 +325,7 @@ get_p2p_provider(P2PProviderRef, DomainRevision) ->
     try
         pm_domain:get(DomainRevision, {p2p_provider, P2PProviderRef})
     catch
-        error:{object_not_found, {DomainRevision, P2PProviderRef}} ->
+        error:{object_not_found, {DomainRevision, {p2p_provider, P2PProviderRef}}} ->
             throw(#payproc_ProviderNotFound{})
     end.
 
@@ -333,7 +333,7 @@ get_withdrawal_provider(WithdrawalProviderRef, DomainRevision) ->
     try
         pm_domain:get(DomainRevision, {withdrawal_provider, WithdrawalProviderRef})
     catch
-        error:{object_not_found, {DomainRevision, WithdrawalProviderRef}} ->
+        error:{object_not_found, {DomainRevision, {withdrawal_provider, WithdrawalProviderRef}}} ->
             throw(#payproc_ProviderNotFound{})
     end.
 
@@ -341,7 +341,7 @@ get_payment_provider(PaymentProviderRef, DomainRevision) ->
     try
         pm_domain:get(DomainRevision, {provider, PaymentProviderRef})
     catch
-        error:{object_not_found, {DomainRevision, PaymentProviderRef}} ->
+        error:{object_not_found, {DomainRevision, {provider, PaymentProviderRef}}} ->
             throw(#payproc_ProviderNotFound{})
     end.
 
@@ -349,8 +349,8 @@ get_terminal(TerminalRef, DomainRevision) ->
     try
         pm_domain:get(DomainRevision, {terminal, TerminalRef})
     catch
-        error:{object_not_found, {DomainRevision, TerminalRef}} ->
-            throw(#payproc_ProviderNotFound{})
+        error:{object_not_found, {DomainRevision, {terminal, TerminalRef}}} ->
+            throw(#payproc_TerminalNotFound{})
     end.
 
 get_default_contract_template(#domain_PaymentInstitution{default_contract_template = ContractSelector}, VS, Revision) ->

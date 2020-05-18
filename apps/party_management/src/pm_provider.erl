@@ -58,11 +58,12 @@ reduce_p2p_terms(#domain_P2PProvisionTerms{} = Terms, VS, Rev) ->
         fees = reduce_if_defined(Terms#domain_P2PProvisionTerms.fees, VS, Rev)
     }.
 
-reduce_withdrawal_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
-    #domain_WithdrawalServiceTerms{
-        currencies = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.currencies, VS, Rev),
-        cash_limit = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_limit, VS, Rev),
-        cash_flow = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_flow, VS, Rev)
+reduce_withdrawal_terms(#domain_WithdrawalProvisionTerms{} = Terms, VS, Rev) ->
+    #domain_WithdrawalProvisionTerms{
+        currencies = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.currencies, VS, Rev),
+        payout_methods = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.payout_methods, VS, Rev),
+        cash_limit = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.cash_limit, VS, Rev),
+        cash_flow = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.cash_flow, VS, Rev)
     }.
 
 reduce_payment_terms(PaymentTerms, VS, DomainRevision) ->

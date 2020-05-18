@@ -47,6 +47,9 @@
 -export([pull_event/2]).
 
 -export([compute_p2p_provider/4]).
+-export([compute_withdrawal_provider/4]).
+-export([compute_payment_provider/4]).
+-export([compute_payment_provider_terminal_terms/5]).
 
 %% GenServer
 
@@ -81,6 +84,9 @@
 -type varset() :: dmsl_payment_processing_thrift:'Varset'().
 
 -type p2p_provider_ref() :: dmsl_domain_thrift:'P2PProviderRef'().
+-type withdrawal_provider_ref() :: dmsl_domain_thrift:'WithdrawalProviderRef'().
+-type payment_provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
+-type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 
 -spec start(party_id(), pm_client_api:t()) -> pid().
 
@@ -308,6 +314,32 @@ get_shop_account(ShopID, Client) ->
 compute_p2p_provider(P2PProviderRef, Revision, Varset, Client) ->
     map_result_error(gen_server:call(Client, {call_without_party, 'ComputeP2PProvider',
         [P2PProviderRef, Revision, Varset]})).
+
+-spec compute_withdrawal_provider(withdrawal_provider_ref(), domain_revision(), varset(), pid()) ->
+    dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
+
+compute_withdrawal_provider(WithdrawalProviderRef, Revision, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeWithdrawalProvider',
+        [WithdrawalProviderRef, Revision, Varset]})).
+
+-spec compute_payment_provider(payment_provider_ref(), domain_revision(), varset(), pid()) ->
+    dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
+
+compute_payment_provider(PaymentProviderRef, Revision, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputePaymentProvider',
+        [PaymentProviderRef, Revision, Varset]})).
+
+-spec compute_payment_provider_terminal_terms(
+    payment_provider_ref(),
+    terminal_ref(),
+    domain_revision(),
+    varset(),
+    pid()
+) -> dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
+
+compute_payment_provider_terminal_terms(PaymentProviderRef, TerminalRef, Revision, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputePaymentProviderTerminalTerms',
+        [PaymentProviderRef, TerminalRef, Revision, Varset]})).
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 

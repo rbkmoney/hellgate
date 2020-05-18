@@ -24,6 +24,7 @@
 -define(bank(ID),       #domain_BankRef{id = ID}).
 -define(bussched(ID),   #domain_BusinessScheduleRef{id = ID}).
 -define(p2pprov(ID),    #domain_P2PProviderRef{id = ID}).
+-define(wtdrlprov(ID),  #domain_WithdrawalProviderRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).
