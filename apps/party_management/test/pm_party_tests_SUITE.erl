@@ -1456,7 +1456,22 @@ party_access_control(C) ->
 compute_p2p_provider_ok(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
-    ok = pm_client_party:compute_p2p_provider(?p2pprov(1), DomainRevision, #payproc_Varset{}, Client).
+    Varset = #payproc_Varset{
+        currency = ?cur(<<"RUB">>)
+    },
+    CashFlow = ?cfpost(
+        {system, settlement},
+        {provider, settlement},
+        {product, {min_of, ?ordset([
+            ?fixed(10, <<"RUB">>),
+            ?share(5, 100, operation_amount, round_half_towards_zero)
+        ])}}
+    ),
+    #domain_P2PProvider{
+        p2p_terms = #domain_P2PProvisionTerms{
+            cash_flow = {value, [CashFlow]}
+        }
+    } = pm_client_party:compute_p2p_provider(?p2pprov(1), DomainRevision, Varset, Client).
 
 %%
 
@@ -1971,7 +1986,7 @@ construct_domain_fixture() ->
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 identity = undefined,
                 p2p_terms = #domain_P2PProvisionTerms{
-                    currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                    currencies = {value, ?ordset([?cur(<<"RUB">>), ?cur(<<"USD">>)])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(       0, <<"RUB">>)},
                         {exclusive, ?cash(10000000, <<"RUB">>)}
@@ -1985,6 +2000,19 @@ construct_domain_fixture() ->
                                     {provider, settlement},
                                     {product, {min_of, ?ordset([
                                         ?fixed(10, <<"RUB">>),
+                                        ?share(5, 100, operation_amount, round_half_towards_zero)
+                                    ])}}
+                                )
+                            ]}
+                        },
+                        #domain_CashFlowDecision{
+                            if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                            then_ = {value, [
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    {product, {min_of, ?ordset([
+                                        ?fixed(10, <<"USD">>),
                                         ?share(5, 100, operation_amount, round_half_towards_zero)
                                     ])}}
                                 )
