@@ -114,6 +114,7 @@
 -export([invalid_refund_shop_status/1]).
 -export([payment_refund_idempotency/1]).
 -export([payment_refund_success/1]).
+-export([payment_refund_failure/1]).
 -export([deadline_doesnt_affect_payment_refund/1]).
 -export([payment_manual_refund/1]).
 -export([payment_partial_refunds_success/1]).
@@ -313,6 +314,7 @@ groups() ->
                 retry_temporary_unavailability_refund,
                 payment_refund_idempotency,
                 payment_refund_success,
+                payment_refund_failure,
                 deadline_doesnt_affect_payment_refund,
                 payment_partial_refunds_success,
                 invalid_amount_payment_partial_refund,
@@ -3469,6 +3471,49 @@ payment_refund_success(C) ->
     % no more refunds for you
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
+
+-spec payment_refund_failure(config()) -> _ | no_return().
+
+payment_refund_failure(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_scenario_payment_params([good, good, fail], {hold, capture}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    % PaymentID = process_payment(InvoiceID, make_payment_params({hold, capture}), Client),
+    RefundParams = make_refund_params(),
+    % not finished yet
+    ?invalid_payment_status(?processed()) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    % not enough funds on the merchant account
+    NoFunds = {failure, payproc_errors:construct('RefundFailure',
+        {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
+    )},
+    Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
+    ] = next_event(InvoiceID, Client),
+    % top up merchant account
+    InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+    % create a refund finally
+    Refund = #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_failed(Failure))))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure))))
+    ] = next_event(InvoiceID, Client),
+    #domain_InvoicePaymentRefund{status = ?refund_failed(Failure)} =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client).
 
 -spec deadline_doesnt_affect_payment_refund(config()) -> _ | no_return().
 
