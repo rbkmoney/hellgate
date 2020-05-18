@@ -3481,7 +3481,6 @@ payment_refund_failure(C) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_scenario_payment_params([good, good, fail], {hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    % PaymentID = process_payment(InvoiceID, make_payment_params({hold, capture}), Client),
     RefundParams = make_refund_params(),
     % not finished yet
     ?invalid_payment_status(?processed()) =
