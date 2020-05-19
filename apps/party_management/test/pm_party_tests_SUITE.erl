@@ -1576,11 +1576,14 @@ compute_payment_provider_terminal_terms_not_found(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     {exception, #payproc_TerminalNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(?prv(1), ?trm(2), DomainRevision, #payproc_Varset{}, Client)),
+        (catch pm_client_party:compute_payment_provider_terminal_terms(
+            ?prv(1), ?trm(2), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(?prv(2), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
+        (catch pm_client_party:compute_payment_provider_terminal_terms(
+            ?prv(2), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(?prv(2), ?trm(2), DomainRevision, #payproc_Varset{}, Client)).
+        (catch pm_client_party:compute_payment_provider_terminal_terms(
+            ?prv(2), ?trm(2), DomainRevision, #payproc_Varset{}, Client)).
 
 %%
 
