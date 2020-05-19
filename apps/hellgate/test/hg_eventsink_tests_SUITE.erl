@@ -102,6 +102,7 @@ no_events(C) ->
             none = hg_client_eventsink:get_last_event_id(Client);
         Events = [_ | _] ->
             ?event(EventID, _, _, _) = lists:last(Events),
+            logger:error("no_events/1 EventID: ~p", [EventID]),
             EventID = hg_client_eventsink:get_last_event_id(Client)
     end.
 
