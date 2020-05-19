@@ -83,6 +83,7 @@
 -export([contract_adjustment_creation/1]).
 -export([contract_adjustment_expiration/1]).
 -export([contract_p2p_terms/1]).
+-export([contract_p2p_template_terms/1]).
 -export([contract_w2w_terms/1]).
 
 -export([compute_payment_institution_terms/1]).
@@ -184,12 +185,13 @@ groups() ->
             contract_expiration,
             contract_legal_agreement_binding,
             contract_report_preferences_modification,
-            contract_payout_tool_creation,
-            contract_payout_tool_modification,
             contract_adjustment_creation,
             contract_adjustment_expiration,
+            contract_payout_tool_creation,
+            contract_payout_tool_modification,
             compute_payment_institution_terms,
             contract_p2p_terms,
+            contract_p2p_template_terms,
             contract_w2w_terms
         ]},
         {shop_management, [sequence], [
@@ -453,6 +455,7 @@ end_per_testcase(_Name, _C) ->
 -spec compute_payment_institution_terms(config()) -> _ | no_return().
 -spec compute_payout_cash_flow(config()) -> _ | no_return().
 -spec contract_p2p_terms(config()) -> _ | no_return().
+-spec contract_p2p_template_terms(config()) -> _ | no_return().
 -spec contract_w2w_terms(config()) -> _ | no_return().
 -spec contractor_creation(config()) -> _ | no_return().
 -spec contractor_modification(config()) -> _ | no_return().
@@ -884,6 +887,28 @@ contract_p2p_terms(C) ->
     {value, #domain_Fees{
         fees = #{surplus := {fixed, #domain_CashVolumeFixed{cash = ?cash(50, <<"RUB">>)}}}
     }} = Fees.
+
+contract_p2p_template_terms(C) ->
+    Client = cfg(client, C),
+    ContractID = ?REAL_CONTRACT_ID,
+    PartyRevision = pm_client_party:get_revision(Client),
+    DomainRevision1 = pm_domain:head(),
+    Timstamp1 = pm_datetime:format_now(),
+    Varset = #payproc_Varset{
+        currency = ?cur(<<"RUB">>),
+        amount = ?cash(2500, <<"RUB">>)
+    },
+    #domain_TermSet{
+        wallets = #domain_WalletServiceTerms{
+            p2p = #domain_P2PServiceTerms{
+                templates = TemplateTerms
+            }
+        }
+    } = pm_client_party:compute_contract_terms(
+        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+    ),
+    #domain_P2PTemplateServiceTerms{allow = Allow} = TemplateTerms,
+    {constant, true} = Allow.
 
 contract_w2w_terms(C) ->
     Client = cfg(client, C),
@@ -1863,7 +1888,10 @@ construct_domain_fixture() ->
                             }
                         ]}
                     }
-                ]}
+                ]},
+                templates = #domain_P2PTemplateServiceTerms{
+                    allow = {constant, true}
+                }
             },
             w2w = #domain_W2WServiceTerms{
                 currencies = {value, ?ordset([?cur(<<"RUB">>)])},

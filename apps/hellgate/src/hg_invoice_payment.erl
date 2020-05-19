@@ -297,11 +297,11 @@ get_sessions(#st{sessions = S}) ->
 
 -spec get_refunds(st()) -> [payment_refund()].
 
-get_refunds(#st{refunds = Rs} = St) ->
+get_refunds(#st{refunds = Rs, payment = Payment}) ->
     RefundList = lists:map(
         fun (#refund_st{refund = R, sessions = S, cash_flow = C}) ->
             #payproc_InvoicePaymentRefund{
-                refund = enrich_refund_with_cash(R, St),
+                refund = enrich_refund_with_cash(R, Payment),
                 sessions = lists:map(fun convert_refund_sessions/1, S),
                 cash_flow = C
             }
@@ -332,10 +332,10 @@ convert_refund_sessions(#{trx := TR}) ->
 
 -spec get_refund(refund_id(), st()) -> domain_refund() | no_return().
 
-get_refund(ID, St) ->
+get_refund(ID, St = #st{payment = Payment}) ->
     case try_get_refund_state(ID, St) of
         #refund_st{refund = Refund} ->
-            enrich_refund_with_cash(Refund, St);
+            enrich_refund_with_cash(Refund, Payment);
         undefined ->
             throw(#payproc_InvoicePaymentRefundNotFound{})
     end.
@@ -399,7 +399,7 @@ init_(PaymentID, Params, Opts) ->
     MakeRecurrent = get_make_recurrent_params(Params),
     ExternalID = get_external_id(Params),
     CreatedAt = hg_datetime:format_now(),
-    MerchantTerms = get_merchant_terms(Opts, Revision),
+    MerchantTerms = get_merchant_terms(Opts, Revision, CreatedAt),
     VS1 = collect_validation_varset(Party, Shop, VS0),
     Context = get_context_params(Params),
     Deadline = get_processing_deadline(Params),
@@ -410,15 +410,9 @@ init_(PaymentID, Params, Opts) ->
     Events = [?payment_started(Payment)],
     {collapse_changes(Events, undefined), {Events, hg_machine_action:instant()}}.
 
-get_merchant_payments_terms(Opts, Revision) ->
-    get_merchant_payments_terms(Opts, Revision, get_invoice_created_at(get_invoice(Opts))).
-
 get_merchant_payments_terms(Opts, Revision, Timestamp) ->
     TermSet = get_merchant_terms(Opts, Revision, Timestamp),
     TermSet#domain_TermSet.payments.
-
-get_merchant_terms(Opts, Revision) ->
-    get_merchant_terms(Opts, Revision, get_invoice_created_at(get_invoice(Opts))).
 
 get_merchant_terms(Opts, Revision, Timestamp) ->
     Invoice = get_invoice(Opts),
@@ -887,7 +881,7 @@ collect_routing_varset(Payment, Opts, VS0) ->
         domain_revision = Revision,
         flow            = DomainFlow
     } = Payment,
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt),
     VS2 = reconstruct_payment_flow(DomainFlow, CreatedAt, VS1),
     VS3 = collect_refund_varset(
         MerchantTerms#domain_PaymentsServiceTerms.refunds,
@@ -1148,9 +1142,10 @@ validate_payment_status(_, #domain_InvoicePayment{status = Status}) ->
 refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
+    CreatedAt = hg_datetime:format_now(),
     Payment = get_payment(St),
-    Refund = make_refund(Params, Payment, Revision, St, Opts),
-    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
+    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
     Changes = [?refund_created(Refund, FinalCashflow)],
     Action = hg_machine_action:instant(),
     ID = Refund#domain_InvoicePaymentRefund.id,
@@ -1162,27 +1157,28 @@ refund(Params, St0, Opts) ->
 manual_refund(Params, St0, Opts) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
+    CreatedAt = hg_datetime:format_now(),
     Payment = get_payment(St),
-    Refund = make_refund(Params, Payment, Revision, St, Opts),
-    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts),
+    Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
+    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
     Changes = [?refund_created(Refund, FinalCashflow, TransactionInfo)],
     Action = hg_machine_action:instant(),
     ID = Refund#domain_InvoicePaymentRefund.id,
     {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
 
-make_refund(Params, Payment, Revision, St, Opts) ->
+make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     _ = assert_no_pending_chargebacks(St),
     _ = assert_payment_status(captured, Payment),
     PartyRevision = get_opts_party_revision(Opts),
     _ = assert_previous_refunds_finished(St),
-    Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, Payment),
+    Cash = define_refund_cash(Params#payproc_InvoicePaymentRefundParams.cash, St),
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
     #domain_InvoicePaymentRefund {
         id              = Params#payproc_InvoicePaymentRefundParams.id,
-        created_at      = hg_datetime:format_now(),
+        created_at      = CreatedAt,
         domain_revision = Revision,
         party_revision  = PartyRevision,
         status          = ?refund_pending(),
@@ -1192,10 +1188,10 @@ make_refund(Params, Payment, Revision, St, Opts) ->
         external_id     = Params#payproc_InvoicePaymentRefundParams.external_id
     }.
 
-make_refund_cashflow(Refund, Payment, Revision, St, Opts) ->
+make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     Route = get_route(St),
     Shop = get_shop(Opts),
-    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision)),
+    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt)),
     VS0 = collect_validation_varset(St, Opts),
     VS1 = validate_refund(MerchantTerms, Refund, Payment, VS0, Revision),
     ProviderPaymentsTerms = get_provider_payments_terms(Route, Revision),
@@ -2697,9 +2693,6 @@ get_invoice_cost(#domain_Invoice{cost = Cost}) ->
 get_invoice_shop_id(#domain_Invoice{shop_id = ShopID}) ->
     ShopID.
 
-get_invoice_created_at(#domain_Invoice{created_at = Dt}) ->
-    Dt.
-
 get_payment_id(#domain_InvoicePayment{id = ID}) ->
     ID.
 
@@ -3147,11 +3140,12 @@ set_refund_status(Status, Refund = #domain_InvoicePaymentRefund{}) ->
 get_refund_cashflow(#refund_st{cash_flow = CashFlow}) ->
     CashFlow.
 
-define_refund_cash(undefined, #domain_InvoicePayment{cost = Cost}) ->
-    Cost;
-define_refund_cash(?cash(_, SymCode) = Cash, #domain_InvoicePayment{cost = ?cash(_, SymCode)}) ->
+define_refund_cash(undefined, St) ->
+    PaymentBallance = get_remaining_payment_balance(St),
+    PaymentBallance;
+define_refund_cash(?cash(_, SymCode) = Cash, #st{payment = #domain_InvoicePayment{cost = ?cash(_, SymCode)}}) ->
     Cash;
-define_refund_cash(?cash(_, SymCode), _Payment) ->
+define_refund_cash(?cash(_, SymCode), _St) ->
     throw(#payproc_InconsistentRefundCurrency{currency = SymCode}).
 
 get_refund_cash(#domain_InvoicePaymentRefund{cash = Cash}) ->
@@ -3160,9 +3154,16 @@ get_refund_cash(#domain_InvoicePaymentRefund{cash = Cash}) ->
 get_refund_created_at(#domain_InvoicePaymentRefund{created_at = CreatedAt}) ->
     CreatedAt.
 
-enrich_refund_with_cash(Refund, #st{payment = Payment}) ->
-    Cash = define_refund_cash(Refund#domain_InvoicePaymentRefund.cash, Payment),
-    Refund#domain_InvoicePaymentRefund{cash = Cash}.
+enrich_refund_with_cash(Refund, #domain_InvoicePayment{cost = PaymentCash}) ->
+    #domain_InvoicePaymentRefund{cash = RefundCash} = Refund,
+    case {RefundCash, PaymentCash} of
+        {undefined, _} ->
+            %% Earlier Refunds haven't got field cash and we got this value from PaymentCash.
+            %% There are some refunds without cash in system that's why for compatablity we save this behaviour.
+            Refund#domain_InvoicePaymentRefund{cash = PaymentCash};
+        {?cash(_, SymCode), ?cash(_, SymCode)} ->
+            Refund
+    end.
 
 try_get_adjustment(ID, #st{adjustments = As}) ->
     case lists:keyfind(ID, #domain_InvoicePaymentAdjustment.id, As) of
