@@ -2906,6 +2906,7 @@ merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment
     St#st{
         payment    = Payment#domain_InvoicePayment{status = Status},
         activity   = idle,
+        failure    = undefined,
         timings    = accrue_status_timing(failed, Opts, St)
     };
 merge_change(Change = ?payment_status_changed({cancelled, _} = Status), #st{payment = Payment} = St, Opts) ->
