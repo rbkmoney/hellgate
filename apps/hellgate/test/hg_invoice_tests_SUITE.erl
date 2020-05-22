@@ -947,6 +947,7 @@ processing_deadline_reached_test(C) ->
     PaymentParams = PaymentParams0#payproc_InvoicePaymentParams{processing_deadline = Deadline},
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_sessions_restarts(PaymentID, ?processed(), InvoiceID, Client, 0),
+    [?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))] = next_event(InvoiceID, Client),
     [?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))] = next_event(InvoiceID, Client),
     ok = payproc_errors:match(
         'PaymentFailure',
@@ -1251,8 +1252,11 @@ payment_suspend_timeout_failure(C) ->
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, _Failure})))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
@@ -3445,6 +3449,9 @@ payment_refund_success(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(Failure)))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
@@ -3494,6 +3501,9 @@ payment_refund_failure(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
@@ -3509,6 +3519,9 @@ payment_refund_failure(C) ->
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_failed(Failure))))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_rollback_started(Failure)))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_failed(Failure)} =
@@ -3531,14 +3544,17 @@ deadline_doesnt_affect_payment_refund(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     timer:sleep(ProcessingDeadline),
     % not enough funds on the merchant account
-    Failure = {failure, payproc_errors:construct('RefundFailure',
+    NoFunds = {failure, payproc_errors:construct('RefundFailure',
         {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
     )},
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
@@ -3578,7 +3594,7 @@ payment_manual_refund(C) ->
     },
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     % not enough funds on the merchant account
-    Failure = {failure, payproc_errors:construct('RefundFailure',
+    NoFunds = {failure, payproc_errors:construct('RefundFailure',
         {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
     )},
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
@@ -3587,7 +3603,10 @@ payment_manual_refund(C) ->
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_created(Refund0, _, TrxInfo)))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
@@ -4471,6 +4490,9 @@ payment_with_offsite_preauth_failed(C) ->
             PaymentID,
             ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
         ),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    ] = next_event(InvoiceID, 8000, Client),
+    [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, 8000, Client),
     ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
@@ -4505,7 +4527,9 @@ repair_fail_pre_processing_succeeded(C) ->
 
     timeout = next_event(InvoiceID, 2000, Client),
     ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
-
+    % [
+    %     ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    % ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
     ] = next_event(InvoiceID, Client).
@@ -4558,6 +4582,9 @@ repair_fail_session_succeeded(C) ->
 
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
@@ -4581,7 +4608,6 @@ repair_fail_session_on_pre_processing(C) ->
         repair_invoice_with_scenario(InvoiceID, fail_session, Client)
     ),
     ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
-
     [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
     ] = next_event(InvoiceID, Client).
@@ -4634,6 +4660,9 @@ repair_complex_succeeded_second(C) ->
 
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
@@ -5167,6 +5196,9 @@ await_payment_process_failure(InvoiceID, PaymentID, Client, Restarts, Target) ->
             PaymentID,
             ?session_ev(Target, ?session_finished(?session_failed(Failure)))
         ),
+        ?payment_ev(PaymentID, ?payment_rollback_started(Failure))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
     ] = next_event(InvoiceID, Client),
     {failed, PaymentID, Failure}.
