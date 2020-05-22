@@ -2252,9 +2252,6 @@ process_failure({payment, Step} = Activity, Events, Action, Failure, St, _Refund
             _ = maybe_notify_fault_detector(Activity, TargetType, OperationStatus, St),
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
-% process_failure({refund_new, ID}, Events, Action, Failure, St, RefundSt) ->
-%     _Clocks = rollback_refund_cashflow(RefundSt, St),
-%     {done, {Events ++ [?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))], Action}};
 process_failure({refund_new, ID}, [], Action, Failure, _St, _RefundSt) ->
     {next, {[?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
 process_failure({refund_session, ID}, Events, Action, Failure, St, _RefundSt) ->
@@ -2265,12 +2262,6 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, _RefundSt) ->
             {SessionEvents, SessionAction} = retry_session(Action, Target, Timeout),
             Events1 = [?refund_ev(ID, E) || E <- SessionEvents],
             {next, {Events ++ Events1, SessionAction}};
-        % fatal ->
-        %     _Clocks = rollback_refund_cashflow(RefundSt, St),
-        %     Events1 = [
-        %         ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
-        %     ],
-        %     {done, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
         fatal ->
             Events1 = [
                 ?refund_ev(ID, ?refund_rollback_started(Failure))
@@ -2343,10 +2334,6 @@ process_fatal_payment_failure(?processed(), [], Action, Failure, _St) ->
 process_fatal_payment_failure(?processed(), Events, Action, Failure, _St) ->
     RollbackStarted = [?payment_rollback_started(Failure)],
     {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}.
-% process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
-%     _Clocks = rollback_payment_cashflow(St),
-%     PaymentFailed = [?payment_status_changed(?failed(Failure))],
-%     {done, {Events ++ PaymentFailed, hg_machine_action:set_timeout(0, Action)}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),

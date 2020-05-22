@@ -4527,9 +4527,6 @@ repair_fail_pre_processing_succeeded(C) ->
 
     timeout = next_event(InvoiceID, 2000, Client),
     ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
-    % [
-    %     ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
-    % ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
     ] = next_event(InvoiceID, Client).
