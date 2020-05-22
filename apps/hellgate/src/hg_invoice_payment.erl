@@ -1292,6 +1292,7 @@ get_remaining_payment_amount(Cash, St) ->
     cash().
 
 get_remaining_payment_balance(St) ->
+    Chargebacks = [CB#payproc_InvoicePaymentChargeback.chargeback || CB <- get_chargebacks(St)],
     PaymentAmount = get_payment_cost(get_payment(St)),
     lists:foldl(
         fun
@@ -1311,7 +1312,7 @@ get_remaining_payment_balance(St) ->
                 end
         end,
         PaymentAmount,
-        get_refunds(St) ++ get_chargebacks(St)
+        get_refunds(St) ++ Chargebacks
     ).
 
 get_merchant_refunds_terms(#domain_PaymentsServiceTerms{refunds = Terms}) when Terms /= undefined ->
@@ -1692,7 +1693,7 @@ assert_payment_status(_, #domain_InvoicePayment{status = Status}) ->
     throw(#payproc_InvalidPaymentStatus{status = Status}).
 
 assert_no_pending_chargebacks(PaymentState) ->
-    Chargebacks = get_chargebacks(PaymentState),
+    Chargebacks = [CB#payproc_InvoicePaymentChargeback.chargeback || CB <- get_chargebacks(PaymentState)],
     case lists:any(fun hg_invoice_payment_chargeback:is_pending/1, Chargebacks) of
         true ->
             throw(#payproc_InvoicePaymentChargebackPending{});
