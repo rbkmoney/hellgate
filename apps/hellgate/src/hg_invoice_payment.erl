@@ -166,6 +166,7 @@
 -type payment_refund()      :: dmsl_payment_processing_thrift:'InvoicePaymentRefund'().
 -type refund_id()           :: dmsl_domain_thrift:'InvoicePaymentRefundID'().
 -type refund_params()       :: dmsl_payment_processing_thrift:'InvoicePaymentRefundParams'().
+-type payment_chargeback()  :: dmsl_payment_processing_thrift:'InvoicePaymentChargeback'().
 -type chargeback()          :: dmsl_domain_thrift:'InvoicePaymentChargeback'().
 -type chargeback_id()       :: dmsl_domain_thrift:'InvoicePaymentChargebackID'().
 -type adjustment()          :: dmsl_domain_thrift:'InvoicePaymentAdjustment'().
@@ -275,13 +276,23 @@ get_chargeback_state(ID, St) ->
             ChargebackState
     end.
 
--spec get_chargebacks(st()) -> [chargeback()].
+-spec get_chargebacks(st()) -> [payment_chargeback()].
 
-get_chargebacks(#st{chargebacks = CBs}) ->
-    lists:keysort(
-        #domain_InvoicePaymentChargeback.id,
-        [hg_invoice_payment_chargeback:get(ChargebackState) || ChargebackState <- maps:values(CBs)]
-    ).
+get_chargebacks(#st{chargebacks = Chargebacks}) ->
+    lists:foldl(
+        fun ({M, F, A}, X) -> apply(M, F, A ++ [X]) end,
+        Chargebacks,
+        [
+            {maps ,  to_list, []                              },
+            {lists,  sort   , []                              },
+            {lists,  map    , [fun build_payment_chargeback/1]}
+        ]).
+
+build_payment_chargeback({_ID, ChargebackState}) ->
+    #payproc_InvoicePaymentChargeback{
+       chargeback = hg_invoice_payment_chargeback:get(ChargebackState),
+       cash_flow = hg_invoice_payment_chargeback:get_cash_flow(ChargebackState)
+    }.
 
 -spec get_sessions(st()) -> [payment_session()].
 
