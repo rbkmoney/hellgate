@@ -279,7 +279,7 @@ get_chargeback_state(ID, St) ->
 -spec get_chargebacks(st()) -> [payment_chargeback()].
 
 get_chargebacks(#st{chargebacks = CBs}) ->
-    [build_payment_chargeback(CB) || {_ID, CB} <- list:sort(maps:to_list(CBs))]
+    [build_payment_chargeback(CB) || {_ID, CB} <- list:sort(maps:to_list(CBs))].
 
 build_payment_chargeback(ChargebackState) ->
     #payproc_InvoicePaymentChargeback{
