@@ -20,6 +20,7 @@
 -export(
     [ get/1
     , get_body/1
+    , get_cash_flow/1
     , get_status/1
     , get_target_status/1
     , is_pending/1
@@ -146,6 +147,11 @@ get_status(#domain_InvoicePaymentChargeback{status = Status}) ->
     status() | undefined.
 get_target_status(#chargeback_st{target_status = TargetStatus}) ->
     TargetStatus.
+
+-spec get_cash_flow(state()) ->
+    cash_flow().
+get_cash_flow(#chargeback_st{cash_flow = CashFlow}) ->
+    CashFlow.
 
 -spec is_pending(chargeback() | state()) ->
     boolean().
