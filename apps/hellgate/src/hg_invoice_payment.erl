@@ -278,17 +278,10 @@ get_chargeback_state(ID, St) ->
 
 -spec get_chargebacks(st()) -> [payment_chargeback()].
 
-get_chargebacks(#st{chargebacks = Chargebacks}) ->
-    lists:foldl(
-        fun ({M, F, A}, X) -> apply(M, F, A ++ [X]) end,
-        Chargebacks,
-        [
-            {maps ,  to_list, []                              },
-            {lists,  sort   , []                              },
-            {lists,  map    , [fun build_payment_chargeback/1]}
-        ]).
+get_chargebacks(#st{chargebacks = CBs}) ->
+    [build_payment_chargeback(CB) || {_ID, CB} <- list:sort(maps:to_list(CBs))].
 
-build_payment_chargeback({_ID, ChargebackState}) ->
+build_payment_chargeback(ChargebackState) ->
     #payproc_InvoicePaymentChargeback{
        chargeback = hg_invoice_payment_chargeback:get(ChargebackState),
        cash_flow = hg_invoice_payment_chargeback:get_cash_flow(ChargebackState)
