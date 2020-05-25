@@ -13,6 +13,10 @@
 -export([create_account/1]).
 -export([create_account/2]).
 -export([collect_account_map/6]).
+-export([collect_merchant_account_map/2]).
+-export([collect_provider_account_map/3]).
+-export([collect_system_account_map/5]).
+-export([collect_external_account_map/4]).
 
 -export([hold/2]).
 -export([plan/2]).
@@ -100,33 +104,51 @@ create_account(CurrencyCode, Description) ->
 
 -spec collect_account_map(payment(), shop(), payment_institution(), provider(), varset(), revision()) -> map().
 
-collect_account_map(
-    Payment,
-    #domain_Shop{account = MerchantAccount},
-    PaymentInstitution,
-    #domain_Provider{accounts = ProviderAccounts},
-    VS,
-    Revision
-) ->
+collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
+    Map0 = collect_merchant_account_map(Shop, #{}),
+    Map1 = collect_provider_account_map(Payment, Provider, Map0),
+    Map2 = collect_system_account_map(Payment, PaymentInstitution, VS, Revision, Map1),
+    collect_external_account_map(Payment, VS, Revision, Map2).
+
+-spec collect_merchant_account_map(shop(), map()) -> map().
+
+collect_merchant_account_map(#domain_Shop{account = MerchantAccount}, Acc) ->
+    Acc#{
+        {merchant, settlement} => MerchantAccount#domain_ShopAccount.settlement,
+        {merchant, guarantee } => MerchantAccount#domain_ShopAccount.guarantee
+    }.
+
+-spec collect_provider_account_map(payment(), provider(), map()) -> map().
+
+collect_provider_account_map(Payment, #domain_Provider{accounts = ProviderAccounts}, Acc) ->
     Currency = get_currency(get_payment_cost(Payment)),
     ProviderAccount = hg_payment_institution:choose_provider_account(Currency, ProviderAccounts),
+    Acc#{
+        {provider , settlement} => ProviderAccount#domain_ProviderAccount.settlement
+    }.
+
+-spec collect_system_account_map(payment(), payment_institution(), varset(), revision(), map()) -> map().
+
+collect_system_account_map(Payment, PaymentInstitution, VS, Revision, Acc) ->
+    Currency = get_currency(get_payment_cost(Payment)),
     SystemAccount = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
-    M = #{
-        {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
-        {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
-        {provider , settlement} => ProviderAccount#domain_ProviderAccount.settlement ,
+    Acc#{
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement     ,
         {system   , subagent  } => SystemAccount#domain_SystemAccount.subagent
-    },
-    % External account probably can be optional for some payments
+    }.
+
+-spec collect_external_account_map(payment(), varset(), revision(), map()) -> map().
+
+collect_external_account_map(Payment, VS, Revision, Acc) ->
+    Currency = get_currency(get_payment_cost(Payment)),
     case hg_payment_institution:choose_external_account(Currency, VS, Revision) of
         #domain_ExternalAccount{income = Income, outcome = Outcome} ->
-            M#{
+            Acc#{
                 {external, income} => Income,
                 {external, outcome} => Outcome
             };
         undefined ->
-            M
+            Acc
     end.
 
 construct_prototype(CurrencyCode, Description) ->

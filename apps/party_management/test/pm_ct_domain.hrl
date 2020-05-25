@@ -42,13 +42,12 @@
         parts = #'Rational'{p = P, q = Q}, 'of' = C}
     }
 ).
--define(share(P, Q, C, RM),
+
+-define(share_with_rounding_method(P, Q, C, RM),
     {share, #domain_CashVolumeShare{
-        parts = #'Rational'{p = P, q = Q}, 'of' = C, 'rounding_method' = RM}
+        parts = #'Rational'{p = P, q = Q}, 'of' = C, rounding_method = RM}
     }
 ).
-
--define(share_with_rounding_method(P, Q, C, RM), {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C, 'rounding_method' = RM}}).
 
 -define(cfpost(A1, A2, V),
     #domain_CashFlowPosting{

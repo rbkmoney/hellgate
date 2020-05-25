@@ -1,4 +1,7 @@
 {application, party_management, [
+    {description,
+        "Party management things"
+    },
     {vsn, "1"},
     {registered, []},
     {mod, {party_management, []}},

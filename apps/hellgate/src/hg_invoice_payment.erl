@@ -1932,7 +1932,8 @@ maybe_set_charged_back_status(_ChargebackStatus, _ChargebackBody, _St) ->
 -spec process_refund_cashflow(refund_id(), action(), st()) -> machine_result().
 process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
-    #domain_Shop{account = #domain_ShopAccount{settlement = SettlementID}} = get_shop(Opts),
+    Shop = get_shop(Opts),
+    #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
     RefundSt = try_get_refund_state(ID, St),
     Clock = prepare_refund_cashflow(RefundSt, St),
     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow

@@ -1507,7 +1507,7 @@ compute_p2p_provider_ok(C) ->
         {provider, settlement},
         {product, {min_of, ?ordset([
             ?fixed(10, <<"RUB">>),
-            ?share(5, 100, operation_amount, round_half_towards_zero)
+            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
         ])}}
     ),
     #domain_P2PProvider{
@@ -1533,7 +1533,7 @@ compute_withdrawal_provider_ok(C) ->
         {provider, settlement},
         {product, {min_of, ?ordset([
             ?fixed(10, <<"RUB">>),
-            ?share(5, 100, operation_amount, round_half_towards_zero)
+            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
         ])}}
     ),
     #domain_WithdrawalProvider{
@@ -1559,7 +1559,7 @@ compute_payment_provider_ok(C) ->
         {provider, settlement},
         {product, {min_of, ?ordset([
             ?fixed(10, <<"RUB">>),
-            ?share(5, 100, operation_amount, round_half_towards_zero)
+            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
         ])}}
     ),
     #domain_Provider{
@@ -1588,7 +1588,7 @@ compute_payment_provider_terminal_terms_ok(C) ->
         {provider, settlement},
         {product, {min_of, ?ordset([
             ?fixed(10, <<"RUB">>),
-            ?share(5, 100, operation_amount, round_half_towards_zero)
+            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
         ])}}
     ),
     PaymentMethods = ?ordset([?pmt(bank_card, visa)]),
@@ -2140,7 +2140,7 @@ construct_domain_fixture() ->
                                     {provider, settlement},
                                     {product, {min_of, ?ordset([
                                         ?fixed(10, <<"RUB">>),
-                                        ?share(5, 100, operation_amount, round_half_towards_zero)
+                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
                                     ])}}
                                 )
                             ]}
@@ -2153,7 +2153,7 @@ construct_domain_fixture() ->
                                     {provider, settlement},
                                     {product, {min_of, ?ordset([
                                         ?fixed(10, <<"USD">>),
-                                        ?share(5, 100, operation_amount, round_half_towards_zero)
+                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
                                     ])}}
                                 )
                             ]}
@@ -2199,7 +2199,7 @@ construct_domain_fixture() ->
                                     {provider, settlement},
                                     {product, {min_of, ?ordset([
                                         ?fixed(10, <<"RUB">>),
-                                        ?share(5, 100, operation_amount, round_half_towards_zero)
+                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
                                     ])}}
                                 )
                             ]}
@@ -2212,7 +2212,7 @@ construct_domain_fixture() ->
                                     {provider, settlement},
                                     {product, {min_of, ?ordset([
                                         ?fixed(10, <<"USD">>),
-                                        ?share(5, 100, operation_amount, round_half_towards_zero)
+                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
                                     ])}}
                                 )
                             ]}
@@ -2252,7 +2252,7 @@ construct_domain_fixture() ->
                                     {provider, settlement},
                                     {product, {min_of, ?ordset([
                                         ?fixed(10, <<"RUB">>),
-                                        ?share(5, 100, operation_amount, round_half_towards_zero)
+                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
                                     ])}}
                                 )
                             ]}
@@ -2265,7 +2265,7 @@ construct_domain_fixture() ->
                                     {provider, settlement},
                                     {product, {min_of, ?ordset([
                                         ?fixed(10, <<"USD">>),
-                                        ?share(5, 100, operation_amount, round_half_towards_zero)
+                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
                                     ])}}
                                 )
                             ]}
