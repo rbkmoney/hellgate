@@ -2,6 +2,7 @@
 -define(__pm_ct_domain__, 42).
 
 -include("domain.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 -define(ordset(Es),     ordsets:from_list(Es)).
 
@@ -22,6 +23,8 @@
 -define(pinst(ID),      #domain_PaymentInstitutionRef{id = ID}).
 -define(bank(ID),       #domain_BankRef{id = ID}).
 -define(bussched(ID),   #domain_BusinessScheduleRef{id = ID}).
+-define(p2pprov(ID),    #domain_P2PProviderRef{id = ID}).
+-define(wtdrlprov(ID),  #domain_WithdrawalProviderRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).
@@ -34,9 +37,17 @@
         amount = Amount,
         currency = ?currency(Currency)
     }}}).
--define(share(P, Q, C), {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C}}).
+-define(share(P, Q, C),
+    {share, #domain_CashVolumeShare{
+        parts = #'Rational'{p = P, q = Q}, 'of' = C}
+    }
+).
 
--define(share_with_rounding_method(P, Q, C, RM), {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C, 'rounding_method' = RM}}).
+-define(share_with_rounding_method(P, Q, C, RM),
+    {share, #domain_CashVolumeShare{
+        parts = #'Rational'{p = P, q = Q}, 'of' = C, rounding_method = RM}
+    }
+).
 
 -define(cfpost(A1, A2, V),
     #domain_CashFlowPosting{
