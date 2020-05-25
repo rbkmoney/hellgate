@@ -12,6 +12,11 @@
 -export([get_balance/2]).
 -export([create_account/1]).
 -export([create_account/2]).
+-export([collect_account_map/6]).
+-export([collect_merchant_account_map/2]).
+-export([collect_provider_account_map/3]).
+-export([collect_system_account_map/5]).
+-export([collect_external_account_map/4]).
 
 -export([hold/2]).
 -export([plan/2]).
@@ -19,6 +24,7 @@
 -export([rollback/2]).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("shumpune_proto/include/shumpune_shumpune_thrift.hrl").
 
 -type amount()          :: dmsl_domain_thrift:'Amount'().
@@ -29,6 +35,13 @@
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type batch()           :: {batch_id(), final_cash_flow()}.
 -type clock()           :: shumpune_shumpune_thrift:'Clock'().
+
+-type payment()             :: dmsl_domain_thrift:'InvoicePayment'().
+-type shop()                :: dmsl_domain_thrift:'Shop'().
+-type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
+-type provider()            :: dmsl_domain_thrift:'Provider'().
+-type varset()              :: pm_selector:varset().
+-type revision()            :: hg_domain:revision().
 
 -export_type([batch/0]).
 
@@ -87,6 +100,55 @@ create_account(CurrencyCode, Description) ->
             Result;
         {exception, Exception} ->
             error({accounting, Exception}) % FIXME
+    end.
+
+-spec collect_account_map(payment(), shop(), payment_institution(), provider(), varset(), revision()) -> map().
+
+collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
+    Map0 = collect_merchant_account_map(Shop, #{}),
+    Map1 = collect_provider_account_map(Payment, Provider, Map0),
+    Map2 = collect_system_account_map(Payment, PaymentInstitution, VS, Revision, Map1),
+    collect_external_account_map(Payment, VS, Revision, Map2).
+
+-spec collect_merchant_account_map(shop(), map()) -> map().
+
+collect_merchant_account_map(#domain_Shop{account = MerchantAccount}, Acc) ->
+    Acc#{
+        {merchant, settlement} => MerchantAccount#domain_ShopAccount.settlement,
+        {merchant, guarantee } => MerchantAccount#domain_ShopAccount.guarantee
+    }.
+
+-spec collect_provider_account_map(payment(), provider(), map()) -> map().
+
+collect_provider_account_map(Payment, #domain_Provider{accounts = ProviderAccounts}, Acc) ->
+    Currency = get_currency(get_payment_cost(Payment)),
+    ProviderAccount = hg_payment_institution:choose_provider_account(Currency, ProviderAccounts),
+    Acc#{
+        {provider , settlement} => ProviderAccount#domain_ProviderAccount.settlement
+    }.
+
+-spec collect_system_account_map(payment(), payment_institution(), varset(), revision(), map()) -> map().
+
+collect_system_account_map(Payment, PaymentInstitution, VS, Revision, Acc) ->
+    Currency = get_currency(get_payment_cost(Payment)),
+    SystemAccount = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
+    Acc#{
+        {system   , settlement} => SystemAccount#domain_SystemAccount.settlement     ,
+        {system   , subagent  } => SystemAccount#domain_SystemAccount.subagent
+    }.
+
+-spec collect_external_account_map(payment(), varset(), revision(), map()) -> map().
+
+collect_external_account_map(Payment, VS, Revision, Acc) ->
+    Currency = get_currency(get_payment_cost(Payment)),
+    case hg_payment_institution:choose_external_account(Currency, VS, Revision) of
+        #domain_ExternalAccount{income = Income, outcome = Outcome} ->
+            Acc#{
+                {external, income} => Income,
+                {external, outcome} => Outcome
+            };
+        undefined ->
+            Acc
     end.
 
 construct_prototype(CurrencyCode, Description) ->
@@ -213,3 +275,9 @@ construct_balance(
 
 call_accounter(Function, Args) ->
     hg_woody_wrapper:call(accounter, Function, Args).
+
+get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
+    Cost.
+
+get_currency(#domain_Cash{currency = Currency}) ->
+    Currency.

@@ -18,6 +18,7 @@
 -export([construct_inspector/5]).
 -export([construct_contract_template/2]).
 -export([construct_contract_template/4]).
+-export([construct_provider_account_set/1]).
 -export([construct_system_account_set/1]).
 -export([construct_system_account_set/3]).
 -export([construct_external_account_set/1]).
@@ -184,6 +185,20 @@ construct_contract_template(Ref, TermsRef, ValidSince, ValidUntil) ->
             terms = TermsRef
         }
     }}.
+
+-spec construct_provider_account_set([currency()]) -> dmsl_domain_thrift:'ProviderAccountSet'().
+
+construct_provider_account_set(Currencies) ->
+    ok = pm_context:save(pm_context:create()),
+    AccountSet = lists:foldl(
+        fun (Cur = ?cur(Code), Acc) ->
+            Acc#{Cur => ?prvacc(pm_accounting:create_account(Code))}
+        end,
+        #{},
+        Currencies
+    ),
+    _ = pm_context:cleanup(),
+    AccountSet.
 
 -spec construct_system_account_set(system_account_set()) ->
     {system_account_set, dmsl_domain_thrift:'SystemAccountSetObject'()}.
