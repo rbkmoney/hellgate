@@ -2232,7 +2232,8 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             Events1 = [
                 ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
             ],
-            {done, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
+            % {done, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
+            {done, {Events ++ Events1, Action}}
         % fatal ->
         %     Events1 = [
         %         ?refund_ev(ID, ?refund_rollback_started(Failure))
@@ -2308,7 +2309,8 @@ process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
 process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
     _Clocks = rollback_payment_cashflow(St),
     PaymentFailed = [?payment_status_changed(?failed(Failure))],
-    {done, {Events ++ PaymentFailed, hg_machine_action:set_timeout(0, Action)}}.
+    % {done, {Events ++ PaymentFailed, hg_machine_action:set_timeout(0, Action)}}.
+    {done, {Events ++ PaymentFailed, Action}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),
