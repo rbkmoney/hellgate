@@ -2831,7 +2831,7 @@ merge_change(?payment_status_changed(Status), #st{activity = {adjustment_pending
         }
     };
 merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
-    _ = validate_transition([{payment, S} || S <- [processing_session]], Change, St, Opts),
+    _ = validate_transition([{payment, processing_session}], Change, St, Opts),
     St#st{
         failure    = Failure,
         activity   = {payment, processing_failure},
