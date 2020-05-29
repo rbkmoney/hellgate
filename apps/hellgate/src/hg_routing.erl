@@ -143,9 +143,8 @@ choose_route(FailRatedRoutes, RejectContext, VS) ->
     {[provider_with_ref()], reject_context()}.
 
 select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
-    ProviderSelector = PaymentInstitution#domain_PaymentInstitution.providers,
-    ProviderRefs0    = reduce(provider, ProviderSelector, VS, Revision),
-    ProviderRefs1    = ordsets:to_list(ProviderRefs0),
+    {value, ProviderRefs0} = PaymentInstitution#domain_PaymentInstitution.providers,
+    ProviderRefs1 = ordsets:to_list(ProviderRefs0),
     {Providers, RejectReasons} = lists:foldl(
         fun (ProviderRef, {Prvs, Reasons}) ->
             try

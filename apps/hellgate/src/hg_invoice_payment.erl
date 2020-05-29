@@ -1201,7 +1201,8 @@ make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     ProviderPaymentsTerms = get_provider_payments_terms(Route, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment, VS1, Revision),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, VS1, Revision),
-    PaymentInstitution = get_payment_institution(Opts, Revision),
+    PaymentInstitutionRef = get_payment_institution_ref(Opts),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     Provider = get_route_provider(Route, Revision),
     AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
     construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
@@ -1604,7 +1605,8 @@ calculate_cashflow(Timestamp, Revision, St, Opts) ->
 
 calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts) ->
     Shop = get_shop(Opts),
-    PaymentInstitution = get_payment_institution(Opts, Revision),
+    PaymentInstitutionRef = get_payment_institution_ref(Opts),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
@@ -1877,13 +1879,15 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
 process_routing(Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
-    PaymentInstitution = get_payment_institution(Opts, Revision),
+    PaymentInstitutionRef = get_payment_institution_ref(Opts),
     Payment = get_payment(St),
     VS0 = collect_routing_varset(Payment, Opts, #{}),
-    RiskScore = repair_inspect(Payment, PaymentInstitution, VS0, Opts, St),
+    PaymentInstitution0 = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS0, Revision),
+    RiskScore = repair_inspect(Payment, PaymentInstitution0, Opts, St),
     Events0 = [?risk_score_changed(RiskScore)],
     VS1 = VS0#{risk_score => RiskScore},
-    case choose_route(PaymentInstitution, VS1, Revision, St) of
+    PaymentInstitution1 = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
+    case choose_route(PaymentInstitution1, VS1, Revision, St) of
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, Revision, Opts, Events0, Action);
         {error, {no_route_found, {Reason, _Details}}} ->
@@ -2679,10 +2683,9 @@ get_contract(#{party := Party, invoice := Invoice}) ->
     Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
     hg_party:get_contract(Shop#domain_Shop.contract_id, Party).
 
-get_payment_institution(Opts, Revision) ->
+get_payment_institution_ref(Opts) ->
     Contract = get_contract(Opts),
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+    Contract#domain_Contract.payment_institution.
 
 get_opts_party_revision(#{party := Party}) ->
     Party#domain_Party.revision.
@@ -3354,20 +3357,19 @@ get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
 get_route_provider(Route, Revision) ->
     hg_domain:get(Revision, {provider, get_route_provider_ref(Route)}).
 
-inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentInstitution, VS, Opts) ->
-    InspectorSelector = PaymentInstitution#domain_PaymentInstitution.inspector,
-    InspectorRef = reduce_selector(inspector, InspectorSelector, VS, Revision),
+inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentInstitution, Opts) ->
+    {value, InspectorRef} = PaymentInstitution#domain_PaymentInstitution.inspector,
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
     RiskScore = hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector),
     % FIXME: move this logic to inspector
     check_payment_type_risk(RiskScore, Payment).
 
-repair_inspect(Payment, PaymentInstitution, VS, Opts, #st{repair_scenario = Scenario}) ->
+repair_inspect(Payment, PaymentInstitution, Opts, #st{repair_scenario = Scenario}) ->
     case hg_invoice_repair:check_for_action(skip_inspector, Scenario) of
         {result, Result} ->
             Result;
         call ->
-            inspect(Payment, PaymentInstitution, VS, Opts)
+            inspect(Payment, PaymentInstitution, Opts)
     end.
 
 check_payment_type_risk(low, #domain_InvoicePayment{make_recurrent = true}) ->
