@@ -2214,10 +2214,12 @@ process_failure({payment, Step} = Activity, Events, Action, Failure, St, _Refund
             _ = maybe_notify_fault_detector(Activity, TargetType, OperationStatus, St),
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
-
-process_failure({refund_new, ID}, [], Action, Failure, _St, _RefundSt) ->
-    {next, {[?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
-process_failure({refund_session, ID}, Events, Action, Failure, St, _RefundSt) ->
+process_failure({refund_new, ID}, Events, Action, Failure, St, RefundSt) ->
+    _Clocks = rollback_refund_cashflow(RefundSt, St),
+    {done, {Events ++ [?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))], Action}};
+% process_failure({refund_new, ID}, [], Action, Failure, _St, _RefundSt) ->
+%     {next, {[?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
+process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
     Target = ?refunded(),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
@@ -2226,10 +2228,16 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, _RefundSt) ->
             Events1 = [?refund_ev(ID, E) || E <- SessionEvents],
             {next, {Events ++ Events1, SessionAction}};
         fatal ->
+            _Clocks = rollback_refund_cashflow(RefundSt, St),
             Events1 = [
-                ?refund_ev(ID, ?refund_rollback_started(Failure))
+                ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
             ],
-            {next, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
+            {done, {Events ++ Events1, Action}}
+        % fatal ->
+        %     Events1 = [
+        %         ?refund_ev(ID, ?refund_rollback_started(Failure))
+        %     ],
+        %     {next, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
     end.
 
 choose_fd_operation_status_for_failure({failure, Failure}) ->
@@ -2292,9 +2300,15 @@ process_fatal_payment_failure(?cancelled(), _Events, _Action, Failure, _St) ->
     error({invalid_cancel_failure, Failure});
 process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
     error({invalid_capture_failure, Failure});
-process_fatal_payment_failure(?processed(), Events, Action, Failure, _St) ->
-    RollbackStarted = [?payment_rollback_started(Failure)],
-    {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}.
+% process_fatal_payment_failure(?processed(), [], Action, Failure, _St) ->
+%     {next, {[?payment_rollback_started(Failure)], hg_machine_action:set_timeout(0, Action)}};
+% process_fatal_payment_failure(?processed(), Events, Action, Failure, _St) ->
+%     RollbackStarted = [?payment_rollback_started(Failure)],
+%     {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}};
+process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
+    _Clocks = rollback_payment_cashflow(St),
+    PaymentFailed = [?payment_status_changed(?failed(Failure))],
+    {done, {Events ++ PaymentFailed, Action}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),
@@ -2831,7 +2845,12 @@ merge_change(?payment_status_changed(Status), #st{activity = {adjustment_pending
         }
     };
 merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
-    _ = validate_transition([{payment, processing_session}], Change, St, Opts),
+    _ = validate_transition([{payment, S} || S <- [
+        risk_scoring,
+        routing,
+        processing_session,
+        processing_failure
+    ]], Change, St, Opts),
     St#st{
         failure    = Failure,
         activity   = {payment, processing_failure},
@@ -2841,6 +2860,7 @@ merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment
     _ = validate_transition([{payment, S} || S <- [
         risk_scoring,
         routing,
+        processing_session,
         processing_failure
     ]], Change, St, Opts),
     St#st{
@@ -2943,7 +2963,7 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
             _ = validate_transition([{refund_session, ID}, {refund_new, ID}], Change, St, Opts),
             St#st{activity = {refund_failure, ID}};
         ?refund_status_changed(?refund_failed(_)) ->
-            _ = validate_transition([{refund_failure, ID}], Change, St, Opts),
+            _ = validate_transition([{refund_session, ID}, {refund_new, ID}, {refund_failure, ID}], Change, St, Opts),
             St;
         _ ->
             _ = validate_transition([{refund_session, ID}], Change, St, Opts),
