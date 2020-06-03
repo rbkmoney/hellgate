@@ -2025,7 +2025,10 @@ get_adjustment_fixture(Revision) ->
                         {exclusive, ?cash(100000000, <<"RUB">>)}
                     )},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })
                     ])},
                     cash_flow = {value,
                         get_adjustment_provider_cashflow(initial)
@@ -4208,7 +4211,10 @@ get_cashflow_rounding_fixture(Revision) ->
                         {exclusive, ?cash(100000000, <<"RUB">>)}
                     )},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })
                     ])},
                     cash_flow = {value, [
                         ?cfpost(
@@ -4279,22 +4285,40 @@ terms_retrieval(C) ->
     TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [
-            ?pmt(bank_card, jcb),
-            ?pmt(bank_card, mastercard),
-            ?pmt(bank_card, visa),
+            ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                payment_system = jcb,
+                has_cvv = true
+            }),
+            ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                payment_system = mastercard,
+                has_cvv = true
+            }),
+            ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                payment_system = visa,
+                has_cvv = false
+            }),
+            ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                payment_system = visa,
+                has_cvv = true,
+                token_provider = applepay
+            }),
+            ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                payment_system = visa,
+                has_cvv = true
+            }),
             ?pmt(crypto_currency, bitcoin),
             ?pmt(digital_wallet, qiwi),
-            ?pmt(empty_cvv_bank_card, visa),
             ?pmt(mobile, mts),
-            ?pmt(payment_terminal, euroset),
-            ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
-        ]}
-    }} = TermSet1,
+            ?pmt(payment_terminal, euroset)
+        ]}}} = TermSet1,
     Revision = hg_domain:head(),
     ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {value, [?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = visa,
+            has_cvv = true
+        })]}
     }} = TermSet2,
     ok = hg_domain:reset(Revision).
 
@@ -5404,13 +5428,29 @@ construct_domain_fixture() ->
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
                     then_ = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard),
-                        ?pmt(bank_card, jcb),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = mastercard,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = jcb,
+                            has_cvv = true
+                        }),
                         ?pmt(payment_terminal, euroset),
                         ?pmt(digital_wallet, qiwi),
-                        ?pmt(empty_cvv_bank_card, visa),
-                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay)),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = false
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true,
+                            token_provider = applepay
+                        }),
                         ?pmt(crypto_currency, bitcoin),
                         ?pmt(mobile, mts)
                     ])}
@@ -5450,8 +5490,14 @@ construct_domain_fixture() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = visa,
+                        has_cvv = true
+                    }),
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = mastercard,
+                        has_cvv = true
+                    })
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -5462,8 +5508,14 @@ construct_domain_fixture() ->
             },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = visa,
+                        has_cvv = true
+                    }),
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = mastercard,
+                        has_cvv = true
+                    })
                 ])},
                 fees = {value, [
                     ?cfpost(
@@ -5489,8 +5541,14 @@ construct_domain_fixture() ->
         },
         recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = true
+                }),
+                ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = mastercard,
+                    has_cvv = true
+                })
             ])}
         }
     },
@@ -5509,8 +5567,14 @@ construct_domain_fixture() ->
                 ?cat(7)
             ])},
             payment_methods = {value, ?ordset([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = true
+                }),
+                ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = mastercard,
+                    has_cvv = true
+                })
             ])},
             cash_limit = {decisions, [
                 % проверяем, что условие никогда не отрабатывает
@@ -5564,8 +5628,14 @@ construct_domain_fixture() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = visa,
+                        has_cvv = true
+                    }),
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = mastercard,
+                        has_cvv = true
+                    })
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -5592,8 +5662,14 @@ construct_domain_fixture() ->
             },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = visa,
+                        has_cvv = true
+                    }),
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = mastercard,
+                        has_cvv = true
+                    })
                 ])},
                 fees = {value, [
                 ]},
@@ -5619,15 +5695,31 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(6), <<"MachineFailer">>, live),
         hg_ct_fixture:construct_category(?cat(7), <<"TempFailer">>, live),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, jcb)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = visa,
+            has_cvv = true
+        })),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = mastercard,
+            has_cvv = true
+        })),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = jcb,
+            has_cvv = true
+        })),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
-        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = visa,
+            has_cvv = false
+        })),
         hg_ct_fixture:construct_payment_method(?pmt(crypto_currency, bitcoin)),
         hg_ct_fixture:construct_payment_method(?pmt(mobile, mts)),
-        hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = visa,
+            has_cvv = true,
+            token_provider = applepay
+        })),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -5840,12 +5932,28 @@ construct_domain_fixture() ->
                         ?cat(1)
                     ])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard),
-                        ?pmt(bank_card, jcb),
-                        ?pmt(empty_cvv_bank_card, visa),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = mastercard,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = jcb,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = false
+                        }),
                         ?pmt(crypto_currency, bitcoin),
-                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true,
+                            token_provider = applepay
+                        })
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -5979,8 +6087,14 @@ construct_domain_fixture() ->
                 recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = mastercard,
+                            has_cvv = true
+                        })
                     ])},
                     cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
@@ -6020,8 +6134,14 @@ construct_domain_fixture() ->
                         ?cat(6)
                     ])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = mastercard,
+                            has_cvv = true
+                        })
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(    1000, <<"RUB">>)},
@@ -6106,7 +6226,10 @@ construct_domain_fixture() ->
                         ?cat(2)
                     ])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(    1000, <<"RUB">>)},
@@ -6290,7 +6413,10 @@ construct_term_set_for_cost(LowerBound, UpperBound) ->
                         {inclusive, ?cash(LowerBound, <<"RUB">>)},
                         {inclusive, ?cash(UpperBound, <<"RUB">>)}
                     )}},
-                    then_ = {value, ordsets:from_list([?pmt(bank_card, visa)])}
+                    then_ = {value, ordsets:from_list([?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })])}
                 },
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
@@ -6366,7 +6492,10 @@ payments_w_bank_card_issuer_conditions_fixture(Revision) ->
                         {exclusive, ?cash(100000000, <<"RUB">>)}
                     )},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })
                     ])},
                     cash_flow = {decisions, [
                         #domain_CashFlowDecision{
@@ -6545,8 +6674,14 @@ construct_term_set_for_partial_capture_service_permit() ->
         payments = #domain_PaymentsServiceTerms{
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = visa,
+                        has_cvv = true
+                    }),
+                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                        payment_system = mastercard,
+                        has_cvv = true
+                    })
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -6607,7 +6742,10 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                         ?cat(1)
                     ])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -6662,8 +6800,14 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                 recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = mastercard,
+                            has_cvv = true
+                        })
                     ])},
                     cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }

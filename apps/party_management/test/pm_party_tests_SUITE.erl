@@ -380,8 +380,20 @@ end_per_testcase(_Name, _C) ->
 -define(REAL_CONTRACTOR_ID, <<"CONTRACTOR1">>).
 -define(REAL_CONTRACT_ID, <<"CONTRACT1">>).
 -define(REAL_WALLET_ID, <<"WALLET1">>).
--define(REAL_PARTY_PAYMENT_METHODS,
-    [?pmt(bank_card, maestro), ?pmt(bank_card, mastercard), ?pmt(bank_card, visa)]).
+-define(REAL_PARTY_PAYMENT_METHODS, [
+    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+        payment_system = maestro,
+        has_cvv = true
+    }),
+    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+        payment_system = mastercard,
+        has_cvv = true
+    }),
+    ?pmt(bank_card, #domain_BankCardPaymentMethod{
+        payment_system = visa,
+        has_cvv = true
+    })
+]).
 
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
@@ -582,7 +594,10 @@ contract_terms_retrieval(C) ->
         ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
     ),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {value, [?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = true
+                })]}
     }} = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, undefined)),
     DomainRevision2 = pm_domain:head(),
@@ -815,7 +830,10 @@ compute_payment_institution_terms(C) ->
     ),
     #domain_TermSet{} = T2 = pm_client_party:compute_payment_institution_terms(
         ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(bank_card, visa)},
+        #payproc_Varset{payment_method = ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = true
+                })},
         Client
     ),
     T1 /= T2 orelse error({equal_term_sets, T1, T2}),
@@ -826,7 +844,10 @@ compute_payment_institution_terms(C) ->
     ),
     #domain_TermSet{} = T4 = pm_client_party:compute_payment_institution_terms(
         ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(empty_cvv_bank_card, visa)},
+        #payproc_Varset{payment_method = ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = false
+                })},
         Client
     ),
     T1 /= T3 orelse error({equal_term_sets, T1, T3}),
@@ -969,7 +990,10 @@ shop_terms_retrieval(C) ->
     Timestamp = pm_datetime:format_now(),
     TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {value, [?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = true
+                })]}
     }} = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
     TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, Client),
@@ -1591,7 +1615,10 @@ compute_payment_provider_terminal_terms_ok(C) ->
             ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
         ])}}
     ),
-    PaymentMethods = ?ordset([?pmt(bank_card, visa)]),
+    PaymentMethods = ?ordset([?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = true
+                })]),
     #domain_PaymentsProvisionTerms{
         cash_flow = {value, [CashFlow]},
         payment_methods = {value, PaymentMethods}
@@ -1695,7 +1722,10 @@ construct_term_set_for_party(PartyID, Def) ->
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
                     then_ = {value, ordsets:from_list([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })
                     ])}
                 }
             ]}
@@ -1732,7 +1762,10 @@ construct_domain_fixture() ->
                 ?cat(3)
             ])},
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa)
+                ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = true
+                })
             ])}
         }
     },
@@ -1972,11 +2005,23 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
         pm_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
 
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = visa,
+            has_cvv = true
+        })),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = mastercard,
+            has_cvv = true
+        })),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = maestro,
+            has_cvv = true
+        })),
         pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = visa,
+            has_cvv = false
+        })),
 
         pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
         pm_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
@@ -2104,7 +2149,10 @@ construct_domain_fixture() ->
                                 ?cat(2)
                             ])},
                             payment_methods = {value, ordsets:from_list([
-                                ?pmt(bank_card, visa)
+                                ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                                    payment_system = visa,
+                                    has_cvv = true
+                                })
                             ])}
                         }
                     }
@@ -2236,8 +2284,14 @@ construct_domain_fixture() ->
                     currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -2275,8 +2329,14 @@ construct_domain_fixture() ->
                 recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        }),
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = mastercard,
+                            has_cvv = true
+                        })
                     ])},
                     cash_value = {decisions, [
                         #domain_CashValueDecision{
@@ -2300,7 +2360,10 @@ construct_domain_fixture() ->
                 risk_coverage = high,
                 terms = #domain_PaymentsProvisionTerms{
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                            payment_system = visa,
+                            has_cvv = true
+                        })
                     ])}
                 }
             }

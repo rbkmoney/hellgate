@@ -558,7 +558,10 @@ construct_domain_fixture() ->
                 ?cat(3)
             ])},
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa)
+                ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = visa,
+                    has_cvv = true
+                })
             ])}
         }
     },
@@ -630,11 +633,23 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
         pm_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
 
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = visa,
+            has_cvv = true
+        })),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = mastercard,
+            has_cvv = true
+        })),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = maestro,
+            has_cvv = true
+        })),
         pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
+            payment_system = visa,
+            has_cvv = false
+        })),
 
         pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
         pm_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
@@ -763,7 +778,10 @@ construct_domain_fixture() ->
                                 ?cat(2)
                             ])},
                             payment_methods = {value, ordsets:from_list([
-                                ?pmt(bank_card, visa)
+                                ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                                    payment_system = visa,
+                                    has_cvv = true
+                                })
                             ])}
                         }
                     }

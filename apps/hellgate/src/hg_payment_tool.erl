@@ -20,15 +20,24 @@
 
 -spec get_method(t()) -> method().
 
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
-    #domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSystem}};
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
-    #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}};
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider}}) ->
-    #domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
+get_method({bank_card_deprecated, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
+    #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}};
+get_method({bank_card_deprecated, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
+    #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}};
+get_method({bank_card_deprecated, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider}}) ->
+    #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
         token_provider = TokenProvider
     }}};
+
+get_method({bank_card, #domain_BankCard{} = BankCard}) ->
+    #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
+        payment_system      = BankCard#domain_BankCard.payment_system,
+        has_cvv             = not genlib:define(BankCard#domain_BankCard.is_cvv_empty, false), % looks bad
+        token_provider      = BankCard#domain_BankCard.token_provider,
+        tokenization_method = BankCard#domain_BankCard.tokenization_method
+    }}};
+
 get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
     #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
 get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
@@ -41,7 +50,7 @@ get_method({mobile_commerce, #domain_MobileCommerce{operator = Operator}}) ->
 -spec create_from_method(method()) -> t().
 
 %% TODO empty strings - ugly hack for dialyzar
-create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSystem}}) ->
+create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
@@ -49,14 +58,14 @@ create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSy
         last_digits = <<"">>,
         is_cvv_empty = true
     }};
-create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
+create_from_method(#domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
         last_digits = <<"">>
     }};
-create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
+create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
         token_provider = TokenProvider
 }}}) ->
@@ -66,6 +75,21 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_T
         bin = <<"">>,
         last_digits = <<"">>,
         token_provider = TokenProvider
+    }};
+create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
+    has_cvv = HasCVV,
+    payment_system = PaymentSystem,
+    token_provider = TokenProvider,
+    tokenization_method = TokenizationMethod
+}}}) ->
+    {bank_card, #domain_BankCard{
+        payment_system = PaymentSystem,
+        token = <<"">>,
+        bin = <<"">>,
+        last_digits = <<"">>,
+        token_provider = TokenProvider,
+        is_cvv_empty = not HasCVV, % baaaaad
+        tokenization_method = TokenizationMethod
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->
     {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}};
@@ -209,7 +233,8 @@ marshal(bank_card = T, #domain_BankCard{} = BankCard) ->
         <<"issuer_country">>    => marshal({T, issuer_country}, BankCard#domain_BankCard.issuer_country),
         <<"bank_name">>         => marshal({T, bank_name}, BankCard#domain_BankCard.bank_name),
         <<"metadata">>          => marshal({T, metadata}, BankCard#domain_BankCard.metadata),
-        <<"is_cvv_empty">>      => marshal({T, boolean}, BankCard#domain_BankCard.is_cvv_empty)
+        <<"is_cvv_empty">>      => marshal({T, boolean}, BankCard#domain_BankCard.is_cvv_empty),
+        <<"tokenization_method">> => marshal(str, BankCard#domain_BankCard.tokenization_method)
     });
 marshal(payment_terminal = T, #domain_PaymentTerminal{terminal_type = TerminalType}) ->
     marshal({T, type}, TerminalType);
@@ -222,6 +247,8 @@ marshal(crypto_currency = T, CC) ->
     marshal({T, currency}, CC);
 
 marshal(payment_method, bank_card) ->
+    <<"card">>;
+marshal(payment_method, bank_card_deprecated) ->
     <<"card">>;
 marshal(payment_method, payment_terminal) ->
     <<"payterm">>;
@@ -346,6 +373,7 @@ unmarshal(bank_card = T, #{
     BankName      = genlib_map:get(<<"bank_name">>, V),
     MD            = genlib_map:get(<<"metadata">>, V),
     IsCVVEmpty    = genlib_map:get(<<"is_cvv_empty">>, V),
+    TokenizationMethod = genlib_map:get(<<"tokenization_method">>, V),
     #domain_BankCard{
         token            = unmarshal(str, Token),
         payment_system   = unmarshal({T, payment_system}, PaymentSystem),
@@ -355,7 +383,8 @@ unmarshal(bank_card = T, #{
         issuer_country   = unmarshal({T, issuer_country}, IssuerCountry),
         bank_name        = unmarshal({T, bank_name}, BankName),
         metadata         = unmarshal({T, metadata}, MD),
-        is_cvv_empty     = unmarshal({T, boolean}, IsCVVEmpty)
+        is_cvv_empty     = unmarshal({T, boolean}, IsCVVEmpty),
+        tokenization_method = unmarshal(str, TokenizationMethod)
     };
 unmarshal(payment_terminal = T, TerminalType) ->
     #domain_PaymentTerminal{
