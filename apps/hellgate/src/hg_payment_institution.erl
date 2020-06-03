@@ -98,7 +98,7 @@ prepare_varset(Varset) ->
     #payproc_Varset{
         category = genlib_map:get(category, Varset),
         currency = genlib_map:get(currency, Varset),
-        amount = genlib_map:get(amount, Varset),
+        amount = genlib_map:get(cost, Varset),
         payment_method = encode_payment_method(genlib_map:get(payment_tool, Varset)),
         payout_method = genlib_map:get(payout_method, Varset),
         wallet_id = genlib_map:get(wallet_id, Varset),

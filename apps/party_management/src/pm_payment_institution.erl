@@ -28,6 +28,8 @@ reduce_payment_institution(PaymentInstitution, VS, Revision) ->
             PaymentInstitution#domain_PaymentInstitution.default_contract_template, VS, Revision),
         default_wallet_contract_template = reduce_if_defined(
             PaymentInstitution#domain_PaymentInstitution.default_wallet_contract_template, VS, Revision),
+        inspector = reduce_if_defined(
+            PaymentInstitution#domain_PaymentInstitution.inspector, VS, Revision),
         wallet_system_account_set = reduce_if_defined(
             PaymentInstitution#domain_PaymentInstitution.wallet_system_account_set, VS, Revision),
         withdrawal_providers = reduce_if_defined(
