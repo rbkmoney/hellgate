@@ -99,19 +99,9 @@ prepare_varset(Varset) ->
         category = genlib_map:get(category, Varset),
         currency = genlib_map:get(currency, Varset),
         amount = genlib_map:get(cost, Varset),
-        payment_method = encode_payment_method(genlib_map:get(payment_tool, Varset)),
+        payment_method = hg_maybe:apply(
+            fun(X) -> hg_payment_tool:get_method(X) end, genlib_map:get(payment_tool, Varset)),
         payout_method = genlib_map:get(payout_method, Varset),
         wallet_id = genlib_map:get(wallet_id, Varset),
         p2p_tool = genlib_map:get(p2p_tool, Varset)
-    }.
-
-encode_payment_method(undefined) ->
-    undefined;
-encode_payment_method({bank_card, #domain_BankCard{payment_system = PaymentSystem}}) ->
-    #domain_PaymentMethodRef{
-        id = {bank_card, PaymentSystem}
-    };
-encode_payment_method({crypto_currency, CryptoCurrency}) ->
-    #domain_PaymentMethodRef{
-        id = {crypto_currency, CryptoCurrency}
     }.
