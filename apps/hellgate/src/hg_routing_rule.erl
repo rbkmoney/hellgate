@@ -19,6 +19,8 @@
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
 
+gather_routes(_, #domain_PaymentInstitution{payment_routing = undefined}, VS, _) ->
+    {[], #{varset => VS, rejected_providers => [], reject_routes => []}};
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing,
     RuleSet = get_rule_set(PaymentRouting#domain_PaymentRouting.policies, Revision),
@@ -50,7 +52,10 @@ reduce_decisions({delegates, [D | Delegates]}, VS, Rev) ->
                    reduce_decisions({delegates, Delegates}, VS, Rev);
                 Candidates ->
                     Candidates ++ reduce_decisions({delegates, Delegates}, VS, Rev)
-            end
+            end;
+        _ ->
+            logger:warning("Misconfiguration routing rule, can't reduce decision: ~p~nVarset:~n~p", [Predicate, VS]),
+            reduce_decisions({delegates, Delegates}, VS, Rev)
     end;
 reduce_decisions({candidates, [C | Candidates]}, VS, Rev) ->
     #domain_PaymentRoutingCandidate{
@@ -60,7 +65,10 @@ reduce_decisions({candidates, [C | Candidates]}, VS, Rev) ->
         ?const(false) ->
             reduce_decisions({candidates, Candidates}, VS, Rev);
         ?const(true) ->
-            [C | reduce_decisions({candidates, Candidates}, VS, Rev)]
+            [C | reduce_decisions({candidates, Candidates}, VS, Rev)];
+        _ ->
+            logger:warning("Misconfiguration routing rule, can't reduce decision: ~p~nVarset:~n~p", [Predicate, VS]),
+            reduce_decisions({candidates, Candidates}, VS, Rev)
     end.
 
 collect_routes(Predestination, Candidates, VS, Revision) ->
@@ -92,7 +100,7 @@ filter_routes(_Predestination, {Routes, Rejected}, CandidatesDeny) ->
         {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
         case lists:keyfind(TerminalRef, 1, CandidatesDeny) of
             false ->
-                {[Route | AccIn], Rejected};
+                {[Route | AccIn], RejectedIn};
             {_, Description, _} ->
                 RejectedOut = [{ProviderRef, TerminalRef, {'RoutingRule', Description}} | RejectedIn],
                 {AccIn, RejectedOut}
