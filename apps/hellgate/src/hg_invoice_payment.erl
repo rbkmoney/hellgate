@@ -403,8 +403,8 @@ init_(PaymentID, Params, Opts) ->
     MakeRecurrent = get_make_recurrent_params(Params),
     ExternalID = get_external_id(Params),
     CreatedAt = hg_datetime:format_now(),
-    MerchantTerms = get_merchant_terms(Opts, Revision, CreatedAt),
     VS1 = collect_validation_varset(Party, Shop, VS0),
+    MerchantTerms = get_merchant_terms(Opts, Revision, CreatedAt, VS1),
     Context = get_context_params(Params),
     Deadline = get_processing_deadline(Params),
     Payment = construct_payment(
@@ -414,17 +414,28 @@ init_(PaymentID, Params, Opts) ->
     Events = [?payment_started(Payment)],
     {collapse_changes(Events, undefined), {Events, hg_machine_action:instant()}}.
 
-get_merchant_payments_terms(Opts, Revision, Timestamp) ->
-    TermSet = get_merchant_terms(Opts, Revision, Timestamp),
+get_merchant_payments_terms(Opts, Revision, Timestamp, VS) ->
+    TermSet = get_merchant_terms(Opts, Revision, Timestamp, VS),
     TermSet#domain_TermSet.payments.
 
-get_merchant_terms(Opts, Revision, Timestamp) ->
+get_merchant_terms(Opts, Revision, Timestamp, VS) ->
     Invoice = get_invoice(Opts),
     Party = get_party(Opts),
     Shop = hg_party:get_shop(get_invoice_shop_id(Invoice), Party),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    #domain_Contract{id = ContractID} = Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     ok = assert_contract_active(Contract),
-    pm_party:get_terms(Contract, Timestamp, Revision).
+    PreparedVS = hg_varset:prepare_varset(VS),
+    {Client, Context} = get_party_client(),
+    {ok, Terms} = party_client_thrift:compute_contract_terms(
+        Party#domain_Party.id,
+        ContractID,
+        Timestamp,
+        {revision, Party#domain_Party.revision},
+        Revision,
+        PreparedVS,
+        Client,
+        Context),
+    Terms.
 
 get_provider_payments_terms(Route, Revision) ->
     hg_routing:get_payments_terms(Route, Revision).
@@ -885,7 +896,7 @@ collect_routing_varset(Payment, Opts, VS0) ->
         domain_revision = Revision,
         flow            = DomainFlow
     } = Payment,
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
     VS2 = reconstruct_payment_flow(DomainFlow, CreatedAt, VS1),
     VS3 = collect_refund_varset(
         MerchantTerms#domain_PaymentsServiceTerms.refunds,
@@ -1002,12 +1013,13 @@ partial_capture(St0, Reason, Cost, Cart, Opts) ->
     St              = St0#st{payment = Payment2},
     Revision        = get_payment_revision(St),
     Timestamp       = get_payment_created_at(Payment),
-    MerchantTerms   = get_merchant_payments_terms(Opts, Revision, Timestamp),
+    VS              = collect_validation_varset(St, Opts),
+    MerchantTerms   = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ok              = validate_merchant_hold_terms(MerchantTerms),
     Route           = get_route(St),
     ProviderTerms   = get_provider_payments_terms(Route, Revision),
     ok              = validate_provider_holds_terms(ProviderTerms),
-    FinalCashflow   = calculate_cashflow(Timestamp, Revision, St, Opts),
+    FinalCashflow   = calculate_cashflow(Timestamp, Revision, St, Opts, VS),
     Changes         = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
     {ok, {Changes, hg_machine_action:instant()}}.
 
@@ -1195,8 +1207,8 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
 make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     Route = get_route(St),
     Shop = get_shop(Opts),
-    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt)),
     VS0 = collect_validation_varset(St, Opts),
+    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt, VS0)),
     VS1 = validate_refund(MerchantTerms, Refund, Payment, VS0, Revision),
     ProviderPaymentsTerms = get_provider_payments_terms(Route, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment, VS1, Revision),
@@ -1451,7 +1463,8 @@ create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts) ->
     NewRevision = maybe_get_domain_revision(DomainRevision),
     PartyRevision = get_opts_party_revision(Opts),
     OldCashFlow = get_final_cashflow(St),
-    NewCashFlow = calculate_cashflow(Timestamp, NewRevision, St, Opts),
+    VS = collect_validation_varset(St, Opts),
+    NewCashFlow = calculate_cashflow(Timestamp, NewRevision, St, Opts, VS),
     AdjState = {cash_flow, #domain_InvoicePaymentAdjustmentCashFlowState{
         scenario = #domain_InvoicePaymentAdjustmentCashFlow{domain_revision = DomainRevision}
     }},
@@ -1578,19 +1591,19 @@ get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
     Timestamp = get_payment_created_at(Payment),
     St = St0#st{payment = Payment},
     Revision = Payment#domain_InvoicePayment.domain_revision,
-    calculate_cashflow(Timestamp, Revision, St, Opts);
+    VS = collect_validation_varset(St, Opts),
+    calculate_cashflow(Timestamp, Revision, St, Opts, VS);
 get_cash_flow_for_target_status({cancelled, _}, _St, _Opts) ->
     [];
 get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
     [].
 
--spec calculate_cashflow(hg_datetime:timestamp(), hg_domain:revision(), st(), opts()) ->
+-spec calculate_cashflow(hg_datetime:timestamp(), hg_domain:revision(), st(), opts(), pm_selector:varset()) ->
     cash_flow().
 
-calculate_cashflow(Timestamp, Revision, St, Opts) ->
+calculate_cashflow(Timestamp, Revision, St, Opts, VS) ->
     Payment = get_payment(St),
     Route = get_route(St),
-    VS = collect_validation_varset(St, Opts),
     calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts).
 
 -spec calculate_cashflow(
@@ -1608,7 +1621,7 @@ calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts) ->
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ProviderTerms = get_provider_payments_terms(Route, Revision),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, VS, Revision),
     construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision).
@@ -4123,3 +4136,9 @@ unmarshal(risk_score, RiskScore) when is_atom(RiskScore) ->
 
 unmarshal(_, Other) ->
     Other.
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.

@@ -30,7 +30,7 @@
 
 compute_payment_institution(PaymentInstitutionRef, VS, Revision) ->
     {Client, Context} = get_party_client(),
-    VS0 = prepare_varset(VS),
+    VS0 = hg_varset:prepare_varset(VS),
     {ok, PaymentInstitution} =
         party_client_thrift:compute_payment_institution(PaymentInstitutionRef, Revision, VS0, Client, Context),
     PaymentInstitution.
@@ -91,17 +91,3 @@ get_party_client() ->
     Client = hg_context:get_party_client(HgContext),
     Context = hg_context:get_party_client_context(HgContext),
     {Client, Context}.
-
--spec prepare_varset(varset()) -> dmsl_payment_processing_thrift:'Varset'().
-
-prepare_varset(Varset) ->
-    #payproc_Varset{
-        category = genlib_map:get(category, Varset),
-        currency = genlib_map:get(currency, Varset),
-        amount = genlib_map:get(cost, Varset),
-        payment_method = hg_maybe:apply(
-            fun(X) -> hg_payment_tool:get_method(X) end, genlib_map:get(payment_tool, Varset)),
-        payout_method = genlib_map:get(payout_method, Varset),
-        wallet_id = genlib_map:get(wallet_id, Varset),
-        p2p_tool = genlib_map:get(p2p_tool, Varset)
-    }.

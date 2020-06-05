@@ -53,7 +53,13 @@ create_from_method(#domain_PaymentMethodRef{id = {digital_wallet, Provider}}) ->
 create_from_method(#domain_PaymentMethodRef{id = {crypto_currency, CC}}) ->
     {crypto_currency, CC};
 create_from_method(#domain_PaymentMethodRef{id = {mobile, Operator}}) ->
-    {mobile_commerce, #domain_MobileCommerce{operator = Operator}}.
+    {mobile_commerce, #domain_MobileCommerce{
+        operator = Operator,
+        phone = #domain_MobilePhone{
+            cc = <<"">>,
+            ctn = <<"">>
+        }
+    }}.
 
 %%
 
