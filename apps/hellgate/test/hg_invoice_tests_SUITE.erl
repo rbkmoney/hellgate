@@ -1259,7 +1259,6 @@ payment_w_wallet_success(C) ->
     InvoiceID = start_invoice(<<"bubbleblob">>, make_due_date(10), 42000, C),
     PaymentParams = make_wallet_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    error(error),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
