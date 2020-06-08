@@ -459,7 +459,7 @@ init([InvoiceTplID, PartyRevision, EncodedInvoiceParams], #{id := ID}) ->
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
         changes => [?invoice_created(Invoice)],
-        action  => set_invoice_timer(#st{invoice = Invoice}),
+        action  => set_invoice_timer(hg_machine_action:new(), #st{invoice = Invoice}),
         state   => #st{}
     }).
 
@@ -727,8 +727,13 @@ assert_no_pending_payment(#st{activity = {payment, PaymentID}}) ->
 assert_no_pending_payment(_) ->
     ok.
 
-set_invoice_timer(#st{invoice = #domain_Invoice{due = Due}}) ->
-    hg_machine_action:set_deadline(Due).
+set_invoice_timer(Action, #st{invoice = Invoice} = St) ->
+    set_invoice_timer(Invoice#domain_Invoice.status, Action, St).
+
+set_invoice_timer(?invoice_unpaid(), Action, #st{invoice = #domain_Invoice{due = Due}}) ->
+    hg_machine_action:set_deadline(Due, Action);
+set_invoice_timer(_Status, Action, _St) ->
+    Action.
 
 capture_payment(PaymentSession, Reason, undefined, Cart, Opts) when
     Cart =/= undefined
@@ -823,13 +828,13 @@ handle_payment_result({done, {Changes1, Action}}, PaymentID, PaymentSession, #st
         ?failed(_) ->
             #{
                 changes => wrap_payment_changes(PaymentID, Changes1),
-                action  => set_invoice_timer(St),
+                action  => set_invoice_timer(Action, St),
                 state   => St
             };
         ?cancelled() ->
             #{
                 changes => wrap_payment_changes(PaymentID, Changes1),
-                action  => set_invoice_timer(St),
+                action  => set_invoice_timer(Action, St),
                 state   => St
             }
     end.

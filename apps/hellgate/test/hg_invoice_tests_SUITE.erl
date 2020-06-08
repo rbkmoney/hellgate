@@ -1751,7 +1751,7 @@ payment_adjustment_captured_from_failed(C) ->
     Cpatured = ?captured(),
     AdjustmentParams = make_status_adjustment_params(Cpatured, AdjReason = <<"manual">>),
     Amount = 42000,
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), Amount, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), Amount, C),
     PaymentParams = make_scenario_payment_params([temp, temp, temp, temp]),
     % start payment
     ?payment_state(?payment(PaymentID)) =
@@ -1763,6 +1763,7 @@ payment_adjustment_captured_from_failed(C) ->
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     {failed, PaymentID, {failure, _Failure}} =
         await_payment_process_failure(InvoiceID, PaymentID, Client, 3),
+    [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client),
     % get balances
     PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
     SysAccount1 = get_cashflow_account({system, settlement}, CF1),
