@@ -50,6 +50,7 @@ init([]) ->
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() -> [
     fatal_risk_score_for_route_found,
+    gathers_fail_rated_routes,
     no_route_found_for_payment,
     handle_uncomputable_provider_terms,
     {group, routing_with_fail_rate},
@@ -58,8 +59,7 @@ all() -> [
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
 groups() -> [
-    {routing_with_fail_rate, [], [
-        gathers_fail_rated_routes,
+    {routing_with_fail_rate, [parallel], [
         prefer_alive,
         prefer_normal_conversion,
         prefer_better_risk_score,
@@ -114,10 +114,45 @@ end_per_group(_GroupName, C) ->
     end.
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
-init_per_testcase(_, C) -> C.
+init_per_testcase(gathers_fail_rated_routes, C) ->
+    application:set_env(hellgate, fault_detector, #{
+        enabled => true,
+        timeout => 4000,
+        availability => #{
+            critical_fail_rate   => 0.7,
+            sliding_window       => 60000,
+            operation_time_limit => 10000,
+            pre_aggregation_size => 2
+        },
+        conversion => #{
+            benign_failures => [
+                insufficient_funds,
+                rejected_by_issuer,
+                processing_deadline_reached
+            ],
+            critical_fail_rate   => 0.7,
+            sliding_window       => 60000,
+            operation_time_limit => 1200000,
+            pre_aggregation_size => 2
+        }
+    }),
+    Revision = hg_domain:head(),
+    ok = hg_domain:upsert(routing_with_fail_rate_fixture(Revision)),
+    [{original_domain_revision, Revision} | C];
+init_per_testcase(_, C) ->
+    C.
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
-end_per_testcase(_Name, _C) -> ok.
+end_per_testcase(gathers_fail_rated_routes, C) ->
+    application:set_env(hellgate, fault_detector, #{enabled => false}),
+    case cfg(original_domain_revision, C) of
+        Revision when is_integer(Revision) ->
+            ok = hg_domain:reset(Revision);
+        undefined ->
+            ok
+    end;
+end_per_testcase(_Name, _C) ->
+    ok.
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
@@ -166,6 +201,7 @@ gathers_fail_rated_routes(_C) ->
 
     {Routes0, _RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
     Result = hg_routing:gather_fail_rates(Routes0),
+    ct:print("FDSTATS\n~p", [Result]),
     [
         {{?prv(200), _}, _, {{dead,  0.9}, {lacking, 0.9}}},
         {{?prv(201), _}, _, {{alive, 0.1}, {normal, 0.1}}},
