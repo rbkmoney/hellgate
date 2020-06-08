@@ -214,13 +214,10 @@ call(Service, Args) ->
     maybe_call(FDEnabled, Service, Args, Opts, Deadline).
 
 maybe_call(true  = _FDEnabled, Service, Args, Opts, Deadline) ->
-    erlang:display(fd_on),
     do_call(Service, Args, Opts, Deadline);
 maybe_call(false = _FDEnabled, 'GetStatistics', _Args, _Opts, _Deadline) ->
-    erlang:display(fd_off),
     [];
 maybe_call(false = _FDEnabled, _Service, _Args, _Opts, _Deadline) ->
-    erlang:display(fd_off),
     disabled.
 
 do_call('InitService', Args, Opts, Deadline) ->
