@@ -201,7 +201,6 @@ gathers_fail_rated_routes(_C) ->
 
     {Routes0, _RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
     Result = hg_routing:gather_fail_rates(Routes0),
-    ct:print("FDSTATS\n~p", [Result]),
     [
         {{?prv(200), _}, _, {{dead,  0.9}, {lacking, 0.9}}},
         {{?prv(201), _}, _, {{alive, 0.1}, {normal, 0.1}}},
