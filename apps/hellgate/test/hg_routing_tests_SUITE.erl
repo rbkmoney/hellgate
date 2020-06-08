@@ -83,27 +83,8 @@ init_per_suite(C) ->
 
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
-    application:set_env(hellgate, fault_detector, #{
-        enabled => true,
-        timeout => 4000,
-        availability => #{
-            critical_fail_rate   => 0.7,
-            sliding_window       => 60000,
-            operation_time_limit => 10000,
-            pre_aggregation_size => 2
-        },
-        conversion => #{
-            benign_failures => [
-                insufficient_funds,
-                rejected_by_issuer,
-                processing_deadline_reached
-            ],
-            critical_fail_rate   => 0.7,
-            sliding_window       => 60000,
-            operation_time_limit => 1200000,
-            pre_aggregation_size => 2
-        }
-    }),
+    FDConfig = genlib_app:env(hellgate, fault_detector),
+    application:set_env(hellgate, fault_detector, FDConfig#{ enabled => true }),
     _ = unlink(SupPid),
     [{apps, Apps}, {test_sup, SupPid} | C].
 
