@@ -2,6 +2,7 @@
 
 -module(hg_routing).
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
 -export([gather_routes/4]).
@@ -9,6 +10,7 @@
 -export([choose_route/3]).
 
 -export([get_payments_terms/2]).
+-export([get_reduced_payments_terms/3]).
 -export([get_rec_paytools_terms/2]).
 
 -export([marshal/1]).
@@ -490,6 +492,15 @@ get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
     #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
     merge_payment_terms(Terms0, Terms1).
 
+-spec get_reduced_payments_terms(route(), hg_varset:varset(), hg_domain:revision()) -> terms().
+
+get_reduced_payments_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
+    PreparedVS = hg_varset:prepare_varset(VS),
+    {Client, Context} = get_party_client(),
+    {ok, Terms} = party_client_thrift:compute_payment_provider_terminal_terms(
+        ProviderRef, TerminalRef, Revision, PreparedVS, Client, Context),
+    Terms.
+
 -spec get_rec_paytools_terms(route(), hg_domain:revision()) -> terms().
 
 get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
@@ -738,6 +749,12 @@ merge_payment_terms(
     };
 merge_payment_terms(ProviderTerms, TerminalTerms) ->
     hg_utils:select_defined(TerminalTerms, ProviderTerms).
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.
 
 %%
 
