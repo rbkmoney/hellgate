@@ -141,7 +141,7 @@ build_operation_id(ServiceType, ID) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec init_service(service_id()) ->
-    {ok, initialised} | {error, any()}.
+    {ok, initialised} | {error, any()} | disabled.
 init_service(ServiceId) ->
     ServiceConfig = build_config(),
     call('InitService', [ServiceId, ServiceConfig]).
@@ -153,7 +153,7 @@ init_service(ServiceId) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec init_service(service_id(), service_config()) ->
-    {ok, initialised} | {error, any()}.
+    {ok, initialised} | {error, any()} | disabled.
 init_service(ServiceId, ServiceConfig) ->
     call('InitService', [ServiceId, ServiceConfig]).
 
@@ -180,7 +180,7 @@ get_statistics(ServiceIds) when is_list(ServiceIds) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec register_operation(operation_status(), service_id(), operation_id()) ->
-    {ok, registered} | {error, not_found} | {error, any()}.
+    {ok, registered} | {error, not_found} | {error, any()} | disabled.
 register_operation(Status, ServiceId, OperationId) ->
     ServiceConfig = build_config(),
     register_operation(Status, ServiceId, OperationId, ServiceConfig).
@@ -193,7 +193,7 @@ register_operation(Status, ServiceId, OperationId) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec register_operation(operation_status(), service_id(), operation_id(), service_config()) ->
-    {ok, registered} | {error, not_found} | {error, any()}.
+    {ok, registered} | {error, not_found} | {error, any()} | disabled.
 register_operation(Status, ServiceId, OperationId, ServiceConfig) ->
     OperationState = case Status of
         start  -> {Status, ?state_start(hg_datetime:format_now())};
@@ -208,9 +208,20 @@ register_operation(Status, ServiceId, OperationId, ServiceConfig) ->
 call(Service, Args) ->
     EnvFDConfig = genlib_app:env(hellgate, fault_detector, #{}),
     Timeout     = genlib_map:get(timeout, EnvFDConfig, 4000),
+    FDEnabled   = genlib_map:get(enabled, EnvFDConfig, true),
     Deadline    = woody_deadline:from_timeout(Timeout),
     Opts        = hg_woody_wrapper:get_service_options(fault_detector),
-    do_call(Service, Args, Opts, Deadline).
+    maybe_call(FDEnabled, Service, Args, Opts, Deadline).
+
+maybe_call(true  = _FDEnabled, Service, Args, Opts, Deadline) ->
+    erlang:display(fd_on),
+    do_call(Service, Args, Opts, Deadline);
+maybe_call(false = _FDEnabled, 'GetStatistics', _Args, _Opts, _Deadline) ->
+    erlang:display(fd_off),
+    [];
+maybe_call(false = _FDEnabled, _Service, _Args, _Opts, _Deadline) ->
+    erlang:display(fd_off),
+    disabled.
 
 do_call('InitService', Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'InitService', Args, Opts, Deadline) of
