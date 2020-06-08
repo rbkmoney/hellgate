@@ -16,6 +16,7 @@
 -export([end_per_testcase/2]).
 
 -export([ruleset_ok/1]).
+-export([empty_candidate_ok/1]).
 
 -behaviour(supervisor).
 -export([init/1]).
@@ -37,7 +38,8 @@ init([]) ->
 
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() -> [
-    ruleset_ok
+    ruleset_ok,
+    empty_candidate_ok
 ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -107,7 +109,36 @@ ruleset_ok(_C) ->
     [{_, {?trm(10), _, _}}] = AcceptedRoute,
     [
         {?prv(3), ?trm(11), {'RoutingRule', undefined}},
+        {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}},
         {?prv(1), ?trm(1),  {'PaymentsProvisionTerms', payment_tool}}
+    ] = RejectContext,
+    ok.
+
+-spec empty_candidate_ok(config()) -> test_return().
+
+empty_candidate_ok(_C) ->
+    BankCard = #domain_BankCard{
+        token = <<"bank card token">>,
+        payment_system = visa,
+        bin = <<"411111">>,
+        last_digits = <<"11">>
+    },
+    VS = #{
+        category        => ?cat(1),
+        currency        => ?cur(<<"RUB">>),
+        cost            => ?cash(101010, <<"RUB">>),
+        payment_tool    => {bank_card, BankCard},
+        party_id        => <<"12345">>,
+        risk_score      => low,
+        flow            => instant
+    },
+
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
+    {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+    [
+        {?prv(1), ?trm(1),  {'RoutingRule', undefined}},
+        {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}}
     ] = RejectContext,
     ok.
 
@@ -312,8 +343,8 @@ construct_domain_fixture() ->
     ]},
 
     Decision2 = {candidates, [
-        candidate(condition(cost_in, {     0,    500000, <<"RUB">>}), ?trm(1)),
-        candidate(condition(cost_in, {500000, 100000000, <<"RUB">>}), ?trm(6))
+        candidate(condition(cost_in, {0, 500000, <<"RUB">>}), ?trm(1)),
+        candidate(condition(cost_in, {0, 500000, <<"RUB">>}), ?trm(6))
     ]},
     Decision3 = {candidates, [
         candidate({constant, true}, ?trm(10)),
@@ -369,7 +400,8 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(2), <<"Rule#2">>, Decision2),
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Rule#3">>, Decision3),
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(4), <<"Rule#4">>, Decision4),
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(5), <<"ProhobitionRule#4">>, Prohibitions),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(5), <<"ProhobitionRule#1">>, Prohibitions),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(6), <<"ProhobitionRule#2">>, Decision4),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
@@ -405,50 +437,11 @@ construct_domain_fixture() ->
                     ?prv(2),
                     ?prv(3)
                 ])},
-                inspector = {decisions, [
-                    #domain_InspectorDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {decisions, [
-                            #domain_InspectorDecision{
-                                if_ = {condition, {category_is, ?cat(3)}},
-                                then_ = {value, ?insp(2)}
-                            },
-                            #domain_InspectorDecision{
-                                if_ = {condition, {category_is, ?cat(4)}},
-                                then_ = {value, ?insp(4)}
-                            },
-                            #domain_InspectorDecision{
-                                if_ = {condition, {category_is, ?cat(5)}},
-                                then_ = {value, ?insp(5)}
-                            },
-                            #domain_InspectorDecision{
-                                if_ = {condition, {category_is, ?cat(6)}},
-                                then_ = {value, ?insp(6)}
-                            },
-                            #domain_InspectorDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                    {inclusive, ?cash(        0, <<"RUB">>)},
-                                    {exclusive, ?cash(   500000, <<"RUB">>)}
-                                )}},
-                                then_ = {value, ?insp(1)}
-                            },
-                            #domain_InspectorDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                    {inclusive, ?cash(   500000, <<"RUB">>)},
-                                    {exclusive, ?cash(100000000, <<"RUB">>)}
-                                )}},
-                                then_ = {value, ?insp(2)}
-                            },
-                            #domain_InspectorDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                    {inclusive, ?cash( 100000000, <<"RUB">>)},
-                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
-                                )}},
-                                then_ = {value, ?insp(3)}
-                            }
-                        ]}
-                    }
-                ]},
+                payment_routing = #domain_PaymentRouting{
+                    policies = ?ruleset(2),
+                    prohibitions = ?ruleset(6)
+                },
+                inspector = {decisions, []},
                 residences = [],
                 realm = live
             }
