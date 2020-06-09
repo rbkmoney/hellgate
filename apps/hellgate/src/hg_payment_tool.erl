@@ -20,16 +20,6 @@
 
 -spec get_method(t()) -> method().
 
-get_method({bank_card_deprecated, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
-    #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}};
-get_method({bank_card_deprecated, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
-    #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}};
-get_method({bank_card_deprecated, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider}}) ->
-    #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
-        payment_system = PaymentSystem,
-        token_provider = TokenProvider
-    }}};
-
 get_method({bank_card, #domain_BankCard{} = BankCard}) ->
     #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
         payment_system      = BankCard#domain_BankCard.payment_system,
