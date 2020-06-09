@@ -226,16 +226,16 @@ unmarshal(bank_card = T, #{
     IsCVVEmpty    = genlib_map:get(<<"is_cvv_empty">>, V),
     TokenizationMethod = genlib_map:get(<<"tokenization_method">>, V),
     #domain_BankCard{
-        token            = unmarshal(str, Token),
-        payment_system   = unmarshal({T, payment_system}, PaymentSystem),
-        bin              = unmarshal(str, Bin),
-        last_digits      = unmarshal(str, MaskedPan),
-        token_provider   = unmarshal({T, token_provider}, TokenProvider),
-        issuer_country   = unmarshal({T, issuer_country}, IssuerCountry),
-        bank_name        = unmarshal({T, bank_name}, BankName),
-        metadata         = unmarshal({T, metadata}, MD),
-        is_cvv_empty     = unmarshal({T, boolean}, IsCVVEmpty),
-        tokenization_method = unmarshal(str, TokenizationMethod)
+        token               = unmarshal(str, Token),
+        payment_system      = unmarshal({T, payment_system}, PaymentSystem),
+        bin                 = unmarshal(str, Bin),
+        last_digits         = unmarshal(str, MaskedPan),
+        token_provider      = unmarshal({T, token_provider}, TokenProvider),
+        issuer_country      = unmarshal({T, issuer_country}, IssuerCountry),
+        bank_name           = unmarshal({T, bank_name}, BankName),
+        metadata            = unmarshal({T, metadata}, MD),
+        is_cvv_empty        = unmarshal({T, boolean}, IsCVVEmpty),
+        tokenization_method = unmarshal({T, tokenization_method}, TokenizationMethod)
     };
 unmarshal(payment_terminal = T, TerminalType) ->
     #domain_PaymentTerminal{
@@ -320,6 +320,11 @@ unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
     googlepay;
 unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
     samsungpay;
+
+unmarshal({bank_card, tokenization_method}, <<"dpan">>) ->
+    dpan;
+unmarshal({bank_card, tokenization_method}, <<"none">>) ->
+    none;
 
 unmarshal({bank_card, issuer_country}, Residence) when is_binary(Residence) ->
     binary_to_existing_atom(unmarshal(str, Residence), utf8);
