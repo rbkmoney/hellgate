@@ -224,7 +224,6 @@ unmarshal(bank_card = T, #{
     BankName      = genlib_map:get(<<"bank_name">>, V),
     MD            = genlib_map:get(<<"metadata">>, V),
     IsCVVEmpty    = genlib_map:get(<<"is_cvv_empty">>, V),
-    TokenizationMethod = genlib_map:get(<<"tokenization_method">>, V),
     #domain_BankCard{
         token            = unmarshal(str, Token),
         payment_system   = unmarshal({T, payment_system}, PaymentSystem),
@@ -234,8 +233,7 @@ unmarshal(bank_card = T, #{
         issuer_country   = unmarshal({T, issuer_country}, IssuerCountry),
         bank_name        = unmarshal({T, bank_name}, BankName),
         metadata         = unmarshal({T, metadata}, MD),
-        is_cvv_empty     = unmarshal({T, boolean}, IsCVVEmpty),
-        tokenization_method = unmarshal(str, TokenizationMethod)
+        is_cvv_empty     = unmarshal({T, boolean}, IsCVVEmpty)
     };
 unmarshal(payment_terminal = T, TerminalType) ->
     #domain_PaymentTerminal{
