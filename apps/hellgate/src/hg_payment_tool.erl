@@ -19,13 +19,23 @@
 
 -spec get_method(t()) -> method().
 
-get_method({bank_card, #domain_BankCard{} = BankCard}) ->
-    #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
-        payment_system      = BankCard#domain_BankCard.payment_system,
-        has_cvv             = not genlib:define(BankCard#domain_BankCard.is_cvv_empty, false), % looks bad
-        token_provider      = BankCard#domain_BankCard.token_provider,
-        tokenization_method = BankCard#domain_BankCard.tokenization_method
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
+    #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}};
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
+    #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}};
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider}}) ->
+    #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
+        payment_system = PaymentSystem,
+        token_provider = TokenProvider
     }}};
+% TODO: uncomment when we are ready to work with new method
+% get_method({bank_card, #domain_BankCard{} = BankCard}) ->
+%     #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
+%         payment_system      = BankCard#domain_BankCard.payment_system,
+%         has_cvv             = not genlib:define(BankCard#domain_BankCard.is_cvv_empty, false), % looks bad
+%         token_provider      = BankCard#domain_BankCard.token_provider,
+%         tokenization_method = BankCard#domain_BankCard.tokenization_method
+%     }}};
 
 get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
     #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
@@ -378,38 +388,38 @@ unmarshal({mobile_commerce, operator}, <<"beeline">>) ->
 unmarshal(_, Other) ->
     Other.
 
--ifdef(TEST).
+% -ifdef(TEST).
 
--include_lib("eunit/include/eunit.hrl").
+% -include_lib("eunit/include/eunit.hrl").
 
--spec test() -> _.
+% -spec test() -> _.
 
--type testcase() :: {_, fun()}.
+% -type testcase() :: {_, fun()}.
 
--spec legacy_unmarshalling_test_() -> [testcase()].
-legacy_unmarshalling_test_() ->
-    PT1 = {bank_card, #domain_BankCard{
-        token          = <<"abcdefabcdefabcdefabcdef">>,
-        payment_system = nspkmir,
-        bin            = <<"22002201">>,
-        last_digits    = <<"11">>
-    }},
-    PT2 = {payment_terminal, #domain_PaymentTerminal{
-        terminal_type  = euroset
-    }},
-    [
-        ?_assertEqual(PT1, unmarshal(legacy_marshal(2, PT1))),
-        ?_assertEqual(PT2, unmarshal(legacy_marshal(2, PT2)))
-    ].
+% -spec legacy_unmarshalling_test_() -> [testcase()].
+% legacy_unmarshalling_test_() ->
+%     PT1 = {bank_card, #domain_BankCard{
+%         token          = <<"abcdefabcdefabcdefabcdef">>,
+%         payment_system = nspkmir,
+%         bin            = <<"22002201">>,
+%         last_digits    = <<"11">>
+%     }},
+%     PT2 = {payment_terminal, #domain_PaymentTerminal{
+%         terminal_type  = euroset
+%     }},
+%     [
+%         ?_assertEqual(PT1, unmarshal(legacy_marshal(2, PT1))),
+%         ?_assertEqual(PT2, unmarshal(legacy_marshal(2, PT2)))
+%     ].
 
-legacy_marshal(_Vsn = 2, {bank_card, #domain_BankCard{} = BankCard}) ->
-    [2, #{
-        <<"token">>          => marshal(str, BankCard#domain_BankCard.token),
-        <<"payment_system">> => marshal({bank_card, payment_system}, BankCard#domain_BankCard.payment_system),
-        <<"bin">>            => marshal(str, BankCard#domain_BankCard.bin),
-        <<"masked_pan">>     => marshal(str, BankCard#domain_BankCard.last_digits)
-    }];
-legacy_marshal(_Vsn = 2, {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
-    [2, marshal({payment_terminal, type}, TerminalType)].
+% legacy_marshal(_Vsn = 2, {bank_card, #domain_BankCard{} = BankCard}) ->
+%     [2, #{
+%         <<"token">>          => marshal(str, BankCard#domain_BankCard.token),
+%         <<"payment_system">> => marshal({bank_card, payment_system}, BankCard#domain_BankCard.payment_system),
+%         <<"bin">>            => marshal(str, BankCard#domain_BankCard.bin),
+%         <<"masked_pan">>     => marshal(str, BankCard#domain_BankCard.last_digits)
+%     }];
+% legacy_marshal(_Vsn = 2, {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
+%     [2, marshal({payment_terminal, type}, TerminalType)].
 
--endif.
+% -endif.

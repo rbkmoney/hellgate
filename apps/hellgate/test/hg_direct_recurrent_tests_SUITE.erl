@@ -517,10 +517,7 @@ construct_term_set_w_recurrent_paytools() ->
     TermSet = construct_simple_term_set(),
     TermSet#domain_TermSet{recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                    payment_system = visa,
-                    has_cvv = true
-                })
+                ?pmt(bank_card_deprecated, visa)
             ])}
         }
     }.
@@ -536,14 +533,8 @@ construct_simple_term_set() ->
                 ?cat(1)
             ])},
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                    payment_system = visa,
-                    has_cvv = true
-                }),
-                ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                    payment_system = mastercard,
-                    has_cvv = true
-                })
+                ?pmt(bank_card_deprecated, visa),
+                ?pmt(bank_card_deprecated, mastercard)
             ])},
             cash_limit = {decisions, [
                 #domain_CashLimitDecision{
@@ -563,14 +554,8 @@ construct_simple_term_set() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                        payment_system = visa,
-                        has_cvv = true
-                    }),
-                    ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                        payment_system = mastercard,
-                        has_cvv = true
-                    })
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -589,14 +574,8 @@ construct_domain_fixture(TermSet) ->
 
         hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
-            payment_system = visa,
-            has_cvv = true
-        })),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
-            payment_system = mastercard,
-            has_cvv = true
-        })),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -658,14 +637,8 @@ construct_domain_fixture(TermSet) ->
                     currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                            payment_system = visa,
-                            has_cvv = true
-                        }),
-                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                            payment_system = mastercard,
-                            has_cvv = true
-                        })
+                        ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card_deprecated, mastercard)
                     ])},
                     cash_limit = {value, ?cashrng(
                         {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -697,10 +670,7 @@ construct_domain_fixture(TermSet) ->
                 recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
                     categories = {value, ?ordset([?cat(1)])},
                     payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                            payment_system = visa,
-                            has_cvv = true
-                        })
+                        ?pmt(bank_card_deprecated, visa)
                     ])},
                     cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }

@@ -458,14 +458,8 @@ terms_retrieval(C) ->
     TermSet2 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [
-            ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                payment_system = mastercard,
-                has_cvv = true
-            }),
-            ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                payment_system = visa,
-                has_cvv = true
-            }),
+            ?pmt(bank_card_deprecated, mastercard),
+            ?pmt(bank_card_deprecated, visa),
             ?pmt(payment_terminal, euroset)
         ]}
     }} = TermSet2,
@@ -544,14 +538,8 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
-            payment_system = visa,
-            has_cvv = true
-        })),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, #domain_BankCardPaymentMethod{
-            payment_system = mastercard,
-            has_cvv = true
-        })),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
 
@@ -603,14 +591,8 @@ construct_term_set_for_cost(LowerBound, UpperBound) ->
                     )}},
                     then_ = {value, ordsets:from_list(
                         [
-                            ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                                payment_system = mastercard,
-                                has_cvv = true
-                            }),
-                            ?pmt(bank_card, #domain_BankCardPaymentMethod{
-                                payment_system = visa,
-                                has_cvv = true
-                            }),
+                            ?pmt(bank_card_deprecated, mastercard),
+                            ?pmt(bank_card_deprecated, visa),
                             ?pmt(payment_terminal, euroset)
                         ]
                     )}
