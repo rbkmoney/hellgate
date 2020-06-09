@@ -4,7 +4,22 @@
 
 -export([prepare_varset/1]).
 
--type varset() :: pm_selector:varset().
+-export_type([varset/0]).
+
+-type varset() :: #{
+    category        => dmsl_domain_thrift:'CategoryRef'(),
+    currency        => dmsl_domain_thrift:'CurrencyRef'(),
+    cost            => dmsl_domain_thrift:'Cash'(),
+    payment_tool    => dmsl_domain_thrift:'PaymentTool'(),
+    party_id        => dmsl_domain_thrift:'PartyID'(),
+    shop_id         => dmsl_domain_thrift:'ShopID'(),
+    risk_score      => dmsl_domain_thrift:'RiskScore'(),
+    flow            => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
+    payout_method   => dmsl_domain_thrift:'PayoutMethodRef'(),
+    wallet_id       => dmsl_domain_thrift:'WalletID'(),
+    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'(),
+    p2p_tool        => dmsl_domain_thrift:'P2PTool'()
+}.
 
 -spec prepare_varset(varset()) -> dmsl_payment_processing_thrift:'Varset'().
 
