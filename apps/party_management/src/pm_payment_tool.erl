@@ -55,7 +55,7 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPay
         bin = <<"">>,
         last_digits = <<"">>,
         token_provider = TokenProvider,
-        is_cvv_empty = IsCVVEmpty, % bad
+        is_cvv_empty = IsCVVEmpty,
         tokenization_method = TokenizationMethod
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->

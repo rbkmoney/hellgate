@@ -387,39 +387,3 @@ unmarshal({mobile_commerce, operator}, <<"beeline">>) ->
 
 unmarshal(_, Other) ->
     Other.
-
-% -ifdef(TEST).
-
-% -include_lib("eunit/include/eunit.hrl").
-
-% -spec test() -> _.
-
-% -type testcase() :: {_, fun()}.
-
-% -spec legacy_unmarshalling_test_() -> [testcase()].
-% legacy_unmarshalling_test_() ->
-%     PT1 = {bank_card, #domain_BankCard{
-%         token          = <<"abcdefabcdefabcdefabcdef">>,
-%         payment_system = nspkmir,
-%         bin            = <<"22002201">>,
-%         last_digits    = <<"11">>
-%     }},
-%     PT2 = {payment_terminal, #domain_PaymentTerminal{
-%         terminal_type  = euroset
-%     }},
-%     [
-%         ?_assertEqual(PT1, unmarshal(legacy_marshal(2, PT1))),
-%         ?_assertEqual(PT2, unmarshal(legacy_marshal(2, PT2)))
-%     ].
-
-% legacy_marshal(_Vsn = 2, {bank_card, #domain_BankCard{} = BankCard}) ->
-%     [2, #{
-%         <<"token">>          => marshal(str, BankCard#domain_BankCard.token),
-%         <<"payment_system">> => marshal({bank_card, payment_system}, BankCard#domain_BankCard.payment_system),
-%         <<"bin">>            => marshal(str, BankCard#domain_BankCard.bin),
-%         <<"masked_pan">>     => marshal(str, BankCard#domain_BankCard.last_digits)
-%     }];
-% legacy_marshal(_Vsn = 2, {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
-%     [2, marshal({payment_terminal, type}, TerminalType)].
-
-% -endif.
