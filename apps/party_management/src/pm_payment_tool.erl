@@ -45,7 +45,7 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated
     }};
 create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
     payment_system = PaymentSystem,
-    has_cvv = HasCVV,
+    is_cvv_empty = IsCVVEmpty,
     token_provider = TokenProvider,
     tokenization_method = TokenizationMethod
 }}}) ->
@@ -55,7 +55,7 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPay
         bin = <<"">>,
         last_digits = <<"">>,
         token_provider = TokenProvider,
-        is_cvv_empty = not HasCVV, % bad
+        is_cvv_empty = IsCVVEmpty, % bad
         tokenization_method = TokenizationMethod
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->

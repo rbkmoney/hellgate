@@ -32,7 +32,7 @@ get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_pr
 % get_method({bank_card, #domain_BankCard{} = BankCard}) ->
 %     #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
 %         payment_system      = BankCard#domain_BankCard.payment_system,
-%         has_cvv             = not genlib:define(BankCard#domain_BankCard.is_cvv_empty, false), % looks bad
+%         is_cvv_empty        = genlib:define(BankCard#domain_BankCard.is_cvv_empty, false),
 %         token_provider      = BankCard#domain_BankCard.token_provider,
 %         tokenization_method = BankCard#domain_BankCard.tokenization_method
 %     }}};
@@ -76,7 +76,7 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated
         token_provider = TokenProvider
     }};
 create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
-    has_cvv = HasCVV,
+    is_cvv_empty = IsCVVEmpty,
     payment_system = PaymentSystem,
     token_provider = TokenProvider,
     tokenization_method = TokenizationMethod
@@ -87,7 +87,7 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPay
         bin = <<"">>,
         last_digits = <<"">>,
         token_provider = TokenProvider,
-        is_cvv_empty = not HasCVV, % baaaaad
+        is_cvv_empty = IsCVVEmpty,
         tokenization_method = TokenizationMethod
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->
