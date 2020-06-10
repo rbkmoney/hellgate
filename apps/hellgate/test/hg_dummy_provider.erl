@@ -667,7 +667,8 @@ make_simple_payment_tool(Token, PaymentSystem, TokenProvider) ->
     make_simple_payment_tool(Token, PaymentSystem, TokenProvider, undefined).
 
 make_simple_payment_tool(Token, PaymentSystem, TokenProvider, TokenizationMethod) ->
-    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>, TokenProvider, <<"SESSION42">>, TokenizationMethod).
+    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>,
+        TokenProvider, <<"SESSION42">>, TokenizationMethod).
 
 construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider, Session, TokenizationMethod) ->
     {
