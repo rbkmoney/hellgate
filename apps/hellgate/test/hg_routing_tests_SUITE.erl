@@ -1230,7 +1230,8 @@ construct_domain_fixture() ->
                             if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
                                 definition = {payment_system, #domain_PaymentSystemCondition{
                                     payment_system_is = visa,
-                                    token_provider_is = applepay
+                                    token_provider_is = applepay,
+                                    tokenization_method_is = dpan
                                 }}
                             }}}},
                             then_ = {value, [

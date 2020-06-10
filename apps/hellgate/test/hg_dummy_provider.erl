@@ -631,7 +631,7 @@ make_payment_tool(digital_wallet) ->
         <<>>
     };
 make_payment_tool(tokenized_bank_card) ->
-    make_simple_payment_tool(<<"no_preauth">>, visa, applepay);
+    make_simple_payment_tool(<<"no_preauth">>, visa, applepay, dpan);
 make_payment_tool(crypto_currency) ->
     {
         {crypto_currency, bitcoin},
@@ -664,16 +664,20 @@ make_simple_payment_tool(Token, PaymentSystem) ->
     make_simple_payment_tool(Token, PaymentSystem, undefined).
 
 make_simple_payment_tool(Token, PaymentSystem, TokenProvider) ->
-    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>, TokenProvider, <<"SESSION42">>).
+    make_simple_payment_tool(Token, PaymentSystem, TokenProvider, undefined).
 
-construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider, Session) ->
+make_simple_payment_tool(Token, PaymentSystem, TokenProvider, TokenizationMethod) ->
+    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>, TokenProvider, <<"SESSION42">>, TokenizationMethod).
+
+construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider, Session, TokenizationMethod) ->
     {
         {bank_card, #domain_BankCard{
             token          = Token,
             payment_system = PaymentSystem,
             bin            = Bin,
             last_digits    = Pan,
-            token_provider = TokenProvider
+            token_provider = TokenProvider,
+            tokenization_method = TokenizationMethod
         }},
         Session
     }.
