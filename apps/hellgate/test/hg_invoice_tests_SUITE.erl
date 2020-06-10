@@ -5647,7 +5647,7 @@ construct_domain_fixture() ->
         }
     },
     [
-        hg_ct_fixture:construct_banc_card_category(
+        hg_ct_fixture:construct_bank_card_category(
             ?bc_cat(1), <<"Bank card category">>, <<"Corporative">>, [<<"*CORPORAT*">>]
         ),
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
