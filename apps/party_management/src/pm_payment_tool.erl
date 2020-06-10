@@ -91,6 +91,8 @@ test_bank_card_condition_def({issuer_country_is, IssuerCountry}, V, Rev) ->
     test_issuer_country_condition(IssuerCountry, V, Rev);
 test_bank_card_condition_def({issuer_bank_is, BankRef}, V, Rev) ->
     test_issuer_bank_condition(BankRef, V, Rev);
+test_bank_card_condition_def({category_is, CategoryRef}, V, Rev) ->
+    test_bank_card_category_condition(CategoryRef, V, Rev);
 test_bank_card_condition_def(
     {empty_cvv_is, Val},
     #domain_BankCard{is_cvv_empty = Val},
@@ -130,6 +132,12 @@ test_issuer_bank_condition(BankRef, #domain_BankCard{bank_name = BankName, bin =
         %      B будущем стоит избавиться от этого.
         {_, _} -> test_bank_card_bins(BIN, BINs)
     end.
+
+test_bank_card_category_condition(CategoryRef, #domain_BankCard{category = Category}, Rev) ->
+    #domain_BankCardCategory{
+        category_patterns = Patterns
+    } = pm_domain:get(Rev, {bank_card_category, CategoryRef}),
+    test_bank_card_patterns(Patterns, Category).
 
 test_bank_card_bins(BIN, BINs) ->
     ordsets:is_element(BIN, BINs).

@@ -41,6 +41,7 @@
 -export([payment_success_additional_info/1]).
 -export([payment_w_terminal_success/1]).
 -export([payment_w_crypto_currency_success/1]).
+-export([payment_bank_card_category_condition/1]).
 -export([payment_w_wallet_success/1]).
 -export([payment_w_customer_success/1]).
 -export([payment_w_another_shop_customer/1]).
@@ -207,7 +208,6 @@ all() ->
 groups() ->
     [
         {all_non_destructive_tests, [parallel], [
-            {group, base_payments},
             payment_risk_score_check,
             payment_risk_score_check_fail,
             payment_risk_score_check_timeout,
@@ -216,6 +216,7 @@ groups() ->
             invalid_payment_w_deprived_party,
             external_account_posting,
             terminal_cashflow_overrides_provider,
+            {group, base_payments},
 
             {group, holds_management},
 
@@ -247,6 +248,7 @@ groups() ->
             processing_deadline_reached_test,
             payment_success_empty_cvv,
             payment_success_additional_info,
+            payment_bank_card_category_condition,
             payment_w_terminal_success,
             payment_w_crypto_currency_success,
             payment_w_wallet_success,
@@ -489,6 +491,7 @@ end_per_suite(C) ->
 
 -define(CB_PROVIDER_LEVY, 50).
 -define(merchant_to_system_share_1, ?share(45, 1000, operation_amount)).
+-define(merchant_to_system_share_2, ?share(100, 1000, operation_amount)).
 -define(merchant_to_system_share_3, ?share(40, 1000, operation_amount)).
 -define(system_to_provider_share_initial, ?share(21, 1000, operation_amount)).
 -define(system_to_provider_share_actual, ?share(16, 1000, operation_amount)).
@@ -1208,6 +1211,29 @@ payment_w_crypto_currency_success(C) ->
     ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
     ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
     ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
+
+-spec payment_bank_card_category_condition(config()) -> _ | no_return().
+
+payment_bank_card_category_condition(C) ->
+    Client = cfg(client, C),
+    PayCash = 2000,
+    InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
+    {{bank_card, BC}, Session} = hg_dummy_provider:make_payment_tool(empty_cvv),
+    BankCard = BC#domain_BankCard{
+        category = <<"CORPORATE CARD">>
+    },
+    PaymentTool = {bank_card, BankCard},
+    PaymentParams = make_payment_params(PaymentTool, Session),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(low)),
+        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+    ] = next_event(InvoiceID, Client),
+    ?cash(200, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
 
 -spec payment_w_mobile_commerce(config()) -> _ | no_return().
 
@@ -5439,6 +5465,18 @@ construct_domain_fixture() ->
             ]},
             fees = {decisions, [
                 #domain_CashFlowDecision{
+                    if_ = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                        definition = {category_is, ?bc_cat(1)}
+                    }}}},
+                    then_ = {value, [
+                        ?cfpost(
+                            {merchant, settlement},
+                            {system, settlement},
+                            ?merchant_to_system_share_2
+                        )
+                    ]}
+                },
+                #domain_CashFlowDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, [
                         ?cfpost(
@@ -5609,6 +5647,14 @@ construct_domain_fixture() ->
         }
     },
     [
+        {bank_card_category, #domain_BankCardCategoryObject{
+            ref = #domain_BankCardCategoryRef{id = 1},
+            data = #domain_BankCardCategory{
+                name = <<"Bank card category">>,
+                description = <<"Corparative">>,
+                category_patterns = [<<"*CORPORAT*">>]
+            }
+        }},
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
         hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
 
@@ -5791,6 +5837,7 @@ construct_domain_fixture() ->
                 payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
+
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
