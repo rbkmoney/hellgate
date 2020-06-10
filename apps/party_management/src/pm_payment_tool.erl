@@ -110,13 +110,18 @@ test_bank_card_condition_def({empty_cvv_is, _Val}, #domain_BankCard{}, _Rev) ->
     false.
 
 test_payment_system_condition(
-    #domain_PaymentSystemCondition{payment_system_is = Ps, token_provider_is = Tp, tokenization_method_is = Tm},
-    #domain_BankCard{payment_system = Ps, token_provider = Tp, tokenization_method = Tm},
+    #domain_PaymentSystemCondition{payment_system_is = Ps, token_provider_is = Tp, tokenization_method_is = Tm0},
+    #domain_BankCard{payment_system = Ps, token_provider = Tp, tokenization_method = Tm1},
     _Rev
 ) ->
-    true;
+    test_tokenization_method_condition(Tm0, Tm1);
 test_payment_system_condition(#domain_PaymentSystemCondition{}, #domain_BankCard{}, _Rev) ->
     false.
+
+test_tokenization_method_condition(undefined, none) ->
+    true;
+test_tokenization_method_condition(DesiredMethod, ActualMethod) ->
+    DesiredMethod == ActualMethod.
 
 test_issuer_country_condition(_Country, #domain_BankCard{issuer_country = undefined}, _Rev) ->
     undefined;
