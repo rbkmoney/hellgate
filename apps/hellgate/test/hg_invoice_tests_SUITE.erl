@@ -5647,14 +5647,9 @@ construct_domain_fixture() ->
         }
     },
     [
-        {bank_card_category, #domain_BankCardCategoryObject{
-            ref = #domain_BankCardCategoryRef{id = 1},
-            data = #domain_BankCardCategory{
-                name = <<"Bank card category">>,
-                description = <<"Corparative">>,
-                category_patterns = [<<"*CORPORAT*">>]
-            }
-        }},
+        hg_ct_fixture:construct_banc_card_category(
+            ?bc_cat(1), <<"Bank card category">>, <<"Corporative">>, [<<"*CORPORAT*">>]
+        ),
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
         hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
 
