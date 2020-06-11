@@ -397,7 +397,6 @@ init_per_suite(C) ->
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
-    {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
     NewC = [
@@ -421,8 +420,6 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 
 end_per_suite(C) ->
-    SupPid = cfg(test_sup, C),
-    ok = supervisor:terminate_child(SupPid, hg_dummy_fault_detector),
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
