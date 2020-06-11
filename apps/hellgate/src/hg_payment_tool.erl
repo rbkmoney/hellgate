@@ -17,34 +17,48 @@
 -type method() :: dmsl_domain_thrift:'PaymentMethodRef'().
 -type condition() :: dmsl_domain_thrift:'PaymentToolCondition'().
 
--spec get_method(t()) -> method().
+-spec get_method(t()) -> ordsets:ordset(method()).
 
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
-    #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}};
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
-    #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}};
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider}}) ->
-    #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
-        payment_system = PaymentSystem,
-        token_provider = TokenProvider
-    }}};
-% TODO: uncomment when we are ready to work with new method
-% get_method({bank_card, #domain_BankCard{} = BankCard}) ->
-%     #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
-%         payment_system      = BankCard#domain_BankCard.payment_system,
-%         is_cvv_empty        = genlib:define(BankCard#domain_BankCard.is_cvv_empty, false),
-%         token_provider      = BankCard#domain_BankCard.token_provider,
-%         tokenization_method = BankCard#domain_BankCard.tokenization_method
-%     }}};
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true} = BankCard}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}},
+        create_bank_card_payment_method_ref(BankCard)
+    ]);
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined} = BankCard}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
+        create_bank_card_payment_method_ref(BankCard)
+    ]);
+get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider} = BankCard}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
+            payment_system = PaymentSystem,
+            token_provider = TokenProvider
+        }}},
+        create_bank_card_payment_method_ref(BankCard)
+    ]);
 
 get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
-    #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
+    [#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}];
 get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
-    #domain_PaymentMethodRef{id = {digital_wallet, Provider}};
+    [#domain_PaymentMethodRef{id = {digital_wallet, Provider}}];
 get_method({crypto_currency, CC}) ->
-    #domain_PaymentMethodRef{id = {crypto_currency, CC}};
+    [#domain_PaymentMethodRef{id = {crypto_currency, CC}}];
 get_method({mobile_commerce, #domain_MobileCommerce{operator = Operator}}) ->
-    #domain_PaymentMethodRef{id = {mobile, Operator}}.
+    [#domain_PaymentMethodRef{id = {mobile, Operator}}].
+
+create_bank_card_payment_method_ref(#domain_BankCard{
+    payment_system = PaymentSystem,
+    is_cvv_empty = IsCVVEmpty,
+    token_provider = TokenProvider,
+    tokenization_method = TokenizationMethod
+}) ->
+    #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
+        payment_system      = PaymentSystem,
+        is_cvv_empty        = genlib:define(IsCVVEmpty, false),
+        token_provider      = TokenProvider,
+        tokenization_method = TokenizationMethod
+    }}}.
 
 -spec create_from_method(method()) -> t().
 

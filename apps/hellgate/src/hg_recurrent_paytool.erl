@@ -738,7 +738,7 @@ ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID}, Party)
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, DomainRevison) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, DomainRevison),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = ordsets:intersection(hg_payment_tool:get_method(PaymentTool), PMs) =/= [] orelse
         throw(#payproc_InvalidPaymentMethod{}),
     PaymentTool.
 

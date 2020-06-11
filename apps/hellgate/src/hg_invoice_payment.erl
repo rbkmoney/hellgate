@@ -660,7 +660,7 @@ validate_recurrent_terms(VS) ->
     } = VS,
     #domain_RecurrentPaytoolsServiceTerms{payment_methods = PaymentMethodSelector} = Terms,
     PMs = reduce_selector(recurrent_payment_methods, PaymentMethodSelector, Varset, Revision),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = ordsets:intersection(hg_payment_tool:get_method(PaymentTool), PMs) =/= [] orelse
         throw_invalid_request(<<"Invalid payment method">>),
     ok.
 
@@ -708,7 +708,7 @@ validate_recurrent_payer(#{payer := _Other}, true) ->
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = ordsets:intersection(hg_payment_tool:get_method(PaymentTool), PMs) =/= [] orelse
         throw_invalid_request(<<"Invalid payment method">>),
     VS#{payment_tool => PaymentTool}.
 
@@ -839,7 +839,7 @@ collect_refund_varset(
     Revision
 ) ->
     RPMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
-    case ordsets:is_element(hg_payment_tool:get_method(maps:get(payment_tool, VS)), RPMs) of
+    case ordsets:intersection(hg_payment_tool:get_method(maps:get(payment_tool, VS)), RPMs) =/= [] of
         true ->
             RVS = collect_partial_refund_varset(PartialRefundsServiceTerms, VS, Revision),
             VS#{refunds => RVS};
