@@ -208,6 +208,7 @@ all() ->
 groups() ->
     [
         {all_non_destructive_tests, [parallel], [
+            {group, base_payments},
             payment_risk_score_check,
             payment_risk_score_check_fail,
             payment_risk_score_check_timeout,
@@ -216,7 +217,7 @@ groups() ->
             invalid_payment_w_deprived_party,
             external_account_posting,
             terminal_cashflow_overrides_provider,
-            {group, base_payments},
+
 
             {group, holds_management},
 
