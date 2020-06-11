@@ -149,6 +149,8 @@ test_payment_system_condition(#domain_PaymentSystemCondition{}, #domain_BankCard
 
 test_tokenization_method_condition(undefined, _) ->
     true;
+test_tokenization_method_condition(_NotUndefined, undefined) ->
+    undefined;
 test_tokenization_method_condition(DesiredMethod, ActualMethod) ->
     DesiredMethod == ActualMethod.
 
