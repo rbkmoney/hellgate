@@ -29,11 +29,16 @@ get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_pr
         #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
         create_bank_card_payment_method_ref(BankCard)
     ]);
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = TokenProvider} = BankCard}) ->
+get_method({bank_card, #domain_BankCard{
+    payment_system = PaymentSystem,
+    token_provider = TokenProvider,
+    tokenization_method = TokenizationMethod
+} = BankCard}) ->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
             payment_system = PaymentSystem,
-            token_provider = TokenProvider
+            token_provider = TokenProvider,
+            tokenization_method = TokenizationMethod
         }}},
         create_bank_card_payment_method_ref(BankCard)
     ]);
