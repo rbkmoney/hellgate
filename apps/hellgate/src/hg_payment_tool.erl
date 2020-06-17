@@ -37,7 +37,6 @@ get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_pr
         }}},
         create_bank_card_payment_method_ref(BankCard)
     ]);
-
 get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
     [#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}];
 get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
@@ -80,14 +79,16 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentS
     }};
 create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
-        token_provider = TokenProvider
+        token_provider = TokenProvider,
+        tokenization_method = TokenizationMethod
 }}}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
         last_digits = <<"">>,
-        token_provider = TokenProvider
+        token_provider = TokenProvider,
+        tokenization_method = TokenizationMethod
     }};
 create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
     is_cvv_empty = IsCVVEmpty,
@@ -169,13 +170,20 @@ test_bank_card_condition_def({empty_cvv_is, _Val}, #domain_BankCard{}, _Rev) ->
     false.
 
 test_payment_system_condition(
-    #domain_PaymentSystemCondition{payment_system_is = Ps, token_provider_is = Tp},
-    #domain_BankCard{payment_system = Ps, token_provider = Tp},
+    #domain_PaymentSystemCondition{payment_system_is = Ps, token_provider_is = Tp, tokenization_method_is = TmCond},
+    #domain_BankCard{payment_system = Ps, token_provider = Tp, tokenization_method = Tm},
     _Rev
 ) ->
-    true;
+    test_tokenization_method_condition(TmCond, Tm);
 test_payment_system_condition(#domain_PaymentSystemCondition{}, #domain_BankCard{}, _Rev) ->
     false.
+
+test_tokenization_method_condition(undefined, _) ->
+    true;
+test_tokenization_method_condition(_NotUndefined, undefined) ->
+    undefined;
+test_tokenization_method_condition(DesiredMethod, ActualMethod) ->
+    DesiredMethod == ActualMethod.
 
 test_issuer_country_condition(_Country, #domain_BankCard{issuer_country = undefined}, _Rev) ->
     undefined;

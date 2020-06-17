@@ -74,10 +74,13 @@
         phone_number = Phone
     }).
 
--define(tkz_bank_card(PaymentSystem, TokenProvider),
+-define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, dpan)).
+
+-define(tkz_bank_card(PaymentSystem, TokenProvider, TokenizationMethod),
     #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
-        token_provider = TokenProvider
+        token_provider = TokenProvider,
+        tokenization_method = TokenizationMethod
     }).
 
 -define(timeout_reason(), <<"Timeout">>).
