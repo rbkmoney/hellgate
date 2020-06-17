@@ -770,7 +770,7 @@ test_term(currency, V, Vs) ->
 test_term(category, V, Vs) ->
     ordsets:is_element(V, Vs);
 test_term(payment_tool, PT, PMs) ->
-    ordsets:intersection(hg_payment_tool:get_method(PT), PMs) =/= [];
+    hg_payment_tool:is_supported_payment_method(hg_payment_tool:get_possible_methods(PT), PMs);
 test_term(cost, Cost, CashRange) ->
     hg_cash_range:is_inside(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
