@@ -5,10 +5,9 @@
 
 %%
 
--export([get_possible_methods/1]).
 -export([create_from_method/1]).
 -export([test_condition/3]).
--export([is_supported_payment_method/2]).
+-export([has_any_payment_method/2]).
 
 -export([unmarshal/1]).
 
@@ -19,10 +18,10 @@
 -type condition() :: dmsl_domain_thrift:'PaymentToolCondition'().
 
 
--spec is_supported_payment_method(ordsets:ordset(method()), ordsets:ordset(method())) -> boolean().
+-spec has_any_payment_method(t(), ordsets:ordset(method())) -> boolean().
 
-is_supported_payment_method(PaymentToolMethods, SupportedMethods) ->
-    not ordsets:is_disjoint(PaymentToolMethods, SupportedMethods).
+has_any_payment_method(PaymentTool, SupportedMethods) ->
+    not ordsets:is_disjoint(get_possible_methods(PaymentTool), SupportedMethods).
 
 -spec get_possible_methods(t()) -> ordsets:ordset(method()).
 
