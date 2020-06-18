@@ -3157,14 +3157,6 @@ get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when
 get_captured_cost(_, #domain_InvoicePayment{cost = Cost}) ->
     Cost.
 
--spec maybe_get_captured_cost(payment_status(), payment()) ->
-    cash().
-
-maybe_get_captured_cost({captured, Captured}, Payment) ->
-    get_captured_cost(Captured, Payment);
-maybe_get_captured_cost(_OtherStatus, #domain_InvoicePayment{cost = Cost}) ->
-    Cost.
-
 get_refund_session(#refund_st{sessions = []}) ->
     undefined;
 get_refund_session(#refund_st{sessions = [Session | _]}) ->
