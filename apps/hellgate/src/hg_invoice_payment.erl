@@ -2827,14 +2827,6 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
-merge_change(?payment_status_changed(Status), #st{activity = {adjustment_pending, _ID}} = St, _Opts) ->
-    Payment = get_payment(St),
-    St#st{
-        payment = Payment#domain_InvoicePayment{
-            status = Status,
-            cost   = maybe_get_captured_cost(Status, Payment)
-        }
-    };
 merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [
         risk_scoring,
