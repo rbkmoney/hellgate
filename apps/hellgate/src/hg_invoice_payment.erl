@@ -3069,7 +3069,17 @@ apply_adjustment_effects(Adjustment, St) ->
         apply_adjustment_effect(cashflow, Adjustment, St)).
 
 apply_adjustment_effect(status, ?adjustment_target_status(Status), St = #st{payment = Payment}) ->
-    St#st{payment = Payment#domain_InvoicePayment{status = Status}};
+    case Status of
+        {captured, Capture} ->
+            St#st{payment = Payment#domain_InvoicePayment{
+                status = Status,
+                cost = get_captured_cost(Capture, Payment)
+            }};
+        _ ->
+            St#st{payment = Payment#domain_InvoicePayment{
+                status = Status
+            }}
+    end;
 apply_adjustment_effect(status, #domain_InvoicePaymentAdjustment{}, St) ->
     St;
 apply_adjustment_effect(cashflow, Adjustment, St) ->
