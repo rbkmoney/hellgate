@@ -8,6 +8,7 @@
 -export([create_from_method/1]).
 -export([test_condition/3]).
 -export([has_any_payment_method/2]).
+-export([get_possible_methods/1]).
 
 -export([unmarshal/1]).
 
