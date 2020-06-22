@@ -396,7 +396,8 @@ reduce_withdrawals_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
     #domain_WithdrawalServiceTerms{
         currencies = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.currencies, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_limit, VS, Rev),
-        cash_flow = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_flow, VS, Rev)
+        cash_flow = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_flow, VS, Rev),
+        attempt_limit = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.attempt_limit, VS, Rev)
     }.
 
 reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
