@@ -189,7 +189,7 @@ all() ->
         payments_w_bank_card_issuer_conditions,
         payments_w_bank_conditions,
 
-        % % With variable domain config
+        % With variable domain config
         {group, adjustments},
         {group, holds_management_with_custom_config},
         {group, refunds},

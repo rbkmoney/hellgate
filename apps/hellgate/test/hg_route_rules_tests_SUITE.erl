@@ -108,9 +108,10 @@ ruleset_ok(_C) ->
     {AcceptedRoute, RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     [{_, {?trm(10), _, _}}] = AcceptedRoute,
     [
-        {?prv(3), ?trm(11), {'RoutingRule', undefined}},
-        {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}},
-        {?prv(1), ?trm(1),  {'PaymentsProvisionTerms', payment_tool}}
+        {?prv(3), ?trm(11), {'RoutingRule', [undefined]}},
+        {?prv(1), ?trm(1),  {'PaymentsProvisionTerms', payment_tool}},
+        {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}}
+
     ] = RejectContext,
     ok.
 
@@ -137,7 +138,7 @@ empty_candidate_ok(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
     {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     [
-        {?prv(1), ?trm(1),  {'RoutingRule', undefined}},
+        {?prv(1), ?trm(1),  {'RoutingRule', [undefined]}},
         {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}}
     ] = RejectContext,
     ok.

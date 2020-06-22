@@ -27,7 +27,7 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     RuleSetDeny = get_rule_set(PaymentRouting#domain_PaymentRouting.prohibitions, Revision),
     Candidates = reduce(RuleSet, VS, Revision),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
-    CandidatesDeny = marshal(candidates, reduce(RuleSetDeny, VS, Revision)),
+    CandidatesDeny = marshal(candidates_deny, reduce(RuleSetDeny, VS, Revision)),
     filter_routes(Predestination, RatedRoutes, CandidatesDeny).
 
 reduce(RuleSet, VS, Revision) ->
@@ -38,38 +38,44 @@ reduce(RuleSet, VS, Revision) ->
 
 reduce_decisions({_, []}, _, _) ->
     [];
-reduce_decisions({delegates, [D | Delegates]}, VS, Rev) ->
-    #domain_PaymentRoutingDelegate{
-        allowed = Predicate,
-        ruleset = RuleSetRef
-    } = D,
-    case pm_selector:reduce_predicate(Predicate, VS, Rev) of
-        ?const(false) ->
-            reduce_decisions({delegates, Delegates}, VS, Rev);
-        ?const(true) ->
-            case reduce(get_rule_set(RuleSetRef, Rev), VS, Rev) of
-                [] ->
-                   reduce_decisions({delegates, Delegates}, VS, Rev);
-                Candidates ->
-                    Candidates ++ reduce_decisions({delegates, Delegates}, VS, Rev)
-            end;
-        _ ->
-            logger:warning("Misconfiguration routing rule, can't reduce decision: ~p~nVarset:~n~p", [Predicate, VS]),
-            reduce_decisions({delegates, Delegates}, VS, Rev)
-    end;
-reduce_decisions({candidates, [C | Candidates]}, VS, Rev) ->
-    #domain_PaymentRoutingCandidate{
-        allowed  = Predicate
-    } = C,
-    case pm_selector:reduce_predicate(Predicate, VS, Rev) of
-        ?const(false) ->
-            reduce_decisions({candidates, Candidates}, VS, Rev);
-        ?const(true) ->
-            [C | reduce_decisions({candidates, Candidates}, VS, Rev)];
-        _ ->
-            logger:warning("Misconfiguration routing rule, can't reduce decision: ~p~nVarset:~n~p", [Predicate, VS]),
-            reduce_decisions({candidates, Candidates}, VS, Rev)
-    end.
+reduce_decisions({delegates, Delegates}, VS, Rev) ->
+    reduce_delegates_decision(Delegates, VS, Rev);
+reduce_decisions({candidates, Candidates}, VS, Rev) ->
+    reduce_candidates_decision(Candidates, VS, Rev).
+
+reduce_delegates_decision(Delegates, VS, Rev) ->
+    lists:foldl(fun(D, AccIn) ->
+        Predicate = D#domain_PaymentRoutingDelegate.allowed,
+        RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
+        case pm_selector:reduce_predicate(Predicate, VS, Rev) of
+            ?const(false) ->
+                AccIn;
+            ?const(true) ->
+                case reduce(get_rule_set(RuleSetRef, Rev), VS, Rev) of
+                    [] ->
+                        AccIn;
+                    Candidates ->
+                        Candidates ++ AccIn
+                end;
+            _ ->
+                logger:warning("Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p", [Predicate, VS]),
+                AccIn
+        end
+    end, [], Delegates).
+
+reduce_candidates_decision(Candidates, VS, Rev) ->
+    lists:foldl(fun(C, AccIn) ->
+        Predicate = C#domain_PaymentRoutingCandidate.allowed,
+        case pm_selector:reduce_predicate(Predicate, VS, Rev) of
+            ?const(false) ->
+                AccIn;
+            ?const(true) ->
+                [C | AccIn];
+            _ ->
+                logger:warning("Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p", [Predicate, VS]),
+                AccIn
+        end
+    end, [], Candidates).
 
 collect_routes(Predestination, Candidates, VS, Revision) ->
     lists:foldl(
@@ -98,10 +104,10 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
 filter_routes(_Predestination, {Routes, Rejected}, CandidatesDeny) ->
     lists:foldl(fun(Route, {AccIn, RejectedIn}) ->
         {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
-        case lists:keyfind(TerminalRef, 1, CandidatesDeny) of
-            false ->
+        case orddict:find(TerminalRef, CandidatesDeny) of
+            error ->
                 {[Route | AccIn], RejectedIn};
-            {_, Description, _} ->
+            {ok, Description} ->
                 RejectedOut = [{ProviderRef, TerminalRef, {'RoutingRule', Description}} | RejectedIn],
                 {AccIn, RejectedOut}
         end
@@ -118,19 +124,11 @@ get_rule_set(RuleSetRef, Revision) ->
 
 get_terminal_ref(Candidate) ->
     Candidate#domain_PaymentRoutingCandidate.terminal.
+
 get_description(Candidate) ->
     Candidate#domain_PaymentRoutingCandidate.description.
-get_priority(Candidate) ->
-    {
-        Candidate#domain_PaymentRoutingCandidate.priority,
-        Candidate#domain_PaymentRoutingCandidate.weight
-    }.
 
-marshal(candidates, Candidates) ->
-    lists:foldl(fun(C, AccIn) ->
-        [{
-            get_terminal_ref(C),
-            get_description(C),
-            get_priority(C)
-        } | AccIn]
-    end, [], Candidates).
+marshal(candidates_deny, Candidates) ->
+    lists:foldl(fun(C, Acc) ->
+        orddict:append(get_terminal_ref(C), get_description(C), Acc)
+    end, orddict:new(), Candidates).
