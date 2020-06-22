@@ -729,7 +729,7 @@ merge_withdrawals_terms(
         currencies = pm_utils:select_defined(Currencies1, Currencies0),
         cash_limit = pm_utils:select_defined(CashLimit1, CashLimit0),
         cash_flow = pm_utils:select_defined(CashFlow1, CashFlow0),
-        attempt_limit = pm_utils:select_defined(AttemptList0, AttemptList1)
+        attempt_limit = pm_utils:select_defined(AttemptList1, AttemptList0)
     };
 merge_withdrawals_terms(Terms0, Terms1) ->
     pm_utils:select_defined(Terms1, Terms0).
