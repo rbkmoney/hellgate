@@ -27,8 +27,14 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     RuleSetDeny = get_rule_set(PaymentRouting#domain_PaymentRouting.prohibitions, Revision),
     Candidates = reduce(RuleSet, VS, Revision),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
-    CandidatesDeny = marshal(candidates_deny, reduce(RuleSetDeny, VS, Revision)),
-    filter_routes(Predestination, RatedRoutes, CandidatesDeny).
+    Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
+    filter_routes(Predestination, RatedRoutes, Prohibitions).
+
+get_table_prohibitions(RuleSetDeny, VS, Revision) ->
+    Candidates = reduce(RuleSetDeny, VS, Revision),
+    lists:foldl(fun(C, AccIn) ->
+        AccIn#{get_terminal_ref(C) => get_description(C)}
+    end, #{}, Candidates).
 
 reduce(RuleSet, VS, Revision) ->
     #domain_PaymentRoutingRuleset{
@@ -44,14 +50,6 @@ reduce_decisions({candidates, Candidates}, VS, Rev) ->
     reduce_candidates_decision(Candidates, VS, Rev).
 
 reduce_delegates_decision(Delegates, VS, Rev) ->
-    ReduceFun = fun(RuleSetRef, AccIn) ->
-        case reduce(get_rule_set(RuleSetRef, Rev), VS, Rev) of
-            [] ->
-                AccIn;
-            Candidates ->
-                Candidates ++ AccIn
-        end
-    end,
     lists:foldl(fun(D, AccIn) ->
         Predicate = D#domain_PaymentRoutingDelegate.allowed,
         RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
@@ -59,7 +57,7 @@ reduce_delegates_decision(Delegates, VS, Rev) ->
             ?const(false) ->
                 AccIn;
             ?const(true) ->
-                ReduceFun(RuleSetRef, AccIn);
+                reduce(get_rule_set(RuleSetRef, Rev), VS, Rev);
             _ ->
                 logger:warning(
                     "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
@@ -110,10 +108,10 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
     ).
 
 %%  Does filter for recurrent_payment only?
-filter_routes(_Predestination, {Routes, Rejected}, CandidatesDeny) ->
+filter_routes(_Predestination, {Routes, Rejected}, Prohibitions) ->
     lists:foldl(fun(Route, {AccIn, RejectedIn}) ->
         {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
-        case orddict:find(TerminalRef, CandidatesDeny) of
+        case maps:find(TerminalRef, Prohibitions) of
             error ->
                 {[Route | AccIn], RejectedIn};
             {ok, Description} ->
@@ -136,8 +134,3 @@ get_terminal_ref(Candidate) ->
 
 get_description(Candidate) ->
     Candidate#domain_PaymentRoutingCandidate.description.
-
-marshal(candidates_deny, Candidates) ->
-    lists:foldl(fun(C, Acc) ->
-        orddict:append(get_terminal_ref(C), get_description(C), Acc)
-    end, orddict:new(), Candidates).
