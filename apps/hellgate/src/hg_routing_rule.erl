@@ -44,6 +44,14 @@ reduce_decisions({candidates, Candidates}, VS, Rev) ->
     reduce_candidates_decision(Candidates, VS, Rev).
 
 reduce_delegates_decision(Delegates, VS, Rev) ->
+    ReduceFun = fun(RuleSetRef, AccIn) ->
+        case reduce(get_rule_set(RuleSetRef, Rev), VS, Rev) of
+            [] ->
+                AccIn;
+            Candidates ->
+                Candidates ++ AccIn
+        end
+    end,
     lists:foldl(fun(D, AccIn) ->
         Predicate = D#domain_PaymentRoutingDelegate.allowed,
         RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
@@ -51,14 +59,12 @@ reduce_delegates_decision(Delegates, VS, Rev) ->
             ?const(false) ->
                 AccIn;
             ?const(true) ->
-                case reduce(get_rule_set(RuleSetRef, Rev), VS, Rev) of
-                    [] ->
-                        AccIn;
-                    Candidates ->
-                        Candidates ++ AccIn
-                end;
+                ReduceFun(RuleSetRef, AccIn);
             _ ->
-                logger:warning("Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p", [Predicate, VS]),
+                logger:warning(
+                    "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
+                    [Predicate, VS]
+                ),
                 AccIn
         end
     end, [], Delegates).
@@ -72,7 +78,10 @@ reduce_candidates_decision(Candidates, VS, Rev) ->
             ?const(true) ->
                 [C | AccIn];
             _ ->
-                logger:warning("Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p", [Predicate, VS]),
+                logger:warning(
+                    "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
+                    [Predicate, VS]
+                ),
                 AccIn
         end
     end, [], Candidates).
