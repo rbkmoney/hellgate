@@ -2205,58 +2205,26 @@ construct_domain_fixture() ->
             ?tmpl(5),
             ?trms(4)
         ),
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(1),
-            data = #domain_TermSetHierarchy{
-                parent_terms = undefined,
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = TestTermSet
-                }]
+        pm_ct_fixture:construct_term_set_hierarchy(?trms(1), undefined, TestTermSet),
+        pm_ct_fixture:construct_term_set_hierarchy(?trms(2), undefined, DefaultTermSet),
+        pm_ct_fixture:construct_term_set_hierarchy(?trms(3), ?trms(2), TermSet),
+        pm_ct_fixture:construct_term_set_hierarchy(
+            ?trms(4),
+            ?trms(3),
+            #domain_TermSet{
+                payments = #domain_PaymentsServiceTerms{
+                    currencies = {value, ordsets:from_list([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ordsets:from_list([
+                        ?cat(2)
+                    ])},
+                    payment_methods = {value, ordsets:from_list([
+                        ?pmt(bank_card, visa)
+                    ])}
+                }
             }
-        }},
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(2),
-            data = #domain_TermSetHierarchy{
-                parent_terms = undefined,
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = DefaultTermSet
-                }]
-            }
-        }},
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(3),
-            data = #domain_TermSetHierarchy{
-                parent_terms = ?trms(2),
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = TermSet
-                }]
-            }
-        }},
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(4),
-            data = #domain_TermSetHierarchy{
-                parent_terms = ?trms(3),
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = #domain_TermSet{
-                        payments = #domain_PaymentsServiceTerms{
-                            currencies = {value, ordsets:from_list([
-                                ?cur(<<"RUB">>)
-                            ])},
-                            categories = {value, ordsets:from_list([
-                                ?cat(2)
-                            ])},
-                            payment_methods = {value, ordsets:from_list([
-                                ?pmt(bank_card, visa)
-                            ])}
-                        }
-                    }
-                }]
-            }
-        }},
+        ),
         {bank, #domain_BankObject{
             ref = ?bank(1),
             data = #domain_Bank {
