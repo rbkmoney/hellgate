@@ -15,9 +15,11 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
--export([ruleset_ok/1]).
+-export([no_route_found_for_payment/1]).
+-export([gather_route_success/1]).
+-export([rejected_by_table_prohibitions/1]).
 -export([empty_candidate_ok/1]).
--export([wrong_ruleset_fail/1]).
+-export([ruleset_misconfig/1]).
 
 -behaviour(supervisor).
 -export([init/1]).
@@ -39,9 +41,11 @@ init([]) ->
 
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() -> [
-    ruleset_ok,
+    no_route_found_for_payment,
+    gather_route_success,
+    rejected_by_table_prohibitions,
     empty_candidate_ok,
-    wrong_ruleset_fail
+    ruleset_misconfig
 ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -91,9 +95,32 @@ cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
 
 
--spec ruleset_ok(config()) -> test_return().
+-spec no_route_found_for_payment(config()) -> test_return().
 
-ruleset_ok(_C) ->
+no_route_found_for_payment(_C) ->
+    VS = #{
+        category        => ?cat(1),
+        currency        => ?cur(<<"RUB">>),
+        cost            => ?cash(999, <<"RUB">>),
+        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        party_id        => <<"12345">>,
+        risk_score      => low,
+        flow            => instant
+    },
+
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+
+    {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+    [
+        {?prv(1), ?trm(1),  {'PaymentsProvisionTerms', payment_tool}},
+        {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}},
+        {?prv(3), ?trm(10), {'PaymentsProvisionTerms', cost}}
+    ] = RejectContext.
+
+-spec gather_route_success(config()) -> test_return().
+
+gather_route_success(_C) ->
     VS = #{
         category        => ?cat(1),
         currency        => ?cur(<<"RUB">>),
@@ -107,10 +134,33 @@ ruleset_ok(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {AcceptedRoute, RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
-    [{_, {?trm(10), _, _}}] = AcceptedRoute,
+    {[{_, {?trm(10), _, _}}], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     [
-        {?prv(3), ?trm(11), {'RoutingRule', undefined}}
+        {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}},
+        {?prv(2), ?trm(6), {'PaymentsProvisionTerms', category}}
+    ] = RejectContext.
+
+-spec rejected_by_table_prohibitions(config()) -> test_return().
+
+rejected_by_table_prohibitions(_C) ->
+VS = #{
+        category        => ?cat(1),
+        currency        => ?cur(<<"RUB">>),
+        cost            => ?cash(1000, <<"RUB">>),
+        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        party_id        => <<"67890">>,
+        risk_score      => low,
+        flow            => instant
+    },
+
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+
+    {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+
+    [
+        {?prv(3), ?trm(11), {'RoutingRule', undefined}},
+        {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}}
     ] = RejectContext,
     ok.
 
@@ -135,18 +185,22 @@ empty_candidate_ok(_C) ->
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
-    {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
-    [
-        {?prv(1), ?trm(1),  {'RoutingRule', undefined}},
-        {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}}
-    ] = RejectContext,
-    ok.
+    {[], []} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
 
--spec wrong_ruleset_fail(config()) -> test_return().
+-spec ruleset_misconfig(config()) -> test_return().
 
-wrong_ruleset_fail(_C) ->
+ruleset_misconfig(_C) ->
+    VS = #{
+        party_id        => <<"12345">>,
+        risk_score      => low,
+        flow            => instant
+    },
 
-    ok.
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+
+    {[], []} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
+
 %%% Domain config fixtures
 
 construct_domain_fixture() ->
@@ -155,12 +209,11 @@ construct_domain_fixture() ->
     ]},
     Decision1 = {delegates, [
         delegate(condition(party, <<"12345">>), ?ruleset(2)),
-        delegate(condition(payment_terminal, euroset), ?ruleset(3))
+        delegate(condition(party, <<"67890">>), ?ruleset(4)),
+        delegate(predicate(true), ?ruleset(3))
     ]},
-
-    Decision2 = {candidates, [
-        candidate(condition(cost_in, {0, 500000, <<"RUB">>}), ?trm(1)),
-        candidate(condition(cost_in, {0, 500000, <<"RUB">>}), ?trm(6))
+    Decision2 = {delegates, [
+        delegate(condition(cost_in, {0, 500000, <<"RUB">>}), ?ruleset(9))
     ]},
     Decision3 = {candidates, [
         candidate({constant, true}, ?trm(10)),
@@ -170,6 +223,11 @@ construct_domain_fixture() ->
         candidate({constant, true}, ?trm(1)),
         candidate({constant, true}, ?trm(11))
     ]},
+    Decision9 = {candidates, [
+        candidate({constant, true}, ?trm(1)),
+        candidate({constant, true}, ?trm(6)),
+        candidate({constant, true}, ?trm(10))
+    ]},
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
         hg_ct_fixture:construct_currency(?cur(<<"USD">>)),
@@ -177,10 +235,6 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
         hg_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
-        hg_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
-        hg_ct_fixture:construct_category(?cat(4), <<"Offliner">>, live),
-        hg_ct_fixture:construct_category(?cat(5), <<"Timeouter">>, live),
-        hg_ct_fixture:construct_category(?cat(6), <<"MachineFailer">>, live),
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
@@ -192,16 +246,6 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
-
-        hg_ct_fixture:construct_inspector(?insp(1), <<"Rejector">>, ?prx(2), #{<<"risk_score">> => <<"low">>}),
-        hg_ct_fixture:construct_inspector(?insp(2), <<"Skipper">>, ?prx(2), #{<<"risk_score">> => <<"high">>}),
-        hg_ct_fixture:construct_inspector(?insp(3), <<"Fatalist">>, ?prx(2), #{<<"risk_score">> => <<"fatal">>}),
-        hg_ct_fixture:construct_inspector(?insp(4), <<"Offliner">>, ?prx(2),
-            #{<<"link_state">> => <<"unexpected_failure">>}, low),
-        hg_ct_fixture:construct_inspector(?insp(5), <<"Offliner">>, ?prx(2),
-            #{<<"link_state">> => <<"timeout">>}, low),
-        hg_ct_fixture:construct_inspector(?insp(6), <<"Offliner">>, ?prx(2),
-            #{<<"link_state">> => <<"unexpected_failure">>}),
 
         hg_ct_fixture:construct_contract_template(?tmpl(1), ?trms(1)),
 
@@ -216,6 +260,9 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(4), <<"Rule#4">>, Decision4),
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(5), <<"ProhobitionRule#1">>, Prohibitions),
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(6), <<"ProhobitionRule#2">>, Decision4),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(7), <<"Empty Delegates">>, {delegates, []}),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(8), <<"Empty Candidates">>, {candidates, []}),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(9), <<"Rule#9">>, Decision9),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
@@ -251,7 +298,7 @@ construct_domain_fixture() ->
                     ?prv(3)
                 ])},
                 payment_routing = #domain_PaymentRouting{
-                    policies = ?ruleset(2),
+                    policies = ?ruleset(7),
                     prohibitions = ?ruleset(6)
                 },
                 inspector = {decisions, []},
@@ -366,10 +413,7 @@ construct_domain_fixture() ->
                         ?cur(<<"RUB">>)
                     ])},
                     categories = {value, ?ordset([
-                        ?cat(2),
-                        ?cat(4),
-                        ?cat(5),
-                        ?cat(6)
+                        ?cat(2)
                     ])},
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa),
@@ -497,6 +541,9 @@ construct_domain_fixture() ->
             }
         }}
     ].
+
+predicate(Constant) when is_boolean(Constant) ->
+    {constant, Constant}.
 
 condition(cost_in, {Min, Max, Cur}) ->
     {condition, {cost_in, ?cashrng(

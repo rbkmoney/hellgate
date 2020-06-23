@@ -28,7 +28,7 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     Candidates = reduce(RuleSet, VS, Revision),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
     Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
-    filter_routes(Predestination, RatedRoutes, Prohibitions).
+    filter_routes(RatedRoutes, Prohibitions).
 
 get_table_prohibitions(RuleSetDeny, VS, Revision) ->
     Candidates = reduce(RuleSetDeny, VS, Revision),
@@ -49,23 +49,21 @@ reduce_decisions({delegates, Delegates}, VS, Rev) ->
 reduce_decisions({candidates, Candidates}, VS, Rev) ->
     reduce_candidates_decision(Candidates, VS, Rev).
 
-reduce_delegates_decision(Delegates, VS, Rev) ->
-    lists:foldl(fun(D, AccIn) ->
-        Predicate = D#domain_PaymentRoutingDelegate.allowed,
-        RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
-        case pm_selector:reduce_predicate(Predicate, VS, Rev) of
-            ?const(false) ->
-                AccIn;
-            ?const(true) ->
-                reduce(get_rule_set(RuleSetRef, Rev), VS, Rev);
-            _ ->
-                logger:warning(
-                    "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
-                    [Predicate, VS]
-                ),
-                AccIn
-        end
-    end, [], Delegates).
+reduce_delegates_decision([D | Delegates], VS, Rev) ->
+    Predicate = D#domain_PaymentRoutingDelegate.allowed,
+    RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
+    case pm_selector:reduce_predicate(Predicate, VS, Rev) of
+        ?const(false) ->
+            reduce_delegates_decision(Delegates, VS, Rev);
+        ?const(true) ->
+            reduce(get_rule_set(RuleSetRef, Rev), VS, Rev);
+        _ ->
+            logger:warning(
+                "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~n Varset:~n~p",
+                [Predicate, VS]
+            ),
+            []
+    end.
 
 reduce_candidates_decision(Candidates, VS, Rev) ->
     lists:foldl(fun(C, AccIn) ->
@@ -107,8 +105,7 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
         Candidates
     ).
 
-%%  Does filter for recurrent_payment only?
-filter_routes(_Predestination, {Routes, Rejected}, Prohibitions) ->
+filter_routes({Routes, Rejected}, Prohibitions) ->
     lists:foldl(fun(Route, {AccIn, RejectedIn}) ->
         {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
         case maps:find(TerminalRef, Prohibitions) of
