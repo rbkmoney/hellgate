@@ -1724,7 +1724,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"KZT">>),
-                        payment_method = ?pmt(bank_card, visa)
+                        payment_method = ?pmt(bank_card_deprecated, visa)
                     },
                     Client
                 )
@@ -1737,7 +1737,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"KZT">>),
-                        payment_method = ?pmt(empty_cvv_bank_card, visa)
+                        payment_method = ?pmt(empty_cvv_bank_card_deprecated, visa)
                     },
                     Client
                 )
@@ -1750,7 +1750,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"RUB">>),
-                        payment_method = ?pmt(bank_card, visa)
+                        payment_method = ?pmt(bank_card_deprecated, visa)
                     },
                     Client
                 )
