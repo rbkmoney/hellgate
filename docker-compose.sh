@@ -64,4 +64,3 @@ services:
       - POSTGRES_PASSWORD=postgres
       - SERVICE_NAME=shumway-db
 EOF
-

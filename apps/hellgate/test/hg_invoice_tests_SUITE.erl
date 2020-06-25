@@ -1772,11 +1772,13 @@ payment_adjustment_captured_from_failed(C) ->
     PartyClient = cfg(party_client, C),
     Shop = hg_client_party:get_shop(cfg(shop_id, C), PartyClient),
     ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(1), PartyClient),
-    Cpatured = ?captured(),
-    AdjustmentParams = make_status_adjustment_params(Cpatured, AdjReason = <<"manual">>),
     Amount = 42000,
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), Amount, C),
     PaymentParams = make_scenario_payment_params([temp, temp, temp, temp]),
+    CaptureAmount = Amount div 2,
+    CaptureCost = ?cash(CaptureAmount, <<"RUB">>),
+    Captured = {captured, #domain_InvoicePaymentCaptured{cost = CaptureCost}},
+    AdjustmentParams = make_status_adjustment_params(Captured, AdjReason = <<"manual">>),
     % start payment
     ?payment_state(?payment(PaymentID)) =
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
@@ -1827,9 +1829,12 @@ payment_adjustment_captured_from_failed(C) ->
     ] = next_event(InvoiceID, Client),
     ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, FailedAdjustmentID, Client),
     [
-        ?payment_ev(PaymentID, ?payment_status_changed(FailedTargetStatus)),
         ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
+    ?assertMatch(
+        ?payment_state(?payment_w_status(PaymentID, FailedTargetStatus)),
+        hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client)
+    ),
 
     ?payment_already_has_status(FailedTargetStatus) =
         hg_client_invoicing:create_adjustment(InvoiceID, PaymentID, FailedAdjustmentParams, Client),
@@ -1846,9 +1851,10 @@ payment_adjustment_captured_from_failed(C) ->
     ] = next_event(InvoiceID, Client),
     ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
-        ?payment_ev(PaymentID, ?payment_status_changed(Cpatured)),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
+    ?payment_state(Payment) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    ?assertMatch(#domain_InvoicePayment{status = Captured, cost = CaptureCost}, Payment),
 
     % verify that cash deposited correctly everywhere
     % new cash flow must be calculated using initial domain and party revisions
@@ -1856,12 +1862,12 @@ payment_adjustment_captured_from_failed(C) ->
     PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
     SysAccount2 = get_cashflow_account({system, settlement}, CF2),
     MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
-    Context = #{operation_amount => ?cash(Amount, <<"RUB">>)},
+    Context = #{operation_amount => CaptureCost},
     #domain_Cash{amount = MrcAmount1} = hg_cashflow:compute_volume(?merchant_to_system_share_1, Context),
-    MrcDiff = Amount - MrcAmount1,
+    MrcDiff = CaptureAmount - MrcAmount1,
     ?assertEqual(MrcDiff, maps:get(own_amount, MrcAccount2) - maps:get(own_amount, MrcAccount1)),
     #domain_Cash{amount = PrvAmount1} = hg_cashflow:compute_volume(?system_to_provider_share_initial, Context),
-    PrvDiff = PrvAmount1 - Amount,
+    PrvDiff = PrvAmount1 - CaptureAmount,
     ?assertEqual(PrvDiff, maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1)),
     SysDiff = MrcAmount1 - PrvAmount1,
     ?assertEqual(SysDiff, maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1)).
@@ -1920,9 +1926,12 @@ payment_adjustment_failed_from_captured(C) ->
     ] = next_event(InvoiceID, Client),
     ok = hg_client_invoicing:capture_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
-        ?payment_ev(PaymentID, ?payment_status_changed(Failed)),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
+    ?assertMatch(
+        ?payment_state(?payment_w_status(PaymentID, Failed)),
+        hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client)
+    ),
     % verify that cash deposited correctly everywhere
     % new cash flow must be calculated using initial domain and party revisions
     PrvAccount2 = get_cashflow_account({provider, settlement}, CF1),

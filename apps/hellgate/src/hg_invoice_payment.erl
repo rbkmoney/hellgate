@@ -1708,15 +1708,14 @@ finalize_adjustment(ID, Intent, St, Options) ->
     Adjustment = get_adjustment(ID, St),
     ok = assert_adjustment_status(processed, Adjustment),
     ok = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
-    {Status, AdditionalEvents} = case Intent of
+    Status = case Intent of
         capture ->
-            {?adjustment_captured(hg_datetime:format_now()),
-             get_ajustment_additional_events(Adjustment)};
+            ?adjustment_captured(hg_datetime:format_now());
         cancel ->
-            {?adjustment_cancelled(hg_datetime:format_now()), []}
+            ?adjustment_cancelled(hg_datetime:format_now())
     end,
     Event = ?adjustment_ev(ID, ?adjustment_status_changed(Status)),
-    {ok, {AdditionalEvents ++ [Event], hg_machine_action:new()}}.
+    {ok, {[Event], hg_machine_action:new()}}.
 
 prepare_adjustment_cashflow(Adjustment, St, Options) ->
     PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
@@ -1793,14 +1792,6 @@ get_adjustment_cashflow(#domain_InvoicePaymentAdjustment{new_cash_flow = Cashflo
         }
     }
 ).
-
--spec get_ajustment_additional_events(adjustment()) ->
-    events().
-
-get_ajustment_additional_events(?adjustment_target_status(Status)) ->
-    [?payment_status_changed(Status)];
-get_ajustment_additional_events(_Adjustment) ->
-    [].
 
 %%
 
@@ -2837,14 +2828,6 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
-merge_change(?payment_status_changed(Status), #st{activity = {adjustment_pending, _ID}} = St, _Opts) ->
-    Payment = get_payment(St),
-    St#st{
-        payment = Payment#domain_InvoicePayment{
-            status = Status,
-            cost   = maybe_get_captured_cost(Status, Payment)
-        }
-    };
 merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [
         risk_scoring,
@@ -2995,7 +2978,7 @@ merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
     % TODO new cashflow imposed implicitly on the payment state? rough
     case get_adjustment_status(Adjustment) of
         ?adjustment_captured(_) ->
-            set_cashflow(get_adjustment_cashflow(Adjustment), St2);
+            apply_adjustment_effects(Adjustment, St2);
         _ ->
             St2
     end;
@@ -3082,6 +3065,27 @@ merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
 merge_adjustment_change(?adjustment_status_changed(Status), Adjustment) ->
     Adjustment#domain_InvoicePaymentAdjustment{status = Status}.
 
+apply_adjustment_effects(Adjustment, St) ->
+    apply_adjustment_effect(status, Adjustment,
+        apply_adjustment_effect(cashflow, Adjustment, St)).
+
+apply_adjustment_effect(status, ?adjustment_target_status(Status), St = #st{payment = Payment}) ->
+    case Status of
+        {captured, Capture} ->
+            St#st{payment = Payment#domain_InvoicePayment{
+                status = Status,
+                cost = get_captured_cost(Capture, Payment)
+            }};
+        _ ->
+            St#st{payment = Payment#domain_InvoicePayment{
+                status = Status
+            }}
+    end;
+apply_adjustment_effect(status, #domain_InvoicePaymentAdjustment{}, St) ->
+    St;
+apply_adjustment_effect(cashflow, Adjustment, St) ->
+    set_cashflow(get_adjustment_cashflow(Adjustment), St).
+
 validate_transition(Allowed, Change, St, Opts) ->
     Valid = is_transition_valid(Allowed, St),
     case Opts of
@@ -3162,14 +3166,6 @@ get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when
 ->
     Cost;
 get_captured_cost(_, #domain_InvoicePayment{cost = Cost}) ->
-    Cost.
-
--spec maybe_get_captured_cost(payment_status(), payment()) ->
-    cash().
-
-maybe_get_captured_cost({captured, Captured}, Payment) ->
-    get_captured_cost(Captured, Payment);
-maybe_get_captured_cost(_OtherStatus, #domain_InvoicePayment{cost = Cost}) ->
     Cost.
 
 get_refund_session(#refund_st{sessions = []}) ->
