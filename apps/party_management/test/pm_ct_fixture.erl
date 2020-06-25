@@ -24,6 +24,8 @@
 -export([construct_external_account_set/1]).
 -export([construct_external_account_set/3]).
 -export([construct_business_schedule/1]).
+-export([construct_criterion/3]).
+-export([construct_term_set_hierarchy/3]).
 
 %%
 
@@ -36,11 +38,16 @@
 -type template()    :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms()       :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime()    :: dmsl_domain_thrift:'Lifetime'() | undefined.
-
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
 
 -type business_schedule() :: dmsl_domain_thrift:'BusinessScheduleRef'().
+
+-type criterion()   :: dmsl_domain_thrift:'CriterionRef'().
+-type predicate()   :: dmsl_domain_thrift:'Predicate'().
+
+-type term_set() :: dmsl_domain_thrift:'TermSet'().
+-type term_set_hierarchy() :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 
 %%
 
@@ -269,5 +276,34 @@ construct_business_schedule(Ref) ->
                 minute = {on, [40]},
                 second = {on, [0]}
             }
+        }
+    }}.
+
+-spec construct_criterion(criterion(), name(), predicate()) ->
+    {criterion, dmsl_domain_thrift:'CriterionObject'()}.
+
+construct_criterion(Ref, Name, Pred) ->
+    {criterion, #domain_CriterionObject{
+        ref = Ref,
+        data = #domain_Criterion{
+            name = Name,
+            predicate = Pred
+        }
+    }}.
+
+-spec construct_term_set_hierarchy(term_set_hierarchy(), term_set_hierarchy(), term_set()) ->
+    {term_set_hierarchy, dmsl_domain_thrift:'TermSetHierarchyObject'()}.
+
+construct_term_set_hierarchy(Ref, ParentRef, TermSet) ->
+    {term_set_hierarchy, #domain_TermSetHierarchyObject{
+        ref = Ref,
+        data = #domain_TermSetHierarchy{
+            parent_terms = ParentRef,
+            term_sets = [
+                #domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TermSet
+                }
+            ]
         }
     }}.

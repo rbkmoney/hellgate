@@ -3,6 +3,7 @@
 -include("pm_ct_domain.hrl").
 -include("party_events.hrl").
 -include_lib("common_test/include/ct.hrl").
+-include_lib("stdlib/include/assert.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([all/0]).
@@ -102,6 +103,9 @@
 -export([compute_payment_provider_terminal_terms_ok/1]).
 -export([compute_payment_provider_terminal_terms_not_found/1]).
 
+-export([compute_pred_w_irreducible_criterion/1]).
+-export([compute_terms_w_criteria/1]).
+
 %% tests descriptions
 
 -type config() :: pm_ct_helper:config().
@@ -127,7 +131,8 @@ all() ->
         {group, contractor_management},
 
         {group, claim_management},
-        {group, providers}
+        {group, providers},
+        {group, terms}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -255,6 +260,11 @@ groups() ->
             compute_payment_provider_not_found,
             compute_payment_provider_terminal_terms_ok,
             compute_payment_provider_terminal_terms_not_found
+        ]},
+        {terms, [sequence], [
+            party_creation,
+            compute_pred_w_irreducible_criterion,
+            compute_terms_w_criteria
         ]}
     ].
 
@@ -469,6 +479,9 @@ end_per_testcase(_Name, _C) ->
 -spec compute_payment_provider_not_found(config()) -> _ | no_return().
 -spec compute_payment_provider_terminal_terms_ok(config()) -> _ | no_return().
 -spec compute_payment_provider_terminal_terms_not_found(config()) -> _ | no_return().
+
+-spec compute_pred_w_irreducible_criterion(config()) -> _ | no_return().
+-spec compute_terms_w_criteria(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -1612,6 +1625,138 @@ compute_payment_provider_terminal_terms_not_found(C) ->
 
 %%
 
+compute_pred_w_irreducible_criterion(_) ->
+    CritRef = ?crit(1),
+    CritName = <<"HAHA GOT ME">>,
+    pm_ct_domain:with(
+        [
+            pm_ct_fixture:construct_criterion(
+                CritRef,
+                CritName,
+                {all_of, [
+                    {constant, true},
+                    {is_not, {condition, {currency_is, ?cur(<<"KZT">>)}}}
+                ]}
+            )
+        ],
+        fun(Revision) ->
+            ?assertMatch(
+                {criterion, #domain_Criterion{name = CritName, predicate = {all_of, [_]}}},
+                pm_selector:reduce_predicate({criterion, CritRef}, #{}, Revision)
+            )
+        end
+    ).
+
+compute_terms_w_criteria(C) ->
+    Client = cfg(client, C),
+    CritRef = ?crit(1),
+    CritBase = ?crit(10),
+    TemplateRef = ?tmpl(10),
+    CashLimitHigh = ?cashrng(
+        {inclusive, ?cash(10, <<"KZT">>)},
+        {exclusive, ?cash(1000, <<"KZT">>)}
+    ),
+    CashLimitLow = ?cashrng(
+        {inclusive, ?cash(10, <<"KZT">>)},
+        {exclusive, ?cash(100, <<"KZT">>)}
+    ),
+    pm_ct_domain:with(
+        [
+            pm_ct_fixture:construct_criterion(
+                CritBase,
+                <<"Visas">>,
+                {all_of, ?ordset([
+                    {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                        definition = {payment_system, #domain_PaymentSystemCondition{
+                            payment_system_is = visa
+                        }}
+                    }}}},
+                    {is_not,
+                        {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                            definition = {empty_cvv_is, true}
+                        }}}}
+                    }
+                ])}
+            ),
+            pm_ct_fixture:construct_criterion(
+                CritRef,
+                <<"Kazakh Visas">>,
+                {all_of, ?ordset([
+                    {condition, {currency_is, ?cur(<<"KZT">>)}},
+                    {criterion, CritBase}
+                ])}
+            ),
+            pm_ct_fixture:construct_contract_template(
+                TemplateRef,
+                ?trms(10)
+            ),
+            pm_ct_fixture:construct_term_set_hierarchy(
+                ?trms(10),
+                ?trms(2),
+                #domain_TermSet{
+                    payments = #domain_PaymentsServiceTerms{
+                        cash_limit = {decisions, [
+                            #domain_CashLimitDecision{
+                                if_ = {criterion, CritRef},
+                                then_ = {value, CashLimitHigh}
+                            },
+                            #domain_CashLimitDecision{
+                                if_ = {is_not, {criterion, CritRef}},
+                                then_ = {value, CashLimitLow}
+                            }
+                        ]}
+                    }
+                }
+            )
+        ],
+        fun (Revision) ->
+            ContractID = pm_ct_helper:create_contract(TemplateRef, ?pinst(1), Client),
+            PartyRevision = pm_client_party:get_revision(Client),
+            Timstamp = pm_datetime:format_now(),
+            ?assertMatch(
+                #domain_TermSet{
+                    payments = #domain_PaymentsServiceTerms{cash_limit = {value, CashLimitHigh}}
+                },
+                pm_client_party:compute_contract_terms(
+                    ContractID, Timstamp, {revision, PartyRevision}, Revision,
+                    #payproc_Varset{
+                        currency = ?cur(<<"KZT">>),
+                        payment_method = ?pmt(bank_card, visa)
+                    },
+                    Client
+                )
+            ),
+            ?assertMatch(
+                #domain_TermSet{
+                    payments = #domain_PaymentsServiceTerms{cash_limit = {value, CashLimitLow}}
+                },
+                pm_client_party:compute_contract_terms(
+                    ContractID, Timstamp, {revision, PartyRevision}, Revision,
+                    #payproc_Varset{
+                        currency = ?cur(<<"KZT">>),
+                        payment_method = ?pmt(empty_cvv_bank_card, visa)
+                    },
+                    Client
+                )
+            ),
+            ?assertMatch(
+                #domain_TermSet{
+                    payments = #domain_PaymentsServiceTerms{cash_limit = {value, CashLimitLow}}
+                },
+                pm_client_party:compute_contract_terms(
+                    ContractID, Timstamp, {revision, PartyRevision}, Revision,
+                    #payproc_Varset{
+                        currency = ?cur(<<"RUB">>),
+                        payment_method = ?pmt(bank_card, visa)
+                    },
+                    Client
+                )
+            )
+        end
+    ).
+
+%%
+
 update_claim(#payproc_Claim{id = ClaimID, revision = Revision}, Changeset, Client) ->
     ok = pm_client_party:update_claim(ClaimID, Revision, Changeset, Client),
     NextRevision = Revision + 1,
@@ -1967,6 +2112,7 @@ construct_domain_fixture() ->
     [
         pm_ct_fixture:construct_currency(?cur(<<"RUB">>)),
         pm_ct_fixture:construct_currency(?cur(<<"USD">>)),
+        pm_ct_fixture:construct_currency(?cur(<<"KZT">>)),
 
         pm_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
         pm_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
@@ -2059,58 +2205,26 @@ construct_domain_fixture() ->
             ?tmpl(5),
             ?trms(4)
         ),
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(1),
-            data = #domain_TermSetHierarchy{
-                parent_terms = undefined,
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = TestTermSet
-                }]
+        pm_ct_fixture:construct_term_set_hierarchy(?trms(1), undefined, TestTermSet),
+        pm_ct_fixture:construct_term_set_hierarchy(?trms(2), undefined, DefaultTermSet),
+        pm_ct_fixture:construct_term_set_hierarchy(?trms(3), ?trms(2), TermSet),
+        pm_ct_fixture:construct_term_set_hierarchy(
+            ?trms(4),
+            ?trms(3),
+            #domain_TermSet{
+                payments = #domain_PaymentsServiceTerms{
+                    currencies = {value, ordsets:from_list([
+                        ?cur(<<"RUB">>)
+                    ])},
+                    categories = {value, ordsets:from_list([
+                        ?cat(2)
+                    ])},
+                    payment_methods = {value, ordsets:from_list([
+                        ?pmt(bank_card, visa)
+                    ])}
+                }
             }
-        }},
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(2),
-            data = #domain_TermSetHierarchy{
-                parent_terms = undefined,
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = DefaultTermSet
-                }]
-            }
-        }},
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(3),
-            data = #domain_TermSetHierarchy{
-                parent_terms = ?trms(2),
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = TermSet
-                }]
-            }
-        }},
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(4),
-            data = #domain_TermSetHierarchy{
-                parent_terms = ?trms(3),
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = #domain_TermSet{
-                        payments = #domain_PaymentsServiceTerms{
-                            currencies = {value, ordsets:from_list([
-                                ?cur(<<"RUB">>)
-                            ])},
-                            categories = {value, ordsets:from_list([
-                                ?cat(2)
-                            ])},
-                            payment_methods = {value, ordsets:from_list([
-                                ?pmt(bank_card, visa)
-                            ])}
-                        }
-                    }
-                }]
-            }
-        }},
+        ),
         {bank, #domain_BankObject{
             ref = ?bank(1),
             data = #domain_Bank {
@@ -2306,5 +2420,3 @@ construct_domain_fixture() ->
             }
         }}
     ].
-
-

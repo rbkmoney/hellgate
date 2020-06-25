@@ -25,6 +25,7 @@
 -define(bussched(ID),   #domain_BusinessScheduleRef{id = ID}).
 -define(p2pprov(ID),    #domain_P2PProviderRef{id = ID}).
 -define(wtdrlprov(ID),  #domain_WithdrawalProviderRef{id = ID}).
+-define(crit(ID),       #domain_CriterionRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).
@@ -66,14 +67,6 @@
     }
 ).
 
--define(contact_info(EMail),
-    ?contact_info(EMail, undefined)).
--define(contact_info(EMail, Phone),
-    #domain_ContactInfo{
-        email = EMail,
-        phone_number = Phone
-    }).
-
 -define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, dpan)).
 
 -define(tkz_bank_card(PaymentSystem, TokenProvider, TokenizationMethod),
@@ -84,15 +77,5 @@
     }).
 
 -define(timeout_reason(), <<"Timeout">>).
-
--define(cart(Price, Details),
-    #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"Test">>,
-                quantity = 1,
-                price = Price,
-                metadata = Details
-}]}).
 
 -endif.
