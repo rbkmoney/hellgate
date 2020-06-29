@@ -18,7 +18,7 @@ services:
     mem_limit: 256M
 
   dominant:
-    image: dr2.rbkmoney.com/rbkmoney/dominant:f0bf7a916358d7db0d687a272eb89768e6e800eb
+    image: dr2.rbkmoney.com/rbkmoney/dominant:6d389d77f2a65edbf8accbbe7af7840157c7e57d
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
@@ -64,4 +64,3 @@ services:
       - POSTGRES_PASSWORD=postgres
       - SERVICE_NAME=shumway-db
 EOF
-

@@ -28,6 +28,7 @@
 -export([construct_payment_routing_ruleset/3]).
 -export([construct_routing_delegate/2]).
 -export([construct_routing_candidate/2]).
+-export([construct_bank_card_category/4]).
 
 %%
 
@@ -47,6 +48,7 @@
 
 -type business_schedule() :: dmsl_domain_thrift:'BusinessScheduleRef'().
 
+-type bank_card_category() :: dmsl_domain_thrift:'BankCardCategoryRef'().
 %%
 
 -define(EVERY, {every, #'ScheduleEvery'{}}).
@@ -283,7 +285,6 @@ construct_business_schedule(Ref) ->
 construct_dummy_additional_info() ->
     #domain_AdditionalTransactionInfo{rrn = <<"rrn">>, approval_code = <<"code">>}.
 
-
 -spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) ->
     dmsl_domain_thrift:'PaymentRoutingRulesetObject'().
 
@@ -313,3 +314,16 @@ construct_routing_candidate(TerminalRef, Predicate) ->
         allowed = Predicate,
         terminal = TerminalRef
     }.
+
+-spec construct_bank_card_category(bank_card_category(), binary(), binary(), [binary()]) ->
+    {bank_card_category, dmsl_domain_thrift:'BankCardCategoryObject'()}.
+
+construct_bank_card_category(Ref, Name, Description, Patterns) ->
+    {bank_card_category, #domain_BankCardCategoryObject{
+        ref = Ref,
+        data = #domain_BankCardCategory{
+            name = Name,
+            description = Description,
+            category_patterns = Patterns
+        }
+    }}.

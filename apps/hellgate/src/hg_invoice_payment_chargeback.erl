@@ -20,6 +20,7 @@
 -export(
     [ get/1
     , get_body/1
+    , get_cash_flow/1
     , get_status/1
     , get_target_status/1
     , is_pending/1
@@ -146,6 +147,11 @@ get_status(#domain_InvoicePaymentChargeback{status = Status}) ->
     status() | undefined.
 get_target_status(#chargeback_st{target_status = TargetStatus}) ->
     TargetStatus.
+
+-spec get_cash_flow(state()) ->
+    cash_flow().
+get_cash_flow(#chargeback_st{cash_flow = CashFlow}) ->
+    CashFlow.
 
 -spec is_pending(chargeback() | state()) ->
     boolean().
@@ -434,7 +440,7 @@ build_chargeback_cash_flow(State, Opts) ->
     ProviderFees     = collect_chargeback_provider_fees(ProviderTerms, VS, Revision),
     PmntInstitution  = get_payment_institution(Contract, Revision),
     Provider         = get_route_provider(Route, Revision),
-    AccountMap       = collect_account_map(Payment, Shop, PmntInstitution, Provider, VS, Revision),
+    AccountMap       = hg_accounting:collect_account_map(Payment, Shop, PmntInstitution, Provider, VS, Revision),
     ServiceContext   = build_service_cash_flow_context(State),
     ProviderContext  = build_provider_cash_flow_context(State, ProviderFees),
     ServiceFinalCF   = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap),
@@ -467,36 +473,6 @@ collect_chargeback_provider_fees(ProviderTerms, VS, Revision) ->
     #domain_PaymentChargebackProvisionTerms{fees = ProviderFeesSelector} = ProviderTerms,
     Fees = reduce_selector(provider_chargeback_fees, ProviderFeesSelector, VS, Revision),
     Fees#domain_Fees.fees.
-
-collect_account_map(
-    Payment,
-    #domain_Shop{account = MerchantAccount},
-    PaymentInstitution,
-    #domain_Provider{accounts = ProviderAccounts},
-    VS,
-    Revision
-) ->
-    PaymentCash     = get_payment_cost(Payment),
-    Currency        = get_cash_currency(PaymentCash),
-    ProviderAccount = hg_payment_institution:choose_provider_account(Currency, ProviderAccounts),
-    SystemAccount   = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
-    M = #{
-        {merchant , settlement} => MerchantAccount#domain_ShopAccount.settlement     ,
-        {merchant , guarantee } => MerchantAccount#domain_ShopAccount.guarantee      ,
-        {provider , settlement} => ProviderAccount#domain_ProviderAccount.settlement ,
-        {system   , settlement} => SystemAccount#domain_SystemAccount.settlement     ,
-        {system   , subagent  } => SystemAccount#domain_SystemAccount.subagent
-    },
-    % External account probably can be optional for some payments
-    case hg_payment_institution:choose_external_account(Currency, VS, Revision) of
-        #domain_ExternalAccount{income = Income, outcome = Outcome} ->
-            M#{
-                {external, income} => Income,
-                {external, outcome} => Outcome
-            };
-        undefined ->
-            M
-    end.
 
 reduce_selector(Name, Selector, VS, Revision) ->
     case pm_selector:reduce(Selector, VS, Revision) of
@@ -768,11 +744,6 @@ get_payment_institution(Contract, Revision) ->
 
 %%
 
-get_cash_currency(#domain_Cash{currency = Currency}) ->
-    Currency.
-
-%%
-
 get_shop_contract_id(#domain_Shop{contract_id = ContractID}) ->
     ContractID.
 
@@ -805,9 +776,6 @@ get_opts_payment_id(Opts) ->
     ID.
 
 %%
-
-get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
-    Cost.
 
 get_payment_tool(#domain_InvoicePayment{payer = Payer}) ->
     get_payer_payment_tool(Payer).

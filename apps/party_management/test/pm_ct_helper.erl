@@ -11,6 +11,7 @@
 
 -export([create_party_and_shop/5]).
 -export([create_battle_ready_shop/5]).
+-export([create_contract/3]).
 -export([get_account/1]).
 -export([get_balance/1]).
 -export([get_first_contract_id/1]).
@@ -294,6 +295,7 @@ make_user_identity(UserID) ->
 -type shop_id()                   :: dmsl_domain_thrift:'ShopID'().
 -type category()                  :: dmsl_domain_thrift:'CategoryRef'().
 -type currency()                  :: dmsl_domain_thrift:'CurrencySymbolicCode'().
+-type payment_institution()       :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 
 -spec create_party_and_shop(
     category(),
@@ -320,7 +322,7 @@ make_party_params() ->
     category(),
     currency(),
     contract_tpl(),
-    dmsl_domain_thrift:'PaymentInstitutionRef'(),
+    payment_institution(),
     Client :: pid()
 ) ->
     shop_id().
@@ -357,6 +359,21 @@ create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef,
     ok = ensure_claim_accepted(pm_client_party:create_claim(Changeset, Client), Client),
     _Shop = pm_client_party:get_shop(ShopID, Client),
     ShopID.
+
+-spec create_contract(contract_tpl(), payment_institution(), Client :: pid()) ->
+    contract_id().
+
+create_contract(TemplateRef, PaymentInstitutionRef, Client) ->
+    ContractID = pm_utils:unique_id(),
+    ContractParams = make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef),
+    Changeset = [
+        {contract_modification, #payproc_ContractModificationUnit{
+            id           = ContractID,
+            modification = {creation, ContractParams}
+        }}
+    ],
+    ok = ensure_claim_accepted(pm_client_party:create_claim(Changeset, Client), Client),
+    ContractID.
 
 -spec get_first_contract_id(Client :: pid()) ->
     contract_id().

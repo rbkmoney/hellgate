@@ -155,6 +155,37 @@ handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
     Party = pm_party_machine:get_party(PartyID),
     pm_party:get_shop_account(ShopID, Party);
 
+%% Providers
+
+handle_function_('ComputeP2PProvider', Args, _Opts) ->
+    [UserInfo, P2PProviderRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    Provider = get_p2p_provider(P2PProviderRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_provider:reduce_p2p_provider(Provider, VS, DomainRevision);
+
+handle_function_('ComputeWithdrawalProvider', Args, _Opts) ->
+    [UserInfo, WithdrawalProviderRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    Provider = get_withdrawal_provider(WithdrawalProviderRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_provider:reduce_withdrawal_provider(Provider, VS, DomainRevision);
+
+handle_function_('ComputePaymentProvider', Args, _Opts) ->
+    [UserInfo, PaymentProviderRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_provider:reduce_payment_provider(Provider, VS, DomainRevision);
+
+handle_function_('ComputePaymentProviderTerminalTerms', Args, _Opts) ->
+    [UserInfo, PaymentProviderRef, TerminalRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
+    Terminal = get_terminal(TerminalRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_provider:reduce_payment_provider_terminal_terms(Provider, Terminal, VS, DomainRevision);
+
 %% PartyMeta
 
 handle_function_('GetMeta', [UserInfo, PartyID], _Opts) ->
@@ -290,6 +321,38 @@ get_payment_institution(PaymentInstitutionRef, Revision) ->
             throw(#payproc_PaymentInstitutionNotFound{})
     end.
 
+get_p2p_provider(P2PProviderRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {p2p_provider, P2PProviderRef})
+    catch
+        error:{object_not_found, {DomainRevision, {p2p_provider, P2PProviderRef}}} ->
+            throw(#payproc_ProviderNotFound{})
+    end.
+
+get_withdrawal_provider(WithdrawalProviderRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {withdrawal_provider, WithdrawalProviderRef})
+    catch
+        error:{object_not_found, {DomainRevision, {withdrawal_provider, WithdrawalProviderRef}}} ->
+            throw(#payproc_ProviderNotFound{})
+    end.
+
+get_payment_provider(PaymentProviderRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {provider, PaymentProviderRef})
+    catch
+        error:{object_not_found, {DomainRevision, {provider, PaymentProviderRef}}} ->
+            throw(#payproc_ProviderNotFound{})
+    end.
+
+get_terminal(TerminalRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {terminal, TerminalRef})
+    catch
+        error:{object_not_found, {DomainRevision, {terminal, TerminalRef}}} ->
+            throw(#payproc_TerminalNotFound{})
+    end.
+
 get_default_contract_template(#domain_PaymentInstitution{default_contract_template = ContractSelector}, VS, Revision) ->
     ContractTemplateRef = pm_selector:reduce_to_value(ContractSelector, VS, Revision),
     pm_domain:get(Revision, {contract_template, ContractTemplateRef}).
@@ -324,6 +387,9 @@ collect_payout_account_map(
         {system   , settlement} => SystemAccount#domain_SystemAccount.settlement,
         {system   , subagent  } => SystemAccount#domain_SystemAccount.subagent
     }.
+
+prepare_varset(#payproc_Varset{} = V) ->
+    prepare_varset(undefined, V).
 
 prepare_varset(PartyID, #payproc_Varset{} = V) ->
     prepare_varset(PartyID, V, #{}).

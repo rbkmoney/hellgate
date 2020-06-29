@@ -2,6 +2,7 @@
 -define(__pm_ct_domain__, 42).
 
 -include("domain.hrl").
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 -define(ordset(Es),     ordsets:from_list(Es)).
 
@@ -22,6 +23,9 @@
 -define(pinst(ID),      #domain_PaymentInstitutionRef{id = ID}).
 -define(bank(ID),       #domain_BankRef{id = ID}).
 -define(bussched(ID),   #domain_BusinessScheduleRef{id = ID}).
+-define(p2pprov(ID),    #domain_P2PProviderRef{id = ID}).
+-define(wtdrlprov(ID),  #domain_WithdrawalProviderRef{id = ID}).
+-define(crit(ID),       #domain_CriterionRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).
@@ -34,9 +38,17 @@
         amount = Amount,
         currency = ?currency(Currency)
     }}}).
--define(share(P, Q, C), {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C}}).
+-define(share(P, Q, C),
+    {share, #domain_CashVolumeShare{
+        parts = #'Rational'{p = P, q = Q}, 'of' = C}
+    }
+).
 
--define(share_with_rounding_method(P, Q, C, RM), {share, #domain_CashVolumeShare{parts = #'Rational'{p = P, q = Q}, 'of' = C, 'rounding_method' = RM}}).
+-define(share_with_rounding_method(P, Q, C, RM),
+    {share, #domain_CashVolumeShare{
+        parts = #'Rational'{p = P, q = Q}, 'of' = C, rounding_method = RM}
+    }
+).
 
 -define(cfpost(A1, A2, V),
     #domain_CashFlowPosting{
@@ -55,30 +67,15 @@
     }
 ).
 
--define(contact_info(EMail),
-    ?contact_info(EMail, undefined)).
--define(contact_info(EMail, Phone),
-    #domain_ContactInfo{
-        email = EMail,
-        phone_number = Phone
-    }).
+-define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, dpan)).
 
--define(tkz_bank_card(PaymentSystem, TokenProvider),
+-define(tkz_bank_card(PaymentSystem, TokenProvider, TokenizationMethod),
     #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
-        token_provider = TokenProvider
+        token_provider = TokenProvider,
+        tokenization_method = TokenizationMethod
     }).
 
 -define(timeout_reason(), <<"Timeout">>).
-
--define(cart(Price, Details),
-    #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"Test">>,
-                quantity = 1,
-                price = Price,
-                metadata = Details
-}]}).
 
 -endif.

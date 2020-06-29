@@ -396,7 +396,8 @@ reduce_withdrawals_terms(#domain_WithdrawalServiceTerms{} = Terms, VS, Rev) ->
     #domain_WithdrawalServiceTerms{
         currencies = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.currencies, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_limit, VS, Rev),
-        cash_flow = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_flow, VS, Rev)
+        cash_flow = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.cash_flow, VS, Rev),
+        attempt_limit = reduce_if_defined(Terms#domain_WithdrawalServiceTerms.attempt_limit, VS, Rev)
     }.
 
 reduce_p2p_terms(#domain_P2PServiceTerms{} = Terms, VS, Rev) ->
@@ -714,18 +715,21 @@ merge_withdrawals_terms(
     #domain_WithdrawalServiceTerms{
         currencies = Currencies0,
         cash_limit = CashLimit0,
-        cash_flow = CashFlow0
+        cash_flow = CashFlow0,
+        attempt_limit = AttemptList0
     },
     #domain_WithdrawalServiceTerms{
         currencies = Currencies1,
         cash_limit = CashLimit1,
-        cash_flow = CashFlow1
+        cash_flow = CashFlow1,
+        attempt_limit = AttemptList1
     }
 ) ->
     #domain_WithdrawalServiceTerms{
         currencies = pm_utils:select_defined(Currencies1, Currencies0),
         cash_limit = pm_utils:select_defined(CashLimit1, CashLimit0),
-        cash_flow = pm_utils:select_defined(CashFlow1, CashFlow0)
+        cash_flow = pm_utils:select_defined(CashFlow1, CashFlow0),
+        attempt_limit = pm_utils:select_defined(AttemptList1, AttemptList0)
     };
 merge_withdrawals_terms(Terms0, Terms1) ->
     pm_utils:select_defined(Terms1, Terms0).

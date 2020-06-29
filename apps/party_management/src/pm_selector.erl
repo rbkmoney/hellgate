@@ -8,6 +8,7 @@
 %%%  - Domain revision is out of place. An `Opts`, anyone?
 
 -module(pm_selector).
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %%
 
@@ -47,6 +48,7 @@
 }.
 
 -type predicate() :: dmsl_domain_thrift:'Predicate'().
+-type criterion() :: dmsl_domain_thrift:'Criterion'().
 
 -export_type([varset/0]).
 
@@ -97,7 +99,8 @@ reduce_decisions([], _, _) ->
     [].
 
 -spec reduce_predicate(predicate(), varset(), pm_domain:revision()) ->
-    predicate().
+    predicate() |
+    {criterion, criterion()}. % for a partially reduced criterion
 
 reduce_predicate(?const(B), _, _) ->
     ?const(B);
@@ -122,7 +125,16 @@ reduce_predicate({all_of, Ps}, VS, Rev) ->
     reduce_combination(all_of, false, Ps, VS, Rev, []);
 
 reduce_predicate({any_of, Ps}, VS, Rev) ->
-    reduce_combination(any_of, true, Ps, VS, Rev, []).
+    reduce_combination(any_of, true, Ps, VS, Rev, []);
+
+reduce_predicate({criterion, CriterionRef = #domain_CriterionRef{}}, VS, Rev) ->
+    Criterion = pm_domain:get(Rev, {criterion, CriterionRef}),
+    case reduce_predicate(Criterion#domain_Criterion.predicate, VS, Rev) of
+        ?const(B) ->
+            ?const(B);
+        P1 ->
+            {criterion, Criterion#domain_Criterion{predicate = P1}}
+    end.
 
 reduce_combination(Type, Fix, [P | Ps], VS, Rev, PAcc) ->
     case reduce_predicate(P, VS, Rev) of
@@ -149,7 +161,6 @@ reduce_condition(C, VS, Rev) ->
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
--include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 -spec test() -> _.
 
