@@ -493,7 +493,7 @@ score_risk_coverage(Terminal, VS) ->
 
 get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
     #domain_Provider{payment_terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
-    #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
+    #domain_Terminal{terms_legacy = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
     merge_payment_terms(Terms0, Terms1).
 
 -spec get_rec_paytools_terms(route(), hg_domain:revision()) -> terms().
@@ -574,7 +574,7 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revisio
 
 acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms0}, VS, Revision) ->
     Terminal = #domain_Terminal{
-        terms         = Terms1,
+        terms_legacy  = Terms1,
         risk_coverage = RiskCoverage
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     % TODO the ability to override any terms makes for uncommon sense
@@ -597,7 +597,7 @@ acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
         recurrent_paytool_terms = RecurrentTerms
     } = Provider,
     Terminal = #domain_Terminal{
-        terms         = TerminalTerms,
+        terms_legacy  = TerminalTerms,
         risk_coverage = RiskCoverage
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     PaymentTerms = merge_payment_terms(PaymentTerms0, TerminalTerms),
