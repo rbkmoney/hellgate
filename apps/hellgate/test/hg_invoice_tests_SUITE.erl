@@ -4375,7 +4375,7 @@ adhoc_repair_invalid_changes_failed(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
     ] = next_event(InvoiceID, Client),
-    timeout = next_event(InvoiceID, 1000, Client),
+    timeout = next_event(InvoiceID, 5000, Client),
     InvalidChanges1 = [
         ?payment_ev(PaymentID, ?refund_ev(<<"42">>, ?refund_status_changed(?refund_succeeded())))
     ],
