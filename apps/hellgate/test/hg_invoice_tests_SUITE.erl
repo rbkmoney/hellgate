@@ -6149,7 +6149,7 @@ construct_domain_fixture() ->
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
                 risk_coverage = low,
-                terms = #domain_PaymentsProvisionTerms{
+                terms_legacy = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},
@@ -6190,7 +6190,7 @@ construct_domain_fixture() ->
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
                 risk_coverage = high,
-                terms = #domain_PaymentsProvisionTerms{
+                terms_legacy = #domain_PaymentsProvisionTerms{
                     cash_flow = {value, [
                         ?cfpost(
                             {provider, settlement},

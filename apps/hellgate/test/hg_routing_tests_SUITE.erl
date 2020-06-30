@@ -1361,7 +1361,7 @@ construct_domain_fixture() ->
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
                 risk_coverage = low,
-                terms = #domain_PaymentsProvisionTerms{
+                terms_legacy = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},
