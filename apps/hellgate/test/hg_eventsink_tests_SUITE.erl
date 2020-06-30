@@ -1,7 +1,8 @@
 -module(hg_eventsink_tests_SUITE).
 
--include("hg_ct_domain.hrl").
 -include_lib("common_test/include/ct.hrl").
+-include_lib("stdlib/include/assert.hrl").
+-include("hg_ct_domain.hrl").
 -include("party_events.hrl").
 
 -export([all/0]).
@@ -11,7 +12,6 @@
 -export([init_per_testcase/2]).
 -export([end_per_testcase/2]).
 
--export([no_events/1]).
 -export([events_observed/1]).
 -export([consistent_history/1]).
 
@@ -38,7 +38,7 @@ all() ->
 
 groups() ->
     [
-        {initial, [], [no_events, events_observed]},
+        {initial, [], [events_observed]},
         {history, [], [consistent_history]}
     ].
 
@@ -93,18 +93,6 @@ end_per_testcase(_Name, _C) ->
     ?event(ID, {party_id, PartyID}, Seq, Payload)
 ).
 
--spec no_events(config()) -> _ | no_return().
-
-no_events(C) ->
-    Client = ?c(eventsink_client, C),
-    case hg_client_eventsink:pull_history(Client) of
-        [] ->
-            none = hg_client_eventsink:get_last_event_id(Client);
-        Events = [_ | _] ->
-            ?event(EventID, _, _, _) = lists:last(Events),
-            EventID = hg_client_eventsink:get_last_event_id(Client)
-    end.
-
 -spec events_observed(config()) -> _ | no_return().
 
 events_observed(C) ->
@@ -113,18 +101,19 @@ events_observed(C) ->
     PartyID = ?c(party_id, C),
     _History = hg_client_eventsink:pull_history(EventsinkClient),
     _ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyMgmtClient),
-    Events = hg_client_eventsink:pull_events(10, EventsinkClient),
+    AllEvents = hg_client_eventsink:pull_events(10, EventsinkClient),
+    Events = [Ev || ?party_event(_ID, EvPartyID, _Seq, _Ev) = Ev <- AllEvents, EvPartyID =:= PartyID],
     [?party_event(_ID, PartyID, 1, ?party_ev([?party_created(_, _, _) | _])) | _] = Events,
     Seqs = [Seq || ?event(_, _, Seq, _) <- Events],
-    Seqs = lists:sort(Seqs),
+    ?assertEqual(Seqs, lists:sort(Seqs)),
     IDs = [ID || ?event(ID, _, _, _) <- Events],
-    IDs = lists:sort(IDs).
+    ?assertEqual(IDs, lists:sort(IDs)).
 
 -spec consistent_history(config()) -> _ | no_return().
 
 consistent_history(C) ->
     Events = hg_client_eventsink:pull_history(?c(eventsink_client, C)),
-    ok = hg_eventsink_history:assert_total_order(Events).
+    ?assertEqual(ok, hg_eventsink_history:assert_total_order(Events)).
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 
