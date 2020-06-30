@@ -47,7 +47,7 @@ do_call(Request, Opts, Context, RetryStrategy) ->
     try
         woody_client:call(Request, Opts, Context)
     catch
-        error:({woody_error, {system, Class, _Details}} = Error):ST when 
+        error:({woody_error, {system, Class, _Details}} = Error):ST when
             Class =:= resource_unavailable orelse
             Class =:= result_unknown
         ->
