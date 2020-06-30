@@ -11,6 +11,8 @@
 -export([get_payments_terms/2]).
 -export([get_rec_paytools_terms/2]).
 
+-export([acceptable_terminal/5]).
+
 -export([marshal/1]).
 -export([unmarshal/1]).
 
@@ -103,6 +105,8 @@
 -type route_scores() :: #route_scores{}.
 
 -export_type([route_predestination/0]).
+-export_type([non_fail_rated_route/0]).
+-export_type([reject_context/0]).
 
 -spec gather_routes(
     route_predestination(),
@@ -750,6 +754,9 @@ merge_terms(
     };
 merge_terms(ProviderTerms, TerminalTerms) ->
     hg_utils:select_defined(TerminalTerms, ProviderTerms).
+
+-spec merge_payment_terms(terms(), terms()) ->
+    terms().
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
