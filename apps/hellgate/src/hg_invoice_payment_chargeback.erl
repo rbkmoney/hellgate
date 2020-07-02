@@ -401,10 +401,10 @@ build_accept_result(State, ?accept_params(ParamsLevy, ParamsBody)) ->
 
 -spec build_reopen_result(state(), reopen_params()) ->
     result() | no_return().
-build_reopen_result(State, ?reopen_params(ParamsLevy, ParamsBody)) ->
+build_reopen_result(State, ?reopen_params(ParamsLevy, ParamsBody) = Params) ->
     Body         = get_body(State),
     Levy         = get_levy(State),
-    Stage        = get_next_stage(State),
+    Stage        = get_next_stage(State, Params),
     Action       = hg_machine_action:instant(),
     BodyChange   = body_change(ParamsBody, Body),
     LevyChange   = levy_change(ParamsLevy, Levy),
@@ -662,13 +662,15 @@ get_stage(#chargeback_st{chargeback = Chargeback}) ->
 get_stage(#domain_InvoicePaymentChargeback{stage = Stage}) ->
     Stage.
 
--spec get_next_stage(state() | chargeback()) ->
+-spec get_next_stage(state() | chargeback(), reopen_params()) ->
     ?chargeback_stage_pre_arbitration() | ?chargeback_stage_arbitration().
-get_next_stage(#chargeback_st{chargeback = Chargeback}) ->
-    get_next_stage(Chargeback);
-get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_chargeback()}) ->
+get_next_stage(#chargeback_st{chargeback = Chargeback}, ReopenParams) ->
+    get_next_stage(Chargeback, ReopenParams);
+% get_next_stage(_State, #payproc_InvoicePaymentChargebackReopenParams{move_to_stage = Stage}) when Stage /= undefined ->
+%     Stage;
+get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_chargeback()}, _Params) ->
     ?chargeback_stage_pre_arbitration();
-get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_pre_arbitration()}) ->
+get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_pre_arbitration()}, _Params) ->
     ?chargeback_stage_arbitration().
 
 -spec get_previous_stage(state() | chargeback()) ->
