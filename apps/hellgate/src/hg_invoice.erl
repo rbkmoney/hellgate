@@ -56,7 +56,8 @@
 -record(st, {
     activity          :: undefined | invoice | {payment, payment_id()},
     invoice           :: undefined | invoice(),
-    payments = []     :: [{payment_id(), payment_st()}]
+    payments = []     :: [{payment_id(), payment_st()}],
+    adjustments = []  :: [adjustment()] %TODO: add adjustment types
 }).
 -type st() :: #st{}.
 
@@ -183,6 +184,24 @@ handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
     get_public_history(InvoiceID, Range);
+
+handle_function_('CreateInvoiceAdjustment', [UserInfo, InvoiceID, _InvoiceAdjustmentParams], _Opts) ->
+    _TimestampNow = hg_datetime:format_now(),
+    _DomainRevision = hg_domain:head(),
+    ok = assume_user_identity(UserInfo),
+    _ = set_invoicing_meta(InvoiceID),
+    St = assert_invoice_accessible(get_state(InvoiceID)),
+    ok;
+    % PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
+    % ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
+    % _ = assert_party_accessible(PartyID),
+    % Party = hg_party:get_party(PartyID),
+    % Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
+    % _ = assert_party_shop_operable(Shop, Party),
+    % MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, TimestampNow),
+    % ok = validate_invoice_params(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision),
+    % ok = ensure_started(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
+    % get_invoice_state(get_state(InvoiceID));
 
 handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     ok = assume_user_identity(UserInfo),
@@ -373,7 +392,7 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
     }.
 
 ensure_started(ID, [TemplateID, PartyRevision, Params]) ->
-    SerializedArgs = [TemplateID, PartyRevision, marchal_invoice_params(Params)],
+    SerializedArgs = [TemplateID, PartyRevision, marshal_invoice_params(Params)],
     map_start_error(do_start(ID, SerializedArgs)).
 
 do_start(ID, Args) ->
@@ -429,6 +448,10 @@ map_repair_error({error, Reason}) ->
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
+
+-type adjustment() :: dmsl_payment_processing_thrift:'InvoiceAdjustment'().
+-type adjustment_params() :: dmsl_payment_processing_thrift:'InvoiceAdjustmentParams'().
+
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type payment_st() :: hg_invoice_payment:st().
 
@@ -454,7 +477,7 @@ namespace() ->
     hg_machine:result().
 
 init([InvoiceTplID, PartyRevision, EncodedInvoiceParams], #{id := ID}) ->
-    InvoiceParams = unmarchal_invoice_params(EncodedInvoiceParams),
+    InvoiceParams = unmarshal_invoice_params(EncodedInvoiceParams),
     Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
@@ -1303,9 +1326,9 @@ get_message(invoice_status_changed) ->
 marshal_event_payload(Changes) when is_list(Changes) ->
     wrap_event_payload({invoice_changes, Changes}).
 
--spec marchal_invoice_params(invoice_params()) ->
+-spec marshal_invoice_params(invoice_params()) ->
     binary().
-marchal_invoice_params(Params) ->
+marshal_invoice_params(Params) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
     hg_proto_utils:serialize(Type, Params).
 
@@ -1330,9 +1353,9 @@ unmarshal_event_payload(#{format_version := 1, data := {bin, Changes}}) ->
 unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
     unmarshal({list, changes}, Changes).
 
--spec unmarchal_invoice_params(binary()) ->
+-spec unmarshal_invoice_params(binary()) ->
     invoice_params().
-unmarchal_invoice_params(Bin) ->
+unmarshal_invoice_params(Bin) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
     hg_proto_utils:deserialize(Type, Bin).
 
