@@ -58,15 +58,15 @@ all() -> [
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
 groups() -> [
-    {routing_with_fail_rate, [], [
-        gathers_fail_rated_routes,
+    {routing_with_fail_rate, [parallel], [
         prefer_alive,
         prefer_normal_conversion,
         prefer_better_risk_score,
         prefer_higher_availability,
         prefer_higher_conversion,
         prefer_weight_over_availability,
-        prefer_weight_over_conversion
+        prefer_weight_over_conversion,
+        gathers_fail_rated_routes
     ]},
     {terminal_priority, [], [
         terminal_priority_for_shop
@@ -83,6 +83,8 @@ init_per_suite(C) ->
 
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
+    FDConfig = genlib_app:env(hellgate, fault_detector),
+    application:set_env(hellgate, fault_detector, FDConfig#{ enabled => true }),
     _ = unlink(SupPid),
     [{apps, Apps}, {test_sup, SupPid} | C].
 
@@ -114,10 +116,12 @@ end_per_group(_GroupName, C) ->
     end.
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
-init_per_testcase(_, C) -> C.
+init_per_testcase(_, C) ->
+    C.
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
-end_per_testcase(_Name, _C) -> ok.
+end_per_testcase(_Name, _C) ->
+    ok.
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
@@ -1226,7 +1230,8 @@ construct_domain_fixture() ->
                             if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
                                 definition = {payment_system, #domain_PaymentSystemCondition{
                                     payment_system_is = visa,
-                                    token_provider_is = applepay
+                                    token_provider_is = applepay,
+                                    tokenization_method_is = dpan
                                 }}
                             }}}},
                             then_ = {value, [
@@ -1356,7 +1361,7 @@ construct_domain_fixture() ->
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
                 risk_coverage = low,
-                terms = #domain_PaymentsProvisionTerms{
+                terms_legacy = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},

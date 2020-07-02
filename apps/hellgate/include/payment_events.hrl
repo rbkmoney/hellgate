@@ -44,6 +44,12 @@
     }
 ).
 
+-define(payment_rollback_started(Failure),
+    {invoice_payment_rollback_started,
+        #payproc_InvoicePaymentRollbackStarted{reason = Failure}
+    }
+).
+
 -define(rec_token_acquired(Token),
     {invoice_payment_rec_token_acquired,
         #payproc_InvoicePaymentRecTokenAcquired{token = Token}
@@ -344,6 +350,12 @@
             cash_flow = CashFlow,
             transaction_info = TrxInfo
         }
+    }
+).
+
+-define(refund_rollback_started(Failure),
+    {invoice_payment_refund_rollback_started,
+        #payproc_InvoicePaymentRefundRollbackStarted{reason = Failure}
     }
 ).
 

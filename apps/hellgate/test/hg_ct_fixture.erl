@@ -25,6 +25,10 @@
 -export([construct_external_account_set/3]).
 -export([construct_business_schedule/1]).
 -export([construct_dummy_additional_info/0]).
+-export([construct_payment_routing_ruleset/3]).
+-export([construct_routing_delegate/2]).
+-export([construct_routing_candidate/2]).
+-export([construct_bank_card_category/4]).
 
 %%
 
@@ -37,12 +41,14 @@
 -type template()    :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms()       :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime()    :: dmsl_domain_thrift:'Lifetime'() | undefined.
+-type payment_routing_ruleset() :: dmsl_domain_thrift:'PaymentRoutingRulesetRef'().
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
 
 -type business_schedule() :: dmsl_domain_thrift:'BusinessScheduleRef'().
 
+-type bank_card_category() :: dmsl_domain_thrift:'BankCardCategoryRef'().
 %%
 
 -define(EVERY, {every, #'ScheduleEvery'{}}).
@@ -278,3 +284,46 @@ construct_business_schedule(Ref) ->
 
 construct_dummy_additional_info() ->
     #domain_AdditionalTransactionInfo{rrn = <<"rrn">>, approval_code = <<"code">>}.
+
+-spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) ->
+    dmsl_domain_thrift:'PaymentRoutingRulesetObject'().
+
+construct_payment_routing_ruleset(Ref, Name, Decisions) ->
+    {payment_routing_rules, #domain_PaymentRoutingRulesObject{
+        ref = Ref,
+        data = #domain_PaymentRoutingRuleset{
+            name = Name,
+            decisions = Decisions
+        }
+    }}.
+
+-spec construct_routing_delegate(_RuleSetRef, _Predicate) ->
+    dmsl_domain_thrift:'PaymentRoutingDelegate'().
+
+construct_routing_delegate(Ref, Predicate) ->
+    #domain_PaymentRoutingDelegate{
+        allowed = Predicate,
+        ruleset = Ref
+    }.
+
+-spec construct_routing_candidate(_, _) ->
+    dmsl_domain_thrift:'PaymentRoutingCandidate'().
+
+construct_routing_candidate(TerminalRef, Predicate) ->
+    #domain_PaymentRoutingCandidate{
+        allowed = Predicate,
+        terminal = TerminalRef
+    }.
+
+-spec construct_bank_card_category(bank_card_category(), binary(), binary(), [binary()]) ->
+    {bank_card_category, dmsl_domain_thrift:'BankCardCategoryObject'()}.
+
+construct_bank_card_category(Ref, Name, Description, Patterns) ->
+    {bank_card_category, #domain_BankCardCategoryObject{
+        ref = Ref,
+        data = #domain_BankCardCategory{
+            name = Name,
+            description = Description,
+            category_patterns = Patterns
+        }
+    }}.
