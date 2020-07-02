@@ -670,7 +670,7 @@ get_next_stage(Chargeback, #payproc_InvoicePaymentChargebackReopenParams{move_to
     case Chargeback#domain_InvoicePaymentChargeback.stage of
         Stage ->
             throw(#payproc_InvoicePaymentChargebackInvalidStage{stage = Stage});
-        % TODO: perhaps allow moving backwards as well?
+        % TODO: perhaps allow moving backwards as well at some point?
         CurrentStage
             when CurrentStage =:= ?chargeback_stage_pre_arbitration(), Stage =:= ?chargeback_stage_chargeback();
                  CurrentStage =:= ?chargeback_stage_arbitration(),     Stage =:= ?chargeback_stage_pre_arbitration();
