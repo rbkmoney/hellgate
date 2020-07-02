@@ -3023,7 +3023,7 @@ reopen_payment_chargeback_accept(C) ->
     ReopenParams = make_chargeback_reopen_params(ReopenLevy),
     ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(?chargeback_stage_pre_arbitration()))),
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_stage_changed(_))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_levy_changed(ReopenLevy))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
@@ -3086,7 +3086,7 @@ reopen_payment_chargeback_skip_stage_accept(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
     ] = next_event(IID, Client),
     Settlement1  = hg_ct_helper:get_balance(SID),
-    NextStage = ?chargeback_stage_arbitration()
+    NextStage = ?chargeback_stage_arbitration(),
     ReopenParams = make_chargeback_reopen_params_move_to_stage(ReopenLevy, NextStage),
     ok = hg_client_invoicing:reopen_chargeback(IID, PID, CBID, ReopenParams, Client),
     [
