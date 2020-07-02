@@ -3405,7 +3405,14 @@ payment_refund_idempotency(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
     RefundParams2 = RefundParams0#payproc_InvoicePaymentRefundParams{id = <<"2">>},
     % can't start a different refund
-    ?operation_not_permitted() = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client),
+    case hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams2, Client) of
+        ?operation_not_permitted() ->
+            % the first refund is still in process
+            ok;
+        ?invalid_payment_status(?refunded()) ->
+            % the first refund has already finished
+            ok
+    end,
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund0, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     [
