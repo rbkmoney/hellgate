@@ -35,6 +35,7 @@ reduce_withdrawal_provider(#domain_WithdrawalProvider{withdrawal_terms = Terms} 
 reduce_payment_provider(Provider, VS, DomainRevision) ->
     Provider#domain_Provider{
         terminal = pm_selector:reduce(Provider#domain_Provider.terminal, VS, DomainRevision),
+        terms = reduce_provision_term_set(Provider#domain_Provider.terms, VS, DomainRevision),
         payment_terms = reduce_payment_terms(Provider#domain_Provider.payment_terms, VS, DomainRevision),
         recurrent_paytool_terms = reduce_recurrent_paytool_terms(
             Provider#domain_Provider.recurrent_paytool_terms, VS, DomainRevision
@@ -64,6 +65,22 @@ reduce_withdrawal_terms(#domain_WithdrawalProvisionTerms{} = Terms, VS, Rev) ->
         payout_methods = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.payout_methods, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.cash_limit, VS, Rev),
         cash_flow = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.cash_flow, VS, Rev)
+    }.
+
+reduce_provision_term_set(ProvisionTermSet, VS, DomainRevision) ->
+    #domain_ProvisionTermSet{
+        payments = pm_maybe:apply(
+            fun(X) -> reduce_payment_terms(X, VS, DomainRevision) end,
+            ProvisionTermSet#domain_ProvisionTermSet.payments
+        ),
+        recurrent_paytools = pm_maybe:apply(
+            fun(X) -> reduce_recurrent_paytool_terms(X, VS, DomainRevision) end,
+            ProvisionTermSet#domain_ProvisionTermSet.recurrent_paytools
+        ),
+        wallet = pm_maybe:apply(
+            fun(X) -> reduce_wallet_provision(X, VS, DomainRevision) end,
+            ProvisionTermSet#domain_ProvisionTermSet.wallet
+        )
     }.
 
 reduce_payment_terms(PaymentTerms, VS, DomainRevision) ->
@@ -136,6 +153,21 @@ reduce_recurrent_paytool_terms(RecurrentPaytoolTerms, VS, DomainRevision) ->
         ),
         payment_methods = reduce_if_defined(
             RecurrentPaytoolTerms#domain_RecurrentPaytoolsProvisionTerms.payment_methods, VS, DomainRevision
+        )
+    }.
+
+reduce_wallet_provision(WalletProvisionTerms, VS, DomainRevision) ->
+    #domain_WalletProvisionTerms{
+        turnover_limit = reduce_if_defined(
+            WalletProvisionTerms#domain_WalletProvisionTerms.turnover_limit, VS, DomainRevision
+        ),
+        withdrawals = pm_maybe:apply(
+            fun(X) -> reduce_withdrawal_terms(X, VS, DomainRevision) end,
+            WalletProvisionTerms#domain_WalletProvisionTerms.withdrawals
+        ),
+        p2p = pm_maybe:apply(
+            fun(X) -> reduce_p2p_terms(X, VS, DomainRevision) end,
+            WalletProvisionTerms#domain_WalletProvisionTerms.p2p
         )
     }.
 
