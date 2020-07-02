@@ -30,13 +30,35 @@ call(ServiceName, Function, Args, {RootUrl, Context}) ->
     Service = hg_proto:get_service(ServiceName),
     Request = {Service, Function, Args},
     Opts = get_opts(ServiceName),
+    RetryStrategy = genlib_retry:intervals([1, 100, 1000]),
     Result = try
-        woody_client:call(Request, Opts, Context)
+        do_call(Request, Opts, Context, RetryStrategy)
     catch
         error:Error:ST ->
             {error, {Error, ST}}
     end,
     {Result, {RootUrl, Context}}.
+
+-spec do_call(woody:request(), woody_client:options(), woody_context:ctx(), genlib_retry:strategy()) ->
+    {ok, woody:result()} |
+    {exception, woody_error:business_error()}.
+
+do_call(Request, Opts, Context, RetryStrategy) ->
+    try
+        woody_client:call(Request, Opts, Context)
+    catch
+        error:({woody_error, {system, Class, _Details}} = Error):ST when
+            Class =:= resource_unavailable orelse
+            Class =:= result_unknown
+        ->
+            case genlib_retry:next_step(RetryStrategy) of
+                finish ->
+                    erlang:raise(error, Error, ST);
+                {wait, Timeout, NextRetryStrategy} ->
+                    ok = timer:sleep(Timeout),
+                    do_call(Request, Opts, Context, NextRetryStrategy)
+            end
+    end.
 
 get_opts(ServiceName) ->
     EventHandlerOpts = genlib_app:env(hellgate, scoper_event_handler_options, #{}),

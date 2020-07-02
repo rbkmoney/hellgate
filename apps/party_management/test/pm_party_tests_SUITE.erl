@@ -2412,7 +2412,7 @@ construct_domain_fixture() ->
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
                 risk_coverage = high,
-                terms = #domain_PaymentsProvisionTerms{
+                terms_legacy = #domain_PaymentsProvisionTerms{
                     payment_methods = {value, ?ordset([
                         ?pmt(bank_card, visa)
                     ])}
