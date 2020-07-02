@@ -3,39 +3,21 @@
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %% API
--export([reduce_p2p_provider/3]).
--export([reduce_withdrawal_provider/3]).
--export([reduce_payment_provider/3]).
+-export([reduce_provider/3]).
 -export([reduce_provider_terminal_terms/4]).
 
--type p2p_provider()            :: dmsl_domain_thrift:'P2PProvider'().
--type withdrawal_provider()     :: dmsl_domain_thrift:'WithdrawalProvider'().
 -type provider()                :: dmsl_domain_thrift:'Provider'().
 -type terminal()                :: dmsl_domain_thrift:'Terminal'().
 -type provision_terms()         :: dmsl_domain_thrift:'ProvisionTermSet'().
 -type varset()                  :: pm_selector:varset().
 -type domain_revision()         :: pm_domain:revision().
 
--spec reduce_p2p_provider(p2p_provider(), varset(), domain_revision()) -> p2p_provider().
+-spec reduce_provider(provider(), varset(), domain_revision()) -> provider().
 
-reduce_p2p_provider(#domain_P2PProvider{p2p_terms = Terms} = Provider, VS, DomainRevision) ->
-    Provider#domain_P2PProvider{
-        p2p_terms = reduce_p2p_terms(Terms, VS, DomainRevision)
-    }.
-
--spec reduce_withdrawal_provider(withdrawal_provider(), varset(), domain_revision()) -> withdrawal_provider().
-
-reduce_withdrawal_provider(#domain_WithdrawalProvider{withdrawal_terms = Terms} = Provider, VS, DomainRevision) ->
-    Provider#domain_WithdrawalProvider{
-        withdrawal_terms = reduce_withdrawal_terms(Terms, VS, DomainRevision)
-    }.
-
--spec reduce_payment_provider(provider(), varset(), domain_revision()) -> provider().
-
-reduce_payment_provider(Provider, VS, DomainRevision) ->
+reduce_provider(Provider, VS, DomainRevision) ->
     Provider#domain_Provider{
         terminal = pm_selector:reduce(Provider#domain_Provider.terminal, VS, DomainRevision),
-        terms = reduce_provision_terms(Provider#domain_Provider.terms, VS, DomainRevision)
+        terms = reduce_provision_term_set(Provider#domain_Provider.terms, VS, DomainRevision)
     }.
 
 -spec reduce_provider_terminal_terms(provider(), terminal(), varset(), domain_revision()) ->
@@ -44,27 +26,8 @@ reduce_payment_provider(Provider, VS, DomainRevision) ->
 reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision) ->
     ProviderTerms = Provider#domain_Provider.terms,
     TerminalTerms = Terminal#domain_Terminal.terms,
-    MergedTerms = merge_terms(ProviderTerms, TerminalTerms),
-    reduce_provision_terms(MergedTerms, VS, DomainRevision).
-
-reduce_provision_terms(undefined = Terms, _VS, _DomainRevision) ->
-    Terms;
-reduce_provision_terms(#domain_ProvisionTermSet{} = Terms, VS, DomainRevision) ->
-    Terms#domain_ProvisionTermSet{
-        payments = reduce_payment_terms(Terms#domain_ProvisionTermSet.payments, VS, DomainRevision),
-        recurrent_paytools = reduce_recurrent_paytool_terms(
-            Terms#domain_ProvisionTermSet.recurrent_paytools, VS, DomainRevision
-        ),
-        wallet = reduce_wallet_terms(Terms#domain_ProvisionTermSet.wallet, VS, DomainRevision)
-    }.
-
-reduce_wallet_terms(undefined = Terms, _VS, _DomainRevision) ->
-    Terms;
-reduce_wallet_terms(#domain_WalletProvisionTerms{} = Terms, VS, Rev) ->
-    Terms#domain_WalletProvisionTerms{
-        withdrawals = reduce_withdrawal_terms(Terms#domain_WalletProvisionTerms.withdrawals, VS, Rev),
-        p2p = reduce_p2p_terms(Terms#domain_WalletProvisionTerms.p2p, VS, Rev)
-    }.
+    MergedTerms = merge_provision_term_sets(ProviderTerms, TerminalTerms),
+    reduce_provision_term_set(MergedTerms, VS, DomainRevision).
 
 reduce_p2p_terms(undefined = Terms, _VS, _Rev) ->
     Terms;
@@ -84,6 +47,24 @@ reduce_withdrawal_terms(#domain_WithdrawalProvisionTerms{} = Terms, VS, Rev) ->
         payout_methods = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.payout_methods, VS, Rev),
         cash_limit = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.cash_limit, VS, Rev),
         cash_flow = reduce_if_defined(Terms#domain_WithdrawalProvisionTerms.cash_flow, VS, Rev)
+    }.
+
+reduce_provision_term_set(undefined = ProvisionTermSet, _VS, _DomainRevision) ->
+    ProvisionTermSet;
+reduce_provision_term_set(ProvisionTermSet, VS, DomainRevision) ->
+    #domain_ProvisionTermSet{
+        payments = pm_maybe:apply(
+            fun(X) -> reduce_payment_terms(X, VS, DomainRevision) end,
+            ProvisionTermSet#domain_ProvisionTermSet.payments
+        ),
+        recurrent_paytools = pm_maybe:apply(
+            fun(X) -> reduce_recurrent_paytool_terms(X, VS, DomainRevision) end,
+            ProvisionTermSet#domain_ProvisionTermSet.recurrent_paytools
+        ),
+        wallet = pm_maybe:apply(
+            fun(X) -> reduce_wallet_provision(X, VS, DomainRevision) end,
+            ProvisionTermSet#domain_ProvisionTermSet.wallet
+        )
     }.
 
 reduce_payment_terms(undefined = PaymentTerms, _VS, _DomainRevision) ->
@@ -161,7 +142,22 @@ reduce_recurrent_paytool_terms(RecurrentPaytoolTerms, VS, DomainRevision) ->
         )
     }.
 
-merge_terms(
+reduce_wallet_provision(WalletProvisionTerms, VS, DomainRevision) ->
+    #domain_WalletProvisionTerms{
+        turnover_limit = reduce_if_defined(
+            WalletProvisionTerms#domain_WalletProvisionTerms.turnover_limit, VS, DomainRevision
+        ),
+        withdrawals = pm_maybe:apply(
+            fun(X) -> reduce_withdrawal_terms(X, VS, DomainRevision) end,
+            WalletProvisionTerms#domain_WalletProvisionTerms.withdrawals
+        ),
+        p2p = pm_maybe:apply(
+            fun(X) -> reduce_p2p_terms(X, VS, DomainRevision) end,
+            WalletProvisionTerms#domain_WalletProvisionTerms.p2p
+        )
+    }.
+
+merge_provision_term_sets(
     #domain_ProvisionTermSet{
         payments           = PPayments,
         recurrent_paytools = PRecurrents,
@@ -178,9 +174,8 @@ merge_terms(
         recurrent_paytools = PRecurrents,
         wallet             = merge_wallet_terms(PWallet, TWallet)
     };
-merge_terms(ProviderTerms, TerminalTerms) ->
+merge_provision_term_sets(ProviderTerms, TerminalTerms) ->
     pm_utils:select_defined(TerminalTerms, ProviderTerms).
-
 
 merge_payment_terms(
     #domain_PaymentsProvisionTerms{
