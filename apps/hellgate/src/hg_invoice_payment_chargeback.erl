@@ -666,8 +666,18 @@ get_stage(#domain_InvoicePaymentChargeback{stage = Stage}) ->
     ?chargeback_stage_pre_arbitration() | ?chargeback_stage_arbitration().
 get_next_stage(#chargeback_st{chargeback = Chargeback}, ReopenParams) ->
     get_next_stage(Chargeback, ReopenParams);
-get_next_stage(_State, #payproc_InvoicePaymentChargebackReopenParams{move_to_stage = Stage}) when Stage =/= undefined ->
-    Stage;
+get_next_stage(Chargeback, #payproc_InvoicePaymentChargebackReopenParams{move_to_stage = Stage}) when Stage =/= undefined ->
+    case Chargeback#domain_InvoicePaymentChargeback.stage of
+        Stage ->
+            throw(#payproc_InvoicePaymentChargebackInvalidStage{stage = Stage});
+        % TODO: perhaps allow moving backwards as well?
+        CurrentStage
+            when CurrentStage =:= ?chargeback_stage_pre_arbitration(), Stage =:= ?chargeback_stage_chargeback();
+                 CurrentStage =:= ?chargeback_stage_arbitration(),     Stage =:= ?chargeback_stage_pre_arbitration();
+                 CurrentStage =:= ?chargeback_stage_arbitration(),     Stage =:= ?chargeback_stage_chargeback() ->
+            throw(#payproc_InvoicePaymentChargebackInvalidStage{stage = CurrentStage});
+        _ -> Stage
+    end;
 get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_chargeback()}, _Params) ->
     ?chargeback_stage_pre_arbitration();
 get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_pre_arbitration()}, _Params) ->
