@@ -107,6 +107,7 @@
 -export([reopen_payment_chargeback_cancel/1]).
 -export([reopen_payment_chargeback_reject/1]).
 -export([reopen_payment_chargeback_accept/1]).
+-export([reopen_payment_chargeback_skip_stage_accept/1]).
 -export([reopen_payment_chargeback_accept_new_levy/1]).
 -export([reopen_payment_chargeback_arbitration/1]).
 -export([reopen_payment_chargeback_arbitration_reopen_fails/1]).
@@ -305,6 +306,7 @@ groups() ->
             reopen_payment_chargeback_cancel,
             reopen_payment_chargeback_reject,
             reopen_payment_chargeback_accept,
+            reopen_payment_chargeback_skip_stage_accept,
             reopen_payment_chargeback_accept_new_levy,
             reopen_payment_chargeback_arbitration,
             reopen_payment_chargeback_arbitration_reopen_fails
@@ -3050,6 +3052,11 @@ reopen_payment_chargeback_accept(C) ->
     ?assertEqual(Paid        - LevyAmount      , maps:get(max_available_amount, Settlement2)),
     ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement3)),
     ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(max_available_amount, Settlement3)).
+
+-spec reopen_payment_chargeback_skip_stage_accept(config()) -> _ | no_return().
+
+reopen_payment_chargeback_skip_stage_accept(C) ->
+    error('TODO').
 
 -spec reopen_payment_chargeback_accept_new_levy(config()) -> _ | no_return().
 
