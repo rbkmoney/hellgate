@@ -4478,7 +4478,7 @@ adhoc_repair_invalid_changes_failed(C) ->
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID))))
     ] = next_event(InvoiceID, Client),
-    timeout = next_event(InvoiceID, 1000, Client),
+    timeout = next_event(InvoiceID, 5000, Client),
     InvalidChanges1 = [
         ?payment_ev(PaymentID, ?refund_ev(<<"42">>, ?refund_status_changed(?refund_succeeded())))
     ],
@@ -6224,7 +6224,7 @@ construct_domain_fixture() ->
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
                 risk_coverage = low,
-                terms = #domain_PaymentsProvisionTerms{
+                terms_legacy = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
                     ])},
@@ -6265,7 +6265,7 @@ construct_domain_fixture() ->
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
                 risk_coverage = high,
-                terms = #domain_PaymentsProvisionTerms{
+                terms_legacy = #domain_PaymentsProvisionTerms{
                     cash_flow = {value, [
                         ?cfpost(
                             {provider, settlement},

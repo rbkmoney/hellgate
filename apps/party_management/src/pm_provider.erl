@@ -46,7 +46,7 @@ reduce_payment_provider(Provider, VS, DomainRevision) ->
 
 reduce_payment_provider_terminal_terms(Provider, Terminal, VS, DomainRevision) ->
     ProviderPaymentTerms = Provider#domain_Provider.payment_terms,
-    TerminalPaymentTerms = Terminal#domain_Terminal.terms,
+    TerminalPaymentTerms = Terminal#domain_Terminal.terms_legacy,
     MergedPaymentTerms = merge_payment_terms(ProviderPaymentTerms, TerminalPaymentTerms),
     reduce_payment_terms(MergedPaymentTerms, VS, DomainRevision).
 
