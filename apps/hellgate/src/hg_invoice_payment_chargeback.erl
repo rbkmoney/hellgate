@@ -676,10 +676,8 @@ get_reopen_stage(#domain_InvoicePaymentChargeback{stage = CurrentStage} = Charge
             throw(#payproc_InvoicePaymentChargebackInvalidStage{stage = CurrentStage})
     end.
 
--spec get_next_stage(state() | chargeback()) ->
+-spec get_next_stage(chargeback()) ->
     ?chargeback_stage_pre_arbitration() | ?chargeback_stage_arbitration().
-get_next_stage(#chargeback_st{chargeback = Chargeback}) ->
-    get_next_stage(Chargeback);
 get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_chargeback()}) ->
     ?chargeback_stage_pre_arbitration();
 get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_pre_arbitration()}) ->
