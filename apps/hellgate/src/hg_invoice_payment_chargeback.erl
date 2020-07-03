@@ -404,7 +404,7 @@ build_accept_result(State, ?accept_params(ParamsLevy, ParamsBody)) ->
 build_reopen_result(State, ?reopen_params(ParamsLevy, ParamsBody) = Params) ->
     Body         = get_body(State),
     Levy         = get_levy(State),
-    Stage        = get_next_stage(State, Params),
+    Stage        = get_reopen_stage(State, Params),
     Action       = hg_machine_action:instant(),
     BodyChange   = body_change(ParamsBody, Body),
     LevyChange   = levy_change(ParamsLevy, Levy),
@@ -662,21 +662,28 @@ get_stage(#chargeback_st{chargeback = Chargeback}) ->
 get_stage(#domain_InvoicePaymentChargeback{stage = Stage}) ->
     Stage.
 
--spec get_next_stage(state() | chargeback(), reopen_params()) ->
+-spec get_reopen_stage(state() | chargeback(), reopen_params()) ->
     ?chargeback_stage_pre_arbitration() | ?chargeback_stage_arbitration().
-get_next_stage(#chargeback_st{chargeback = Chargeback}, ReopenParams) ->
-    get_next_stage(Chargeback, ReopenParams);
-get_next_stage(#domain_InvoicePaymentChargeback{stage = CurrentStage}, Params) ->
+get_reopen_stage(#chargeback_st{chargeback = Chargeback}, ReopenParams) ->
+    get_reopen_stage(Chargeback, ReopenParams);
+get_reopen_stage(#domain_InvoicePaymentChargeback{stage = CurrentStage}, Params) ->
     case Params#payproc_InvoicePaymentChargebackReopenParams.move_to_stage of
-        undefined when CurrentStage =:= ?chargeback_stage_chargeback() ->
-            ?chargeback_stage_pre_arbitration();
-        undefined when CurrentStage =:= ?chargeback_stage_pre_arbitration() ->
-            ?chargeback_stage_arbitration();
+        undefined ->
+            get_next_stage(CurrentStage);
         Stage when Stage =/= CurrentStage, CurrentStage =:= ?chargeback_stage_chargeback() ->
             Stage;
         _Other ->
             throw(#payproc_InvoicePaymentChargebackInvalidStage{stage = CurrentStage})
     end.
+
+-spec get_next_stage(state() | chargeback()) ->
+    ?chargeback_stage_pre_arbitration() | ?chargeback_stage_arbitration().
+get_next_stage(#chargeback_st{chargeback = Chargeback}) ->
+    get_next_stage(Chargeback);
+get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_chargeback()}) ->
+    ?chargeback_stage_pre_arbitration();
+get_next_stage(#domain_InvoicePaymentChargeback{stage = ?chargeback_stage_pre_arbitration()}) ->
+    ?chargeback_stage_arbitration().
 
 -spec get_previous_stage(state() | chargeback()) ->
     undefined | ?chargeback_stage_pre_arbitration() | ?chargeback_stage_chargeback().
