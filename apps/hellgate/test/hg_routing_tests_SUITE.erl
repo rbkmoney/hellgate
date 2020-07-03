@@ -20,7 +20,6 @@
 -export([fatal_risk_score_for_route_found/1]).
 -export([prefer_alive/1]).
 -export([prefer_normal_conversion/1]).
--export([prefer_better_risk_score/1]).
 -export([prefer_higher_availability/1]).
 -export([prefer_higher_conversion/1]).
 -export([prefer_weight_over_availability/1]).
@@ -222,7 +221,7 @@ fatal_risk_score_for_route_found(_C) ->
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
         ],
-        rejected_routes := [{?prv(3), ?trm(10), {'Terminal', risk_coverage}}]}
+        rejected_routes := []}
     }}} = Result1,
     hg_context:cleanup(),
     ok.
@@ -369,35 +368,6 @@ prefer_normal_conversion(_C) ->
     #{reject_reason := conversion_condition} = Meta0,
     false = maps:is_key(reject_reason, Meta1),
     #{reject_reason := conversion_condition} = Meta2,
-
-    ok.
-
--spec prefer_better_risk_score(config()) -> test_return().
-prefer_better_risk_score(_C) ->
-    VS = #{
-        category        => ?cat(1),
-        currency        => ?cur(<<"RUB">>),
-        cost            => ?cash(1000, <<"RUB">>),
-        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id        => <<"12345">>,
-        risk_score      => low,
-        flow            => instant
-    },
-
-    Revision = hg_domain:head(),
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
-
-    {ProviderRefs, TerminalData} = lists:unzip(Routes),
-
-    ProviderStatuses = [{{dead, 1.0}, {normal, 0.0}}, {{alive, 0.3}, {normal, 0.3}}, {{alive, 0.0}, {normal, 0.0}}],
-    FailRatedRoutes  = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
-
-    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
-
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, Meta} = Result,
-    false = maps:is_key(reject_reason, Meta),
 
     ok.
 
@@ -564,16 +534,14 @@ routing_with_fail_rate_fixture(Revision) ->
             ref = ?trm(111),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
         {terminal, #domain_TerminalObject{
             ref = ?trm(222),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = high
+                description = <<"Euroset">>
             }
         }},
         {provider, #domain_ProviderObject{
@@ -1288,8 +1256,7 @@ construct_domain_fixture() ->
             ref = ?trm(1),
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>,
-                risk_coverage = high
+                description = <<"Brominal 1">>
             }
         }},
 
@@ -1360,7 +1327,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                risk_coverage = low,
                 terms_legacy = #domain_PaymentsProvisionTerms{
                     currencies = {value, ?ordset([
                         ?cur(<<"RUB">>)
@@ -1400,8 +1366,7 @@ construct_domain_fixture() ->
             ref = ?trm(7),
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
-                description = <<"Terminal 7">>,
-                risk_coverage = high
+                description = <<"Terminal 7">>
             }
         }},
 
@@ -1506,16 +1471,14 @@ terminal_priority_fixture(Revision, _C) ->
             ref = ?trm(111),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
         {terminal, #domain_TerminalObject{
             ref = ?trm(222),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
         {provider, #domain_ProviderObject{
