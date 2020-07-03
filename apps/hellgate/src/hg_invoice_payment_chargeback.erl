@@ -666,10 +666,10 @@ get_stage(#domain_InvoicePaymentChargeback{stage = Stage}) ->
     ?chargeback_stage_pre_arbitration() | ?chargeback_stage_arbitration().
 get_reopen_stage(#chargeback_st{chargeback = Chargeback}, ReopenParams) ->
     get_reopen_stage(Chargeback, ReopenParams);
-get_reopen_stage(#domain_InvoicePaymentChargeback{stage = CurrentStage}, Params) ->
+get_reopen_stage(#domain_InvoicePaymentChargeback{stage = CurrentStage} = Chargeback, Params) ->
     case Params#payproc_InvoicePaymentChargebackReopenParams.move_to_stage of
-        undefined ->
-            get_next_stage(CurrentStage);
+        undefined  ->
+            get_next_stage(Chargeback);
         Stage when Stage =/= CurrentStage, CurrentStage =:= ?chargeback_stage_chargeback() ->
             Stage;
         _Other ->
