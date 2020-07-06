@@ -17,9 +17,6 @@ build('hellgate', 'docker-host', finalHook) {
     pipeErlangService = load("${env.JENKINS_LIB}/pipeErlangService.groovy")
   }
 
-  options {
-    parallelsAlwaysFailFast()
-  }
-
+  parallelsAlwaysFailFast()
   pipeErlangService.runPipe(true, true)
 }
