@@ -184,7 +184,8 @@ handle_function_('ComputePaymentProviderTerminalTerms', Args, _Opts) ->
     Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
     Terminal = get_terminal(TerminalRef, DomainRevision),
     VS = prepare_varset(Varset),
-    pm_provider:reduce_payment_provider_terminal_terms(Provider, Terminal, VS, DomainRevision);
+    Terms = pm_provider:reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision),
+    Terms#domain_ProvisionTermSet.payments;
 
 %% PartyMeta
 
