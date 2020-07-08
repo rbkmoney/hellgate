@@ -3,36 +3,18 @@
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %% API
--export([reduce_p2p_provider/3]).
--export([reduce_withdrawal_provider/3]).
--export([reduce_payment_provider/3]).
--export([reduce_payment_provider_terminal_terms/4]).
+-export([reduce_provider/3]).
+-export([reduce_provider_terminal_terms/4]).
 
--type p2p_provider()            :: dmsl_domain_thrift:'P2PProvider'().
--type withdrawal_provider()     :: dmsl_domain_thrift:'WithdrawalProvider'().
 -type payment_provider()        :: dmsl_domain_thrift:'Provider'().
 -type terminal()                :: dmsl_domain_thrift:'Terminal'().
 -type payment_provision_terms() :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
 -type varset()                  :: pm_selector:varset().
 -type domain_revision()         :: pm_domain:revision().
 
--spec reduce_p2p_provider(p2p_provider(), varset(), domain_revision()) -> p2p_provider().
+-spec reduce_provider(payment_provider(), varset(), domain_revision()) -> payment_provider().
 
-reduce_p2p_provider(#domain_P2PProvider{p2p_terms = Terms} = Provider, VS, DomainRevision) ->
-    Provider#domain_P2PProvider{
-        p2p_terms = reduce_p2p_terms(Terms, VS, DomainRevision)
-    }.
-
--spec reduce_withdrawal_provider(withdrawal_provider(), varset(), domain_revision()) -> withdrawal_provider().
-
-reduce_withdrawal_provider(#domain_WithdrawalProvider{withdrawal_terms = Terms} = Provider, VS, DomainRevision) ->
-    Provider#domain_WithdrawalProvider{
-        withdrawal_terms = reduce_withdrawal_terms(Terms, VS, DomainRevision)
-    }.
-
--spec reduce_payment_provider(payment_provider(), varset(), domain_revision()) -> payment_provider().
-
-reduce_payment_provider(Provider, VS, DomainRevision) ->
+reduce_provider(Provider, VS, DomainRevision) ->
     Provider#domain_Provider{
         terminal = pm_selector:reduce(Provider#domain_Provider.terminal, VS, DomainRevision),
         terms = reduce_provision_term_set(Provider#domain_Provider.terms, VS, DomainRevision),
@@ -42,10 +24,10 @@ reduce_payment_provider(Provider, VS, DomainRevision) ->
         )
     }.
 
--spec reduce_payment_provider_terminal_terms(payment_provider(), terminal(), varset(), domain_revision()) ->
+-spec reduce_provider_terminal_terms(payment_provider(), terminal(), varset(), domain_revision()) ->
     payment_provision_terms().
 
-reduce_payment_provider_terminal_terms(Provider, Terminal, VS, DomainRevision) ->
+reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision) ->
     ProviderPaymentTerms = Provider#domain_Provider.payment_terms,
     TerminalPaymentTerms = Terminal#domain_Terminal.terms_legacy,
     MergedPaymentTerms = merge_payment_terms(ProviderPaymentTerms, TerminalPaymentTerms),

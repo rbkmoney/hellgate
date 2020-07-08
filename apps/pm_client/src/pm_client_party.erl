@@ -46,10 +46,8 @@
 -export([pull_event/1]).
 -export([pull_event/2]).
 
--export([compute_p2p_provider/4]).
--export([compute_withdrawal_provider/4]).
--export([compute_payment_provider/4]).
--export([compute_payment_provider_terminal_terms/5]).
+-export([compute_provider/4]).
+-export([compute_provider_terminal_terms/5]).
 
 %% GenServer
 
@@ -83,9 +81,7 @@
 -type payment_intitution_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 -type varset() :: dmsl_payment_processing_thrift:'Varset'().
 
--type p2p_provider_ref() :: dmsl_domain_thrift:'P2PProviderRef'().
--type withdrawal_provider_ref() :: dmsl_domain_thrift:'WithdrawalProviderRef'().
--type payment_provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
+-type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
 -type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 
 -spec start(party_id(), pm_client_api:t()) -> pid().
@@ -308,38 +304,24 @@ get_account_state(AccountID, Client) ->
 get_shop_account(ShopID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetShopAccount', [ShopID]})).
 
--spec compute_p2p_provider(p2p_provider_ref(), domain_revision(), varset(), pid()) ->
+-spec compute_provider(provider_ref(), domain_revision(), varset(), pid()) ->
     dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
 
-compute_p2p_provider(P2PProviderRef, Revision, Varset, Client) ->
-    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeP2PProvider',
-        [P2PProviderRef, Revision, Varset]})).
+compute_provider(ProviderRef, Revision, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeProvider',
+        [ProviderRef, Revision, Varset]})).
 
--spec compute_withdrawal_provider(withdrawal_provider_ref(), domain_revision(), varset(), pid()) ->
-    dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
-
-compute_withdrawal_provider(WithdrawalProviderRef, Revision, Varset, Client) ->
-    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeWithdrawalProvider',
-        [WithdrawalProviderRef, Revision, Varset]})).
-
--spec compute_payment_provider(payment_provider_ref(), domain_revision(), varset(), pid()) ->
-    dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
-
-compute_payment_provider(PaymentProviderRef, Revision, Varset, Client) ->
-    map_result_error(gen_server:call(Client, {call_without_party, 'ComputePaymentProvider',
-        [PaymentProviderRef, Revision, Varset]})).
-
--spec compute_payment_provider_terminal_terms(
-    payment_provider_ref(),
+-spec compute_provider_terminal_terms(
+    provider_ref(),
     terminal_ref(),
     domain_revision(),
     varset(),
     pid()
 ) -> dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
 
-compute_payment_provider_terminal_terms(PaymentProviderRef, TerminalRef, Revision, Varset, Client) ->
-    map_result_error(gen_server:call(Client, {call_without_party, 'ComputePaymentProviderTerminalTerms',
-        [PaymentProviderRef, TerminalRef, Revision, Varset]})).
+compute_provider_terminal_terms(ProviderRef, TerminalRef, Revision, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeProviderTerminalTerms',
+        [ProviderRef, TerminalRef, Revision, Varset]})).
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
