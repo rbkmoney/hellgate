@@ -1576,11 +1576,13 @@ compute_payment_provider_ok(C) ->
         ])}}
     ),
     #domain_Provider{
-        payment_terms = #domain_PaymentsProvisionTerms{
-            cash_flow = {value, [CashFlow]}
-        },
-        recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
-            cash_value = {value, ?cash(1000, <<"RUB">>)}
+        terms = #domain_ProvisionTermSet{
+            payments = #domain_PaymentsProvisionTerms{
+                cash_flow = {value, [CashFlow]}
+            },
+            recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+                cash_value = {value, ?cash(1000, <<"RUB">>)}
+            }
         }
     } = pm_client_party:compute_payment_provider(?prv(1), DomainRevision, Varset, Client).
 
@@ -2346,62 +2348,68 @@ construct_domain_fixture() ->
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([?cur(<<"RUB">>)])},
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(      1000, <<"RUB">>)},
-                        {exclusive, ?cash(1000000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {decisions, [
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    {product, {min_of, ?ordset([
-                                        ?fixed(10, <<"RUB">>),
-                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-                                    ])}}
-                                )
-                            ]}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    {product, {min_of, ?ordset([
-                                        ?fixed(10, <<"USD">>),
-                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-                                    ])}}
-                                )
-                            ]}
-                        }
-                    ]}
-                },
-                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
-                    ])},
-                    cash_value = {decisions, [
-                        #domain_CashValueDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                            then_ = {value, ?cash(1000, <<"RUB">>)}
-                        },
-                        #domain_CashValueDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
-                            then_ = {value, ?cash(1000, <<"USD">>)}
-                        }
-                    ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                        categories = {value, ?ordset([?cat(1)])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card, visa),
+                            ?pmt(bank_card, mastercard)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(      1000, <<"RUB">>)},
+                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {decisions, [
+                            #domain_CashFlowDecision{
+                                if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                then_ = {value, [
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        {product, {min_of, ?ordset([
+                                            ?fixed(10, <<"RUB">>),
+                                            ?share_with_rounding_method(
+                                                5, 100, operation_amount, round_half_towards_zero
+                                            )
+                                        ])}}
+                                    )
+                                ]}
+                            },
+                            #domain_CashFlowDecision{
+                                if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                                then_ = {value, [
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        {product, {min_of, ?ordset([
+                                            ?fixed(10, <<"USD">>),
+                                            ?share_with_rounding_method(
+                                                5, 100, operation_amount, round_half_towards_zero
+                                            )
+                                        ])}}
+                                    )
+                                ]}
+                            }
+                        ]}
+                    },
+                    recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+                        categories = {value, ?ordset([?cat(1)])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card, visa),
+                            ?pmt(bank_card, mastercard)
+                        ])},
+                        cash_value = {decisions, [
+                            #domain_CashValueDecision{
+                                if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                then_ = {value, ?cash(1000, <<"RUB">>)}
+                            },
+                            #domain_CashValueDecision{
+                                if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                                then_ = {value, ?cash(1000, <<"USD">>)}
+                            }
+                        ]}
+                    }
                 }
             }
         }},
@@ -2411,10 +2419,12 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                terms_legacy = #domain_PaymentsProvisionTerms{
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
-                    ])}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card, visa)
+                        ])}
+                    }
                 }
             }
         }}

@@ -11,7 +11,6 @@
 -export([get_payments_terms/2]).
 -export([get_rec_paytools_terms/2]).
 
--export([merge_payment_terms/2]).
 -export([acceptable_terminal/5]).
 
 -export([marshal/1]).
@@ -484,15 +483,16 @@ build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
 -spec get_payments_terms(route(), hg_domain:revision()) -> terms().
 
 get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
-    #domain_Provider{payment_terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
-    #domain_Terminal{terms_legacy = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
-    merge_payment_terms(Terms0, Terms1).
+    #domain_Provider{terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
+    #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
+    Terms = merge_terms(Terms0, Terms1),
+    Terms#domain_ProvisionTermSet.payments.
 
 -spec get_rec_paytools_terms(route(), hg_domain:revision()) -> terms().
 
 get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
-    #domain_Provider{recurrent_paytool_terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
-    Terms.
+    #domain_Provider{terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
+    Terms#domain_ProvisionTermSet.recurrent_paytools.
 
 -spec acceptable_provider(
     route_predestination(),
@@ -504,24 +504,23 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
 
 acceptable_provider(payment, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
-        payment_terms = Terms
+        terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
     {ProviderRef, Provider};
 acceptable_provider(recurrent_paytool, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
-        recurrent_paytool_terms = Terms
+        terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
+    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {ProviderRef, Provider};
 acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
     % Use provider check combined from recurrent_paytool and payment check
     Provider = #domain_Provider{
-        payment_terms = PaymentTerms,
-        recurrent_paytool_terms = RecurrentTerms
+        terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
-    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {ProviderRef, Provider}.
 
 %%
@@ -564,31 +563,36 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revisio
 ) ->
     unweighted_terminal() | no_return().
 
-acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms0}, VS, Revision) ->
+acceptable_terminal(payment, TerminalRef, Provider, VS, Revision) ->
+    #domain_Provider{
+        terms = ProviderTerms
+    } = Provider,
     Terminal = #domain_Terminal{
-        terms_legacy  = Terms1
+        terms = TerminalTerms,
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     % TODO the ability to override any terms makes for uncommon sense
     %      is it better to allow to override only cash flow / refunds terms?
-    Terms = merge_payment_terms(Terms0, Terms1),
-    _ = acceptable_payment_terms(Terms, VS, Revision),
+    Terms = merge_terms(ProviderTerms, TerminalTerms),
+    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
     {TerminalRef, Terminal};
-acceptable_terminal(recurrent_paytool, TerminalRef, #domain_Provider{recurrent_paytool_terms = Terms}, VS, Revision) ->
+acceptable_terminal(recurrent_paytool, TerminalRef, Provider, VS, Revision) ->
+    #domain_Provider{
+        terms = Terms
+    } = Provider,
     Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
-    _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
+    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {TerminalRef, Terminal};
 acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
     % Use provider check combined from recurrent_paytool and payment check
     #domain_Provider{
-        payment_terms = PaymentTerms0,
-        recurrent_paytool_terms = RecurrentTerms
+        terms = ProviderTerms
     } = Provider,
     Terminal = #domain_Terminal{
-        terms_legacy  = TerminalTerms
+        terms = TerminalTerms,
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
-    PaymentTerms = merge_payment_terms(PaymentTerms0, TerminalTerms),
-    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
-    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
+    Terms = merge_terms(ProviderTerms, TerminalTerms),
+    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {TerminalRef, Terminal}.
 
 -spec get_terminal_ref(provider_terminal_ref()) ->
@@ -607,6 +611,30 @@ get_terminal_priority(#domain_ProviderTerminalRef{
     {Priority, Weight}.
 
 %%
+
+acceptable_provision_payment_terms(
+    #domain_ProvisionTermSet{
+        payments = PaymentTerms
+    },
+    VS,
+    Revision
+) ->
+    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
+    true;
+acceptable_provision_payment_terms(undefined, _VS, _Revision) ->
+    throw(?rejected({'ProvisionTermSet', undefined})).
+
+acceptable_provision_recurrent_terms(
+    #domain_ProvisionTermSet{
+        recurrent_paytools = RecurrentTerms
+    },
+    VS,
+    Revision
+) ->
+    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
+    true;
+acceptable_provision_recurrent_terms(undefined, _VS, _Revision) ->
+    throw(?rejected({'ProvisionTermSet', undefined})).
 
 acceptable_payment_terms(
     #domain_PaymentsProvisionTerms{
@@ -689,6 +717,23 @@ acceptable_chargeback_terms(_Terms, #{}, _VS, _Revision) ->
     true;
 acceptable_chargeback_terms(undefined, _RVS, _VS, _Revision) ->
     throw(?rejected({'PaymentChargebackProvisionTerms', undefined})).
+
+merge_terms(
+    #domain_ProvisionTermSet{
+        payments           = PPayments,
+        recurrent_paytools = PRecurrents
+    },
+    #domain_ProvisionTermSet{
+        payments           = TPayments,
+        recurrent_paytools = _TRecurrents  % TODO: Allow to define recurrent terms in terminal
+    }
+) ->
+    #domain_ProvisionTermSet{
+        payments           = merge_payment_terms(PPayments, TPayments),
+        recurrent_paytools = PRecurrents
+    };
+merge_terms(ProviderTerms, TerminalTerms) ->
+    hg_utils:select_defined(TerminalTerms, ProviderTerms).
 
 -spec merge_payment_terms(terms(), terms()) ->
     terms().
