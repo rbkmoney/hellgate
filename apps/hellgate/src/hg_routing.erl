@@ -568,7 +568,7 @@ acceptable_terminal(payment, TerminalRef, Provider, VS, Revision) ->
         terms = ProviderTerms
     } = Provider,
     Terminal = #domain_Terminal{
-        terms = TerminalTerms,
+        terms = TerminalTerms
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     % TODO the ability to override any terms makes for uncommon sense
     %      is it better to allow to override only cash flow / refunds terms?
@@ -588,7 +588,7 @@ acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
         terms = ProviderTerms
     } = Provider,
     Terminal = #domain_Terminal{
-        terms = TerminalTerms,
+        terms = TerminalTerms
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     Terms = merge_terms(ProviderTerms, TerminalTerms),
     _ = acceptable_provision_payment_terms(Terms, VS, Revision),
