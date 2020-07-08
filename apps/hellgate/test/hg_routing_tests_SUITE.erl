@@ -60,7 +60,6 @@ groups() -> [
     {routing_with_fail_rate, [parallel], [
         prefer_alive,
         prefer_normal_conversion,
-        prefer_better_risk_score,
         prefer_higher_availability,
         prefer_higher_conversion,
         prefer_weight_over_availability,
@@ -322,8 +321,9 @@ prefer_alive(_C) ->
     {ok, #domain_PaymentRoute{provider = ?prv(202)}, Meta2} = Result2,
 
     #{reject_reason := availability_condition} = Meta0,
-    false = maps:is_key(reject_reason, Meta1),
-    #{reject_reason := availability_condition} = Meta2,
+    #{reject_reason := availability_condition} = Meta1,
+    false = maps:is_key(reject_reason, Meta2),
+
 
     ok.
 
@@ -366,8 +366,8 @@ prefer_normal_conversion(_C) ->
     {ok, #domain_PaymentRoute{provider = ?prv(202)}, Meta2} = Result2,
 
     #{reject_reason := conversion_condition} = Meta0,
-    false = maps:is_key(reject_reason, Meta1),
-    #{reject_reason := conversion_condition} = Meta2,
+    #{reject_reason := conversion_condition} = Meta1,
+    false = maps:is_key(reject_reason, Meta2),
 
     ok.
 
@@ -390,7 +390,7 @@ prefer_higher_availability(_C) ->
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
-    ProviderStatuses = [{{alive, 0.5}, {normal, 0.5}}, {{alive, 0.6}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}],
+    ProviderStatuses = [{{alive, 0.5}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.6}, {normal, 0.5}}],
     FailRatedRoutes  = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
@@ -407,7 +407,6 @@ prefer_higher_conversion(_C) ->
         cost            => ?cash(1000, <<"RUB">>),
         payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
         party_id        => <<"12345">>,
-        risk_score      => low,
         flow            => instant
     },
 
@@ -418,12 +417,12 @@ prefer_higher_conversion(_C) ->
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
-    ProviderStatuses = [{{alive, 0.5}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}],
+    ProviderStatuses = [{{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.5}}],
     FailRatedRoutes  = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{reject_reason := conversion}} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(201)}, #{reject_reason := conversion}} = Result,
 
     ok.
 
@@ -474,7 +473,7 @@ prefer_weight_over_conversion(_C) ->
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
-    ProviderStatuses = [{{alive, 0.3}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.5}}, {{alive, 0.3}, {normal, 0.3}}],
+    ProviderStatuses = [{{alive, 0.3}, {normal, 0.5}}, {{alive, 0.3}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
     FailRatedRoutes  = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
@@ -1422,8 +1421,7 @@ construct_domain_fixture() ->
             ref = ?trm(10),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
 
