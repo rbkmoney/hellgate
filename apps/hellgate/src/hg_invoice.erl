@@ -63,15 +63,13 @@
 
 -type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
 
--type activity()
-    :: invoice
-     | {payment, payment_id()}
-     | {adjustment_new, adjustment_id()}
-     | {adjustment_pending, adjustment_id()}
-     .
+-type activity() :: invoice
+                  | {payment, payment_id()}
+                  | {adjustment_new, adjustment_id()}
+                  | {adjustment_pending, adjustment_id()}
+                  .
 
--type adjustment_id()
-    :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
+-type adjustment_id() :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
 
 %% API
 
@@ -503,10 +501,7 @@ handle_signal(timeout, St = #st{activity = {adjustment_new, ID}}) ->
     % there's an adjustment pending
     Status = {processed, #domain_InvoiceAdjustmentProcessed{}},
     Change = [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Status))],
-    #{changes => Change, state => St};
-handle_signal(timeout, St = #st{activity = {adjustment_pending, _ID}}) ->
-    % there's an adjustment pending
-    #{state => St};
+    #{changes => Change, state => St, action => hg_machine_action:new()};
 handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
