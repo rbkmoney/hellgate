@@ -648,11 +648,12 @@ handle_call({{'Invoicing', 'Rescind'}, [_UserInfo, _InvoiceID, Reason]}, St) ->
     };
 
 handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, Params]}, St) ->
-    ok = assert_all_adjustments_finalised(St),
-    % TODO: should it be final?
-    ok = assert_adjustment_target_status_final(Params),
-    St = assert_invoice_accessible(St),
     ID = create_adjustment_id(St),
+    St = assert_invoice_accessible(St),
+    TargetStatus = get_adjustment_params_target_status(Params),
+    InvoiceStatus = get_invoice_status(St),
+    ok = assert_adjustment_target_status(TargetStatus, InvoiceStatus),
+    ok = assert_all_adjustments_finalised(St),
     wrap_adjustment_impact(ID, hg_invoice_adjustment:create(ID, Params), St);
 
 handle_call({{'Invoicing', 'CaptureAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
@@ -1176,7 +1177,21 @@ set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
 
 %%
 
-assert_adjustment_target_status_final(_) ->
+get_adjustment_params_target_status(#payproc_InvoiceAdjustmentParams{
+    scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{target_status = Status}}}
+) ->
+    Status.
+
+get_invoice_status(#st{invoice = #domain_Invoice{status = Status}}) ->
+    Status.
+
+assert_adjustment_target_status(TargetStatus, Status)
+when TargetStatus =:= Status ->
+    throw(#payproc_InvoiceAlreadyHasStatus{status = Status});
+assert_adjustment_target_status({TargetStatus, _}, _Status)
+when TargetStatus =:= unpaid ->
+    throw(#payproc_InvoiceAdjustmentStatusUnacceptable{});
+assert_adjustment_target_status(_TargetStatus, _Status) ->
     ok.
 
 assert_all_adjustments_finalised(#st{adjustments = Adjustments}) ->
