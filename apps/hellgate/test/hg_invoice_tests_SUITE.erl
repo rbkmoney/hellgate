@@ -2149,7 +2149,7 @@ external_account_posting(C) ->
                     account_type = {external, outcome},
                     account_id = AccountID
                 },
-                details = <<"Assist fee">>
+                details = <<"Kek">>
             } <- CF
     ],
     #domain_ExternalAccountSet{
