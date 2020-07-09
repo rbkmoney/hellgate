@@ -199,7 +199,7 @@ all() ->
         payments_w_bank_conditions,
 
         % With variable domain config
-        {group, invoice_adjustments},
+        % {group, invoice_adjustments},
         {group, adjustments},
         {group, holds_management_with_custom_config},
         {group, refunds},
@@ -225,7 +225,6 @@ groups() ->
             invalid_payment_w_deprived_party,
             external_account_posting,
             terminal_cashflow_overrides_provider,
-
 
             {group, holds_management},
 
