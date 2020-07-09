@@ -199,7 +199,7 @@ all() ->
         payments_w_bank_conditions,
 
         % With variable domain config
-        % {group, invoice_adjustments},
+        {group, invoice_adjustments},
         {group, adjustments},
         {group, holds_management_with_custom_config},
         {group, refunds},
