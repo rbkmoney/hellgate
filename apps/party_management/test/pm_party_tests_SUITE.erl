@@ -131,7 +131,7 @@ all() ->
         {group, contractor_management},
 
         {group, claim_management},
-        {group, providers},
+        % {group, providers},
         {group, terms}
     ].
 
