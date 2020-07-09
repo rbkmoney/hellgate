@@ -28,7 +28,7 @@
     :: {[change()], action()}.
 
 -type change()
-    :: dmsl_payment_processing_thrift:'InvoiceChange'().
+    :: dmsl_payment_processing_thrift:'InvoiceAdjustmentChangePayload'().
 -type action()
     :: hg_machine_action:t().
 

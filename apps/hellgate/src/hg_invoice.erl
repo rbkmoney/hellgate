@@ -54,7 +54,7 @@
 %% Internal types
 
 -record(st, {
-    activity          :: undefined | invoice | {payment, payment_id()},
+    activity          :: undefined | activity(),
     invoice           :: undefined | invoice(),
     payments = []     :: [{payment_id(), payment_st()}],
     adjustments = []  :: [adjustment()]
@@ -62,6 +62,16 @@
 -type st() :: #st{}.
 
 -type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
+
+-type activity()
+    :: invoice
+     | {payment, payment_id()}
+     | {adjustment_new, adjustment_id()}
+     | {adjustment_pending, adjustment_id()}
+     .
+
+-type adjustment_id()
+    :: dmsl_payment_processing_thrift:'InvoiceAdjustmentID'().
 
 %% API
 
