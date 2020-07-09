@@ -34,6 +34,9 @@
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invalid_payment_amount/1]).
 
+-export([invoice_adjustment_capture/1]).
+-export([invoice_adjustment_cancel/1]).
+
 -export([payment_start_idempotency/1]).
 -export([payment_success/1]).
 -export([processing_deadline_reached_test/1]).
@@ -183,22 +186,23 @@ cfg(Key, C) ->
 
 all() ->
     [
-        invalid_party_status,
-        invalid_shop_status,
+        % invalid_party_status,
+        % invalid_shop_status,
 
-        % With constant domain config
-        {group, all_non_destructive_tests},
+        % % With constant domain config
+        % {group, all_non_destructive_tests},
 
-        payments_w_bank_card_issuer_conditions,
-        payments_w_bank_conditions,
+        % payments_w_bank_card_issuer_conditions,
+        % payments_w_bank_conditions,
 
-        % With variable domain config
-        {group, adjustments},
-        {group, holds_management_with_custom_config},
-        {group, refunds},
-        {group, chargebacks},
-        rounding_cashflow_volume,
-        terms_retrieval,
+        % % With variable domain config
+        {group, invoice_adjustments},
+        % {group, adjustments},
+        % {group, holds_management_with_custom_config},
+        % {group, refunds},
+        % {group, chargebacks},
+        % rounding_cashflow_volume,
+        % terms_retrieval,
 
         consistent_account_balances,
         consistent_history
@@ -271,6 +275,11 @@ groups() ->
             payment_partial_capture_success,
             payment_error_in_cancel_session_does_not_cause_payment_failure,
             payment_error_in_capture_session_does_not_cause_payment_failure
+        ]},
+
+        {invoice_adjustments, [], [
+            invoice_adjustment_capture,
+            invoice_adjustment_cancel
         ]},
 
         {adjustments, [], [
@@ -882,6 +891,76 @@ invalid_payment_amount(C) ->
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more", _/binary>>]
     }} = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client).
+
+%% ADJ
+
+-spec invoice_adjustment_capture(config()) -> test_return().
+
+invoice_adjustment_capture(C) ->
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
+    TargetInvoiceStatus = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}},
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = TargetInvoiceStatus
+    }}},
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
+    ?assertMatch({pending, _}, Adjustment#domain_InvoiceAdjustment.status),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
+    ?assertMatch({processed, _}, Processed),
+    ok = hg_client_invoicing:capture_invoice_adjustment(InvoiceID, ID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Captured))]  = next_event(InvoiceID, Client),
+    ?assertMatch({captured, _}, Captured),
+    #payproc_Invoice{invoice = #domain_Invoice{status = FinalStatus}} = hg_client_invoicing:get(InvoiceID, Client),
+    ?assertMatch(TargetInvoiceStatus, FinalStatus).
+
+-spec invoice_adjustment_cancel(config()) -> test_return().
+
+invoice_adjustment_cancel(C) ->
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(_)] = next_event(InvoiceID, Client),
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}}
+    }}},
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    #payproc_Invoice{invoice = #domain_Invoice{status = InvoiceStatus}} = hg_client_invoicing:get(InvoiceID, Client),
+    Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
+    ?assertMatch({pending, _}, Adjustment#domain_InvoiceAdjustment.status),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
+    ?assertMatch({processed, _}, Processed),
+    ok = hg_client_invoicing:cancel_invoice_adjustment(InvoiceID, ID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Cancelled))] = next_event(InvoiceID, Client),
+    ?assertMatch({cancelled, _}, Cancelled),
+    #payproc_Invoice{invoice = #domain_Invoice{status = FinalStatus}} = hg_client_invoicing:get(InvoiceID, Client),
+    ?assertMatch(InvoiceStatus, FinalStatus).
+
+%% ADJ
 
 -spec payment_start_idempotency(config()) -> test_return().
 
