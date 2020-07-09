@@ -57,7 +57,7 @@
     activity          :: undefined | invoice | {payment, payment_id()},
     invoice           :: undefined | invoice(),
     payments = []     :: [{payment_id(), payment_st()}],
-    adjustments = []  :: [adjustment()] %TODO: add adjustment types
+    adjustments = []  :: [adjustment()]
 }).
 -type st() :: #st{}.
 

@@ -68,7 +68,6 @@
 -type invoice_params()     :: dmsl_payment_processing_thrift:'InvoiceParams'().
 -type invoice_params_tpl() :: dmsl_payment_processing_thrift:'InvoiceWithTemplateParams'().
 
-% TODO: invoice adjustment types
 -type invoice_adjustment()         :: dmsl_domain_thrift:'InvoiceAdjustment'().
 -type invoice_adjustment_id()      :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
 -type invoice_adjustment_params()  :: dmsl_payment_processing_thrift:'InvoiceAdjustmentParams'().
