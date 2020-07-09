@@ -15,7 +15,7 @@
 -type id()
     :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
 -type params()
-    :: dmsl_domain_thrift:'InvoiceAdjustmentParams'().
+    :: dmsl_payment_processing_thrift:'InvoiceAdjustmentParams'().
 -type adjustment_state()
     :: dmsl_domain_thrift:'InvoiceAdjustmentState'().
 
@@ -77,9 +77,7 @@ build_adjustment(ID, Params) ->
 build_adjustment_state(Params) ->
     case Params#payproc_InvoiceAdjustmentParams.scenario of
         {status_change, StatusChange} ->
-            {status_change, #domain_InvoiceAdjustmentStatusChangeState{scenario = StatusChange}};
-        _ ->
-            undefined
+            {status_change, #domain_InvoiceAdjustmentStatusChangeState{scenario = StatusChange}}
     end.
 
 -spec build_adjustment_target(captured)  -> captured();

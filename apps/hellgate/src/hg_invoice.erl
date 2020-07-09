@@ -71,7 +71,7 @@
      .
 
 -type adjustment_id()
-    :: dmsl_payment_processing_thrift:'InvoiceAdjustmentID'().
+    :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
 
 %% API
 
