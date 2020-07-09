@@ -449,7 +449,6 @@ map_repair_error({error, Reason}) ->
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 
 -type adjustment() :: dmsl_payment_processing_thrift:'InvoiceAdjustment'().
-% -type adjustment_params() :: dmsl_payment_processing_thrift:'InvoiceAdjustmentParams'().
 
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type payment_st() :: hg_invoice_payment:st().
