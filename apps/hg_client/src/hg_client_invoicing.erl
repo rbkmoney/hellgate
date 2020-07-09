@@ -185,14 +185,14 @@ create_invoice_adjustment(InvoiceID, Params, Client) ->
 
 capture_invoice_adjustment(InvoiceID, ID, Client) ->
     Args = [InvoiceID, ID],
-    map_result_error(gen_server:call(Client, {call, 'CaptureInvoiceAdjustment', Args})).
+    map_result_error(gen_server:call(Client, {call, 'CaptureAdjustment', Args})).
 
 -spec cancel_invoice_adjustment(invoice_id(), invoice_adjustment_id(), pid()) ->
     invoice_adjustment() | woody_error:business_error().
 
 cancel_invoice_adjustment(InvoiceID, ID, Client) ->
     Args = [InvoiceID, ID],
-    map_result_error(gen_server:call(Client, {call, 'CancelInvoiceAdjustment', Args})).
+    map_result_error(gen_server:call(Client, {call, 'CancelAdjustment', Args})).
 
 -spec get_invoice_adjustment(invoice_id(), invoice_adjustment_params(), pid()) ->
     invoice_adjustment() | woody_error:business_error().
