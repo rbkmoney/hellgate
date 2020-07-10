@@ -18,7 +18,7 @@ services:
     mem_limit: 256M
 
   dominant:
-    image: dr2.rbkmoney.com/rbkmoney/dominant:4f03f9825406312e5b422235f0ba430aa2bd9ee0
+    image: dr2.rbkmoney.com/rbkmoney/dominant:cc80f430221e6142bab5cc4bf27783c55b81edb5
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
