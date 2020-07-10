@@ -305,7 +305,7 @@ get_shop_account(ShopID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'GetShopAccount', [ShopID]})).
 
 -spec compute_provider(provider_ref(), domain_revision(), varset(), pid()) ->
-    dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
+    dmsl_domain_thrift:'Provider'() | woody_error:business_error().
 
 compute_provider(ProviderRef, Revision, Varset, Client) ->
     map_result_error(gen_server:call(Client, {call_without_party, 'ComputeProvider',
@@ -317,7 +317,7 @@ compute_provider(ProviderRef, Revision, Varset, Client) ->
     domain_revision(),
     varset(),
     pid()
-) -> dmsl_domain_thrift:'P2PProvider'() | woody_error:business_error().
+) -> dmsl_domain_thrift:'ProvisionTermSet'() | woody_error:business_error().
 
 compute_provider_terminal_terms(ProviderRef, TerminalRef, Revision, Varset, Client) ->
     map_result_error(gen_server:call(Client, {call_without_party, 'ComputeProviderTerminalTerms',

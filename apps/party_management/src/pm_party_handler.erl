@@ -158,16 +158,16 @@ handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
 %% Providers
 
 handle_function_('ComputeProvider', Args, _Opts) ->
-    [UserInfo, PaymentProviderRef, DomainRevision, Varset] = Args,
+    [UserInfo, ProviderRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
-    Provider = get_provider(PaymentProviderRef, DomainRevision),
+    Provider = get_provider(ProviderRef, DomainRevision),
     VS = prepare_varset(Varset),
     pm_provider:reduce_provider(Provider, VS, DomainRevision);
 
 handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
-    [UserInfo, PaymentProviderRef, TerminalRef, DomainRevision, Varset] = Args,
+    [UserInfo, ProviderRef, TerminalRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
-    Provider = get_provider(PaymentProviderRef, DomainRevision),
+    Provider = get_provider(ProviderRef, DomainRevision),
     Terminal = get_terminal(TerminalRef, DomainRevision),
     VS = prepare_varset(Varset),
     pm_provider:reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision);
