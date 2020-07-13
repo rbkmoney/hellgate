@@ -9,6 +9,8 @@
     , cancel/0
     ]).
 
+-export([get_log_params/1]).
+
 -type adjustment()
     :: dmsl_domain_thrift:'InvoiceAdjustment'().
 
@@ -31,6 +33,13 @@
     :: dmsl_payment_processing_thrift:'InvoiceAdjustmentChangePayload'().
 -type action()
     :: hg_machine_action:t().
+
+-type log_params()
+    :: #{
+            type := invoice_adjustment_event,
+            params := list(),
+            message := string()
+        }.
 
 % API
 
@@ -57,6 +66,11 @@ cancel() ->
     Changes = [?invoice_adjustment_status_changed(AdjustmentTarget)],
     Action = hg_machine_action:new(),
     {ok, {Changes, Action}}.
+
+-spec get_log_params(change()) ->
+    {ok, log_params()} | undefined.
+get_log_params(Change) ->
+    do_get_log_params(Change).
 
 % Internal
 
@@ -86,3 +100,64 @@ build_adjustment_target(captured) ->
     {captured, #domain_InvoiceAdjustmentCaptured{at = hg_datetime:format_now()}};
 build_adjustment_target(cancelled) ->
     {cancelled, #domain_InvoiceAdjustmentCancelled{at = hg_datetime:format_now()}}.
+
+-spec do_get_log_params(change()) ->
+    {ok, log_params()} | undefined.
+do_get_log_params(?invoice_adjustment_created(Adjustment)) ->
+    Params = #{
+        adjustment => Adjustment,
+        event_type => invoice_adjustment_created
+    },
+    make_log_params(Params);
+do_get_log_params(?invoice_adjustment_status_changed(Status)) ->
+    Params = #{
+        adjustment_status => Status,
+        event_type => invoice_adjustment_status_changed
+    },
+    make_log_params(Params);
+do_get_log_params(_) ->
+    undefined.
+
+-spec make_log_params(Params :: map()) ->
+    {ok, log_params()}.
+make_log_params(#{event_type := EventType} = Params) ->
+    LogParams = maps:fold(
+        fun(K, V, Acc) ->
+            build_log_param(K, V) ++ Acc
+        end,
+        [],
+        Params
+    ),
+    Message = get_log_message(EventType),
+    {ok, #{
+        type => invoice_adjustment_event,
+        message => Message,
+        params => LogParams
+    }}.
+
+-spec build_log_param(atom(), term()) ->
+    [{atom(), term()}].
+build_log_param(adjustment, #domain_InvoiceAdjustment{} = Adjustment) ->
+    [
+        {id, Adjustment#domain_InvoiceAdjustment.id},
+        {reason, Adjustment#domain_InvoiceAdjustment.reason} |
+        build_log_param(state, Adjustment#domain_InvoiceAdjustment.state)
+    ];
+build_log_param(state, {status_change, State}) ->
+    Scenario = State#domain_InvoiceAdjustmentStatusChangeState.scenario,
+    TargetStatus = Scenario#domain_InvoiceAdjustmentStatusChange.target_status,
+    build_log_param(target_status, TargetStatus);
+build_log_param(adjustment_status, {Status, _Details}) ->
+    [{status, Status}];
+build_log_param(target_status, {Status, _Details}) ->
+    [{status, Status}];
+build_log_param(_Key, _Value) ->
+    [].
+
+-spec get_log_message(EventType)
+    -> string() when EventType :: invoice_adjustment_created
+                                | invoice_adjustment_status_changed.
+get_log_message(invoice_adjustment_created) ->
+    "Invoice adjustment created";
+get_log_message(invoice_adjustment_status_changed) ->
+    "Invoice adjustment status changed".

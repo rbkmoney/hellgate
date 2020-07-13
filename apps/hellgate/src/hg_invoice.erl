@@ -1412,9 +1412,19 @@ get_log_params(?invoice_created(Invoice), _St) ->
     get_invoice_event_log(invoice_created, unpaid, Invoice);
 get_log_params(?invoice_status_changed({StatusName, _}), #st{invoice = Invoice}) ->
     get_invoice_event_log(invoice_status_changed, StatusName, Invoice);
-get_log_params(?invoice_adjustment_ev(_ID, _Payload), #st{invoice = _Invoice}) ->
-    undefined;
-    % get_invoice_event_log(invoice_status_changed, StatusName, Invoice);
+get_log_params(?invoice_adjustment_ev(_ID, Change), #st{invoice = Invoice}) ->
+    case hg_invoice_adjustment:get_log_params(Change) of
+        {ok, Params} ->
+            {ok, maps:update_with(
+                params,
+                fun (V) ->
+                    [{invoice, get_invoice_params(Invoice)} | V]
+                end,
+                Params
+            )};
+        undefined ->
+            undefined
+    end;
 get_log_params(?payment_ev(PaymentID, Change), St = #st{invoice = Invoice}) ->
     PaymentSession = try_get_payment_session(PaymentID, St),
     case hg_invoice_payment:get_log_params(Change, PaymentSession) of
