@@ -592,6 +592,7 @@ handle_call({{'Invoicing', 'StartPayment'}, [_UserInfo, _InvoiceID, PaymentParam
     % TODO consolidate these assertions somehow
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
+    _ = assert_all_adjustments_finalised(St),
     start_payment(PaymentParams, St);
 
 handle_call({{'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
@@ -651,6 +652,7 @@ handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, P
     St = assert_invoice_accessible(St),
     TargetStatus = get_adjustment_params_target_status(Params),
     InvoiceStatus = get_invoice_status(St),
+    ok = assert_no_pending_payment(St),
     ok = assert_adjustment_target_status(TargetStatus, InvoiceStatus),
     ok = assert_all_adjustments_finalised(St),
     wrap_adjustment_impact(ID, hg_invoice_adjustment:create(ID, Params), St);
