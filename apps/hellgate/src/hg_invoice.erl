@@ -1134,7 +1134,6 @@ merge_change(?invoice_adjustment_ev(ID, Event), St, _Opts) ->
     end;
 merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
     PaymentSession = try_get_payment_session(PaymentID, St),
-    % ok = assert_adjustment_status(processed, Adjustment),
     PaymentSession1 = hg_invoice_payment:merge_change(Change, PaymentSession, Opts),
     St1 = set_payment_session(PaymentID, PaymentSession1, St),
     case hg_invoice_payment:get_activity(PaymentSession1) of
