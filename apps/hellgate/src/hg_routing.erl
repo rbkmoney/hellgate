@@ -476,10 +476,6 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
 
-%% NOTE
-%% Score ∈ [0.0 .. 1.0]
-%% Higher score is better, e.g. route is more likely to be chosen.
-
 -spec get_payments_terms(route(), hg_domain:revision()) -> terms().
 
 get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
