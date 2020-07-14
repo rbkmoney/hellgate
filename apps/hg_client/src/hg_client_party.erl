@@ -119,7 +119,7 @@ get_contract(ID, Client) ->
     dmsl_domain_thrift:'Shop'() | woody_error:business_error().
 
 get_shop(ID, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'GetShop', [ID]})).
+    map_result_error(gen_server:call(Client, {call, 'GetShop', [ID]}, 10000)).
 
 -spec block_shop(shop_id(), binary(), pid()) ->
     ok | woody_error:business_error().
@@ -149,13 +149,13 @@ activate_shop(ID, Client) ->
     claim() | woody_error:business_error().
 
 create_claim(Changeset, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'CreateClaim', [Changeset]})).
+    map_result_error(gen_server:call(Client, {call, 'CreateClaim', [Changeset]}, 10000)).
 
 -spec accept_claim(claim_id(), claim_revision(), pid()) ->
     ok | woody_error:business_error().
 
 accept_claim(ID, Revision, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'AcceptClaim', [ID, Revision]})).
+    map_result_error(gen_server:call(Client, {call, 'AcceptClaim', [ID, Revision]}, 10000)).
 
 map_result_error({ok, Result}) ->
     Result;
