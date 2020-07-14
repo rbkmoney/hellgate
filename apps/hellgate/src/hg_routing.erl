@@ -97,7 +97,6 @@
     conversion_condition    :: condition_score(),
     priority_rating         :: terminal_priority_rating(),
     random_condition        :: integer(),
-    risk_coverage           :: float(),
     availability            :: float(),
     conversion              :: float()
 }).
@@ -393,8 +392,7 @@ calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
 score_routes(Routes, VS) ->
     [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
 
-score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS) ->
-    RiskCoverage = score_risk_coverage(Terminal, VS),
+score_route({_Provider, {_TerminalRef, _Terminal, Priority}, ProviderStatus}, _VS) ->
     {AvailabilityStatus,    ConversionStatus} = ProviderStatus,
     {AvailabilityCondition, Availability}     = get_availability_score(AvailabilityStatus),
     {ConversionCondition,   Conversion}       = get_conversion_score(ConversionStatus),
@@ -405,8 +403,7 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
         availability = Availability,
         conversion = Conversion,
         priority_rating = PriorityRate,
-        random_condition = RandomCondition,
-        risk_coverage = RiskCoverage
+        random_condition = RandomCondition
     }.
 
 get_availability_score({alive, FailRate}) -> {1, 1.0 - FailRate};
@@ -478,15 +475,6 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
-
-%% NOTE
-%% Score ∈ [0.0 .. 1.0]
-%% Higher score is better, e.g. route is more likely to be chosen.
-
-score_risk_coverage(Terminal, VS) ->
-    RiskScore = getv(risk_score, VS),
-    RiskCoverage = Terminal#domain_Terminal.risk_coverage,
-    math:exp(-hg_inspector:compare_risk_score(RiskCoverage, RiskScore)).
 
 -spec get_payments_terms(route(), hg_domain:revision()) -> terms().
 
@@ -576,24 +564,19 @@ acceptable_terminal(payment, TerminalRef, Provider, VS, Revision) ->
         terms = ProviderTerms
     } = Provider,
     Terminal = #domain_Terminal{
-        terms = TerminalTerms,
-        risk_coverage = RiskCoverage
+        terms = TerminalTerms
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     % TODO the ability to override any terms makes for uncommon sense
     %      is it better to allow to override only cash flow / refunds terms?
     Terms = merge_terms(ProviderTerms, TerminalTerms),
     _ = acceptable_provision_payment_terms(Terms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
     {TerminalRef, Terminal};
 acceptable_terminal(recurrent_paytool, TerminalRef, Provider, VS, Revision) ->
     #domain_Provider{
         terms = Terms
     } = Provider,
-    Terminal = #domain_Terminal{
-        risk_coverage = RiskCoverage
-    } = hg_domain:get(Revision, {terminal, TerminalRef}),
+    Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
     _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
     {TerminalRef, Terminal};
 acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
     % Use provider check combined from recurrent_paytool and payment check
@@ -601,19 +584,12 @@ acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
         terms = ProviderTerms
     } = Provider,
     Terminal = #domain_Terminal{
-        terms = TerminalTerms,
-        risk_coverage = RiskCoverage
+        terms = TerminalTerms
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     Terms = merge_terms(ProviderTerms, TerminalTerms),
     _ = acceptable_provision_payment_terms(Terms, VS, Revision),
     _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
     {TerminalRef, Terminal}.
-
-acceptable_risk(RiskCoverage, VS) ->
-    RiskScore = getv(risk_score, VS),
-    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0
-        orelse throw(?rejected({'Terminal', risk_coverage})).
 
 -spec get_terminal_ref(provider_terminal_ref()) ->
     terminal_ref().
@@ -926,8 +902,7 @@ record_comparsion_test() ->
         conversion_condition = 1,
         conversion = 0.5,
         priority_rating = 1,
-        random_condition = 1,
-        risk_coverage = 1.0
+        random_condition = 1
     }, {42, 42}},
     Smaller = {#route_scores{
         availability_condition = 0,
@@ -935,8 +910,7 @@ record_comparsion_test() ->
         conversion_condition = 1,
         conversion = 0.5,
         priority_rating = 1,
-        random_condition = 1,
-        risk_coverage = 1.0
+        random_condition = 1
     }, {99, 99}},
     Bigger = select_better_route(Bigger, Smaller).
 

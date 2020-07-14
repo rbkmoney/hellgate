@@ -423,8 +423,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 provider_ref = ?prv(1),
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>,
-                risk_coverage = high
+                description = <<"Brominal 1">>
             }
         }},
 
@@ -475,7 +474,6 @@ construct_domain_fixture() ->
                 provider_ref = ?prv(2),
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                risk_coverage = low,
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([
@@ -507,8 +505,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 provider_ref = ?prv(2),
                 name = <<"Terminal 7">>,
-                description = <<"Terminal 7">>,
-                risk_coverage = high
+                description = <<"Terminal 7">>
             }
         }},
 
@@ -567,8 +564,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 provider_ref = ?prv(3),
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -576,8 +572,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 provider_ref = ?prv(3),
                 name = <<"Second Payment Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }}
     ].

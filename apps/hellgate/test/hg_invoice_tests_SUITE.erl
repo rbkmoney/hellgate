@@ -2062,8 +2062,7 @@ get_adjustment_fixture(Revision) ->
             ref = ?trm(100),
             data = #domain_Terminal{
                 name = <<"Adjustable Terminal">>,
-                description = <<>>,
-                risk_coverage = low
+                description = <<>>
             }
         }}
 
@@ -2150,7 +2149,7 @@ external_account_posting(C) ->
                     account_type = {external, outcome},
                     account_id = AccountID
                 },
-                details = <<"Assist fee">>
+                details = <<"Kek">>
             } <- CF
     ],
     #domain_ExternalAccountSet{
@@ -4330,8 +4329,7 @@ get_cashflow_rounding_fixture(Revision) ->
             ref = ?trm(100),
                 data = #domain_Terminal{
                     name = <<"Rounding Terminal">>,
-                description = <<>>,
-                risk_coverage = low
+                description = <<>>
             }
         }}
     ].
@@ -6091,8 +6089,7 @@ construct_domain_fixture() ->
             ref = ?trm(1),
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>,
-                risk_coverage = high
+                description = <<"Brominal 1">>
             }
         }},
 
@@ -6200,7 +6197,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                risk_coverage = low,
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([
@@ -6243,7 +6239,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
-                risk_coverage = high,
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         cash_flow = {value, [
@@ -6319,8 +6314,7 @@ construct_domain_fixture() ->
             ref = ?trm(10),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
 
@@ -6383,7 +6377,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Parking Payment Terminal">>,
                 description = <<"Mts">>,
-                risk_coverage = low,
                 options = #{
                     <<"goodPhone">> => <<"7891">>,
                     <<"prefix">>    => <<"1234567890">>
@@ -6541,8 +6534,7 @@ payments_w_bank_card_issuer_conditions_fixture(Revision) ->
             ref = ?trm(100),
             data = #domain_Terminal{
                 name = <<"VTB21">>,
-                description = <<>>,
-                risk_coverage = low
+                description = <<>>
             }
         }},
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
