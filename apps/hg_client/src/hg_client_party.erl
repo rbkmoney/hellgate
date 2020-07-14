@@ -83,7 +83,7 @@ create(PartyParams, Client) ->
     dmsl_domain_thrift:'Party'() | woody_error:business_error().
 
 get(Client) ->
-    map_result_error(gen_server:call(Client, {call, 'Get', []})).
+    map_result_error(gen_server:call(Client, {call, 'Get', []}, 10000)).
 
 -spec block(binary(), pid()) ->
     ok | woody_error:business_error().
