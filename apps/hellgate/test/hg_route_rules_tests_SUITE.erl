@@ -20,6 +20,7 @@
 -export([rejected_by_table_prohibitions/1]).
 -export([empty_candidate_ok/1]).
 -export([ruleset_misconfig/1]).
+-export([prefer_better_risk_score/1]).
 
 -behaviour(supervisor).
 -export([init/1]).
@@ -45,7 +46,8 @@ all() -> [
     gather_route_success,
     rejected_by_table_prohibitions,
     empty_candidate_ok,
-    ruleset_misconfig
+    ruleset_misconfig,
+    prefer_better_risk_score
 ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -200,6 +202,36 @@ ruleset_misconfig(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[], []} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
+
+-spec prefer_better_risk_score(config()) -> test_return().
+prefer_better_risk_score(_C) ->
+    VS = #{
+        category        => ?cat(1),
+        currency        => ?cur(<<"RUB">>),
+        cost            => ?cash(1000, <<"RUB">>),
+        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        party_id        => <<"12345">>,
+        risk_score      => low,
+        flow            => instant
+    },
+
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+
+    {Routes, RC} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+
+    {ProviderRefs, TerminalData} = lists:unzip(Routes),
+
+    ProviderStatuses = [{{dead, 1.0}, {normal, 0.0}}],
+    FailRatedRoutes  = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
+
+    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
+
+    {ok, #domain_PaymentRoute{provider = ?prv(3)}, Meta} = Result,
+    false = maps:is_key(reject_reason, Meta),
+
+    ok.
+
 
 %%% Domain config fixtures
 
