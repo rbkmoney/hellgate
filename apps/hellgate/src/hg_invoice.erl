@@ -1188,8 +1188,8 @@ get_invoice_status(#st{invoice = #domain_Invoice{status = Status}}) ->
 assert_adjustment_target_status(TargetStatus, Status)
 when TargetStatus =:= Status ->
     throw(#payproc_InvoiceAlreadyHasStatus{status = Status});
-assert_adjustment_target_status({TargetStatus, _}, _Status)
-when TargetStatus =:= unpaid ->
+assert_adjustment_target_status({TargetStatus, _}, {Status, _})
+when TargetStatus =:= unpaid, Status =/= paid ->
     throw(#payproc_InvoiceAdjustmentStatusUnacceptable{});
 assert_adjustment_target_status(_TargetStatus, _Status) ->
     ok.

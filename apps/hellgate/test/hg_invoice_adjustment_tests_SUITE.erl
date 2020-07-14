@@ -210,6 +210,7 @@ invoice_adjustment_invalid_invoice_status(C) ->
     PaymentParams = set_payment_context(Context, make_payment_params()),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ok = hg_client_invoicing:fulfill(InvoiceID, <<"ok">>, Client),
     {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch(#payproc_InvoiceAdjustmentStatusUnacceptable{}, E).
 
