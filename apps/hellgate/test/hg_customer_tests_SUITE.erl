@@ -781,8 +781,8 @@ construct_domain_fixture(TermSet) ->
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa),
-                            ?pmt(bank_card, mastercard)
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
                         ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
