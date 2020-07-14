@@ -296,7 +296,11 @@ prefer_alive(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _} 
+    ] = Routes, RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
@@ -316,12 +320,12 @@ prefer_alive(_C) ->
     Result1           = hg_routing:choose_route(FailRatedRoutes1, RejectContext, VS),
     Result2           = hg_routing:choose_route(FailRatedRoutes2, RejectContext, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, Meta0} = Result0,
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, Meta1} = Result1,
-    {ok, #domain_PaymentRoute{provider = ?prv(202)}, Meta2} = Result2,
+    {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, Meta0} = Result0,
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, Meta1} = Result1,
+    {ok, #domain_PaymentRoute{provider = ?prv(202), terminal = ?trm(222)}, Meta2} = Result2,
 
-    #{reject_reason := availability_condition} = Meta0,
-    #{reject_reason := availability_condition} = Meta1,
+    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 202}} = Meta0,
+    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 202}} = Meta1,
     false = maps:is_key(reject_reason, Meta2),
 
 
@@ -342,7 +346,11 @@ prefer_normal_conversion(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _} 
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -361,12 +369,12 @@ prefer_normal_conversion(_C) ->
     Result1 = hg_routing:choose_route(FailRatedRoutes1, RC, VS),
     Result2 = hg_routing:choose_route(FailRatedRoutes2, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, Meta0} = Result0,
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, Meta1} = Result1,
-    {ok, #domain_PaymentRoute{provider = ?prv(202)}, Meta2} = Result2,
+    {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, Meta0} = Result0,
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, Meta1} = Result1,
+    {ok, #domain_PaymentRoute{provider = ?prv(202), terminal = ?trm(222)}, Meta2} = Result2,
 
-    #{reject_reason := conversion_condition} = Meta0,
-    #{reject_reason := conversion_condition} = Meta1,
+    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 202}} = Meta0,
+    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 202}} = Meta1,
     false = maps:is_key(reject_reason, Meta2),
 
     ok.
@@ -386,7 +394,11 @@ prefer_higher_availability(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _} 
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
@@ -395,7 +407,10 @@ prefer_higher_availability(_C) ->
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{reject_reason := availability}} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, #{
+        reject_reason := availability,
+        preferable_route := #{provider_ref := 202}
+    }} = Result,
 
     ok.
 
@@ -413,7 +428,11 @@ prefer_higher_conversion(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _} 
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -421,9 +440,10 @@ prefer_higher_conversion(_C) ->
     FailRatedRoutes  = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
-
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, #{reject_reason := conversion}} = Result,
-
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, #{
+        reject_reason    := conversion,
+        preferable_route := #{provider_ref := 202}
+    }} = Result,
     ok.
 
 -spec prefer_weight_over_availability(config()) -> test_return().
@@ -441,7 +461,11 @@ prefer_weight_over_availability(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _} 
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -450,7 +474,7 @@ prefer_weight_over_availability(_C) ->
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, _Meta} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, _Meta} = Result,
 
     ok.
 
@@ -469,7 +493,11 @@ prefer_weight_over_conversion(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _} 
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -478,7 +506,7 @@ prefer_weight_over_conversion(_C) ->
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, _Meta} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, _Meta} = Result,
 
     ok.
 
