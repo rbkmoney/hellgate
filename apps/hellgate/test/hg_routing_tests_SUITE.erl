@@ -299,7 +299,7 @@ prefer_alive(_C) ->
     {[
       {{?prv(200), _}, _},
       {{?prv(201), _}, _},
-      {{?prv(202), _}, _} 
+      {{?prv(202), _}, _}
     ] = Routes, RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
@@ -349,7 +349,7 @@ prefer_normal_conversion(_C) ->
     {[
       {{?prv(200), _}, _},
       {{?prv(201), _}, _},
-      {{?prv(202), _}, _} 
+      {{?prv(202), _}, _}
     ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
@@ -397,7 +397,7 @@ prefer_higher_availability(_C) ->
     {[
       {{?prv(200), _}, _},
       {{?prv(201), _}, _},
-      {{?prv(202), _}, _} 
+      {{?prv(202), _}, _}
     ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
@@ -431,7 +431,7 @@ prefer_higher_conversion(_C) ->
     {[
       {{?prv(200), _}, _},
       {{?prv(201), _}, _},
-      {{?prv(202), _}, _} 
+      {{?prv(202), _}, _}
     ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
@@ -464,7 +464,7 @@ prefer_weight_over_availability(_C) ->
     {[
       {{?prv(200), _}, _},
       {{?prv(201), _}, _},
-      {{?prv(202), _}, _} 
+      {{?prv(202), _}, _}
     ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
@@ -496,7 +496,7 @@ prefer_weight_over_conversion(_C) ->
     {[
       {{?prv(200), _}, _},
       {{?prv(201), _}, _},
-      {{?prv(202), _}, _} 
+      {{?prv(202), _}, _}
     ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
