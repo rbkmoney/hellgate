@@ -71,7 +71,6 @@ init_per_suite(C) ->
     AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
-    ok = start_kv_store(SupPid),
     NewC = [
         {party_id, PartyID},
         {party_client, PartyClient},
@@ -95,6 +94,21 @@ end_per_suite(C) ->
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
+
+-spec init_per_testcase(test_case_name(), config()) -> config().
+init_per_testcase(_Name, C) ->
+    init_per_testcase(C).
+
+init_per_testcase(C) ->
+    ApiClient = hg_ct_helper:create_client(cfg(root_url, C), cfg(party_id, C)),
+    Client = hg_client_invoicing:start_link(ApiClient),
+    ClientTpl = hg_client_invoice_templating:start_link(ApiClient),
+    ok = hg_context:save(hg_context:create()),
+    [{client, Client}, {client_tpl, ClientTpl} | C].
+
+-spec end_per_testcase(test_case_name(), config()) -> config().
+end_per_testcase(_Name, _C) ->
+    ok = hg_context:cleanup().
 
 -include("invoice_events.hrl").
 -include("payment_events.hrl").
@@ -164,26 +178,6 @@ end_per_suite(C) ->
 -define(system_to_provider_share_actual, ?share(16, 1000, operation_amount)).
 -define(system_to_external_fixed, ?fixed(20, <<"RUB">>)).
 
--spec init_per_testcase(test_case_name(), config()) -> config().
-init_per_testcase(_Name, C) ->
-    init_per_testcase(C).
-
-init_per_testcase(C) ->
-    ApiClient = hg_ct_helper:create_client(cfg(root_url, C), cfg(party_id, C)),
-    Client = hg_client_invoicing:start_link(ApiClient),
-    ClientTpl = hg_client_invoice_templating:start_link(ApiClient),
-    ok = hg_context:save(hg_context:create()),
-    [{client, Client}, {client_tpl, ClientTpl} | C].
-
--spec end_per_testcase(test_case_name(), config()) -> config().
-end_per_testcase(_Name, C) ->
-    ok = hg_context:cleanup(),
-    _ = case cfg(original_domain_revision, C) of
-        Revision when is_integer(Revision) ->
-            ok = hg_domain:reset(Revision);
-        undefined ->
-            ok
-    end.
 
 %% ADJ
 
@@ -619,18 +613,6 @@ construct_domain_fixture() ->
             }
         }}
     ].
-
-start_kv_store(SupPid) ->
-    ChildSpec = #{
-        id => hg_kv_store,
-        start => {hg_kv_store, start_link, [[]]},
-        restart => permanent,
-        shutdown => 2000,
-        type => worker,
-        modules => [hg_kv_store]
-    },
-    {ok, _} = supervisor:start_child(SupPid, ChildSpec),
-    ok.
 
 start_service_handler(Module, C, HandlerOpts) ->
     start_service_handler(Module, Module, C, HandlerOpts).
