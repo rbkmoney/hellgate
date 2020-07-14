@@ -285,10 +285,6 @@ construct_domain_fixture() ->
             ])},
             payment_methods = {decisions, [
                 #domain_PaymentMethodDecision{
-                    if_   = ?partycond(<<"DEPRIVED ONE">>, undefined),
-                    then_ = {value, ordsets:new()}
-                },
-                #domain_PaymentMethodDecision{
                     if_   = {constant, true},
                     then_ = {value, ?ordset([
                         ?pmt(bank_card, visa)
@@ -296,17 +292,6 @@ construct_domain_fixture() ->
                 }
             ]},
             cash_limit = {decisions, [
-                #domain_CashLimitDecision {
-                    if_ = {condition, {payment_tool, {crypto_currency, #domain_CryptoCurrencyCondition{
-                        definition = {crypto_currency_is, bitcoin}
-                    }}}},
-                    then_ = {value,
-                        ?cashrng(
-                            {inclusive, ?cash(        10, <<"RUB">>)},
-                            {inclusive, ?cash(4200000000, <<"RUB">>)}
-                        )
-                    }
-                },
                 #domain_CashLimitDecision{
                     if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
                     then_ = {value, ?cashrng(
