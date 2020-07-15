@@ -17,6 +17,7 @@
 -export([invoice_adjustment_existing_invoice_status/1]).
 -export([invoice_adjustment_invalid_invoice_status/1]).
 -export([invoice_adjustment_invalid_adjustment_status/1]).
+-export([invoice_adjustment_payment_pending/1]).
 
 -behaviour(supervisor).
 -export([init/1]).
@@ -44,7 +45,8 @@ all() ->
         invoice_adjustment_cancel,
         invoice_adjustment_existing_invoice_status,
         invoice_adjustment_invalid_invoice_status,
-        invoice_adjustment_invalid_adjustment_status
+        invoice_adjustment_invalid_adjustment_status,
+        invoice_adjustment_payment_pending
     ].
 
 %% starting/stopping
@@ -271,6 +273,34 @@ invoice_adjustment_invalid_adjustment_status(C) ->
     ?assertMatch(InvoiceStatus, FinalStatus),
     {exception, E} = hg_client_invoicing:cancel_invoice_adjustment(InvoiceID, ID, Client),
     ?assertMatch(#payproc_InvalidInvoiceAdjustmentStatus{status = Cancelled}, E).
+
+-spec invoice_adjustment_payment_pending(config()) -> test_return().
+invoice_adjustment_payment_pending(C) ->
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(_)] = next_event(InvoiceID, Client),
+    Paid = {paid, #domain_InvoicePaid{}},
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = Paid
+    }}},
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_tds_payment_params()),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
+    {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
+    ?assertMatch(#payproc_InvoicePaymentPending{id = PaymentID}, E),
+    {URL, GoodForm} = get_post_request(UserInteraction),
+    _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(GoodForm)}),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
 %% ADJ
 
@@ -637,6 +667,13 @@ make_payment_params(FlowType) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
     make_payment_params(PaymentTool, Session, FlowType).
 
+make_tds_payment_params() ->
+    make_tds_payment_params(instant).
+
+make_tds_payment_params(FlowType) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
+    make_payment_params(PaymentTool, Session, FlowType).
+
 make_payment_params(PaymentTool, Session, FlowType) ->
     Flow = case FlowType of
         instant ->
@@ -655,6 +692,12 @@ make_payment_params(PaymentTool, Session, FlowType) ->
         }},
         flow = Flow
     }.
+
+get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, form = Form}}}) ->
+    {URL, Form};
+get_post_request({payment_terminal_reciept, #'PaymentTerminalReceipt'{short_payment_id = SPID}}) ->
+    URL = hg_dummy_provider:get_callback_url(),
+    {URL, #{<<"tag">> => SPID}}.
 
 start_payment(InvoiceID, PaymentParams, Client) ->
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
@@ -681,6 +724,9 @@ await_payment_session_started(InvoiceID, PaymentID, Client, Target) ->
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID.
+
+await_payment_process_finish(InvoiceID, PaymentID, Client) ->
+    await_payment_process_finish(InvoiceID, PaymentID, Client, 0).
 
 await_payment_process_finish(InvoiceID, PaymentID, Client, Restarts) ->
     PaymentID = await_sessions_restarts(PaymentID, ?processed(), InvoiceID, Client, Restarts),
@@ -733,6 +779,17 @@ await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cos
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
+await_payment_process_interaction(InvoiceID, PaymentID, Client) ->
+    Events0 = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = Events0,
+    Events1 = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?interaction_requested(UserInteraction)))
+    ] = Events1,
+    UserInteraction.
+
 await_sessions_restarts(PaymentID, _Target, _InvoiceID, _Client, 0) ->
     PaymentID;
 await_sessions_restarts(PaymentID, ?refunded() = Target, InvoiceID, Client, Restarts) when Restarts > 0 ->
@@ -747,3 +804,12 @@ await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts) when Res
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts - 1).
+
+assert_success_post_request(Req) ->
+    {ok, 200, _RespHeaders, _ClientRef} = post_request(Req).
+
+post_request({URL, Form}) ->
+    Method = post,
+    Headers = [],
+    Body = {form, maps:to_list(Form)},
+    hackney:request(Method, URL, Headers, Body).
