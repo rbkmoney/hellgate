@@ -652,6 +652,7 @@ handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, P
     St = assert_invoice_accessible(St),
     TargetStatus = get_adjustment_params_target_status(Params),
     InvoiceStatus = get_invoice_status(St),
+    % TODO add exception to adjustment
     ok = assert_no_pending_payment(St),
     ok = assert_adjustment_target_status(TargetStatus, InvoiceStatus),
     ok = assert_all_adjustments_finalised(St),
@@ -1189,7 +1190,8 @@ assert_adjustment_target_status(TargetStatus, Status)
 when TargetStatus =:= Status ->
     throw(#payproc_InvoiceAlreadyHasStatus{status = Status});
 assert_adjustment_target_status({TargetStatus, _}, {Status, _})
-when TargetStatus =:= unpaid, Status =/= paid ->
+when TargetStatus =:= unpaid, Status =/= paid;
+     TargetStatus =:= paid, Status =/= unpaid ->
     throw(#payproc_InvoiceAdjustmentStatusUnacceptable{});
 assert_adjustment_target_status(_TargetStatus, _Status) ->
     ok.
@@ -1197,9 +1199,9 @@ assert_adjustment_target_status(_TargetStatus, _Status) ->
 assert_all_adjustments_finalised(#st{adjustments = Adjustments}) ->
     lists:foreach(fun assert_adjustment_finalised/1, Adjustments).
 
-assert_adjustment_finalised(#domain_InvoiceAdjustment{status = {Status, _}})
+assert_adjustment_finalised(#domain_InvoiceAdjustment{id = ID, status = {Status, _}})
 when Status =:= pending; Status =:= processed ->
-    throw(#payproc_InvoiceAdjustmentPending{});
+    throw(#payproc_InvoiceAdjustmentPending{id = ID});
 assert_adjustment_finalised(_) ->
     ok.
 
