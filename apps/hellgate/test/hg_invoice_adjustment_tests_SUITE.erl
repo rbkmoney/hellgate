@@ -18,6 +18,7 @@
 -export([invoice_adjustment_invalid_invoice_status/1]).
 -export([invoice_adjustment_invalid_adjustment_status/1]).
 -export([invoice_adjustment_payment_pending/1]).
+-export([invoice_adjustment_pending_blocks_payment/1]).
 
 -behaviour(supervisor).
 -export([init/1]).
@@ -45,8 +46,10 @@ all() ->
         invoice_adjustment_cancel,
         invoice_adjustment_existing_invoice_status,
         invoice_adjustment_invalid_invoice_status,
-        invoice_adjustment_invalid_adjustment_status,
-        invoice_adjustment_payment_pending
+        invoice_adjustment_invalid_adjustment_status
+        % TODO: add exception
+        % invoice_adjustment_payment_pending
+        % invoice_adjustment_pending_blocks_payment
     ].
 
 %% starting/stopping
@@ -301,6 +304,39 @@ invoice_adjustment_payment_pending(C) ->
     _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(GoodForm)}),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
+
+-spec invoice_adjustment_pending_blocks_payment(config()) -> test_return().
+invoice_adjustment_pending_blocks_payment(C) ->
+    Client = cfg(client, C),
+    ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
+    TargetInvoiceStatus = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}},
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = TargetInvoiceStatus
+    }}},
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params({hold, capture})),
+
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    Cash = ?cash(10, <<"RUB">>),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
+    PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
+    Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
+    ?assertMatch({pending, _}, Adjustment#domain_InvoiceAdjustment.status),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
+    ?assertMatch({processed, _}, Processed),
+    {exception, E} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    ?assertMatch(#payproc_InvoiceAdjustmentPending{}, E).
 
 %% ADJ
 
@@ -759,6 +795,18 @@ await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts).
 
+await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
+    await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, 0).
+
+await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
+    [
+       ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+       ?payment_ev(PaymentID, ?cash_flow_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cash).
 
 await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
