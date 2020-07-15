@@ -46,10 +46,9 @@ all() ->
         invoice_adjustment_cancel,
         invoice_adjustment_existing_invoice_status,
         invoice_adjustment_invalid_invoice_status,
-        invoice_adjustment_invalid_adjustment_status
-        % TODO: add exception
-        % invoice_adjustment_payment_pending
-        % invoice_adjustment_pending_blocks_payment
+        invoice_adjustment_invalid_adjustment_status,
+        invoice_adjustment_payment_pending,
+        invoice_adjustment_pending_blocks_payment
     ].
 
 %% starting/stopping
@@ -139,7 +138,7 @@ invoice_adjustment_capture(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
-    TargetInvoiceStatus = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}},
+    TargetInvoiceStatus = {unpaid, #domain_InvoiceUnpaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
         scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
@@ -153,13 +152,13 @@ invoice_adjustment_capture(C) ->
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
-    ?assertMatch({pending, _}, Adjustment#domain_InvoiceAdjustment.status),
+    ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
-    ?assertMatch({processed, _}, Processed),
+    ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     ok = hg_client_invoicing:capture_invoice_adjustment(InvoiceID, ID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Captured))]  = next_event(InvoiceID, Client),
-    ?assertMatch({captured, _}, Captured),
+    ?assertMatch({captured, #domain_InvoiceAdjustmentCaptured{}}, Captured),
     #payproc_Invoice{invoice = #domain_Invoice{status = FinalStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     ?assertMatch(TargetInvoiceStatus, FinalStatus).
 
@@ -171,10 +170,11 @@ invoice_adjustment_cancel(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
+    TargetInvoiceStatus = {unpaid, #domain_InvoiceUnpaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
         scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}}
+            target_status = TargetInvoiceStatus
     }}},
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
@@ -185,13 +185,13 @@ invoice_adjustment_cancel(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     #payproc_Invoice{invoice = #domain_Invoice{status = InvoiceStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
-    ?assertMatch({pending, _}, Adjustment#domain_InvoiceAdjustment.status),
+    ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
-    ?assertMatch({processed, _}, Processed),
+    ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     ok = hg_client_invoicing:cancel_invoice_adjustment(InvoiceID, ID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Cancelled))] = next_event(InvoiceID, Client),
-    ?assertMatch({cancelled, _}, Cancelled),
+    ?assertMatch({cancelled, #domain_InvoiceAdjustmentCancelled{}}, Cancelled),
     #payproc_Invoice{invoice = #domain_Invoice{status = FinalStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     ?assertMatch(InvoiceStatus, FinalStatus).
 
@@ -265,13 +265,13 @@ invoice_adjustment_invalid_adjustment_status(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     #payproc_Invoice{invoice = #domain_Invoice{status = InvoiceStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
-    ?assertMatch({pending, _}, Adjustment#domain_InvoiceAdjustment.status),
+    ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
-    ?assertMatch({processed, _}, Processed),
+    ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     ok = hg_client_invoicing:cancel_invoice_adjustment(InvoiceID, ID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Cancelled))] = next_event(InvoiceID, Client),
-    ?assertMatch({cancelled, _}, Cancelled),
+    ?assertMatch({cancelled, #domain_InvoiceAdjustmentCancelled{}}, Cancelled),
     #payproc_Invoice{invoice = #domain_Invoice{status = FinalStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     ?assertMatch(InvoiceStatus, FinalStatus),
     {exception, E} = hg_client_invoicing:cancel_invoice_adjustment(InvoiceID, ID, Client),
@@ -282,7 +282,7 @@ invoice_adjustment_payment_pending(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     Paid = {paid, #domain_InvoicePaid{}},
@@ -297,11 +297,11 @@ invoice_adjustment_payment_pending(C) ->
     },
     PaymentParams = set_payment_context(Context, make_tds_payment_params()),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
-    UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch(#payproc_InvoicePaymentPending{id = PaymentID}, E),
+    UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     {URL, GoodForm} = get_post_request(UserInteraction),
-    _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(GoodForm)}),
+    _ = assert_success_post_request({URL, GoodForm}),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
@@ -324,19 +324,18 @@ invoice_adjustment_pending_blocks_payment(C) ->
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
     },
     PaymentParams = set_payment_context(Context, make_payment_params({hold, capture})),
-
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(10, <<"RUB">>),
     Reason = <<"ok">>,
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
-    ?assertMatch({pending, _}, Adjustment#domain_InvoiceAdjustment.status),
+    ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
-    ?assertMatch({processed, _}, Processed),
+    ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     {exception, E} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
-    ?assertMatch(#payproc_InvoiceAdjustmentPending{}, E).
+    ?assertMatch(#payproc_InvoiceAdjustmentPending{id = ID}, E).
 
 %% ADJ
 
@@ -653,6 +652,11 @@ construct_proxy(ID, Url, Options) ->
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).
 
+make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
+    hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cost).
+
+make_due_date(LifetimeSeconds) ->
+    genlib_time:unow() + LifetimeSeconds.
 
 create_invoice(InvoiceParams, Client) ->
     ?invoice_state(?invoice(InvoiceID)) = hg_client_invoicing:create(InvoiceParams, Client),
