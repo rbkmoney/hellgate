@@ -92,7 +92,7 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
             } = Candidate,
             {#domain_Terminal{provider_ref = ProviderRef}, Provider} = get_route(TerminalRef, Revision),
             try
-                Terminal = hg_routing:acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
+                {_, Terminal} = hg_routing:acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
                 {[{{ProviderRef, Provider}, {TerminalRef, Terminal, {Priority, Weight}}} | Accepted], Rejected}
             catch
                 {rejected, Reason} ->
