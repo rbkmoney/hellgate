@@ -490,8 +490,9 @@ get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
 get_reduced_payments_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
     PreparedVS = hg_varset:prepare_varset(VS),
     {Client, Context} = get_party_client(),
-    {ok, Terms} = party_client_thrift:compute_payment_provider_terminal_terms(
+    {ok, TermsSet} = party_client_thrift:compute_provider_terminal_terms(
         ProviderRef, TerminalRef, Revision, PreparedVS, Client, Context),
+    #domain_ProvisionTermSet{payments = Terms} = TermsSet,
     Terms.
 
 -spec get_rec_paytools_terms(route(), hg_domain:revision()) -> terms().
