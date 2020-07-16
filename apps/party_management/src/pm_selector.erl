@@ -237,4 +237,47 @@ p2p_allow_test() ->
     Allow2 = reduce_predicate(Predicate, VS2, 1),
     ?assertEqual({constant, true}, Allow2).
 
+-spec constant_true_test() -> _.
+constant_true_test() ->
+    CashLimit = {value,
+        #domain_CashRange{
+            upper = {inclusive, #domain_Cash{
+                amount = 1000,
+                currency = <<"RUB">>
+            }},
+            lower = {exclusive,
+                #domain_Cash{
+                    amount = 1000000000,
+                    currency = <<"RUB">>
+                }
+            }
+        }
+    },
+    CashLimitSelector = {decisions, [
+        #domain_CashLimitDecision {
+            if_ = {condition, {payment_tool, {crypto_currency, #domain_CryptoCurrencyCondition{
+                definition = {crypto_currency_is, bitcoin}
+            }}}},
+            then_ = {value,
+                #domain_CashRange{
+                    upper = {inclusive, #domain_Cash{
+                        amount = 10,
+                        currency = <<"RUB">>
+                    }},
+                    lower = {inclusive,
+                        #domain_Cash{
+                            amount = 4200000000,
+                            currency = <<"RUB">>
+                        }
+                    }
+                }
+            }
+        },
+        #domain_CashLimitDecision {
+            if_   = {constant, true},
+            then_ = CashLimit
+        }
+    ]},
+    CashLimit = reduce(CashLimitSelector, #{}, 1).
+
 -endif.
