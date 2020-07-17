@@ -865,7 +865,7 @@ overdue_invoice_cancellation(C) ->
 
 invoice_cancellation_after_payment_timeout(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(3), 1000, C),
+    InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(30), 1000, C),
     PaymentParams = make_tds_payment_params(),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
