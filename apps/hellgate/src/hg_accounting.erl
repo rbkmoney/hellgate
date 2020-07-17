@@ -8,6 +8,7 @@
 -module(hg_accounting).
 
 -export([get_account/1]).
+-export([get_account/2]).
 -export([get_balance/1]).
 -export([get_balance/2]).
 -export([create_account/1]).
@@ -61,7 +62,13 @@
     account().
 
 get_account(AccountID) ->
-    case call_accounter('GetAccountByID', [AccountID]) of
+    get_account(AccountID, {latest, #shumpune_LatestClock{}}).
+
+-spec get_account(account_id(), clock()) ->
+    account().
+
+get_account(AccountID, Clock) ->
+    case call_accounter('GetAccountByID', [AccountID, Clock]) of
         {ok, Result} ->
             construct_account(AccountID, Result);
         {exception, #shumpune_AccountNotFound{}} ->
