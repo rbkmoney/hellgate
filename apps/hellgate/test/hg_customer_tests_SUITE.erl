@@ -608,7 +608,7 @@ construct_proxy(ID, Url, Options) ->
 %%
 
 next_event(CustomerID, Client) ->
-    case hg_client_customer:pull_event(CustomerID, 10000, Client) of
+    case hg_client_customer:pull_event(CustomerID, 30000, Client) of
         {ok, ?customer_event(Changes)} ->
             Changes;
         Result ->
