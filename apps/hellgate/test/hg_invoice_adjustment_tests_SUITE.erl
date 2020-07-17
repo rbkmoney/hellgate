@@ -7,6 +7,7 @@
 -include_lib("stdlib/include/assert.hrl").
 
 -export([all/0]).
+-export([groups/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
 -export([init_per_testcase/2]).
@@ -44,15 +45,23 @@ cfg(Key, C) ->
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        invoice_adjustment_capture,
-        invoice_adjustment_cancel,
-        invoice_adjustment_existing_invoice_status,
-        invoice_adjustment_invalid_invoice_status,
-        invoice_adjustment_invalid_adjustment_status,
-        invoice_adjustment_payment_pending,
-        invoice_adjustment_pending_blocks_payment,
-        invoice_adjustment_pending_invoice_expiration,
-        invoice_adjustment_invoice_expiration_after_capture
+        {group, all_tests}
+    ].
+
+-spec groups() -> [{group_name(), list(), [test_case_name()]}].
+groups() ->
+    [
+        {all_tests, [parallel], [
+            invoice_adjustment_capture,
+            invoice_adjustment_cancel,
+            invoice_adjustment_existing_invoice_status,
+            invoice_adjustment_invalid_invoice_status,
+            invoice_adjustment_invalid_adjustment_status,
+            invoice_adjustment_payment_pending,
+            invoice_adjustment_pending_blocks_payment,
+            invoice_adjustment_pending_invoice_expiration,
+            invoice_adjustment_invoice_expiration_after_capture
+        ]}
     ].
 
 %% starting/stopping
@@ -139,15 +148,9 @@ invoice_adjustment_capture(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
-    Unpaid = {unpaid, #domain_InvoiceUnpaid{}},
-    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
-        reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = Unpaid
-    }}},
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
@@ -155,6 +158,12 @@ invoice_adjustment_capture(C) ->
     PaymentParams = set_payment_context(Context, make_payment_params()),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    Unpaid = {unpaid, #domain_InvoiceUnpaid{}},
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = Unpaid
+    }}},
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
@@ -174,12 +183,6 @@ invoice_adjustment_cancel(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    TargetInvoiceStatus = {unpaid, #domain_InvoiceUnpaid{}},
-    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
-        reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = TargetInvoiceStatus
-    }}},
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
@@ -188,6 +191,12 @@ invoice_adjustment_cancel(C) ->
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     #payproc_Invoice{invoice = #domain_Invoice{status = InvoiceStatus}} = hg_client_invoicing:get(InvoiceID, Client),
+    TargetInvoiceStatus = {unpaid, #domain_InvoiceUnpaid{}},
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = TargetInvoiceStatus
+    }}},
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
@@ -207,11 +216,6 @@ invoice_adjustment_invalid_invoice_status(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
-        reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = {unpaid, #domain_InvoiceUnpaid{}}
-    }}},
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
@@ -219,6 +223,11 @@ invoice_adjustment_invalid_invoice_status(C) ->
     PaymentParams = set_payment_context(Context, make_payment_params()),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = {unpaid, #domain_InvoiceUnpaid{}}
+    }}},
     ok = hg_client_invoicing:fulfill(InvoiceID, <<"ok">>, Client),
     {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch(#payproc_InvoiceAdjustmentStatusUnacceptable{}, E).
@@ -231,12 +240,6 @@ invoice_adjustment_existing_invoice_status(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    Paid = {paid, #domain_InvoicePaid{}},
-    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
-        reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = Paid
-    }}},
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
@@ -244,6 +247,12 @@ invoice_adjustment_existing_invoice_status(C) ->
     PaymentParams = set_payment_context(Context, make_payment_params()),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    Paid = {paid, #domain_InvoicePaid{}},
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = Paid
+    }}},
     {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch(#payproc_InvoiceAlreadyHasStatus{status = Paid}, E).
 
@@ -255,11 +264,6 @@ invoice_adjustment_invalid_adjustment_status(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
-        reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}}
-    }}},
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
@@ -268,6 +272,11 @@ invoice_adjustment_invalid_adjustment_status(C) ->
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     #payproc_Invoice{invoice = #domain_Invoice{status = InvoiceStatus}} = hg_client_invoicing:get(InvoiceID, Client),
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}}
+    }}},
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
@@ -289,18 +298,18 @@ invoice_adjustment_payment_pending(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    Paid = {paid, #domain_InvoicePaid{}},
-    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
-        reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = Paid
-    }}},
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
     },
     PaymentParams = set_payment_context(Context, make_tds_payment_params()),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    Paid = {paid, #domain_InvoicePaid{}},
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = Paid
+    }}},
     {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch(#payproc_InvoicePaymentPending{id = PaymentID}, E),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
@@ -317,12 +326,6 @@ invoice_adjustment_pending_blocks_payment(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
-    TargetInvoiceStatus = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}},
-    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
-        reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = TargetInvoiceStatus
-    }}},
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
@@ -331,6 +334,12 @@ invoice_adjustment_pending_blocks_payment(C) ->
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(10, <<"RUB">>),
     Reason = <<"ok">>,
+    TargetInvoiceStatus = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}},
+    AdjustmentParams = #payproc_InvoiceAdjustmentParams{
+        reason = <<"kek">>,
+        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
+            target_status = TargetInvoiceStatus
+    }}},
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
@@ -346,7 +355,7 @@ invoice_adjustment_pending_invoice_expiration(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(2), 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     Paid = {paid, #domain_InvoicePaid{}},
@@ -365,22 +374,22 @@ invoice_adjustment_invoice_expiration_after_capture(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(4), 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
     },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     Unpaid = {unpaid, #domain_InvoiceUnpaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
         scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
             target_status = Unpaid
     }}},
-    PaymentParams = set_payment_context(Context, make_payment_params()),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
