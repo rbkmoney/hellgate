@@ -457,6 +457,14 @@ map_repair_error({error, Reason}) ->
     #payproc_InvalidInvoiceStatus{status = Status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
+-define(
+    adjustment_target_status(Status),
+    #domain_InvoiceAdjustment{
+        state = {status_change, #domain_InvoiceAdjustmentStatusChangeState{
+            scenario = #domain_InvoiceAdjustmentStatusChange{target_status = Status}}
+        }
+    }
+).
 
 -spec publish_event(invoice_id(), hg_machine:event_payload()) ->
     hg_event_provider:public_event().
@@ -497,10 +505,15 @@ handle_signal(timeout, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
     process_payment_signal(timeout, PaymentID, PaymentSession, St);
 handle_signal(timeout, St = #st{activity = {adjustment_new, ID}}) ->
-    % there's an adjustment pending
     Status = {processed, #domain_InvoiceAdjustmentProcessed{}},
     Change = [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Status))],
-    #{changes => Change, state => St, action => hg_machine_action:new()};
+    Action = hg_machine_action:new(),
+    #{changes => Change, state => St, action => set_invoice_timer(Action, St)};
+handle_signal(timeout, St = #st{activity = {adjustment_pending, _ID}, invoice = Invoice}) ->
+    case Invoice#domain_Invoice.status of
+        {unpaid, _} -> handle_expiration(St);
+        _Otherwise -> #{state => St}
+    end;
 handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
@@ -661,12 +674,26 @@ handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, P
 handle_call({{'Invoicing', 'CaptureAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_adjustment_processed(ID, St),
-    wrap_adjustment_impact(ID, hg_invoice_adjustment:capture(), St);
+    ?adjustment_target_status(Status) = get_adjustment(ID, St),
+    {Response, {Changes, Action}} = hg_invoice_adjustment:capture(),
+    #{
+        response => Response,
+        changes  => wrap_adjustment_changes(ID, Changes),
+        action   => set_invoice_timer(Status, Action, St),
+        state    => St
+    };
 
 handle_call({{'Invoicing', 'CancelAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_adjustment_processed(ID, St),
-    wrap_adjustment_impact(ID, hg_invoice_adjustment:cancel(), St);
+    Status = get_invoice_status(St),
+    {Response, {Changes, Action}} = hg_invoice_adjustment:cancel(),
+    #{
+        response => Response,
+        changes  => wrap_adjustment_changes(ID, Changes),
+        action   => set_invoice_timer(Status, Action, St),
+        state    => St
+    };
 
 handle_call({{'Invoicing', 'RefundPayment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
     _ = assert_invoice_accessible(St),
@@ -1239,15 +1266,6 @@ set_adjustment(ID, Adjustment, St = #st{adjustments = As}) ->
 
 get_adjustment_status(#domain_InvoiceAdjustment{status = Status}) ->
     Status.
-
--define(
-    adjustment_target_status(Status),
-    #domain_InvoiceAdjustment{
-        state = {status_change, #domain_InvoiceAdjustmentStatusChangeState{
-            scenario = #domain_InvoiceAdjustmentStatusChange{target_status = Status}}
-        }
-    }
-).
 
 apply_adjustment_status(?adjustment_target_status(Status), St = #st{invoice = Invoice}) ->
     St#st{invoice = Invoice#domain_Invoice{status = Status}}.
