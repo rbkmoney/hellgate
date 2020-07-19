@@ -55,6 +55,8 @@ reduce_decisions({delegates, Delegates}, VS, Rev) ->
 reduce_decisions({candidates, Candidates}, VS, Rev) ->
     reduce_candidates_decision(Candidates, VS, Rev).
 
+reduce_delegates_decision([], _VS, _Rev) ->
+    [];
 reduce_delegates_decision([D | Delegates], VS, Rev) ->
     Predicate = D#domain_PaymentRoutingDelegate.allowed,
     RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
