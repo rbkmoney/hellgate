@@ -507,13 +507,7 @@ handle_signal(timeout, St = #st{activity = {payment, PaymentID}}) ->
 handle_signal(timeout, St = #st{activity = {adjustment_new, ID}}) ->
     Status = {processed, #domain_InvoiceAdjustmentProcessed{}},
     Change = [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Status))],
-    Action = hg_machine_action:new(),
-    #{changes => Change, state => St, action => set_invoice_timer(Action, St)};
-handle_signal(timeout, St = #st{activity = {adjustment_pending, _ID}, invoice = Invoice}) ->
-    case Invoice#domain_Invoice.status of
-        {unpaid, _} -> handle_expiration(St);
-        _Otherwise -> #{state => St}
-    end;
+    #{changes => Change, state => St};
 handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
@@ -665,7 +659,6 @@ handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, P
     St = assert_invoice_accessible(St),
     TargetStatus = get_adjustment_params_target_status(Params),
     InvoiceStatus = get_invoice_status(St),
-    % TODO add exception to adjustment
     ok = assert_no_pending_payment(St),
     ok = assert_adjustment_target_status(TargetStatus, InvoiceStatus),
     ok = assert_all_adjustments_finalised(St),

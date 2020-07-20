@@ -20,7 +20,7 @@
 -export([invoice_adjustment_invalid_adjustment_status/1]).
 -export([invoice_adjustment_payment_pending/1]).
 -export([invoice_adjustment_pending_blocks_payment/1]).
--export([invoice_adjustment_pending_invoice_expiration/1]).
+-export([invoice_adjustment_pending_no_invoice_expiration/1]).
 -export([invoice_adjustment_invoice_expiration_after_capture/1]).
 
 -behaviour(supervisor).
@@ -59,7 +59,7 @@ groups() ->
             invoice_adjustment_invalid_adjustment_status,
             invoice_adjustment_payment_pending,
             invoice_adjustment_pending_blocks_payment,
-            invoice_adjustment_pending_invoice_expiration,
+            invoice_adjustment_pending_no_invoice_expiration,
             invoice_adjustment_invoice_expiration_after_capture
         ]}
     ].
@@ -296,7 +296,8 @@ invoice_adjustment_pending_blocks_payment(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
-    PaymentID = process_payment(InvoiceID, make_payment_params({hold, capture}), Client),
+    PaymentParams = make_payment_params({hold, capture}),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(10, <<"RUB">>),
     Reason = <<"ok">>,
     TargetInvoiceStatus = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}},
@@ -315,12 +316,12 @@ invoice_adjustment_pending_blocks_payment(C) ->
     {exception, E} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     ?assertMatch(#payproc_InvoiceAdjustmentPending{id = ID}, E).
 
--spec invoice_adjustment_pending_invoice_expiration(config()) -> test_return().
-invoice_adjustment_pending_invoice_expiration(C) ->
+-spec invoice_adjustment_pending_no_invoice_expiration(config()) -> test_return().
+invoice_adjustment_pending_no_invoice_expiration(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(1), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     Paid = {paid, #domain_InvoicePaid{}},
@@ -332,7 +333,7 @@ invoice_adjustment_pending_invoice_expiration(C) ->
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]        = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(_Processed))] = next_event(InvoiceID, Client),
-    [?invoice_status_changed(?invoice_cancelled(_))] = next_event(InvoiceID, Client).
+    timeout = next_event(InvoiceID, 2000, Client).
 
 -spec invoice_adjustment_invoice_expiration_after_capture(config()) -> test_return().
 invoice_adjustment_invoice_expiration_after_capture(C) ->
