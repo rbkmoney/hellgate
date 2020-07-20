@@ -151,12 +151,7 @@ invoice_adjustment_capture(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     Unpaid = {unpaid, #domain_InvoiceUnpaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
@@ -183,12 +178,7 @@ invoice_adjustment_cancel(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     #payproc_Invoice{invoice = #domain_Invoice{status = InvoiceStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     TargetInvoiceStatus = {unpaid, #domain_InvoiceUnpaid{}},
@@ -216,12 +206,7 @@ invoice_adjustment_invalid_invoice_status(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
@@ -240,12 +225,7 @@ invoice_adjustment_existing_invoice_status(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     Paid = {paid, #domain_InvoicePaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
@@ -264,12 +244,7 @@ invoice_adjustment_invalid_adjustment_status(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     #payproc_Invoice{invoice = #domain_Invoice{status = InvoiceStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
@@ -298,12 +273,7 @@ invoice_adjustment_payment_pending(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_tds_payment_params()),
-    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = start_payment(InvoiceID, make_tds_payment_params(), Client),
     Paid = {paid, #domain_InvoicePaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
@@ -326,12 +296,7 @@ invoice_adjustment_pending_blocks_payment(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params({hold, capture})),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params({hold, capture}), Client),
     Cash = ?cash(10, <<"RUB">>),
     Reason = <<"ok">>,
     TargetInvoiceStatus = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}},
