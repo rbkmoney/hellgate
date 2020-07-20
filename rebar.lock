@@ -70,7 +70,7 @@
   0},
  {<<"shumpune_proto">>,
   {git,"git@github.com:rbkmoney/shumpune-proto.git",
-       {ref,"a0aed3bdce6aafdb832bbcde45e6278222b08c0b"}},
+       {ref,"9f82af15d3c9dba4adff2f2f0e659b9821cbf773"}},
   0},
  {<<"snowflake">>,
   {git,"https://github.com/rbkmoney/snowflake.git",
