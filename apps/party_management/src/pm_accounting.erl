@@ -8,11 +8,13 @@
 -module(pm_accounting).
 
 -export([get_account/1]).
+-export([get_account/2]).
 -export([get_balance/1]).
--export([create_account/1]).
+-export([get_balance/2]).
+% -export([create_account/1]).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
--include_lib("shumpune_proto/include/shumpune_shumpune_thrift.hrl").
+-include_lib("shumpune_proto/include/shumaich_shumaich_thrift.hrl").
 
 -type amount()          :: dmsl_domain_thrift:'Amount'().
 -type currency_code()   :: dmsl_domain_thrift:'CurrencySymbolicCode'().
@@ -20,7 +22,7 @@
 -type batch_id()        :: dmsl_accounter_thrift:'BatchID'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type batch()           :: {batch_id(), final_cash_flow()}.
--type clock()           :: shumpune_shumpune_thrift:'Clock'().
+-type clock()           :: shumaich_shumaich_thrift:'Clock'().
 
 -export_type([batch/0]).
 
@@ -38,61 +40,65 @@
 
 -spec get_account(account_id()) ->
     account().
-
 get_account(AccountID) ->
-    case call_accounter('GetAccountByID', [AccountID]) of
+    get_account(AccountID, {latest, #shumaich_LatestClock{}}).
+
+-spec get_account(account_id(), clock()) ->
+    account().
+get_account(AccountID, Clock) ->
+    case call_accounter('GetAccountByID', [AccountID, Clock]) of
         {ok, Result} ->
             construct_account(AccountID, Result);
-        {exception, #shumpune_AccountNotFound{}} ->
+        {exception, #shumaich_AccountNotFound{}} ->
             pm_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 -spec get_balance(account_id()) ->
     balance().
-
 get_balance(AccountID) ->
-    get_balance(AccountID, {latest, #shumpune_LatestClock{}}).
+    get_balance(AccountID, {latest, #shumaich_LatestClock{}}).
 
 -spec get_balance(account_id(), clock()) ->
     balance().
-
 get_balance(AccountID, Clock) ->
     case call_accounter('GetBalanceByID', [AccountID, Clock]) of
         {ok, Result} ->
             construct_balance(AccountID, Result);
-        {exception, #shumpune_AccountNotFound{}} ->
+        {exception, #shumaich_AccountNotFound{}} ->
             pm_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
--spec create_account(currency_code()) ->
-    account_id().
+% DEPRECATED
 
-create_account(CurrencyCode) ->
-    create_account(CurrencyCode, undefined).
+% -spec create_account(currency_code()) ->
+%     account_id().
+% create_account(CurrencyCode) ->
+%     create_account(CurrencyCode, undefined).
 
--spec create_account(currency_code(), binary() | undefined) ->
-    account_id().
+% -spec create_account(currency_code(), binary() | undefined) ->
+%     account_id().
+% create_account(CurrencyCode, Description) ->
+%     case call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)]) of
+%         {ok, Result} ->
+%             Result;
+%         {exception, Exception} ->
+%             error({accounting, Exception}) % FIXME
+%     end.
 
-create_account(CurrencyCode, Description) ->
-    case call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)]) of
-        {ok, Result} ->
-            Result;
-        {exception, Exception} ->
-            error({accounting, Exception}) % FIXME
-    end.
+% DEPRECATED
 
-construct_prototype(CurrencyCode, Description) ->
-    #shumpune_AccountPrototype{
-        currency_sym_code = CurrencyCode,
-        description = Description
-    }.
+% construct_prototype(CurrencyCode, Description) ->
+%     #shumaich_AccountPrototype{
+%         currency_sym_code = CurrencyCode,
+%         description = Description
+%     }.
 
 %%
 
 construct_account(
     AccountID,
-    #shumpune_Account{
-        currency_sym_code = CurrencyCode
+    #shumaich_Account{
+        currency_symbolic_code = CurrencyCode
     }
 ) ->
     #{
@@ -102,7 +108,7 @@ construct_account(
 
 construct_balance(
     AccountID,
-    #shumpune_Balance{
+    #shumaich_Balance{
         own_amount = OwnAmount,
         min_available_amount = MinAvailableAmount,
         max_available_amount = MaxAvailableAmount
