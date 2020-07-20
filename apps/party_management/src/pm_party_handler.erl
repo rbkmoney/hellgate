@@ -370,15 +370,17 @@ prepare_varset(PartyID, #payproc_Varset{} = V, VS0) ->
         category => V#payproc_Varset.category,
         currency => V#payproc_Varset.currency,
         cost => V#payproc_Varset.amount,
-        payment_tool => prepare_payment_tool_var(V#payproc_Varset.payment_method),
+        payment_tool => prepare_payment_tool_var(V#payproc_Varset.payment_method, V#payproc_Varset.payment_tool),
         payout_method => V#payproc_Varset.payout_method,
         wallet_id => V#payproc_Varset.wallet_id,
         p2p_tool => V#payproc_Varset.p2p_tool
     }).
 
-prepare_payment_tool_var(PaymentMethodRef) when PaymentMethodRef /= undefined ->
+prepare_payment_tool_var(_PaymentMethodRef, PaymentTool) when PaymentTool /= undefined ->
+    PaymentTool;
+prepare_payment_tool_var(PaymentMethodRef = #domain_PaymentMethodRef{}, _PaymentTool) ->
     pm_payment_tool:create_from_method(PaymentMethodRef);
-prepare_payment_tool_var(undefined) ->
+prepare_payment_tool_var(undefined, undefined) ->
     undefined.
 
 get_identification_level(#domain_Contract{contractor_id = undefined, contractor = Contractor}, _) ->
