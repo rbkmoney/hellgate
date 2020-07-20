@@ -11,7 +11,7 @@
         genlib,
         fault_detector_proto,
         hg_proto,
-        shumpune_proto,
+        shumaich_proto,
         cowboy,
         how_are_you,  % must be after ranch and before any woody usage
         woody,
