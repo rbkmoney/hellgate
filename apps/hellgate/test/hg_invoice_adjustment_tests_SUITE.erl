@@ -321,7 +321,7 @@ invoice_adjustment_pending_no_invoice_expiration(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(1), 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(5), 10000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     Paid = {paid, #domain_InvoicePaid{}},
@@ -333,7 +333,7 @@ invoice_adjustment_pending_no_invoice_expiration(C) ->
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]        = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(_Processed))] = next_event(InvoiceID, Client),
-    timeout = next_event(InvoiceID, 2000, Client).
+    timeout = next_event(InvoiceID, 6000, Client).
 
 -spec invoice_adjustment_invoice_expiration_after_capture(config()) -> test_return().
 invoice_adjustment_invoice_expiration_after_capture(C) ->
