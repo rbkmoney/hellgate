@@ -161,10 +161,11 @@ raise_invalid_object_ref_({contract, ID}, Ex) ->
 
 create_shop_account(#payproc_ShopAccountParams{currency = Currency}) ->
     create_shop_account(Currency);
-create_shop_account(#domain_CurrencyRef{symbolic_code = SymbolicCode} = CurrencyRef) ->
-    GuaranteeID = pm_accounting:create_account(SymbolicCode),
-    SettlementID = pm_accounting:create_account(SymbolicCode),
-    PayoutID = pm_accounting:create_account(SymbolicCode),
+create_shop_account(#domain_CurrencyRef{symbolic_code = _SymbolicCode} = CurrencyRef) ->
+    % WARNING ADHOC FOR TESTING ONLY
+    GuaranteeID = rand:uniform(1000), %pm_accounting:create_account(SymbolicCode),
+    SettlementID = rand:uniform(1000), %pm_accounting:create_account(SymbolicCode),
+    PayoutID = rand:uniform(1000), %pm_accounting:create_account(SymbolicCode),
     #domain_ShopAccount{
         currency = CurrencyRef,
         settlement = SettlementID,

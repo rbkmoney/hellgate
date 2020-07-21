@@ -198,8 +198,9 @@ construct_contract_template(Ref, TermsRef, ValidSince, ValidUntil) ->
 construct_provider_account_set(Currencies) ->
     ok = hg_context:save(hg_context:create()),
     AccountSet = lists:foldl(
-        fun (Cur = ?cur(Code), Acc) ->
-            Acc#{Cur => ?prvacc(hg_accounting:create_account(Code))}
+        fun (Cur = ?cur(_Code), Acc) ->
+            % WARNING ADHOC FOR TESTING ONLY
+            Acc#{Cur => ?prvacc(rand:uniform(1000))} %?prvacc(hg_accounting:create_account(Code))}
         end,
         #{},
         Currencies
@@ -218,8 +219,8 @@ construct_system_account_set(Ref) ->
 
 construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
     ok = hg_context:save(hg_context:create()),
-    SettlementAccountID = hg_accounting:create_account(CurrencyCode),
-    SubagentAccountID = hg_accounting:create_account(CurrencyCode),
+    % SettlementAccountID = hg_accounting:create_account(CurrencyCode),
+    % SubagentAccountID = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
     {system_account_set, #domain_SystemAccountSetObject{
         ref = Ref,
@@ -227,8 +228,9 @@ construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
             name = Name,
             description = Name,
             accounts = #{?cur(CurrencyCode) => #domain_SystemAccount{
-                settlement = SettlementAccountID,
-                subagent = SubagentAccountID
+                % WARNING ADHOC FOR TESTING ONLY
+                settlement = rand:uniform(1000),
+                subagent = rand:uniform(1000)
             }}
         }
     }}.
@@ -242,10 +244,10 @@ construct_external_account_set(Ref) ->
 -spec construct_external_account_set(external_account_set(), name(), currency()) ->
     {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 
-construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
+construct_external_account_set(Ref, Name, ?cur(_CurrencyCode)) ->
     ok = hg_context:save(hg_context:create()),
-    AccountID1 = hg_accounting:create_account(CurrencyCode),
-    AccountID2 = hg_accounting:create_account(CurrencyCode),
+    % AccountID1 = hg_accounting:create_account(CurrencyCode),
+    % AccountID2 = hg_accounting:create_account(CurrencyCode),
     hg_context:cleanup(),
     {external_account_set, #domain_ExternalAccountSetObject{
         ref = Ref,
@@ -253,8 +255,9 @@ construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
             name = Name,
             description = Name,
             accounts = #{?cur(<<"RUB">>) => #domain_ExternalAccount{
-                income  = AccountID1,
-                outcome = AccountID2
+                % WARNING ADHOC FOR TESTING ONLY
+                income  = rand:uniform(1000),
+                outcome = rand:uniform(1000)
             }}
         }
     }}.
