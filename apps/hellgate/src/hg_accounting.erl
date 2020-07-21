@@ -246,9 +246,8 @@ collect_postings(Cashflow) ->
     [
         #shumaich_Posting{
             % NEW
-            % TODO: change to Account
-            from_account           = Source,
-            to_account             = Destination,
+            from_account           = construct_posting_account(Source, CurrencyCode),
+            to_account             = construct_posting_account(Destination, CurrencyCode),
             % OLD
             % from_id           = Source,
             % to_id             = Destination,
@@ -266,6 +265,9 @@ collect_postings(Cashflow) ->
             }
         } <- Cashflow
     ].
+
+construct_posting_account(ID, Currency) ->
+    #shumaich_Account{id = integer_to_binary(ID), currency_symbolic_code = Currency}.
 
 construct_posting_description(Details) when is_binary(Details) ->
     Details;
