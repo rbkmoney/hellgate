@@ -40,7 +40,7 @@ get_service(proxy_inspector) ->
 get_service(proxy_host_provider) ->
     {dmsl_proxy_provider_thrift, 'ProviderProxyHost'};
 get_service(accounter) ->
-    {shumpune_shumpune_thrift, 'Accounter'};
+    {shumaich_shumaich_thrift, 'Accounter'};
 get_service(automaton) ->
     {mg_proto_state_processing_thrift, 'Automaton'};
 get_service(processor) ->
