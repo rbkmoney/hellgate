@@ -54,13 +54,22 @@
 %% Internal types
 
 -record(st, {
-    activity          :: undefined | invoice | {payment, payment_id()},
+    activity          :: undefined | activity(),
     invoice           :: undefined | invoice(),
-    payments = []     :: [{payment_id(), payment_st()}]
+    payments = []     :: [{payment_id(), payment_st()}],
+    adjustments = []  :: [adjustment()]
 }).
 -type st() :: #st{}.
 
 -type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
+
+-type activity() :: invoice
+                  | {payment, payment_id()}
+                  | {adjustment_new, adjustment_id()}
+                  | {adjustment_pending, adjustment_id()}
+                  .
+
+-type adjustment_id() :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
 
 %% API
 
@@ -184,6 +193,12 @@ handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
     get_public_history(InvoiceID, Range);
 
+handle_function_('GetInvoiceAdjustment', [UserInfo, InvoiceID, ID], _Opts) ->
+    St = assert_invoice_accessible(get_state(InvoiceID)),
+    ok = assume_user_identity(UserInfo),
+    ok = set_invoicing_meta(InvoiceID),
+    get_adjustment(ID, St);
+
 handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
@@ -234,6 +249,9 @@ handle_function_(Fun, [UserInfo, InvoiceID | _Tail] = Args, _Opts) when
     Fun =:= 'CancelPayment' orelse
     Fun =:= 'RefundPayment' orelse
     Fun =:= 'CreateManualRefund' orelse
+    Fun =:= 'CreateInvoiceAdjustment' orelse
+    Fun =:= 'CaptureAdjustment' orelse
+    Fun =:= 'CancelAdjustment' orelse
     Fun =:= 'CreateChargeback' orelse
     Fun =:= 'CancelChargeback' orelse
     Fun =:= 'AcceptChargeback' orelse
@@ -373,7 +391,7 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
     }.
 
 ensure_started(ID, [TemplateID, PartyRevision, Params]) ->
-    SerializedArgs = [TemplateID, PartyRevision, marchal_invoice_params(Params)],
+    SerializedArgs = [TemplateID, PartyRevision, marshal_invoice_params(Params)],
     map_start_error(do_start(ID, SerializedArgs)).
 
 do_start(ID, Args) ->
@@ -429,6 +447,9 @@ map_repair_error({error, Reason}) ->
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
+
+-type adjustment() :: dmsl_payment_processing_thrift:'InvoiceAdjustment'().
+
 -type payment_id() :: dmsl_domain_thrift:'InvoicePaymentID'().
 -type payment_st() :: hg_invoice_payment:st().
 
@@ -436,6 +457,14 @@ map_repair_error({error, Reason}) ->
     #payproc_InvalidInvoiceStatus{status = Status}).
 -define(payment_pending(PaymentID),
     #payproc_InvoicePaymentPending{id = PaymentID}).
+-define(
+    adjustment_target_status(Status),
+    #domain_InvoiceAdjustment{
+        state = {status_change, #domain_InvoiceAdjustmentStatusChangeState{
+            scenario = #domain_InvoiceAdjustmentStatusChange{target_status = Status}}
+        }
+    }
+).
 
 -spec publish_event(invoice_id(), hg_machine:event_payload()) ->
     hg_event_provider:public_event().
@@ -454,7 +483,7 @@ namespace() ->
     hg_machine:result().
 
 init([InvoiceTplID, PartyRevision, EncodedInvoiceParams], #{id := ID}) ->
-    InvoiceParams = unmarchal_invoice_params(EncodedInvoiceParams),
+    InvoiceParams = unmarshal_invoice_params(EncodedInvoiceParams),
     Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
@@ -475,6 +504,10 @@ handle_signal(timeout, St = #st{activity = {payment, PaymentID}}) ->
     % there's a payment pending
     PaymentSession = get_payment_session(PaymentID, St),
     process_payment_signal(timeout, PaymentID, PaymentSession, St);
+handle_signal(timeout, St = #st{activity = {adjustment_new, ID}}) ->
+    Status = {processed, #domain_InvoiceAdjustmentProcessed{}},
+    Change = [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Status))],
+    #{changes => Change, state => St};
 handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
     handle_expiration(St);
@@ -566,6 +599,7 @@ handle_call({{'Invoicing', 'StartPayment'}, [_UserInfo, _InvoiceID, PaymentParam
     % TODO consolidate these assertions somehow
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
+    _ = assert_all_adjustments_finalised(St),
     start_payment(PaymentParams, St);
 
 handle_call({{'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
@@ -617,6 +651,40 @@ handle_call({{'Invoicing', 'Rescind'}, [_UserInfo, _InvoiceID, Reason]}, St) ->
         response => ok,
         changes  => [?invoice_status_changed(?invoice_cancelled(hg_utils:format_reason(Reason)))],
         action   => hg_machine_action:unset_timer(),
+        state    => St
+    };
+
+handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, Params]}, St) ->
+    ID = create_adjustment_id(St),
+    St = assert_invoice_accessible(St),
+    TargetStatus = get_adjustment_params_target_status(Params),
+    InvoiceStatus = get_invoice_status(St),
+    ok = assert_no_pending_payment(St),
+    ok = assert_adjustment_target_status(TargetStatus, InvoiceStatus),
+    ok = assert_all_adjustments_finalised(St),
+    wrap_adjustment_impact(ID, hg_invoice_adjustment:create(ID, Params), St);
+
+handle_call({{'Invoicing', 'CaptureAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
+    _ = assert_invoice_accessible(St),
+    _ = assert_adjustment_processed(ID, St),
+    ?adjustment_target_status(Status) = get_adjustment(ID, St),
+    {Response, {Changes, Action}} = hg_invoice_adjustment:capture(),
+    #{
+        response => Response,
+        changes  => wrap_adjustment_changes(ID, Changes),
+        action   => set_invoice_timer(Status, Action, St),
+        state    => St
+    };
+
+handle_call({{'Invoicing', 'CancelAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
+    _ = assert_invoice_accessible(St),
+    _ = assert_adjustment_processed(ID, St),
+    Status = get_invoice_status(St),
+    {Response, {Changes, Action}} = hg_invoice_adjustment:cancel(),
+    #{
+        response => Response,
+        changes  => wrap_adjustment_changes(ID, Changes),
+        action   => set_invoice_timer(Status, Action, St),
         state    => St
     };
 
@@ -856,6 +924,17 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St, OccurredAt) ->
         state    => St
     }.
 
+wrap_adjustment_changes(AdjustmentID, Changes) ->
+    [?invoice_adjustment_ev(AdjustmentID, C) || C <- Changes].
+
+wrap_adjustment_impact(AdjustmentID, {Response, {Changes, Action}}, St) ->
+    #{
+        response => Response,
+        changes  => wrap_adjustment_changes(AdjustmentID, Changes),
+        action   => Action,
+        state    => St
+    }.
+
 handle_result(#{} = Result) ->
     St = validate_changes(Result),
     _ = log_changes(maps:get(changes, Result, []), St),
@@ -1057,6 +1136,23 @@ merge_change(?invoice_created(Invoice), St, _Opts) ->
     St#st{activity = invoice, invoice = Invoice};
 merge_change(?invoice_status_changed(Status), St = #st{invoice = I}, _Opts) ->
     St#st{invoice = I#domain_Invoice{status = Status}};
+merge_change(?invoice_adjustment_ev(ID, Event), St, _Opts) ->
+    St1 = case Event of
+        ?invoice_adjustment_created(_Adjustment) ->
+            St#st{activity = {adjustment_new, ID}};
+        ?invoice_adjustment_status_changed({processed, _}) ->
+            St#st{activity = {adjustment_pending, ID}};
+        ?invoice_adjustment_status_changed(_Status) ->
+            St#st{activity = invoice}
+    end,
+    Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St1)),
+    St2 = set_adjustment(ID, Adjustment, St1),
+    case get_adjustment_status(Adjustment) of
+        {captured, _} ->
+            apply_adjustment_status(Adjustment, St2);
+        _ ->
+            St2
+    end;
 merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
     PaymentSession = try_get_payment_session(PaymentID, St),
     PaymentSession1 = hg_invoice_payment:merge_change(Change, PaymentSession, Opts),
@@ -1099,6 +1195,76 @@ try_get_payment_session(PaymentID, #st{payments = Payments}) ->
 
 set_payment_session(PaymentID, PaymentSession, St = #st{payments = Payments}) ->
     St#st{payments = lists:keystore(PaymentID, 1, Payments, {PaymentID, PaymentSession})}.
+
+%%
+
+get_adjustment_params_target_status(#payproc_InvoiceAdjustmentParams{
+    scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{target_status = Status}}}
+) ->
+    Status.
+
+get_invoice_status(#st{invoice = #domain_Invoice{status = Status}}) ->
+    Status.
+
+assert_adjustment_target_status(TargetStatus, Status)
+when TargetStatus =:= Status ->
+    throw(#payproc_InvoiceAlreadyHasStatus{status = Status});
+assert_adjustment_target_status({TargetStatus, _}, {Status, _})
+when TargetStatus =:= unpaid, Status =/= paid;
+     TargetStatus =:= paid, Status =/= unpaid ->
+    throw(#payproc_InvoiceAdjustmentStatusUnacceptable{});
+assert_adjustment_target_status(_TargetStatus, _Status) ->
+    ok.
+
+assert_all_adjustments_finalised(#st{adjustments = Adjustments}) ->
+    lists:foreach(fun assert_adjustment_finalised/1, Adjustments).
+
+assert_adjustment_finalised(#domain_InvoiceAdjustment{id = ID, status = {Status, _}})
+when Status =:= pending; Status =:= processed ->
+    throw(#payproc_InvoiceAdjustmentPending{id = ID});
+assert_adjustment_finalised(_) ->
+    ok.
+
+assert_adjustment_processed(ID, #st{adjustments = Adjustments}) ->
+    case lists:keyfind(ID, #domain_InvoiceAdjustment.id, Adjustments) of
+        #domain_InvoiceAdjustment{status = {processed, _}} ->
+            ok;
+        #domain_InvoiceAdjustment{status = Status} ->
+            throw(#payproc_InvalidInvoiceAdjustmentStatus{status = Status})
+    end.
+
+merge_adjustment_change(?invoice_adjustment_created(Adjustment), undefined) ->
+    Adjustment;
+merge_adjustment_change(?invoice_adjustment_status_changed(Status), Adjustment) ->
+    Adjustment#domain_InvoiceAdjustment{status = Status}.
+
+get_adjustment(ID, St) ->
+    case try_get_adjustment(ID, St) of
+        Adjustment = #domain_InvoiceAdjustment{} ->
+            Adjustment;
+        undefined ->
+            throw(#payproc_InvoiceAdjustmentNotFound{})
+    end.
+
+try_get_adjustment(ID, #st{adjustments = As}) ->
+    case lists:keyfind(ID, #domain_InvoiceAdjustment.id, As) of
+        V = #domain_InvoiceAdjustment{} ->
+            V;
+        false ->
+            undefined
+    end.
+
+set_adjustment(ID, Adjustment, St = #st{adjustments = As}) ->
+    St#st{adjustments = lists:keystore(ID, #domain_InvoiceAdjustment.id, As, Adjustment)}.
+
+get_adjustment_status(#domain_InvoiceAdjustment{status = Status}) ->
+    Status.
+
+apply_adjustment_status(?adjustment_target_status(Status), St = #st{invoice = Invoice}) ->
+    St#st{invoice = Invoice#domain_Invoice{status = Status}}.
+
+create_adjustment_id(#st{adjustments = Adjustments}) ->
+    integer_to_binary(length(Adjustments) + 1).
 
 %%
 
@@ -1258,6 +1424,19 @@ get_log_params(?invoice_created(Invoice), _St) ->
     get_invoice_event_log(invoice_created, unpaid, Invoice);
 get_log_params(?invoice_status_changed({StatusName, _}), #st{invoice = Invoice}) ->
     get_invoice_event_log(invoice_status_changed, StatusName, Invoice);
+get_log_params(?invoice_adjustment_ev(_ID, Change), #st{invoice = Invoice}) ->
+    case hg_invoice_adjustment:get_log_params(Change) of
+        {ok, Params} ->
+            {ok, maps:update_with(
+                params,
+                fun (V) ->
+                    [{invoice, get_invoice_params(Invoice)} | V]
+                end,
+                Params
+            )};
+        undefined ->
+            undefined
+    end;
 get_log_params(?payment_ev(PaymentID, Change), St = #st{invoice = Invoice}) ->
     PaymentSession = try_get_payment_session(PaymentID, St),
     case hg_invoice_payment:get_log_params(Change, PaymentSession) of
@@ -1303,9 +1482,9 @@ get_message(invoice_status_changed) ->
 marshal_event_payload(Changes) when is_list(Changes) ->
     wrap_event_payload({invoice_changes, Changes}).
 
--spec marchal_invoice_params(invoice_params()) ->
+-spec marshal_invoice_params(invoice_params()) ->
     binary().
-marchal_invoice_params(Params) ->
+marshal_invoice_params(Params) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
     hg_proto_utils:serialize(Type, Params).
 
@@ -1330,9 +1509,9 @@ unmarshal_event_payload(#{format_version := 1, data := {bin, Changes}}) ->
 unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
     unmarshal({list, changes}, Changes).
 
--spec unmarchal_invoice_params(binary()) ->
+-spec unmarshal_invoice_params(binary()) ->
     invoice_params().
-unmarchal_invoice_params(Bin) ->
+unmarshal_invoice_params(Bin) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
     hg_proto_utils:deserialize(Type, Bin).
 
