@@ -23,6 +23,7 @@
 -define(pinst(ID),      #domain_PaymentInstitutionRef{id = ID}).
 -define(bank(ID),       #domain_BankRef{id = ID}).
 -define(bussched(ID),   #domain_BusinessScheduleRef{id = ID}).
+-define(ruleset(ID),    #domain_PaymentRoutingRulesetRef{id = ID}).
 -define(p2pprov(ID),    #domain_P2PProviderRef{id = ID}).
 -define(wtdrlprov(ID),  #domain_WithdrawalProviderRef{id = ID}).
 -define(crit(ID),       #domain_CriterionRef{id = ID}).

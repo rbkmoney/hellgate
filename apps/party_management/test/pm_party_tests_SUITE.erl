@@ -98,6 +98,8 @@
 -export([compute_provider_not_found/1]).
 -export([compute_provider_terminal_terms_ok/1]).
 -export([compute_provider_terminal_terms_not_found/1]).
+-export([compute_payment_routing_ruleset_ok/1]).
+-export([compute_payment_routing_ruleset_not_found/1]).
 
 -export([compute_pred_w_irreducible_criterion/1]).
 -export([compute_terms_w_criteria/1]).
@@ -127,7 +129,7 @@ all() ->
         {group, contractor_management},
 
         {group, claim_management},
-        {group, providers},
+        {group, compute},
         {group, terms}
     ].
 
@@ -247,11 +249,13 @@ groups() ->
             complex_claim_acceptance,
             no_pending_claims
         ]},
-        {providers, [parallel], [
+        {compute, [parallel], [
             compute_provider_ok,
             compute_provider_not_found,
             compute_provider_terminal_terms_ok,
-            compute_provider_terminal_terms_not_found
+            compute_provider_terminal_terms_not_found,
+            compute_payment_routing_ruleset_ok,
+            compute_payment_routing_ruleset_not_found
         ]},
         {terms, [sequence], [
             party_creation,
@@ -467,6 +471,8 @@ end_per_testcase(_Name, _C) ->
 -spec compute_provider_not_found(config()) -> _ | no_return().
 -spec compute_provider_terminal_terms_ok(config()) -> _ | no_return().
 -spec compute_provider_terminal_terms_not_found(config()) -> _ | no_return().
+-spec compute_payment_routing_ruleset_ok(config()) -> _ | no_return().
+-spec compute_payment_routing_ruleset_not_found(config()) -> _ | no_return().
 
 -spec compute_pred_w_irreducible_criterion(config()) -> _ | no_return().
 -spec compute_terms_w_criteria(config()) -> _ | no_return().
@@ -1566,6 +1572,20 @@ compute_provider_terminal_terms_not_found(C) ->
         (catch pm_client_party:compute_provider_terminal_terms(
             ?prv(2), ?trm(2), DomainRevision, #payproc_Varset{}, Client)).
 
+compute_payment_routing_ruleset_ok(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    Varset = #payproc_Varset{
+        party_id = <<"67890">>
+    },
+    ok = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
+
+compute_payment_routing_ruleset_not_found(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    {exception, #payproc_RuleSetNotFound{}} =
+        (catch pm_client_party:compute_payment_routing_ruleset(?ruleset(5), DomainRevision, #payproc_Varset{}, Client)).
+
 %%
 
 compute_pred_w_irreducible_criterion(_) ->
@@ -2052,6 +2072,38 @@ construct_domain_fixture() ->
             }
         }
     },
+    Decision1 = {delegates, [
+        #domain_PaymentRoutingDelegate{
+            allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
+            ruleset = ?ruleset(2)
+        },
+        #domain_PaymentRoutingDelegate{
+            allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
+            ruleset = ?ruleset(3)
+        },
+        #domain_PaymentRoutingDelegate{
+            allowed = {constant, true},
+            ruleset = ?ruleset(4)
+        }
+    ]},
+    Decision2 = {candidates, [
+        #domain_PaymentRoutingCandidate{
+            allowed = {constant, true},
+            terminal = ?trm(1)
+        }
+    ]},
+    Decision3 = {candidates, [
+        #domain_PaymentRoutingCandidate{
+            allowed = {constant, true},
+            terminal = ?trm(2)
+        }
+    ]},
+    Decision4 = {candidates, [
+        #domain_PaymentRoutingCandidate{
+            allowed = {constant, true},
+            terminal = ?trm(3)
+        }
+    ]},
     [
         pm_ct_fixture:construct_currency(?cur(<<"RUB">>)),
         pm_ct_fixture:construct_currency(?cur(<<"USD">>)),
@@ -2077,6 +2129,11 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_external_account_set(?eas(1)),
 
         pm_ct_fixture:construct_business_schedule(?bussched(1)),
+
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(1), <<"Rule#1">>, Decision1),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(2), <<"Rule#2">>, Decision2),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Rule#3">>, Decision3),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(4), <<"Rule#4">>, Decision4),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),

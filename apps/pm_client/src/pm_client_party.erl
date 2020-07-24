@@ -48,6 +48,8 @@
 
 -export([compute_provider/4]).
 -export([compute_provider_terminal_terms/5]).
+-export([compute_globals/4]).
+-export([compute_payment_routing_ruleset/4]).
 
 %% GenServer
 
@@ -81,8 +83,10 @@
 -type payment_intitution_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 -type varset() :: dmsl_payment_processing_thrift:'Varset'().
 
--type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
--type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
+-type provider_ref()                 :: dmsl_domain_thrift:'ProviderRef'().
+-type terminal_ref()                 :: dmsl_domain_thrift:'TerminalRef'().
+-type globals_ref()                  :: dmsl_domain_thrift:'GlobalsRef'().
+-type payment_routring_ruleset_ref() :: dmsl_domain_thrift:'PaymentRoutingRulesetRef'().
 
 -spec start(party_id(), pm_client_api:t()) -> pid().
 
@@ -322,6 +326,20 @@ compute_provider(PaymentProviderRef, Revision, Varset, Client) ->
 compute_provider_terminal_terms(PaymentProviderRef, TerminalRef, Revision, Varset, Client) ->
     map_result_error(gen_server:call(Client, {call_without_party, 'ComputeProviderTerminalTerms',
         [PaymentProviderRef, TerminalRef, Revision, Varset]})).
+
+-spec compute_globals(globals_ref(), domain_revision(), varset(), pid()) ->
+    dmsl_domain_thrift:'Globals'() | woody_error:business_error().
+
+compute_globals(GlobalsRef, Revision, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeGlobals',
+        [GlobalsRef, Revision, Varset]})).
+
+-spec compute_payment_routing_ruleset(payment_routring_ruleset_ref(), domain_revision(), varset(), pid()) ->
+    dmsl_domain_thrift:'PaymentRoutingRuleset'() | woody_error:business_error().
+
+compute_payment_routing_ruleset(PaymentRoutingRuleSetRef, Revision, Varset, Client) ->
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputePaymentRoutingRuleset',
+        [PaymentRoutingRuleSetRef, Revision, Varset]})).
 
 -define(DEFAULT_NEXT_EVENT_TIMEOUT, 5000).
 
