@@ -184,25 +184,25 @@ cfg(Key, C) ->
 
 all() ->
     [
-        invalid_party_status,
-        invalid_shop_status,
+        % invalid_party_status,
+        % invalid_shop_status,
 
         % With constant domain config
-        {group, all_non_destructive_tests},
+        {group, all_non_destructive_tests}
 
-        payments_w_bank_card_issuer_conditions,
-        payments_w_bank_conditions,
+        % payments_w_bank_card_issuer_conditions,
+        % payments_w_bank_conditions,
 
-        % With variable domain config
-        {group, adjustments},
-        {group, holds_management_with_custom_config},
-        {group, refunds},
-        {group, chargebacks},
-        rounding_cashflow_volume,
-        terms_retrieval,
+        % % With variable domain config
+        % {group, adjustments},
+        % {group, holds_management_with_custom_config},
+        % {group, refunds},
+        % {group, chargebacks},
+        % rounding_cashflow_volume,
+        % terms_retrieval,
 
-        consistent_account_balances,
-        consistent_history
+        % consistent_account_balances,
+        % consistent_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -210,69 +210,69 @@ all() ->
 groups() ->
     [
         {all_non_destructive_tests, [parallel], [
-            {group, base_payments},
-            payment_risk_score_check,
-            payment_risk_score_check_fail,
-            payment_risk_score_check_timeout,
-            party_revision_check,
+            {group, base_payments}
+            % payment_risk_score_check,
+            % payment_risk_score_check_fail,
+            % payment_risk_score_check_timeout,
+            % party_revision_check,
 
-            invalid_payment_w_deprived_party,
-            external_account_posting,
-            terminal_cashflow_overrides_provider,
+            % invalid_payment_w_deprived_party,
+            % external_account_posting,
+            % terminal_cashflow_overrides_provider,
 
 
-            {group, holds_management},
+            % {group, holds_management},
 
-            {group, offsite_preauth_payment},
+            % {group, offsite_preauth_payment},
 
-            payment_with_tokenized_bank_card,
+            % payment_with_tokenized_bank_card,
 
-            {group, adhoc_repairs},
+            % {group, adhoc_repairs},
 
-            {group, repair_scenarios}
+            % {group, repair_scenarios}
         ]},
 
         {base_payments, [parallel], [
-            invoice_creation_idempotency,
-            invalid_invoice_shop,
-            invalid_invoice_amount,
-            invalid_invoice_currency,
-            invalid_invoice_template_cost,
-            invalid_invoice_template_id,
-            invoive_w_template_idempotency,
-            invoice_w_template,
-            invoice_cancellation,
-            overdue_invoice_cancellation,
-            invoice_cancellation_after_payment_timeout,
-            invalid_payment_amount,
+            % invoice_creation_idempotency,
+            % invalid_invoice_shop,
+            % invalid_invoice_amount,
+            % invalid_invoice_currency,
+            % invalid_invoice_template_cost,
+            % invalid_invoice_template_id,
+            % invoive_w_template_idempotency,
+            % invoice_w_template,
+            % invoice_cancellation,
+            % overdue_invoice_cancellation,
+            % invoice_cancellation_after_payment_timeout,
+            % invalid_payment_amount,
 
-            payment_start_idempotency,
-            payment_success,
-            payment_success_ruleset,
-            processing_deadline_reached_test,
-            payment_success_empty_cvv,
-            payment_success_additional_info,
-            payment_bank_card_category_condition,
-            payment_w_terminal_success,
-            payment_w_crypto_currency_success,
-            payment_w_wallet_success,
-            payment_w_customer_success,
-            payment_w_another_shop_customer,
-            payment_w_another_party_customer,
-            payment_w_deleted_customer,
-            payment_w_mobile_commerce,
-            payment_suspend_timeout_failure,
-            payment_success_on_second_try,
-            payment_fail_after_silent_callback,
-            payment_temporary_unavailability_retry_success,
-            payment_temporary_unavailability_too_many_retries,
-            payment_has_optional_fields,
-            invoice_success_on_third_payment,
-            payment_capture_failed,
-            payment_capture_retries_exceeded,
-            payment_partial_capture_success,
-            payment_error_in_cancel_session_does_not_cause_payment_failure,
-            payment_error_in_capture_session_does_not_cause_payment_failure
+            % payment_start_idempotency,
+            % payment_success,
+            % payment_success_ruleset,
+            % processing_deadline_reached_test,
+            % payment_success_empty_cvv,
+            % payment_success_additional_info,
+            % payment_bank_card_category_condition,
+            payment_w_terminal_success
+            % payment_w_crypto_currency_success,
+            % payment_w_wallet_success,
+            % payment_w_customer_success,
+            % payment_w_another_shop_customer,
+            % payment_w_another_party_customer,
+            % payment_w_deleted_customer,
+            % payment_w_mobile_commerce,
+            % payment_suspend_timeout_failure,
+            % payment_success_on_second_try,
+            % payment_fail_after_silent_callback,
+            % payment_temporary_unavailability_retry_success,
+            % payment_temporary_unavailability_too_many_retries,
+            % payment_has_optional_fields,
+            % invoice_success_on_third_payment,
+            % payment_capture_failed,
+            % payment_capture_retries_exceeded,
+            % payment_partial_capture_success,
+            % payment_error_in_cancel_session_does_not_cause_payment_failure,
+            % payment_error_in_capture_session_does_not_cause_payment_failure
         ]},
 
         {adjustments, [], [
@@ -5344,6 +5344,7 @@ post_request({URL, Form}) ->
     Method = post,
     Headers = [],
     Body = {form, maps:to_list(Form)},
+    ct:print("Url[~p]~nBody:~n~p~n", [URL, Body]),
     hackney:request(Method, URL, Headers, Body).
 
 get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, form = Form}}}) ->
