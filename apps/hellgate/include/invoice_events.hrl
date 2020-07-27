@@ -13,6 +13,25 @@
         #payproc_InvoiceStatusChanged{status = Status}}
 ).
 
+-define(invoice_adjustment_ev(ID, Payload),
+    {invoice_adjustment_change, #payproc_InvoiceAdjustmentChange{
+        id = ID,
+        payload = Payload
+    }}
+).
+
+-define(invoice_adjustment_created(Adjustment),
+    {invoice_adjustment_created, #payproc_InvoiceAdjustmentCreated{
+        adjustment = Adjustment
+    }}
+).
+
+-define(invoice_adjustment_status_changed(Status),
+    {invoice_adjustment_status_changed, #payproc_InvoiceAdjustmentStatusChanged{
+        status = Status
+    }}
+).
+
 -define(payment_ev(PaymentID, Payload),
     {invoice_payment_change, #payproc_InvoicePaymentChange{
         id = PaymentID,
