@@ -20,8 +20,8 @@ reduce_payment_routing_ruleset(RuleSet, VS, DomainRevision) ->
         decisions = reduce_payment_routing_decisions(RuleSet#domain_PaymentRoutingRuleset.decisions, VS, DomainRevision)
     }.
 
-reduce_payment_routing_decisions({_, []}, _, _) ->
-    [];
+reduce_payment_routing_decisions({Type, []}, _, _) ->
+    {Type, []};
 reduce_payment_routing_decisions({delegates, Delegates}, VS, Rev) ->
     reduce_payment_routing_delegates(Delegates, VS, Rev);
 reduce_payment_routing_decisions({candidates, Candidates}, VS, Rev) ->
@@ -34,17 +34,20 @@ reduce_payment_routing_delegates([D | Delegates], VS, Rev) ->
         ?const(false) ->
             reduce_payment_routing_delegates(Delegates, VS, Rev);
         ?const(true) ->
-            reduce_payment_routing_ruleset(get_payment_routing_ruleset(RuleSetRef, Rev), VS, Rev);
+            #domain_PaymentRoutingRuleset{
+                decisions = Decisions
+            } = get_payment_routing_ruleset(RuleSetRef, Rev),
+            reduce_payment_routing_decisions(Decisions, VS, Rev);
         _ ->
             logger:warning(
                 "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~n Varset:~n~p",
                 [Predicate, VS]
             ),
-            []
+            {delegates, []}
     end.
 
 reduce_payment_routing_candidates(Candidates, VS, Rev) ->
-    lists:foldl(
+    {candidates, lists:foldl(
         fun(C, AccIn) ->
             Predicate = C#domain_PaymentRoutingCandidate.allowed,
             case pm_selector:reduce_predicate(Predicate, VS, Rev) of
@@ -60,7 +63,7 @@ reduce_payment_routing_candidates(Candidates, VS, Rev) ->
                     AccIn
             end
         end,
-        [], Candidates).
+        [], Candidates)}.
 
 get_payment_routing_ruleset(RuleSetRef, DomainRevision) ->
     try

@@ -98,6 +98,7 @@
 -export([compute_provider_not_found/1]).
 -export([compute_provider_terminal_terms_ok/1]).
 -export([compute_provider_terminal_terms_not_found/1]).
+-export([compute_globals_ok/1]).
 -export([compute_payment_routing_ruleset_ok/1]).
 -export([compute_payment_routing_ruleset_not_found/1]).
 
@@ -254,6 +255,7 @@ groups() ->
             compute_provider_not_found,
             compute_provider_terminal_terms_ok,
             compute_provider_terminal_terms_not_found,
+            compute_globals_ok,
             compute_payment_routing_ruleset_ok,
             compute_payment_routing_ruleset_not_found
         ]},
@@ -471,6 +473,7 @@ end_per_testcase(_Name, _C) ->
 -spec compute_provider_not_found(config()) -> _ | no_return().
 -spec compute_provider_terminal_terms_ok(config()) -> _ | no_return().
 -spec compute_provider_terminal_terms_not_found(config()) -> _ | no_return().
+-spec compute_globals_ok(config()) -> _ | no_return().
 -spec compute_payment_routing_ruleset_ok(config()) -> _ | no_return().
 -spec compute_payment_routing_ruleset_not_found(config()) -> _ | no_return().
 
@@ -1572,13 +1575,28 @@ compute_provider_terminal_terms_not_found(C) ->
         (catch pm_client_party:compute_provider_terminal_terms(
             ?prv(2), ?trm(4), DomainRevision, #payproc_Varset{}, Client)).
 
+compute_globals_ok(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    Varset = #payproc_Varset{},
+    #domain_Globals{
+        external_account_set = {value, ?eas(1)}
+    } = pm_client_party:compute_globals(#domain_GlobalsRef{}, DomainRevision, Varset, Client).
+
 compute_payment_routing_ruleset_ok(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     Varset = #payproc_Varset{
         party_id = <<"67890">>
     },
-    ok = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
+    #domain_PaymentRoutingRuleset{
+        name = <<"Rule#1">>,
+        decisions = {candidates, [
+            #domain_PaymentRoutingCandidate{
+                terminal = ?trm(2)
+            }
+        ]}
+    } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_not_found(C) ->
     Client = cfg(client, C),
@@ -2177,7 +2195,12 @@ construct_domain_fixture() ->
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
-                external_account_set = {value, ?eas(1)},
+                external_account_set = {decisions, [
+                    #domain_ExternalAccountSetDecision{
+                        if_ = {condition, true},
+                        then_ = {value, ?eas(1)}
+                    }
+                ]},
                 payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
