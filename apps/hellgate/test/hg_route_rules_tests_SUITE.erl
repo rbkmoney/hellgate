@@ -114,11 +114,11 @@ no_route_found_for_payment(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
-    [
+    #{rejected_routes := [
         {?prv(1), ?trm(1),  {'PaymentsProvisionTerms', payment_tool}},
         {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}},
         {?prv(3), ?trm(10), {'PaymentsProvisionTerms', cost}}
-    ] = RejectContext.
+    ]} = RejectContext.
 
 -spec gather_route_success(config()) -> test_return().
 
@@ -137,10 +137,10 @@ gather_route_success(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[{_, {?trm(10), _, _}}], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
-    [
+    #{rejected_routes := [
         {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}},
         {?prv(2), ?trm(6), {'PaymentsProvisionTerms', category}}
-    ] = RejectContext.
+    ]} = RejectContext.
 
 -spec rejected_by_table_prohibitions(config()) -> test_return().
 
@@ -160,10 +160,10 @@ VS = #{
 
     {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
 
-    [
+    #{rejected_routes := [
         {?prv(3), ?trm(11), {'RoutingRule', undefined}},
         {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}}
-    ] = RejectContext,
+    ]} = RejectContext,
     ok.
 
 -spec empty_candidate_ok(config()) -> test_return().
@@ -187,7 +187,11 @@ empty_candidate_ok(_C) ->
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
-    {[], []} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
+    {[], #{
+        varset := VS,
+        rejected_routes := [],
+        rejected_providers := []
+    }} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
 
 -spec ruleset_misconfig(config()) -> test_return().
 
@@ -201,7 +205,11 @@ ruleset_misconfig(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {[], []} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
+    {[], #{
+        varset := VS,
+        rejected_routes := [],
+        rejected_providers := []
+    }} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
 
 -spec prefer_better_risk_score(config()) -> test_return().
 prefer_better_risk_score(_C) ->
