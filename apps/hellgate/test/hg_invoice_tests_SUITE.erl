@@ -5344,7 +5344,6 @@ post_request({URL, Form}) ->
     Method = post,
     Headers = [],
     Body = {form, maps:to_list(Form)},
-    ct:print("Url[~p]~nBody:~n~p~n", [URL, Body]),
     hackney:request(Method, URL, Headers, Body).
 
 get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, form = Form}}}) ->
