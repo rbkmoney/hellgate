@@ -2197,7 +2197,7 @@ construct_domain_fixture() ->
             data = #domain_Globals{
                 external_account_set = {decisions, [
                     #domain_ExternalAccountSetDecision{
-                        if_ = {condition, true},
+                        if_ = {constant, true},
                         then_ = {value, ?eas(1)}
                     }
                 ]},
