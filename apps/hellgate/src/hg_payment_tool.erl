@@ -21,15 +21,15 @@
 -spec get_method(t()) -> method().
 
 get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
-    #domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSystem}};
+    #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}};
 get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
-    #domain_PaymentMethodRef{id = {bank_card, PaymentSystem}};
+    #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}};
 get_method({bank_card, #domain_BankCard{
     payment_system = PaymentSystem,
     token_provider = TokenProvider,
     tokenization_method = TokenizationMethod
 }}) ->
-    #domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
+    #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
         token_provider = TokenProvider,
         tokenization_method = TokenizationMethod
@@ -46,7 +46,7 @@ get_method({mobile_commerce, #domain_MobileCommerce{operator = Operator}}) ->
 -spec create_from_method(method()) -> t().
 
 %% TODO empty strings - ugly hack for dialyzar
-create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSystem}}) ->
+create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
@@ -54,14 +54,14 @@ create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSy
         last_digits = <<"">>,
         is_cvv_empty = true
     }};
-create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
+create_from_method(#domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
         last_digits = <<"">>
     }};
-create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
+create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
         token_provider = TokenProvider,
         tokenization_method = TokenizationMethod

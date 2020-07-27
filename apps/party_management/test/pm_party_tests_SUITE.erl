@@ -387,7 +387,7 @@ end_per_testcase(_Name, _C) ->
 -define(REAL_CONTRACT_ID, <<"CONTRACT1">>).
 -define(REAL_WALLET_ID, <<"WALLET1">>).
 -define(REAL_PARTY_PAYMENT_METHODS,
-    [?pmt(bank_card, maestro), ?pmt(bank_card, mastercard), ?pmt(bank_card, visa)]).
+    [?pmt(bank_card_deprecated, maestro), ?pmt(bank_card_deprecated, mastercard), ?pmt(bank_card_deprecated, visa)]).
 
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
@@ -589,7 +589,7 @@ contract_terms_retrieval(C) ->
         ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
     ),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
     }} = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, undefined)),
     DomainRevision2 = pm_domain:head(),
@@ -822,7 +822,7 @@ compute_payment_institution_terms(C) ->
     ),
     #domain_TermSet{} = T2 = pm_client_party:compute_payment_institution_terms(
         ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(bank_card, visa)},
+        #payproc_Varset{payment_method = ?pmt(bank_card_deprecated, visa)},
         Client
     ),
     T1 /= T2 orelse error({equal_term_sets, T1, T2}),
@@ -833,7 +833,7 @@ compute_payment_institution_terms(C) ->
     ),
     #domain_TermSet{} = T4 = pm_client_party:compute_payment_institution_terms(
         ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(empty_cvv_bank_card, visa)},
+        #payproc_Varset{payment_method = ?pmt(empty_cvv_bank_card_deprecated, visa)},
         Client
     ),
     T1 /= T3 orelse error({equal_term_sets, T1, T3}),
@@ -976,7 +976,7 @@ shop_terms_retrieval(C) ->
     Timestamp = pm_datetime:format_now(),
     TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
     }} = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
     TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, Client),
@@ -1548,7 +1548,7 @@ compute_provider_terminal_terms_ok(C) ->
             ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
         ])}}
     ),
-    PaymentMethods = ?ordset([?pmt(bank_card, visa)]),
+    PaymentMethods = ?ordset([?pmt(bank_card_deprecated, visa)]),
     #domain_ProvisionTermSet{
         payments = #domain_PaymentsProvisionTerms{
             cash_flow = {value, [CashFlow]},
@@ -1564,13 +1564,13 @@ compute_provider_terminal_terms_not_found(C) ->
     DomainRevision = pm_domain:head(),
     {exception, #payproc_TerminalNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(1), ?trm(2), DomainRevision, #payproc_Varset{}, Client)),
+            ?prv(1), ?trm(4), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
             ?prv(2), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(2), ?trm(2), DomainRevision, #payproc_Varset{}, Client)).
+            ?prv(2), ?trm(4), DomainRevision, #payproc_Varset{}, Client)).
 
 compute_payment_routing_ruleset_ok(C) ->
     Client = cfg(client, C),
@@ -1684,7 +1684,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"KZT">>),
-                        payment_method = ?pmt(bank_card, visa)
+                        payment_method = ?pmt(bank_card_deprecated, visa)
                     },
                     Client
                 )
@@ -1697,7 +1697,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"KZT">>),
-                        payment_method = ?pmt(empty_cvv_bank_card, visa)
+                        payment_method = ?pmt(empty_cvv_bank_card_deprecated, visa)
                     },
                     Client
                 )
@@ -1710,7 +1710,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"RUB">>),
-                        payment_method = ?pmt(bank_card, visa)
+                        payment_method = ?pmt(bank_card_deprecated, visa)
                     },
                     Client
                 )
@@ -1803,7 +1803,7 @@ construct_term_set_for_party(PartyID, Def) ->
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
                     then_ = {value, ordsets:from_list([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card_deprecated, visa)
                     ])}
                 }
             ]}
@@ -1840,7 +1840,7 @@ construct_domain_fixture() ->
                 ?cat(3)
             ])},
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa)
+                ?pmt(bank_card_deprecated, visa)
             ])}
         }
     },
@@ -2113,11 +2113,11 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
         pm_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
 
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, maestro)),
         pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
 
         pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
         pm_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
@@ -2220,7 +2220,7 @@ construct_domain_fixture() ->
                         ?cat(2)
                     ])},
                     payment_methods = {value, ordsets:from_list([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card_deprecated, visa)
                     ])}
                 }
             }
@@ -2351,8 +2351,8 @@ construct_domain_fixture() ->
                         currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                         categories = {value, ?ordset([?cat(1)])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa),
-                            ?pmt(bank_card, mastercard)
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
                         ])},
                         cash_limit = {value, ?cashrng(
                             {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -2394,8 +2394,8 @@ construct_domain_fixture() ->
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa),
-                            ?pmt(bank_card, mastercard)
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
                         ])},
                         cash_value = {decisions, [
                             #domain_CashValueDecision{
@@ -2420,7 +2420,35 @@ construct_domain_fixture() ->
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa)
+                            ?pmt(bank_card_deprecated, visa)
+                        ])}
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(2),
+            data = #domain_Terminal{
+                name = <<"Brominal 2">>,
+                description = <<"Brominal 2">>,
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])}
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(3),
+            data = #domain_Terminal{
+                name = <<"Brominal 3">>,
+                description = <<"Brominal 3">>,
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
                         ])}
                     }
                 }

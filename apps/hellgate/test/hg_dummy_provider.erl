@@ -630,7 +630,7 @@ make_payment_tool(digital_wallet) ->
         }},
         <<>>
     };
-make_payment_tool(tokenized_bank_card) ->
+make_payment_tool(tokenized_bank_card_deprecated) ->
     make_simple_payment_tool(<<"no_preauth">>, visa, applepay, dpan);
 make_payment_tool(crypto_currency) ->
     {
