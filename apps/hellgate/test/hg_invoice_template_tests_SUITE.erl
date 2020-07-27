@@ -457,7 +457,11 @@ terms_retrieval(C) ->
     ok = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
     TermSet2 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card_deprecated, mastercard), ?pmt(bank_card_deprecated, visa), ?pmt(payment_terminal, euroset)]}
+        payment_methods = {value, [
+            ?pmt(bank_card_deprecated, mastercard),
+            ?pmt(bank_card_deprecated, visa),
+            ?pmt(payment_terminal, euroset)
+        ]}
     }} = TermSet2,
     Lifetime = make_lifetime(0, 0, 2),
     Cost = make_cost(unlim, sale, "1%"),
