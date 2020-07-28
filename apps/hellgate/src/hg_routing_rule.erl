@@ -20,15 +20,21 @@
 ) -> {[non_fail_rated_route()], reject_context()}.
 
 gather_routes(_, #domain_PaymentInstitution{payment_routing = undefined}, VS, _) ->
-    {[], #{varset => VS, rejected_providers => [], reject_routes => []}};
+    {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
+    RejectedContext = #{
+        varset => VS,
+        rejected_providers => [],
+        rejected_routes => []
+    },
     PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing,
     RuleSet = get_rule_set(PaymentRouting#domain_PaymentRouting.policies, Revision),
     RuleSetDeny = get_rule_set(PaymentRouting#domain_PaymentRouting.prohibitions, Revision),
     Candidates = reduce(RuleSet, VS, Revision),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
     Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
-    filter_routes(RatedRoutes, Prohibitions).
+    {Accepted, RejectedRoutes} = filter_routes(RatedRoutes, Prohibitions),
+    {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}.
 
 get_table_prohibitions(RuleSetDeny, VS, Revision) ->
     Candidates = reduce(RuleSetDeny, VS, Revision),
@@ -49,6 +55,8 @@ reduce_decisions({delegates, Delegates}, VS, Rev) ->
 reduce_decisions({candidates, Candidates}, VS, Rev) ->
     reduce_candidates_decision(Candidates, VS, Rev).
 
+reduce_delegates_decision([], _VS, _Rev) ->
+    [];
 reduce_delegates_decision([D | Delegates], VS, Rev) ->
     Predicate = D#domain_PaymentRoutingDelegate.allowed,
     RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,

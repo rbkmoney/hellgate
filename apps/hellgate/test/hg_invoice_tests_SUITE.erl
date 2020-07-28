@@ -117,6 +117,7 @@
 -export([invalid_refund_shop_status/1]).
 -export([payment_refund_idempotency/1]).
 -export([payment_refund_success/1]).
+-export([payment_success_ruleset/1]).
 -export([payment_refund_failure/1]).
 -export([deadline_doesnt_affect_payment_refund/1]).
 -export([payment_manual_refund/1]).
@@ -250,6 +251,7 @@ groups() ->
 
             payment_start_idempotency,
             payment_success,
+            payment_success_ruleset,
             processing_deadline_reached_test,
             payment_success_empty_cvv,
             payment_success_additional_info,
@@ -925,6 +927,32 @@ payment_start_idempotency(C) ->
 payment_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(Payment)]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    ?payment_w_status(PaymentID, ?captured()) = Payment,
+    ?payment_w_context(Context) = Payment.
+
+-spec payment_success_ruleset(config()) -> test_return().
+
+payment_success_ruleset(C) ->
+    PartyID = <<"bIg merch">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+    %%
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
@@ -5773,6 +5801,21 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_external_account_set(?eas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(2), <<"Assist">>, ?cur(<<"RUB">>)),
 
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(1), <<"SubMain">>, {candidates, [
+            #domain_PaymentRoutingCandidate{
+                allowed = {constant, true},
+                terminal = #domain_TerminalRef{id = 1}
+            }
+        ]}),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(2), <<"Main">>, {delegates, [
+            #domain_PaymentRoutingDelegate{
+                description = <<"Important merch">>,
+                allowed = {condition, {party, #domain_PartyCondition{id = <<"bIg merch">>}}},
+                ruleset = #domain_PaymentRoutingRulesetRef{id = 1}
+            }
+        ]}),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Prohibitions">>, {candidates, []}),
+
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
             data = #domain_PaymentInstitution{
@@ -5785,7 +5828,10 @@ construct_domain_fixture() ->
                     ?prv(3),
                     ?prv(4)
                 ])},
-
+                payment_routing = #domain_PaymentRouting{
+                    policies = ?ruleset(2),
+                    prohibitions = ?ruleset(3)
+                },
                 % TODO do we realy need this decision hell here?
                 inspector = {decisions, [
                     #domain_InspectorDecision{
@@ -6114,7 +6160,8 @@ construct_domain_fixture() ->
             ref = ?trm(1),
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>
+                description = <<"Brominal 1">>,
+                provider_ref = #domain_ProviderRef{id = 1}
             }
         }},
 
