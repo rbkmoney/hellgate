@@ -157,35 +157,20 @@ handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
 
 %% Providers
 
-handle_function_('ComputeP2PProvider', Args, _Opts) ->
-    [UserInfo, P2PProviderRef, DomainRevision, Varset] = Args,
+handle_function_('ComputeProvider', Args, _Opts) ->
+    [UserInfo, ProviderRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
-    Provider = get_p2p_provider(P2PProviderRef, DomainRevision),
+    Provider = get_provider(ProviderRef, DomainRevision),
     VS = prepare_varset(Varset),
-    pm_provider:reduce_p2p_provider(Provider, VS, DomainRevision);
+    pm_provider:reduce_provider(Provider, VS, DomainRevision);
 
-handle_function_('ComputeWithdrawalProvider', Args, _Opts) ->
-    [UserInfo, WithdrawalProviderRef, DomainRevision, Varset] = Args,
+handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
+    [UserInfo, ProviderRef, TerminalRef, DomainRevision, Varset] = Args,
     ok = assume_user_identity(UserInfo),
-    Provider = get_withdrawal_provider(WithdrawalProviderRef, DomainRevision),
-    VS = prepare_varset(Varset),
-    pm_provider:reduce_withdrawal_provider(Provider, VS, DomainRevision);
-
-handle_function_('ComputePaymentProvider', Args, _Opts) ->
-    [UserInfo, PaymentProviderRef, DomainRevision, Varset] = Args,
-    ok = assume_user_identity(UserInfo),
-    Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
-    VS = prepare_varset(Varset),
-    pm_provider:reduce_payment_provider(Provider, VS, DomainRevision);
-
-handle_function_('ComputePaymentProviderTerminalTerms', Args, _Opts) ->
-    [UserInfo, PaymentProviderRef, TerminalRef, DomainRevision, Varset] = Args,
-    ok = assume_user_identity(UserInfo),
-    Provider = get_payment_provider(PaymentProviderRef, DomainRevision),
+    Provider = get_provider(ProviderRef, DomainRevision),
     Terminal = get_terminal(TerminalRef, DomainRevision),
     VS = prepare_varset(Varset),
-    Terms = pm_provider:reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision),
-    Terms#domain_ProvisionTermSet.payments;
+    pm_provider:reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision);
 
 %% PartyMeta
 
@@ -322,27 +307,11 @@ get_payment_institution(PaymentInstitutionRef, Revision) ->
             throw(#payproc_PaymentInstitutionNotFound{})
     end.
 
-get_p2p_provider(P2PProviderRef, DomainRevision) ->
+get_provider(ProviderRef, DomainRevision) ->
     try
-        pm_domain:get(DomainRevision, {p2p_provider, P2PProviderRef})
+        pm_domain:get(DomainRevision, {provider, ProviderRef})
     catch
-        error:{object_not_found, {DomainRevision, {p2p_provider, P2PProviderRef}}} ->
-            throw(#payproc_ProviderNotFound{})
-    end.
-
-get_withdrawal_provider(WithdrawalProviderRef, DomainRevision) ->
-    try
-        pm_domain:get(DomainRevision, {withdrawal_provider, WithdrawalProviderRef})
-    catch
-        error:{object_not_found, {DomainRevision, {withdrawal_provider, WithdrawalProviderRef}}} ->
-            throw(#payproc_ProviderNotFound{})
-    end.
-
-get_payment_provider(PaymentProviderRef, DomainRevision) ->
-    try
-        pm_domain:get(DomainRevision, {provider, PaymentProviderRef})
-    catch
-        error:{object_not_found, {DomainRevision, {provider, PaymentProviderRef}}} ->
+        error:{object_not_found, {DomainRevision, {provider, ProviderRef}}} ->
             throw(#payproc_ProviderNotFound{})
     end.
 

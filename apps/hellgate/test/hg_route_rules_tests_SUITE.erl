@@ -20,6 +20,7 @@
 -export([rejected_by_table_prohibitions/1]).
 -export([empty_candidate_ok/1]).
 -export([ruleset_misconfig/1]).
+-export([prefer_better_risk_score/1]).
 
 -behaviour(supervisor).
 -export([init/1]).
@@ -45,7 +46,8 @@ all() -> [
     gather_route_success,
     rejected_by_table_prohibitions,
     empty_candidate_ok,
-    ruleset_misconfig
+    ruleset_misconfig,
+    prefer_better_risk_score
 ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -112,11 +114,11 @@ no_route_found_for_payment(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
-    [
+    #{rejected_routes := [
         {?prv(1), ?trm(1),  {'PaymentsProvisionTerms', payment_tool}},
         {?prv(2), ?trm(6),  {'PaymentsProvisionTerms', category}},
         {?prv(3), ?trm(10), {'PaymentsProvisionTerms', cost}}
-    ] = RejectContext.
+    ]} = RejectContext.
 
 -spec gather_route_success(config()) -> test_return().
 
@@ -135,10 +137,10 @@ gather_route_success(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[{_, {?trm(10), _, _}}], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
-    [
+    #{rejected_routes := [
         {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}},
         {?prv(2), ?trm(6), {'PaymentsProvisionTerms', category}}
-    ] = RejectContext.
+    ]} = RejectContext.
 
 -spec rejected_by_table_prohibitions(config()) -> test_return().
 
@@ -158,10 +160,10 @@ VS = #{
 
     {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
 
-    [
+    #{rejected_routes := [
         {?prv(3), ?trm(11), {'RoutingRule', undefined}},
         {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}}
-    ] = RejectContext,
+    ]} = RejectContext,
     ok.
 
 -spec empty_candidate_ok(config()) -> test_return().
@@ -185,7 +187,11 @@ empty_candidate_ok(_C) ->
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
-    {[], []} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
+    {[], #{
+        varset := VS,
+        rejected_routes := [],
+        rejected_providers := []
+    }} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
 
 -spec ruleset_misconfig(config()) -> test_return().
 
@@ -199,7 +205,41 @@ ruleset_misconfig(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {[], []} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
+    {[], #{
+        varset := VS,
+        rejected_routes := [],
+        rejected_providers := []
+    }} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
+
+-spec prefer_better_risk_score(config()) -> test_return().
+prefer_better_risk_score(_C) ->
+    VS = #{
+        category        => ?cat(1),
+        currency        => ?cur(<<"RUB">>),
+        cost            => ?cash(1000, <<"RUB">>),
+        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        party_id        => <<"12345">>,
+        risk_score      => low,
+        flow            => instant
+    },
+
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+
+    {Routes, RC} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+
+    {ProviderRefs, TerminalData} = lists:unzip(Routes),
+
+    ProviderStatuses = [{{dead, 1.0}, {normal, 0.0}}],
+    FailRatedRoutes  = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
+
+    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
+
+    {ok, #domain_PaymentRoute{provider = ?prv(3)}, Meta} = Result,
+    false = maps:is_key(reject_reason, Meta),
+
+    ok.
+
 
 %%% Domain config fixtures
 
@@ -391,8 +431,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 provider_ref = ?prv(1),
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>,
-                risk_coverage = high
+                description = <<"Brominal 1">>
             }
         }},
 
@@ -443,7 +482,6 @@ construct_domain_fixture() ->
                 provider_ref = ?prv(2),
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                risk_coverage = low,
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([
@@ -475,8 +513,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 provider_ref = ?prv(2),
                 name = <<"Terminal 7">>,
-                description = <<"Terminal 7">>,
-                risk_coverage = high
+                description = <<"Terminal 7">>
             }
         }},
 
@@ -535,8 +572,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 provider_ref = ?prv(3),
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -544,8 +580,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 provider_ref = ?prv(3),
                 name = <<"Second Payment Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }}
     ].

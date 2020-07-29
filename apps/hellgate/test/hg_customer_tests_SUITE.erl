@@ -608,7 +608,7 @@ construct_proxy(ID, Url, Options) ->
 %%
 
 next_event(CustomerID, Client) ->
-    case hg_client_customer:pull_event(CustomerID, 10000, Client) of
+    case hg_client_customer:pull_event(CustomerID, 30000, Client) of
         {ok, ?customer_event(Changes)} ->
             Changes;
         Result ->
@@ -794,8 +794,7 @@ construct_domain_fixture(TermSet) ->
             ref = ?trm(1),
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>,
-                risk_coverage = high
+                description = <<"Brominal 1">>
             }
         }}
     ].

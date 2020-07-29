@@ -94,14 +94,10 @@
 -export([contractor_modification/1]).
 -export([contract_w_contractor_creation/1]).
 
--export([compute_p2p_provider_ok/1]).
--export([compute_p2p_provider_not_found/1]).
--export([compute_withdrawal_provider_ok/1]).
--export([compute_withdrawal_provider_not_found/1]).
--export([compute_payment_provider_ok/1]).
--export([compute_payment_provider_not_found/1]).
--export([compute_payment_provider_terminal_terms_ok/1]).
--export([compute_payment_provider_terminal_terms_not_found/1]).
+-export([compute_provider_ok/1]).
+-export([compute_provider_not_found/1]).
+-export([compute_provider_terminal_terms_ok/1]).
+-export([compute_provider_terminal_terms_not_found/1]).
 
 -export([compute_pred_w_irreducible_criterion/1]).
 -export([compute_terms_w_criteria/1]).
@@ -252,14 +248,10 @@ groups() ->
             no_pending_claims
         ]},
         {providers, [parallel], [
-            compute_p2p_provider_ok,
-            compute_p2p_provider_not_found,
-            compute_withdrawal_provider_ok,
-            compute_withdrawal_provider_not_found,
-            compute_payment_provider_ok,
-            compute_payment_provider_not_found,
-            compute_payment_provider_terminal_terms_ok,
-            compute_payment_provider_terminal_terms_not_found
+            compute_provider_ok,
+            compute_provider_not_found,
+            compute_provider_terminal_terms_ok,
+            compute_provider_terminal_terms_not_found
         ]},
         {terms, [sequence], [
             party_creation,
@@ -474,14 +466,10 @@ end_per_testcase(_Name, _C) ->
 -spec contractor_modification(config()) -> _ | no_return().
 -spec contract_w_contractor_creation(config()) -> _ | no_return().
 
--spec compute_p2p_provider_ok(config()) -> _ | no_return().
--spec compute_p2p_provider_not_found(config()) -> _ | no_return().
--spec compute_withdrawal_provider_ok(config()) -> _ | no_return().
--spec compute_withdrawal_provider_not_found(config()) -> _ | no_return().
--spec compute_payment_provider_ok(config()) -> _ | no_return().
--spec compute_payment_provider_not_found(config()) -> _ | no_return().
--spec compute_payment_provider_terminal_terms_ok(config()) -> _ | no_return().
--spec compute_payment_provider_terminal_terms_not_found(config()) -> _ | no_return().
+-spec compute_provider_ok(config()) -> _ | no_return().
+-spec compute_provider_not_found(config()) -> _ | no_return().
+-spec compute_provider_terminal_terms_ok(config()) -> _ | no_return().
+-spec compute_provider_terminal_terms_not_found(config()) -> _ | no_return().
 
 -spec compute_pred_w_irreducible_criterion(config()) -> _ | no_return().
 -spec compute_terms_w_criteria(config()) -> _ | no_return().
@@ -1512,59 +1500,7 @@ party_access_control(C) ->
 
 %% Compute providers
 
-compute_p2p_provider_ok(C) ->
-    Client = cfg(client, C),
-    DomainRevision = pm_domain:head(),
-    Varset = #payproc_Varset{
-        currency = ?cur(<<"RUB">>)
-    },
-    CashFlow = ?cfpost(
-        {system, settlement},
-        {provider, settlement},
-        {product, {min_of, ?ordset([
-            ?fixed(10, <<"RUB">>),
-            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-        ])}}
-    ),
-    #domain_P2PProvider{
-        p2p_terms = #domain_P2PProvisionTerms{
-            cash_flow = {value, [CashFlow]}
-        }
-    } = pm_client_party:compute_p2p_provider(?p2pprov(1), DomainRevision, Varset, Client).
-
-compute_p2p_provider_not_found(C) ->
-    Client = cfg(client, C),
-    DomainRevision = pm_domain:head(),
-    {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_p2p_provider(?p2pprov(2), DomainRevision, #payproc_Varset{}, Client)).
-
-compute_withdrawal_provider_ok(C) ->
-    Client = cfg(client, C),
-    DomainRevision = pm_domain:head(),
-    Varset = #payproc_Varset{
-        currency = ?cur(<<"RUB">>)
-    },
-    CashFlow = ?cfpost(
-        {system, settlement},
-        {provider, settlement},
-        {product, {min_of, ?ordset([
-            ?fixed(10, <<"RUB">>),
-            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-        ])}}
-    ),
-    #domain_WithdrawalProvider{
-        withdrawal_terms = #domain_WithdrawalProvisionTerms{
-            cash_flow = {value, [CashFlow]}
-        }
-    } = pm_client_party:compute_withdrawal_provider(?wtdrlprov(1), DomainRevision, Varset, Client).
-
-compute_withdrawal_provider_not_found(C) ->
-    Client = cfg(client, C),
-    DomainRevision = pm_domain:head(),
-    {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_withdrawal_provider(?wtdrlprov(2), DomainRevision, #payproc_Varset{}, Client)).
-
-compute_payment_provider_ok(C) ->
+compute_provider_ok(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     Varset = #payproc_Varset{
@@ -1587,15 +1523,15 @@ compute_payment_provider_ok(C) ->
                 cash_value = {value, ?cash(1000, <<"RUB">>)}
             }
         }
-    } = pm_client_party:compute_payment_provider(?prv(1), DomainRevision, Varset, Client).
+    } = pm_client_party:compute_provider(?prv(1), DomainRevision, Varset, Client).
 
-compute_payment_provider_not_found(C) ->
+compute_provider_not_found(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_payment_provider(?prv(2), DomainRevision, #payproc_Varset{}, Client)).
+        (catch pm_client_party:compute_provider(?prv(2), DomainRevision, #payproc_Varset{}, Client)).
 
-compute_payment_provider_terminal_terms_ok(C) ->
+compute_provider_terminal_terms_ok(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     Varset = #payproc_Varset{
@@ -1610,22 +1546,27 @@ compute_payment_provider_terminal_terms_ok(C) ->
         ])}}
     ),
     PaymentMethods = ?ordset([?pmt(bank_card_deprecated, visa)]),
-    #domain_PaymentsProvisionTerms{
-        cash_flow = {value, [CashFlow]},
-        payment_methods = {value, PaymentMethods}
-    } = pm_client_party:compute_payment_provider_terminal_terms(?prv(1), ?trm(1), DomainRevision, Varset, Client).
+    #domain_ProvisionTermSet{
+        payments = #domain_PaymentsProvisionTerms{
+            cash_flow = {value, [CashFlow]},
+            payment_methods = {value, PaymentMethods}
+        },
+        recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+            cash_value = {value, ?cash(1000, <<"RUB">>)}
+        }
+    } = pm_client_party:compute_provider_terminal_terms(?prv(1), ?trm(1), DomainRevision, Varset, Client).
 
-compute_payment_provider_terminal_terms_not_found(C) ->
+compute_provider_terminal_terms_not_found(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     {exception, #payproc_TerminalNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(
+        (catch pm_client_party:compute_provider_terminal_terms(
             ?prv(1), ?trm(2), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(
+        (catch pm_client_party:compute_provider_terminal_terms(
             ?prv(2), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(
+        (catch pm_client_party:compute_provider_terminal_terms(
             ?prv(2), ?trm(2), DomainRevision, #payproc_Varset{}, Client)).
 
 %%
@@ -2422,7 +2363,6 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                risk_coverage = high,
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         payment_methods = {value, ?ordset([
