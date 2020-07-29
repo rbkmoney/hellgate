@@ -737,8 +737,8 @@ validate_limit(Cash, CashRange) ->
 choose_route(PaymentInstitution, VS, Revision, St) ->
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
-        {ok, Route} ->
-            check_risk_score(Route, VS);
+        {ok, _Route} = Result ->
+            Result;
         undefined ->
             Payment        = get_payment(St),
             Predestination = choose_routing_predestination(Payment),
@@ -754,18 +754,10 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                     _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext),
                     {ok, Route};
-                {error, {no_route_found, {RejectReason, RejectContext1}}}  ->
+                {error, {no_route_found, {RejectReason, RejectContext1}}} = Error ->
                     _ = log_reject_context(RejectReason, RejectContext1),
-                    {error, {no_route_found, RejectReason}}
+                    Error
             end
-    end.
-
-check_risk_score(Route, VS) ->
-    case hg_routing:check_risk_score(VS) of
-        ok ->
-            {ok, Route};
-        {error, risk_score_is_too_high = Reason} ->
-            {error, {no_route_found, Reason}}
     end.
 
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
@@ -1904,7 +1896,7 @@ process_routing(Action, St) ->
     case choose_route(PaymentInstitution, VS1, Revision, St) of
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, Revision, Opts, Events0, Action);
-        {error, {no_route_found, Reason}} ->
+        {error, {no_route_found, {Reason, _Details}}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',
                 {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
             )},
