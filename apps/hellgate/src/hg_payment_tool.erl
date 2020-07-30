@@ -5,11 +5,11 @@
 
 %%
 
--export([get_method/1]).
 -export([create_from_method/1]).
 -export([test_condition/3]).
+-export([has_any_payment_method/2]).
+-export([get_possible_methods/1]).
 
--export([marshal/1]).
 -export([unmarshal/1]).
 
 %%
@@ -18,30 +18,68 @@
 -type method() :: dmsl_domain_thrift:'PaymentMethodRef'().
 -type condition() :: dmsl_domain_thrift:'PaymentToolCondition'().
 
--spec get_method(t()) -> method().
 
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true}}) ->
-    #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}};
-get_method({bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined}}) ->
-    #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}};
-get_method({bank_card, #domain_BankCard{
+-spec has_any_payment_method(t(), ordsets:ordset(method())) -> boolean().
+
+has_any_payment_method(PaymentTool, SupportedMethods) ->
+    not ordsets:is_disjoint(get_possible_methods(PaymentTool), SupportedMethods).
+
+-spec get_possible_methods(t()) -> ordsets:ordset(method()).
+
+get_possible_methods({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true} = BankCard}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}},
+        create_bank_card_payment_method_ref(BankCard)
+    ]);
+get_possible_methods({bank_card,
+    #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined} = BankCard
+}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
+        create_bank_card_payment_method_ref(BankCard)
+    ]);
+get_possible_methods({bank_card, #domain_BankCard{
     payment_system = PaymentSystem,
     token_provider = TokenProvider,
     tokenization_method = TokenizationMethod
-}}) ->
-    #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
-        payment_system = PaymentSystem,
-        token_provider = TokenProvider,
+} = BankCard}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
+            payment_system = PaymentSystem,
+            token_provider = TokenProvider,
+            tokenization_method = TokenizationMethod
+        }}},
+        create_bank_card_payment_method_ref(BankCard)
+    ]);
+get_possible_methods({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}
+    ]);
+get_possible_methods({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {digital_wallet, Provider}}
+    ]);
+get_possible_methods({crypto_currency, CC}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {crypto_currency, CC}}
+    ]);
+get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator = Operator}}) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {mobile, Operator}}
+    ]).
+
+create_bank_card_payment_method_ref(#domain_BankCard{
+    payment_system = PaymentSystem,
+    is_cvv_empty = IsCVVEmpty,
+    token_provider = TokenProvider,
+    tokenization_method = TokenizationMethod
+}) ->
+    #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
+        payment_system      = PaymentSystem,
+        is_cvv_empty        = genlib:define(IsCVVEmpty, false),
+        token_provider      = TokenProvider,
         tokenization_method = TokenizationMethod
-    }}};
-get_method({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
-    #domain_PaymentMethodRef{id = {payment_terminal, TerminalType}};
-get_method({digital_wallet, #domain_DigitalWallet{provider = Provider}}) ->
-    #domain_PaymentMethodRef{id = {digital_wallet, Provider}};
-get_method({crypto_currency, CC}) ->
-    #domain_PaymentMethodRef{id = {crypto_currency, CC}};
-get_method({mobile_commerce, #domain_MobileCommerce{operator = Operator}}) ->
-    #domain_PaymentMethodRef{id = {mobile, Operator}}.
+    }}}.
 
 -spec create_from_method(method()) -> t().
 
@@ -72,6 +110,21 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated
         bin = <<"">>,
         last_digits = <<"">>,
         token_provider = TokenProvider,
+        tokenization_method = TokenizationMethod
+    }};
+create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
+    is_cvv_empty = IsCVVEmpty,
+    payment_system = PaymentSystem,
+    token_provider = TokenProvider,
+    tokenization_method = TokenizationMethod
+}}}) ->
+    {bank_card, #domain_BankCard{
+        payment_system = PaymentSystem,
+        token = <<"">>,
+        bin = <<"">>,
+        last_digits = <<"">>,
+        token_provider = TokenProvider,
+        is_cvv_empty = IsCVVEmpty,
         tokenization_method = TokenizationMethod
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->
@@ -200,144 +253,9 @@ test_mobile_commerce_condition(#domain_MobileCommerceCondition{definition = Def}
 test_mobile_commerce_condition_def({operator_is, C1}, #domain_MobileCommerce{operator = C2}, _Rev) ->
     C1 =:= C2.
 
-%% Marshalling
+%% Unmarshalling
 
 -include("legacy_structures.hrl").
-
--spec marshal(t()) ->
-    hg_msgpack_marshalling:value().
-
-marshal(PaymentTool) ->
-    marshal(payment_tool, PaymentTool).
-
-marshal(payment_tool, {PaymentMethod, V}) ->
-    [3, marshal(payment_method, PaymentMethod), marshal(PaymentMethod, V)];
-
-marshal(bank_card = T, #domain_BankCard{} = BankCard) ->
-    genlib_map:compact(#{
-        <<"token">>             => marshal(str, BankCard#domain_BankCard.token),
-        <<"payment_system">>    => marshal({T, payment_system}, BankCard#domain_BankCard.payment_system),
-        <<"bin">>               => marshal(str, BankCard#domain_BankCard.bin),
-        <<"masked_pan">>        => marshal(str, BankCard#domain_BankCard.last_digits),
-        <<"token_provider">>    => marshal({T, token_provider}, BankCard#domain_BankCard.token_provider),
-        <<"issuer_country">>    => marshal({T, issuer_country}, BankCard#domain_BankCard.issuer_country),
-        <<"bank_name">>         => marshal({T, bank_name}, BankCard#domain_BankCard.bank_name),
-        <<"metadata">>          => marshal({T, metadata}, BankCard#domain_BankCard.metadata),
-        <<"is_cvv_empty">>      => marshal({T, boolean}, BankCard#domain_BankCard.is_cvv_empty)
-    });
-marshal(payment_terminal = T, #domain_PaymentTerminal{terminal_type = TerminalType}) ->
-    marshal({T, type}, TerminalType);
-marshal(digital_wallet = T, #domain_DigitalWallet{} = DigitalWallet) ->
-    #{
-        <<"provider">> => marshal({T, provider}, DigitalWallet#domain_DigitalWallet.provider),
-        <<"id">>       => marshal(str, DigitalWallet#domain_DigitalWallet.id)
-    };
-marshal(crypto_currency = T, CC) ->
-    marshal({T, currency}, CC);
-
-marshal(payment_method, bank_card) ->
-    <<"card">>;
-marshal(payment_method, payment_terminal) ->
-    <<"payterm">>;
-marshal(payment_method, digital_wallet) ->
-    <<"wallet">>;
-marshal(payment_method, crypto_currency) ->
-    <<"crypto_currency">>;
-marshal(payment_method, mobile_commerce) ->
-    <<"mobile_commerce">>;
-
-marshal({bank_card, payment_system}, visa) ->
-    <<"visa">>;
-marshal({bank_card, payment_system}, mastercard) ->
-    <<"mastercard">>;
-marshal({bank_card, payment_system}, visaelectron) ->
-    <<"visaelectron">>;
-marshal({bank_card, payment_system}, maestro) ->
-    <<"maestro">>;
-marshal({bank_card, payment_system}, forbrugsforeningen) ->
-    <<"forbrugsforeningen">>;
-marshal({bank_card, payment_system}, dankort) ->
-    <<"dankort">>;
-marshal({bank_card, payment_system}, amex) ->
-    <<"amex">>;
-marshal({bank_card, payment_system}, dinersclub) ->
-    <<"dinersclub">>;
-marshal({bank_card, payment_system}, discover) ->
-    <<"discover">>;
-marshal({bank_card, payment_system}, unionpay) ->
-    <<"unionpay">>;
-marshal({bank_card, payment_system}, jcb) ->
-    <<"jcb">>;
-marshal({bank_card, payment_system}, nspkmir) ->
-    <<"nspkmir">>;
-
-marshal({bank_card, token_provider}, applepay) ->
-    <<"applepay">>;
-marshal({bank_card, token_provider}, googlepay) ->
-    <<"googlepay">>;
-marshal({bank_card, token_provider}, samsungpay) ->
-    <<"samsungpay">>;
-
-marshal({bank_card, issuer_country}, Residence) when is_atom(Residence), Residence /= undefined ->
-    marshal(str, atom_to_binary(Residence, utf8));
-
-marshal({bank_card, bank_name}, Name) when is_binary(Name) ->
-    marshal(str, Name);
-
-marshal({bank_card, metadata}, MD) when is_map(MD) ->
-    maps:map(fun (_, V) -> hg_msgpack_marshalling:unmarshal(V) end, MD);
-
-marshal({payment_terminal, type}, euroset) ->
-    <<"euroset">>;
-
-marshal({payment_terminal, type}, wechat) ->
-    <<"wechat">>;
-
-marshal({payment_terminal, type}, alipay) ->
-    <<"alipay">>;
-
-marshal({payment_terminal, type}, zotapay) ->
-    <<"zotapay">>;
-
-marshal({payment_terminal, type}, qps) ->
-    <<"qps">>;
-
-marshal({digital_wallet, provider}, qiwi) ->
-    <<"qiwi">>;
-
-marshal({bank_card, boolean}, true) ->
-    <<"true">>;
-marshal({bank_card, boolean}, false) ->
-    <<"false">>;
-
-marshal({mobile_commerce, operator}, mts) ->
-    <<"mts">>;
-marshal({mobile_commerce, operator}, megafone) ->
-    <<"megafone">>;
-marshal({mobile_commerce, operator}, yota) ->
-    <<"yota">>;
-marshal({mobile_commerce, operator}, tele2) ->
-    <<"tele2">>;
-marshal({mobile_commerce, operator}, beeline) ->
-    <<"beeline">>;
-
-marshal({crypto_currency, currency}, bitcoin) ->
-    <<"bitcoin">>;
-marshal({crypto_currency, currency}, litecoin) ->
-    <<"litecoin">>;
-marshal({crypto_currency, currency}, bitcoin_cash) ->
-    <<"bitcoin_cash">>;
-marshal({crypto_currency, currency}, ripple) ->
-    <<"ripple">>;
-marshal({crypto_currency, currency}, ethereum) ->
-    <<"ethereum">>;
-marshal({crypto_currency, currency}, zcash) ->
-    <<"zcash">>;
-
-marshal(_, Other) ->
-    Other.
-
-%% Unmarshalling
 
 -spec unmarshal(hg_msgpack_marshalling:value()) ->
     t().
@@ -513,39 +431,3 @@ unmarshal({mobile_commerce, operator}, <<"beeline">>) ->
 
 unmarshal(_, Other) ->
     Other.
-
--ifdef(TEST).
-
--include_lib("eunit/include/eunit.hrl").
-
--spec test() -> _.
-
--type testcase() :: {_, fun()}.
-
--spec legacy_unmarshalling_test_() -> [testcase()].
-legacy_unmarshalling_test_() ->
-    PT1 = {bank_card, #domain_BankCard{
-        token          = <<"abcdefabcdefabcdefabcdef">>,
-        payment_system = nspkmir,
-        bin            = <<"22002201">>,
-        last_digits    = <<"11">>
-    }},
-    PT2 = {payment_terminal, #domain_PaymentTerminal{
-        terminal_type  = euroset
-    }},
-    [
-        ?_assertEqual(PT1, unmarshal(legacy_marshal(2, PT1))),
-        ?_assertEqual(PT2, unmarshal(legacy_marshal(2, PT2)))
-    ].
-
-legacy_marshal(_Vsn = 2, {bank_card, #domain_BankCard{} = BankCard}) ->
-    [2, #{
-        <<"token">>          => marshal(str, BankCard#domain_BankCard.token),
-        <<"payment_system">> => marshal({bank_card, payment_system}, BankCard#domain_BankCard.payment_system),
-        <<"bin">>            => marshal(str, BankCard#domain_BankCard.bin),
-        <<"masked_pan">>     => marshal(str, BankCard#domain_BankCard.last_digits)
-    }];
-legacy_marshal(_Vsn = 2, {payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
-    [2, marshal({payment_terminal, type}, TerminalType)].
-
--endif.

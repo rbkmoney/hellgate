@@ -388,8 +388,11 @@ end_per_testcase(_Name, _C) ->
 -define(REAL_CONTRACTOR_ID, <<"CONTRACTOR1">>).
 -define(REAL_CONTRACT_ID, <<"CONTRACT1">>).
 -define(REAL_WALLET_ID, <<"WALLET1">>).
--define(REAL_PARTY_PAYMENT_METHODS,
-    [?pmt(bank_card_deprecated, maestro), ?pmt(bank_card_deprecated, mastercard), ?pmt(bank_card_deprecated, visa)]).
+-define(REAL_PARTY_PAYMENT_METHODS, [
+    ?pmt(bank_card_deprecated, maestro),
+    ?pmt(bank_card_deprecated, mastercard),
+    ?pmt(bank_card_deprecated, visa)
+]).
 
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().

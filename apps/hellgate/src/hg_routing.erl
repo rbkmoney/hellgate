@@ -7,7 +7,6 @@
 -export([gather_routes/4]).
 -export([gather_fail_rates/1]).
 -export([choose_route/3]).
--export([check_risk_score/1]).
 
 -export([get_payments_terms/2]).
 -export([get_rec_paytools_terms/2]).
@@ -135,20 +134,7 @@ gather_fail_rates(Routes) ->
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 
 choose_route(FailRatedRoutes, RejectContext, VS) ->
-    case check_risk_score(VS) of
-        ok ->
-            do_choose_route(FailRatedRoutes, VS, RejectContext);
-        {error, Reason} ->
-            {error, {no_route_found, {Reason, RejectContext}}}
-    end.
-
--spec check_risk_score(pm_selector:varset()) ->
-    ok | {error, risk_score_is_too_high}.
-
-check_risk_score(#{risk_score := fatal}) ->
-    {error, risk_score_is_too_high};
-check_risk_score(_VS) ->
-    ok.
+    do_choose_route(FailRatedRoutes, VS, RejectContext).
 
 -spec select_providers(
     route_predestination(),
@@ -202,8 +188,10 @@ select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
 
 -spec do_choose_route([fail_rated_route()], pm_selector:varset(), reject_context()) ->
     {ok, route(), route_choice_meta()} |
-    {error, {no_route_found, {unknown, reject_context()}}}.
+    {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 
+do_choose_route(_Routes, #{risk_score := fatal}, RejectContext) ->
+    {error, {no_route_found, {risk_score_is_too_high, RejectContext}}};
 do_choose_route([] = _Routes, _VS, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
 do_choose_route(Routes, VS, _RejectContext) ->
@@ -811,7 +799,7 @@ test_term(currency, V, Vs) ->
 test_term(category, V, Vs) ->
     ordsets:is_element(V, Vs);
 test_term(payment_tool, PT, PMs) ->
-    ordsets:is_element(hg_payment_tool:get_method(PT), PMs);
+    hg_payment_tool:has_any_payment_method(PT, PMs);
 test_term(cost, Cost, CashRange) ->
     hg_cash_range:is_inside(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->

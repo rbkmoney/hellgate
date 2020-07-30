@@ -660,7 +660,7 @@ validate_recurrent_terms(VS) ->
     } = VS,
     #domain_RecurrentPaytoolsServiceTerms{payment_methods = PaymentMethodSelector} = Terms,
     PMs = reduce_selector(recurrent_payment_methods, PaymentMethodSelector, Varset, Revision),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
         throw_invalid_request(<<"Invalid payment method">>),
     ok.
 
@@ -708,7 +708,7 @@ validate_recurrent_payer(#{payer := _Other}, true) ->
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
         throw_invalid_request(<<"Invalid payment method">>),
     VS#{payment_tool => PaymentTool}.
 
@@ -737,8 +737,8 @@ validate_limit(Cash, CashRange) ->
 choose_route(PaymentInstitution, VS, Revision, St) ->
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
-        {ok, Route} ->
-            check_risk_score(Route, VS);
+        {ok, _Route} = Result ->
+            Result;
         undefined ->
             Payment        = get_payment(St),
             Predestination = choose_routing_predestination(Payment),
@@ -754,18 +754,10 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                     _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext),
                     {ok, Route};
-                {error, {no_route_found, {RejectReason, RejectContext1}}}  ->
+                {error, {no_route_found, {RejectReason, RejectContext1}}} = Error ->
                     _ = log_reject_context(RejectReason, RejectContext1),
-                    {error, {no_route_found, RejectReason}}
+                    Error
             end
-    end.
-
-check_risk_score(Route, VS) ->
-    case hg_routing:check_risk_score(VS) of
-        ok ->
-            {ok, Route};
-        {error, risk_score_is_too_high = Reason} ->
-            {error, {no_route_found, Reason}}
     end.
 
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
@@ -855,7 +847,8 @@ collect_refund_varset(
     Revision
 ) ->
     RPMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
-    case ordsets:is_element(hg_payment_tool:get_method(maps:get(payment_tool, VS)), RPMs) of
+    PaymentTool = maps:get(payment_tool, VS),
+    case hg_payment_tool:has_any_payment_method(PaymentTool, RPMs) of
         true ->
             RVS = collect_partial_refund_varset(PartialRefundsServiceTerms, VS, Revision),
             VS#{refunds => RVS};
@@ -1904,7 +1897,7 @@ process_routing(Action, St) ->
     case choose_route(PaymentInstitution, VS1, Revision, St) of
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, Revision, Opts, Events0, Action);
-        {error, {no_route_found, Reason}} ->
+        {error, {no_route_found, {Reason, _Details}}} ->
             Failure = {failure, payproc_errors:construct('PaymentFailure',
                 {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
             )},
