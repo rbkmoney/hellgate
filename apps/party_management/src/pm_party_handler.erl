@@ -416,13 +416,10 @@ get_party_id(V, undefined) ->
     V#payproc_Varset.party_id;
 get_party_id(#payproc_Varset{party_id = undefined}, PartyID) ->
     PartyID;
-get_party_id(#payproc_Varset{party_id = PartyID1}, PartyID2) ->
-    case PartyID1 of
-        PartyID2 ->
-            PartyID1;
-        _ ->
-            throw(#payproc_PartyNotFound{})
-    end.
+get_party_id(#payproc_Varset{party_id = PartyID1}, PartyID2) when PartyID1 =:= PartyID2 ->
+    PartyID1;
+get_party_id(#payproc_Varset{party_id = PartyID1}, PartyID2) when PartyID1 =/= PartyID2 ->
+    throw(#payproc_PartyNotFound{}).
 
 prepare_payment_tool_var(_PaymentMethodRef, PaymentTool) when PaymentTool /= undefined ->
     PaymentTool;
