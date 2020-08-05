@@ -43,7 +43,7 @@ reduce_payment_routing_delegates([D | Delegates], VS, Rev) ->
                 "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~n Varset:~n~p",
                 [Predicate, VS]
             ),
-            {delegates, []}
+            {delegates, [D | Delegates]}
     end.
 
 reduce_payment_routing_candidates(Candidates, VS, Rev) ->
@@ -53,22 +53,20 @@ reduce_payment_routing_candidates(Candidates, VS, Rev) ->
             case pm_selector:reduce_predicate(Predicate, VS, Rev) of
                 ?const(false) ->
                     AccIn;
-                ?const(true) ->
-                    [C | AccIn];
+                ?const(true) = ReducedPredicate ->
+                    ReducedCandidate = C#domain_PaymentRoutingCandidate{
+                        allowed = ReducedPredicate
+                    },
+                    [ReducedCandidate | AccIn];
                 _ ->
                     logger:warning(
                         "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
                         [Predicate, VS]
                     ),
-                    AccIn
+                    [C | AccIn]
             end
         end,
         [], Candidates)}.
 
 get_payment_routing_ruleset(RuleSetRef, DomainRevision) ->
-    try
-        pm_domain:get(DomainRevision, {payment_routing_rules, RuleSetRef})
-    catch
-        error:{object_not_found, {DomainRevision, {payment_routing_rules, RuleSetRef}}} ->
-            throw(#payproc_RuleSetNotFound{})
-    end.
+    pm_domain:get(DomainRevision, {payment_routing_rules, RuleSetRef}).

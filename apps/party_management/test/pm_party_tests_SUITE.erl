@@ -1596,7 +1596,8 @@ compute_payment_routing_ruleset_ok(C) ->
         name = <<"Rule#1">>,
         decisions = {candidates, [
             #domain_PaymentRoutingCandidate{
-                terminal = ?trm(2)
+                terminal = ?trm(2),
+                allowed = {constant, true}
             }
         ]}
     } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
@@ -2115,7 +2116,7 @@ construct_domain_fixture() ->
     ]},
     Decision3 = {candidates, [
         #domain_PaymentRoutingCandidate{
-            allowed = {constant, true},
+            allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
             terminal = ?trm(2)
         }
     ]},
