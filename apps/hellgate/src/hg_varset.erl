@@ -28,8 +28,6 @@ prepare_varset(Varset) ->
          category = genlib_map:get(category, Varset),
          currency = genlib_map:get(currency, Varset),
          amount = genlib_map:get(cost, Varset),
-         payment_method = hg_maybe:apply(
-             fun(X) -> hg_payment_tool:get_method(X) end, genlib_map:get(payment_tool, Varset)),
          payout_method = genlib_map:get(payout_method, Varset),
          wallet_id = genlib_map:get(wallet_id, Varset),
          p2p_tool = genlib_map:get(p2p_tool, Varset),

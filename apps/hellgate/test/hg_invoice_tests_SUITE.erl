@@ -4947,7 +4947,7 @@ make_customer_payment_params(CustomerID) ->
     }.
 
 make_tokenized_bank_card_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(tokenized_bank_card_deprecated),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(tokenized_bank_card),
     make_payment_params(PaymentTool, Session).
 
 make_scenario_payment_params(Scenario) ->
