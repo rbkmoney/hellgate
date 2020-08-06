@@ -394,6 +394,8 @@ end_per_testcase(_Name, _C) ->
     ?pmt(bank_card_deprecated, visa)
 ]).
 
+-define(WRONG_DMT_OBJ_ID, 99999).
+
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
 -spec party_already_exists(config()) -> _ | no_return().
@@ -1538,7 +1540,7 @@ compute_provider_not_found(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_provider(?prv(2), DomainRevision, #payproc_Varset{}, Client)).
+        (catch pm_client_party:compute_provider(?prv(?WRONG_DMT_OBJ_ID), DomainRevision, #payproc_Varset{}, Client)).
 
 compute_provider_terminal_terms_ok(C) ->
     Client = cfg(client, C),
@@ -1570,13 +1572,13 @@ compute_provider_terminal_terms_not_found(C) ->
     DomainRevision = pm_domain:head(),
     {exception, #payproc_TerminalNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(1), ?trm(99999), DomainRevision, #payproc_Varset{}, Client)),
+            ?prv(1), ?trm(?WRONG_DMT_OBJ_ID), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(2), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
+            ?prv(?WRONG_DMT_OBJ_ID), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(2), ?trm(4), DomainRevision, #payproc_Varset{}, Client)).
+            ?prv(?WRONG_DMT_OBJ_ID), ?trm(?WRONG_DMT_OBJ_ID), DomainRevision, #payproc_Varset{}, Client)).
 
 compute_globals_ok(C) ->
     Client = cfg(client, C),
