@@ -1570,7 +1570,7 @@ compute_provider_terminal_terms_not_found(C) ->
     DomainRevision = pm_domain:head(),
     {exception, #payproc_TerminalNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(1), ?trm(4), DomainRevision, #payproc_Varset{}, Client)),
+            ?prv(1), ?trm(99999), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
             ?prv(2), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
