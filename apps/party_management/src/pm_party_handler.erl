@@ -211,13 +211,13 @@ handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
 
 handle_function_(
     'ComputePaymentInstitutionTerms',
-    [UserInfo, PartyID, PaymentInstitutionRef, Varset],
+    [UserInfo, PaymentInstitutionRef, Varset],
     _Opts
 ) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
+    ok = assume_user_identity(UserInfo),
     Revision = pm_domain:head(),
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    VS = prepare_varset(PartyID, Varset),
+    VS = prepare_varset(Varset),
     ContractTemplate = get_default_contract_template(PaymentInstitution, VS, Revision),
     Terms = pm_party:get_terms(ContractTemplate, pm_datetime:format_now(), Revision),
     pm_party:reduce_terms(Terms, VS, Revision);
@@ -419,7 +419,10 @@ get_party_id(#payproc_Varset{party_id = undefined}, PartyID) ->
 get_party_id(#payproc_Varset{party_id = PartyID1}, PartyID2) when PartyID1 =:= PartyID2 ->
     PartyID1;
 get_party_id(#payproc_Varset{party_id = PartyID1}, PartyID2) when PartyID1 =/= PartyID2 ->
-    throw(#payproc_PartyNotFound{}).
+    throw(#payproc_VarsetPartyNotMatch{
+        varset_party_id = PartyID1,
+        agrument_party_id = PartyID2
+    }).
 
 prepare_payment_tool_var(_PaymentMethodRef, PaymentTool) when PaymentTool /= undefined ->
     PaymentTool;

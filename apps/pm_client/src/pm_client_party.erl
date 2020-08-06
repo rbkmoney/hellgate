@@ -210,7 +210,7 @@ compute_contract_terms(ID, Timestamp, PartyRevision, DomainRevision, Varset, Cli
     dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
 
 compute_payment_institution_terms(Ref, Varset, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ComputePaymentInstitutionTerms', [Ref, Varset]})).
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputePaymentInstitutionTerms', [Ref, Varset]})).
 
 -spec compute_payout_cash_flow(dmsl_payment_processing_thrift:'PayoutParams'(), pid()) ->
     dmsl_domain_thrift:'FinalCashFlow'() | woody_error:business_error().
