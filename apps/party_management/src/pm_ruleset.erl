@@ -47,7 +47,7 @@ reduce_payment_routing_delegates([D | Delegates], VS, Rev) ->
     end.
 
 reduce_payment_routing_candidates(Candidates, VS, Rev) ->
-    {candidates, lists:foldl(
+    {candidates, lists:foldr(
         fun(C, AccIn) ->
             Predicate = C#domain_PaymentRoutingCandidate.allowed,
             case pm_selector:reduce_predicate(Predicate, VS, Rev) of
