@@ -2161,6 +2161,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
         ?cancelled() ->
             rollback_payment_cashflow(St)
     end,
+    assert_recurrent_token(St),
     NewAction = get_action(Target, Action, St),
     {done, {[?payment_status_changed(Target)], NewAction}};
 
@@ -2239,6 +2240,22 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
         %     ],
         %     {next, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
     end.
+
+assert_recurrent_token(#st{
+    payment = #domain_InvoicePayment{id = ID, make_recurrent = true},
+    recurrent_token = undefined
+}) ->
+    _ = logger:warning("Fail to get recurrent token in payment. Payment id:~p", [ID]);
+assert_recurrent_token(#st{
+    payment = #domain_InvoicePayment{id = ID, make_recurrent = MakeRecurrent},
+    recurrent_token = Token
+}) when
+    (MakeRecurrent =:= false orelse MakeRecurrent =:= undefined) andalso
+    Token =/= undefined
+->
+    _ = logger:warning("Got recurrent token in non recurrent payment. Payment id:~p", [ID]);
+assert_recurrent_token(_) ->
+    ok.
 
 choose_fd_operation_status_for_failure({failure, Failure}) ->
     payproc_errors:match('PaymentFailure', Failure, fun do_choose_fd_operation_status_for_failure/1);
