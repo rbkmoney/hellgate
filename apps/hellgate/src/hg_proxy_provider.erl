@@ -85,9 +85,9 @@ issue_call(Func, Args, Route) ->
             _ = notify_fault_detector(finish, Route, CallID),
             Result
     catch
-        error:{woody_error, _ErrorType} = Reason ->
+        error:{woody_error, _ErrorType} = Reason:St ->
             _ = notify_fault_detector(error, Route, CallID),
-            error(Reason)
+            erlang:raise(error, Reason, St)
     end.
 
 notify_fault_detector(Status, Route, CallID) ->
