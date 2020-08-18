@@ -665,7 +665,7 @@ validate_recurrent_terms(VS) ->
     } = VS,
     #domain_RecurrentPaytoolsServiceTerms{payment_methods = PaymentMethodSelector} = Terms,
     PMs = get_selector_value(recurrent_payment_methods, PaymentMethodSelector),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
         throw_invalid_request(<<"Invalid payment method">>),
     ok.
 
@@ -713,7 +713,7 @@ validate_recurrent_payer(#{payer := _Other}, true) ->
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS) ->
     PMs = get_selector_value(payment_methods, PaymentMethodSelector),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
         throw_invalid_request(<<"Invalid payment method">>),
     VS#{payment_tool => PaymentTool}.
 
@@ -849,7 +849,8 @@ collect_refund_varset(
     VS
 ) ->
     RPMs = get_selector_value(payment_methods, PaymentMethodSelector),
-    case ordsets:is_element(hg_payment_tool:get_method(maps:get(payment_tool, VS)), RPMs) of
+    PaymentTool = maps:get(payment_tool, VS),
+    case hg_payment_tool:has_any_payment_method(PaymentTool, RPMs) of
         true ->
             RVS = collect_partial_refund_varset(PartialRefundsServiceTerms),
             VS#{refunds => RVS};
@@ -2159,6 +2160,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
         ?cancelled() ->
             rollback_payment_cashflow(St)
     end,
+    check_recurrent_token(St),
     NewAction = get_action(Target, Action, St),
     {done, {[?payment_status_changed(Target)], NewAction}};
 
@@ -2237,6 +2239,22 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
         %     ],
         %     {next, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
     end.
+
+check_recurrent_token(#st{
+    payment = #domain_InvoicePayment{id = ID, make_recurrent = true},
+    recurrent_token = undefined
+}) ->
+    _ = logger:warning("Fail to get recurrent token in recurrent payment. Payment id:~p", [ID]);
+check_recurrent_token(#st{
+    payment = #domain_InvoicePayment{id = ID, make_recurrent = MakeRecurrent},
+    recurrent_token = Token
+}) when
+    (MakeRecurrent =:= false orelse MakeRecurrent =:= undefined) andalso
+    Token =/= undefined
+->
+    _ = logger:warning("Got recurrent token in non recurrent payment. Payment id:~p", [ID]);
+check_recurrent_token(_) ->
+    ok.
 
 choose_fd_operation_status_for_failure({failure, Failure}) ->
     payproc_errors:match('PaymentFailure', Failure, fun do_choose_fd_operation_status_for_failure/1);

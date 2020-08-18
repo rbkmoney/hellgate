@@ -172,6 +172,24 @@ handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
     VS = prepare_varset(Varset),
     pm_provider:reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision);
 
+%% Globals
+
+handle_function_('ComputeGlobals', Args, _Opts) ->
+    [UserInfo, GlobalsRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    Globals = get_globals(GlobalsRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_globals:reduce_globals(Globals, VS, DomainRevision);
+
+%% RuleSets
+
+handle_function_('ComputePaymentRoutingRuleset', Args, _Opts) ->
+    [UserInfo, RuleSetRef, DomainRevision, Varset] = Args,
+    ok = assume_user_identity(UserInfo),
+    RuleSet = get_payment_routing_ruleset(RuleSetRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_ruleset:reduce_payment_routing_ruleset(RuleSet, VS, DomainRevision);
+
 %% PartyMeta
 
 handle_function_('GetMeta', [UserInfo, PartyID], _Opts) ->
@@ -193,13 +211,13 @@ handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
 
 handle_function_(
     'ComputePaymentInstitutionTerms',
-    [UserInfo, PartyID, PaymentInstitutionRef, Varset],
+    [UserInfo, PaymentInstitutionRef, Varset],
     _Opts
 ) ->
-    ok = set_meta_and_check_access(UserInfo, PartyID),
+    ok = assume_user_identity(UserInfo),
     Revision = pm_domain:head(),
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
-    VS = prepare_varset(PartyID, Varset),
+    VS = prepare_varset(Varset),
     ContractTemplate = get_default_contract_template(PaymentInstitution, VS, Revision),
     Terms = pm_party:get_terms(ContractTemplate, pm_datetime:format_now(), Revision),
     pm_party:reduce_terms(Terms, VS, Revision);
@@ -330,6 +348,22 @@ get_terminal(TerminalRef, DomainRevision) ->
             throw(#payproc_TerminalNotFound{})
     end.
 
+get_globals(GlobalsRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {globals, GlobalsRef})
+    catch
+        error:{object_not_found, {DomainRevision, {globals, GlobalsRef}}} ->
+            throw(#payproc_GlobalsNotFound{})
+    end.
+
+get_payment_routing_ruleset(RuleSetRef, DomainRevision) ->
+    try
+        pm_domain:get(DomainRevision, {payment_routing_rules, RuleSetRef})
+    catch
+        error:{object_not_found, {DomainRevision, {payment_routing_rules, RuleSetRef}}} ->
+            throw(#payproc_RuleSetNotFound{})
+    end.
+
 get_default_contract_template(#domain_PaymentInstitution{default_contract_template = ContractSelector}, VS, Revision) ->
     ContractTemplateRef = pm_selector:reduce_to_value(ContractSelector, VS, Revision),
     pm_domain:get(Revision, {contract_template, ContractTemplateRef}).
@@ -371,16 +405,30 @@ prepare_varset(#payproc_Varset{} = V) ->
 prepare_varset(PartyID, #payproc_Varset{} = V) ->
     prepare_varset(PartyID, V, #{}).
 
-prepare_varset(PartyID, #payproc_Varset{} = V, VS0) ->
+prepare_varset(PartyID0, #payproc_Varset{} = V, VS0) ->
+    PartyID1 = get_party_id(V, PartyID0),
     genlib_map:compact(VS0#{
-        party_id => PartyID,
+        party_id => PartyID1,
         category => V#payproc_Varset.category,
         currency => V#payproc_Varset.currency,
         cost => V#payproc_Varset.amount,
         payment_tool => prepare_payment_tool_var(V#payproc_Varset.payment_method, V#payproc_Varset.payment_tool),
         payout_method => V#payproc_Varset.payout_method,
         wallet_id => V#payproc_Varset.wallet_id,
-        p2p_tool => V#payproc_Varset.p2p_tool
+        p2p_tool => V#payproc_Varset.p2p_tool,
+        identification_level => V#payproc_Varset.identification_level
+    }).
+
+get_party_id(V, undefined) ->
+    V#payproc_Varset.party_id;
+get_party_id(#payproc_Varset{party_id = undefined}, PartyID) ->
+    PartyID;
+get_party_id(#payproc_Varset{party_id = PartyID1}, PartyID2) when PartyID1 =:= PartyID2 ->
+    PartyID1;
+get_party_id(#payproc_Varset{party_id = PartyID1}, PartyID2) when PartyID1 =/= PartyID2 ->
+    throw(#payproc_VarsetPartyNotMatch{
+        varset_party_id = PartyID1,
+        agrument_party_id = PartyID2
     }).
 
 prepare_payment_tool_var(_PaymentMethodRef, PaymentTool) when PaymentTool /= undefined ->
