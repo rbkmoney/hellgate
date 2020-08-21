@@ -94,14 +94,14 @@
 -export([contractor_modification/1]).
 -export([contract_w_contractor_creation/1]).
 
--export([compute_p2p_provider_ok/1]).
--export([compute_p2p_provider_not_found/1]).
--export([compute_withdrawal_provider_ok/1]).
--export([compute_withdrawal_provider_not_found/1]).
--export([compute_payment_provider_ok/1]).
--export([compute_payment_provider_not_found/1]).
--export([compute_payment_provider_terminal_terms_ok/1]).
--export([compute_payment_provider_terminal_terms_not_found/1]).
+-export([compute_provider_ok/1]).
+-export([compute_provider_not_found/1]).
+-export([compute_provider_terminal_terms_ok/1]).
+-export([compute_provider_terminal_terms_not_found/1]).
+-export([compute_globals_ok/1]).
+-export([compute_payment_routing_ruleset_ok/1]).
+-export([compute_payment_routing_ruleset_unreducable/1]).
+-export([compute_payment_routing_ruleset_not_found/1]).
 
 -export([compute_pred_w_irreducible_criterion/1]).
 -export([compute_terms_w_criteria/1]).
@@ -131,7 +131,7 @@ all() ->
         {group, contractor_management},
 
         {group, claim_management},
-        {group, providers},
+        {group, compute},
         {group, terms}
     ].
 
@@ -251,15 +251,15 @@ groups() ->
             complex_claim_acceptance,
             no_pending_claims
         ]},
-        {providers, [parallel], [
-            compute_p2p_provider_ok,
-            compute_p2p_provider_not_found,
-            compute_withdrawal_provider_ok,
-            compute_withdrawal_provider_not_found,
-            compute_payment_provider_ok,
-            compute_payment_provider_not_found,
-            compute_payment_provider_terminal_terms_ok,
-            compute_payment_provider_terminal_terms_not_found
+        {compute, [parallel], [
+            compute_provider_ok,
+            compute_provider_not_found,
+            compute_provider_terminal_terms_ok,
+            compute_provider_terminal_terms_not_found,
+            compute_globals_ok,
+            compute_payment_routing_ruleset_ok,
+            compute_payment_routing_ruleset_unreducable,
+            compute_payment_routing_ruleset_not_found
         ]},
         {terms, [sequence], [
             party_creation,
@@ -390,8 +390,13 @@ end_per_testcase(_Name, _C) ->
 -define(REAL_CONTRACTOR_ID, <<"CONTRACTOR1">>).
 -define(REAL_CONTRACT_ID, <<"CONTRACT1">>).
 -define(REAL_WALLET_ID, <<"WALLET1">>).
--define(REAL_PARTY_PAYMENT_METHODS,
-    [?pmt(bank_card, maestro), ?pmt(bank_card, mastercard), ?pmt(bank_card, visa)]).
+-define(REAL_PARTY_PAYMENT_METHODS, [
+    ?pmt(bank_card_deprecated, maestro),
+    ?pmt(bank_card_deprecated, mastercard),
+    ?pmt(bank_card_deprecated, visa)
+]).
+
+-define(WRONG_DMT_OBJ_ID, 99999).
 
 -spec party_creation(config()) -> _ | no_return().
 -spec party_not_found_on_retrieval(config()) -> _ | no_return().
@@ -471,14 +476,14 @@ end_per_testcase(_Name, _C) ->
 -spec contractor_modification(config()) -> _ | no_return().
 -spec contract_w_contractor_creation(config()) -> _ | no_return().
 
--spec compute_p2p_provider_ok(config()) -> _ | no_return().
--spec compute_p2p_provider_not_found(config()) -> _ | no_return().
--spec compute_withdrawal_provider_ok(config()) -> _ | no_return().
--spec compute_withdrawal_provider_not_found(config()) -> _ | no_return().
--spec compute_payment_provider_ok(config()) -> _ | no_return().
--spec compute_payment_provider_not_found(config()) -> _ | no_return().
--spec compute_payment_provider_terminal_terms_ok(config()) -> _ | no_return().
--spec compute_payment_provider_terminal_terms_not_found(config()) -> _ | no_return().
+-spec compute_provider_ok(config()) -> _ | no_return().
+-spec compute_provider_not_found(config()) -> _ | no_return().
+-spec compute_provider_terminal_terms_ok(config()) -> _ | no_return().
+-spec compute_provider_terminal_terms_not_found(config()) -> _ | no_return().
+-spec compute_globals_ok(config()) -> _ | no_return().
+-spec compute_payment_routing_ruleset_ok(config()) -> _ | no_return().
+-spec compute_payment_routing_ruleset_unreducable(config()) -> _ | no_return().
+-spec compute_payment_routing_ruleset_not_found(config()) -> _ | no_return().
 
 -spec compute_pred_w_irreducible_criterion(config()) -> _ | no_return().
 -spec compute_terms_w_criteria(config()) -> _ | no_return().
@@ -595,7 +600,7 @@ contract_terms_retrieval(C) ->
         ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
     ),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
     }} = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, undefined)),
     DomainRevision2 = pm_domain:head(),
@@ -828,7 +833,7 @@ compute_payment_institution_terms(C) ->
     ),
     #domain_TermSet{} = T2 = pm_client_party:compute_payment_institution_terms(
         ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(bank_card, visa)},
+        #payproc_Varset{payment_method = ?pmt(bank_card_deprecated, visa)},
         Client
     ),
     T1 /= T2 orelse error({equal_term_sets, T1, T2}),
@@ -839,7 +844,7 @@ compute_payment_institution_terms(C) ->
     ),
     #domain_TermSet{} = T4 = pm_client_party:compute_payment_institution_terms(
         ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(empty_cvv_bank_card, visa)},
+        #payproc_Varset{payment_method = ?pmt(empty_cvv_bank_card_deprecated, visa)},
         Client
     ),
     T1 /= T3 orelse error({equal_term_sets, T1, T3}),
@@ -982,7 +987,7 @@ shop_terms_retrieval(C) ->
     Timestamp = pm_datetime:format_now(),
     TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
     }} = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
     TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, Client),
@@ -1509,59 +1514,7 @@ party_access_control(C) ->
 
 %% Compute providers
 
-compute_p2p_provider_ok(C) ->
-    Client = cfg(client, C),
-    DomainRevision = pm_domain:head(),
-    Varset = #payproc_Varset{
-        currency = ?cur(<<"RUB">>)
-    },
-    CashFlow = ?cfpost(
-        {system, settlement},
-        {provider, settlement},
-        {product, {min_of, ?ordset([
-            ?fixed(10, <<"RUB">>),
-            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-        ])}}
-    ),
-    #domain_P2PProvider{
-        p2p_terms = #domain_P2PProvisionTerms{
-            cash_flow = {value, [CashFlow]}
-        }
-    } = pm_client_party:compute_p2p_provider(?p2pprov(1), DomainRevision, Varset, Client).
-
-compute_p2p_provider_not_found(C) ->
-    Client = cfg(client, C),
-    DomainRevision = pm_domain:head(),
-    {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_p2p_provider(?p2pprov(2), DomainRevision, #payproc_Varset{}, Client)).
-
-compute_withdrawal_provider_ok(C) ->
-    Client = cfg(client, C),
-    DomainRevision = pm_domain:head(),
-    Varset = #payproc_Varset{
-        currency = ?cur(<<"RUB">>)
-    },
-    CashFlow = ?cfpost(
-        {system, settlement},
-        {provider, settlement},
-        {product, {min_of, ?ordset([
-            ?fixed(10, <<"RUB">>),
-            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-        ])}}
-    ),
-    #domain_WithdrawalProvider{
-        withdrawal_terms = #domain_WithdrawalProvisionTerms{
-            cash_flow = {value, [CashFlow]}
-        }
-    } = pm_client_party:compute_withdrawal_provider(?wtdrlprov(1), DomainRevision, Varset, Client).
-
-compute_withdrawal_provider_not_found(C) ->
-    Client = cfg(client, C),
-    DomainRevision = pm_domain:head(),
-    {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_withdrawal_provider(?wtdrlprov(2), DomainRevision, #payproc_Varset{}, Client)).
-
-compute_payment_provider_ok(C) ->
+compute_provider_ok(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     Varset = #payproc_Varset{
@@ -1576,21 +1529,23 @@ compute_payment_provider_ok(C) ->
         ])}}
     ),
     #domain_Provider{
-        payment_terms = #domain_PaymentsProvisionTerms{
-            cash_flow = {value, [CashFlow]}
-        },
-        recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
-            cash_value = {value, ?cash(1000, <<"RUB">>)}
+        terms = #domain_ProvisionTermSet{
+            payments = #domain_PaymentsProvisionTerms{
+                cash_flow = {value, [CashFlow]}
+            },
+            recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+                cash_value = {value, ?cash(1000, <<"RUB">>)}
+            }
         }
-    } = pm_client_party:compute_payment_provider(?prv(1), DomainRevision, Varset, Client).
+    } = pm_client_party:compute_provider(?prv(1), DomainRevision, Varset, Client).
 
-compute_payment_provider_not_found(C) ->
+compute_provider_not_found(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_payment_provider(?prv(2), DomainRevision, #payproc_Varset{}, Client)).
+        (catch pm_client_party:compute_provider(?prv(?WRONG_DMT_OBJ_ID), DomainRevision, #payproc_Varset{}, Client)).
 
-compute_payment_provider_terminal_terms_ok(C) ->
+compute_provider_terminal_terms_ok(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     Varset = #payproc_Varset{
@@ -1604,24 +1559,89 @@ compute_payment_provider_terminal_terms_ok(C) ->
             ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
         ])}}
     ),
-    PaymentMethods = ?ordset([?pmt(bank_card, visa)]),
-    #domain_PaymentsProvisionTerms{
-        cash_flow = {value, [CashFlow]},
-        payment_methods = {value, PaymentMethods}
-    } = pm_client_party:compute_payment_provider_terminal_terms(?prv(1), ?trm(1), DomainRevision, Varset, Client).
+    PaymentMethods = ?ordset([?pmt(bank_card_deprecated, visa)]),
+    #domain_ProvisionTermSet{
+        payments = #domain_PaymentsProvisionTerms{
+            cash_flow = {value, [CashFlow]},
+            payment_methods = {value, PaymentMethods}
+        },
+        recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+            cash_value = {value, ?cash(1000, <<"RUB">>)}
+        }
+    } = pm_client_party:compute_provider_terminal_terms(?prv(1), ?trm(1), DomainRevision, Varset, Client).
 
-compute_payment_provider_terminal_terms_not_found(C) ->
+compute_provider_terminal_terms_not_found(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     {exception, #payproc_TerminalNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(
-            ?prv(1), ?trm(2), DomainRevision, #payproc_Varset{}, Client)),
+        (catch pm_client_party:compute_provider_terminal_terms(
+            ?prv(1), ?trm(?WRONG_DMT_OBJ_ID), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(
-            ?prv(2), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
+        (catch pm_client_party:compute_provider_terminal_terms(
+            ?prv(?WRONG_DMT_OBJ_ID), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
     {exception, #payproc_ProviderNotFound{}} =
-        (catch pm_client_party:compute_payment_provider_terminal_terms(
-            ?prv(2), ?trm(2), DomainRevision, #payproc_Varset{}, Client)).
+        (catch pm_client_party:compute_provider_terminal_terms(
+            ?prv(?WRONG_DMT_OBJ_ID), ?trm(?WRONG_DMT_OBJ_ID), DomainRevision, #payproc_Varset{}, Client)).
+
+compute_globals_ok(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    Varset = #payproc_Varset{},
+    #domain_Globals{
+        external_account_set = {value, ?eas(1)}
+    } = pm_client_party:compute_globals(#domain_GlobalsRef{}, DomainRevision, Varset, Client).
+
+compute_payment_routing_ruleset_ok(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    Varset = #payproc_Varset{
+        party_id = <<"67890">>
+    },
+    #domain_PaymentRoutingRuleset{
+        name = <<"Rule#1">>,
+        decisions = {candidates, [
+            #domain_PaymentRoutingCandidate{
+                terminal = ?trm(2),
+                allowed = {constant, true}
+            },
+            #domain_PaymentRoutingCandidate{
+                terminal = ?trm(3),
+                allowed = {constant, true}
+            },
+            #domain_PaymentRoutingCandidate{
+                terminal = ?trm(1),
+                allowed = {constant, true}
+            }
+        ]}
+    } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
+
+compute_payment_routing_ruleset_unreducable(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    Varset = #payproc_Varset{},
+    #domain_PaymentRoutingRuleset{
+        name = <<"Rule#1">>,
+        decisions = {delegates, [
+            #domain_PaymentRoutingDelegate{
+                allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
+                ruleset = ?ruleset(2)
+            },
+            #domain_PaymentRoutingDelegate{
+                allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
+                ruleset = ?ruleset(3)
+            },
+            #domain_PaymentRoutingDelegate{
+                allowed = {constant, true},
+                ruleset = ?ruleset(4)
+            }
+        ]}
+    } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
+
+compute_payment_routing_ruleset_not_found(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    {exception, #payproc_RuleSetNotFound{}} =
+        (catch pm_client_party:compute_payment_routing_ruleset(?ruleset(5), DomainRevision, #payproc_Varset{}, Client)).
 
 %%
 
@@ -1721,7 +1741,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"KZT">>),
-                        payment_method = ?pmt(bank_card, visa)
+                        payment_method = ?pmt(bank_card_deprecated, visa)
                     },
                     Client
                 )
@@ -1734,7 +1754,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"KZT">>),
-                        payment_method = ?pmt(empty_cvv_bank_card, visa)
+                        payment_method = ?pmt(empty_cvv_bank_card_deprecated, visa)
                     },
                     Client
                 )
@@ -1747,7 +1767,7 @@ compute_terms_w_criteria(C) ->
                     ContractID, Timstamp, {revision, PartyRevision}, Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"RUB">>),
-                        payment_method = ?pmt(bank_card, visa)
+                        payment_method = ?pmt(bank_card_deprecated, visa)
                     },
                     Client
                 )
@@ -1840,7 +1860,7 @@ construct_term_set_for_party(PartyID, Def) ->
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
                     then_ = {value, ordsets:from_list([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card_deprecated, visa)
                     ])}
                 }
             ]}
@@ -1877,7 +1897,7 @@ construct_domain_fixture() ->
                 ?cat(3)
             ])},
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa)
+                ?pmt(bank_card_deprecated, visa)
             ])}
         }
     },
@@ -2109,6 +2129,46 @@ construct_domain_fixture() ->
             }
         }
     },
+    Decision1 = {delegates, [
+        #domain_PaymentRoutingDelegate{
+            allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
+            ruleset = ?ruleset(2)
+        },
+        #domain_PaymentRoutingDelegate{
+            allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
+            ruleset = ?ruleset(3)
+        },
+        #domain_PaymentRoutingDelegate{
+            allowed = {constant, true},
+            ruleset = ?ruleset(4)
+        }
+    ]},
+    Decision2 = {candidates, [
+        #domain_PaymentRoutingCandidate{
+            allowed = {constant, true},
+            terminal = ?trm(1)
+        }
+    ]},
+    Decision3 = {candidates, [
+        #domain_PaymentRoutingCandidate{
+            allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
+            terminal = ?trm(2)
+        },
+        #domain_PaymentRoutingCandidate{
+            allowed = {constant, true},
+            terminal = ?trm(3)
+        },
+        #domain_PaymentRoutingCandidate{
+            allowed = {constant, true},
+            terminal = ?trm(1)
+        }
+    ]},
+    Decision4 = {candidates, [
+        #domain_PaymentRoutingCandidate{
+            allowed = {constant, true},
+            terminal = ?trm(3)
+        }
+    ]},
     [
         pm_ct_fixture:construct_currency(?cur(<<"RUB">>)),
         pm_ct_fixture:construct_currency(?cur(<<"USD">>)),
@@ -2118,11 +2178,11 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_category(?cat(2), <<"Generic Store">>, live),
         pm_ct_fixture:construct_category(?cat(3), <<"Guns & Booze">>, live),
 
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        pm_ct_fixture:construct_payment_method(?pmt(bank_card, maestro)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
+        pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, maestro)),
         pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
 
         pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
         pm_ct_fixture:construct_payout_method(?pomt(international_bank_account)),
@@ -2134,6 +2194,11 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_external_account_set(?eas(1)),
 
         pm_ct_fixture:construct_business_schedule(?bussched(1)),
+
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(1), <<"Rule#1">>, Decision1),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(2), <<"Rule#2">>, Decision2),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Rule#3">>, Decision3),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(4), <<"Rule#4">>, Decision4),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
@@ -2177,7 +2242,12 @@ construct_domain_fixture() ->
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
-                external_account_set = {value, ?eas(1)},
+                external_account_set = {decisions, [
+                    #domain_ExternalAccountSetDecision{
+                        if_ = {constant, true},
+                        then_ = {value, ?eas(1)}
+                    }
+                ]},
                 payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
@@ -2220,7 +2290,7 @@ construct_domain_fixture() ->
                         ?cat(2)
                     ])},
                     payment_methods = {value, ordsets:from_list([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card_deprecated, visa)
                     ])}
                 }
             }
@@ -2346,62 +2416,68 @@ construct_domain_fixture() ->
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([?cur(<<"RUB">>)])},
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(      1000, <<"RUB">>)},
-                        {exclusive, ?cash(1000000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {decisions, [
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    {product, {min_of, ?ordset([
-                                        ?fixed(10, <<"RUB">>),
-                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-                                    ])}}
-                                )
-                            ]}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    {product, {min_of, ?ordset([
-                                        ?fixed(10, <<"USD">>),
-                                        ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-                                    ])}}
-                                )
-                            ]}
-                        }
-                    ]}
-                },
-                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
-                    ])},
-                    cash_value = {decisions, [
-                        #domain_CashValueDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                            then_ = {value, ?cash(1000, <<"RUB">>)}
-                        },
-                        #domain_CashValueDecision{
-                            if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
-                            then_ = {value, ?cash(1000, <<"USD">>)}
-                        }
-                    ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                        categories = {value, ?ordset([?cat(1)])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(      1000, <<"RUB">>)},
+                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {decisions, [
+                            #domain_CashFlowDecision{
+                                if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                then_ = {value, [
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        {product, {min_of, ?ordset([
+                                            ?fixed(10, <<"RUB">>),
+                                            ?share_with_rounding_method(
+                                                5, 100, operation_amount, round_half_towards_zero
+                                            )
+                                        ])}}
+                                    )
+                                ]}
+                            },
+                            #domain_CashFlowDecision{
+                                if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                                then_ = {value, [
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        {product, {min_of, ?ordset([
+                                            ?fixed(10, <<"USD">>),
+                                            ?share_with_rounding_method(
+                                                5, 100, operation_amount, round_half_towards_zero
+                                            )
+                                        ])}}
+                                    )
+                                ]}
+                            }
+                        ]}
+                    },
+                    recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+                        categories = {value, ?ordset([?cat(1)])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
+                        ])},
+                        cash_value = {decisions, [
+                            #domain_CashValueDecision{
+                                if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                then_ = {value, ?cash(1000, <<"RUB">>)}
+                            },
+                            #domain_CashValueDecision{
+                                if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
+                                then_ = {value, ?cash(1000, <<"USD">>)}
+                            }
+                        ]}
+                    }
                 }
             }
         }},
@@ -2411,11 +2487,40 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                risk_coverage = high,
-                terms_legacy = #domain_PaymentsProvisionTerms{
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
-                    ])}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])}
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(2),
+            data = #domain_Terminal{
+                name = <<"Brominal 2">>,
+                description = <<"Brominal 2">>,
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])}
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(3),
+            data = #domain_Terminal{
+                name = <<"Brominal 3">>,
+                description = <<"Brominal 3">>,
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])}
+                    }
                 }
             }
         }}

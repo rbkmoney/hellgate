@@ -17,7 +17,7 @@
 -spec create_from_method(method()) -> t().
 
 %% TODO empty strings - ugly hack for dialyzar
-create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSystem}}) ->
+create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
@@ -25,14 +25,14 @@ create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card, PaymentSy
         last_digits = <<"">>,
         is_cvv_empty = true
     }};
-create_from_method(#domain_PaymentMethodRef{id = {bank_card, PaymentSystem}}) ->
+create_from_method(#domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
         bin = <<"">>,
         last_digits = <<"">>
     }};
-create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_TokenizedBankCard{
+create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
         payment_system = PaymentSystem,
         token_provider = TokenProvider,
         tokenization_method = TokenizationMethod
@@ -43,6 +43,21 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card, #domain_T
         bin = <<"">>,
         last_digits = <<"">>,
         token_provider = TokenProvider,
+        tokenization_method = TokenizationMethod
+    }};
+create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
+    payment_system = PaymentSystem,
+    is_cvv_empty = IsCVVEmpty,
+    token_provider = TokenProvider,
+    tokenization_method = TokenizationMethod
+}}}) ->
+    {bank_card, #domain_BankCard{
+        payment_system = PaymentSystem,
+        token = <<"">>,
+        bin = <<"">>,
+        last_digits = <<"">>,
+        token_provider = TokenProvider,
+        is_cvv_empty = IsCVVEmpty,
         tokenization_method = TokenizationMethod
     }};
 create_from_method(#domain_PaymentMethodRef{id = {payment_terminal, TerminalType}}) ->

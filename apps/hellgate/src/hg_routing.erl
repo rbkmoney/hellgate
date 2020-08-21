@@ -11,7 +11,6 @@
 -export([get_payments_terms/2]).
 -export([get_rec_paytools_terms/2]).
 
--export([merge_payment_terms/2]).
 -export([acceptable_terminal/5]).
 
 -export([marshal/1]).
@@ -98,7 +97,6 @@
     conversion_condition    :: condition_score(),
     priority_rating         :: terminal_priority_rating(),
     random_condition        :: integer(),
-    risk_coverage           :: float(),
     availability            :: float(),
     conversion              :: float()
 }).
@@ -394,8 +392,7 @@ calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
 score_routes(Routes, VS) ->
     [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
 
-score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS) ->
-    RiskCoverage = score_risk_coverage(Terminal, VS),
+score_route({_Provider, {_TerminalRef, _Terminal, Priority}, ProviderStatus}, _VS) ->
     {AvailabilityStatus,    ConversionStatus} = ProviderStatus,
     {AvailabilityCondition, Availability}     = get_availability_score(AvailabilityStatus),
     {ConversionCondition,   Conversion}       = get_conversion_score(ConversionStatus),
@@ -406,8 +403,7 @@ score_route({_Provider, {_TerminalRef, Terminal, Priority}, ProviderStatus}, VS)
         availability = Availability,
         conversion = Conversion,
         priority_rating = PriorityRate,
-        random_condition = RandomCondition,
-        risk_coverage = RiskCoverage
+        random_condition = RandomCondition
     }.
 
 get_availability_score({alive, FailRate}) -> {1, 1.0 - FailRate};
@@ -480,27 +476,19 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
 
-%% NOTE
-%% Score ∈ [0.0 .. 1.0]
-%% Higher score is better, e.g. route is more likely to be chosen.
-
-score_risk_coverage(Terminal, VS) ->
-    RiskScore = getv(risk_score, VS),
-    RiskCoverage = Terminal#domain_Terminal.risk_coverage,
-    math:exp(-hg_inspector:compare_risk_score(RiskCoverage, RiskScore)).
-
 -spec get_payments_terms(route(), hg_domain:revision()) -> terms().
 
 get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
-    #domain_Provider{payment_terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
-    #domain_Terminal{terms_legacy = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
-    merge_payment_terms(Terms0, Terms1).
+    #domain_Provider{terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
+    #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
+    Terms = merge_terms(Terms0, Terms1),
+    Terms#domain_ProvisionTermSet.payments.
 
 -spec get_rec_paytools_terms(route(), hg_domain:revision()) -> terms().
 
 get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
-    #domain_Provider{recurrent_paytool_terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
-    Terms.
+    #domain_Provider{terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
+    Terms#domain_ProvisionTermSet.recurrent_paytools.
 
 -spec acceptable_provider(
     route_predestination(),
@@ -512,24 +500,23 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
 
 acceptable_provider(payment, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
-        payment_terms = Terms
+        terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
     {ProviderRef, Provider};
 acceptable_provider(recurrent_paytool, ProviderRef, VS, Revision) ->
     Provider = #domain_Provider{
-        recurrent_paytool_terms = Terms
+        terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
+    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {ProviderRef, Provider};
 acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
     % Use provider check combined from recurrent_paytool and payment check
     Provider = #domain_Provider{
-        payment_terms = PaymentTerms,
-        recurrent_paytool_terms = RecurrentTerms
+        terms = Terms
     } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
-    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {ProviderRef, Provider}.
 
 %%
@@ -572,44 +559,37 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revisio
 ) ->
     unweighted_terminal() | no_return().
 
-acceptable_terminal(payment, TerminalRef, #domain_Provider{payment_terms = Terms0}, VS, Revision) ->
+acceptable_terminal(payment, TerminalRef, Provider, VS, Revision) ->
+    #domain_Provider{
+        terms = ProviderTerms
+    } = Provider,
     Terminal = #domain_Terminal{
-        terms_legacy  = Terms1,
-        risk_coverage = RiskCoverage
+        terms = TerminalTerms
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     % TODO the ability to override any terms makes for uncommon sense
     %      is it better to allow to override only cash flow / refunds terms?
-    Terms = merge_payment_terms(Terms0, Terms1),
-    _ = acceptable_payment_terms(Terms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
+    Terms = merge_terms(ProviderTerms, TerminalTerms),
+    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
     {TerminalRef, Terminal};
-acceptable_terminal(recurrent_paytool, TerminalRef, #domain_Provider{recurrent_paytool_terms = Terms}, VS, Revision) ->
-    Terminal = #domain_Terminal{
-        risk_coverage = RiskCoverage
-    } = hg_domain:get(Revision, {terminal, TerminalRef}),
-    _ = acceptable_recurrent_paytool_terms(Terms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
+acceptable_terminal(recurrent_paytool, TerminalRef, Provider, VS, Revision) ->
+    #domain_Provider{
+        terms = Terms
+    } = Provider,
+    Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
+    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {TerminalRef, Terminal};
 acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
     % Use provider check combined from recurrent_paytool and payment check
     #domain_Provider{
-        payment_terms = PaymentTerms0,
-        recurrent_paytool_terms = RecurrentTerms
+        terms = ProviderTerms
     } = Provider,
     Terminal = #domain_Terminal{
-        terms_legacy  = TerminalTerms,
-        risk_coverage = RiskCoverage
+        terms = TerminalTerms
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
-    PaymentTerms = merge_payment_terms(PaymentTerms0, TerminalTerms),
-    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
-    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
-    _ = acceptable_risk(RiskCoverage, VS),
+    Terms = merge_terms(ProviderTerms, TerminalTerms),
+    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {TerminalRef, Terminal}.
-
-acceptable_risk(RiskCoverage, VS) ->
-    RiskScore = getv(risk_score, VS),
-    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0
-        orelse throw(?rejected({'Terminal', risk_coverage})).
 
 -spec get_terminal_ref(provider_terminal_ref()) ->
     terminal_ref().
@@ -627,6 +607,30 @@ get_terminal_priority(#domain_ProviderTerminalRef{
     {Priority, Weight}.
 
 %%
+
+acceptable_provision_payment_terms(
+    #domain_ProvisionTermSet{
+        payments = PaymentTerms
+    },
+    VS,
+    Revision
+) ->
+    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
+    true;
+acceptable_provision_payment_terms(undefined, _VS, _Revision) ->
+    throw(?rejected({'ProvisionTermSet', undefined})).
+
+acceptable_provision_recurrent_terms(
+    #domain_ProvisionTermSet{
+        recurrent_paytools = RecurrentTerms
+    },
+    VS,
+    Revision
+) ->
+    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
+    true;
+acceptable_provision_recurrent_terms(undefined, _VS, _Revision) ->
+    throw(?rejected({'ProvisionTermSet', undefined})).
 
 acceptable_payment_terms(
     #domain_PaymentsProvisionTerms{
@@ -710,6 +714,23 @@ acceptable_chargeback_terms(_Terms, #{}, _VS, _Revision) ->
 acceptable_chargeback_terms(undefined, _RVS, _VS, _Revision) ->
     throw(?rejected({'PaymentChargebackProvisionTerms', undefined})).
 
+merge_terms(
+    #domain_ProvisionTermSet{
+        payments           = PPayments,
+        recurrent_paytools = PRecurrents
+    },
+    #domain_ProvisionTermSet{
+        payments           = TPayments,
+        recurrent_paytools = _TRecurrents  % TODO: Allow to define recurrent terms in terminal
+    }
+) ->
+    #domain_ProvisionTermSet{
+        payments           = merge_payment_terms(PPayments, TPayments),
+        recurrent_paytools = PRecurrents
+    };
+merge_terms(ProviderTerms, TerminalTerms) ->
+    hg_utils:select_defined(TerminalTerms, ProviderTerms).
+
 -spec merge_payment_terms(terms(), terms()) ->
     terms().
 
@@ -778,7 +799,7 @@ test_term(currency, V, Vs) ->
 test_term(category, V, Vs) ->
     ordsets:is_element(V, Vs);
 test_term(payment_tool, PT, PMs) ->
-    ordsets:is_element(hg_payment_tool:get_method(PT), PMs);
+    hg_payment_tool:has_any_payment_method(PT, PMs);
 test_term(cost, Cost, CashRange) ->
     hg_cash_range:is_inside(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
@@ -881,8 +902,7 @@ record_comparsion_test() ->
         conversion_condition = 1,
         conversion = 0.5,
         priority_rating = 1,
-        random_condition = 1,
-        risk_coverage = 1.0
+        random_condition = 1
     }, {42, 42}},
     Smaller = {#route_scores{
         availability_condition = 0,
@@ -890,8 +910,7 @@ record_comparsion_test() ->
         conversion_condition = 1,
         conversion = 0.5,
         priority_rating = 1,
-        random_condition = 1,
-        risk_coverage = 1.0
+        random_condition = 1
     }, {99, 99}},
     Bigger = select_better_route(Bigger, Smaller).
 

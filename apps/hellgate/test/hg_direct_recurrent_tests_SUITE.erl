@@ -514,7 +514,7 @@ construct_term_set_w_recurrent_paytools() ->
     TermSet = construct_simple_term_set(),
     TermSet#domain_TermSet{recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa)
+                ?pmt(bank_card_deprecated, visa)
             ])}
         }
     }.
@@ -530,8 +530,8 @@ construct_simple_term_set() ->
                 ?cat(1)
             ])},
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card_deprecated, visa),
+                ?pmt(bank_card_deprecated, mastercard)
             ])},
             cash_limit = {decisions, [
                 #domain_CashLimitDecision{
@@ -551,8 +551,8 @@ construct_simple_term_set() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -571,8 +571,8 @@ construct_domain_fixture(TermSet) ->
 
         hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -630,46 +630,48 @@ construct_domain_fixture(TermSet) ->
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([?cur(<<"RUB">>)])},
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(      1000, <<"RUB">>)},
-                        {exclusive, ?cash(1000000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(18, 1000, operation_amount)
-                        )
-                    ]},
-                    holds = #domain_PaymentHoldsProvisionTerms{
-                        lifetime = {decisions, [
-                            #domain_HoldLifetimeDecision{
-                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                    definition = {payment_system_is, visa}
-                                }}}},
-                                then_ = {value, ?hold_lifetime(12)}
-                            }
-                        ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([?cur(<<"RUB">>)])},
+                        categories = {value, ?ordset([?cat(1)])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(      1000, <<"RUB">>)},
+                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(18, 1000, operation_amount)
+                            )
+                        ]},
+                        holds = #domain_PaymentHoldsProvisionTerms{
+                            lifetime = {decisions, [
+                                #domain_HoldLifetimeDecision{
+                                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                        definition = {payment_system_is, visa}
+                                    }}}},
+                                    then_ = {value, ?hold_lifetime(12)}
+                                }
+                            ]}
+                        }
+                    },
+                    recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+                        categories = {value, ?ordset([?cat(1)])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])},
+                        cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
-                },
-                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
-                    ])},
-                    cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
             }
         }},
@@ -677,8 +679,7 @@ construct_domain_fixture(TermSet) ->
             ref = ?trm(1),
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>,
-                risk_coverage = high
+                description = <<"Brominal 1">>
             }
         }}
     ].

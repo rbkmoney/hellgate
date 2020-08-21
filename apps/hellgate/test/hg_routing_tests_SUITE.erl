@@ -20,7 +20,6 @@
 -export([fatal_risk_score_for_route_found/1]).
 -export([prefer_alive/1]).
 -export([prefer_normal_conversion/1]).
--export([prefer_better_risk_score/1]).
 -export([prefer_higher_availability/1]).
 -export([prefer_higher_conversion/1]).
 -export([prefer_weight_over_availability/1]).
@@ -61,7 +60,6 @@ groups() -> [
     {routing_with_fail_rate, [parallel], [
         prefer_alive,
         prefer_normal_conversion,
-        prefer_better_risk_score,
         prefer_higher_availability,
         prefer_higher_conversion,
         prefer_weight_over_availability,
@@ -222,7 +220,7 @@ fatal_risk_score_for_route_found(_C) ->
             {?prv(2), {'PaymentsProvisionTerms', category}},
             {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
         ],
-        rejected_routes := [{?prv(3), ?trm(10), {'Terminal', risk_coverage}}]}
+        rejected_routes := []}
     }}} = Result1,
     hg_context:cleanup(),
     ok.
@@ -298,7 +296,11 @@ prefer_alive(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _}
+    ] = Routes, RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
@@ -318,13 +320,14 @@ prefer_alive(_C) ->
     Result1           = hg_routing:choose_route(FailRatedRoutes1, RejectContext, VS),
     Result2           = hg_routing:choose_route(FailRatedRoutes2, RejectContext, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, Meta0} = Result0,
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, Meta1} = Result1,
-    {ok, #domain_PaymentRoute{provider = ?prv(202)}, Meta2} = Result2,
+    {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, Meta0} = Result0,
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, Meta1} = Result1,
+    {ok, #domain_PaymentRoute{provider = ?prv(202), terminal = ?trm(222)}, Meta2} = Result2,
 
-    #{reject_reason := availability_condition} = Meta0,
-    false = maps:is_key(reject_reason, Meta1),
-    #{reject_reason := availability_condition} = Meta2,
+    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 202}} = Meta0,
+    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 202}} = Meta1,
+    false = maps:is_key(reject_reason, Meta2),
+
 
     ok.
 
@@ -343,7 +346,11 @@ prefer_normal_conversion(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _}
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -362,42 +369,13 @@ prefer_normal_conversion(_C) ->
     Result1 = hg_routing:choose_route(FailRatedRoutes1, RC, VS),
     Result2 = hg_routing:choose_route(FailRatedRoutes2, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, Meta0} = Result0,
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, Meta1} = Result1,
-    {ok, #domain_PaymentRoute{provider = ?prv(202)}, Meta2} = Result2,
+    {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, Meta0} = Result0,
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, Meta1} = Result1,
+    {ok, #domain_PaymentRoute{provider = ?prv(202), terminal = ?trm(222)}, Meta2} = Result2,
 
-    #{reject_reason := conversion_condition} = Meta0,
-    false = maps:is_key(reject_reason, Meta1),
-    #{reject_reason := conversion_condition} = Meta2,
-
-    ok.
-
--spec prefer_better_risk_score(config()) -> test_return().
-prefer_better_risk_score(_C) ->
-    VS = #{
-        category        => ?cat(1),
-        currency        => ?cur(<<"RUB">>),
-        cost            => ?cash(1000, <<"RUB">>),
-        payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id        => <<"12345">>,
-        risk_score      => low,
-        flow            => instant
-    },
-
-    Revision = hg_domain:head(),
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
-
-    {ProviderRefs, TerminalData} = lists:unzip(Routes),
-
-    ProviderStatuses = [{{dead, 1.0}, {normal, 0.0}}, {{alive, 0.3}, {normal, 0.3}}, {{alive, 0.0}, {normal, 0.0}}],
-    FailRatedRoutes  = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
-
-    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
-
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, Meta} = Result,
-    false = maps:is_key(reject_reason, Meta),
+    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 202}} = Meta0,
+    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 202}} = Meta1,
+    false = maps:is_key(reject_reason, Meta2),
 
     ok.
 
@@ -416,16 +394,23 @@ prefer_higher_availability(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _}
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
-    ProviderStatuses = [{{alive, 0.5}, {normal, 0.5}}, {{alive, 0.6}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}],
+    ProviderStatuses = [{{alive, 0.5}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.6}, {normal, 0.5}}],
     FailRatedRoutes  = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{reject_reason := availability}} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, #{
+        reject_reason := availability,
+        preferable_route := #{provider_ref := 202}
+    }} = Result,
 
     ok.
 
@@ -437,24 +422,28 @@ prefer_higher_conversion(_C) ->
         cost            => ?cash(1000, <<"RUB">>),
         payment_tool    => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
         party_id        => <<"12345">>,
-        risk_score      => low,
         flow            => instant
     },
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _}
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
-    ProviderStatuses = [{{alive, 0.5}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}],
+    ProviderStatuses = [{{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.5}}],
     FailRatedRoutes  = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
-
-    {ok, #domain_PaymentRoute{provider = ?prv(200)}, #{reject_reason := conversion}} = Result,
-
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, #{
+        reject_reason    := conversion,
+        preferable_route := #{provider_ref := 202}
+    }} = Result,
     ok.
 
 -spec prefer_weight_over_availability(config()) -> test_return().
@@ -472,7 +461,11 @@ prefer_weight_over_availability(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _}
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -481,7 +474,7 @@ prefer_weight_over_availability(_C) ->
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, _Meta} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, _Meta} = Result,
 
     ok.
 
@@ -500,16 +493,20 @@ prefer_weight_over_conversion(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[
+      {{?prv(200), _}, _},
+      {{?prv(201), _}, _},
+      {{?prv(202), _}, _}
+    ] = Routes, RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
-    ProviderStatuses = [{{alive, 0.3}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.5}}, {{alive, 0.3}, {normal, 0.3}}],
+    ProviderStatuses = [{{alive, 0.3}, {normal, 0.5}}, {{alive, 0.3}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
     FailRatedRoutes  = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(201)}, _Meta} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, _Meta} = Result,
 
     ok.
 
@@ -564,16 +561,14 @@ routing_with_fail_rate_fixture(Revision) ->
             ref = ?trm(111),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
         {terminal, #domain_TerminalObject{
             ref = ?trm(222),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = high
+                description = <<"Euroset">>
             }
         }},
         {provider, #domain_ProviderObject{
@@ -603,33 +598,35 @@ routing_with_fail_rate_fixture(Revision) ->
                 },
                 abs_account = <<"0987654321">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(1)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(payment_terminal, euroset),
-                        ?pmt(digital_wallet, qiwi)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, <<"RUB">>)},
-                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(21, 1000, operation_amount)
-                        )
-                    ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([
+                            ?cur(<<"RUB">>)
+                        ])},
+                        categories = {value, ?ordset([
+                            ?cat(1)
+                        ])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(payment_terminal, euroset),
+                            ?pmt(digital_wallet, qiwi)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(    1000, <<"RUB">>)},
+                            {exclusive, ?cash(10000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(21, 1000, operation_amount)
+                            )
+                        ]}
+                    }
                 }
             }
         }},
@@ -660,33 +657,35 @@ routing_with_fail_rate_fixture(Revision) ->
                 },
                 abs_account = <<"0987654321">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(1)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(payment_terminal, euroset),
-                        ?pmt(digital_wallet, qiwi)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, <<"RUB">>)},
-                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(21, 1000, operation_amount)
-                        )
-                    ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([
+                            ?cur(<<"RUB">>)
+                        ])},
+                        categories = {value, ?ordset([
+                            ?cat(1)
+                        ])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(payment_terminal, euroset),
+                            ?pmt(digital_wallet, qiwi)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(    1000, <<"RUB">>)},
+                            {exclusive, ?cash(10000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(21, 1000, operation_amount)
+                            )
+                        ]}
+                    }
                 }
             }
         }},
@@ -717,33 +716,35 @@ routing_with_fail_rate_fixture(Revision) ->
                 },
                 abs_account = <<"0987654321">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(1)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(payment_terminal, euroset),
-                        ?pmt(digital_wallet, qiwi)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, <<"RUB">>)},
-                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(21, 1000, operation_amount)
-                        )
-                    ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([
+                            ?cur(<<"RUB">>)
+                        ])},
+                        categories = {value, ?ordset([
+                            ?cat(1)
+                        ])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(payment_terminal, euroset),
+                            ?pmt(digital_wallet, qiwi)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(    1000, <<"RUB">>)},
+                            {exclusive, ?cash(10000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(21, 1000, operation_amount)
+                            )
+                        ]}
+                    }
                 }
             }
         }}
@@ -766,13 +767,13 @@ construct_domain_fixture() ->
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
                     then_ = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard),
-                        ?pmt(bank_card, jcb),
+                        ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card_deprecated, mastercard),
+                        ?pmt(bank_card_deprecated, jcb),
                         ?pmt(payment_terminal, euroset),
                         ?pmt(digital_wallet, qiwi),
-                        ?pmt(empty_cvv_bank_card, visa),
-                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
+                        ?pmt(empty_cvv_bank_card_deprecated, visa),
+                        ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
                     ])}
                 }
             ]},
@@ -799,8 +800,8 @@ construct_domain_fixture() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -811,8 +812,8 @@ construct_domain_fixture() ->
             },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 fees = {value, [
                     ?cfpost(
@@ -838,8 +839,8 @@ construct_domain_fixture() ->
         },
         recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card_deprecated, visa),
+                ?pmt(bank_card_deprecated, mastercard)
             ])}
         }
     },
@@ -857,8 +858,8 @@ construct_domain_fixture() ->
                 ?cat(6)
             ])},
             payment_methods = {value, ?ordset([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card_deprecated, visa),
+                ?pmt(bank_card_deprecated, mastercard)
             ])},
             cash_limit = {decisions, [
                 % проверяем, что условие никогда не отрабатывает
@@ -912,8 +913,8 @@ construct_domain_fixture() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -924,8 +925,8 @@ construct_domain_fixture() ->
             },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 fees = {value, [
                 ]},
@@ -951,13 +952,13 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(5), <<"Timeouter">>, live),
         hg_ct_fixture:construct_category(?cat(6), <<"MachineFailer">>, live),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, jcb)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, jcb)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
-        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
+        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -1156,131 +1157,133 @@ construct_domain_fixture() ->
                 },
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(1)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard),
-                        ?pmt(bank_card, jcb),
-                        ?pmt(empty_cvv_bank_card, visa),
-                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(      1000, <<"RUB">>)},
-                        {exclusive, ?cash(1000000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {decisions, [
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system_is, visa}
-                            }}}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(18, 1000, operation_amount)
-                                )
-                            ]}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system_is, mastercard}
-                            }}}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(19, 1000, operation_amount)
-                                )
-                            ]}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system_is, jcb}
-                            }}}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(20, 1000, operation_amount)
-                                )
-                            ]}
-                        },
-                        #domain_CashFlowDecision{
-                            if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system, #domain_PaymentSystemCondition{
-                                    payment_system_is = visa,
-                                    token_provider_is = applepay,
-                                    tokenization_method_is = dpan
-                                }}
-                            }}}},
-                            then_ = {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(20, 1000, operation_amount)
-                                )
-                            ]}
-                        }
-                    ]},
-                    holds = #domain_PaymentHoldsProvisionTerms{
-                        lifetime = {decisions, [
-                            #domain_HoldLifetimeDecision{
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([
+                            ?cur(<<"RUB">>)
+                        ])},
+                        categories = {value, ?ordset([
+                            ?cat(1)
+                        ])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard),
+                            ?pmt(bank_card_deprecated, jcb),
+                            ?pmt(empty_cvv_bank_card_deprecated, visa),
+                            ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(      1000, <<"RUB">>)},
+                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {decisions, [
+                            #domain_CashFlowDecision{
                                 if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
                                     definition = {payment_system_is, visa}
                                 }}}},
-                                then_ = {value, ?hold_lifetime(12)}
+                                then_ = {value, [
+                                    ?cfpost(
+                                        {provider, settlement},
+                                        {merchant, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    ),
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        ?share(18, 1000, operation_amount)
+                                    )
+                                ]}
+                            },
+                            #domain_CashFlowDecision{
+                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                    definition = {payment_system_is, mastercard}
+                                }}}},
+                                then_ = {value, [
+                                    ?cfpost(
+                                        {provider, settlement},
+                                        {merchant, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    ),
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        ?share(19, 1000, operation_amount)
+                                    )
+                                ]}
+                            },
+                            #domain_CashFlowDecision{
+                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                    definition = {payment_system_is, jcb}
+                                }}}},
+                                then_ = {value, [
+                                    ?cfpost(
+                                        {provider, settlement},
+                                        {merchant, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    ),
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        ?share(20, 1000, operation_amount)
+                                    )
+                                ]}
+                            },
+                            #domain_CashFlowDecision{
+                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                    definition = {payment_system, #domain_PaymentSystemCondition{
+                                        payment_system_is = visa,
+                                        token_provider_is = applepay,
+                                        tokenization_method_is = dpan
+                                    }}
+                                }}}},
+                                then_ = {value, [
+                                    ?cfpost(
+                                        {provider, settlement},
+                                        {merchant, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    ),
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        ?share(20, 1000, operation_amount)
+                                    )
+                                ]}
                             }
-                        ]}
-                    },
-                    refunds = #domain_PaymentRefundsProvisionTerms{
-                        cash_flow = {value, [
-                            ?cfpost(
-                                {merchant, settlement},
-                                {provider, settlement},
-                                ?share(1, 1, operation_amount)
-                            )
                         ]},
-                        partial_refunds = #domain_PartialRefundsProvisionTerms{
-                            cash_limit = {value, ?cashrng(
-                                {inclusive, ?cash(        10, <<"RUB">>)},
-                                {exclusive, ?cash(1000000000, <<"RUB">>)}
-                            )}
+                        holds = #domain_PaymentHoldsProvisionTerms{
+                            lifetime = {decisions, [
+                                #domain_HoldLifetimeDecision{
+                                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
+                                        definition = {payment_system_is, visa}
+                                    }}}},
+                                    then_ = {value, ?hold_lifetime(12)}
+                                }
+                            ]}
+                        },
+                        refunds = #domain_PaymentRefundsProvisionTerms{
+                            cash_flow = {value, [
+                                ?cfpost(
+                                    {merchant, settlement},
+                                    {provider, settlement},
+                                    ?share(1, 1, operation_amount)
+                                )
+                            ]},
+                            partial_refunds = #domain_PartialRefundsProvisionTerms{
+                                cash_limit = {value, ?cashrng(
+                                    {inclusive, ?cash(        10, <<"RUB">>)},
+                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                )}
+                            }
                         }
+                    },
+                    recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+                        categories = {value, ?ordset([?cat(1)])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
+                        ])},
+                        cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
-                },
-                recurrent_paytool_terms = #domain_RecurrentPaytoolsProvisionTerms{
-                    categories = {value, ?ordset([?cat(1)])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
-                    ])},
-                    cash_value = {value, ?cash(1000, <<"RUB">>)}
                 }
             }
         }},
@@ -1288,8 +1291,7 @@ construct_domain_fixture() ->
             ref = ?trm(1),
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>,
-                risk_coverage = high
+                description = <<"Brominal 1">>
             }
         }},
 
@@ -1307,49 +1309,51 @@ construct_domain_fixture() ->
                 },
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(2),
-                        ?cat(4),
-                        ?cat(5),
-                        ?cat(6)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, <<"RUB">>)},
-                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(16, 1000, operation_amount)
-                        )
-                    ]},
-                    refunds = #domain_PaymentRefundsProvisionTerms{
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([
+                            ?cur(<<"RUB">>)
+                        ])},
+                        categories = {value, ?ordset([
+                            ?cat(2),
+                            ?cat(4),
+                            ?cat(5),
+                            ?cat(6)
+                        ])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(    1000, <<"RUB">>)},
+                            {exclusive, ?cash(10000000, <<"RUB">>)}
+                        )},
                         cash_flow = {value, [
                             ?cfpost(
-                                {merchant, settlement},
                                 {provider, settlement},
+                                {merchant, settlement},
                                 ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(16, 1000, operation_amount)
                             )
                         ]},
-                        partial_refunds = #domain_PartialRefundsProvisionTerms{
-                            cash_limit = {value, ?cashrng(
-                                {inclusive, ?cash(        10, <<"RUB">>)},
-                                {exclusive, ?cash(1000000000, <<"RUB">>)}
-                            )}
+                        refunds = #domain_PaymentRefundsProvisionTerms{
+                            cash_flow = {value, [
+                                ?cfpost(
+                                    {merchant, settlement},
+                                    {provider, settlement},
+                                    ?share(1, 1, operation_amount)
+                                )
+                            ]},
+                            partial_refunds = #domain_PartialRefundsProvisionTerms{
+                                cash_limit = {value, ?cashrng(
+                                    {inclusive, ?cash(        10, <<"RUB">>)},
+                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                )}
+                            }
                         }
                     }
                 }
@@ -1360,39 +1364,40 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Drominal 1">>,
                 description = <<"Drominal 1">>,
-                risk_coverage = low,
-                terms_legacy = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(2)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(bank_card, visa)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, <<"RUB">>)},
-                        {exclusive, ?cash( 5000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(16, 1000, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {external, outcome},
-                            ?fixed(20, <<"RUB">>),
-                            <<"Assist fee">>
-                        )
-                    ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([
+                            ?cur(<<"RUB">>)
+                        ])},
+                        categories = {value, ?ordset([
+                            ?cat(2)
+                        ])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(    1000, <<"RUB">>)},
+                            {exclusive, ?cash( 5000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(16, 1000, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {external, outcome},
+                                ?fixed(20, <<"RUB">>),
+                                <<"Assist fee">>
+                            )
+                        ]}
+                    }
                 }
             }
         }},
@@ -1400,8 +1405,7 @@ construct_domain_fixture() ->
             ref = ?trm(7),
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
-                description = <<"Terminal 7">>,
-                risk_coverage = high
+                description = <<"Terminal 7">>
             }
         }},
 
@@ -1419,37 +1423,39 @@ construct_domain_fixture() ->
                 },
                 abs_account = <<"0987654321">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>),
-                        ?cur(<<"EUR">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(1)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(payment_terminal, euroset),
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard),
-                        ?pmt(bank_card, jcb),
-                        ?pmt(digital_wallet, qiwi)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, <<"RUB">>)},
-                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(21, 1000, operation_amount)
-                        )
-                    ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([
+                            ?cur(<<"RUB">>),
+                            ?cur(<<"EUR">>)
+                        ])},
+                        categories = {value, ?ordset([
+                            ?cat(1)
+                        ])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(payment_terminal, euroset),
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard),
+                            ?pmt(bank_card_deprecated, jcb),
+                            ?pmt(digital_wallet, qiwi)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(    1000, <<"RUB">>)},
+                            {exclusive, ?cash(10000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(21, 1000, operation_amount)
+                            )
+                        ]}
+                    }
                 }
             }
         }},
@@ -1457,8 +1463,7 @@ construct_domain_fixture() ->
             ref = ?trm(10),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
 
@@ -1476,12 +1481,14 @@ construct_domain_fixture() ->
                 },
                 abs_account = <<"0987654321">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = undefined,
-                    categories = undefined,
-                    payment_methods = undefined,
-                    cash_limit = undefined,
-                    cash_flow = undefined
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = undefined,
+                        categories = undefined,
+                        payment_methods = undefined,
+                        cash_limit = undefined,
+                        cash_flow = undefined
+                    }
                 }
             }
         }}
@@ -1506,16 +1513,14 @@ terminal_priority_fixture(Revision, _C) ->
             ref = ?trm(111),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
         {terminal, #domain_TerminalObject{
             ref = ?trm(222),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>,
-                risk_coverage = low
+                description = <<"Euroset">>
             }
         }},
         {provider, #domain_ProviderObject{
@@ -1561,33 +1566,35 @@ terminal_priority_fixture(Revision, _C) ->
                 },
                 abs_account = <<"0987654321">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                payment_terms = #domain_PaymentsProvisionTerms{
-                    currencies = {value, ?ordset([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ?ordset([
-                        ?cat(1)
-                    ])},
-                    payment_methods = {value, ?ordset([
-                        ?pmt(payment_terminal, euroset),
-                        ?pmt(digital_wallet, qiwi)
-                    ])},
-                    cash_limit = {value, ?cashrng(
-                        {inclusive, ?cash(    1000, <<"RUB">>)},
-                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                    )},
-                    cash_flow = {value, [
-                        ?cfpost(
-                            {provider, settlement},
-                            {merchant, settlement},
-                            ?share(1, 1, operation_amount)
-                        ),
-                        ?cfpost(
-                            {system, settlement},
-                            {provider, settlement},
-                            ?share(21, 1000, operation_amount)
-                        )
-                    ]}
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies = {value, ?ordset([
+                            ?cur(<<"RUB">>)
+                        ])},
+                        categories = {value, ?ordset([
+                            ?cat(1)
+                        ])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(payment_terminal, euroset),
+                            ?pmt(digital_wallet, qiwi)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(    1000, <<"RUB">>)},
+                            {exclusive, ?cash(10000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(21, 1000, operation_amount)
+                            )
+                        ]}
+                    }
                 }
             }
         }}

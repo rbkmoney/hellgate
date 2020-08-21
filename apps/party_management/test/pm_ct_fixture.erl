@@ -26,6 +26,7 @@
 -export([construct_business_schedule/1]).
 -export([construct_criterion/3]).
 -export([construct_term_set_hierarchy/3]).
+-export([construct_payment_routing_ruleset/3]).
 
 %%
 
@@ -38,6 +39,8 @@
 -type template()    :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms()       :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime()    :: dmsl_domain_thrift:'Lifetime'() | undefined.
+-type payment_routing_ruleset() :: dmsl_domain_thrift:'PaymentRoutingRulesetRef'().
+
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
 
@@ -100,7 +103,9 @@ construct_category(Ref, Name, Type) ->
 construct_payment_method(?pmt(_Type, ?tkz_bank_card(Name, _)) = Ref) when is_atom(Name) ->
     construct_payment_method(Name, Ref);
 construct_payment_method(?pmt(_Type, Name) = Ref) when is_atom(Name) ->
-    construct_payment_method(Name, Ref).
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(_Type, #domain_BankCardPaymentMethod{}) = Ref) ->
+    construct_payment_method(Ref#domain_BankCardPaymentMethod.payment_system, Ref).
 
 construct_payment_method(Name, Ref) ->
     Def = erlang:atom_to_binary(Name, unicode),
@@ -305,5 +310,18 @@ construct_term_set_hierarchy(Ref, ParentRef, TermSet) ->
                     terms = TermSet
                 }
             ]
+        }
+    }}.
+
+
+-spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) ->
+    dmsl_domain_thrift:'PaymentRoutingRulesetObject'().
+
+construct_payment_routing_ruleset(Ref, Name, Decisions) ->
+    {payment_routing_rules, #domain_PaymentRoutingRulesObject{
+        ref = Ref,
+        data = #domain_PaymentRoutingRuleset{
+            name = Name,
+            decisions = Decisions
         }
     }}.
