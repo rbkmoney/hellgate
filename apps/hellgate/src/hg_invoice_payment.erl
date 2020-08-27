@@ -72,7 +72,7 @@
 -export([process_signal/3]).
 -export([process_call/3]).
 
--export([merge_change/3]).
+-export([merge_change/4]).
 -export([collapse_changes/2]).
 
 -export([get_log_params/2]).
@@ -144,7 +144,8 @@
     repair_scenario        :: undefined | hg_invoice_repair:scenario(),
     capture_params         :: undefined | capture_params(),
     failure                :: undefined | failure(),
-    timings                :: undefined | hg_timings:t()
+    timings                :: undefined | hg_timings:t(),
+    latest_change_at       :: undefined | hg_datetime:timestamp()
 }).
 
 -record(refund_st, {
@@ -2800,10 +2801,21 @@ throw_invalid_recurrent_parent(Details) ->
     validation => strict
 }.
 
+
+-spec merge_change(change(), st() | undefined, change_opts(), hg_datetime:timestamp() | undefined) -> st().
+
+merge_change(Change, St, Opts, OccurredAt)
+when OccurredAt =/= undefined,
+     St         =/= undefined ->
+    merge_change(Change, St#st{latest_change_at = OccurredAt}, Opts);
+merge_change(Change, St, Opts, _OccurredAt) ->
+    merge_change(Change, St, Opts).
+
 -spec merge_change(change(), st() | undefined, change_opts()) -> st().
 
 merge_change(Change, undefined, Opts) ->
-    merge_change(Change, #st{activity = {payment, new}}, Opts);
+    Now = hg_datetime:format_now(),
+    merge_change(Change, #st{activity = {payment, new}, latest_change_at = Now}, Opts);
 merge_change(Change = ?payment_started(Payment), #st{} = St, Opts) ->
     _ = validate_transition({payment, new}, Change, St, Opts),
     St#st{
