@@ -912,9 +912,6 @@ handle_payment_result({done, {Changes, Action}}, PaymentID, PaymentSession, #st{
             }
     end.
 
-wrap_payment_changes(PaymentID, Changes) ->
-    [?payment_ev(PaymentID, C) || C <- Changes].
-
 wrap_payment_changes(PaymentID, Changes, OccurredAt) ->
     [?payment_ev(PaymentID, C, OccurredAt) || C <- Changes].
 
