@@ -610,12 +610,13 @@ handle_call({{'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID,
         cash = Cash,
         cart = Cart
     } = Params,
+    OccurredAt = hg_datetime:format_now(),
     PaymentSession = get_payment_session(PaymentID, St),
     Opts = get_payment_opts(St),
     {ok, {Changes, Action}} = capture_payment(PaymentSession, Reason, Cash, Cart, Opts),
     #{
         response => ok,
-        changes => wrap_payment_changes(PaymentID, Changes),
+        changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
         action => Action,
         state => St
     };
@@ -624,10 +625,11 @@ handle_call({{'Invoicing', 'CancelPayment'}, [_UserInfo, _InvoiceID, PaymentID, 
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
+    OccurredAt = hg_datetime:format_now(),
     {ok, {Changes, Action}} = hg_invoice_payment:cancel(PaymentSession, Reason),
     #{
         response => ok,
-        changes => wrap_payment_changes(PaymentID, Changes),
+        changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
         action => Action,
         state => St
     };
@@ -833,11 +835,12 @@ do_start_payment(PaymentID, PaymentParams, St) ->
     _ = assert_invoice_status(unpaid, St),
     _ = assert_no_pending_payment(St),
     Opts = get_payment_opts(St),
+    OccurredAt = hg_datetime:format_now(),
     % TODO make timer reset explicit here
     {PaymentSession, {Changes, Action}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
     #{
         response => get_payment_state(PaymentSession),
-        changes  => wrap_payment_changes(PaymentID, Changes),
+        changes  => wrap_payment_changes(PaymentID, Changes, OccurredAt),
         action   => Action,
         state    => St
     }.
@@ -856,52 +859,54 @@ process_payment_call(Call, PaymentID, PaymentSession, St) ->
     PaymentResult1#{response => Response}.
 
 handle_payment_result({next, {Changes, Action}}, PaymentID, _PaymentSession, St) ->
+    OccurredAt = hg_datetime:format_now(),
     #{
-        changes => wrap_payment_changes(PaymentID, Changes),
+        changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
         action  => Action,
         state   => St
     };
-handle_payment_result({done, {Changes1, Action}}, PaymentID, PaymentSession, #st{invoice = Invoice} = St) ->
-    PaymentSession1 = hg_invoice_payment:collapse_changes(Changes1, PaymentSession),
+handle_payment_result({done, {Changes, Action}}, PaymentID, PaymentSession, #st{invoice = Invoice} = St) ->
+    PaymentSession1 = hg_invoice_payment:collapse_changes(Changes, PaymentSession),
     Payment = hg_invoice_payment:get_payment(PaymentSession1),
+    OccurredAt = hg_datetime:format_now(),
     case get_payment_status(Payment) of
         ?processed() ->
             #{
-                changes => wrap_payment_changes(PaymentID, Changes1),
+                changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
                 action  => Action,
                 state   => St
             };
         ?captured() ->
-            Changes2 = case Invoice of
+            MaybePaid = case Invoice of
                 #domain_Invoice{status = ?invoice_paid()} ->
                     [];
                 #domain_Invoice{} ->
                     [?invoice_status_changed(?invoice_paid())]
             end,
             #{
-                changes => wrap_payment_changes(PaymentID, Changes1) ++ Changes2,
+                changes => wrap_payment_changes(PaymentID, Changes, OccurredAt) ++ MaybePaid,
                 action  => Action,
                 state   => St
             };
         ?refunded() ->
             #{
-                changes => wrap_payment_changes(PaymentID, Changes1),
+                changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
                 state   => St
             };
         ?charged_back() ->
             #{
-                changes => wrap_payment_changes(PaymentID, Changes1),
+                changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
                 state   => St
             };
         ?failed(_) ->
             #{
-                changes => wrap_payment_changes(PaymentID, Changes1),
+                changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
                 action  => set_invoice_timer(Action, St),
                 state   => St
             };
         ?cancelled() ->
             #{
-                changes => wrap_payment_changes(PaymentID, Changes1),
+                changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
                 action  => set_invoice_timer(Action, St),
                 state   => St
             }
@@ -1153,9 +1158,9 @@ merge_change(?invoice_adjustment_ev(ID, Event), St, _Opts) ->
         _ ->
             St2
     end;
-merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
+merge_change(?payment_ev(PaymentID, Change, OccurredAt), St, Opts) ->
     PaymentSession = try_get_payment_session(PaymentID, St),
-    PaymentSession1 = hg_invoice_payment:merge_change(Change, PaymentSession, Opts),
+    PaymentSession1 = hg_invoice_payment:merge_change(Change, PaymentSession, Opts, OccurredAt),
     St1 = set_payment_session(PaymentID, PaymentSession1, St),
     case hg_invoice_payment:get_activity(PaymentSession1) of
         A when A =/= idle ->
