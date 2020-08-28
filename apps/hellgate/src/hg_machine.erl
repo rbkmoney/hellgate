@@ -254,8 +254,9 @@ call_automaton(Function, Args) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
+    ArgsList = tuple_to_list(Args),
     scoper:scope(machine,
-        fun() -> handle_function_(Func, Args, Opts) end
+        fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
 -spec handle_function_(func(), woody:args(), #{ns := ns()}) -> term() | no_return().

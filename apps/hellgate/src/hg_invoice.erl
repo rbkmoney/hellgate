@@ -134,8 +134,9 @@ get_payment_opts(Revision, _, St = #st{invoice = Invoice}) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
+    ArgsList = tuple_to_list(Args),
     scoper:scope(invoicing,
-        fun() -> handle_function_(Func, Args, Opts) end
+        fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
 -spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->

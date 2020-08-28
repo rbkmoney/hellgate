@@ -73,9 +73,11 @@ choose_provider_account(Currency, Accounts) ->
     external_account() | undefined.
 
 choose_external_account(Currency, VS, Revision) ->
-    Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
+    {Client, Context} = get_party_client(),
+    Varset = hg_varset:prepare_varset(VS),
+    {ok, Globals} = party_client_thrift:compute_globals(#domain_GlobalsRef{}, Revision, Varset, Client, Context),
     ExternalAccountSetSelector = Globals#domain_Globals.external_account_set,
-    case pm_selector:reduce(ExternalAccountSetSelector, VS, Revision) of
+    case ExternalAccountSetSelector of
         {value, ExternalAccountSetRef} ->
             ExternalAccountSet = hg_domain:get(Revision, {external_account_set, ExternalAccountSetRef}),
             genlib_map:get(
@@ -85,6 +87,12 @@ choose_external_account(Currency, VS, Revision) ->
         _ ->
             undefined
     end.
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.
 
 get_party_client() ->
     HgContext = hg_context:load(),

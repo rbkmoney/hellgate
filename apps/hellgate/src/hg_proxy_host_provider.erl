@@ -25,11 +25,11 @@
     term() | no_return()
     when Args :: tag() | {provider, callback()}.
 
-handle_function('ProcessPaymentCallback', [Tag, Callback], _) ->
+handle_function('ProcessPaymentCallback', {Tag, Callback}, _) ->
     handle_callback_result(hg_invoice:process_callback(Tag, {provider, Callback}));
-handle_function('ProcessRecurrentTokenCallback', [Tag, Callback], _) ->
+handle_function('ProcessRecurrentTokenCallback', {Tag, Callback}, _) ->
     handle_callback_result(hg_recurrent_paytool:process_callback(Tag, {provider, Callback}));
-handle_function('GetPayment', [Tag], _) ->
+handle_function('GetPayment', {Tag}, _) ->
     case hg_invoice:get({tag, Tag}) of
         {ok, InvoiceSt} ->
             case hg_invoice:get_payment({tag, Tag}, InvoiceSt) of

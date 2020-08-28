@@ -10,8 +10,9 @@
     term()| no_return().
 
 handle_function(Func, Args, Opts) ->
+    ArgsList = tuple_to_list(Args),
     scoper:scope(claimmgmt,
-        fun() -> handle_function_(Func, Args, Opts) end
+        fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
 -spec handle_function_(woody:func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
