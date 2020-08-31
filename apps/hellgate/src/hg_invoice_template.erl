@@ -60,7 +60,7 @@ handle_function(Func, Args, Opts) ->
         fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
--spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function_(woody:func(), list(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
 handle_function_('Create', [UserInfo, Params], _Opts) ->
