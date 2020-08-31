@@ -72,7 +72,7 @@
 -export([process_signal/3]).
 -export([process_call/3]).
 
--export([merge_change/4]).
+-export([merge_change/3]).
 -export([collapse_changes/2]).
 
 -export([get_log_params/2]).
@@ -2790,7 +2790,7 @@ throw_invalid_recurrent_parent(Details) ->
 
 -spec merge_change(change(), st() | undefined, change_opts()) -> st().
 
-merge_change(Change, undefined, Opts = #{occurred_at := OccuredAt}) ->
+merge_change(Change, undefined, Opts = #{occurred_at := OccurredAt}) ->
     merge_change(Change, #st{activity = {payment, new}, latest_change_at = OccurredAt}, Opts);
 merge_change(Change, undefined, Opts) ->
     merge_change(Change, #st{activity = {payment, new}}, Opts);
