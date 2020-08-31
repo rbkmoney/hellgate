@@ -28,67 +28,30 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
         rejected_routes => []
     },
     PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing,
-    RuleSet = get_rule_set(PaymentRouting#domain_PaymentRouting.policies, Revision),
-    RuleSetDeny = get_rule_set(PaymentRouting#domain_PaymentRouting.prohibitions, Revision),
-    Candidates = reduce(RuleSet, VS, Revision),
+    RuleSet = compute_rule_set(PaymentRouting#domain_PaymentRouting.policies, VS, Revision),
+    RuleSetDeny = compute_rule_set(PaymentRouting#domain_PaymentRouting.prohibitions, VS, Revision),
+    Candidates = get_decisions(RuleSet),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
-    Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
+    Prohibitions = get_table_prohibitions(RuleSetDeny),
     {Accepted, RejectedRoutes} = filter_routes(RatedRoutes, Prohibitions),
     {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}.
 
-get_table_prohibitions(RuleSetDeny, VS, Revision) ->
-    Candidates = reduce(RuleSetDeny, VS, Revision),
+get_table_prohibitions(RuleSetDeny) ->
+    Candidates = get_decisions(RuleSetDeny),
     lists:foldl(fun(C, AccIn) ->
         AccIn#{get_terminal_ref(C) => get_description(C)}
     end, #{}, Candidates).
 
-reduce(RuleSet, VS, Revision) ->
+get_decisions(RuleSet) ->
     #domain_PaymentRoutingRuleset{
         decisions = Decisions
     } = RuleSet,
-    reduce_decisions(Decisions, VS, Revision).
-
-reduce_decisions({_, []}, _, _) ->
-    [];
-reduce_decisions({delegates, Delegates}, VS, Rev) ->
-    reduce_delegates_decision(Delegates, VS, Rev);
-reduce_decisions({candidates, Candidates}, VS, Rev) ->
-    reduce_candidates_decision(Candidates, VS, Rev).
-
-reduce_delegates_decision([], _VS, _Rev) ->
-    [];
-reduce_delegates_decision([D | Delegates], VS, Rev) ->
-    Predicate = D#domain_PaymentRoutingDelegate.allowed,
-    RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
-    case pm_selector:reduce_predicate(Predicate, VS, Rev) of
-        ?const(false) ->
-            reduce_delegates_decision(Delegates, VS, Rev);
-        ?const(true) ->
-            reduce(get_rule_set(RuleSetRef, Rev), VS, Rev);
-        _ ->
-            logger:warning(
-                "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~n Varset:~n~p",
-                [Predicate, VS]
-            ),
-            []
+    case Decisions of
+        {delegates, Delegates} ->
+            Delegates;
+        {candidates, Candidates} ->
+            Candidates
     end.
-
-reduce_candidates_decision(Candidates, VS, Rev) ->
-    lists:foldl(fun(C, AccIn) ->
-        Predicate = C#domain_PaymentRoutingCandidate.allowed,
-        case pm_selector:reduce_predicate(Predicate, VS, Rev) of
-            ?const(false) ->
-                AccIn;
-            ?const(true) ->
-                [C | AccIn];
-            _ ->
-                logger:warning(
-                    "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
-                    [Predicate, VS]
-                ),
-                AccIn
-        end
-    end, [], Candidates).
 
 collect_routes(Predestination, Candidates, VS, Revision) ->
     lists:foldl(
@@ -131,11 +94,20 @@ get_route(TerminalRef, Revision) ->
     } = hg_domain:get(Revision, {terminal, TerminalRef}),
     {Terminal, hg_domain:get(Revision, {provider, ProviderRef})}.
 
-get_rule_set(RuleSetRef, Revision) ->
-    hg_domain:get(Revision, {payment_routing_rules, RuleSetRef}).
+compute_rule_set(RuleSetRef, VS, Revision) ->
+    {Client, Context} = get_party_client(),
+    PreparedVarset = hg_varset:prepare_varset(VS),
+    {ok, RuleSet} = party_client_thrift:compute_payment_routing_ruleset(RuleSetRef, Revision, PreparedVarset, Client, Context),
+    RuleSet.
 
 get_terminal_ref(Candidate) ->
     Candidate#domain_PaymentRoutingCandidate.terminal.
 
 get_description(Candidate) ->
     Candidate#domain_PaymentRoutingCandidate.description.
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.
