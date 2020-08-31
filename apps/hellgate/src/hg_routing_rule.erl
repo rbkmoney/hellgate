@@ -97,7 +97,8 @@ get_route(TerminalRef, Revision) ->
 compute_rule_set(RuleSetRef, VS, Revision) ->
     {Client, Context} = get_party_client(),
     PreparedVarset = hg_varset:prepare_varset(VS),
-    {ok, RuleSet} = party_client_thrift:compute_payment_routing_ruleset(RuleSetRef, Revision, PreparedVarset, Client, Context),
+    {ok, RuleSet} = party_client_thrift:compute_payment_routing_ruleset(
+        RuleSetRef, Revision, PreparedVarset, Client, Context),
     RuleSet.
 
 get_terminal_ref(Candidate) ->

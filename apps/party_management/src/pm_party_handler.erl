@@ -189,9 +189,7 @@ handle_function_('ComputePaymentRoutingRuleset', Args, _Opts) ->
     ok = assume_user_identity(UserInfo),
     RuleSet = get_payment_routing_ruleset(RuleSetRef, DomainRevision),
     VS = prepare_varset(Varset),
-    RS = pm_ruleset:reduce_payment_routing_ruleset(RuleSet, VS, DomainRevision),
-    _ = logger:error("RuleSet: ~p~n", [RS]),
-    RS;
+    pm_ruleset:reduce_payment_routing_ruleset(RuleSet, VS, DomainRevision);
 
 %% PartyMeta
 
