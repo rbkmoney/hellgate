@@ -457,7 +457,11 @@ terms_retrieval(C) ->
     ok = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
     TermSet2 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, mastercard), ?pmt(bank_card, visa), ?pmt(payment_terminal, euroset)]}
+        payment_methods = {value, [
+            ?pmt(bank_card_deprecated, mastercard),
+            ?pmt(bank_card_deprecated, visa),
+            ?pmt(payment_terminal, euroset)
+        ]}
     }} = TermSet2,
     Lifetime = make_lifetime(0, 0, 2),
     Cost = make_cost(unlim, sale, "1%"),
@@ -534,8 +538,8 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_system_account_set(?sas(1)),
         hg_ct_fixture:construct_external_account_set(?eas(1)),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
 
@@ -587,8 +591,8 @@ construct_term_set_for_cost(LowerBound, UpperBound) ->
                     )}},
                     then_ = {value, ordsets:from_list(
                         [
-                            ?pmt(bank_card, mastercard),
-                            ?pmt(bank_card, visa),
+                            ?pmt(bank_card_deprecated, mastercard),
+                            ?pmt(bank_card_deprecated, visa),
                             ?pmt(payment_terminal, euroset)
                         ]
                     )}

@@ -660,7 +660,7 @@ validate_recurrent_terms(VS) ->
     } = VS,
     #domain_RecurrentPaytoolsServiceTerms{payment_methods = PaymentMethodSelector} = Terms,
     PMs = reduce_selector(recurrent_payment_methods, PaymentMethodSelector, Varset, Revision),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
         throw_invalid_request(<<"Invalid payment method">>),
     ok.
 
@@ -708,7 +708,7 @@ validate_recurrent_payer(#{payer := _Other}, true) ->
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, Revision) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
-    _ = ordsets:is_element(hg_payment_tool:get_method(PaymentTool), PMs) orelse
+    _ = hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
         throw_invalid_request(<<"Invalid payment method">>),
     VS#{payment_tool => PaymentTool}.
 
@@ -847,7 +847,8 @@ collect_refund_varset(
     Revision
 ) ->
     RPMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, Revision),
-    case ordsets:is_element(hg_payment_tool:get_method(maps:get(payment_tool, VS)), RPMs) of
+    PaymentTool = maps:get(payment_tool, VS),
+    case hg_payment_tool:has_any_payment_method(PaymentTool, RPMs) of
         true ->
             RVS = collect_partial_refund_varset(PartialRefundsServiceTerms, VS, Revision),
             VS#{refunds => RVS};
@@ -2160,6 +2161,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
         ?cancelled() ->
             rollback_payment_cashflow(St)
     end,
+    check_recurrent_token(St),
     NewAction = get_action(Target, Action, St),
     {done, {[?payment_status_changed(Target)], NewAction}};
 
@@ -2213,12 +2215,10 @@ process_failure({payment, Step} = Activity, Events, Action, Failure, St, _Refund
             _ = maybe_notify_fault_detector(Activity, TargetType, OperationStatus, St),
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
-process_failure({refund_new, ID}, Events, Action, Failure, St, RefundSt) ->
-    _Clocks = rollback_refund_cashflow(RefundSt, St),
-    {done, {Events ++ [?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))], Action}};
-% process_failure({refund_new, ID}, [], Action, Failure, _St, _RefundSt) ->
-%     {next, {[?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
-process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
+
+process_failure({refund_new, ID}, [], Action, Failure, _St, _RefundSt) ->
+    {next, {[?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
+process_failure({refund_session, ID}, Events, Action, Failure, St, _RefundSt) ->
     Target = ?refunded(),
     case check_retry_possibility(Target, Failure, St) of
         {retry, Timeout} ->
@@ -2227,17 +2227,27 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, RefundSt) ->
             Events1 = [?refund_ev(ID, E) || E <- SessionEvents],
             {next, {Events ++ Events1, SessionAction}};
         fatal ->
-            _Clocks = rollback_refund_cashflow(RefundSt, St),
             Events1 = [
-                ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
+                ?refund_ev(ID, ?refund_rollback_started(Failure))
             ],
-            {done, {Events ++ Events1, Action}}
-        % fatal ->
-        %     Events1 = [
-        %         ?refund_ev(ID, ?refund_rollback_started(Failure))
-        %     ],
-        %     {next, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
+            {next, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
     end.
+
+check_recurrent_token(#st{
+    payment = #domain_InvoicePayment{id = ID, make_recurrent = true},
+    recurrent_token = undefined
+}) ->
+    _ = logger:warning("Fail to get recurrent token in recurrent payment. Payment id:~p", [ID]);
+check_recurrent_token(#st{
+    payment = #domain_InvoicePayment{id = ID, make_recurrent = MakeRecurrent},
+    recurrent_token = Token
+}) when
+    (MakeRecurrent =:= false orelse MakeRecurrent =:= undefined) andalso
+    Token =/= undefined
+->
+    _ = logger:warning("Got recurrent token in non recurrent payment. Payment id:~p", [ID]);
+check_recurrent_token(_) ->
+    ok.
 
 choose_fd_operation_status_for_failure({failure, Failure}) ->
     payproc_errors:match('PaymentFailure', Failure, fun do_choose_fd_operation_status_for_failure/1);
@@ -2299,15 +2309,9 @@ process_fatal_payment_failure(?cancelled(), _Events, _Action, Failure, _St) ->
     error({invalid_cancel_failure, Failure});
 process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
     error({invalid_capture_failure, Failure});
-% process_fatal_payment_failure(?processed(), [], Action, Failure, _St) ->
-%     {next, {[?payment_rollback_started(Failure)], hg_machine_action:set_timeout(0, Action)}};
-% process_fatal_payment_failure(?processed(), Events, Action, Failure, _St) ->
-%     RollbackStarted = [?payment_rollback_started(Failure)],
-%     {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}};
-process_fatal_payment_failure(_Target, Events, Action, Failure, St) ->
-    _Clocks = rollback_payment_cashflow(St),
-    PaymentFailed = [?payment_status_changed(?failed(Failure))],
-    {done, {Events ++ PaymentFailed, Action}}.
+process_fatal_payment_failure(?processed(), Events, Action, Failure, _St) ->
+    RollbackStarted = [?payment_rollback_started(Failure)],
+    {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),
@@ -2836,12 +2840,7 @@ merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
 merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
-    _ = validate_transition([{payment, S} || S <- [
-        risk_scoring,
-        routing,
-        processing_session,
-        processing_failure
-    ]], Change, St, Opts),
+    _ = validate_transition([{payment, processing_session}], Change, St, Opts),
     St#st{
         failure    = Failure,
         activity   = {payment, processing_failure},
@@ -2851,7 +2850,6 @@ merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment
     _ = validate_transition([{payment, S} || S <- [
         risk_scoring,
         routing,
-        processing_session,
         processing_failure
     ]], Change, St, Opts),
     St#st{
@@ -2954,7 +2952,7 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
             _ = validate_transition([{refund_session, ID}, {refund_new, ID}], Change, St, Opts),
             St#st{activity = {refund_failure, ID}};
         ?refund_status_changed(?refund_failed(_)) ->
-            _ = validate_transition([{refund_session, ID}, {refund_new, ID}, {refund_failure, ID}], Change, St, Opts),
+            _ = validate_transition([{refund_failure, ID}], Change, St, Opts),
             St;
         _ ->
             _ = validate_transition([{refund_session, ID}], Change, St, Opts),

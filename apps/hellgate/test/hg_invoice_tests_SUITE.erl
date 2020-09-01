@@ -978,6 +978,7 @@ processing_deadline_reached_test(C) ->
     PaymentParams = PaymentParams0#payproc_InvoicePaymentParams{processing_deadline = Deadline},
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_sessions_restarts(PaymentID, ?processed(), InvoiceID, Client, 0),
+    [?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))] = next_event(InvoiceID, Client),
     [?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))] = next_event(InvoiceID, Client),
     ok = payproc_errors:match(
         'PaymentFailure',
@@ -1305,8 +1306,11 @@ payment_suspend_timeout_failure(C) ->
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, _Failure})))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
@@ -2052,7 +2056,7 @@ get_payment_adjustment_fixture(Revision) ->
                             {exclusive, ?cash(100000000, <<"RUB">>)}
                         )},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa)
+                            ?pmt(bank_card_deprecated, visa)
                         ])},
                         cash_flow = {value,
                             get_payment_adjustment_provider_cashflow(initial)
@@ -3546,6 +3550,9 @@ payment_refund_success(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(Failure)))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
@@ -3595,6 +3602,9 @@ payment_refund_failure(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
@@ -3610,6 +3620,9 @@ payment_refund_failure(C) ->
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_failed(Failure))))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_rollback_started(Failure)))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_failed(Failure)} =
@@ -3632,14 +3645,17 @@ deadline_doesnt_affect_payment_refund(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     timer:sleep(ProcessingDeadline),
     % not enough funds on the merchant account
-    Failure = {failure, payproc_errors:construct('RefundFailure',
+    NoFunds = {failure, payproc_errors:construct('RefundFailure',
         {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
     )},
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID0, Refund0, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
@@ -3679,7 +3695,7 @@ payment_manual_refund(C) ->
     },
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     % not enough funds on the merchant account
-    Failure = {failure, payproc_errors:construct('RefundFailure',
+    NoFunds = {failure, payproc_errors:construct('RefundFailure',
         {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
     )},
     Refund0 = #domain_InvoicePaymentRefund{id = RefundID0} =
@@ -3688,7 +3704,10 @@ payment_manual_refund(C) ->
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_created(Refund0, _, TrxInfo)))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
@@ -4310,7 +4329,7 @@ get_cashflow_rounding_fixture(Revision) ->
                             {exclusive, ?cash(100000000, <<"RUB">>)}
                         )},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa)
+                            ?pmt(bank_card_deprecated, visa)
                         ])},
                         cash_flow = {value, [
                             ?cfpost(
@@ -4381,22 +4400,22 @@ terms_retrieval(C) ->
     TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
         payment_methods = {value, [
-            ?pmt(bank_card, jcb),
-            ?pmt(bank_card, mastercard),
-            ?pmt(bank_card, visa),
+            ?pmt(bank_card_deprecated, jcb),
+            ?pmt(bank_card_deprecated, mastercard),
+            ?pmt(bank_card_deprecated, visa),
             ?pmt(crypto_currency, bitcoin),
             ?pmt(digital_wallet, qiwi),
-            ?pmt(empty_cvv_bank_card, visa),
+            ?pmt(empty_cvv_bank_card_deprecated, visa),
             ?pmt(mobile, mts),
             ?pmt(payment_terminal, euroset),
-            ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
+            ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
         ]}
     }} = TermSet1,
     Revision = hg_domain:head(),
     ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
     #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card, visa)]}
+        payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
     }} = TermSet2,
     ok = hg_domain:reset(Revision).
 
@@ -4573,6 +4592,9 @@ payment_with_offsite_preauth_failed(C) ->
             PaymentID,
             ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
         ),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    ] = next_event(InvoiceID, 8000, Client),
+    [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, 8000, Client),
     ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
@@ -4607,7 +4629,6 @@ repair_fail_pre_processing_succeeded(C) ->
 
     timeout = next_event(InvoiceID, 2000, Client),
     ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
-
     [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
     ] = next_event(InvoiceID, Client).
@@ -4660,6 +4681,9 @@ repair_fail_session_succeeded(C) ->
 
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
@@ -4683,7 +4707,6 @@ repair_fail_session_on_pre_processing(C) ->
         repair_invoice_with_scenario(InvoiceID, fail_session, Client)
     ),
     ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
-
     [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
     ] = next_event(InvoiceID, Client).
@@ -4736,6 +4759,9 @@ repair_complex_succeeded_second(C) ->
 
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
@@ -5275,6 +5301,9 @@ await_payment_process_failure(InvoiceID, PaymentID, Client, Restarts, Target) ->
             PaymentID,
             ?session_ev(Target, ?session_finished(?session_failed(Failure)))
         ),
+        ?payment_ev(PaymentID, ?payment_rollback_started(Failure))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
     ] = next_event(InvoiceID, Client),
     {failed, PaymentID, Failure}.
@@ -5512,13 +5541,13 @@ construct_domain_fixture() ->
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
                     then_ = {value, ?ordset([
-                        ?pmt(bank_card, visa),
-                        ?pmt(bank_card, mastercard),
-                        ?pmt(bank_card, jcb),
+                        ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card_deprecated, mastercard),
+                        ?pmt(bank_card_deprecated, jcb),
                         ?pmt(payment_terminal, euroset),
                         ?pmt(digital_wallet, qiwi),
-                        ?pmt(empty_cvv_bank_card, visa),
-                        ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay)),
+                        ?pmt(empty_cvv_bank_card_deprecated, visa),
+                        ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
                         ?pmt(crypto_currency, bitcoin),
                         ?pmt(mobile, mts)
                     ])}
@@ -5570,8 +5599,8 @@ construct_domain_fixture() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -5582,8 +5611,8 @@ construct_domain_fixture() ->
             },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 fees = {value, [
                     ?cfpost(
@@ -5609,8 +5638,8 @@ construct_domain_fixture() ->
         },
         recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card_deprecated, visa),
+                ?pmt(bank_card_deprecated, mastercard)
             ])}
         }
     },
@@ -5629,8 +5658,8 @@ construct_domain_fixture() ->
                 ?cat(7)
             ])},
             payment_methods = {value, ?ordset([
-                ?pmt(bank_card, visa),
-                ?pmt(bank_card, mastercard)
+                ?pmt(bank_card_deprecated, visa),
+                ?pmt(bank_card_deprecated, mastercard)
             ])},
             cash_limit = {decisions, [
                 % проверяем, что условие никогда не отрабатывает
@@ -5684,8 +5713,8 @@ construct_domain_fixture() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -5712,8 +5741,8 @@ construct_domain_fixture() ->
             },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 fees = {value, [
                 ]},
@@ -5742,15 +5771,15 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(6), <<"MachineFailer">>, live),
         hg_ct_fixture:construct_category(?cat(7), <<"TempFailer">>, live),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, mastercard)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, jcb)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, jcb)),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
-        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(crypto_currency, bitcoin)),
         hg_ct_fixture:construct_payment_method(?pmt(mobile, mts)),
-        hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))),
+        hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -5983,12 +6012,12 @@ construct_domain_fixture() ->
                             ?cat(1)
                         ])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa),
-                            ?pmt(bank_card, mastercard),
-                            ?pmt(bank_card, jcb),
-                            ?pmt(empty_cvv_bank_card, visa),
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard),
+                            ?pmt(bank_card_deprecated, jcb),
+                            ?pmt(empty_cvv_bank_card_deprecated, visa),
                             ?pmt(crypto_currency, bitcoin),
-                            ?pmt(tokenized_bank_card, ?tkz_bank_card(visa, applepay))
+                            ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
                         ])},
                         cash_limit = {value, ?cashrng(
                             {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -6123,8 +6152,8 @@ construct_domain_fixture() ->
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa),
-                            ?pmt(bank_card, mastercard)
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
                         ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
@@ -6166,8 +6195,8 @@ construct_domain_fixture() ->
                             ?cat(6)
                         ])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa),
-                            ?pmt(bank_card, mastercard)
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
                         ])},
                         cash_limit = {value, ?cashrng(
                             {inclusive, ?cash(    1000, <<"RUB">>)},
@@ -6253,7 +6282,7 @@ construct_domain_fixture() ->
                             ?cat(2)
                         ])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa)
+                            ?pmt(bank_card_deprecated, visa)
                         ])},
                         cash_limit = {value, ?cashrng(
                             {inclusive, ?cash(    1000, <<"RUB">>)},
@@ -6441,7 +6470,7 @@ construct_term_set_for_cost(LowerBound, UpperBound) ->
                         {inclusive, ?cash(LowerBound, <<"RUB">>)},
                         {inclusive, ?cash(UpperBound, <<"RUB">>)}
                     )}},
-                    then_ = {value, ordsets:from_list([?pmt(bank_card, visa)])}
+                    then_ = {value, ordsets:from_list([?pmt(bank_card_deprecated, visa)])}
                 },
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
@@ -6518,7 +6547,7 @@ payments_w_bank_card_issuer_conditions_fixture(Revision) ->
                             {exclusive, ?cash(100000000, <<"RUB">>)}
                         )},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa)
+                            ?pmt(bank_card_deprecated, visa)
                         ])},
                         cash_flow = {decisions, [
                             #domain_CashFlowDecision{
@@ -6697,8 +6726,8 @@ construct_term_set_for_partial_capture_service_permit() ->
         payments = #domain_PaymentsServiceTerms{
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa),
-                    ?pmt(bank_card, mastercard)
+                    ?pmt(bank_card_deprecated, visa),
+                    ?pmt(bank_card_deprecated, mastercard)
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -6760,7 +6789,7 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                             ?cat(1)
                         ])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa)
+                            ?pmt(bank_card_deprecated, visa)
                         ])},
                         cash_limit = {value, ?cashrng(
                             {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -6815,8 +6844,8 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa),
-                            ?pmt(bank_card, mastercard)
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
                         ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }

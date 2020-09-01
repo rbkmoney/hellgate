@@ -383,7 +383,7 @@ construct_domain_fixture() ->
                 #domain_PaymentMethodDecision{
                     if_   = {constant, true},
                     then_ = {value, ?ordset([
-                        ?pmt(bank_card, visa)
+                        ?pmt(bank_card_deprecated, visa)
                     ])}
                 }
             ]},
@@ -422,7 +422,7 @@ construct_domain_fixture() ->
             ]},
             holds = #domain_PaymentHoldsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa)
+                    ?pmt(bank_card_deprecated, visa)
                 ])},
                 lifetime = {decisions, [
                     #domain_HoldLifetimeDecision{
@@ -433,7 +433,7 @@ construct_domain_fixture() ->
             },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods = {value, ?ordset([
-                    ?pmt(bank_card, visa)
+                    ?pmt(bank_card_deprecated, visa)
                 ])},
                 fees = {value, [
                     ?cfpost(
@@ -459,7 +459,7 @@ construct_domain_fixture() ->
         },
         recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
             payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card, visa)
+                ?pmt(bank_card_deprecated, visa)
             ])}
         }
     },
@@ -472,7 +472,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_category(?cat(1), <<"Test category">>, test),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, visa)),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
         hg_ct_fixture:construct_proxy(?prx(2), <<"Inspector proxy">>),
@@ -560,7 +560,7 @@ construct_domain_fixture() ->
                             ?cat(1)
                         ])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa)
+                            ?pmt(bank_card_deprecated, visa)
                         ])},
                         cash_limit = {value, ?cashrng(
                             {inclusive, ?cash(      1000, <<"RUB">>)},
@@ -623,7 +623,7 @@ construct_domain_fixture() ->
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
                         payment_methods = {value, ?ordset([
-                            ?pmt(bank_card, visa)
+                            ?pmt(bank_card_deprecated, visa)
                         ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }

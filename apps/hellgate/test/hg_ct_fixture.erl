@@ -100,7 +100,9 @@ construct_category(Ref, Name, Type) ->
 construct_payment_method(?pmt(_Type, ?tkz_bank_card(Name, _)) = Ref) when is_atom(Name) ->
     construct_payment_method(Name, Ref);
 construct_payment_method(?pmt(_Type, Name) = Ref) when is_atom(Name) ->
-    construct_payment_method(Name, Ref).
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(_Type, #domain_BankCardPaymentMethod{} = PM) = Ref) ->
+    construct_payment_method(PM#domain_BankCardPaymentMethod.payment_system, Ref).
 
 construct_payment_method(Name, Ref) ->
     Def = erlang:atom_to_binary(Name, unicode),
