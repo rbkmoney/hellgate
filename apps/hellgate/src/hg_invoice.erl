@@ -111,7 +111,8 @@ get_payment_tags(PaymentSession) ->
 get_payment_opts(St = #st{invoice = Invoice}) ->
     #{
         party => hg_party:get_party(get_party_id(St)),
-        invoice => Invoice
+        invoice => Invoice,
+        timestamp => hg_datetime:format_now()
     }.
 
 -spec get_payment_opts(hg_party:party_revision() | undefined, hg_datetime:timestamp(), st()) ->
@@ -120,12 +121,14 @@ get_payment_opts(St = #st{invoice = Invoice}) ->
 get_payment_opts(undefined, Timestamp, St = #st{invoice = Invoice}) ->
     #{
         party => hg_party:checkout(get_party_id(St), {timestamp, Timestamp}),
-        invoice => Invoice
+        invoice => Invoice,
+        timestamp => hg_datetime:format_now()
     };
 get_payment_opts(Revision, _, St = #st{invoice = Invoice}) ->
     #{
         party => hg_party:checkout(get_party_id(St), {revision, Revision}),
-        invoice => Invoice
+        invoice => Invoice,
+        timestamp => hg_datetime:format_now()
     }.
 
 %%
@@ -834,8 +837,7 @@ start_payment(#payproc_InvoicePaymentParams{id = PaymentID} = PaymentParams, St)
 do_start_payment(PaymentID, PaymentParams, St) ->
     _ = assert_invoice_status(unpaid, St),
     _ = assert_no_pending_payment(St),
-    Opts = get_payment_opts(St),
-    OccurredAt = hg_datetime:format_now(),
+    Opts = #{timestamp := OccurredAt} = get_payment_opts(St),
     % TODO make timer reset explicit here
     {PaymentSession, {Changes, Action}} = hg_invoice_payment:init(PaymentID, PaymentParams, Opts),
     #{
