@@ -1030,7 +1030,7 @@ partial_capture(St0, Reason, Cost, Cart, Opts) ->
     Route           = get_route(St),
     ProviderTerms   = get_provider_terminal_terms(Route, VS, Revision),
     ok              = validate_provider_holds_terms(ProviderTerms),
-    FinalCashflow   = calculate_cashflow(Timestamp, Revision, St, Opts, VS),
+    FinalCashflow   = calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Changes         = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
     {ok, {Changes, hg_machine_action:instant()}}.
 
@@ -1458,12 +1458,13 @@ create_adjustment_with_scenario(Timestamp, Params, St, Opts) ->
 
 create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts) ->
     Payment = get_payment(St),
+    Route = get_route(St),
     _ = assert_payment_status(captured, Payment),
     NewRevision = maybe_get_domain_revision(DomainRevision),
     PartyRevision = get_opts_party_revision(Opts),
     OldCashFlow = get_final_cashflow(St),
     VS = collect_validation_varset(St, Opts),
-    NewCashFlow = calculate_cashflow(Timestamp, NewRevision, St, Opts, VS),
+    NewCashFlow = calculate_cashflow(Route, Payment, Timestamp, VS, NewRevision, Opts),
     AdjState = {cash_flow, #domain_InvoicePaymentAdjustmentCashFlowState{
         scenario = #domain_InvoicePaymentAdjustmentCashFlow{domain_revision = DomainRevision}
     }},
@@ -1583,6 +1584,7 @@ get_cash_flow_for_status({failed, _}, _St) ->
 
 get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
     Payment0 = get_payment(St0),
+    Route = get_route(St0),
     Cost = get_captured_cost(Captured, Payment0),
     Payment = Payment0#domain_InvoicePayment{
         cost = Cost
@@ -1591,37 +1593,43 @@ get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
     St = St0#st{payment = Payment},
     Revision = Payment#domain_InvoicePayment.domain_revision,
     VS = collect_validation_varset(St, Opts),
-    calculate_cashflow(Timestamp, Revision, St, Opts, VS);
+    calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts);
 get_cash_flow_for_target_status({cancelled, _}, _St, _Opts) ->
     [];
 get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
     [].
 
--spec calculate_cashflow(hg_datetime:timestamp(), hg_domain:revision(), st(), opts(), pm_selector:varset()) ->
-    cash_flow().
-
-calculate_cashflow(Timestamp, Revision, St, Opts, VS) ->
-    Payment = get_payment(St),
-    Route = get_route(St),
-    calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts).
-
 -spec calculate_cashflow(
     route(),
     payment(),
-    map(),
     hg_datetime:timestamp(),
+    pm_selector:varset(),
     hg_domain:revision(),
     opts()
 ) ->
     cash_flow().
 
-calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts) ->
+calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
+    ProviderTerms   = get_provider_terminal_terms(Route, VS, Revision),
+    calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts).
+
+-spec calculate_cashflow(
+    route(),
+    payment(),
+    dmsl_domain_thrift:'PaymentsServiceTerms'() | undefined,
+    dmsl_domain_thrift:'PaymentsProvisionTerms'() | undefined,
+    pm_selector:varset(),
+    hg_domain:revision(),
+    opts()
+) ->
+    cash_flow().
+
+calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts) ->
     Shop = get_shop(Opts),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms),
     construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision).
 
@@ -1904,7 +1912,9 @@ process_routing(Action, St) ->
 
 process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
     Timestamp = get_payment_created_at(Payment),
-    FinalCashflow = calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
+    ProviderTerms   = get_provider_terminal_terms(Route, VS, Revision),
+    FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Invoice = get_invoice(Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
