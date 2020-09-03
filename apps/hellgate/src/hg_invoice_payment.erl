@@ -2235,7 +2235,8 @@ process_payment_session(State) ->
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason:St ->
             % It's look like unexpected error is equivalent to a failed operation
             % in terms of conversion
-            _ = notify_fault_detector(error, State),
+            _ = maybe_notify_fault_detector(start, St),
+            _ = maybe_notify_fault_detector(error, St),
             erlang:raise(error, Reason, St)
     end.
 
@@ -2246,7 +2247,8 @@ process_payment_session_callback(Payload, State) ->
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason:St ->
             % It's look like unexpected error is equivalent to a failed operation
             % in terms of conversion
-            _ = notify_fault_detector(error, State),
+            _ = maybe_notify_fault_detector(start, St),
+            _ = maybe_notify_fault_detector(error, St),
             erlang:raise(error, Reason, St)
     end.
 
@@ -2286,6 +2288,11 @@ do_choose_fd_operation_status_for_failure({authorization_failed, {FailType, _}})
     end;
 do_choose_fd_operation_status_for_failure(_Failure) ->
     finish.
+
+maybe_notify_fault_detector(Status, St) ->
+    Activity = get_activity(St),
+    TargetType = get_target_type(get_target(St)),
+    maybe_notify_fault_detector(Activity, TargetType, Status, St).
 
 maybe_notify_fault_detector({payment, processing_session}, processed, Status, St) ->
     notify_fault_detector(Status, St);
