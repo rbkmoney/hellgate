@@ -666,16 +666,18 @@ handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, P
     ok = assert_no_pending_payment(St),
     ok = assert_adjustment_target_status(TargetStatus, InvoiceStatus),
     ok = assert_all_adjustments_finalised(St),
-    wrap_adjustment_impact(ID, hg_invoice_adjustment:create(ID, Params), St);
+    OccurredAt = hg_datetime:format_now(),
+    wrap_adjustment_impact(ID, hg_invoice_adjustment:create(ID, Params), St, OccurredAt);
 
 handle_call({{'Invoicing', 'CaptureAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_adjustment_processed(ID, St),
+    OccurredAt = hg_datetime:format_now(),
     ?adjustment_target_status(Status) = get_adjustment(ID, St),
     {Response, {Changes, Action}} = hg_invoice_adjustment:capture(),
     #{
         response => Response,
-        changes  => wrap_adjustment_changes(ID, Changes),
+        changes  => wrap_adjustment_changes(ID, Changes, OccurredAt),
         action   => set_invoice_timer(Status, Action, St),
         state    => St
     };
@@ -683,11 +685,12 @@ handle_call({{'Invoicing', 'CaptureAdjustment'}, [_UserInfo, _InvoiceID, ID]}, S
 handle_call({{'Invoicing', 'CancelAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_adjustment_processed(ID, St),
+    OccurredAt = hg_datetime:format_now(),
     Status = get_invoice_status(St),
     {Response, {Changes, Action}} = hg_invoice_adjustment:cancel(),
     #{
         response => Response,
-        changes  => wrap_adjustment_changes(ID, Changes),
+        changes  => wrap_adjustment_changes(ID, Changes, OccurredAt),
         action   => set_invoice_timer(Status, Action, St),
         state    => St
     };
@@ -928,13 +931,13 @@ wrap_payment_impact(PaymentID, {Response, {Changes, Action}}, St, OccurredAt) ->
         state    => St
     }.
 
-wrap_adjustment_changes(AdjustmentID, Changes) ->
-    [?invoice_adjustment_ev(AdjustmentID, C) || C <- Changes].
+wrap_adjustment_changes(AdjustmentID, Changes, OccurredAt) ->
+    [?invoice_adjustment_ev(AdjustmentID, C, OccurredAt) || C <- Changes].
 
-wrap_adjustment_impact(AdjustmentID, {Response, {Changes, Action}}, St) ->
+wrap_adjustment_impact(AdjustmentID, {Response, {Changes, Action}}, St, OccurredAt) ->
     #{
         response => Response,
-        changes  => wrap_adjustment_changes(AdjustmentID, Changes),
+        changes  => wrap_adjustment_changes(AdjustmentID, Changes, OccurredAt),
         action   => Action,
         state    => St
     }.

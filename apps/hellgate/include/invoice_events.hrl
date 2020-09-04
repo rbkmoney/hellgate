@@ -20,6 +20,14 @@
     }}
 ).
 
+-define(invoice_adjustment_ev(ID, Payload, OccurredAt),
+    {invoice_adjustment_change, #payproc_InvoiceAdjustmentChange{
+        id = ID,
+        payload = Payload,
+        occurred_at = OccurredAt
+    }}
+).
+
 -define(invoice_adjustment_created(Adjustment),
     {invoice_adjustment_created, #payproc_InvoiceAdjustmentCreated{
         adjustment = Adjustment
