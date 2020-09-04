@@ -667,14 +667,14 @@ handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, P
     ok = assert_adjustment_target_status(TargetStatus, InvoiceStatus),
     ok = assert_all_adjustments_finalised(St),
     OccurredAt = hg_datetime:format_now(),
-    wrap_adjustment_impact(ID, hg_invoice_adjustment:create(ID, Params), St, OccurredAt);
+    wrap_adjustment_impact(ID, hg_invoice_adjustment:create(ID, Params, OccurredAt), St, OccurredAt);
 
 handle_call({{'Invoicing', 'CaptureAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_adjustment_processed(ID, St),
     OccurredAt = hg_datetime:format_now(),
     ?adjustment_target_status(Status) = get_adjustment(ID, St),
-    {Response, {Changes, Action}} = hg_invoice_adjustment:capture(),
+    {Response, {Changes, Action}} = hg_invoice_adjustment:capture(OccurredAt),
     #{
         response => Response,
         changes  => wrap_adjustment_changes(ID, Changes, OccurredAt),
@@ -687,7 +687,7 @@ handle_call({{'Invoicing', 'CancelAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St
     _ = assert_adjustment_processed(ID, St),
     OccurredAt = hg_datetime:format_now(),
     Status = get_invoice_status(St),
-    {Response, {Changes, Action}} = hg_invoice_adjustment:cancel(),
+    {Response, {Changes, Action}} = hg_invoice_adjustment:cancel(OccurredAt),
     #{
         response => Response,
         changes  => wrap_adjustment_changes(ID, Changes, OccurredAt),

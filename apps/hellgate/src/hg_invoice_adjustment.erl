@@ -46,7 +46,13 @@
 -spec create(id(), params()) ->
     {adjustment(), result()}.
 create(ID, Params) ->
-    Adjustment = build_adjustment(ID, Params),
+    Timestamp = hg_datetime:format_now(),
+    create(ID, Params, Timestamp).
+
+-spec create(id(), params(), hg_datetime:timestamp()) ->
+    {adjustment(), result()}.
+create(ID, Params, Timestamp) ->
+    Adjustment = build_adjustment(ID, Params, Timestamp),
     Changes = [?invoice_adjustment_created(Adjustment)],
     Action = hg_machine_action:instant(),
     {Adjustment, {Changes, Action}}.
@@ -54,7 +60,12 @@ create(ID, Params) ->
 -spec capture() ->
     {ok, result()}.
 capture() ->
-    AdjustmentTarget = build_adjustment_target(captured),
+    capture(hg_datetime:format_now()).
+
+-spec capture(hg_datetime:timestamp()) ->
+    {ok, result()}.
+capture(Timestamp) ->
+    AdjustmentTarget = build_adjustment_target(captured, Timestamp),
     Changes = [?invoice_adjustment_status_changed(AdjustmentTarget)],
     Action = hg_machine_action:new(),
     {ok, {Changes, Action}}.
@@ -62,7 +73,12 @@ capture() ->
 -spec cancel() ->
     {ok, result()}.
 cancel() ->
-    AdjustmentTarget = build_adjustment_target(cancelled),
+    cancel(hg_datetime:format_now()).
+
+-spec cancel(hg_datetime:timestamp()) ->
+    {ok, result()}.
+cancel(Timestamp) ->
+    AdjustmentTarget = build_adjustment_target(cancelled, Timestamp),
     Changes = [?invoice_adjustment_status_changed(AdjustmentTarget)],
     Action = hg_machine_action:new(),
     {ok, {Changes, Action}}.
@@ -74,14 +90,14 @@ get_log_params(Change) ->
 
 % Internal
 
--spec build_adjustment(id(), params()) ->
+-spec build_adjustment(id(), params(), hg_datetime:timestamp()) ->
     adjustment().
-build_adjustment(ID, Params) ->
+build_adjustment(ID, Params, Timestamp) ->
     #domain_InvoiceAdjustment{
         id = ID,
         reason = Params#payproc_InvoiceAdjustmentParams.reason,
         status = {pending, #domain_InvoiceAdjustmentPending{}},
-        created_at = hg_datetime:format_now(),
+        created_at = Timestamp,
         domain_revision = hg_domain:head(),
         state = build_adjustment_state(Params)
     }.
@@ -94,12 +110,12 @@ build_adjustment_state(Params) ->
             {status_change, #domain_InvoiceAdjustmentStatusChangeState{scenario = StatusChange}}
     end.
 
--spec build_adjustment_target(captured)  -> captured();
-                             (cancelled) -> cancelled().
-build_adjustment_target(captured) ->
-    {captured, #domain_InvoiceAdjustmentCaptured{at = hg_datetime:format_now()}};
-build_adjustment_target(cancelled) ->
-    {cancelled, #domain_InvoiceAdjustmentCancelled{at = hg_datetime:format_now()}}.
+-spec build_adjustment_target(captured, hg_datetime:timestamp())  -> captured();
+                             (cancelled, hg_datetime:timestamp()) -> cancelled().
+build_adjustment_target(captured, Timestamp) ->
+    {captured, #domain_InvoiceAdjustmentCaptured{at = Timestamp}};
+build_adjustment_target(cancelled, Timestamp) ->
+    {cancelled, #domain_InvoiceAdjustmentCancelled{at = Timestamp}}.
 
 -spec do_get_log_params(change()) ->
     {ok, log_params()} | undefined.
