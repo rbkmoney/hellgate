@@ -421,8 +421,7 @@ init_(PaymentID, Params, Opts = #{timestamp := CreatedAt}) ->
         VS1, Revision, MakeRecurrent, Context, ExternalID, Deadline
     ),
     Events = [?payment_started(Payment)],
-    St = collapse_changes(Events, undefined, #{occurred_at => CreatedAt}),
-    {St, {Events, hg_machine_action:instant()}}.
+    {collapse_changes(Events, undefined), {Events, hg_machine_action:instant()}}.
 
 get_merchant_payments_terms(Opts, Revision, Timestamp) ->
     TermSet = get_merchant_terms(Opts, Revision, Timestamp),
