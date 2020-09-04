@@ -5,8 +5,11 @@
 
 -export(
     [ create/2
+    , create/3
     , capture/0
+    , capture/1
     , cancel/0
+    , cancel/1
     ]).
 
 -export([get_log_params/1]).
