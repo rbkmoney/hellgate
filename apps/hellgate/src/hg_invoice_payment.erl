@@ -2233,7 +2233,7 @@ process_payment_session(State) ->
     Route = get_route(State),
     try hg_proxy_provider:process_payment(ProxyContext, Route) catch
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason:St ->
-            % It's look like unexpected error is equivalent to a failed operation
+            % It looks like an unexpected error here is equivalent to a failed operation
             % in terms of conversion
             _ = maybe_notify_fault_detector(start, St),
             _ = maybe_notify_fault_detector(error, St),
@@ -2245,7 +2245,7 @@ process_payment_session_callback(Payload, State) ->
     Route = get_route(State),
     try hg_proxy_provider:handle_payment_callback(Payload, ProxyContext, Route) catch
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason:St ->
-            % It's look like unexpected error is equivalent to a failed operation
+            % It looks like an unexpected error here is equivalent to a failed operation
             % in terms of conversion
             _ = maybe_notify_fault_detector(start, St),
             _ = maybe_notify_fault_detector(error, St),
