@@ -144,7 +144,8 @@
     repair_scenario        :: undefined | hg_invoice_repair:scenario(),
     capture_params         :: undefined | capture_params(),
     failure                :: undefined | failure(),
-    timings                :: undefined | hg_timings:t()
+    timings                :: undefined | hg_timings:t(),
+    latest_change_at       :: undefined | hg_datetime:timestamp()
 }).
 
 -record(refund_st, {
@@ -215,7 +216,8 @@
 
 -type opts() :: #{
     party => party(),
-    invoice => invoice()
+    invoice => invoice(),
+    timestamp => hg_datetime:timestamp()
 }.
 
 %%
@@ -400,7 +402,7 @@ init(PaymentID, PaymentParams, Opts) ->
 -spec init_(payment_id(), _, opts()) ->
     {st(), result()}.
 
-init_(PaymentID, Params, Opts) ->
+init_(PaymentID, Params, Opts = #{timestamp := CreatedAt}) ->
     Revision = hg_domain:head(),
     Party = get_party(Opts),
     Shop = get_shop(Opts),
@@ -410,7 +412,6 @@ init_(PaymentID, Params, Opts) ->
     Flow = get_flow_params(Params),
     MakeRecurrent = get_make_recurrent_params(Params),
     ExternalID = get_external_id(Params),
-    CreatedAt = hg_datetime:format_now(),
     MerchantTerms = get_merchant_terms(Opts, Revision, CreatedAt),
     VS1 = collect_validation_varset(Party, Shop, VS0),
     Context = get_context_params(Params),
@@ -1160,10 +1161,9 @@ validate_payment_status(_, #domain_InvoicePayment{status = Status}) ->
 -spec refund(refund_params(), st(), opts()) ->
     {domain_refund(), result()}.
 
-refund(Params, St0, Opts) ->
+refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
-    CreatedAt = hg_datetime:format_now(),
     Payment = get_payment(St),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
@@ -1175,10 +1175,9 @@ refund(Params, St0, Opts) ->
 -spec manual_refund(refund_params(), st(), opts()) ->
     {domain_refund(), result()}.
 
-manual_refund(Params, St0, Opts) ->
+manual_refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
-    CreatedAt = hg_datetime:format_now(),
     Payment = get_payment(St),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
@@ -1712,15 +1711,15 @@ cancel_adjustment(ID, St, Options) ->
 -spec finalize_adjustment(adjustment_id(), capture | cancel, st(), opts()) ->
     {ok, result()}.
 
-finalize_adjustment(ID, Intent, St, Options) ->
+finalize_adjustment(ID, Intent, St, Options = #{timestamp := Timestamp}) ->
     Adjustment = get_adjustment(ID, St),
     ok = assert_adjustment_status(processed, Adjustment),
     ok = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
     Status = case Intent of
         capture ->
-            ?adjustment_captured(hg_datetime:format_now());
+            ?adjustment_captured(Timestamp);
         cancel ->
-            ?adjustment_cancelled(hg_datetime:format_now())
+            ?adjustment_cancelled(Timestamp)
     end,
     Event = ?adjustment_ev(ID, ?adjustment_status_changed(Status)),
     {ok, {[Event], hg_machine_action:new()}}.
