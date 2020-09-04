@@ -1157,10 +1157,9 @@ merge_change(?invoice_adjustment_ev(ID, Event), St, _Opts) ->
         _ ->
             St2
     end;
-merge_change(?payment_ev(PaymentID, Change, OccurredAt), St, Opts) ->
-    OptsWithTimestamp = Opts#{occurred_at => OccurredAt},
+merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
     PaymentSession = try_get_payment_session(PaymentID, St),
-    PaymentSession1 = hg_invoice_payment:merge_change(Change, PaymentSession, OptsWithTimestamp),
+    PaymentSession1 = hg_invoice_payment:merge_change(Change, PaymentSession, Opts),
     St1 = set_payment_session(PaymentID, PaymentSession1, St),
     case hg_invoice_payment:get_activity(PaymentSession1) of
         A when A =/= idle ->
