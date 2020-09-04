@@ -2783,14 +2783,11 @@ throw_invalid_recurrent_parent(Details) ->
 
 -type change_opts() :: #{
     timestamp  => hg_datetime:timestamp(),
-    validation => strict,
-    occurred_at  => hg_datetime:timestamp()
+    validation => strict
 }.
 
 -spec merge_change(change(), st() | undefined, change_opts()) -> st().
 
-merge_change(Change, undefined, Opts = #{occurred_at := OccurredAt}) ->
-    merge_change(Change, #st{activity = {payment, new}, latest_change_at = OccurredAt}, Opts);
 merge_change(Change, undefined, Opts) ->
     merge_change(Change, #st{activity = {payment, new}}, Opts);
 merge_change(Change = ?payment_started(Payment), #st{} = St, Opts) ->

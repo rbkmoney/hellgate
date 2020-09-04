@@ -613,9 +613,8 @@ handle_call({{'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID,
         cash = Cash,
         cart = Cart
     } = Params,
-    OccurredAt = hg_datetime:format_now(),
     PaymentSession = get_payment_session(PaymentID, St),
-    Opts = get_payment_opts(St),
+    Opts = #{timestamp := OccurredAt} = get_payment_opts(St),
     {ok, {Changes, Action}} = capture_payment(PaymentSession, Reason, Cash, Cart, Opts),
     #{
         response => ok,
@@ -628,7 +627,7 @@ handle_call({{'Invoicing', 'CancelPayment'}, [_UserInfo, _InvoiceID, PaymentID, 
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
-    OccurredAt = hg_datetime:format_now(),
+    #{timestamp := OccurredAt} = get_payment_opts(St),
     {ok, {Changes, Action}} = hg_invoice_payment:cancel(PaymentSession, Reason),
     #{
         response => ok,
@@ -851,26 +850,27 @@ process_payment_signal(Signal, PaymentID, PaymentSession, St) ->
     {Revision, Timestamp} = hg_invoice_payment:get_party_revision(PaymentSession),
     Opts = get_payment_opts(Revision, Timestamp, St),
     PaymentResult = hg_invoice_payment:process_signal(Signal, PaymentSession, Opts),
-    handle_payment_result(PaymentResult, PaymentID, PaymentSession, St).
+    handle_payment_result(PaymentResult, PaymentID, PaymentSession, St, Opts).
 
 process_payment_call(Call, PaymentID, PaymentSession, St) ->
     {Revision, Timestamp} = hg_invoice_payment:get_party_revision(PaymentSession),
     Opts = get_payment_opts(Revision, Timestamp, St),
     {Response, PaymentResult0} = hg_invoice_payment:process_call(Call, PaymentSession, Opts),
-    PaymentResult1 = handle_payment_result(PaymentResult0, PaymentID, PaymentSession, St),
+    PaymentResult1 = handle_payment_result(PaymentResult0, PaymentID, PaymentSession, St, Opts),
     PaymentResult1#{response => Response}.
 
-handle_payment_result({next, {Changes, Action}}, PaymentID, _PaymentSession, St) ->
-    OccurredAt = hg_datetime:format_now(),
+handle_payment_result({next, {Changes, Action}}, PaymentID, _PaymentSession, St, Opts) ->
+    #{timestamp := OccurredAt} = Opts,
     #{
         changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
         action  => Action,
         state   => St
     };
-handle_payment_result({done, {Changes, Action}}, PaymentID, PaymentSession, #st{invoice = Invoice} = St) ->
+handle_payment_result({done, {Changes, Action}}, PaymentID, PaymentSession, St, Opts) ->
+    Invoice = St#st.invoice,
+    #{timestamp := OccurredAt} = Opts,
     PaymentSession1 = hg_invoice_payment:collapse_changes(Changes, PaymentSession),
     Payment = hg_invoice_payment:get_payment(PaymentSession1),
-    OccurredAt = hg_datetime:format_now(),
     case get_payment_status(Payment) of
         ?processed() ->
             #{
