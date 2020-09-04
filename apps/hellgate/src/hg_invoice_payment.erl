@@ -1913,7 +1913,7 @@ process_routing(Action, St) ->
 process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
     Timestamp = get_payment_created_at(Payment),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    ProviderTerms   = get_provider_terminal_terms(Route, VS, Revision),
+    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Invoice = get_invoice(Opts),
     _Clock = hg_accounting:hold(
