@@ -412,7 +412,6 @@ init_(PaymentID, Params, Opts = #{timestamp := CreatedAt}) ->
     Flow = get_flow_params(Params),
     MakeRecurrent = get_make_recurrent_params(Params),
     ExternalID = get_external_id(Params),
-    CreatedAt = hg_datetime:format_now(),
     VS1 = collect_validation_varset(Party, Shop, VS0),
     Context = get_context_params(Params),
     Deadline = get_processing_deadline(Params),
