@@ -144,7 +144,8 @@
     repair_scenario        :: undefined | hg_invoice_repair:scenario(),
     capture_params         :: undefined | capture_params(),
     failure                :: undefined | failure(),
-    timings                :: undefined | hg_timings:t()
+    timings                :: undefined | hg_timings:t(),
+    latest_change_at       :: undefined | hg_datetime:timestamp()
 }).
 
 -record(refund_st, {
@@ -215,7 +216,8 @@
 
 -type opts() :: #{
     party => party(),
-    invoice => invoice()
+    invoice => invoice(),
+    timestamp => hg_datetime:timestamp()
 }.
 
 %%
@@ -400,7 +402,7 @@ init(PaymentID, PaymentParams, Opts) ->
 -spec init_(payment_id(), _, opts()) ->
     {st(), result()}.
 
-init_(PaymentID, Params, Opts) ->
+init_(PaymentID, Params, Opts = #{timestamp := CreatedAt}) ->
     Revision = hg_domain:head(),
     Party = get_party(Opts),
     Shop = get_shop(Opts),
@@ -410,7 +412,6 @@ init_(PaymentID, Params, Opts) ->
     Flow = get_flow_params(Params),
     MakeRecurrent = get_make_recurrent_params(Params),
     ExternalID = get_external_id(Params),
-    CreatedAt = hg_datetime:format_now(),
     VS1 = collect_validation_varset(Party, Shop, VS0),
     Context = get_context_params(Params),
     Deadline = get_processing_deadline(Params),
@@ -1030,7 +1031,7 @@ partial_capture(St0, Reason, Cost, Cart, Opts) ->
     Route           = get_route(St),
     ProviderTerms   = get_provider_terminal_terms(Route, VS, Revision),
     ok              = validate_provider_holds_terms(ProviderTerms),
-    FinalCashflow   = calculate_cashflow(Timestamp, Revision, St, Opts, VS),
+    FinalCashflow   = calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Changes         = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
     {ok, {Changes, hg_machine_action:instant()}}.
 
@@ -1166,10 +1167,9 @@ validate_payment_status(_, #domain_InvoicePayment{status = Status}) ->
 -spec refund(refund_params(), st(), opts()) ->
     {domain_refund(), result()}.
 
-refund(Params, St0, Opts) ->
+refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
-    CreatedAt = hg_datetime:format_now(),
     Payment = get_payment(St),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
@@ -1181,10 +1181,9 @@ refund(Params, St0, Opts) ->
 -spec manual_refund(refund_params(), st(), opts()) ->
     {domain_refund(), result()}.
 
-manual_refund(Params, St0, Opts) ->
+manual_refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
-    CreatedAt = hg_datetime:format_now(),
     Payment = get_payment(St),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
@@ -1458,12 +1457,13 @@ create_adjustment_with_scenario(Timestamp, Params, St, Opts) ->
 
 create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts) ->
     Payment = get_payment(St),
+    Route = get_route(St),
     _ = assert_payment_status(captured, Payment),
     NewRevision = maybe_get_domain_revision(DomainRevision),
     PartyRevision = get_opts_party_revision(Opts),
     OldCashFlow = get_final_cashflow(St),
     VS = collect_validation_varset(St, Opts),
-    NewCashFlow = calculate_cashflow(Timestamp, NewRevision, St, Opts, VS),
+    NewCashFlow = calculate_cashflow(Route, Payment, Timestamp, VS, NewRevision, Opts),
     AdjState = {cash_flow, #domain_InvoicePaymentAdjustmentCashFlowState{
         scenario = #domain_InvoicePaymentAdjustmentCashFlow{domain_revision = DomainRevision}
     }},
@@ -1583,6 +1583,7 @@ get_cash_flow_for_status({failed, _}, _St) ->
 
 get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
     Payment0 = get_payment(St0),
+    Route = get_route(St0),
     Cost = get_captured_cost(Captured, Payment0),
     Payment = Payment0#domain_InvoicePayment{
         cost = Cost
@@ -1591,37 +1592,43 @@ get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
     St = St0#st{payment = Payment},
     Revision = Payment#domain_InvoicePayment.domain_revision,
     VS = collect_validation_varset(St, Opts),
-    calculate_cashflow(Timestamp, Revision, St, Opts, VS);
+    calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts);
 get_cash_flow_for_target_status({cancelled, _}, _St, _Opts) ->
     [];
 get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
     [].
 
--spec calculate_cashflow(hg_datetime:timestamp(), hg_domain:revision(), st(), opts(), pm_selector:varset()) ->
-    cash_flow().
-
-calculate_cashflow(Timestamp, Revision, St, Opts, VS) ->
-    Payment = get_payment(St),
-    Route = get_route(St),
-    calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts).
-
 -spec calculate_cashflow(
     route(),
     payment(),
-    map(),
     hg_datetime:timestamp(),
+    pm_selector:varset(),
     hg_domain:revision(),
     opts()
 ) ->
     cash_flow().
 
-calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts) ->
+calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
+    ProviderTerms   = get_provider_terminal_terms(Route, VS, Revision),
+    calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts).
+
+-spec calculate_cashflow(
+    route(),
+    payment(),
+    dmsl_domain_thrift:'PaymentsServiceTerms'() | undefined,
+    dmsl_domain_thrift:'PaymentsProvisionTerms'() | undefined,
+    pm_selector:varset(),
+    hg_domain:revision(),
+    opts()
+) ->
+    cash_flow().
+
+calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts) ->
     Shop = get_shop(Opts),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms),
     construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision).
 
@@ -1709,15 +1716,15 @@ cancel_adjustment(ID, St, Options) ->
 -spec finalize_adjustment(adjustment_id(), capture | cancel, st(), opts()) ->
     {ok, result()}.
 
-finalize_adjustment(ID, Intent, St, Options) ->
+finalize_adjustment(ID, Intent, St, Options = #{timestamp := Timestamp}) ->
     Adjustment = get_adjustment(ID, St),
     ok = assert_adjustment_status(processed, Adjustment),
     ok = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
     Status = case Intent of
         capture ->
-            ?adjustment_captured(hg_datetime:format_now());
+            ?adjustment_captured(Timestamp);
         cancel ->
-            ?adjustment_cancelled(hg_datetime:format_now())
+            ?adjustment_cancelled(Timestamp)
     end,
     Event = ?adjustment_ev(ID, ?adjustment_status_changed(Status)),
     {ok, {[Event], hg_machine_action:new()}}.
@@ -1904,7 +1911,7 @@ process_routing(Action, St) ->
 
 process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
     Timestamp = get_payment_created_at(Payment),
-    FinalCashflow = calculate_cashflow(Route, Payment, VS, Timestamp, Revision, Opts),
+    FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts),
     Invoice = get_invoice(Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
@@ -2047,8 +2054,7 @@ repair_session(St = #st{repair_scenario = Scenario}) ->
         {result, Result} ->
             {ok, Result};
         call ->
-            ProxyContext = construct_proxy_context(St),
-            hg_proxy_provider:process_payment(ProxyContext, get_route(St))
+            process_payment_session(St)
     end.
 
 -spec finalize_payment(action(), st()) -> machine_result().
@@ -2079,9 +2085,7 @@ finalize_payment(Action, St) ->
 process_callback_timeout(Action, Session, Events, St) ->
     case get_session_timeout_behaviour(Session) of
         {callback, Payload} ->
-            ProxyContext = construct_proxy_context(St),
-            Route        = get_route(St),
-            {ok, CallbackResult} = hg_proxy_provider:handle_payment_callback(Payload, ProxyContext, Route),
+            {ok, CallbackResult} = process_payment_session_callback(Payload, St),
             {_Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
             finish_session_processing(Result, St);
         {operation_failure, OperationFailure} ->
@@ -2093,9 +2097,7 @@ process_callback_timeout(Action, Session, Events, St) ->
 -spec handle_callback(callback(), action(), st()) ->
     {callback_response(), machine_result()}.
 handle_callback(Payload, Action, St) ->
-    ProxyContext = construct_proxy_context(St),
-    Route        = get_route(St),
-    {ok, CallbackResult} = hg_proxy_provider:handle_payment_callback(Payload, ProxyContext, Route),
+    {ok, CallbackResult} = process_payment_session_callback(Payload, St),
     {Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
     {Response, finish_session_processing(Result, St)}.
 
@@ -2231,6 +2233,30 @@ process_failure({refund_session, ID}, Events, Action, Failure, St, _RefundSt) ->
             {next, {Events ++ Events1, hg_machine_action:set_timeout(0, Action)}}
     end.
 
+process_payment_session(State) ->
+    ProxyContext = construct_proxy_context(State),
+    Route = get_route(State),
+    try hg_proxy_provider:process_payment(ProxyContext, Route) catch
+        error:{woody_error, {_Source, result_unexpected, _Details}} = Reason:StackTrace ->
+            % It looks like an unexpected error here is equivalent to a failed operation
+            % in terms of conversion
+            _ = maybe_notify_fault_detector(start, State),
+            _ = maybe_notify_fault_detector(error, State),
+            erlang:raise(error, Reason, StackTrace)
+    end.
+
+process_payment_session_callback(Payload, State) ->
+    ProxyContext = construct_proxy_context(State),
+    Route = get_route(State),
+    try hg_proxy_provider:handle_payment_callback(Payload, ProxyContext, Route) catch
+        error:{woody_error, {_Source, result_unexpected, _Details}} = Reason:StackTrace ->
+            % It looks like an unexpected error here is equivalent to a failed operation
+            % in terms of conversion
+            _ = maybe_notify_fault_detector(start, State),
+            _ = maybe_notify_fault_detector(error, State),
+            erlang:raise(error, Reason, StackTrace)
+    end.
+
 check_recurrent_token(#st{
     payment = #domain_InvoicePayment{id = ID, make_recurrent = true},
     recurrent_token = undefined
@@ -2267,6 +2293,11 @@ do_choose_fd_operation_status_for_failure({authorization_failed, {FailType, _}})
     end;
 do_choose_fd_operation_status_for_failure(_Failure) ->
     finish.
+
+maybe_notify_fault_detector(Status, St) ->
+    Activity = get_activity(St),
+    TargetType = get_target_type(get_target(St)),
+    maybe_notify_fault_detector(Activity, TargetType, Status, St).
 
 maybe_notify_fault_detector({payment, processing_session}, processed, Status, St) ->
     notify_fault_detector(Status, St);
