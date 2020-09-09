@@ -38,7 +38,7 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
 
 get_table_prohibitions(RuleSetDeny) ->
     Candidates = get_decisions(RuleSetDeny),
-    lists:foldl(fun(C, AccIn) ->
+    lists:foldr(fun(C, AccIn) ->
         AccIn#{get_terminal_ref(C) => get_description(C)}
     end, #{}, Candidates).
 
@@ -47,14 +47,14 @@ get_decisions(RuleSet) ->
         decisions = Decisions
     } = RuleSet,
     case Decisions of
-        {delegates, Delegates} ->
-            Delegates;
+        {delegates, _Delegates} ->
+            []; %% костыль на предыдущую логику
         {candidates, Candidates} ->
             Candidates
     end.
 
 collect_routes(Predestination, Candidates, VS, Revision) ->
-    lists:foldl(
+    lists:foldr(
         fun(Candidate, {Accepted, Rejected}) ->
             #domain_PaymentRoutingCandidate{
                 terminal = TerminalRef,
@@ -77,7 +77,7 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
     ).
 
 filter_routes({Routes, Rejected}, Prohibitions) ->
-    lists:foldl(fun(Route, {AccIn, RejectedIn}) ->
+    lists:foldr(fun(Route, {AccIn, RejectedIn}) ->
         {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
         case maps:find(TerminalRef, Prohibitions) of
             error ->
