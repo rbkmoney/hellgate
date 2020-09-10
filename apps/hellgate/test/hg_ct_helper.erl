@@ -263,11 +263,6 @@ start_app(party_client = AppName) ->
         }}
     ]), #{}};
 
-start_app(snowflake = AppName) ->
-    {start_app(AppName, [
-        {max_backward_clock_moving, 1000}
-    ]), #{}};
-
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
 

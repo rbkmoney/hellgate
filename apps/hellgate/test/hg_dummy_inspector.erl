@@ -23,30 +23,30 @@ get_service_spec() ->
 
 handle_function(
     'InspectPayment',
-    {#proxy_inspector_Context{
+    [#proxy_inspector_Context{
         payment = _PaymentInfo,
         options = #{
             <<"risk_score">> := RiskScore
         }
-    }},
+    }],
     _Options
 ) ->
     binary_to_atom(RiskScore, utf8);
 
 handle_function(
     'InspectPayment',
-    {#proxy_inspector_Context{
+    [#proxy_inspector_Context{
         payment = _PaymentInfo,
         options = #{
             <<"link_state">> := <<"unexpected_failure">>
         }
-    }},
+    }],
     _Options
 ) ->
     erlang:error(test_error);
 handle_function(
     'InspectPayment',
-    {#proxy_inspector_Context{
+    [#proxy_inspector_Context{
         payment = #proxy_inspector_PaymentInfo{
             payment = #proxy_inspector_InvoicePayment{
                 id = PaymentID
@@ -58,7 +58,7 @@ handle_function(
         options = #{
             <<"link_state">> := <<"temporary_failure">>
         }
-    }},
+    }],
     _Options
 ) ->
     case is_already_failed(InvoiceID, PaymentID) of
@@ -70,12 +70,12 @@ handle_function(
     end;
 handle_function(
     'InspectPayment',
-    {#proxy_inspector_Context{
+    [#proxy_inspector_Context{
         payment = _PaymentInfo,
         options = #{
             <<"link_state">> := _LinkState
         }
-    }},
+    }],
     _Options
 ) ->
     timer:sleep(10000),

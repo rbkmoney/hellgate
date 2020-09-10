@@ -54,9 +54,8 @@
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 handle_function(Func, Args, Opts) ->
-    ArgsList = tuple_to_list(Args),
     scoper:scope(customer_management,
-        fun() -> handle_function_(Func, ArgsList, Opts) end
+        fun() -> handle_function_(Func, Args, Opts) end
     ).
 
 handle_function_('Create', [CustomerParams], _Opts) ->
