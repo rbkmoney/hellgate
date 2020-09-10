@@ -28,7 +28,8 @@ construct_context() ->
 
 call(ServiceName, Function, Args, {RootUrl, Context}) ->
     Service = hg_proto:get_service(ServiceName),
-    Request = {Service, Function, Args},
+    ArgsTuple = list_to_tuple(Args),
+    Request = {Service, Function, ArgsTuple},
     Opts = get_opts(ServiceName),
     RetryStrategy = genlib_retry:intervals([1, 100, 1000]),
     Result = try
