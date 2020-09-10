@@ -126,6 +126,4 @@ from_cm_shop_modification({location_modification, _ShopLocation} = LocationModif
 from_cm_shop_modification(?cm_shop_account_creation_params(CurrencyRef)) ->
     ?shop_account_creation_params(CurrencyRef);
 from_cm_shop_modification(?cm_payout_schedule_modification(BusinessScheduleRef)) ->
-    ?payout_schedule_modification(BusinessScheduleRef);
-from_cm_shop_modification({cash_register_modification_unit, _Unit} = CashRegisterModificationUnit) ->
-    CashRegisterModificationUnit.
+    ?payout_schedule_modification(BusinessScheduleRef).
