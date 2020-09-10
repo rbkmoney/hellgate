@@ -77,7 +77,8 @@ call(ServiceName, Function, Args, Opts) ->
 call(ServiceName, Function, Args, Opts, Deadline) ->
     Service = get_service_modname(ServiceName),
     Context = hg_context:get_woody_context(hg_context:load()),
-    Request = {Service, Function, Args},
+    ArgsTuple = list_to_tuple(Args),
+    Request = {Service, Function, ArgsTuple},
     woody_client:call(
         Request,
         Opts#{event_handler => {
