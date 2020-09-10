@@ -14,11 +14,12 @@
     term()| no_return().
 
 handle_function(Func, Args, Opts) ->
+    ArgsList = tuple_to_list(Args),
     scoper:scope(partymgmt,
-        fun() -> handle_function_(Func, Args, Opts) end
+        fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
--spec handle_function_(woody:func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
+-spec handle_function_(woody:func(), list(), pm_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
 %% Party
