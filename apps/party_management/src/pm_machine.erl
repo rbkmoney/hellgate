@@ -254,11 +254,12 @@ call_automaton(Function, Args) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
+    ArgsList = tuple_to_list(Args),
     scoper:scope(machine,
-        fun() -> handle_function_(Func, Args, Opts) end
+        fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
--spec handle_function_(func(), woody:args(), #{ns := ns()}) -> term() | no_return().
+-spec handle_function_(func(), list(), #{ns := ns()}) -> term() | no_return().
 
 handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
     #mg_stateproc_SignalArgs{signal = {Type, Signal}, machine = #mg_stateproc_Machine{id = ID} = Machine} = Args,

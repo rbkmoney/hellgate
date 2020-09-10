@@ -17,13 +17,14 @@ handle_function(Func, Args, Opts) ->
 -spec handle_function_(woody:func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function_(Fun, [PartyID, _Claim] = Args, _Opts) when Fun == 'Accept'; Fun == 'Commit' ->
+handle_function_(Fun, {PartyID, _Claim} = Args, _Opts) when Fun == 'Accept'; Fun == 'Commit' ->
     call(PartyID, Fun, Args).
 
 call(PartyID, FunctionName, Args) ->
     ok = scoper:add_meta(#{party_id => PartyID}),
     try
-        pm_party_machine:call(PartyID, claim_committer, {'ClaimCommitter', FunctionName}, Args)
+        ArgsList = tuple_to_list(Args),
+        pm_party_machine:call(PartyID, claim_committer, {'ClaimCommitter', FunctionName}, ArgsList)
     catch
         throw:#payproc_PartyNotFound{} ->
             erlang:throw(#claim_management_PartyNotFound{})
