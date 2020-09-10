@@ -97,6 +97,14 @@
 ).
 
 -define(
+    cm_cash_register_unit_creation(ID, Params),
+    {creation, #claim_management_CashRegisterParams{
+        cash_register_provider_id = ID,
+        cash_register_provider_params = Params
+    }}
+).
+
+-define(
     cm_adjustment_modification(ContractAdjustmentID, Mod),
     {adjustment_modification, #claim_management_ContractAdjustmentModificationUnit{
         adjustment_id = ContractAdjustmentID,
