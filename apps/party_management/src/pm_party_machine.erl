@@ -274,13 +274,17 @@ handle_call('Accept', [Claim], AuxSt, St) ->
     #claim_management_Claim{
         changeset = Changeset
     } = Claim,
-    PayprocClaim = pm_claim_committer:from_claim_mgmt(Claim),
-    Timestamp = pm_datetime:format_now(),
-    Revision = pm_domain:head(),
-    Party = get_st_party(St),
     try
-        ok = pm_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
-        ok = pm_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party),
+        case pm_claim_committer:from_claim_mgmt(Claim) of
+            undefined ->
+                ok;
+            PayprocClaim ->
+                Timestamp = pm_datetime:format_now(),
+                Revision = pm_domain:head(),
+                Party = get_st_party(St),
+                ok = pm_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
+                ok = pm_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party)
+        end,
         respond(
             ok,
             [],
@@ -305,22 +309,27 @@ handle_call('Accept', [Claim], AuxSt, St) ->
 
 handle_call('Commit', [CmClaim], AuxSt, St) ->
     PayprocClaim = pm_claim_committer:from_claim_mgmt(CmClaim),
-    Timestamp = pm_datetime:format_now(),
-    Revision = pm_domain:head(),
-    Party = get_st_party(St),
-    AcceptedClaim = pm_claim:accept(Timestamp, Revision, Party, PayprocClaim),
-    PartyRevision = get_next_party_revision(St),
-    Changes = [
-        ?claim_created(PayprocClaim),
-        finalize_claim(AcceptedClaim, Timestamp),
-        ?revision_changed(Timestamp, PartyRevision)
-    ],
+    Changes = get_changes(PayprocClaim, St),
     respond(
         ok,
         Changes,
         AuxSt,
         St
     ).
+
+get_changes(undefined, _) ->
+    [];
+get_changes(PayprocClaim, St) ->
+    Timestamp = pm_datetime:format_now(),
+    Revision = pm_domain:head(),
+    Party = get_st_party(St),
+    AcceptedClaim = pm_claim:accept(Timestamp, Revision, Party, PayprocClaim),
+    PartyRevision = get_next_party_revision(St),
+    [
+        ?claim_created(PayprocClaim),
+        finalize_claim(AcceptedClaim, Timestamp),
+        ?revision_changed(Timestamp, PartyRevision)
+    ].
 
 %% Generic handlers
 

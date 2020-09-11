@@ -7,7 +7,7 @@
 -export([from_claim_mgmt/1]).
 
 -spec from_claim_mgmt(dmsl_claim_management_thrift:'Claim'()) ->
-    dmsl_payment_processing_thrift:'Claim'().
+    dmsl_payment_processing_thrift:'Claim'() | undefined.
 
 from_claim_mgmt(#claim_management_Claim{
     id         = ID,
@@ -16,14 +16,18 @@ from_claim_mgmt(#claim_management_Claim{
     created_at = CreatedAt,
     updated_at = UpdatedAt
 }) ->
-    #payproc_Claim{
-        id         = ID,
-        status     = ?pending(),
-        changeset  = from_cm_changeset(Changeset),
-        revision   = Revision,
-        created_at = CreatedAt,
-        updated_at = UpdatedAt
-    }.
+    case from_cm_changeset(Changeset) of
+        [] -> undefined;
+        Converted ->
+            #payproc_Claim{
+                id         = ID,
+                status     = ?pending(),
+                changeset  = Converted,
+                revision   = Revision,
+                created_at = CreatedAt,
+                updated_at = UpdatedAt
+            }
+    end.
 
 %%% Internal functions
 
