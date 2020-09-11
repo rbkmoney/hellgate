@@ -105,6 +105,16 @@
 ).
 
 -define(
+    cm_cash_register_modification_unit_modification(ShopID, Unit),
+    ?cm_shop_modification(ShopID, {cash_register_modification_unit, Unit})
+).
+
+-define (
+    cm_cash_register_modification_unit(Unit),
+    {cash_register_modification_unit, Unit}
+).
+
+-define(
     cm_adjustment_modification(ContractAdjustmentID, Mod),
     {adjustment_modification, #claim_management_ContractAdjustmentModificationUnit{
         adjustment_id = ContractAdjustmentID,

@@ -7,7 +7,7 @@
 -export([from_claim_mgmt/1]).
 
 -spec from_claim_mgmt(dmsl_claim_management_thrift:'Claim'()) ->
-    dmsl_payment_processing_thrift:'Claim'() | undefined.
+    dmsl_payment_processing_thrift:'Claim'().
 
 from_claim_mgmt(#claim_management_Claim{
     id         = ID,
@@ -37,7 +37,7 @@ from_cm_changeset(Changeset) ->
                 modification = {party_modification, PartyMod}
             }) ->
             case PartyMod of
-                ?cm_shop_modification(_ShopID, {cash_register_modification_unit, _}) ->
+                ?cm_cash_register_modification_unit_modification(_, _) ->
                     false;
                 PartyMod ->
                     {true, from_cm_party_mod(PartyMod)}
@@ -129,6 +129,8 @@ from_cm_shop_modification({payout_tool_modification, _PayoutToolID} = PayoutTool
     PayoutToolModification;
 from_cm_shop_modification({location_modification, _ShopLocation} = LocationModification) ->
     LocationModification;
+from_cm_shop_modification({cash_register_modification_unit, _CashRegister} = CashRegisterModification) ->
+    CashRegisterModification;
 from_cm_shop_modification(?cm_shop_account_creation_params(CurrencyRef)) ->
     ?shop_account_creation_params(CurrencyRef);
 from_cm_shop_modification(?cm_payout_schedule_modification(BusinessScheduleRef)) ->
