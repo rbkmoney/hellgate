@@ -308,36 +308,28 @@ handle_call('Accept', [Claim], AuxSt, St) ->
     end;
 
 handle_call('Commit', [CmClaim], AuxSt, St) ->
-    PayprocClaim = filter_claim(pm_claim_committer:from_claim_mgmt(CmClaim)),
-    Timestamp = pm_datetime:format_now(),
-    Revision = pm_domain:head(),
-    Party = get_st_party(St),
-    AcceptedClaim = pm_claim:accept(Timestamp, Revision, Party, PayprocClaim),
-    PartyRevision = get_next_party_revision(St),
-    Changes = [
-        ?claim_created(PayprocClaim),
-        finalize_claim(AcceptedClaim, Timestamp),
-        ?revision_changed(Timestamp, PartyRevision)
-    ],
+    PayprocClaim = pm_claim_committer:from_claim_mgmt(CmClaim),
+    Changes = get_changes(PayprocClaim, St),
     respond(
         ok,
         Changes,
         AuxSt,
         St
-    ).
+   ).
 
-filter_claim(#payproc_Claim{changeset = Changeset} = PayprocClaim) ->
-    FilteredChangeset = lists:filter(
-        fun (?shop_modification(_, {cash_register_modification_unit, _})) ->
-                false;
-            (_) ->
-                true
-        end,
-        Changeset
-    ),
-    PayprocClaim#payproc_Claim{
-        changeset = FilteredChangeset
-    }.
+get_changes(undefined, _St) ->
+    [];
+get_changes(PayprocClaim, St) ->
+    Timestamp = pm_datetime:format_now(),
+    Revision = pm_domain:head(),
+    Party = get_st_party(St),
+    AcceptedClaim = pm_claim:accept(Timestamp, Revision, Party, PayprocClaim),
+    PartyRevision = get_next_party_revision(St),
+    [
+        ?claim_created(PayprocClaim),
+        finalize_claim(AcceptedClaim, Timestamp),
+        ?revision_changed(Timestamp, PartyRevision)
+    ].
 
 %% Generic handlers
 
