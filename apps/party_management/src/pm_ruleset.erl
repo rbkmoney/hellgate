@@ -20,13 +20,14 @@ reduce_payment_routing_ruleset(RuleSet, VS, DomainRevision) ->
         decisions = reduce_payment_routing_decisions(RuleSet#domain_PaymentRoutingRuleset.decisions, VS, DomainRevision)
     }.
 
-reduce_payment_routing_decisions({Type, []}, _, _) ->
-    {Type, []};
 reduce_payment_routing_decisions({delegates, Delegates}, VS, Rev) ->
     reduce_payment_routing_delegates(Delegates, VS, Rev);
 reduce_payment_routing_decisions({candidates, Candidates}, VS, Rev) ->
     reduce_payment_routing_candidates(Candidates, VS, Rev).
 
+
+reduce_payment_routing_delegates([], _VS, _Rev) ->
+    {delegates, []};
 reduce_payment_routing_delegates([D | Delegates], VS, Rev) ->
     Predicate = D#domain_PaymentRoutingDelegate.allowed,
     RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
