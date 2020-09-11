@@ -41,7 +41,11 @@ from_cm_changeset(Changeset) ->
                     false;
                 PartyMod ->
                     {true, from_cm_party_mod(PartyMod)}
-            end
+            end;
+            (#claim_management_ModificationUnit{
+                modification = {claim_modification, _}
+            }) ->
+                false
         end,
         Changeset
     ).
