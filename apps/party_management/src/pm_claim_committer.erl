@@ -28,21 +28,19 @@ from_claim_mgmt(#claim_management_Claim{
 %%% Internal functions
 
 from_cm_changeset(Changeset) ->
-    lists:foldr(
+    lists:filtermap(
         fun (#claim_management_ModificationUnit{
                 modification = {party_modification, PartyMod}
-            }, Acc) ->
-            maybe_apply_change(PartyMod, Acc)
+            }) ->
+            case PartyMod of
+                ?cm_shop_modification(_ShopID, {cash_register_modification_unit, _}) ->
+                    false;
+                PartyMod ->
+                    {true, from_cm_party_mod(PartyMod)}
+            end
         end,
-        [],
         Changeset
     ).
-
-maybe_apply_change(?cm_shop_modification(_ShopID, {cash_register_modification_unit, _}), Acc) ->
-    %% Filter out unsupported modification
-    Acc;
-maybe_apply_change(PartyMod, Acc) ->
-    [from_cm_party_mod(PartyMod) | Acc].
 
 from_cm_party_mod(?cm_contractor_modification(ContractorID, ContractorModification)) ->
     ?contractor_modification(ContractorID, ContractorModification);
