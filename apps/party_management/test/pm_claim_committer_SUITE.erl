@@ -327,12 +327,17 @@ shop_complex_modification(C) ->
     PayoutToolID2 = ?REAL_PAYOUT_TOOL_ID2,
     Schedule = ?bussched(2),
     ScheduleParams = #claim_management_ScheduleModification{schedule = Schedule},
+    CashRegisterModificationUnit = #claim_management_CashRegisterModificationUnit{
+        id = <<"1">>,
+        modification = ?cm_cash_register_unit_creation(1, #{})
+    },
     Modifications = [
         ?cm_shop_modification(ShopID, {category_modification, NewCategory}),
         ?cm_shop_modification(ShopID, {details_modification, NewDetails}),
         ?cm_shop_modification(ShopID, {location_modification, NewLocation}),
         ?cm_shop_modification(ShopID, {payout_tool_modification, PayoutToolID2}),
-        ?cm_shop_modification(ShopID, {payout_schedule_modification, ScheduleParams})
+        ?cm_shop_modification(ShopID, {payout_schedule_modification, ScheduleParams}),
+        ?cm_shop_modification(ShopID, {cash_register_modification_unit, CashRegisterModificationUnit})
     ],
     Claim = claim(Modifications, PartyID),
     ok = accept_claim(Claim, C),
@@ -776,6 +781,17 @@ construct_domain_fixture() ->
                 name = <<"Test BIN range">>,
                 description = <<"Test BIN range">>,
                 bins = ordsets:from_list([<<"1234">>, <<"5678">>])
+            }
+        }},
+        {cash_register_provider, #domain_CashRegisterProviderObject{
+            ref = ?crp(1),
+            data = #domain_CashRegisterProvider{
+                name = <<"Test Cache Register">>,
+                params_schema = [],
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{}
+                }
             }
         }}
     ].

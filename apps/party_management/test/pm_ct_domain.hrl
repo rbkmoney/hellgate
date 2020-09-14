@@ -27,6 +27,7 @@
 -define(p2pprov(ID),    #domain_P2PProviderRef{id = ID}).
 -define(wtdrlprov(ID),  #domain_WithdrawalProviderRef{id = ID}).
 -define(crit(ID),       #domain_CriterionRef{id = ID}).
+-define(crp(ID),        #domain_CashRegisterProviderRef{id = ID}).
 
 -define(cashrng(Lower, Upper),
     #domain_CashRange{lower = Lower, upper = Upper}).
