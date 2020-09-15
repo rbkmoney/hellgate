@@ -314,11 +314,25 @@ end_per_testcase(_Name, _C) ->
 %%
 
 -define(party_w_status(ID, Blocking, Suspension),
-    #domain_Party{id = ID, blocking = Blocking, suspension = Suspension}).
+    #domain_Party{
+        id = ID,
+        blocking = Blocking,
+        suspension = Suspension}
+).
 -define(shop_w_status(ID, Blocking, Suspension),
-    #domain_Shop{id = ID, blocking = Blocking, suspension = Suspension}).
+    #domain_Shop{
+        id = ID,
+        blocking = Blocking,
+        suspension = Suspension
+    }
+).
 -define(wallet_w_status(ID, Blocking, Suspension),
-    #domain_Wallet{id = ID, blocking = Blocking, suspension = Suspension}).
+    #domain_Wallet{
+        id = ID,
+        blocking = Blocking,
+        suspension = Suspension
+    }
+).
 
 -define(invalid_user(),
     {exception, #payproc_InvalidUser{}}).

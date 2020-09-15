@@ -1430,9 +1430,9 @@ payments_w_bank_card_issuer_conditions(C) ->
     FirstPayment = await_payment_capture(FirstInvoice, FirstPayment, Client),
     %kaz fail
     SecondInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {exception,
+    ?assertEqual({exception,
         {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
-    } = hg_client_invoicing:start_payment(SecondInvoice, KazPaymentParams, Client),
+    }, hg_client_invoicing:start_payment(SecondInvoice, KazPaymentParams, Client)),
     %rus success
     ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
     {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
@@ -1470,9 +1470,9 @@ payments_w_bank_conditions(C) ->
     FirstPayment = await_payment_capture(FirstInvoice, FirstPayment, Client),
     %bank 1 fail
     SecondInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {exception,
+    ?assertEqual({exception,
         {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
-    } = hg_client_invoicing:start_payment(SecondInvoice, TestPaymentParams, Client),
+    }, hg_client_invoicing:start_payment(SecondInvoice, TestPaymentParams, Client)),
     %bank 1 /w different wildcard fail
     ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
     {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
@@ -1480,9 +1480,9 @@ payments_w_bank_conditions(C) ->
         bank_name = <<"TESTBANK">>
     },
     WildPaymentParams = make_payment_params({bank_card, WildBankCard}, Session1, instant),
-    {exception,
+    ?assertEqual({exception,
         {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
-    } = hg_client_invoicing:start_payment(ThirdInvoice, WildPaymentParams, Client),
+    }, hg_client_invoicing:start_payment(ThirdInvoice, WildPaymentParams, Client)),
     %some other bank success
     FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 10000, C),
     {{bank_card, BankCard2}, Session2} = hg_dummy_provider:make_payment_tool(no_preauth),
@@ -1499,9 +1499,9 @@ payments_w_bank_conditions(C) ->
         bin = <<"42424242">>
     },
     FallbackPaymentParams = make_payment_params({bank_card, FallbackBankCard}, Session3, instant),
-    {exception,
+    ?assertEqual({exception,
         {'InvalidRequest', [<<"Invalid amount, more than allowed maximum">>]}
-    } = hg_client_invoicing:start_payment(FifthInvoice, FallbackPaymentParams, Client).
+    }, hg_client_invoicing:start_payment(FifthInvoice, FallbackPaymentParams, Client)).
 
 
 -spec invoice_success_on_third_payment(config()) -> test_return().
