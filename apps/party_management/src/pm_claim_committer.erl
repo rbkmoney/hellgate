@@ -7,7 +7,7 @@
 -export([from_claim_mgmt/1]).
 
 -spec from_claim_mgmt(dmsl_claim_management_thrift:'Claim'()) ->
-    dmsl_payment_processing_thrift:'Claim'().
+    dmsl_payment_processing_thrift:'Claim'() | undefined.
 
 from_claim_mgmt(#claim_management_Claim{
     id         = ID,
@@ -16,22 +16,39 @@ from_claim_mgmt(#claim_management_Claim{
     created_at = CreatedAt,
     updated_at = UpdatedAt
 }) ->
-    #payproc_Claim{
-        id         = ID,
-        status     = ?pending(),
-        changeset  = from_cm_changeset(Changeset),
-        revision   = Revision,
-        created_at = CreatedAt,
-        updated_at = UpdatedAt
-    }.
+    case from_cm_changeset(Changeset) of
+        [] -> undefined;
+        Converted ->
+            #payproc_Claim{
+                id         = ID,
+                status     = ?pending(),
+                changeset  = Converted,
+                revision   = Revision,
+                created_at = CreatedAt,
+                updated_at = UpdatedAt
+            }
+    end.
 
 %%% Internal functions
 
 from_cm_changeset(Changeset) ->
-    [from_cm_party_mod(PartyMod) ||
-     #claim_management_ModificationUnit{
-        modification = {party_modification, PartyMod}
-     } <- Changeset].
+    lists:filtermap(
+        fun (#claim_management_ModificationUnit{
+                modification = {party_modification, PartyMod}
+            }) ->
+            case PartyMod of
+                ?cm_cash_register_modification_unit_modification(_, _) ->
+                    false;
+                PartyMod ->
+                    {true, from_cm_party_mod(PartyMod)}
+            end;
+            (#claim_management_ModificationUnit{
+                modification = {claim_modification, _}
+            }) ->
+                false
+        end,
+        Changeset
+    ).
 
 from_cm_party_mod(?cm_contractor_modification(ContractorID, ContractorModification)) ->
     ?contractor_modification(ContractorID, ContractorModification);
