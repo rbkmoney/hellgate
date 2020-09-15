@@ -12,11 +12,10 @@
 
 -define(VERSION_PREFIX, "/v1").
 
--type service()      :: woody:service().
+-type service() :: woody:service().
 -type service_spec() :: {Path :: string(), service()}.
 
 -spec get_service(Name :: atom()) -> service().
-
 get_service(claim_committer) ->
     {dmsl_claim_management_thrift, 'ClaimCommitter'};
 get_service(party_management) ->
@@ -51,12 +50,10 @@ get_service(fault_detector) ->
     {fd_proto_fault_detector_thrift, 'FaultDetector'}.
 
 -spec get_service_spec(Name :: atom()) -> service_spec().
-
 get_service_spec(Name) ->
     get_service_spec(Name, #{}).
 
 -spec get_service_spec(Name :: atom(), Opts :: #{namespace => binary()}) -> service_spec().
-
 get_service_spec(Name = invoicing, #{}) ->
     {?VERSION_PREFIX ++ "/processing/invoicing", get_service(Name)};
 get_service_spec(Name = invoice_templating, #{}) ->

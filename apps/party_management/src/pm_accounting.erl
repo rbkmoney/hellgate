@@ -14,13 +14,13 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("shumpune_proto/include/shumpune_shumpune_thrift.hrl").
 
--type amount()          :: dmsl_domain_thrift:'Amount'().
--type currency_code()   :: dmsl_domain_thrift:'CurrencySymbolicCode'().
--type account_id()      :: dmsl_accounter_thrift:'AccountID'().
--type batch_id()        :: dmsl_accounter_thrift:'BatchID'().
+-type amount() :: dmsl_domain_thrift:'Amount'().
+-type currency_code() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
+-type account_id() :: dmsl_accounter_thrift:'AccountID'().
+-type batch_id() :: dmsl_accounter_thrift:'BatchID'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
--type batch()           :: {batch_id(), final_cash_flow()}.
--type clock()           :: shumpune_shumpune_thrift:'Clock'().
+-type batch() :: {batch_id(), final_cash_flow()}.
+-type clock() :: shumpune_shumpune_thrift:'Clock'().
 
 -export_type([batch/0]).
 
@@ -36,9 +36,7 @@
     max_available_amount => amount()
 }.
 
--spec get_account(account_id()) ->
-    account().
-
+-spec get_account(account_id()) -> account().
 get_account(AccountID) ->
     case call_accounter('GetAccountByID', [AccountID]) of
         {ok, Result} ->
@@ -47,15 +45,11 @@ get_account(AccountID) ->
             pm_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
--spec get_balance(account_id()) ->
-    balance().
-
+-spec get_balance(account_id()) -> balance().
 get_balance(AccountID) ->
     get_balance(AccountID, {latest, #shumpune_LatestClock{}}).
 
--spec get_balance(account_id(), clock()) ->
-    balance().
-
+-spec get_balance(account_id(), clock()) -> balance().
 get_balance(AccountID, Clock) ->
     case call_accounter('GetBalanceByID', [AccountID, Clock]) of
         {ok, Result} ->
@@ -64,21 +58,18 @@ get_balance(AccountID, Clock) ->
             pm_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
--spec create_account(currency_code()) ->
-    account_id().
-
+-spec create_account(currency_code()) -> account_id().
 create_account(CurrencyCode) ->
     create_account(CurrencyCode, undefined).
 
--spec create_account(currency_code(), binary() | undefined) ->
-    account_id().
-
+-spec create_account(currency_code(), binary() | undefined) -> account_id().
 create_account(CurrencyCode, Description) ->
     case call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)]) of
         {ok, Result} ->
             Result;
         {exception, Exception} ->
-            error({accounting, Exception}) % FIXME
+            % FIXME
+            error({accounting, Exception})
     end.
 
 construct_prototype(CurrencyCode, Description) ->

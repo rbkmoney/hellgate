@@ -1,8 +1,12 @@
 -module(hg_direct_recurrent_tests_SUITE).
+
 -include_lib("common_test/include/ct.hrl").
+
 -include("hg_ct_domain.hrl").
 -include("hg_ct_json.hrl").
+
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+
 -include("invoice_events.hrl").
 -include("payment_events.hrl").
 -include("customer_events.hrl").
@@ -30,10 +34,10 @@
 
 %% Internal types
 
--type config()           :: hg_ct_helper:config().
--type test_case_name()   :: hg_ct_helper:test_case_name().
--type group_name()       :: hg_ct_helper:group_name().
--type test_result()      :: any() | no_return().
+-type config() :: hg_ct_helper:config().
+-type test_case_name() :: hg_ct_helper:test_case_name().
+-type group_name() :: hg_ct_helper:group_name().
+-type test_result() :: any() | no_return().
 
 %% Macro helpers
 
@@ -49,15 +53,20 @@
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
--define(evp(Pattern), fun(EvpPattern) -> case EvpPattern of Pattern -> true; (_) -> false end end).
+-define(evp(Pattern), fun(EvpPattern) ->
+    case EvpPattern of
+        Pattern -> true;
+        (_) -> false
+    end
+end).
 
 %% Supervisor callbacks
 
 -behaviour(supervisor).
+
 -export([init/1]).
 
--spec init([]) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+-spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
 
@@ -96,7 +105,13 @@ init_per_suite(C) ->
     % _ = dbg:tpl({woody_client, '_', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([
-        woody, scoper, dmt_client, party_management, hellgate, {cowboy, CowboySpec}]),
+        woody,
+        scoper,
+        dmt_client,
+        party_management,
+        hellgate,
+        {cowboy, CowboySpec}
+    ]),
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
@@ -286,15 +301,17 @@ cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
 
 start_proxies(Proxies) ->
-    setup_proxies(lists:map(
-        fun
-            Mapper({Module, ProxyID, Context}) ->
-                Mapper({Module, ProxyID, #{}, Context});
-            Mapper({Module, ProxyID, ProxyOpts, Context}) ->
-                construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
-        end,
-        Proxies
-    )).
+    setup_proxies(
+        lists:map(
+            fun
+                Mapper({Module, ProxyID, Context}) ->
+                    Mapper({Module, ProxyID, #{}, Context});
+                Mapper({Module, ProxyID, ProxyOpts, Context}) ->
+                    construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
+            end,
+            Proxies
+        )
+    ).
 
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
@@ -317,10 +334,10 @@ construct_proxy(ID, Url, Options) ->
     {proxy, #domain_ProxyObject{
         ref = ?prx(ID),
         data = #domain_ProxyDefinition{
-            name              = Url,
-            description       = Url,
-            url               = Url,
-            options           = Options
+            name = Url,
+            description = Url,
+            url = Url,
+            options = Options
         }
     }}.
 
@@ -338,12 +355,13 @@ make_payment_params(PaymentTool, Session, FlowType, MakeRecurrent, RecurrentPare
     make_payment_params(#domain_ClientInfo{}, PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent).
 
 make_payment_params(ClientInfo, PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent) ->
-    Flow = case FlowType of
-        instant ->
-            {instant, #payproc_InvoicePaymentParamsFlowInstant{}};
-        {hold, OnHoldExpiration} ->
-            {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
-    end,
+    Flow =
+        case FlowType of
+            instant ->
+                {instant, #payproc_InvoicePaymentParamsFlowInstant{}};
+            {hold, OnHoldExpiration} ->
+                {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
+        end,
     Payer = make_payer_params(PaymentTool, Session, ClientInfo, RecurrentParent),
     #payproc_InvoicePaymentParams{
         payer = Payer,
@@ -446,12 +464,13 @@ wait_for_binding_success(CustomerID, BindingID, TimeLeft, Client) when TimeLeft 
     Target = ?customer_binding_changed(BindingID, ?customer_binding_status_changed(?customer_binding_succeeded())),
     Started = genlib_time:ticks(),
     Event = hg_client_customer:pull_event(CustomerID, Client),
-    R = case Event of
-        {ok, ?customer_event(Changes)} ->
-            lists:member(Target, Changes);
-        _ ->
-            false
-    end,
+    R =
+        case Event of
+            {ok, ?customer_event(Changes)} ->
+                lists:member(Target, Changes);
+            _ ->
+                false
+        end,
     case R of
         true ->
             ok;
@@ -469,9 +488,10 @@ make_customer_payment_params(CustomerID) ->
 
 make_customer_payment_params(CustomerID, MakeRecurrent) ->
     #payproc_InvoicePaymentParams{
-        payer = {customer, #payproc_CustomerPayerParams{
-            customer_id = CustomerID
-        }},
+        payer =
+            {customer, #payproc_CustomerPayerParams{
+                customer_id = CustomerID
+            }},
         flow = {instant, #payproc_InvoicePaymentParamsFlowInstant{}},
         make_recurrent = MakeRecurrent
     }.
@@ -512,10 +532,13 @@ next_event(InvoiceID, Timeout, Client) ->
 -spec construct_term_set_w_recurrent_paytools() -> term().
 construct_term_set_w_recurrent_paytools() ->
     TermSet = construct_simple_term_set(),
-    TermSet#domain_TermSet{recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card_deprecated, visa)
-            ])}
+    TermSet#domain_TermSet{
+        recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
+            payment_methods =
+                {value,
+                    ordsets:from_list([
+                        ?pmt(bank_card_deprecated, visa)
+                    ])}
         }
     }.
 
@@ -523,43 +546,55 @@ construct_term_set_w_recurrent_paytools() ->
 construct_simple_term_set() ->
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            currencies = {value, ordsets:from_list([
-                ?cur(<<"RUB">>)
-            ])},
-            categories = {value, ordsets:from_list([
-                ?cat(1)
-            ])},
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card_deprecated, visa),
-                ?pmt(bank_card_deprecated, mastercard)
-            ])},
-            cash_limit = {decisions, [
-                #domain_CashLimitDecision{
-                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(     1000, <<"RUB">>)},
-                        upper = {exclusive, ?cash(420000000, <<"RUB">>)}
-                    }}
-                }
-            ]},
-            fees = {value, [
-                ?cfpost(
-                    {merchant, settlement},
-                    {system, settlement},
-                    ?share(45, 1000, operation_amount)
-                )
-            ]},
-            holds = #domain_PaymentHoldsServiceTerms{
-                payment_methods = {value, ?ordset([
-                    ?pmt(bank_card_deprecated, visa),
-                    ?pmt(bank_card_deprecated, mastercard)
-                ])},
-                lifetime = {decisions, [
-                    #domain_HoldLifetimeDecision{
+            currencies =
+                {value,
+                    ordsets:from_list([
+                        ?cur(<<"RUB">>)
+                    ])},
+            categories =
+                {value,
+                    ordsets:from_list([
+                        ?cat(1)
+                    ])},
+            payment_methods =
+                {value,
+                    ordsets:from_list([
+                        ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card_deprecated, mastercard)
+                    ])},
+            cash_limit =
+                {decisions, [
+                    #domain_CashLimitDecision{
                         if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, #domain_HoldLifetime{seconds = 10}}
+                        then_ =
+                            {value, #domain_CashRange{
+                                lower = {inclusive, ?cash(1000, <<"RUB">>)},
+                                upper = {exclusive, ?cash(420000000, <<"RUB">>)}
+                            }}
                     }
-                ]}
+                ]},
+            fees =
+                {value, [
+                    ?cfpost(
+                        {merchant, settlement},
+                        {system, settlement},
+                        ?share(45, 1000, operation_amount)
+                    )
+                ]},
+            holds = #domain_PaymentHoldsServiceTerms{
+                payment_methods =
+                    {value,
+                        ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
+                        ])},
+                lifetime =
+                    {decisions, [
+                        #domain_HoldLifetimeDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ = {value, #domain_HoldLifetime{seconds = 10}}
+                        }
+                    ]}
             }
         }
     }.
@@ -590,15 +625,18 @@ construct_domain_fixture(TermSet) ->
                 name = <<"Test Inc.">>,
                 system_account_set = {value, ?sas(1)},
                 default_contract_template = {value, ?tmpl(1)},
-                providers = {value, ?ordset([
-                    ?prv(1)
-                ])},
-                inspector = {decisions, [
-                    #domain_InspectorDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, ?insp(1)}
-                    }
-                ]},
+                providers =
+                    {value,
+                        ?ordset([
+                            ?prv(1)
+                        ])},
+                inspector =
+                    {decisions, [
+                        #domain_InspectorDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ = {value, ?insp(1)}
+                        }
+                    ]},
                 residences = [],
                 realm = test
             }
@@ -615,10 +653,12 @@ construct_domain_fixture(TermSet) ->
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
                 parent_terms = undefined,
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = TermSet
-                }]
+                term_sets = [
+                    #domain_TimedTermSet{
+                        action_time = #'TimestampInterval'{},
+                        terms = TermSet
+                    }
+                ]
             }
         }},
         {provider, #domain_ProviderObject{
@@ -634,42 +674,53 @@ construct_domain_fixture(TermSet) ->
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa),
-                            ?pmt(bank_card_deprecated, mastercard)
-                        ])},
-                        cash_limit = {value, ?cashrng(
-                            {inclusive, ?cash(      1000, <<"RUB">>)},
-                            {exclusive, ?cash(1000000000, <<"RUB">>)}
-                        )},
-                        cash_flow = {value, [
-                            ?cfpost(
-                                {provider, settlement},
-                                {merchant, settlement},
-                                ?share(1, 1, operation_amount)
-                            ),
-                            ?cfpost(
-                                {system, settlement},
-                                {provider, settlement},
-                                ?share(18, 1000, operation_amount)
-                            )
-                        ]},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card_deprecated, mastercard)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                )},
+                        cash_flow =
+                            {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(18, 1000, operation_amount)
+                                )
+                            ]},
                         holds = #domain_PaymentHoldsProvisionTerms{
-                            lifetime = {decisions, [
-                                #domain_HoldLifetimeDecision{
-                                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                        definition = {payment_system_is, visa}
-                                    }}}},
-                                    then_ = {value, ?hold_lifetime(12)}
-                                }
-                            ]}
+                            lifetime =
+                                {decisions, [
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition = {payment_system_is, visa}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(12)}
+                                    }
+                                ]}
                         }
                     },
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa)
-                        ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
                 }

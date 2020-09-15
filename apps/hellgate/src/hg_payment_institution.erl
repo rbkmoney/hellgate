@@ -14,20 +14,19 @@
 
 %%
 
--type currency()          :: dmsl_domain_thrift:'CurrencyRef'().
--type varset()            :: pm_selector:varset().
--type revision()          :: hg_domain:revision().
--type payment_inst()      :: dmsl_domain_thrift:'PaymentInstitution'().
--type payment_inst_ref()  :: dmsl_domain_thrift:'PaymentInstitutionRef'().
--type realm()             :: dmsl_domain_thrift:'PaymentInstitutionRealm'().
--type accounts()          :: dmsl_domain_thrift:'ProviderAccountSet'().
--type account()           :: dmsl_domain_thrift:'ProviderAccount'().
--type external_account()  :: dmsl_domain_thrift:'ExternalAccount'().
+-type currency() :: dmsl_domain_thrift:'CurrencyRef'().
+-type varset() :: pm_selector:varset().
+-type revision() :: hg_domain:revision().
+-type payment_inst() :: dmsl_domain_thrift:'PaymentInstitution'().
+-type payment_inst_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
+-type realm() :: dmsl_domain_thrift:'PaymentInstitutionRealm'().
+-type accounts() :: dmsl_domain_thrift:'ProviderAccountSet'().
+-type account() :: dmsl_domain_thrift:'ProviderAccount'().
+-type external_account() :: dmsl_domain_thrift:'ExternalAccount'().
 
 %%
 
 -spec compute_payment_institution(payment_inst_ref(), varset(), revision()) -> payment_inst().
-
 compute_payment_institution(PaymentInstitutionRef, VS, Revision) ->
     {Client, Context} = get_party_client(),
     VS0 = hg_varset:prepare_varset(VS),
@@ -35,9 +34,7 @@ compute_payment_institution(PaymentInstitutionRef, VS, Revision) ->
         party_client_thrift:compute_payment_institution(PaymentInstitutionRef, Revision, VS0, Client, Context),
     PaymentInstitution.
 
--spec get_system_account(currency(), revision(), payment_inst()) ->
-    dmsl_domain_thrift:'SystemAccount'() | no_return().
-
+-spec get_system_account(currency(), revision(), payment_inst()) -> dmsl_domain_thrift:'SystemAccount'() | no_return().
 get_system_account(Currency, Revision, #domain_PaymentInstitution{system_account_set = S}) ->
     {value, SystemAccountSetRef} = S,
     SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
@@ -49,18 +46,14 @@ get_system_account(Currency, Revision, #domain_PaymentInstitution{system_account
     end.
 
 -spec get_realm(payment_inst()) -> realm().
-
 get_realm(#domain_PaymentInstitution{realm = Realm}) ->
     Realm.
 
 -spec is_live(payment_inst()) -> boolean().
-
 is_live(#domain_PaymentInstitution{realm = Realm}) ->
     Realm =:= live.
 
--spec choose_provider_account(currency(), accounts()) ->
-    account() | no_return().
-
+-spec choose_provider_account(currency(), accounts()) -> account() | no_return().
 choose_provider_account(Currency, Accounts) ->
     case maps:find(Currency, Accounts) of
         {ok, Account} ->
@@ -69,9 +62,7 @@ choose_provider_account(Currency, Accounts) ->
             error({misconfiguration, {'No provider account for a given currency', Currency}})
     end.
 
--spec choose_external_account(currency(), varset(), revision()) ->
-    external_account() | undefined.
-
+-spec choose_external_account(currency(), varset(), revision()) -> external_account() | undefined.
 choose_external_account(Currency, VS, Revision) ->
     Globals = hg_domain:get(Revision, {globals, #domain_GlobalsRef{}}),
     ExternalAccountSetSelector = Globals#domain_Globals.external_account_set,

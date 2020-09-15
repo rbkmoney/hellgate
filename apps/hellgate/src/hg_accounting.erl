@@ -27,21 +27,21 @@
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("shumpune_proto/include/shumpune_shumpune_thrift.hrl").
 
--type amount()          :: dmsl_domain_thrift:'Amount'().
--type currency_code()   :: dmsl_domain_thrift:'CurrencySymbolicCode'().
--type account_id()      :: dmsl_accounter_thrift:'AccountID'().
--type plan_id()         :: dmsl_accounter_thrift:'PlanID'().
--type batch_id()        :: dmsl_accounter_thrift:'BatchID'().
+-type amount() :: dmsl_domain_thrift:'Amount'().
+-type currency_code() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
+-type account_id() :: dmsl_accounter_thrift:'AccountID'().
+-type plan_id() :: dmsl_accounter_thrift:'PlanID'().
+-type batch_id() :: dmsl_accounter_thrift:'BatchID'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
--type batch()           :: {batch_id(), final_cash_flow()}.
--type clock()           :: shumpune_shumpune_thrift:'Clock'().
+-type batch() :: {batch_id(), final_cash_flow()}.
+-type clock() :: shumpune_shumpune_thrift:'Clock'().
 
--type payment()             :: dmsl_domain_thrift:'InvoicePayment'().
--type shop()                :: dmsl_domain_thrift:'Shop'().
+-type payment() :: dmsl_domain_thrift:'InvoicePayment'().
+-type shop() :: dmsl_domain_thrift:'Shop'().
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
--type provider()            :: dmsl_domain_thrift:'Provider'().
--type varset()              :: pm_selector:varset().
--type revision()            :: hg_domain:revision().
+-type provider() :: dmsl_domain_thrift:'Provider'().
+-type varset() :: pm_selector:varset().
+-type revision() :: hg_domain:revision().
 
 -export_type([batch/0]).
 
@@ -57,9 +57,7 @@
     max_available_amount => amount()
 }.
 
--spec get_account(account_id()) ->
-    account().
-
+-spec get_account(account_id()) -> account().
 get_account(AccountID) ->
     case call_accounter('GetAccountByID', [AccountID]) of
         {ok, Result} ->
@@ -68,15 +66,11 @@ get_account(AccountID) ->
             hg_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
--spec get_balance(account_id()) ->
-    balance().
-
+-spec get_balance(account_id()) -> balance().
 get_balance(AccountID) ->
     get_balance(AccountID, {latest, #shumpune_LatestClock{}}).
 
--spec get_balance(account_id(), clock()) ->
-    balance().
-
+-spec get_balance(account_id(), clock()) -> balance().
 get_balance(AccountID, Clock) ->
     case call_accounter('GetBalanceByID', [AccountID, Clock]) of
         {ok, Result} ->
@@ -85,25 +79,21 @@ get_balance(AccountID, Clock) ->
             hg_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
--spec create_account(currency_code()) ->
-    account_id().
-
+-spec create_account(currency_code()) -> account_id().
 create_account(CurrencyCode) ->
     create_account(CurrencyCode, undefined).
 
--spec create_account(currency_code(), binary() | undefined) ->
-    account_id().
-
+-spec create_account(currency_code(), binary() | undefined) -> account_id().
 create_account(CurrencyCode, Description) ->
     case call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)]) of
         {ok, Result} ->
             Result;
         {exception, Exception} ->
-            error({accounting, Exception}) % FIXME
+            % FIXME
+            error({accounting, Exception})
     end.
 
 -spec collect_account_map(payment(), shop(), payment_institution(), provider(), varset(), revision()) -> map().
-
 collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
     Map0 = collect_merchant_account_map(Shop, #{}),
     Map1 = collect_provider_account_map(Payment, Provider, Map0),
@@ -111,15 +101,13 @@ collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) -
     collect_external_account_map(Payment, VS, Revision, Map2).
 
 -spec collect_merchant_account_map(shop(), map()) -> map().
-
 collect_merchant_account_map(#domain_Shop{account = MerchantAccount}, Acc) ->
     Acc#{
         {merchant, settlement} => MerchantAccount#domain_ShopAccount.settlement,
-        {merchant, guarantee } => MerchantAccount#domain_ShopAccount.guarantee
+        {merchant, guarantee} => MerchantAccount#domain_ShopAccount.guarantee
     }.
 
 -spec collect_provider_account_map(payment(), provider(), map()) -> map().
-
 collect_provider_account_map(Payment, #domain_Provider{accounts = ProviderAccounts}, Acc) ->
     Currency = get_currency(get_payment_cost(Payment)),
     ProviderAccount = hg_payment_institution:choose_provider_account(Currency, ProviderAccounts),
@@ -128,17 +116,15 @@ collect_provider_account_map(Payment, #domain_Provider{accounts = ProviderAccoun
     }.
 
 -spec collect_system_account_map(payment(), payment_institution(), revision(), map()) -> map().
-
 collect_system_account_map(Payment, PaymentInstitution, Revision, Acc) ->
     Currency = get_currency(get_payment_cost(Payment)),
     SystemAccount = hg_payment_institution:get_system_account(Currency, Revision, PaymentInstitution),
     Acc#{
         {system, settlement} => SystemAccount#domain_SystemAccount.settlement,
-        {system, subagent  } => SystemAccount#domain_SystemAccount.subagent
+        {system, subagent} => SystemAccount#domain_SystemAccount.subagent
     }.
 
 -spec collect_external_account_map(payment(), varset(), revision(), map()) -> map().
-
 collect_external_account_map(Payment, VS, Revision, Acc) ->
     Currency = get_currency(get_payment_cost(Payment)),
     case hg_payment_institution:choose_external_account(Currency, VS, Revision) of
@@ -158,35 +144,27 @@ construct_prototype(CurrencyCode, Description) ->
     }.
 
 %%
--spec plan(plan_id(), [batch()]) ->
-    clock().
-
+-spec plan(plan_id(), [batch()]) -> clock().
 plan(_PlanID, []) ->
     error(badarg);
 plan(_PlanID, Batches) when not is_list(Batches) ->
     error(badarg);
 plan(PlanID, Batches) ->
     lists:foldl(
-        fun (Batch, _) -> hold(PlanID, Batch) end,
+        fun(Batch, _) -> hold(PlanID, Batch) end,
         undefined,
         Batches
     ).
 
--spec hold(plan_id(), batch()) ->
-    clock().
-
+-spec hold(plan_id(), batch()) -> clock().
 hold(PlanID, Batch) ->
     do('Hold', construct_plan_change(PlanID, Batch)).
 
--spec commit(plan_id(), [batch()]) ->
-    clock().
-
+-spec commit(plan_id(), [batch()]) -> clock().
 commit(PlanID, Batches) ->
     do('CommitPlan', construct_plan(PlanID, Batches)).
 
--spec rollback(plan_id(), [batch()]) ->
-    clock().
-
+-spec rollback(plan_id(), [batch()]) -> clock().
 rollback(PlanID, Batches) ->
     do('RollbackPlan', construct_plan(PlanID, Batches)).
 
@@ -195,7 +173,8 @@ do(Op, Plan) ->
         {ok, Clock} ->
             Clock;
         {exception, Exception} ->
-            error({accounting, Exception}) % FIXME
+            % FIXME
+            error({accounting, Exception})
     end.
 
 construct_plan_change(PlanID, {BatchID, Cashflow}) ->
@@ -209,33 +188,34 @@ construct_plan_change(PlanID, {BatchID, Cashflow}) ->
 
 construct_plan(PlanID, Batches) ->
     #shumpune_PostingPlan{
-        id    = PlanID,
+        id = PlanID,
         batch_list = [
             #shumpune_PostingBatch{
                 id = BatchID,
                 postings = collect_postings(Cashflow)
             }
-        || {BatchID, Cashflow} <- Batches]
+            || {BatchID, Cashflow} <- Batches
+        ]
     }.
 
 collect_postings(Cashflow) ->
     [
         #shumpune_Posting{
-            from_id           = Source,
-            to_id             = Destination,
-            amount            = Amount,
+            from_id = Source,
+            to_id = Destination,
+            amount = Amount,
             currency_sym_code = CurrencyCode,
-            description       = construct_posting_description(Details)
+            description = construct_posting_description(Details)
         }
         || #domain_FinalCashFlowPosting{
-            source      = #domain_FinalCashFlowAccount{account_id = Source},
-            destination = #domain_FinalCashFlowAccount{account_id = Destination},
-            details     = Details,
-            volume      = #domain_Cash{
-                amount      = Amount,
-                currency    = #domain_CurrencyRef{symbolic_code = CurrencyCode}
-            }
-        } <- Cashflow
+               source = #domain_FinalCashFlowAccount{account_id = Source},
+               destination = #domain_FinalCashFlowAccount{account_id = Destination},
+               details = Details,
+               volume = #domain_Cash{
+                   amount = Amount,
+                   currency = #domain_CurrencyRef{symbolic_code = CurrencyCode}
+               }
+           } <- Cashflow
     ].
 
 construct_posting_description(Details) when is_binary(Details) ->

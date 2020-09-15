@@ -1,4 +1,5 @@
 -module(hg_msgpack_marshalling).
+
 -include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 -include_lib("mg_proto/include/mg_proto_msgpack_thrift.hrl").
 
@@ -26,8 +27,7 @@
 
 %%
 
--spec marshal(msgpack_value()) ->
-    dmsl_msgpack_thrift:'Value'().
+-spec marshal(msgpack_value()) -> dmsl_msgpack_thrift:'Value'().
 marshal(undefined) ->
     {nl, #msgpack_Nil{}};
 marshal(Boolean) when is_boolean(Boolean) ->
@@ -41,19 +41,18 @@ marshal(String) when is_binary(String) ->
 marshal({bin, Binary}) ->
     {bin, Binary};
 marshal(Object) when is_map(Object) ->
-    {obj, maps:fold(
-        fun(K, V, Acc) ->
-            maps:put(marshal(K), marshal(V), Acc)
-        end,
-        #{},
-        Object
-    )};
+    {obj,
+        maps:fold(
+            fun(K, V, Acc) ->
+                maps:put(marshal(K), marshal(V), Acc)
+            end,
+            #{},
+            Object
+        )};
 marshal(Array) when is_list(Array) ->
     {arr, lists:map(fun marshal/1, Array)}.
 
--spec unmarshal(dmsl_msgpack_thrift:'Value'()) ->
-    msgpack_value().
-
+-spec unmarshal(dmsl_msgpack_thrift:'Value'()) -> msgpack_value().
 unmarshal({nl, #msgpack_Nil{}}) ->
     undefined;
 unmarshal({b, Boolean}) ->
@@ -75,26 +74,20 @@ unmarshal({arr, Array}) ->
 
 -include_lib("damsel/include/dmsl_json_thrift.hrl").
 
--spec marshal
-    (json, dmsl_json_thrift:'Value'()) -> value().
+-spec marshal(json, dmsl_json_thrift:'Value'()) -> value().
+marshal(json, {nl, _}) -> undefined;
+marshal(json, {b, B}) -> B;
+marshal(json, {i, I}) -> I;
+marshal(json, {flt, F}) -> F;
+marshal(json, {str, S}) -> S;
+marshal(json, {obj, O}) -> maps:map(fun(_, V) -> marshal(json, V) end, O);
+marshal(json, {arr, A}) -> lists:map(fun(V) -> marshal(json, V) end, A).
 
-marshal(json, {nl, _})                -> undefined;
-marshal(json, {b, B})                 -> B;
-marshal(json, {i, I})                 -> I;
-marshal(json, {flt, F})               -> F;
-marshal(json, {str, S})               -> S;
-marshal(json, {obj, O})               -> maps:map(fun (_, V) -> marshal(json, V) end, O);
-marshal(json, {arr, A})               -> lists:map(fun (V)   -> marshal(json, V) end, A).
-
-
--spec unmarshal
-    (json, value()) -> dmsl_json_thrift:'Value'().
-
-unmarshal(json, undefined)            -> {nl, #json_Null{}};
+-spec unmarshal(json, value()) -> dmsl_json_thrift:'Value'().
+unmarshal(json, undefined) -> {nl, #json_Null{}};
 unmarshal(json, B) when is_boolean(B) -> {b, B};
 unmarshal(json, I) when is_integer(I) -> {i, I};
-unmarshal(json, F) when is_float(F)   -> {flt, F};
-unmarshal(json, S) when is_binary(S)  -> {str, S};
-unmarshal(json, O) when is_map(O)     -> {obj, maps:map(fun (_, V) -> unmarshal(json, V) end, O)};
-unmarshal(json, A) when is_list(A)    -> {arr, lists:map(fun (V)   -> unmarshal(json, V) end, A)}.
-
+unmarshal(json, F) when is_float(F) -> {flt, F};
+unmarshal(json, S) when is_binary(S) -> {str, S};
+unmarshal(json, O) when is_map(O) -> {obj, maps:map(fun(_, V) -> unmarshal(json, V) end, O)};
+unmarshal(json, A) when is_list(A) -> {arr, lists:map(fun(V) -> unmarshal(json, V) end, A)}.

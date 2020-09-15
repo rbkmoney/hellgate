@@ -16,51 +16,45 @@
 -type timestamp_interval_bound() :: dmsl_base_thrift:'TimestampIntervalBound'().
 
 %% not exported from calendar module
--type rfc3339_time_unit() :: microsecond
-                           | millisecond
-                           | nanosecond
-                           | second.
+-type rfc3339_time_unit() ::
+    microsecond |
+    millisecond |
+    nanosecond |
+    second.
 
 -export_type([timestamp/0]).
 
 %%
 
 -spec format_ts(unix_timestamp()) -> timestamp().
-
 format_ts(Ts) when is_integer(Ts) ->
     format_ts(Ts, second).
 
 -spec format_now() -> timestamp().
-
 format_now() ->
     USec = erlang:system_time(microsecond),
     format_ts(USec, microsecond).
 
 -spec compare(timestamp(), timestamp()) -> later | earlier | simultaneously.
-
 compare(T1, T2) when is_binary(T1) andalso is_binary(T2) ->
     compare_int(to_integer(T1), to_integer(T2)).
 
 % Compare inclusivly! undefined == ∞
 -spec between(timestamp(), timestamp() | undefined, timestamp() | undefined) -> boolean().
-
 between(Timestamp, Start, End) ->
     LB = to_interval_bound(Start, inclusive),
     UB = to_interval_bound(End, inclusive),
     between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}).
 
 -spec between(timestamp(), timestamp_interval()) -> boolean().
-
 between(Timestamp, #'TimestampInterval'{lower_bound = LB, upper_bound = UB}) ->
-    check_bound(Timestamp, LB, later)
-    andalso
-    check_bound(Timestamp, UB, earlier).
+    check_bound(Timestamp, LB, later) andalso
+        check_bound(Timestamp, UB, earlier).
 
 -spec add_interval(timestamp(), {Years, Months, Days}) -> timestamp() when
     Years :: integer() | undefined,
     Months :: integer() | undefined,
     Days :: integer() | undefined.
-
 add_interval(Timestamp, {YY, MM, DD}) ->
     TSSeconds = erlang:convert_time_unit(to_integer(Timestamp), microsecond, second),
     {Date, Time} = genlib_time:unixtime_to_daytime(TSSeconds),
@@ -68,7 +62,6 @@ add_interval(Timestamp, {YY, MM, DD}) ->
     format_ts(genlib_time:daytime_to_unixtime({NewDate, Time})).
 
 -spec parse(binary(), rfc3339_time_unit()) -> integer().
-
 parse(Bin, Precision) when is_binary(Bin) ->
     Str = erlang:binary_to_list(Bin),
     calendar:rfc3339_to_system_time(Str, [{unit, Precision}]).
@@ -76,13 +69,11 @@ parse(Bin, Precision) when is_binary(Bin) ->
 %% Internal functions
 
 -spec format_ts(integer(), rfc3339_time_unit()) -> timestamp().
-
 format_ts(Ts, Unit) ->
     Str = calendar:system_time_to_rfc3339(Ts, [{unit, Unit}, {offset, "Z"}]),
     erlang:list_to_binary(Str).
 
 -spec to_integer(timestamp()) -> integer().
-
 to_integer(Timestamp) ->
     parse(Timestamp, microsecond).
 
@@ -102,7 +93,6 @@ compare_int(T1, T2) ->
     end.
 
 -spec check_bound(timestamp(), timestamp_interval_bound(), later | earlier) -> boolean().
-
 check_bound(_, undefined, _) ->
     true;
 check_bound(Timestamp, #'TimestampIntervalBound'{bound_type = Type, bound_time = BoundTime}, Operator) ->
@@ -120,6 +110,5 @@ nvl(Val) ->
 
 nvl(undefined, Default) ->
     Default;
-
 nvl(Val, _) ->
     Val.

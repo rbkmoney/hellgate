@@ -4,6 +4,7 @@
 %%%  - designate an exception when specified tag is missing
 
 -module(hg_proxy_host_provider).
+
 -include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
 
 %% Woody handler called by hg_woody_wrapper
@@ -14,16 +15,16 @@
 
 %%
 
--type tag()               :: dmsl_base_thrift:'Tag'().
--type callback()          :: dmsl_proxy_provider_thrift:'Callback'().
+-type tag() :: dmsl_base_thrift:'Tag'().
+-type callback() :: dmsl_proxy_provider_thrift:'Callback'().
 -type callback_response() :: dmsl_proxy_provider_thrift:'CallbackResponse'().
--type callback_name()     :: 'ProcessPaymentCallback'
-                           | 'ProcessRecurrentTokenCallback'
-                           | 'GetPayment'.
+-type callback_name() ::
+    'ProcessPaymentCallback' |
+    'ProcessRecurrentTokenCallback' |
+    'GetPayment'.
 
 -spec handle_function(callback_name(), {tag()} | {tag(), callback()}, hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
-
 handle_function('ProcessPaymentCallback', {Tag, Callback}, _) ->
     handle_callback_result(hg_invoice:process_callback(Tag, {provider, Callback}));
 handle_function('ProcessRecurrentTokenCallback', {Tag, Callback}, _) ->

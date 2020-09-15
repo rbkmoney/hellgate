@@ -1,6 +1,7 @@
 %%% Payment tools
 
 -module(pm_payment_tool).
+
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %%
@@ -15,7 +16,6 @@
 -type condition() :: dmsl_domain_thrift:'PaymentToolCondition'().
 
 -spec create_from_method(method()) -> t().
-
 %% TODO empty strings - ugly hack for dialyzar
 create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
@@ -32,11 +32,14 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentS
         bin = <<"">>,
         last_digits = <<"">>
     }};
-create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
-        payment_system = PaymentSystem,
-        token_provider = TokenProvider,
-        tokenization_method = TokenizationMethod
-}}}) ->
+create_from_method(#domain_PaymentMethodRef{
+    id =
+        {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
+            payment_system = PaymentSystem,
+            token_provider = TokenProvider,
+            tokenization_method = TokenizationMethod
+        }}
+}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
@@ -45,12 +48,15 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated
         token_provider = TokenProvider,
         tokenization_method = TokenizationMethod
     }};
-create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
-    payment_system = PaymentSystem,
-    is_cvv_empty = IsCVVEmpty,
-    token_provider = TokenProvider,
-    tokenization_method = TokenizationMethod
-}}}) ->
+create_from_method(#domain_PaymentMethodRef{
+    id =
+        {bank_card, #domain_BankCardPaymentMethod{
+            payment_system = PaymentSystem,
+            is_cvv_empty = IsCVVEmpty,
+            token_provider = TokenProvider,
+            tokenization_method = TokenizationMethod
+        }}
+}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
@@ -81,7 +87,6 @@ create_from_method(#domain_PaymentMethodRef{id = {mobile, Operator}}) ->
 %%
 
 -spec test_condition(condition(), t(), pm_domain:revision()) -> boolean() | undefined.
-
 test_condition({bank_card, C}, {bank_card, V = #domain_BankCard{}}, Rev) ->
     test_bank_card_condition(C, V, Rev);
 test_condition({payment_terminal, C}, {payment_terminal, V = #domain_PaymentTerminal{}}, Rev) ->
@@ -109,7 +114,6 @@ test_bank_card_condition_def(
     true;
 test_bank_card_condition_def({payment_system_is, _Ps}, #domain_BankCard{}, _Rev) ->
     false;
-
 test_bank_card_condition_def({payment_system, PaymentSystem}, V, Rev) ->
     test_payment_system_condition(PaymentSystem, V, Rev);
 test_bank_card_condition_def({issuer_country_is, IssuerCountry}, V, Rev) ->
@@ -162,7 +166,8 @@ test_issuer_bank_condition(BankRef, #domain_BankCard{bank_name = BankName, bin =
             test_bank_card_patterns(Patterns, BankName);
         % TODO т.к. BinBase не обладает полным объемом данных, при их отсутствии мы возвращаемся к проверкам по бинам.
         %      B будущем стоит избавиться от этого.
-        {_, _} -> test_bank_card_bins(BIN, BINs)
+        {_, _} ->
+            test_bank_card_bins(BIN, BINs)
     end.
 
 test_bank_card_category_condition(CategoryRef, #domain_BankCard{category = Category}, Rev) ->
