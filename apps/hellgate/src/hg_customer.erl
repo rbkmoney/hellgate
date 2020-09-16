@@ -54,12 +54,11 @@
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 handle_function(Func, Args, Opts) ->
-    ArgsList = tuple_to_list(Args),
     scoper:scope(customer_management,
-        fun() -> handle_function_(Func, ArgsList, Opts) end
+        fun() -> handle_function_(Func, Args, Opts) end
     ).
 
-handle_function_('Create', [CustomerParams], _Opts) ->
+handle_function_('Create', {CustomerParams}, _Opts) ->
     DomainRevison = hg_domain:head(),
     CustomerID = hg_utils:unique_id(),
     ok = set_meta(CustomerID),
@@ -74,19 +73,19 @@ handle_function_('Create', [CustomerParams], _Opts) ->
     get_customer(get_state(CustomerID));
 
 %% TODO Удалить после перехода на новый протокол
-handle_function_('Get', [CustomerID, undefined], _Opts) ->
+handle_function_('Get', {CustomerID, undefined}, _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
     ok = assert_customer_accessible(St),
     get_customer(St);
 
-handle_function_('Get', [CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}], _Opts) ->
+handle_function_('Get', {CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}}, _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID, AfterID, Limit),
     ok = assert_customer_accessible(St),
     get_customer(St);
 
-handle_function_('GetActiveBinding', [CustomerID], _Opts) ->
+handle_function_('GetActiveBinding', {CustomerID}, _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
     ok = assert_customer_accessible(St),
@@ -97,15 +96,16 @@ handle_function_('GetActiveBinding', [CustomerID], _Opts) ->
             throw(?invalid_customer_status(get_customer_status(get_customer(St))))
     end;
 
-handle_function_('GetEvents', [CustomerID, Range], _Opts) ->
+handle_function_('GetEvents', {CustomerID, Range}, _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_accessible(get_initial_state(CustomerID)),
     get_public_history(CustomerID, Range);
 
-handle_function_(Fun, [CustomerID | _Tail] = Args, _Opts) when
+handle_function_(Fun, Args, _Opts) when
     Fun =:= 'Delete' orelse
     Fun =:= 'StartBinding'
 ->
+    CustomerID = element(1, Args),
     ok = set_meta(CustomerID),
     call(CustomerID, Fun, Args).
 
@@ -276,13 +276,13 @@ process_call(Call, #{history := History}) ->
             {{exception, Exception}, #{}}
     end.
 
-handle_call({{'CustomerManagement', 'Delete'}, [_CustomerID]}, St) ->
+handle_call({{'CustomerManagement', 'Delete'}, {_CustomerID}}, St) ->
     ok = assert_customer_operable(St),
     #{
         response => ok,
         changes  => [?customer_deleted()]
     };
-handle_call({{'CustomerManagement', 'StartBinding'}, [_CustomerID, BindingParams]}, St) ->
+handle_call({{'CustomerManagement', 'StartBinding'}, {_CustomerID, BindingParams}}, St) ->
     ok = assert_customer_operable(St),
     start_binding(BindingParams, St).
 
@@ -446,10 +446,10 @@ create_paytool_params(
     }.
 
 create_recurrent_paytool(Params) ->
-    issue_recurrent_paytools_call('Create', [Params]).
+    issue_recurrent_paytools_call('Create', {Params}).
 
 get_recurrent_paytool_events(RecurrentPaytoolID, EventRange) ->
-    issue_recurrent_paytools_call('GetEvents', [RecurrentPaytoolID, EventRange]).
+    issue_recurrent_paytools_call('GetEvents', {RecurrentPaytoolID, EventRange}).
 
 get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
     EventRange = construct_event_range(LastEventID),

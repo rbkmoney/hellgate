@@ -144,7 +144,7 @@ build_operation_id(ServiceType, ID) ->
     {ok, initialised} | {error, any()} | disabled.
 init_service(ServiceId) ->
     ServiceConfig = build_config(),
-    call('InitService', [ServiceId, ServiceConfig]).
+    call('InitService', {ServiceId, ServiceConfig}).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -155,7 +155,7 @@ init_service(ServiceId) ->
 -spec init_service(service_id(), service_config()) ->
     {ok, initialised} | {error, any()} | disabled.
 init_service(ServiceId, ServiceConfig) ->
-    call('InitService', [ServiceId, ServiceConfig]).
+    call('InitService', {ServiceId, ServiceConfig}).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -168,7 +168,7 @@ init_service(ServiceId, ServiceConfig) ->
 %%------------------------------------------------------------------------------
 -spec get_statistics([service_id()]) -> [service_stats()].
 get_statistics(ServiceIds) when is_list(ServiceIds) ->
-    call('GetStatistics', [ServiceIds]).
+    call('GetStatistics', {ServiceIds}).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -201,7 +201,7 @@ register_operation(Status, ServiceId, OperationId, ServiceConfig) ->
         finish -> {Status, ?state_finish(hg_datetime:format_now())}
     end,
     Operation = ?operation(OperationId, OperationState),
-    call('RegisterOperation', [ServiceId, Operation, ServiceConfig]).
+    call('RegisterOperation', {ServiceId, Operation, ServiceConfig}).
 
 %% PRIVATE
 
@@ -220,41 +220,37 @@ maybe_call(false = _FDEnabled, 'GetStatistics', _Args, _Opts, _Deadline) ->
 maybe_call(false = _FDEnabled, _Service, _Args, _Opts, _Deadline) ->
     disabled.
 
-do_call('InitService', Args, Opts, Deadline) ->
+do_call('InitService', {ServiceId, _} = Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'InitService', Args, Opts, Deadline) of
         {ok, _Result} -> {ok, initialised}
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason
             when Class =:= resource_unavailable orelse
                  Class =:= result_unknown ->
-            [ServiceId | _] = Args,
             ErrorText = "Unable to init service ~p in fault detector, ~p:~p",
             _ = logger:warning(ErrorText, [ServiceId, error, Reason]),
             {error, Reason};
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            [ServiceId | _] = Args,
             ErrorText = "Unable to init service ~p in fault detector, ~p:~p",
             _ = logger:error(ErrorText, [ServiceId, error, Reason]),
             {error, Reason}
     end;
-do_call('GetStatistics', Args, Opts, Deadline) ->
+do_call('GetStatistics', {ServiceIds} = Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'GetStatistics', Args, Opts, Deadline) of
         {ok, Stats} -> Stats
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason
             when Class =:= resource_unavailable orelse
                  Class =:= result_unknown ->
-            [ServiceIds | _] = Args,
             String = "Unable to get statistics for services ~p from fault detector, ~p:~p",
             _ = logger:warning(String, [ServiceIds, error, Reason]),
             [];
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            [ServiceIds | _] = Args,
             String = "Unable to get statistics for services ~p from fault detector, ~p:~p",
             _ = logger:error(String, [ServiceIds, error, Reason]),
             []
     end;
-do_call('RegisterOperation', Args, Opts, Deadline) ->
+do_call('RegisterOperation', {ServiceId, OperationId, _} = Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'RegisterOperation', Args, Opts, Deadline) of
         {ok, _Result} ->
             {ok, registered};
@@ -264,12 +260,10 @@ do_call('RegisterOperation', Args, Opts, Deadline) ->
         error:{woody_error, {_Source, Class, _Details}} = Reason
             when Class =:= resource_unavailable orelse
                  Class =:= result_unknown ->
-            [ServiceId, OperationId | _] = Args,
             ErrorText = "Unable to register operation ~p for service ~p in fault detector, ~p:~p",
             _ = logger:warning(ErrorText, [OperationId, ServiceId, error, Reason]),
             {error, Reason};
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            [ServiceId, OperationId | _] = Args,
             ErrorText = "Unable to register operation ~p for service ~p in fault detector, ~p:~p",
             _ = logger:error(ErrorText, [OperationId, ServiceId, error, Reason]),
             {error, Reason}
