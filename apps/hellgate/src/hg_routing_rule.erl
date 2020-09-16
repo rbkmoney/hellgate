@@ -30,25 +30,25 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing,
     RuleSet = compute_rule_set(PaymentRouting#domain_PaymentRouting.policies, VS, Revision),
     RuleSetDeny = compute_rule_set(PaymentRouting#domain_PaymentRouting.prohibitions, VS, Revision),
-    Candidates = get_decisions(RuleSet),
+    Candidates = get_decisions_candidates(RuleSet),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
     Prohibitions = get_table_prohibitions(RuleSetDeny),
     {Accepted, RejectedRoutes} = filter_routes(RatedRoutes, Prohibitions),
     {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}.
 
 get_table_prohibitions(RuleSetDeny) ->
-    Candidates = get_decisions(RuleSetDeny),
+    Candidates = get_decisions_candidates(RuleSetDeny),
     lists:foldr(fun(C, AccIn) ->
         AccIn#{get_terminal_ref(C) => get_description(C)}
     end, #{}, Candidates).
 
-get_decisions(RuleSet) ->
+get_decisions_candidates(RuleSet) ->
     #domain_PaymentRoutingRuleset{
         decisions = Decisions
     } = RuleSet,
     case Decisions of
         {delegates, _Delegates} ->
-            []; %% костыль на предыдущую логику
+            error({misconfiguration, {'PaymentRoutingDecisions couldn\'t be reduced to candidates', Decisions}});
         {candidates, Candidates} ->
             Candidates
     end.

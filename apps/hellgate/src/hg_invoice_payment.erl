@@ -755,7 +755,7 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
         undefined ->
             Payment        = get_payment(St),
             Predestination = choose_routing_predestination(Payment),
-            {Routes, RejectContext} = gather_routes(
+            {Routes, RejectContext} = hg_routing_rule:gather_routes(
                 Predestination,
                 PaymentInstitution,
                 VS,
@@ -771,14 +771,6 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                     _ = log_reject_context(RejectReason, RejectContext1),
                     Error
             end
-    end.
-
-gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
-    case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS, Revision) of
-        {[], _} ->
-            hg_routing:gather_routes(Predestination, PaymentInstitution, VS, Revision);
-        Routes ->
-            Routes
     end.
 
 -spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().
