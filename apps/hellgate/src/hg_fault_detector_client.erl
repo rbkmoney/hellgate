@@ -220,7 +220,7 @@ maybe_call(false = _FDEnabled, 'GetStatistics', _Args, _Opts, _Deadline) ->
 maybe_call(false = _FDEnabled, _Service, _Args, _Opts, _Deadline) ->
     disabled.
 
-do_call('InitService', {ServiceId, _} = Args, Opts, Deadline) ->
+do_call('InitService', {ServiceId, _ServiceConfig} = Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'InitService', Args, Opts, Deadline) of
         {ok, _Result} -> {ok, initialised}
     catch
@@ -250,7 +250,7 @@ do_call('GetStatistics', {ServiceIds} = Args, Opts, Deadline) ->
             _ = logger:error(String, [ServiceIds, error, Reason]),
             []
     end;
-do_call('RegisterOperation', {ServiceId, OperationId, _} = Args, Opts, Deadline) ->
+do_call('RegisterOperation', {ServiceId, OperationId, _ServiceConfig} = Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'RegisterOperation', Args, Opts, Deadline) of
         {ok, _Result} ->
             {ok, registered};
