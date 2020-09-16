@@ -50,7 +50,21 @@ get_decisions_candidates(RuleSet) ->
         {delegates, _Delegates} ->
             error({misconfiguration, {'PaymentRoutingDecisions couldn\'t be reduced to candidates', Decisions}});
         {candidates, Candidates} ->
+            ok = validate_decisions_candidates(Candidates),
             Candidates
+    end.
+
+validate_decisions_candidates([]) ->
+    ok;
+validate_decisions_candidates([Candidate | Rest]) ->
+    #domain_PaymentRoutingCandidate{
+        allowed = Predicate
+    } = Candidate,
+    case Predicate of
+        {constant, true} ->
+            validate_decisions_candidates(Rest);
+        _ ->
+            error({misconfiguration, {'PaymentRoutingCandidate couldn\'t be reduced', Candidate}})
     end.
 
 collect_routes(Predestination, Candidates, VS, Revision) ->
