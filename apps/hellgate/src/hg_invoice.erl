@@ -137,15 +137,14 @@ get_payment_opts(Revision, _, St = #st{invoice = Invoice}) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
-    ArgsList = tuple_to_list(Args),
     scoper:scope(invoicing,
-        fun() -> handle_function_(Func, ArgsList, Opts) end
+        fun() -> handle_function_(Func, Args, Opts) end
     ).
 
--spec handle_function_(woody:func(), list(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
+handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     TimestampNow = hg_datetime:format_now(),
     DomainRevision = hg_domain:head(),
     InvoiceID = hg_utils:uid(InvoiceParams#payproc_InvoiceParams.id),
@@ -159,10 +158,10 @@ handle_function_('Create', [UserInfo, InvoiceParams], _Opts) ->
     _ = assert_party_shop_operable(Shop, Party),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, TimestampNow),
     ok = validate_invoice_params(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision),
-    ok = ensure_started(InvoiceID, [undefined, Party#domain_Party.revision, InvoiceParams]),
+    ok = ensure_started(InvoiceID, {undefined, Party#domain_Party.revision, InvoiceParams}),
     get_invoice_state(get_state(InvoiceID));
 
-handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
+handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     TimestampNow = hg_datetime:format_now(),
     DomainRevision = hg_domain:head(),
     InvoiceID = hg_utils:uid(Params#payproc_InvoiceWithTemplateParams.id),
@@ -172,63 +171,63 @@ handle_function_('CreateWithTemplate', [UserInfo, Params], _Opts) ->
     {Party, Shop, InvoiceParams} = make_invoice_params(Params),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, TimestampNow),
     ok = validate_invoice_params(InvoiceParams, Party, Shop, MerchantTerms, DomainRevision),
-    ok = ensure_started(InvoiceID, [TplID, Party#domain_Party.revision, InvoiceParams]),
+    ok = ensure_started(InvoiceID, {TplID, Party#domain_Party.revision, InvoiceParams}),
     get_invoice_state(get_state(InvoiceID));
 
 handle_function_('CapturePaymentNew', Args, Opts) ->
     handle_function_('CapturePayment', Args, Opts);
 
-handle_function_('Get', [UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}], _Opts) ->
+handle_function_('Get', {UserInfo, InvoiceID, #payproc_EventRange{'after' = AfterID, limit = Limit}}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     St = assert_invoice_accessible(get_state(InvoiceID, AfterID, Limit)),
     get_invoice_state(St);
 
 %% TODO Удалить после перехода на новый протокол
-handle_function_('Get', [UserInfo, InvoiceID, undefined], _Opts) ->
+handle_function_('Get', {UserInfo, InvoiceID, undefined}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
     get_invoice_state(St);
 
-handle_function_('GetEvents', [UserInfo, InvoiceID, Range], _Opts) ->
+handle_function_('GetEvents', {UserInfo, InvoiceID, Range}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
     get_public_history(InvoiceID, Range);
 
-handle_function_('GetInvoiceAdjustment', [UserInfo, InvoiceID, ID], _Opts) ->
+handle_function_('GetInvoiceAdjustment', {UserInfo, InvoiceID, ID}, _Opts) ->
     St = assert_invoice_accessible(get_state(InvoiceID)),
     ok = assume_user_identity(UserInfo),
     ok = set_invoicing_meta(InvoiceID),
     get_adjustment(ID, St);
 
-handle_function_('GetPayment', [UserInfo, InvoiceID, PaymentID], _Opts) ->
+handle_function_('GetPayment', {UserInfo, InvoiceID, PaymentID}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
     get_payment_state(get_payment_session(PaymentID, St));
 
-handle_function_('GetPaymentRefund', [UserInfo, InvoiceID, PaymentID, ID], _Opts) ->
+handle_function_('GetPaymentRefund', {UserInfo, InvoiceID, PaymentID, ID}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
     hg_invoice_payment:get_refund(ID, get_payment_session(PaymentID, St));
 
-handle_function_('GetPaymentChargeback', [UserInfo, InvoiceID, PaymentID, ID], _Opts) ->
+handle_function_('GetPaymentChargeback', {UserInfo, InvoiceID, PaymentID, ID}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
     CBSt = hg_invoice_payment:get_chargeback_state(ID, get_payment_session(PaymentID, St)),
     hg_invoice_payment_chargeback:get(CBSt);
 
-handle_function_('GetPaymentAdjustment', [UserInfo, InvoiceID, PaymentID, ID], _Opts) ->
+handle_function_('GetPaymentAdjustment', {UserInfo, InvoiceID, PaymentID, ID}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID, PaymentID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
     hg_invoice_payment:get_adjustment(ID, get_payment_session(PaymentID, St));
 
-handle_function_('ComputeTerms', [UserInfo, InvoiceID, PartyRevision0], _Opts) ->
+handle_function_('ComputeTerms', {UserInfo, InvoiceID, PartyRevision0}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     St = assert_invoice_accessible(get_state(InvoiceID)),
@@ -247,7 +246,7 @@ handle_function_('ComputeTerms', [UserInfo, InvoiceID, PartyRevision0], _Opts) -
     Cash = get_cost(St),
     pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
 
-handle_function_(Fun, [UserInfo, InvoiceID | _Tail] = Args, _Opts) when
+handle_function_(Fun, Args, _Opts) when
     Fun =:= 'StartPayment' orelse
     Fun =:= 'CapturePayment' orelse
     Fun =:= 'CancelPayment' orelse
@@ -267,17 +266,19 @@ handle_function_(Fun, [UserInfo, InvoiceID | _Tail] = Args, _Opts) when
     Fun =:= 'Fulfill' orelse
     Fun =:= 'Rescind'
 ->
+    UserInfo = erlang:element(1, Args),
+    InvoiceID = erlang:element(2, Args),
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     call(InvoiceID, Fun, Args);
 
-handle_function_('Repair', [UserInfo, InvoiceID, Changes, Action, Params], _Opts) ->
+handle_function_('Repair', {UserInfo, InvoiceID, Changes, Action, Params}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
     repair(InvoiceID, {changes, Changes, Action, Params});
 
-handle_function_('RepairWithScenario', [UserInfo, InvoiceID, Scenario], _Opts) ->
+handle_function_('RepairWithScenario', {UserInfo, InvoiceID, Scenario}, _Opts) ->
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice_accessible(get_initial_state(InvoiceID)),
@@ -394,8 +395,8 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
         payload = ?invoice_ev(Event)
     }.
 
-ensure_started(ID, [TemplateID, PartyRevision, Params]) ->
-    SerializedArgs = [TemplateID, PartyRevision, marshal_invoice_params(Params)],
+ensure_started(ID, {TemplateID, PartyRevision, Params}) ->
+    SerializedArgs = {TemplateID, PartyRevision, marshal_invoice_params(Params)},
     map_start_error(do_start(ID, SerializedArgs)).
 
 do_start(ID, Args) ->
@@ -483,10 +484,13 @@ publish_event(InvoiceID, Payload) ->
 namespace() ->
     ?NS.
 
--spec init([invoice_tpl_id() | invoice_params()], hg_machine:machine()) ->
+-spec init(
+    {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary()},
+    hg_machine:machine()
+) ->
     hg_machine:result().
 
-init([InvoiceTplID, PartyRevision, EncodedInvoiceParams], #{id := ID}) ->
+init({InvoiceTplID, PartyRevision, EncodedInvoiceParams}, #{id := ID}) ->
     InvoiceParams = unmarshal_invoice_params(EncodedInvoiceParams),
     Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
@@ -599,14 +603,14 @@ process_call(Call, #{history := History}) ->
 -spec handle_call(call(), st()) ->
     call_result().
 
-handle_call({{'Invoicing', 'StartPayment'}, [_UserInfo, _InvoiceID, PaymentParams]}, St) ->
+handle_call({{'Invoicing', 'StartPayment'}, {_UserInfo, _InvoiceID, PaymentParams}}, St) ->
     % TODO consolidate these assertions somehow
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_all_adjustments_finalised(St),
     start_payment(PaymentParams, St);
 
-handle_call({{'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
+handle_call({{'Invoicing', 'CapturePayment'}, {_UserInfo, _InvoiceID, PaymentID, Params}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     #payproc_InvoicePaymentCaptureParams{
@@ -624,7 +628,7 @@ handle_call({{'Invoicing', 'CapturePayment'}, [_UserInfo, _InvoiceID, PaymentID,
         state => St
     };
 
-handle_call({{'Invoicing', 'CancelPayment'}, [_UserInfo, _InvoiceID, PaymentID, Reason]}, St) ->
+handle_call({{'Invoicing', 'CancelPayment'}, {_UserInfo, _InvoiceID, PaymentID, Reason}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
@@ -637,7 +641,7 @@ handle_call({{'Invoicing', 'CancelPayment'}, [_UserInfo, _InvoiceID, PaymentID, 
         state => St
     };
 
-handle_call({{'Invoicing', 'Fulfill'}, [_UserInfo, _InvoiceID, Reason]}, St) ->
+handle_call({{'Invoicing', 'Fulfill'}, {_UserInfo, _InvoiceID, Reason}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(paid, St),
@@ -647,7 +651,7 @@ handle_call({{'Invoicing', 'Fulfill'}, [_UserInfo, _InvoiceID, Reason]}, St) ->
         state    => St
     };
 
-handle_call({{'Invoicing', 'Rescind'}, [_UserInfo, _InvoiceID, Reason]}, St) ->
+handle_call({{'Invoicing', 'Rescind'}, {_UserInfo, _InvoiceID, Reason}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     _ = assert_invoice_status(unpaid, St),
@@ -659,7 +663,7 @@ handle_call({{'Invoicing', 'Rescind'}, [_UserInfo, _InvoiceID, Reason]}, St) ->
         state    => St
     };
 
-handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, Params]}, St) ->
+handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, {_UserInfo, _InvoiceID, Params}}, St) ->
     ID = create_adjustment_id(St),
     St = assert_invoice_accessible(St),
     TargetStatus = get_adjustment_params_target_status(Params),
@@ -670,7 +674,7 @@ handle_call({{'Invoicing', 'CreateInvoiceAdjustment'}, [_UserInfo, _InvoiceID, P
     OccurredAt = hg_datetime:format_now(),
     wrap_adjustment_impact(ID, hg_invoice_adjustment:create(ID, Params, OccurredAt), St, OccurredAt);
 
-handle_call({{'Invoicing', 'CaptureAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
+handle_call({{'Invoicing', 'CaptureAdjustment'}, {_UserInfo, _InvoiceID, ID}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_adjustment_processed(ID, St),
     OccurredAt = hg_datetime:format_now(),
@@ -683,7 +687,7 @@ handle_call({{'Invoicing', 'CaptureAdjustment'}, [_UserInfo, _InvoiceID, ID]}, S
         state    => St
     };
 
-handle_call({{'Invoicing', 'CancelAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St) ->
+handle_call({{'Invoicing', 'CancelAdjustment'}, {_UserInfo, _InvoiceID, ID}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_adjustment_processed(ID, St),
     OccurredAt = hg_datetime:format_now(),
@@ -696,53 +700,53 @@ handle_call({{'Invoicing', 'CancelAdjustment'}, [_UserInfo, _InvoiceID, ID]}, St
         state    => St
     };
 
-handle_call({{'Invoicing', 'RefundPayment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
+handle_call({{'Invoicing', 'RefundPayment'}, {_UserInfo, _InvoiceID, PaymentID, Params}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
     start_refund(refund, Params, PaymentID, PaymentSession, St);
 
-handle_call({{'Invoicing', 'CreateManualRefund'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
+handle_call({{'Invoicing', 'CreateManualRefund'}, {_UserInfo, _InvoiceID, PaymentID, Params}}, St) ->
     _ = assert_invoice_accessible(St),
     _ = assert_invoice_operable(St),
     PaymentSession = get_payment_session(PaymentID, St),
     start_refund(manual_refund, Params, PaymentID, PaymentSession, St);
 
-handle_call({{'Invoicing', 'CreateChargeback'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
+handle_call({{'Invoicing', 'CreateChargeback'}, {_UserInfo, _InvoiceID, PaymentID, Params}}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     PaymentOpts    = get_payment_opts(St),
     start_chargeback(Params, PaymentID, PaymentSession, PaymentOpts, St);
 
-handle_call({{'Invoicing', 'CancelChargeback'}, [_UserInfo, _InvoiceID, PaymentID, ChargebackID, Params]}, St) ->
+handle_call({{'Invoicing', 'CancelChargeback'}, {_UserInfo, _InvoiceID, PaymentID, ChargebackID, Params}}, St) ->
     #payproc_InvoicePaymentChargebackCancelParams{occurred_at = OccurredAt} = Params,
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     CancelResult   = hg_invoice_payment:cancel_chargeback(ChargebackID, PaymentSession, Params),
     wrap_payment_impact(PaymentID, CancelResult, St, OccurredAt);
 
-handle_call({{'Invoicing', 'RejectChargeback'}, [_UserInfo, _InvoiceID, PaymentID, ChargebackID, Params]}, St) ->
+handle_call({{'Invoicing', 'RejectChargeback'}, {_UserInfo, _InvoiceID, PaymentID, ChargebackID, Params}}, St) ->
     #payproc_InvoicePaymentChargebackRejectParams{occurred_at = OccurredAt} = Params,
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     RejectResult   = hg_invoice_payment:reject_chargeback(ChargebackID, PaymentSession, Params),
     wrap_payment_impact(PaymentID, RejectResult, St, OccurredAt);
 
-handle_call({{'Invoicing', 'AcceptChargeback'}, [_UserInfo, _InvoiceID, PaymentID, ChargebackID, Params]}, St) ->
+handle_call({{'Invoicing', 'AcceptChargeback'}, {_UserInfo, _InvoiceID, PaymentID, ChargebackID, Params}}, St) ->
     #payproc_InvoicePaymentChargebackAcceptParams{occurred_at = OccurredAt} = Params,
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     AcceptResult   = hg_invoice_payment:accept_chargeback(ChargebackID, PaymentSession, Params),
     wrap_payment_impact(PaymentID, AcceptResult, St, OccurredAt);
 
-handle_call({{'Invoicing', 'ReopenChargeback'}, [_UserInfo, _InvoiceID, PaymentID, ChargebackID, Params]}, St) ->
+handle_call({{'Invoicing', 'ReopenChargeback'}, {_UserInfo, _InvoiceID, PaymentID, ChargebackID, Params}}, St) ->
     #payproc_InvoicePaymentChargebackReopenParams{occurred_at = OccurredAt} = Params,
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     ReopenResult   = hg_invoice_payment:reopen_chargeback(ChargebackID, PaymentSession, Params),
     wrap_payment_impact(PaymentID, ReopenResult, St, OccurredAt);
 
-handle_call({{'Invoicing', 'CreatePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, Params]}, St) ->
+handle_call({{'Invoicing', 'CreatePaymentAdjustment'}, {_UserInfo, _InvoiceID, PaymentID, Params}}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Timestamp = hg_datetime:format_now(),
@@ -753,7 +757,7 @@ handle_call({{'Invoicing', 'CreatePaymentAdjustment'}, [_UserInfo, _InvoiceID, P
         St
     );
 
-handle_call({{'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID]}, St) ->
+handle_call({{'Invoicing', 'CapturePaymentAdjustment'}, {_UserInfo, _InvoiceID, PaymentID, ID}}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Adjustment = hg_invoice_payment:get_adjustment(ID, PaymentSession),
@@ -765,7 +769,7 @@ handle_call({{'Invoicing', 'CapturePaymentAdjustment'}, [_UserInfo, _InvoiceID, 
     Impact = hg_invoice_payment:capture_adjustment(ID, PaymentSession, PaymentOpts),
     wrap_payment_impact(PaymentID, Impact, St);
 
-handle_call({{'Invoicing', 'CancelPaymentAdjustment'}, [_UserInfo, _InvoiceID, PaymentID, ID]}, St) ->
+handle_call({{'Invoicing', 'CancelPaymentAdjustment'}, {_UserInfo, _InvoiceID, PaymentID, ID}}, St) ->
     _ = assert_invoice_accessible(St),
     PaymentSession = get_payment_session(PaymentID, St),
     Adjustment = hg_invoice_payment:get_adjustment(ID, PaymentSession),

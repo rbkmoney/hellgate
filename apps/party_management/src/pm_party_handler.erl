@@ -14,54 +14,55 @@
     term()| no_return().
 
 handle_function(Func, Args, Opts) ->
-    ArgsList = tuple_to_list(Args),
     scoper:scope(partymgmt,
-        fun() -> handle_function_(Func, ArgsList, Opts) end
+        fun() -> handle_function_(Func, Args, Opts) end
     ).
 
--spec handle_function_(woody:func(), list(), pm_woody_wrapper:handler_opts()) ->
+-spec handle_function_(woody:func(), woody:args(), pm_woody_wrapper:handler_opts()) ->
     term()| no_return().
 
 %% Party
 
-handle_function_('Create', [UserInfo, PartyID, PartyParams], _Opts) ->
+handle_function_('Create', {UserInfo, PartyID, PartyParams}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     pm_party_machine:start(PartyID, PartyParams);
 
-handle_function_('Checkout', [UserInfo, PartyID, RevisionParam], _Opts) ->
+handle_function_('Checkout', {UserInfo, PartyID, RevisionParam}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     checkout_party(PartyID, RevisionParam, #payproc_InvalidPartyRevision{});
 
-handle_function_('Get', [UserInfo, PartyID], _Opts) ->
+handle_function_('Get', {UserInfo, PartyID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     pm_party_machine:get_party(PartyID);
 
-handle_function_('GetRevision', [UserInfo, PartyID], _Opts) ->
+handle_function_('GetRevision', {UserInfo, PartyID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     pm_party_machine:get_last_revision(PartyID);
 
-handle_function_('GetStatus', [UserInfo, PartyID], _Opts) ->
+handle_function_('GetStatus', {UserInfo, PartyID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     pm_party_machine:get_status(PartyID);
 
-handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
+handle_function_(Fun, Args, _Opts) when
     Fun =:= 'Block' orelse
     Fun =:= 'Unblock' orelse
     Fun =:= 'Suspend' orelse
     Fun =:= 'Activate'
 ->
+    UserInfo = erlang:element(1, Args),
+    PartyID = erlang:element(2, Args),
     ok = set_meta_and_check_access(UserInfo, PartyID),
     call(PartyID, Fun, Args);
 
 %% Contract
 
-handle_function_('GetContract', [UserInfo, PartyID, ContractID], _Opts) ->
+handle_function_('GetContract', {UserInfo, PartyID, ContractID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = pm_party_machine:get_party(PartyID),
     ensure_contract(pm_party:get_contract(ContractID, Party));
 
 handle_function_('ComputeContractTerms', Args, _Opts) ->
-    [UserInfo, PartyID, ContractID, Timestamp, PartyRevisionParams, DomainRevision, Varset] = Args,
+    {UserInfo, PartyID, ContractID, Timestamp, PartyRevisionParams, DomainRevision, Varset} = Args,
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, PartyRevisionParams),
     Contract = ensure_contract(pm_party:get_contract(ContractID, Party)),
@@ -75,12 +76,12 @@ handle_function_('ComputeContractTerms', Args, _Opts) ->
 
 %% Shop
 
-handle_function_('GetShop', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('GetShop', {UserInfo, PartyID, ID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = pm_party_machine:get_party(PartyID),
     ensure_shop(pm_party:get_shop(ID, Party));
 
-handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp, PartyRevision], _Opts) ->
+handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, PartyRevision}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, pm_maybe:get_defined(PartyRevision, {timestamp, Timestamp})),
     Shop = ensure_shop(pm_party:get_shop(ShopID, Party)),
@@ -95,18 +96,20 @@ handle_function_('ComputeShopTerms', [UserInfo, PartyID, ShopID, Timestamp, Part
     },
     pm_party:reduce_terms(pm_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
 
-handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
+handle_function_(Fun, Args, _Opts) when
     Fun =:= 'BlockShop' orelse
     Fun =:= 'UnblockShop' orelse
     Fun =:= 'SuspendShop' orelse
     Fun =:= 'ActivateShop'
 ->
+    UserInfo = erlang:element(1, Args),
+    PartyID = erlang:element(2, Args),
     ok = set_meta_and_check_access(UserInfo, PartyID),
     call(PartyID, Fun, Args);
 
 %% Wallet
 
-handle_function_('ComputeWalletTermsNew', [UserInfo, PartyID, ContractID, Timestamp, Varset], _Opts) ->
+handle_function_('ComputeWalletTermsNew', {UserInfo, PartyID, ContractID, Timestamp, Varset}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
     Contract = pm_party:get_contract(ContractID, Party),
@@ -119,39 +122,41 @@ handle_function_('ComputeWalletTermsNew', [UserInfo, PartyID, ContractID, Timest
 
 %% Claim
 
-handle_function_('GetClaim', [UserInfo, PartyID, ID], _Opts) ->
+handle_function_('GetClaim', {UserInfo, PartyID, ID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     pm_party_machine:get_claim(ID, PartyID);
 
-handle_function_('GetClaims', [UserInfo, PartyID], _Opts) ->
+handle_function_('GetClaims', {UserInfo, PartyID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     pm_party_machine:get_claims(PartyID);
 
-handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
+handle_function_(Fun, Args, _Opts) when
     Fun =:= 'CreateClaim' orelse
     Fun =:= 'AcceptClaim' orelse
     Fun =:= 'UpdateClaim' orelse
     Fun =:= 'DenyClaim' orelse
     Fun =:= 'RevokeClaim'
 ->
+    UserInfo = erlang:element(1, Args),
+    PartyID = erlang:element(2, Args),
     ok = set_meta_and_check_access(UserInfo, PartyID),
     call(PartyID, Fun, Args);
 
 %% Event
 
-handle_function_('GetEvents', [UserInfo, PartyID, Range], _Opts) ->
+handle_function_('GetEvents', {UserInfo, PartyID, Range}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     #payproc_EventRange{'after' = AfterID, limit = Limit} = Range,
     pm_party_machine:get_public_history(PartyID, AfterID, Limit);
 
 %% ShopAccount
 
-handle_function_('GetAccountState', [UserInfo, PartyID, AccountID], _Opts) ->
+handle_function_('GetAccountState', {UserInfo, PartyID, AccountID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = pm_party_machine:get_party(PartyID),
     pm_party:get_account_state(AccountID, Party);
 
-handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
+handle_function_('GetShopAccount', {UserInfo, PartyID, ShopID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = pm_party_machine:get_party(PartyID),
     pm_party:get_shop_account(ShopID, Party);
@@ -159,14 +164,14 @@ handle_function_('GetShopAccount', [UserInfo, PartyID, ShopID], _Opts) ->
 %% Providers
 
 handle_function_('ComputeProvider', Args, _Opts) ->
-    [UserInfo, ProviderRef, DomainRevision, Varset] = Args,
+    {UserInfo, ProviderRef, DomainRevision, Varset} = Args,
     ok = assume_user_identity(UserInfo),
     Provider = get_provider(ProviderRef, DomainRevision),
     VS = prepare_varset(Varset),
     pm_provider:reduce_provider(Provider, VS, DomainRevision);
 
 handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
-    [UserInfo, ProviderRef, TerminalRef, DomainRevision, Varset] = Args,
+    {UserInfo, ProviderRef, TerminalRef, DomainRevision, Varset} = Args,
     ok = assume_user_identity(UserInfo),
     Provider = get_provider(ProviderRef, DomainRevision),
     Terminal = get_terminal(TerminalRef, DomainRevision),
@@ -176,7 +181,7 @@ handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
 %% Globals
 
 handle_function_('ComputeGlobals', Args, _Opts) ->
-    [UserInfo, GlobalsRef, DomainRevision, Varset] = Args,
+    {UserInfo, GlobalsRef, DomainRevision, Varset} = Args,
     ok = assume_user_identity(UserInfo),
     Globals = get_globals(GlobalsRef, DomainRevision),
     VS = prepare_varset(Varset),
@@ -185,7 +190,7 @@ handle_function_('ComputeGlobals', Args, _Opts) ->
 %% RuleSets
 
 handle_function_('ComputePaymentRoutingRuleset', Args, _Opts) ->
-    [UserInfo, RuleSetRef, DomainRevision, Varset] = Args,
+    {UserInfo, RuleSetRef, DomainRevision, Varset} = Args,
     ok = assume_user_identity(UserInfo),
     RuleSet = get_payment_routing_ruleset(RuleSetRef, DomainRevision),
     VS = prepare_varset(Varset),
@@ -193,18 +198,20 @@ handle_function_('ComputePaymentRoutingRuleset', Args, _Opts) ->
 
 %% PartyMeta
 
-handle_function_('GetMeta', [UserInfo, PartyID], _Opts) ->
+handle_function_('GetMeta', {UserInfo, PartyID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     pm_party_machine:get_meta(PartyID);
 
-handle_function_('GetMetaData', [UserInfo, PartyID, NS], _Opts) ->
+handle_function_('GetMetaData', {UserInfo, PartyID, NS}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     pm_party_machine:get_metadata(NS, PartyID);
 
-handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
+handle_function_(Fun, Args, _Opts) when
     Fun =:= 'SetMetaData' orelse
     Fun =:= 'RemoveMetaData'
 ->
+    UserInfo = erlang:element(1, Args),
+    PartyID = erlang:element(2, Args),
     ok = set_meta_and_check_access(UserInfo, PartyID),
     call(PartyID, Fun, Args);
 
@@ -212,7 +219,7 @@ handle_function_(Fun, [UserInfo, PartyID | _Tail] = Args, _Opts) when
 
 handle_function_(
     'ComputePaymentInstitutionTerms',
-    [UserInfo, PaymentInstitutionRef, Varset],
+    {UserInfo, PaymentInstitutionRef, Varset},
     _Opts
 ) ->
     ok = assume_user_identity(UserInfo),
@@ -223,11 +230,18 @@ handle_function_(
     Terms = pm_party:get_terms(ContractTemplate, pm_datetime:format_now(), Revision),
     pm_party:reduce_terms(Terms, VS, Revision);
 
+handle_function_('ComputePaymentInstitution', Args, _Opts) ->
+    {UserInfo, PaymentInstitutionRef, DomainRevision, Varset} = Args,
+    ok = assume_user_identity(UserInfo),
+    PaymentInstitution = get_payment_institution(PaymentInstitutionRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_payment_institution:reduce_payment_institution(PaymentInstitution, VS, DomainRevision);
+
 %% Payouts adhocs
 
 handle_function_(
     'ComputePayoutCashFlow',
-    [UserInfo, PartyID, #payproc_PayoutParams{id = ShopID, amount = Amount, timestamp = Timestamp} = PayoutParams],
+    {UserInfo, PartyID, #payproc_PayoutParams{id = ShopID, amount = Amount, timestamp = Timestamp} = PayoutParams},
     _Opts
 ) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),

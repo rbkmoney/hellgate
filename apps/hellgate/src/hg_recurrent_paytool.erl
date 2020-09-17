@@ -91,12 +91,11 @@ handle_function('GetLastEventID', {}, _Opts) ->
             throw(#payproc_NoLastEvent{})
     end;
 handle_function(Func, Args, Opts) ->
-    ArgsList = tuple_to_list(Args),
     scoper:scope(recurrent_payment_tools,
-        fun() -> handle_function_(Func, ArgsList, Opts) end
+        fun() -> handle_function_(Func, Args, Opts) end
     ).
 
-handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
+handle_function_('Create', {RecurrentPaymentToolParams}, _Opts) ->
     RecurrentPaymentToolParams0 = ensure_params_paytool_id_defined(RecurrentPaymentToolParams),
     RecPaymentToolID = get_paytool_id(RecurrentPaymentToolParams0),
     ok = set_meta(RecPaymentToolID),
@@ -104,13 +103,13 @@ handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
     _ = validate_paytool_params(RecurrentPaymentToolParams1),
     ok = start(RecPaymentToolID, RecurrentPaymentToolParams1),
     get_rec_payment_tool(get_state(RecPaymentToolID));
-handle_function_('Abandon', [RecPaymentToolID], _Opts) ->
+handle_function_('Abandon', {RecPaymentToolID}, _Opts) ->
     ok = set_meta(RecPaymentToolID),
     call(RecPaymentToolID, abandon);
-handle_function_('Get', [RecPaymentToolID], _Opts) ->
+handle_function_('Get', {RecPaymentToolID}, _Opts) ->
     ok = set_meta(RecPaymentToolID),
     get_rec_payment_tool(get_state(RecPaymentToolID));
-handle_function_('GetEvents', [RecPaymentToolID, Range], _Opts) ->
+handle_function_('GetEvents', {RecPaymentToolID, Range}, _Opts) ->
     ok = set_meta(RecPaymentToolID),
     get_public_history(RecPaymentToolID, Range).
 
