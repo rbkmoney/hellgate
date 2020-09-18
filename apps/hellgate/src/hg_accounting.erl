@@ -61,7 +61,7 @@
     account().
 
 get_account(AccountID) ->
-    case call_accounter('GetAccountByID', [AccountID]) of
+    case call_accounter('GetAccountByID', {AccountID}) of
         {ok, Result} ->
             construct_account(AccountID, Result);
         {exception, #shumpune_AccountNotFound{}} ->
@@ -78,7 +78,7 @@ get_balance(AccountID) ->
     balance().
 
 get_balance(AccountID, Clock) ->
-    case call_accounter('GetBalanceByID', [AccountID, Clock]) of
+    case call_accounter('GetBalanceByID', {AccountID, Clock}) of
         {ok, Result} ->
             construct_balance(AccountID, Result);
         {exception, #shumpune_AccountNotFound{}} ->
@@ -95,7 +95,7 @@ create_account(CurrencyCode) ->
     account_id().
 
 create_account(CurrencyCode, Description) ->
-    case call_accounter('CreateAccount', [construct_prototype(CurrencyCode, Description)]) of
+    case call_accounter('CreateAccount', {construct_prototype(CurrencyCode, Description)}) of
         {ok, Result} ->
             Result;
         {exception, Exception} ->
@@ -191,7 +191,7 @@ rollback(PlanID, Batches) ->
     do('RollbackPlan', construct_plan(PlanID, Batches)).
 
 do(Op, Plan) ->
-    case call_accounter(Op, [Plan]) of
+    case call_accounter(Op, {Plan}) of
         {ok, Clock} ->
             Clock;
         {exception, Exception} ->
