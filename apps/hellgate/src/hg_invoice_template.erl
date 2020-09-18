@@ -55,14 +55,15 @@ get_invoice_template(ID) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
+    ArgsList = tuple_to_list(Args),
     scoper:scope(invoice_templating,
-        fun() -> handle_function_(Func, Args, Opts) end
+        fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
--spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+-spec handle_function_(woody:func(), list(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
 
-handle_function_('Create', {UserInfo, Params}, _Opts) ->
+handle_function_('Create', [UserInfo, Params], _Opts) ->
     TplID = hg_utils:unique_id(),
     ok    = assume_user_identity(UserInfo),
     _     = set_meta(TplID),
@@ -72,14 +73,14 @@ handle_function_('Create', {UserInfo, Params}, _Opts) ->
     ok    = start(TplID, Params),
     get_invoice_template(TplID);
 
-handle_function_('Get', {UserInfo, TplID}, _Opts) ->
+handle_function_('Get', [UserInfo, TplID], _Opts) ->
     ok  = assume_user_identity(UserInfo),
     _   = set_meta(TplID),
     Tpl = get_invoice_template(TplID),
     _   = hg_invoice_utils:assert_party_accessible(Tpl#domain_InvoiceTemplate.owner_id),
     Tpl;
 
-handle_function_('Update' = Fun, {UserInfo, TplID, Params} = Args, _Opts) ->
+handle_function_('Update' = Fun, [UserInfo, TplID, Params] = Args, _Opts) ->
     ok    = assume_user_identity(UserInfo),
     _     = set_meta(TplID),
     Tpl   = get_invoice_template(TplID),
@@ -88,7 +89,7 @@ handle_function_('Update' = Fun, {UserInfo, TplID, Params} = Args, _Opts) ->
     ok = validate_update_params(Params, Shop),
     call(TplID, Fun, Args);
 
-handle_function_('Delete' = Fun, {UserInfo, TplID} = Args, _Opts) ->
+handle_function_('Delete' = Fun, [UserInfo, TplID] = Args, _Opts) ->
     ok    = assume_user_identity(UserInfo),
     Tpl   = get_invoice_template(TplID),
     Party = get_party(Tpl#domain_InvoiceTemplate.owner_id),
@@ -96,7 +97,7 @@ handle_function_('Delete' = Fun, {UserInfo, TplID} = Args, _Opts) ->
     _     = set_meta(TplID),
     call(TplID, Fun, Args);
 
-handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _Opts) ->
+handle_function_('ComputeTerms', [UserInfo, TplID, Timestamp, PartyRevision0], _Opts) ->
     ok    = assume_user_identity(UserInfo),
     _     = set_meta(TplID),
     Tpl   = get_invoice_template(TplID),
@@ -269,10 +270,10 @@ process_call(Call, #{history := History}) ->
             {{exception, Exception}, #{}}
     end.
 
-handle_call({{'InvoiceTemplating', 'Update'}, {_UserInfo, _TplID, Params}}, Tpl) ->
+handle_call({{'InvoiceTemplating', 'Update'}, [_UserInfo, _TplID, Params]}, Tpl) ->
     Changes = [?tpl_updated(Params)],
     {merge_changes(Changes, Tpl), Changes};
-handle_call({{'InvoiceTemplating', 'Delete'}, {_UserInfo, _TplID}}, _Tpl) ->
+handle_call({{'InvoiceTemplating', 'Delete'}, [_UserInfo, _TplID]}, _Tpl) ->
     {ok, [?tpl_deleted()]}.
 
 collapse_history(History) ->
@@ -597,3 +598,4 @@ construct_invoice_template_details(Product, Cost) when Product =/= undefined, Co
     }};
 construct_invoice_template_details(Product, Cost) ->
     error({unmarshal_event_error, {'Cant construct invoice template details', Product, Cost}}).
+

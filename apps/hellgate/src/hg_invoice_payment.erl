@@ -3418,10 +3418,10 @@ collapse_changes(Changes, St, Opts) ->
 %%
 
 get_rec_payment_tool(RecPaymentToolID) ->
-    hg_woody_wrapper:call(recurrent_paytool, 'Get', {RecPaymentToolID}).
+    hg_woody_wrapper:call(recurrent_paytool, 'Get', [RecPaymentToolID]).
 
 get_customer(CustomerID) ->
-    case issue_customer_call('Get', {CustomerID, #payproc_EventRange{}}) of
+    case issue_customer_call('Get', [CustomerID, #payproc_EventRange{}]) of
         {ok, Customer} ->
             Customer;
         {exception, #payproc_CustomerNotFound{}} ->

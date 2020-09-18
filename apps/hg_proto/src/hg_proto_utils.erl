@@ -67,12 +67,13 @@
 
 %% API
 
--spec serialize_function_args(thrift_fun_full_ref(), woody:args()) ->
+-spec serialize_function_args(thrift_fun_full_ref(), list(term())) ->
     binary().
 
-serialize_function_args({Module, {Service, Function}}, Args) when is_tuple(Args) ->
+serialize_function_args({Module, {Service, Function}}, Args) when is_list(Args) ->
     ArgsType = Module:function_info(Service, Function, params_type),
-    serialize(ArgsType, Args).
+    ArgsRecord = erlang:list_to_tuple([args | Args]),
+    serialize(ArgsType, ArgsRecord).
 
 -spec serialize_function_reply(thrift_fun_full_ref(), term()) ->
     binary().
@@ -86,17 +87,19 @@ serialize_function_reply({Module, {Service, Function}}, Data) ->
 
 serialize_function_exception(FunctionRef, Exception) ->
     ExceptionType = get_fun_exception_type(FunctionRef),
-    Name = find_exception_name(FunctionRef, Exception),
+    Name = find_exception_name(ExceptionType, Exception),
     serialize(ExceptionType, {Name, Exception}).
 
 -spec serialize(thrift_type(), term()) -> binary().
 
 serialize(Type, Data) ->
-    Codec0 = thrift_strict_binary_codec:new(),
-    case thrift_strict_binary_codec:write(Codec0, Type, Data) of
-        {ok, Codec1} ->
-            thrift_strict_binary_codec:close(Codec1);
-        {error, Reason} ->
+    {ok, Trans} = thrift_membuffer_transport:new(),
+    {ok, Proto} = new_protocol(Trans),
+    case thrift_protocol:write(Proto, {Type, Data}) of
+        {NewProto, ok} ->
+            {_, {ok, Result}} = thrift_protocol:close_transport(NewProto),
+            Result;
+        {_NewProto, {error, Reason}} ->
             erlang:error({thrift, {protocol, Reason}})
     end.
 
@@ -104,25 +107,22 @@ serialize(Type, Data) ->
     term().
 
 deserialize(Type, Data) ->
-    Codec0 = thrift_strict_binary_codec:new(Data),
-    case thrift_strict_binary_codec:read(Codec0, Type) of
-        {ok, Result, Codec1} ->
-            case thrift_strict_binary_codec:close(Codec1) of
-                <<>> ->
-                    Result;
-                Leftovers ->
-                    erlang:error({thrift, {protocol, {excess_binary_data, Leftovers}}})
-            end;
-        {error, Reason} ->
+    {ok, Trans} = thrift_membuffer_transport:new(Data),
+    {ok, Proto} = new_protocol(Trans),
+    case thrift_protocol:read(Proto, Type) of
+        {_NewProto, {ok, Result}} ->
+            Result;
+        {_NewProto, {error, Reason}} ->
             erlang:error({thrift, {protocol, Reason}})
     end.
 
 -spec deserialize_function_args(thrift_fun_full_ref(), binary()) ->
-    woody:args().
+    list(term()).
 
 deserialize_function_args({Module, {Service, Function}}, Data) ->
     ArgsType = Module:function_info(Service, Function, params_type),
-    deserialize(ArgsType, Data).
+    Args = deserialize(ArgsType, Data),
+    erlang:tuple_to_list(Args).
 
 -spec deserialize_function_reply(thrift_fun_full_ref(), binary()) ->
     term().
@@ -138,6 +138,11 @@ deserialize_function_exception(FunctionRef, Data) ->
     ExceptionType = get_fun_exception_type(FunctionRef),
     {_Name, Exception} = deserialize(ExceptionType, Data),
     Exception.
+
+%% Internals
+
+new_protocol(Trans) ->
+    thrift_binary_protocol:new(Trans, [{strict_read, true}, {strict_write, true}]).
 
 %%
 
@@ -167,13 +172,25 @@ get_fun_exception_type({Module, {Service, Function}}) ->
     {struct, struct, Exceptions} = DeclaredType,
     {struct, union, Exceptions}.
 
--spec find_exception_name(thrift_fun_full_ref(), thrift_exception()) ->
+-spec find_exception_name(thrift_type(), thrift_exception()) ->
     Name :: atom().
 
-find_exception_name({Module, {Service, Function}}, Exception) ->
-    case thrift_processor_codec:match_exception({Module, Service}, Function, Exception) of
-        {ok, {_Type, Name}} ->
+find_exception_name(Type, Exception) ->
+    RecordName = erlang:element(1, Exception),
+    {struct, union, Variants} = Type,
+    do_find_exception_name(Variants, RecordName).
+
+-spec do_find_exception_name(thrift_struct_def(), atom()) ->
+    Name :: atom().
+
+do_find_exception_name([], RecordName) ->
+    erlang:error({thrift, {unknown_exception, RecordName}});
+do_find_exception_name([{_Tag, _Req, Type, Name, _Default} | Tail], RecordName) ->
+    {struct, exception, {Module, Exception}} = Type,
+    case Module:record_name(Exception) of
+        TypeRecordName when TypeRecordName =:= RecordName ->
             Name;
-        {error, bad_exception} ->
-            erlang:error({thrift, {unknown_exception, Exception}})
+        _Other ->
+            do_find_exception_name(Tail, RecordName)
     end.
+

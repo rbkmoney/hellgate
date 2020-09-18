@@ -116,7 +116,7 @@
 -spec start(ns(), id(), term()) ->
     {ok, term()} | {error, exists | term()} | no_return().
 start(Ns, ID, Args) ->
-    call_automaton('Start', {Ns, ID, wrap_args(Args)}).
+    call_automaton('Start', [Ns, ID, wrap_args(Args)]).
 
 -spec thrift_call(ns(), ref(), service_name(), function_ref(), args()) ->
     response() | {error, notfound | failed}.
@@ -170,7 +170,7 @@ call(Ns, Ref, Args, After, Limit, Direction) ->
 
 repair(Ns, Ref, Args) ->
     Descriptor = prepare_descriptor(Ns, Ref, #mg_stateproc_HistoryRange{}),
-    call_automaton('Repair', {Descriptor, wrap_args(Args)}).
+    call_automaton('Repair', [Descriptor, wrap_args(Args)]).
 
 -spec get_history(ns(), ref()) ->
     {ok, history()} | {error, notfound} | no_return().
@@ -201,7 +201,7 @@ get_history(Ns, Ref, AfterID, Limit, Direction) ->
 get_machine(Ns, Ref, AfterID, Limit, Direction) ->
     Range = #mg_stateproc_HistoryRange{'after' = AfterID, limit = Limit, direction = Direction},
     Descriptor = prepare_descriptor(Ns, Ref, Range),
-    case call_automaton('GetMachine', {Descriptor}) of
+    case call_automaton('GetMachine', [Descriptor]) of
         {ok, #mg_stateproc_Machine{} = Machine} ->
             {ok, unmarshal_machine(Machine)};
         Error ->
@@ -225,7 +225,7 @@ do_call(Ns, Ref, Args, After, Limit, Direction) ->
         'direction' = Direction
     },
     Descriptor = prepare_descriptor(Ns, Ref, HistoryRange),
-    case call_automaton('Call', {Descriptor, wrap_args(Args)}) of
+    case call_automaton('Call', [Descriptor, wrap_args(Args)]) of
         {ok, Response} ->
             {ok, unmarshal_response(Response)};
         {error, _} = Error ->
@@ -254,13 +254,14 @@ call_automaton(Function, Args) ->
     term() | no_return().
 
 handle_function(Func, Args, Opts) ->
+    ArgsList = tuple_to_list(Args),
     scoper:scope(machine,
-        fun() -> handle_function_(Func, Args, Opts) end
+        fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
--spec handle_function_(func(), woody:args(), #{ns := ns()}) -> term() | no_return().
+-spec handle_function_(func(), list(), #{ns := ns()}) -> term() | no_return().
 
-handle_function_('ProcessSignal', {Args}, #{ns := Ns} = _Opts) ->
+handle_function_('ProcessSignal', [Args], #{ns := Ns} = _Opts) ->
     #mg_stateproc_SignalArgs{signal = {Type, Signal}, machine = #mg_stateproc_Machine{id = ID} = Machine} = Args,
     scoper:add_meta(#{
         namespace => Ns,
@@ -270,7 +271,7 @@ handle_function_('ProcessSignal', {Args}, #{ns := Ns} = _Opts) ->
     }),
     dispatch_signal(Ns, Signal, unmarshal_machine(Machine));
 
-handle_function_('ProcessCall', {Args}, #{ns := Ns} = _Opts) ->
+handle_function_('ProcessCall', [Args], #{ns := Ns} = _Opts) ->
     #mg_stateproc_CallArgs{arg = Payload, machine = #mg_stateproc_Machine{id = ID} = Machine} = Args,
     scoper:add_meta(#{
         namespace => Ns,

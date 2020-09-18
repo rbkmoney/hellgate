@@ -56,26 +56,26 @@ collect_proxy_options(#domain_PaymentRoute{provider = ProviderRef, terminal = Te
 -spec process_payment(_ProxyContext, route()) ->
     term().
 process_payment(ProxyContext, Route) ->
-    issue_call('ProcessPayment', {ProxyContext}, Route).
+    issue_call('ProcessPayment', [ProxyContext], Route).
 
 -spec generate_token(_ProxyContext, route()) ->
     term().
 generate_token(ProxyContext, Route) ->
-    issue_call('GenerateToken', {ProxyContext}, Route).
+    issue_call('GenerateToken', [ProxyContext], Route).
 
 -spec handle_payment_callback(_Payload, _ProxyContext, route()) ->
     term().
 handle_payment_callback(Payload, ProxyContext, Route) ->
-    issue_call('HandlePaymentCallback', {Payload, ProxyContext}, Route).
+    issue_call('HandlePaymentCallback', [Payload, ProxyContext], Route).
 
 -spec handle_recurrent_token_callback(_Payload, _ProxyContext, route()) ->
     term().
 handle_recurrent_token_callback(Payload, ProxyContext, Route) ->
-    issue_call('HandleRecurrentTokenCallback', {Payload, ProxyContext}, Route).
+    issue_call('HandleRecurrentTokenCallback', [Payload, ProxyContext], Route).
 
 
 
--spec issue_call(woody:func(), woody:args(), route()) ->
+-spec issue_call(woody:func(), list(), route()) ->
     term().
 issue_call(Func, Args, Route) ->
     CallID = hg_utils:unique_id(),

@@ -55,7 +55,7 @@ handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
         pm_context:cleanup()
     end.
 
--spec call(atom(), woody:func(), woody:args()) ->
+-spec call(atom(), woody:func(), list()) ->
     term().
 
 call(ServiceName, Function, Args) ->
@@ -63,20 +63,21 @@ call(ServiceName, Function, Args) ->
     Deadline = undefined,
     call(ServiceName, Function, Args, Opts, Deadline).
 
--spec call(atom(), woody:func(), woody:args(), client_opts()) ->
+-spec call(atom(), woody:func(), list(), client_opts()) ->
     term().
 
 call(ServiceName, Function, Args, Opts) ->
     Deadline = undefined,
     call(ServiceName, Function, Args, Opts, Deadline).
 
--spec call(atom(), woody:func(), woody:args(), client_opts(), woody_deadline:deadline()) ->
+-spec call(atom(), woody:func(), list(), client_opts(), woody_deadline:deadline()) ->
     term().
 
 call(ServiceName, Function, Args, Opts, Deadline) ->
     Service = get_service_modname(ServiceName),
     Context = pm_context:get_woody_context(pm_context:load()),
-    Request = {Service, Function, Args},
+    ArgsTuple = list_to_tuple(Args),
+    Request = {Service, Function, ArgsTuple},
     woody_client:call(
         Request,
         Opts#{event_handler => {

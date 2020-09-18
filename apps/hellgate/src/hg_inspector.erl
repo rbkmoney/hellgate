@@ -32,7 +32,7 @@ inspect(
         payment = get_payment_info(Shop, Invoice, Payment),
         options = maps:merge(ProxyDef#domain_ProxyDefinition.options, ProxyAdditional)
     },
-    Result = issue_call('InspectPayment', {Context}, hg_proxy:get_call_options(Proxy,
+    Result = issue_call('InspectPayment', [Context], hg_proxy:get_call_options(Proxy,
         Revision), FallBackRiskScore, DeadLine),
     case Result of
         {ok, RiskScore} when is_atom(RiskScore) ->

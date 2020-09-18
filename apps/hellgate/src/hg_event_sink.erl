@@ -46,11 +46,11 @@ get_history_range(EventSinkID, After, Limit) ->
 
 get_history_range(EventSinkID, After, Limit, Direction) ->
     HistoryRange = #mg_stateproc_HistoryRange{'after' = After, limit = Limit, direction = Direction},
-    {ok, History} = call_event_sink('GetHistory', {EventSinkID, HistoryRange}),
+    {ok, History} = call_event_sink('GetHistory', EventSinkID, [HistoryRange]),
     map_sink_events(History).
 
-call_event_sink(Function, Args) ->
-    hg_woody_wrapper:call(eventsink, Function, Args).
+call_event_sink(Function, EventSinkID, Args) ->
+    hg_woody_wrapper:call(eventsink, Function, [EventSinkID | Args]).
 
 map_sink_events(History) ->
     [map_sink_event(Ev) || Ev <- History].
