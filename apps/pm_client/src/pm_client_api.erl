@@ -28,8 +28,7 @@ construct_context() ->
 
 call(ServiceName, Function, Args, {RootUrl, Context}) ->
     Service = pm_proto:get_service(ServiceName),
-    ArgsTuple = list_to_tuple(Args),
-    Request = {Service, Function, ArgsTuple},
+    Request = {Service, Function, Args},
     Opts = get_opts(ServiceName),
     Result =
         try

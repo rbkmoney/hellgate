@@ -17,7 +17,7 @@
     ('GetLastEventID', woody:args(), hg_woody_wrapper:handler_opts()) ->
         event_id() | no_return().
 
-handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, _Opts) ->
+handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->
     case hg_event_sink:get_events(<<"payproc">>, After, Limit) of
         {ok, Events} ->
             publish_events(Events);
@@ -25,7 +25,7 @@ handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit
             throw(#payproc_EventNotFound{})
     end;
 
-handle_function('GetLastEventID', {}, _Opts) ->
+handle_function('GetLastEventID', [], _Opts) ->
     % TODO handle thrift exceptions here
     case hg_event_sink:get_last_event_id(<<"payproc">>) of
         {ok, ID} ->

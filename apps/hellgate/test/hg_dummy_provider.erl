@@ -86,55 +86,55 @@ construct_silent_callback(Form) ->
 
 handle_function(
     'GenerateToken',
-    {#prxprv_RecurrentTokenContext{
+    [#prxprv_RecurrentTokenContext{
         session = #prxprv_RecurrentTokenSession{state = State},
         token_info = TokenInfo,
         options = _
-    }},
+    }],
     Opts
 ) ->
     generate_token(State, TokenInfo, Opts);
 
 handle_function(
     'HandleRecurrentTokenCallback',
-    {Payload, #prxprv_RecurrentTokenContext{
+    [Payload, #prxprv_RecurrentTokenContext{
         session = #prxprv_RecurrentTokenSession{state = State},
         token_info = TokenInfo,
         options = _
-    }},
+    }],
     Opts
 ) ->
     handle_token_callback(Payload, State, TokenInfo, Opts);
 
 handle_function(
     'ProcessPayment',
-    {#prxprv_PaymentContext{
+    [#prxprv_PaymentContext{
         session = #prxprv_Session{target = ?refunded(), state = State},
         payment_info = PaymentInfo,
         options = _
-    }},
+    }],
     Opts
 ) ->
     process_refund(State, PaymentInfo, Opts);
 
 handle_function(
     'ProcessPayment',
-    {#prxprv_PaymentContext{
+    [#prxprv_PaymentContext{
         session = #prxprv_Session{target = Target, state = State},
         payment_info = PaymentInfo,
         options = _
-    }},
+    }],
     Opts
 ) ->
     process_payment(Target, State, PaymentInfo, Opts);
 
 handle_function(
     'HandlePaymentCallback',
-    {Payload, #prxprv_PaymentContext{
+    [Payload, #prxprv_PaymentContext{
         session = #prxprv_Session{target = Target, state = State},
         payment_info = PaymentInfo,
         options = _
-    }},
+    }],
     Opts
 ) ->
     handle_payment_callback(Payload, Target, State, PaymentInfo, Opts).

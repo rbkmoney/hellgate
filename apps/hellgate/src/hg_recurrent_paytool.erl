@@ -76,14 +76,14 @@
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
     term() | no_return().
-handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, _Opts) ->
+handle_function('GetEvents', [#payproc_EventRange{'after' = After, limit = Limit}], _Opts) ->
     case hg_event_sink:get_events(?NS, After, Limit) of
         {ok, Events} ->
             publish_rec_payment_tool_events(Events);
         {error, event_not_found} ->
             throw(#payproc_EventNotFound{})
     end;
-handle_function('GetLastEventID', {}, _Opts) ->
+handle_function('GetLastEventID', [], _Opts) ->
     case hg_event_sink:get_last_event_id(?NS) of
         {ok, ID} ->
             ID;
@@ -91,9 +91,8 @@ handle_function('GetLastEventID', {}, _Opts) ->
             throw(#payproc_NoLastEvent{})
     end;
 handle_function(Func, Args, Opts) ->
-    ArgsList = tuple_to_list(Args),
     scoper:scope(recurrent_payment_tools,
-        fun() -> handle_function_(Func, ArgsList, Opts) end
+        fun() -> handle_function_(Func, Args, Opts) end
     ).
 
 handle_function_('Create', [RecurrentPaymentToolParams], _Opts) ->
