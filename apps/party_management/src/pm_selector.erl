@@ -27,7 +27,8 @@
     dmsl_domain_thrift:'CumulativeLimitSelector'() |
     dmsl_domain_thrift:'TimeSpanSelector'() |
     dmsl_domain_thrift:'P2PProviderSelector'() |
-    dmsl_domain_thrift:'FeeSelector'().
+    dmsl_domain_thrift:'FeeSelector'() |
+    dmsl_domain_thrift:'InspectorSelector'().
 
 -type value() ::
     _. %% FIXME

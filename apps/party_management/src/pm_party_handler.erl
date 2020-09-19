@@ -230,6 +230,13 @@ handle_function_(
     Terms = pm_party:get_terms(ContractTemplate, pm_datetime:format_now(), Revision),
     pm_party:reduce_terms(Terms, VS, Revision);
 
+handle_function_('ComputePaymentInstitution', Args, _Opts) ->
+    {UserInfo, PaymentInstitutionRef, DomainRevision, Varset} = Args,
+    ok = assume_user_identity(UserInfo),
+    PaymentInstitution = get_payment_institution(PaymentInstitutionRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_payment_institution:reduce_payment_institution(PaymentInstitution, VS, DomainRevision);
+
 %% Payouts adhocs
 
 handle_function_(
@@ -417,7 +424,8 @@ prepare_varset(PartyID0, #payproc_Varset{} = V, VS0) ->
         payout_method => V#payproc_Varset.payout_method,
         wallet_id => V#payproc_Varset.wallet_id,
         p2p_tool => V#payproc_Varset.p2p_tool,
-        identification_level => V#payproc_Varset.identification_level
+        identification_level => V#payproc_Varset.identification_level,
+        shop_id => V#payproc_Varset.shop_id
     }).
 
 get_party_id(V, undefined) ->
