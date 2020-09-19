@@ -97,7 +97,7 @@ reduce_payment_hold_terms(PaymentHoldTerms, VS, DomainRevision) ->
         lifetime = reduce_if_defined(PaymentHoldTerms#domain_PaymentHoldsProvisionTerms.lifetime, VS, DomainRevision),
         partial_captures = pm_maybe:apply(
             fun(X) -> reduce_partial_captures_terms(X, VS, DomainRevision) end,
-            PaymentHoldTerms#domain_PaymentHoldsProvisionTerms.partial_captures
+            #domain_PaymentHoldsProvisionTerms.partial_captures
         )
     }.
 

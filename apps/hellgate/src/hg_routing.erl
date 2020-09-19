@@ -2,7 +2,6 @@
 
 -module(hg_routing).
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
--include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
 -export([gather_routes/4]).
@@ -147,8 +146,9 @@ choose_route(FailRatedRoutes, RejectContext, VS) ->
     {[provider_with_ref()], reject_context()}.
 
 select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
-    {value, ProviderRefs0} = PaymentInstitution#domain_PaymentInstitution.providers,
-    ProviderRefs1 = ordsets:to_list(ProviderRefs0),
+    ProviderSelector = PaymentInstitution#domain_PaymentInstitution.providers,
+    ProviderRefs0    = reduce(provider, ProviderSelector, VS, Revision),
+    ProviderRefs1    = ordsets:to_list(ProviderRefs0),
     {Providers, RejectReasons} = lists:foldl(
         fun (ProviderRef, {Prvs, Reasons}) ->
             try

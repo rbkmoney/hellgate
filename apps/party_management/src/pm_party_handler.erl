@@ -230,13 +230,6 @@ handle_function_(
     Terms = pm_party:get_terms(ContractTemplate, pm_datetime:format_now(), Revision),
     pm_party:reduce_terms(Terms, VS, Revision);
 
-handle_function_('ComputePaymentInstitution', Args, _Opts) ->
-    {UserInfo, PaymentInstitutionRef, DomainRevision, Varset} = Args,
-    ok = assume_user_identity(UserInfo),
-    PaymentInstitution = get_payment_institution(PaymentInstitutionRef, DomainRevision),
-    VS = prepare_varset(Varset),
-    pm_payment_institution:reduce_payment_institution(PaymentInstitution, VS, DomainRevision);
-
 %% Payouts adhocs
 
 handle_function_(
