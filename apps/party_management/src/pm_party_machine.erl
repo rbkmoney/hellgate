@@ -4,6 +4,7 @@
 -include("legacy_party_structures.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
+-include("claim_management.hrl").
 
 %% Machine callbacks
 
@@ -282,6 +283,8 @@ handle_call('Accept', {_PartyID, Claim}, AuxSt, St) ->
                 Timestamp = pm_datetime:format_now(),
                 Revision = pm_domain:head(),
                 Party = get_st_party(St),
+
+                ok = assert_cash_regisrty_modifications_applicable(Changeset, Party),
                 ok = pm_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
                 ok = pm_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party)
         end,
@@ -316,6 +319,47 @@ handle_call('Commit', {_PartyID, CmClaim}, AuxSt, St) ->
         AuxSt,
         St
    ).
+
+assert_cash_regisrty_modifications_applicable(Changeset, Party) ->
+    CashRegisterShopIDs = get_cash_register_modifications_shop_ids(Changeset),
+    ShopModificationsShopIDs = get_shop_modifications_shop_ids(Changeset),
+    PartyShopIDs = maps:keys(pm_party:get_shops(Party)),
+    ShopIDs = ShopModificationsShopIDs ++ PartyShopIDs, % Ignoring duplicates for now
+
+    lists:foreach(
+        fun(ShopID) -> case lists:member(ShopID, ShopIDs) of
+            true ->
+                ok;
+            false ->
+                throw(#payproc_InvalidChangeset{reason = ?invalid_shop(ShopID, {not_exists, ShopID})})
+            end
+        end,
+        CashRegisterShopIDs
+    ).
+
+get_cash_register_modifications_shop_ids(Changeset) ->
+    lists:filtermap(
+        fun(#claim_management_ModificationUnit{
+                modification = {party_modification, ?cm_cash_register_modification_unit_modification(ShopID, _)}}
+        ) ->
+            {true, ShopID};
+        (_) ->
+            false
+        end,
+        Changeset
+    ).
+
+get_shop_modifications_shop_ids(Changeset) ->
+    lists:filtermap(
+        fun(#claim_management_ModificationUnit{
+                modification = {party_modification, ?cm_shop_modification(ShopID, _)}}
+        ) ->
+            {true, ShopID};
+        (_) ->
+            false
+        end,
+        Changeset
+    ).
 
 get_changes(undefined, _St) ->
     [];
