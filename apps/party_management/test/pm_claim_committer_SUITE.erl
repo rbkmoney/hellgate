@@ -20,7 +20,7 @@
 -export([contract_report_preferences_modification/1]).
 -export([shop_creation/1]).
 -export([shop_complex_modification/1]).
--export([invalid_cash_regisrty_modification/1]).
+-export([invalid_cash_register_modification/1]).
 -export([shop_contract_modification/1]).
 -export([contract_termination/1]).
 -export([contractor_already_exists/1]).
@@ -57,7 +57,7 @@ all() ->
         contract_report_preferences_modification,
         shop_creation,
         shop_complex_modification,
-        invalid_cash_regisrty_modification,
+        invalid_cash_register_modification,
         shop_contract_modification,
         contract_termination,
         contractor_already_exists,
@@ -352,9 +352,9 @@ shop_complex_modification(C) ->
         payout_schedule = Schedule
     }} = get_shop(PartyID, ShopID, C).
 
--spec invalid_cash_regisrty_modification(config()) -> _.
+-spec invalid_cash_register_modification(config()) -> _.
 
-invalid_cash_regisrty_modification(C) ->
+invalid_cash_register_modification(C) ->
     PartyID = cfg(party_id, C),
     CashRegisterModificationUnit = #claim_management_CashRegisterModificationUnit{
         id = <<"1">>,
@@ -371,7 +371,7 @@ invalid_cash_regisrty_modification(C) ->
     ],
     Claim = claim(Modifications, PartyID),
     Reason =  <<"{invalid_shop,{payproc_InvalidShop,<<\"", AnotherShopID/binary,
-        "\">>,{not_exists,<<\"", AnotherShopID/binary,"\">>}}}">>,
+        "\">>,{not_exists,<<\"", AnotherShopID/binary, "\">>}}}">>,
     {exception, #claim_management_InvalidChangeset{
         reason = Reason
     }} = accept_claim(Claim, C).
