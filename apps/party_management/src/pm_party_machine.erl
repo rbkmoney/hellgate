@@ -325,7 +325,6 @@ assert_cash_regisrty_modifications_applicable(Changeset, Party) ->
     ShopModificationsShopIDs = get_shop_modifications_shop_ids(Changeset),
     PartyShopIDs = maps:keys(pm_party:get_shops(Party)),
     ShopIDs = ShopModificationsShopIDs ++ PartyShopIDs, % Ignoring duplicates for now
-
     lists:foreach(
         fun(ShopID) -> case lists:member(ShopID, ShopIDs) of
             true ->
@@ -350,10 +349,12 @@ get_cash_register_modifications_shop_ids(Changeset) ->
     ).
 
 get_shop_modifications_shop_ids(Changeset) ->
-    lists:filtermap(
-        fun(#claim_management_ModificationUnit{
-                modification = {party_modification, ?cm_shop_modification(ShopID, _)}}
-        ) ->
+    lists:filtermap(fun
+        (#claim_management_ModificationUnit{
+                modification = {party_modification, ?cm_cash_register_modification_unit_modification(_, _)}}) ->
+            false;
+        (#claim_management_ModificationUnit{
+                modification = {party_modification, ?cm_shop_modification(ShopID, _)}}) ->
             {true, ShopID};
         (_) ->
             false
