@@ -2,6 +2,7 @@
 
 -include("party_events.hrl").
 -include("legacy_party_structures.hrl").
+
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
@@ -42,61 +43,59 @@
 -define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
 
 -record(st, {
-    party                :: undefined | party(),
-    timestamp            :: undefined | timestamp(),
-    claims   = #{}       :: #{claim_id() => claim()},
-    meta = #{}           :: meta(),
+    party :: undefined | party(),
+    timestamp :: undefined | timestamp(),
+    claims = #{} :: #{claim_id() => claim()},
+    meta = #{} :: meta(),
     migration_data = #{} :: #{any() => any()},
-    last_event = 0       :: event_id()
+    last_event = 0 :: event_id()
 }).
 
 -type st() :: #st{}.
 
--type call()            :: pm_machine:thrift_call().
--type service_name()    :: atom().
+-type call() :: pm_machine:thrift_call().
+-type service_name() :: atom().
 
--type call_target()     :: party | {shop, shop_id()}.
+-type call_target() :: party | {shop, shop_id()}.
 
--type party()           :: pm_party:party().
--type party_id()        :: dmsl_domain_thrift:'PartyID'().
--type party_status()    :: pm_party:party_status().
--type shop_id()         :: dmsl_domain_thrift:'ShopID'().
--type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
--type claim()           :: dmsl_payment_processing_thrift:'Claim'().
--type timestamp()       :: pm_datetime:timestamp().
--type meta()            :: dmsl_domain_thrift:'PartyMeta'().
--type meta_ns()         :: dmsl_domain_thrift:'PartyMetaNamespace'().
--type meta_data()       :: dmsl_domain_thrift:'PartyMetaData'().
+-type party() :: pm_party:party().
+-type party_id() :: dmsl_domain_thrift:'PartyID'().
+-type party_status() :: pm_party:party_status().
+-type shop_id() :: dmsl_domain_thrift:'ShopID'().
+-type claim_id() :: dmsl_payment_processing_thrift:'ClaimID'().
+-type claim() :: dmsl_payment_processing_thrift:'Claim'().
+-type timestamp() :: pm_datetime:timestamp().
+-type meta() :: dmsl_domain_thrift:'PartyMeta'().
+-type meta_ns() :: dmsl_domain_thrift:'PartyMetaNamespace'().
+-type meta_data() :: dmsl_domain_thrift:'PartyMetaData'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
--type party_revision()  :: dmsl_domain_thrift:'PartyRevision'().
--type event_id()        :: non_neg_integer().
+-type party_revision() :: dmsl_domain_thrift:'PartyRevision'().
+-type event_id() :: non_neg_integer().
 
--type content_type()    :: binary().
--type party_aux_st()    :: #{
+-type content_type() :: binary().
+-type party_aux_st() :: #{
     snapshot_index := snapshot_index(),
     party_revision_index := party_revision_index(),
     last_event_id => event_id()
 }.
--type snapshot_index()  :: [event_id()].
+
+-type snapshot_index() :: [event_id()].
 -type party_revision_index() :: #{
     party_revision() => event_range()
 }.
--type event_range()     :: {
+
+-type event_range() :: {
     FromEventID :: event_id() | undefined,
-    ToEventID   :: event_id() | undefined
+    ToEventID :: event_id() | undefined
 }.
 
 -export_type([party_revision/0]).
 
--spec namespace() ->
-    pm_machine:ns().
-
+-spec namespace() -> pm_machine:ns().
 namespace() ->
     ?NS.
 
--spec init(binary(), pm_machine:machine()) ->
-    pm_machine:result().
-
+-spec init(binary(), pm_machine:machine()) -> pm_machine:result().
 init(EncodedPartyParams, #{id := ID}) ->
     ParamsType = {struct, struct, {dmsl_payment_processing_thrift, 'PartyParams'}},
     PartyParams = pm_proto_utils:deserialize(ParamsType, EncodedPartyParams),
@@ -113,25 +112,20 @@ process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = pm_datetime:format_now(),
     Changes = [?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)],
     #{
-        events  => [wrap_event_payload(?party_ev(Changes))],
-        auxst   => wrap_aux_state(#{
+        events => [wrap_event_payload(?party_ev(Changes))],
+        auxst => wrap_aux_state(#{
             snapshot_index => [],
             party_revision_index => #{}
         })
     }.
 
--spec process_signal(pm_machine:signal(), pm_machine:machine()) ->
-    pm_machine:result().
-
+-spec process_signal(pm_machine:signal(), pm_machine:machine()) -> pm_machine:result().
 process_signal(timeout, _Machine) ->
     #{};
-
 process_signal({repair, _}, _Machine) ->
     #{}.
 
--spec process_call(call(), pm_machine:machine()) ->
-    {pm_machine:response(), pm_machine:result()}.
-
+-spec process_call(call(), pm_machine:machine()) -> {pm_machine:response(), pm_machine:result()}.
 process_call({{'PartyManagement', Fun}, Args}, Machine) ->
     PartyID = erlang:element(2, Args),
     process_call_(PartyID, Fun, Args, Machine);
@@ -163,30 +157,22 @@ process_call_(PartyID, Fun, Args, Machine) ->
 
 handle_call('Block', {_, _PartyID, Reason}, AuxSt, St) ->
     handle_block(party, Reason, AuxSt, St);
-
 handle_call('Unblock', {_, _PartyID, Reason}, AuxSt, St) ->
     handle_unblock(party, Reason, AuxSt, St);
-
 handle_call('Suspend', {_, _PartyID}, AuxSt, St) ->
     handle_suspend(party, AuxSt, St);
-
 handle_call('Activate', {_, _PartyID}, AuxSt, St) ->
     handle_activate(party, AuxSt, St);
-
 %% Shop
 
 handle_call('BlockShop', {_, _PartyID, ID, Reason}, AuxSt, St) ->
     handle_block({shop, ID}, Reason, AuxSt, St);
-
 handle_call('UnblockShop', {_, _PartyID, ID, Reason}, AuxSt, St) ->
     handle_unblock({shop, ID}, Reason, AuxSt, St);
-
 handle_call('SuspendShop', {_, _PartyID, ID}, AuxSt, St) ->
     handle_suspend({shop, ID}, AuxSt, St);
-
 handle_call('ActivateShop', {_, _PartyID, ID}, AuxSt, St) ->
     handle_activate({shop, ID}, AuxSt, St);
-
 %% PartyMeta
 
 handle_call('SetMetaData', {_, _PartyID, NS, Data}, AuxSt, St) ->
@@ -196,7 +182,6 @@ handle_call('SetMetaData', {_, _PartyID, NS, Data}, AuxSt, St) ->
         AuxSt,
         St
     );
-
 handle_call('RemoveMetaData', {_, _PartyID, NS}, AuxSt, St) ->
     _ = get_st_metadata(NS, St),
     respond(
@@ -205,7 +190,6 @@ handle_call('RemoveMetaData', {_, _PartyID, NS}, AuxSt, St) ->
         AuxSt,
         St
     );
-
 %% Claim
 
 handle_call('CreateClaim', {_, _PartyID, Changeset}, AuxSt, St) ->
@@ -217,7 +201,6 @@ handle_call('CreateClaim', {_, _PartyID, Changeset}, AuxSt, St) ->
         AuxSt,
         St
     );
-
 handle_call('UpdateClaim', {_, _PartyID, ID, ClaimRevision, Changeset}, AuxSt, St) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
@@ -227,7 +210,6 @@ handle_call('UpdateClaim', {_, _PartyID, ID, ClaimRevision, Changeset}, AuxSt, S
         AuxSt,
         St
     );
-
 handle_call('AcceptClaim', {_, _PartyID, ID, ClaimRevision}, AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Timestamp = pm_datetime:format_now(),
@@ -244,7 +226,6 @@ handle_call('AcceptClaim', {_, _PartyID, ID, ClaimRevision}, AuxSt, St) ->
         AuxSt,
         St
     );
-
 handle_call('DenyClaim', {_, _PartyID, ID, ClaimRevision, Reason}, AuxSt, St) ->
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
     Timestamp = pm_datetime:format_now(),
@@ -255,7 +236,6 @@ handle_call('DenyClaim', {_, _PartyID, ID, ClaimRevision, Reason}, AuxSt, St) ->
         AuxSt,
         St
     );
-
 handle_call('RevokeClaim', {_, _PartyID, ID, ClaimRevision, Reason}, AuxSt, St) ->
     ok = assert_party_operable(St),
     ok = assert_claim_modification_allowed(ID, ClaimRevision, St),
@@ -267,7 +247,6 @@ handle_call('RevokeClaim', {_, _PartyID, ID, ClaimRevision, Reason}, AuxSt, St) 
         AuxSt,
         St
     );
-
 %% ClaimCommitter
 
 handle_call('Accept', {_PartyID, Claim}, AuxSt, St) ->
@@ -296,17 +275,16 @@ handle_call('Accept', {_PartyID, Claim}, AuxSt, St) ->
             Reason1 = io_lib:format("~0tp", [Reason0]),
             Reason2 = unicode:characters_to_binary(Reason1),
             InvalidModificationChangeset = [
-                Modification ||
-                #claim_management_ModificationUnit{
-                    modification = Modification
-                } <- Changeset
+                Modification
+                || #claim_management_ModificationUnit{
+                       modification = Modification
+                   } <- Changeset
             ],
             erlang:throw(#claim_management_InvalidChangeset{
                 reason = Reason2,
                 invalid_changeset = InvalidModificationChangeset
             })
     end;
-
 handle_call('Commit', {_PartyID, CmClaim}, AuxSt, St) ->
     PayprocClaim = pm_claim_committer:from_claim_mgmt(CmClaim),
     Changes = get_changes(PayprocClaim, St),
@@ -315,7 +293,7 @@ handle_call('Commit', {_PartyID, CmClaim}, AuxSt, St) ->
         Changes,
         AuxSt,
         St
-   ).
+    ).
 
 get_changes(undefined, _St) ->
     [];
@@ -333,9 +311,7 @@ get_changes(PayprocClaim, St) ->
 
 %% Generic handlers
 
--spec handle_block(call_target(), binary(), party_aux_st(), st()) ->
-    {pm_machine:response(), pm_machine:result()}.
-
+-spec handle_block(call_target(), binary(), party_aux_st(), st()) -> {pm_machine:response(), pm_machine:result()}.
 handle_block(Target, Reason, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
     Timestamp = pm_datetime:format_now(),
@@ -347,9 +323,7 @@ handle_block(Target, Reason, AuxSt, St) ->
         St
     ).
 
--spec handle_unblock(call_target(), binary(), party_aux_st(), st()) ->
-    {pm_machine:response(), pm_machine:result()}.
-
+-spec handle_unblock(call_target(), binary(), party_aux_st(), st()) -> {pm_machine:response(), pm_machine:result()}.
 handle_unblock(Target, Reason, AuxSt, St) ->
     ok = assert_blocked(Target, St),
     Timestamp = pm_datetime:format_now(),
@@ -361,9 +335,7 @@ handle_unblock(Target, Reason, AuxSt, St) ->
         St
     ).
 
--spec handle_suspend(call_target(), party_aux_st(), st()) ->
-    {pm_machine:response(), pm_machine:result()}.
-
+-spec handle_suspend(call_target(), party_aux_st(), st()) -> {pm_machine:response(), pm_machine:result()}.
 handle_suspend(Target, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
     ok = assert_active(Target, St),
@@ -376,9 +348,7 @@ handle_suspend(Target, AuxSt, St) ->
         St
     ).
 
--spec handle_activate(call_target(), party_aux_st(), st()) ->
-    {pm_machine:response(), pm_machine:result()}.
-
+-spec handle_activate(call_target(), party_aux_st(), st()) -> {pm_machine:response(), pm_machine:result()}.
 handle_activate(Target, AuxSt, St) ->
     ok = assert_unblocked(Target, St),
     ok = assert_suspended(Target, St),
@@ -394,16 +364,12 @@ handle_activate(Target, AuxSt, St) ->
 publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
 
--spec publish_event(party_id(), pm_machine:event_payload()) ->
-    pm_event_provider:public_event().
-
+-spec publish_event(party_id(), pm_machine:event_payload()) -> pm_event_provider:public_event().
 publish_event(PartyID, Ev) ->
     {{party_id, PartyID}, unwrap_event_payload(Ev)}.
 
 %%
--spec start(party_id(), Args :: term()) ->
-    ok | no_return().
-
+-spec start(party_id(), Args :: term()) -> ok | no_return().
 start(PartyID, PartyParams) ->
     ParamsType = {struct, struct, {dmsl_payment_processing_thrift, 'PartyParams'}},
     EncodedPartyParams = pm_proto_utils:serialize(ParamsType, PartyParams),
@@ -414,9 +380,7 @@ start(PartyID, PartyParams) ->
             throw(#payproc_PartyExists{})
     end.
 
--spec get_party(party_id()) ->
-    dmsl_domain_thrift:'Party'() | no_return().
-
+-spec get_party(party_id()) -> dmsl_domain_thrift:'Party'() | no_return().
 get_party(PartyID) ->
     get_st_party(get_state(PartyID)).
 
@@ -431,7 +395,7 @@ get_state(PartyID, []) ->
 get_state(PartyID, [FirstID | _]) ->
     History = get_history(PartyID, FirstID - 1, undefined, forward),
     Events = lists:map(fun unwrap_event/1, History),
-    [FirstEvent| _] = History,
+    [FirstEvent | _] = History,
     St = unwrap_state(FirstEvent),
     merge_events(Events, St).
 
@@ -439,9 +403,7 @@ get_state_for_call(PartyID, ReversedHistoryPart, AuxSt) ->
     {St, History} = parse_history(ReversedHistoryPart),
     get_state_for_call(PartyID, {St, History}, [], AuxSt).
 
-get_state_for_call(PartyID, {undefined, [{FirstID, _, _} | _] = Events}, EventsAcc, AuxSt)
-    when FirstID > 1
-->
+get_state_for_call(PartyID, {undefined, [{FirstID, _, _} | _] = Events}, EventsAcc, AuxSt) when FirstID > 1 ->
     Limit = get_limit(FirstID, get_snapshot_index(AuxSt)),
     NewHistoryPart = parse_history(get_history(PartyID, FirstID, Limit, backward)),
     get_state_for_call(PartyID, NewHistoryPart, Events ++ EventsAcc, AuxSt);
@@ -471,9 +433,7 @@ parse_history([WrappedEvent | Others], EventsAcc) ->
 parse_history([], EventsAcc) ->
     {undefined, EventsAcc}.
 
--spec checkout(party_id(), party_revision_param()) ->
-    dmsl_domain_thrift:'Party'() | no_return().
-
+-spec checkout(party_id(), party_revision_param()) -> dmsl_domain_thrift:'Party'() | no_return().
 checkout(PartyID, RevisionParam) ->
     get_st_party(
         pm_utils:unwrap_result(
@@ -481,9 +441,7 @@ checkout(PartyID, RevisionParam) ->
         )
     ).
 
--spec get_last_revision(party_id()) ->
-    party_revision() | no_return().
-
+-spec get_last_revision(party_id()) -> party_revision() | no_return().
 get_last_revision(PartyID) ->
     AuxState = get_aux_state(PartyID),
     LastEventID = maps:get(last_event_id, AuxState),
@@ -507,35 +465,31 @@ get_last_revision(PartyID) ->
             get_last_revision_old_way(PartyID)
     end.
 
--spec get_last_revision_old_way(party_id()) ->
-    party_revision() | no_return().
-
+-spec get_last_revision_old_way(party_id()) -> party_revision() | no_return().
 get_last_revision_old_way(PartyID) ->
     {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
     get_revision_of_part(PartyID, History, Last, Step).
 
--spec get_status(party_id()) ->
-    party_status() | no_return().
-
+-spec get_status(party_id()) -> party_status() | no_return().
 get_status(PartyID) ->
     pm_party:get_status(
         get_party(PartyID)
     ).
 
--spec call(party_id(), service_name(), pm_proto_utils:thrift_fun_ref(), woody:args()) ->
-    term() | no_return().
-
+-spec call(party_id(), service_name(), pm_proto_utils:thrift_fun_ref(), woody:args()) -> term() | no_return().
 call(PartyID, ServiceName, FucntionRef, Args) ->
-    map_error(pm_machine:thrift_call(
-        ?NS,
-        PartyID,
-        ServiceName,
-        FucntionRef,
-        Args,
-        undefined,
-        ?SNAPSHOT_STEP,
-        backward
-    )).
+    map_error(
+        pm_machine:thrift_call(
+            ?NS,
+            PartyID,
+            ServiceName,
+            FucntionRef,
+            Args,
+            undefined,
+            ?SNAPSHOT_STEP,
+            backward
+        )
+    ).
 
 map_error(ok) ->
     ok;
@@ -548,35 +502,26 @@ map_error({error, notfound}) ->
 map_error({error, Reason}) ->
     error(Reason).
 
--spec get_claim(claim_id(), party_id()) ->
-    claim() | no_return().
-
+-spec get_claim(claim_id(), party_id()) -> claim() | no_return().
 get_claim(ID, PartyID) ->
     get_st_claim(ID, get_state(PartyID)).
 
--spec get_claims(party_id()) ->
-    [claim()] | no_return().
-
+-spec get_claims(party_id()) -> [claim()] | no_return().
 get_claims(PartyID) ->
     #st{claims = Claims} = get_state(PartyID),
     maps:values(Claims).
 
--spec get_meta(party_id()) ->
-    meta() | no_return().
-
+-spec get_meta(party_id()) -> meta() | no_return().
 get_meta(PartyID) ->
     #st{meta = Meta} = get_state(PartyID),
     Meta.
 
--spec get_metadata(meta_ns(), party_id()) ->
-    meta_data() | no_return().
-
+-spec get_metadata(meta_ns(), party_id()) -> meta_data() | no_return().
 get_metadata(NS, PartyID) ->
     get_st_metadata(NS, get_state(PartyID)).
 
 -spec get_public_history(party_id(), integer() | undefined, non_neg_integer()) ->
     [dmsl_payment_processing_thrift:'Event'()].
-
 get_public_history(PartyID, AfterID, Limit) ->
     Events = unwrap_events(get_history(PartyID, AfterID, Limit)),
     [publish_party_event({party_id, PartyID}, Ev) || Ev <- Events].
@@ -587,17 +532,17 @@ get_history(PartyID, AfterID, Limit) ->
 get_history(PartyID, AfterID, Limit, Direction) ->
     map_history_error(pm_machine:get_history(?NS, PartyID, AfterID, Limit, Direction)).
 
--spec get_aux_state(party_id()) ->
-    party_aux_st().
-
+-spec get_aux_state(party_id()) -> party_aux_st().
 get_aux_state(PartyID) ->
-    #{aux_state := AuxSt, history := History} = map_history_error(pm_machine:get_machine(
-        ?NS,
-        PartyID,
-        undefined,
-        1,
-        backward
-    )),
+    #{aux_state := AuxSt, history := History} = map_history_error(
+        pm_machine:get_machine(
+            ?NS,
+            PartyID,
+            undefined,
+            1,
+            backward
+        )
+    ),
     AuxState = unwrap_aux_state(AuxSt),
     case History of
         [] ->
@@ -611,7 +556,7 @@ get_revision_of_part(PartyID, History, Last, Step) ->
         revision_not_found when Last == 0 ->
             0;
         revision_not_found ->
-            {History1, Last1, Step1} = get_history_part(PartyID, Last, Step*2),
+            {History1, Last1, Step1} = get_history_part(PartyID, Last, Step * 2),
             get_revision_of_part(PartyID, History1, Last1, Step1);
         Revision ->
             Revision
@@ -662,20 +607,20 @@ get_next_party_revision(#st{party = Party}) ->
 get_st_claim(ID, #st{claims = Claims}) ->
     assert_claim_exists(maps:get(ID, Claims, undefined)).
 
-get_st_pending_claims(#st{claims = Claims})->
+get_st_pending_claims(#st{claims = Claims}) ->
     % TODO cache it during history collapse
     % Looks like little overhead, compared to previous version (based on maps:fold),
     % but I hope for small amount of pending claims simultaniously.
-    maps:values(maps:filter(
-        fun(_ID, Claim) ->
-            pm_claim:is_pending(Claim)
-        end,
-        Claims
-    )).
+    maps:values(
+        maps:filter(
+            fun(_ID, Claim) ->
+                pm_claim:is_pending(Claim)
+            end,
+            Claims
+        )
+    ).
 
--spec get_st_metadata(meta_ns(), st()) ->
-    meta_data().
-
+-spec get_st_metadata(meta_ns(), st()) -> meta_data().
 get_st_metadata(NS, #st{meta = Meta}) ->
     case maps:get(NS, Meta, undefined) of
         MetaData when MetaData =/= undefined ->
@@ -774,7 +719,7 @@ finalize_claim(Claim, Timestamp) ->
 
 get_next_claim_id(#st{claims = Claims}) ->
     % TODO cache sequences on history collapse
-    lists:max([0| maps:keys(Claims)]) + 1.
+    lists:max([0 | maps:keys(Claims)]) + 1.
 
 apply_accepted_claim(Claim, St) ->
     case pm_claim:is_accepted(Claim) of
@@ -796,8 +741,8 @@ do_respond(Response, Changes, AuxSt0, St) ->
     {
         Response,
         #{
-            events  => Events,
-            auxst   => AuxSt2
+            events => Events,
+            auxst => AuxSt2
         }
     }.
 
@@ -863,7 +808,6 @@ get_limit(_ToEventID, []) ->
 %%
 
 -spec checkout_party(party_id(), party_revision_param()) -> {ok, st()} | {error, revision_not_found}.
-
 checkout_party(PartyID, {timestamp, Timestamp}) ->
     Events = unwrap_events(get_history(PartyID, undefined, undefined)),
     checkout_history_by_timestamp(Events, Timestamp, #st{});
@@ -886,12 +830,13 @@ checkout_history_by_timestamp([], Timestamp, St) ->
 
 checkout_party_by_revision(PartyID, Revision) ->
     AuxSt = get_aux_state(PartyID),
-    FromEventID = case get_party_revision_range(Revision, get_party_revision_index(AuxSt)) of
-        {_, undefined} ->
-            undefined;
-        {_, EventID} ->
-            EventID + 1
-    end,
+    FromEventID =
+        case get_party_revision_range(Revision, get_party_revision_index(AuxSt)) of
+            {_, undefined} ->
+                undefined;
+            {_, EventID} ->
+                EventID + 1
+        end,
     Limit = get_limit(FromEventID, get_snapshot_index(AuxSt)),
     ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
     case parse_history(ReversedHistory) of
@@ -920,13 +865,13 @@ checkout_history_by_revision([], Revision, St) ->
 merge_events(Events, St) ->
     lists:foldl(fun merge_event/2, St, Events).
 
-merge_event({ID, _Dt, ?party_ev(PartyChanges)}, #st{last_event = LastEventID} = St)
-    when is_list(PartyChanges) andalso ID =:= LastEventID + 1
+merge_event({ID, _Dt, ?party_ev(PartyChanges)}, #st{last_event = LastEventID} = St) when
+    is_list(PartyChanges) andalso ID =:= LastEventID + 1
 ->
     merge_party_changes(PartyChanges, St#st{last_event = ID}).
 
 merge_party_changes(Changes, St) ->
-     lists:foldl(fun merge_party_change/2, St, Changes).
+    lists:foldl(fun merge_party_change/2, St, Changes).
 
 merge_party_change(?party_created(PartyID, ContactInfo, Timestamp), St) ->
     St#st{
@@ -1115,14 +1060,15 @@ ensure_payment_institution(
     Timestamp
 ) ->
     Revision = pm_domain:head(),
-    Realm = case TemplateRef of
-        undefined ->
-            % use default live payment institution
-            live;
-        _ ->
-            Template = get_template(TemplateRef, Revision),
-            get_realm(Template, Timestamp, Revision)
-    end,
+    Realm =
+        case TemplateRef of
+            undefined ->
+                % use default live payment institution
+                live;
+            _ ->
+                Template = get_template(TemplateRef, Revision),
+                get_realm(Template, Timestamp, Revision)
+        end,
     ContractParams#payproc_ContractParams{
         payment_institution = get_default_payment_institution(Realm, Revision)
     };
@@ -1170,9 +1116,8 @@ get_template(TemplateRef, Revision) ->
 
 %%
 
-try_attach_snapshot(Changes, AuxSt0, #st{last_event = LastEventID} = St)
-    when
-        LastEventID > 0 andalso
+try_attach_snapshot(Changes, AuxSt0, #st{last_event = LastEventID} = St) when
+    LastEventID > 0 andalso
         LastEventID rem ?SNAPSHOT_STEP =:= 0
 ->
     AuxSt1 = append_snapshot_index(LastEventID + 1, AuxSt0),
@@ -1191,19 +1136,19 @@ try_attach_snapshot(Changes, AuxSt, _) ->
 -define(TOP_VERSION, 6).
 
 wrap_event_payload(Changes) ->
-   marshal_event_payload(Changes, undefined).
+    marshal_event_payload(Changes, undefined).
 
 wrap_event_payload_w_snapshot(Changes, St) ->
-   StateSnapshot = encode_state(?CT_ERLANG_BINARY, St),
-   marshal_event_payload(Changes, StateSnapshot).
+    StateSnapshot = encode_state(?CT_ERLANG_BINARY, St),
+    marshal_event_payload(Changes, StateSnapshot).
 
 marshal_event_payload(?party_ev(Changes), StateSnapshot) ->
-   Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-   Bin = pm_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
-   #{
-       format_version => 1,
-       data => {bin, Bin}
-   }.
+    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
+    Bin = pm_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
+    #{
+        format_version => 1,
+        data => {bin, Bin}
+    }.
 
 unwrap_events(History) ->
     [unwrap_event(E) || E <- History].
@@ -1218,11 +1163,10 @@ unwrap_event_payload(1, {bin, ThriftEncodedBin}) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
     #payproc_PartyEventData{changes = Changes} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
     ?party_ev(Changes);
-
 unwrap_event_payload(undefined, [
     #{
         <<"vsn">> := Version,
-        <<"ct">>  := ContentType
+        <<"ct">> := ContentType
     },
     EncodedEvent
 ]) ->
@@ -1233,27 +1177,32 @@ unwrap_event_payload(undefined, Event) when is_list(Event) ->
 unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
     transmute([1, binary_to_term(Bin)]).
 
-unwrap_state({
-    _ID,
-    _Dt,
-    #{
-        data := {bin, ThriftEncodedBin},
-        format_version := 1
+unwrap_state(
+    {
+        _ID,
+        _Dt,
+        #{
+            data := {bin, ThriftEncodedBin},
+            format_version := 1
+        }
     }
-}) ->
+) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
     #payproc_PartyEventData{state_snapshot = StateSnapshot} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
     decode_state(?CT_ERLANG_BINARY, StateSnapshot);
-unwrap_state({
-    _ID,
-    _Dt,
-    #{
-        data := [
-            #{<<"ct">>  := ContentType, <<"state_snapshot">> := EncodedSt},
-            _EncodedEvent],
-        format_version := undefined
+unwrap_state(
+    {
+        _ID,
+        _Dt,
+        #{
+            data := [
+                #{<<"ct">> := ContentType, <<"state_snapshot">> := EncodedSt},
+                _EncodedEvent
+            ],
+            format_version := undefined
+        }
     }
-}) ->
+) ->
     decode_state(ContentType, EncodedSt);
 unwrap_state(_) ->
     undefined.
@@ -1270,13 +1219,11 @@ decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
 
 -spec wrap_aux_state(party_aux_st()) -> pm_msgpack_marshalling:msgpack_value().
-
 wrap_aux_state(AuxSt) ->
     ContentType = ?CT_ERLANG_BINARY,
     #{<<"ct">> => ContentType, <<"aux_state">> => encode_aux_state(ContentType, AuxSt)}.
 
 -spec unwrap_aux_state(pm_msgpack_marshalling:msgpack_value()) -> party_aux_st().
-
 unwrap_aux_state(#{<<"ct">> := ContentType, <<"aux_state">> := AuxSt}) ->
     decode_aux_state(ContentType, AuxSt);
 %% backward compatibility
@@ -1284,41 +1231,43 @@ unwrap_aux_state(undefined) ->
     #{}.
 
 -spec encode_aux_state(content_type(), party_aux_st()) -> dmsl_msgpack_thrift:'Value'().
-
 encode_aux_state(?CT_ERLANG_BINARY, AuxSt) ->
     {bin, term_to_binary(AuxSt)}.
 
 -spec decode_aux_state(content_type(), dmsl_msgpack_thrift:'Value'()) -> party_aux_st().
-
 decode_aux_state(?CT_ERLANG_BINARY, {bin, AuxSt}) ->
     binary_to_term(AuxSt).
 
 transmute([Version, Event]) ->
     transmute_event(Version, ?TOP_VERSION, Event).
 
-transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1->
+transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1 ->
     NewChanges = [transmute_change(V1, V1 + 1, C) || C <- Changes],
     transmute_event(V1 + 1, V2, ?party_ev(NewChanges));
 transmute_event(V, V, Event) ->
     Event.
 
--spec transmute_change(pos_integer(), pos_integer(), term()) ->
-    dmsl_payment_processing_thrift:'PartyChange'().
-
-transmute_change(1, 2,
+-spec transmute_change(pos_integer(), pos_integer(), term()) -> dmsl_payment_processing_thrift:'PartyChange'().
+transmute_change(
+    1,
+    2,
     ?legacy_party_created(?legacy_party(ID, ContactInfo, CreatedAt, _, _, _, _))
 ) ->
     ?party_created(ID, ContactInfo, CreatedAt);
-transmute_change(V1, V2,
-    ?claim_created(?legacy_claim(
-        ID,
-        Status,
-        Changeset,
-        Revision,
-        CreatedAt,
-        UpdatedAt
-    ))
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
+transmute_change(
+    V1,
+    V2,
+    ?claim_created(
+        ?legacy_claim(
+            ID,
+            Status,
+            Changeset,
+            Revision,
+            CreatedAt,
+            UpdatedAt
+        )
+    )
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_created(#payproc_Claim{
         id = ID,
@@ -1328,78 +1277,108 @@ transmute_change(V1, V2,
         created_at = CreatedAt,
         updated_at = UpdatedAt
     });
-transmute_change(V1, V2,
+transmute_change(
+    V1,
+    V2,
     ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
-transmute_change(V1, V2,
+transmute_change(
+    V1,
+    V2,
     ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
     NewEffects = [transmute_claim_effect(V1, V2, E) || E <- Effects],
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
-transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
+transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
     C.
-transmute_party_modification(1, 2,
+
+transmute_party_modification(
+    1,
+    2,
     ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v1(Contractor, TemplateRef)})
 ) ->
-    ?legacy_contract_modification(ID, {creation, ?legacy_contract_params_v2(
-        transmute_contractor(1, 2, Contractor),
-        TemplateRef,
-        undefined
-    )});
-transmute_party_modification(2, 3,
     ?legacy_contract_modification(
         ID,
-        {creation, ?legacy_contract_params_v2(
-            Contractor,
-            TemplateRef,
-            PaymentInstitutionRef
-        )}
-    )
-) ->
-    ?legacy_contract_modification(
-        ID,
-        {creation, ?legacy_contract_params_v3_4(
-            transmute_contractor(2, 3, Contractor),
-            TemplateRef,
-            PaymentInstitutionRef
-        )}
+        {creation,
+            ?legacy_contract_params_v2(
+                transmute_contractor(1, 2, Contractor),
+                TemplateRef,
+                undefined
+            )}
     );
-transmute_party_modification(4, 5,
+transmute_party_modification(
+    2,
+    3,
     ?legacy_contract_modification(
         ID,
-        {creation, ?legacy_contract_params_v3_4(
-            Contractor,
-            TemplateRef,
-            PaymentInstitutionRef
-        )}
+        {creation,
+            ?legacy_contract_params_v2(
+                Contractor,
+                TemplateRef,
+                PaymentInstitutionRef
+            )}
     )
 ) ->
-    ?contract_modification(ID, {creation, #payproc_ContractParams{
-        contractor = Contractor,
-        template = TemplateRef,
-        payment_institution = PaymentInstitutionRef
-    }});
-transmute_party_modification(V1, V2,
-    ?legacy_contract_modification(ContractID, ?legacy_payout_tool_creation(
+    ?legacy_contract_modification(
         ID,
-        ?legacy_payout_tool_params(Currency, ToolInfo)
-    ))
-) when V1 =:= 1; V1 =:= 2 ; V1 =:= 5 ->
+        {creation,
+            ?legacy_contract_params_v3_4(
+                transmute_contractor(2, 3, Contractor),
+                TemplateRef,
+                PaymentInstitutionRef
+            )}
+    );
+transmute_party_modification(
+    4,
+    5,
+    ?legacy_contract_modification(
+        ID,
+        {creation,
+            ?legacy_contract_params_v3_4(
+                Contractor,
+                TemplateRef,
+                PaymentInstitutionRef
+            )}
+    )
+) ->
+    ?contract_modification(
+        ID,
+        {creation, #payproc_ContractParams{
+            contractor = Contractor,
+            template = TemplateRef,
+            payment_institution = PaymentInstitutionRef
+        }}
+    );
+transmute_party_modification(
+    V1,
+    V2,
+    ?legacy_contract_modification(
+        ContractID,
+        ?legacy_payout_tool_creation(
+            ID,
+            ?legacy_payout_tool_params(Currency, ToolInfo)
+        )
+    )
+) when V1 =:= 1; V1 =:= 2; V1 =:= 5 ->
     PayoutToolParams = #payproc_PayoutToolParams{
         currency = Currency,
         tool_info = transmute_payout_tool_info(V1, V2, ToolInfo)
     },
     ?contract_modification(ContractID, ?payout_tool_creation(ID, PayoutToolParams));
-transmute_party_modification(3, 4,
+transmute_party_modification(
+    3,
+    4,
     ?legacy_contract_modification(
         ID,
         {legal_agreement_binding, LegalAgreement}
     )
 ) ->
     ?contract_modification(ID, {legal_agreement_binding, transmute_legal_agreement(3, 4, LegalAgreement)});
-transmute_party_modification(3, 4,
+transmute_party_modification(
+    3,
+    4,
     ?legacy_shop_modification(
         ID,
         {payout_schedule_modification, ?legacy_schedule_modification(PayoutScheduleRef)}
@@ -1411,24 +1390,29 @@ transmute_party_modification(3, 4,
             schedule = transmute_payout_schedule_ref(3, 4, PayoutScheduleRef)
         }}
     );
-transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
+transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
     C.
 
-transmute_claim_effect(1, 2, ?legacy_contract_effect(
-    ID,
-    {created, ?legacy_contract_v1(
+transmute_claim_effect(
+    1,
+    2,
+    ?legacy_contract_effect(
         ID,
-        Contractor,
-        CreatedAt,
-        ValidSince,
-        ValidUntil,
-        Status,
-        Terms,
-        Adjustments,
-        PayoutTools,
-        LegalAgreement
-    )}
-)) ->
+        {created,
+            ?legacy_contract_v1(
+                ID,
+                Contractor,
+                CreatedAt,
+                ValidSince,
+                ValidUntil,
+                Status,
+                Terms,
+                Adjustments,
+                PayoutTools,
+                LegalAgreement
+            )}
+    )
+) ->
     Contract = ?legacy_contract_v2_3(
         ID,
         transmute_contractor(1, 2, Contractor),
@@ -1443,22 +1427,27 @@ transmute_claim_effect(1, 2, ?legacy_contract_effect(
         LegalAgreement
     ),
     ?legacy_contract_effect(ID, {created, Contract});
-transmute_claim_effect(2, 3, ?legacy_contract_effect(
-    ID,
-    {created, ?legacy_contract_v2_3(
+transmute_claim_effect(
+    2,
+    3,
+    ?legacy_contract_effect(
         ID,
-        Contractor,
-        PaymentInstitutionRef,
-        CreatedAt,
-        ValidSince,
-        ValidUntil,
-        Status,
-        Terms,
-        Adjustments,
-        PayoutTools,
-        LegalAgreement
-    )}
-)) ->
+        {created,
+            ?legacy_contract_v2_3(
+                ID,
+                Contractor,
+                PaymentInstitutionRef,
+                CreatedAt,
+                ValidSince,
+                ValidUntil,
+                Status,
+                Terms,
+                Adjustments,
+                PayoutTools,
+                LegalAgreement
+            )}
+    )
+) ->
     Contract = ?legacy_contract_v2_3(
         ID,
         transmute_contractor(2, 3, Contractor),
@@ -1473,22 +1462,27 @@ transmute_claim_effect(2, 3, ?legacy_contract_effect(
         LegalAgreement
     ),
     ?legacy_contract_effect(ID, {created, Contract});
-transmute_claim_effect(3, 4, ?legacy_contract_effect(
-    ID,
-    {created, ?legacy_contract_v2_3(
+transmute_claim_effect(
+    3,
+    4,
+    ?legacy_contract_effect(
         ID,
-        Contractor,
-        PaymentInstitutionRef,
-        CreatedAt,
-        ValidSince,
-        ValidUntil,
-        Status,
-        Terms,
-        Adjustments,
-        PayoutTools,
-        LegalAgreement
-    )}
-)) ->
+        {created,
+            ?legacy_contract_v2_3(
+                ID,
+                Contractor,
+                PaymentInstitutionRef,
+                CreatedAt,
+                ValidSince,
+                ValidUntil,
+                Status,
+                Terms,
+                Adjustments,
+                PayoutTools,
+                LegalAgreement
+            )}
+    )
+) ->
     Contract = ?legacy_contract_v4(
         ID,
         Contractor,
@@ -1504,23 +1498,28 @@ transmute_claim_effect(3, 4, ?legacy_contract_effect(
         undefined
     ),
     ?legacy_contract_effect(ID, {created, Contract});
-transmute_claim_effect(4, 5, ?legacy_contract_effect(
-    ID,
-    {created, ?legacy_contract_v4(
+transmute_claim_effect(
+    4,
+    5,
+    ?legacy_contract_effect(
         ID,
-        Contractor,
-        PaymentInstitutionRef,
-        CreatedAt,
-        ValidSince,
-        ValidUntil,
-        Status,
-        Terms,
-        Adjustments,
-        PayoutTools,
-        LegalAgreement,
-        ReportPreferences
-    )}
-)) ->
+        {created,
+            ?legacy_contract_v4(
+                ID,
+                Contractor,
+                PaymentInstitutionRef,
+                CreatedAt,
+                ValidSince,
+                ValidUntil,
+                Status,
+                Terms,
+                Adjustments,
+                PayoutTools,
+                LegalAgreement,
+                ReportPreferences
+            )}
+    )
+) ->
     Contract = #domain_Contract{
         id = ID,
         contractor = Contractor,
@@ -1536,32 +1535,61 @@ transmute_claim_effect(4, 5, ?legacy_contract_effect(
         report_preferences = ReportPreferences
     },
     ?contract_effect(ID, {created, Contract});
-transmute_claim_effect(5, 6, ?contract_effect(
-    ID,
-    {created, Contract = #domain_Contract{payout_tools = PayoutTools}})
+transmute_claim_effect(
+    5,
+    6,
+    ?contract_effect(
+        ID,
+        {created, Contract = #domain_Contract{payout_tools = PayoutTools}}
+    )
 ) ->
-    ?contract_effect(ID, {created, Contract#domain_Contract{
-        payout_tools = [transmute_payout_tool(5, 6, P) || P <- PayoutTools]
-    }});
-transmute_claim_effect(V1, V2, ?legacy_contract_effect(
-    ContractID,
-    {payout_tool_created, PayoutTool}
-)) when V1 =:= 1; V1 =:= 2 ; V1 =:= 5 ->
+    ?contract_effect(
+        ID,
+        {created, Contract#domain_Contract{
+            payout_tools = [transmute_payout_tool(5, 6, P) || P <- PayoutTools]
+        }}
+    );
+transmute_claim_effect(
+    V1,
+    V2,
+    ?legacy_contract_effect(
+        ContractID,
+        {payout_tool_created, PayoutTool}
+    )
+) when V1 =:= 1; V1 =:= 2; V1 =:= 5 ->
     ?contract_effect(
         ContractID,
         {payout_tool_created, transmute_payout_tool(V1, V2, PayoutTool)}
     );
-transmute_claim_effect(3, 4, ?legacy_contract_effect(
-    ContractID,
-    {legal_agreement_bound, LegalAgreement}
-)) ->
+transmute_claim_effect(
+    3,
+    4,
+    ?legacy_contract_effect(
+        ContractID,
+        {legal_agreement_bound, LegalAgreement}
+    )
+) ->
     ?contract_effect(ContractID, {legal_agreement_bound, transmute_legal_agreement(3, 4, LegalAgreement)});
-transmute_claim_effect(2, 3, ?legacy_shop_effect(
-    ID,
-    {created, ?legacy_shop_v2(
-        ID, CreatedAt, Blocking, Suspension, Details, Location, Category, Account, ContractID, PayoutToolID
-    )}
-)) ->
+transmute_claim_effect(
+    2,
+    3,
+    ?legacy_shop_effect(
+        ID,
+        {created,
+            ?legacy_shop_v2(
+                ID,
+                CreatedAt,
+                Blocking,
+                Suspension,
+                Details,
+                Location,
+                Category,
+                Account,
+                ContractID,
+                PayoutToolID
+            )}
+    )
+) ->
     Shop = #domain_Shop{
         id = ID,
         created_at = CreatedAt,
@@ -1575,22 +1603,27 @@ transmute_claim_effect(2, 3, ?legacy_shop_effect(
         payout_tool_id = PayoutToolID
     },
     ?shop_effect(ID, {created, Shop});
-transmute_claim_effect(3, 4, ?legacy_shop_effect(
-    ID,
-    {created, ?legacy_shop_v3(
+transmute_claim_effect(
+    3,
+    4,
+    ?legacy_shop_effect(
         ID,
-        CreatedAt,
-        Blocking,
-        Suspension,
-        Details,
-        Location,
-        Category,
-        Account,
-        ContractID,
-        PayoutToolID,
-        PayoutSchedule
-    )}
-)) ->
+        {created,
+            ?legacy_shop_v3(
+                ID,
+                CreatedAt,
+                Blocking,
+                Suspension,
+                Details,
+                Location,
+                Category,
+                Account,
+                ContractID,
+                PayoutToolID,
+                PayoutSchedule
+            )}
+    )
+) ->
     Shop = #domain_Shop{
         id = ID,
         created_at = CreatedAt,
@@ -1605,63 +1638,84 @@ transmute_claim_effect(3, 4, ?legacy_shop_effect(
         payout_schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
     },
     ?shop_effect(ID, {created, Shop});
-transmute_claim_effect(3, 4, ?legacy_shop_effect(
-    ID,
-    {payout_schedule_changed, ?legacy_schedule_changed(PayoutSchedule)}
-)) ->
-    ?shop_effect(ID, {payout_schedule_changed, #payproc_ScheduleChanged{
-        schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
-    }});
-transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4 ; V1 =:= 5 ->
+transmute_claim_effect(
+    3,
+    4,
+    ?legacy_shop_effect(
+        ID,
+        {payout_schedule_changed, ?legacy_schedule_changed(PayoutSchedule)}
+    )
+) ->
+    ?shop_effect(
+        ID,
+        {payout_schedule_changed, #payproc_ScheduleChanged{
+            schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
+        }}
+    );
+transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
     C.
 
-transmute_contractor(1, 2,
-    {legal_entity, {russian_legal_entity, ?legacy_russian_legal_entity(
-        RegisteredName,
-        RegisteredNumber,
-        Inn,
-        ActualAddress,
-        PostAddress,
-        RepresentativePosition,
-        RepresentativeFullName,
-        RepresentativeDocument,
-        BankAccount
-    )}}
+transmute_contractor(
+    1,
+    2,
+    {legal_entity,
+        {russian_legal_entity,
+            ?legacy_russian_legal_entity(
+                RegisteredName,
+                RegisteredNumber,
+                Inn,
+                ActualAddress,
+                PostAddress,
+                RepresentativePosition,
+                RepresentativeFullName,
+                RepresentativeDocument,
+                BankAccount
+            )}}
 ) ->
-    {legal_entity, {russian_legal_entity, #domain_RussianLegalEntity{
-        registered_name = RegisteredName,
-        registered_number = RegisteredNumber,
-        inn = Inn,
-        actual_address = ActualAddress,
-        post_address = PostAddress,
-        representative_position = RepresentativePosition,
-        representative_full_name = RepresentativeFullName,
-        representative_document = RepresentativeDocument,
-        russian_bank_account = transmute_bank_account(1, 2, BankAccount)
-    }}};
-transmute_contractor(2, 3,
-    {legal_entity, {international_legal_entity, ?legacy_international_legal_entity(
-        LegalName,
-        TradingName,
-        RegisteredAddress,
-        ActualAddress
-    )}}
+    {legal_entity,
+        {russian_legal_entity, #domain_RussianLegalEntity{
+            registered_name = RegisteredName,
+            registered_number = RegisteredNumber,
+            inn = Inn,
+            actual_address = ActualAddress,
+            post_address = PostAddress,
+            representative_position = RepresentativePosition,
+            representative_full_name = RepresentativeFullName,
+            representative_document = RepresentativeDocument,
+            russian_bank_account = transmute_bank_account(1, 2, BankAccount)
+        }}};
+transmute_contractor(
+    2,
+    3,
+    {legal_entity,
+        {international_legal_entity,
+            ?legacy_international_legal_entity(
+                LegalName,
+                TradingName,
+                RegisteredAddress,
+                ActualAddress
+            )}}
 ) ->
-    {legal_entity, {international_legal_entity, #domain_InternationalLegalEntity{
-        legal_name = LegalName,
-        trading_name = TradingName,
-        registered_address = RegisteredAddress,
-        actual_address = ActualAddress
-    }}};
+    {legal_entity,
+        {international_legal_entity, #domain_InternationalLegalEntity{
+            legal_name = LegalName,
+            trading_name = TradingName,
+            registered_address = RegisteredAddress,
+            actual_address = ActualAddress
+        }}};
 transmute_contractor(V1, _, Contractor) when V1 =:= 1; V1 =:= 2 ->
     Contractor.
 
-transmute_payout_tool(V1, V2, ?legacy_payout_tool(
-    ID,
-    CreatedAt,
-    Currency,
-    ToolInfo
-)) when V1 =:= 1; V1 =:= 2 ->
+transmute_payout_tool(
+    V1,
+    V2,
+    ?legacy_payout_tool(
+        ID,
+        CreatedAt,
+        Currency,
+        ToolInfo
+    )
+) when V1 =:= 1; V1 =:= 2 ->
     #domain_PayoutTool{
         id = ID,
         created_at = CreatedAt,
@@ -1675,29 +1729,40 @@ transmute_payout_tool(V1, V2, PayoutTool = #domain_PayoutTool{payout_tool_info =
 
 transmute_payout_tool_info(1, 2, {bank_account, BankAccount}) ->
     {russian_bank_account, transmute_bank_account(1, 2, BankAccount)};
-transmute_payout_tool_info(2, 3, {international_bank_account, ?legacy_international_bank_account(
-    AccountHolder,
-    BankName,
-    BankAddress,
-    Iban,
-    Bic
-)}) ->
-    {international_bank_account, ?legacy_international_bank_account_v3_4_5(
-        AccountHolder,
-        BankName,
-        BankAddress,
-        Iban,
-        Bic,
-        undefined
-    )};
-transmute_payout_tool_info(5, 6, {international_bank_account, ?legacy_international_bank_account_v3_4_5(
-    AccountHolder,
-    BankName,
-    BankAddress,
-    Iban,
-    Bic,
-    _LocalBankCode
-)}) ->
+transmute_payout_tool_info(
+    2,
+    3,
+    {international_bank_account,
+        ?legacy_international_bank_account(
+            AccountHolder,
+            BankName,
+            BankAddress,
+            Iban,
+            Bic
+        )}
+) ->
+    {international_bank_account,
+        ?legacy_international_bank_account_v3_4_5(
+            AccountHolder,
+            BankName,
+            BankAddress,
+            Iban,
+            Bic,
+            undefined
+        )};
+transmute_payout_tool_info(
+    5,
+    6,
+    {international_bank_account,
+        ?legacy_international_bank_account_v3_4_5(
+            AccountHolder,
+            BankName,
+            BankAddress,
+            Iban,
+            Bic,
+            _LocalBankCode
+        )}
+) ->
     {international_bank_account, #domain_InternationalBankAccount{
         bank = #domain_InternationalBankDetails{
             bic = Bic,
@@ -1707,7 +1772,7 @@ transmute_payout_tool_info(5, 6, {international_bank_account, ?legacy_internatio
         iban = Iban,
         account_holder = AccountHolder
     }};
-transmute_payout_tool_info(V1, _, ToolInfo) when V1 =:= 1; V1 =:= 2 ; V1 =:= 5 ->
+transmute_payout_tool_info(V1, _, ToolInfo) when V1 =:= 1; V1 =:= 2; V1 =:= 5 ->
     ToolInfo.
 
 transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAccount, BankBik)) ->
@@ -1720,7 +1785,7 @@ transmute_bank_account(1, 2, ?legacy_bank_account(Account, BankName, BankPostAcc
 
 transmute_legal_agreement(3, 4, ?legacy_legal_agreement(SignedAt, LegalAgreementID)) ->
     #domain_LegalAgreement{
-        signed_at =  SignedAt,
+        signed_at = SignedAt,
         legal_agreement_id = LegalAgreementID
     };
 transmute_legal_agreement(3, 4, undefined) ->

@@ -5,19 +5,19 @@
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
 -define(service_config(SW, OTL, PAS), #fault_detector_ServiceConfig{
-     sliding_window       = SW,
-     operation_time_limit = OTL,
-     pre_aggregation_size = PAS
+    sliding_window = SW,
+    operation_time_limit = OTL,
+    pre_aggregation_size = PAS
 }).
 
 -define(operation(OpId, State), #fault_detector_Operation{
-     operation_id = OpId,
-     state        = State
+    operation_id = OpId,
+    state = State
 }).
 
--define(state_start(TimeStamp),  #fault_detector_Start{ time_start = TimeStamp }).
--define(state_error(TimeStamp),  #fault_detector_Error{ time_end   = TimeStamp }).
--define(state_finish(TimeStamp), #fault_detector_Finish{ time_end  = TimeStamp }).
+-define(state_start(TimeStamp), #fault_detector_Start{time_start = TimeStamp}).
+-define(state_error(TimeStamp), #fault_detector_Error{time_end = TimeStamp}).
+-define(state_finish(TimeStamp), #fault_detector_Finish{time_end = TimeStamp}).
 
 -export([build_config/0]).
 -export([build_config/2]).
@@ -35,18 +35,19 @@
 -export([register_operation/3]).
 -export([register_operation/4]).
 
--type operation_status()        :: start | finish | error.
--type service_stats()           :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
--type service_id()              :: fd_proto_fault_detector_thrift:'ServiceId'().
--type operation_id()            :: fd_proto_fault_detector_thrift:'OperationId'().
--type service_config()          :: fd_proto_fault_detector_thrift:'ServiceConfig'().
--type sliding_window()          :: fd_proto_fault_detector_thrift:'Milliseconds'().
--type operation_time_limit()    :: fd_proto_fault_detector_thrift:'Milliseconds'().
--type pre_aggregation_size()    :: fd_proto_fault_detector_thrift:'Seconds'() | undefined.
+-type operation_status() :: start | finish | error.
+-type service_stats() :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
+-type service_id() :: fd_proto_fault_detector_thrift:'ServiceId'().
+-type operation_id() :: fd_proto_fault_detector_thrift:'OperationId'().
+-type service_config() :: fd_proto_fault_detector_thrift:'ServiceConfig'().
+-type sliding_window() :: fd_proto_fault_detector_thrift:'Milliseconds'().
+-type operation_time_limit() :: fd_proto_fault_detector_thrift:'Milliseconds'().
+-type pre_aggregation_size() :: fd_proto_fault_detector_thrift:'Seconds'() | undefined.
 
--type id()                      :: binary() | atom() | number().
--type fd_service_type()         :: adapter_availability
-                                 | provider_conversion.
+-type id() :: binary() | atom() | number().
+-type fd_service_type() ::
+    adapter_availability |
+    provider_conversion.
 
 %% API
 
@@ -66,13 +67,12 @@
 %%      Default: 2
 %% @end
 %%------------------------------------------------------------------------------
--spec build_config() ->
-    service_config().
+-spec build_config() -> service_config().
 build_config() ->
-    EnvFDConfig     = genlib_app:env(hellgate, fault_detector, #{}),
-    SlidingWindow   = genlib_map:get(sliding_window,       EnvFDConfig, 60000),
-    OpTimeLimit     = genlib_map:get(operation_time_limit, EnvFDConfig, 10000),
-    PreAggrSize     = genlib_map:get(pre_aggregation_size, EnvFDConfig, 2),
+    EnvFDConfig = genlib_app:env(hellgate, fault_detector, #{}),
+    SlidingWindow = genlib_map:get(sliding_window, EnvFDConfig, 60000),
+    OpTimeLimit = genlib_map:get(operation_time_limit, EnvFDConfig, 10000),
+    PreAggrSize = genlib_map:get(pre_aggregation_size, EnvFDConfig, 2),
     ?service_config(SlidingWindow, OpTimeLimit, PreAggrSize).
 
 %%------------------------------------------------------------------------------
@@ -82,8 +82,7 @@ build_config() ->
 %% and `register_operation/4`.
 %% @end
 %%------------------------------------------------------------------------------
--spec build_config(sliding_window(), operation_time_limit()) ->
-    service_config().
+-spec build_config(sliding_window(), operation_time_limit()) -> service_config().
 build_config(SlidingWindow, OpTimeLimit) ->
     ?service_config(SlidingWindow, OpTimeLimit, undefined).
 
@@ -93,8 +92,7 @@ build_config(SlidingWindow, OpTimeLimit) ->
 %% the optional pre-aggregation size argument.
 %% @end
 %%------------------------------------------------------------------------------
--spec build_config(sliding_window(), operation_time_limit(), pre_aggregation_size()) ->
-    service_config().
+-spec build_config(sliding_window(), operation_time_limit(), pre_aggregation_size()) -> service_config().
 build_config(SlidingWindow, OpTimeLimit, PreAggrSize) ->
     ?service_config(SlidingWindow, OpTimeLimit, PreAggrSize).
 
@@ -103,8 +101,7 @@ build_config(SlidingWindow, OpTimeLimit, PreAggrSize) ->
 %% `build_service_id/2` is a helper function for building service IDs
 %% @end
 %%------------------------------------------------------------------------------
--spec build_service_id(fd_service_type(), id()) ->
-    binary().
+-spec build_service_id(fd_service_type(), id()) -> binary().
 build_service_id(ServiceType, ID) ->
     do_build_id(service, ServiceType, genlib:to_binary(ID)).
 
@@ -140,8 +137,7 @@ build_operation_id(ServiceType, ID) ->
 %% `get_statistics/1` function.
 %% @end
 %%------------------------------------------------------------------------------
--spec init_service(service_id()) ->
-    {ok, initialised} | {error, any()} | disabled.
+-spec init_service(service_id()) -> {ok, initialised} | {error, any()} | disabled.
 init_service(ServiceId) ->
     ServiceConfig = build_config(),
     call('InitService', {ServiceId, ServiceConfig}).
@@ -152,8 +148,7 @@ init_service(ServiceId) ->
 %% configuration for the fault detector service created by `build_config/3`.
 %% @end
 %%------------------------------------------------------------------------------
--spec init_service(service_id(), service_config()) ->
-    {ok, initialised} | {error, any()} | disabled.
+-spec init_service(service_id(), service_config()) -> {ok, initialised} | {error, any()} | disabled.
 init_service(ServiceId, ServiceConfig) ->
     call('InitService', {ServiceId, ServiceConfig}).
 
@@ -195,11 +190,12 @@ register_operation(Status, ServiceId, OperationId) ->
 -spec register_operation(operation_status(), service_id(), operation_id(), service_config()) ->
     {ok, registered} | {error, not_found} | {error, any()} | disabled.
 register_operation(Status, ServiceId, OperationId, ServiceConfig) ->
-    OperationState = case Status of
-        start  -> {Status, ?state_start(hg_datetime:format_now())};
-        error  -> {Status, ?state_error(hg_datetime:format_now())};
-        finish -> {Status, ?state_finish(hg_datetime:format_now())}
-    end,
+    OperationState =
+        case Status of
+            start -> {Status, ?state_start(hg_datetime:format_now())};
+            error -> {Status, ?state_error(hg_datetime:format_now())};
+            finish -> {Status, ?state_finish(hg_datetime:format_now())}
+        end,
     Operation = ?operation(OperationId, OperationState),
     call('RegisterOperation', {ServiceId, Operation, ServiceConfig}).
 
@@ -207,13 +203,13 @@ register_operation(Status, ServiceId, OperationId, ServiceConfig) ->
 
 call(Service, Args) ->
     EnvFDConfig = genlib_app:env(hellgate, fault_detector, #{}),
-    Timeout     = genlib_map:get(timeout, EnvFDConfig, 4000),
-    FDEnabled   = genlib_map:get(enabled, EnvFDConfig, true),
-    Deadline    = woody_deadline:from_timeout(Timeout),
-    Opts        = hg_woody_wrapper:get_service_options(fault_detector),
+    Timeout = genlib_map:get(timeout, EnvFDConfig, 4000),
+    FDEnabled = genlib_map:get(enabled, EnvFDConfig, true),
+    Deadline = woody_deadline:from_timeout(Timeout),
+    Opts = hg_woody_wrapper:get_service_options(fault_detector),
     maybe_call(FDEnabled, Service, Args, Opts, Deadline).
 
-maybe_call(true  = _FDEnabled, Service, Args, Opts, Deadline) ->
+maybe_call(true = _FDEnabled, Service, Args, Opts, Deadline) ->
     do_call(Service, Args, Opts, Deadline);
 maybe_call(false = _FDEnabled, 'GetStatistics', _Args, _Opts, _Deadline) ->
     [];
@@ -224,9 +220,10 @@ do_call('InitService', {ServiceId, _ServiceConfig} = Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'InitService', Args, Opts, Deadline) of
         {ok, _Result} -> {ok, initialised}
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason
-            when Class =:= resource_unavailable orelse
-                 Class =:= result_unknown ->
+        error:{woody_error, {_Source, Class, _Details}} = Reason when
+            Class =:= resource_unavailable orelse
+                Class =:= result_unknown
+        ->
             ErrorText = "Unable to init service ~p in fault detector, ~p:~p",
             _ = logger:warning(ErrorText, [ServiceId, error, Reason]),
             {error, Reason};
@@ -239,9 +236,10 @@ do_call('GetStatistics', {ServiceIds} = Args, Opts, Deadline) ->
     try hg_woody_wrapper:call(fault_detector, 'GetStatistics', Args, Opts, Deadline) of
         {ok, Stats} -> Stats
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason
-            when Class =:= resource_unavailable orelse
-                 Class =:= result_unknown ->
+        error:{woody_error, {_Source, Class, _Details}} = Reason when
+            Class =:= resource_unavailable orelse
+                Class =:= result_unknown
+        ->
             String = "Unable to get statistics for services ~p from fault detector, ~p:~p",
             _ = logger:warning(String, [ServiceIds, error, Reason]),
             [];
@@ -257,9 +255,10 @@ do_call('RegisterOperation', {ServiceId, OperationId, _ServiceConfig} = Args, Op
         {exception, #fault_detector_ServiceNotFoundException{}} ->
             {error, not_found}
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason
-            when Class =:= resource_unavailable orelse
-                 Class =:= result_unknown ->
+        error:{woody_error, {_Source, Class, _Details}} = Reason when
+            Class =:= resource_unavailable orelse
+                Class =:= result_unknown
+        ->
             ErrorText = "Unable to register operation ~p for service ~p in fault detector, ~p:~p",
             _ = logger:warning(ErrorText, [OperationId, ServiceId, error, Reason]),
             {error, Reason};
@@ -270,9 +269,10 @@ do_call('RegisterOperation', {ServiceId, OperationId, _ServiceConfig} = Args, Op
     end.
 
 do_build_id(IDType, ServiceType, ID) ->
-    Prefix = case IDType of
-        service   -> <<"hellgate_service">>;
-        operation -> <<"hellgate_operation">>
-    end,
+    Prefix =
+        case IDType of
+            service -> <<"hellgate_service">>;
+            operation -> <<"hellgate_operation">>
+        end,
     BinServiceType = genlib:to_binary(ServiceType),
     hg_utils:construct_complex_id(lists:flatten([Prefix, BinServiceType, ID])).

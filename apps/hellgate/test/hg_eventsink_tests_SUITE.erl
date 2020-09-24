@@ -2,6 +2,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
+
 -include("hg_ct_domain.hrl").
 -include("party_events.hrl").
 
@@ -17,7 +18,9 @@
 
 %%
 
--define(c(Key, C), begin element(2, lists:keyfind(Key, 1, C)) end).
+-define(c(Key, C), begin
+    element(2, lists:keyfind(Key, 1, C))
+end).
 
 %% tests descriptions
 
@@ -27,7 +30,6 @@
 -type group_name() :: atom().
 
 -spec all() -> [{group, group_name()}].
-
 all() ->
     [
         {group, initial},
@@ -35,7 +37,6 @@ all() ->
     ].
 
 -spec groups() -> [{group_name(), [test_case_name()]}].
-
 groups() ->
     [
         {initial, [], [events_observed]},
@@ -47,54 +48,48 @@ groups() ->
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -spec init_per_suite(config()) -> config().
-
 init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, party_management, hellgate]),
     ok = hg_domain:insert(construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.
-
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- ?c(apps, C)].
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
-
 init_per_testcase(_Name, C) ->
     RootUrl = ?c(root_url, C),
     PartyID = hg_utils:unique_id(),
     [
         {party_id, PartyID},
         {eventsink_client, hg_client_eventsink:start_link(create_api(RootUrl, PartyID))},
-        {partymgmt_client, hg_client_party:start_link(PartyID, create_api(RootUrl, PartyID))} | C
+        {partymgmt_client, hg_client_party:start_link(PartyID, create_api(RootUrl, PartyID))}
+        | C
     ].
 
 create_api(RootUrl, PartyID) ->
     hg_ct_helper:create_client(RootUrl, PartyID).
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
-
 end_per_testcase(_Name, _C) ->
     ok.
 
 %% tests
 
--define(event(ID, Source, Seq, Payload),
-    #payproc_Event{
-        id = ID,
-        source = Source,
-        payload = Payload,
-        sequence   = Seq
-    }
-).
+-define(event(ID, Source, Seq, Payload), #payproc_Event{
+    id = ID,
+    source = Source,
+    payload = Payload,
+    sequence = Seq
+}).
 
 -define(party_event(ID, PartyID, Seq, Payload),
     ?event(ID, {party_id, PartyID}, Seq, Payload)
 ).
 
 -spec events_observed(config()) -> _ | no_return().
-
 events_observed(C) ->
     EventsinkClient = ?c(eventsink_client, C),
     PartyMgmtClient = ?c(partymgmt_client, C),
@@ -110,13 +105,11 @@ events_observed(C) ->
     ?assertEqual(IDs, lists:sort(IDs)).
 
 -spec consistent_history(config()) -> _ | no_return().
-
 consistent_history(C) ->
     Events = hg_client_eventsink:pull_history(?c(eventsink_client, C)),
     ?assertEqual(ok, hg_eventsink_history:assert_total_order(Events)).
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
-
 construct_domain_fixture() ->
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
@@ -152,15 +145,17 @@ construct_domain_fixture() ->
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
                 parent_terms = undefined,
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = #domain_TermSet{
-                        payments = #domain_PaymentsServiceTerms{
-                            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
-                            categories = {value, ordsets:from_list([?cat(1)])}
+                term_sets = [
+                    #domain_TimedTermSet{
+                        action_time = #'TimestampInterval'{},
+                        terms = #domain_TermSet{
+                            payments = #domain_PaymentsServiceTerms{
+                                currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
+                                categories = {value, ordsets:from_list([?cat(1)])}
+                            }
                         }
                     }
-                }]
+                ]
             }
         }}
     ].

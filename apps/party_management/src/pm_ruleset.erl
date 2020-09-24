@@ -9,12 +9,11 @@
 -define(const(Bool), {constant, Bool}).
 
 -type payment_routing_ruleset() :: dmsl_domain_thrift:'PaymentRoutingRuleset'().
--type varset()                  :: pm_selector:varset().
--type domain_revision()         :: pm_domain:revision().
+-type varset() :: pm_selector:varset().
+-type domain_revision() :: pm_domain:revision().
 
 -spec reduce_payment_routing_ruleset(payment_routing_ruleset(), varset(), domain_revision()) ->
     payment_routing_ruleset().
-
 reduce_payment_routing_ruleset(RuleSet, VS, DomainRevision) ->
     RuleSet#domain_PaymentRoutingRuleset{
         decisions = reduce_payment_routing_decisions(RuleSet#domain_PaymentRoutingRuleset.decisions, VS, DomainRevision)
@@ -47,26 +46,29 @@ reduce_payment_routing_delegates([D | Delegates], VS, Rev) ->
     end.
 
 reduce_payment_routing_candidates(Candidates, VS, Rev) ->
-    {candidates, lists:foldr(
-        fun(C, AccIn) ->
-            Predicate = C#domain_PaymentRoutingCandidate.allowed,
-            case pm_selector:reduce_predicate(Predicate, VS, Rev) of
-                ?const(false) ->
-                    AccIn;
-                ?const(true) = ReducedPredicate ->
-                    ReducedCandidate = C#domain_PaymentRoutingCandidate{
-                        allowed = ReducedPredicate
-                    },
-                    [ReducedCandidate | AccIn];
-                _ ->
-                    logger:warning(
-                        "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
-                        [Predicate, VS]
-                    ),
-                    [C | AccIn]
-            end
-        end,
-        [], Candidates)}.
+    {candidates,
+        lists:foldr(
+            fun(C, AccIn) ->
+                Predicate = C#domain_PaymentRoutingCandidate.allowed,
+                case pm_selector:reduce_predicate(Predicate, VS, Rev) of
+                    ?const(false) ->
+                        AccIn;
+                    ?const(true) = ReducedPredicate ->
+                        ReducedCandidate = C#domain_PaymentRoutingCandidate{
+                            allowed = ReducedPredicate
+                        },
+                        [ReducedCandidate | AccIn];
+                    _ ->
+                        logger:warning(
+                            "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
+                            [Predicate, VS]
+                        ),
+                        [C | AccIn]
+                end
+            end,
+            [],
+            Candidates
+        )}.
 
 get_payment_routing_ruleset(RuleSetRef, DomainRevision) ->
     pm_domain:get(DomainRevision, {payment_routing_rules, RuleSetRef}).
