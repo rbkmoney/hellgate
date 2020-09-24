@@ -1,5 +1,4 @@
 -module(pm_condition).
-
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %%
@@ -9,9 +8,11 @@
 %%
 
 -type condition() :: dmsl_domain_thrift:'Condition'().
--type varset() :: pm_selector:varset().
+-type varset()    :: pm_selector:varset().
 
--spec test(condition(), varset(), pm_domain:revision()) -> true | false | undefined.
+-spec test(condition(), varset(), pm_domain:revision()) ->
+    true | false | undefined.
+
 test({category_is, V1}, #{category := V2}, _) ->
     V1 =:= V2;
 test({currency_is, V1}, #{currency := V2}, _) ->
@@ -76,19 +77,14 @@ test_p2p_tool(P2PCondition, P2PTool, Rev) ->
         sender = Sender,
         receiver = Receiver
     } = P2PTool,
-    case
-        {
-            test({payment_tool, SenderIs}, #{payment_tool => Sender}, Rev),
-            test({payment_tool, ReceiverIs}, #{payment_tool => Receiver}, Rev)
-        }
-    of
-        {true, true} ->
-            true;
-        {T1, T2} when
-            T1 =:= undefined orelse
-                T2 =:= undefined
-        ->
-            undefined;
-        {_, _} ->
-            false
+     case {
+        test({payment_tool, SenderIs}, #{payment_tool => Sender}, Rev),
+        test({payment_tool, ReceiverIs}, #{payment_tool => Receiver}, Rev)
+    } of
+            {true, true} -> true;
+            {T1, T2} when  T1 =:= undefined
+                    orelse T2 =:= undefined -> undefined;
+            {_, _} -> false
     end.
+
+

@@ -8,7 +8,6 @@
 %%%  - Domain revision is out of place. An `Opts`, anyone?
 
 -module(pm_selector).
-
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %%
@@ -32,22 +31,21 @@
     dmsl_domain_thrift:'InspectorSelector'().
 
 -type value() ::
-    %% FIXME
-    _.
+    _. %% FIXME
 
 -type varset() :: #{
-    category => dmsl_domain_thrift:'CategoryRef'(),
-    currency => dmsl_domain_thrift:'CurrencyRef'(),
-    cost => dmsl_domain_thrift:'Cash'(),
-    payment_tool => dmsl_domain_thrift:'PaymentTool'(),
-    party_id => dmsl_domain_thrift:'PartyID'(),
-    shop_id => dmsl_domain_thrift:'ShopID'(),
-    risk_score => dmsl_domain_thrift:'RiskScore'(),
-    flow => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
-    payout_method => dmsl_domain_thrift:'PayoutMethodRef'(),
-    wallet_id => dmsl_domain_thrift:'WalletID'(),
+    category        => dmsl_domain_thrift:'CategoryRef'(),
+    currency        => dmsl_domain_thrift:'CurrencyRef'(),
+    cost            => dmsl_domain_thrift:'Cash'(),
+    payment_tool    => dmsl_domain_thrift:'PaymentTool'(),
+    party_id        => dmsl_domain_thrift:'PartyID'(),
+    shop_id         => dmsl_domain_thrift:'ShopID'(),
+    risk_score      => dmsl_domain_thrift:'RiskScore'(),
+    flow            => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
+    payout_method   => dmsl_domain_thrift:'PayoutMethodRef'(),
+    wallet_id       => dmsl_domain_thrift:'WalletID'(),
     identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'(),
-    p2p_tool => dmsl_domain_thrift:'P2PTool'()
+    p2p_tool        => dmsl_domain_thrift:'P2PTool'()
 }.
 
 -type predicate() :: dmsl_domain_thrift:'Predicate'().
@@ -64,6 +62,7 @@
 %%
 
 -spec reduce_to_value(t(), varset(), pm_domain:revision()) -> value() | no_return().
+
 reduce_to_value(Selector, VS, Revision) ->
     case reduce(Selector, VS, Revision) of
         {value, Value} ->
@@ -72,7 +71,9 @@ reduce_to_value(Selector, VS, Revision) ->
             error({misconfiguration, {'Can\'t reduce selector to value', Selector, VS, Revision}})
     end.
 
--spec reduce(t(), varset(), pm_domain:revision()) -> t().
+-spec reduce(t(), varset(), pm_domain:revision()) ->
+    t().
+
 reduce({value, _} = V, _, _) ->
     V;
 reduce({decisions, Ps}, VS, Rev) ->
@@ -100,10 +101,11 @@ reduce_decisions([], _, _) ->
 
 -spec reduce_predicate(predicate(), varset(), pm_domain:revision()) ->
     predicate() |
-    % for a partially reduced criterion
-    {criterion, criterion()}.
+    {criterion, criterion()}. % for a partially reduced criterion
+
 reduce_predicate(?const(B), _, _) ->
     ?const(B);
+
 reduce_predicate({condition, C0}, VS, Rev) ->
     case reduce_condition(C0, VS, Rev) of
         ?const(B) ->
@@ -111,6 +113,7 @@ reduce_predicate({condition, C0}, VS, Rev) ->
         C1 ->
             {condition, C1}
     end;
+
 reduce_predicate({is_not, P0}, VS, Rev) ->
     case reduce_predicate(P0, VS, Rev) of
         ?const(B) ->
@@ -118,10 +121,13 @@ reduce_predicate({is_not, P0}, VS, Rev) ->
         P1 ->
             {is_not, P1}
     end;
+
 reduce_predicate({all_of, Ps}, VS, Rev) ->
     reduce_combination(all_of, false, Ps, VS, Rev, []);
+
 reduce_predicate({any_of, Ps}, VS, Rev) ->
     reduce_combination(any_of, true, Ps, VS, Rev, []);
+
 reduce_predicate({criterion, CriterionRef = #domain_CriterionRef{}}, VS, Rev) ->
     Criterion = pm_domain:get(Rev, {criterion, CriterionRef}),
     case reduce_predicate(Criterion#domain_Criterion.predicate, VS, Rev) of
@@ -160,7 +166,6 @@ reduce_condition(C, VS, Rev) ->
 -spec test() -> _.
 
 -spec p2p_provider_test() -> _.
-
 p2p_provider_test() ->
     BankCardCondition = #domain_BankCardCondition{definition = {issuer_country_is, rus}},
     BankCardCondition2 = #domain_BankCardCondition{definition = {issuer_country_is, usa}},
@@ -172,34 +177,33 @@ p2p_provider_test() ->
         sender_is = {payment_tool, {bank_card, BankCardCondition}},
         receiver_is = {payment_tool, {bank_card, BankCardCondition2}}
     },
-    P2PProviderSelector =
-        {decisions, [
-            #domain_P2PProviderDecision{
-                if_ = {condition, {p2p_tool, P2PCondition1}},
-                then_ = {value, [#domain_ProviderRef{id = 1}]}
-            },
-            #domain_P2PProviderDecision{
-                if_ = {condition, {p2p_tool, P2PCondition2}},
-                then_ = {value, [#domain_ProviderRef{id = 2}]}
-            }
-        ]},
+    P2PProviderSelector = {decisions, [
+        #domain_P2PProviderDecision{
+            if_ = {condition, {p2p_tool, P2PCondition1}},
+            then_ = {value, [#domain_ProviderRef{id = 1}]}
+        },
+        #domain_P2PProviderDecision{
+            if_ = {condition, {p2p_tool, P2PCondition2}},
+            then_ = {value, [#domain_ProviderRef{id = 2}]}
+        }
+    ]},
     BankCard1 = #domain_BankCard{
-        token = <<"TOKEN1">>,
+        token          = <<"TOKEN1">>,
         payment_system = mastercard,
-        bin = <<"888888">>,
-        last_digits = <<"888">>,
+        bin            = <<"888888">>,
+        last_digits    = <<"888">>,
         issuer_country = rus
     },
     BankCard2 = #domain_BankCard{
-        token = <<"TOKEN2">>,
+        token          = <<"TOKEN2">>,
         payment_system = mastercard,
-        bin = <<"777777">>,
-        last_digits = <<"777">>,
+        bin            = <<"777777">>,
+        last_digits    = <<"777">>,
         issuer_country = rus
     },
     Vs = #{
         p2p_tool => #domain_P2PTool{
-            sender = {bank_card, BankCard1},
+            sender   = {bank_card, BankCard1},
             receiver = {bank_card, BankCard2}
         }
     },
@@ -207,22 +211,17 @@ p2p_provider_test() ->
 
 -spec p2p_allow_test() -> _.
 p2p_allow_test() ->
-    FunGenCard = fun(PS, Country) ->
-        #domain_BankCard{
-            token = <<"TOKEN1">>,
-            payment_system = PS,
-            bin = <<"888888">>,
-            last_digits = <<"888">>,
-            issuer_country = Country
-        }
+    FunGenCard = fun(PS, Country) -> #domain_BankCard{
+        token          = <<"TOKEN1">>,
+        payment_system = PS,
+        bin            = <<"888888">>,
+        last_digits    = <<"888">>,
+        issuer_country = Country}
     end,
-    FunGenVS = fun(PS1, PS2) ->
-        #{
-            p2p_tool => #domain_P2PTool{
-                sender = {bank_card, FunGenCard(PS1, rus)},
-                receiver = {bank_card, FunGenCard(PS2, rus)}
-            }
-        }
+    FunGenVS = fun(PS1, PS2) -> #{p2p_tool => #domain_P2PTool{
+            sender   = {bank_card, FunGenCard(PS1, rus)},
+            receiver = {bank_card, FunGenCard(PS2, rus)}
+        }}
     end,
     Condition = #domain_BankCardCondition{definition = {payment_system_is, visa}},
     CardCondition1 = #domain_P2PToolCondition{

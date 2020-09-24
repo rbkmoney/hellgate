@@ -19,53 +19,39 @@
 %% cowboy http callbacks
 -export([init/2]).
 -export([terminate/3]).
-
 %%
 
 -define(COWBOY_PORT, 9988).
 
 -define(sleep(To, UI),
-    {sleep, #'prxprv_SleepIntent'{timer = {timeout, To}, user_interaction = UI}}
-).
-
+    {sleep, #'prxprv_SleepIntent'{timer = {timeout, To}, user_interaction = UI}}).
 -define(suspend(Tag, To, UI),
-    {suspend, #'prxprv_SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}
-).
-
+    {suspend, #'prxprv_SuspendIntent'{tag = Tag, timeout = {timeout, To}, user_interaction = UI}}).
 -define(suspend(Tag, To, UI, TimeoutBehaviour),
     {suspend, #'prxprv_SuspendIntent'{
         tag = Tag,
         timeout = {timeout, To},
         user_interaction = UI,
-        timeout_behaviour = TimeoutBehaviour
-    }}
-).
-
+        timeout_behaviour = TimeoutBehaviour}}).
 -define(finish(Status),
-    {finish, #'prxprv_FinishIntent'{status = Status}}
-).
-
+    {finish, #'prxprv_FinishIntent'{status = Status}}).
 -define(success(Token),
-    {success, #'prxprv_Success'{token = Token}}
-).
-
+    {success, #'prxprv_Success'{token = Token}}).
 -define(failure(Failure),
-    {failure, Failure}
-).
-
+    {failure, Failure}).
 -define(recurrent_token_finish(Token),
-    {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}
-).
-
+    {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {success, #'prxprv_RecurrentTokenSuccess'{token = Token}}}}).
 -define(recurrent_token_finish_w_failure(Failure),
-    {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {failure, Failure}}}
-).
+    {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {failure, Failure}}}).
 
--spec get_service_spec() -> hg_proto:service_spec().
+-spec get_service_spec() ->
+    hg_proto:service_spec().
+
 get_service_spec() ->
     {"/test/proxy/provider/dummy", {dmsl_proxy_provider_thrift, 'ProviderProxy'}}.
 
 -spec get_http_cowboy_spec() -> #{}.
+
 get_http_cowboy_spec() ->
     Dispatch = cowboy_router:compile([{'_', [{"/", ?MODULE, []}]}]),
     #{
@@ -77,25 +63,27 @@ get_http_cowboy_spec() ->
 
 %%
 
--define(LAY_LOW_BUDDY, <<"lay low buddy">>).
+-define(LAY_LOW_BUDDY   , <<"lay low buddy">>).
 
 -define(REC_TOKEN, <<"rec_token">>).
 
 -type form() :: #{binary() => binary() | true}.
 
 -spec construct_silent_callback(form()) -> form().
+
 construct_silent_callback(Form) ->
     Form#{<<"payload">> => ?LAY_LOW_BUDDY}.
 
 -type failure_scenario_step() :: good | temp | fail | error.
 -type failure_scenario() :: [failure_scenario_step()].
-
 %%
 
 -include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("hellgate/include/payment_events.hrl").
 
--spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
+-spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+    term() | no_return().
+
 handle_function(
     'GenerateToken',
     {#prxprv_RecurrentTokenContext{
@@ -106,6 +94,7 @@ handle_function(
     Opts
 ) ->
     generate_token(State, TokenInfo, Opts);
+
 handle_function(
     'HandleRecurrentTokenCallback',
     {Payload, #prxprv_RecurrentTokenContext{
@@ -116,6 +105,7 @@ handle_function(
     Opts
 ) ->
     handle_token_callback(Payload, State, TokenInfo, Opts);
+
 handle_function(
     'ProcessPayment',
     {#prxprv_PaymentContext{
@@ -126,6 +116,7 @@ handle_function(
     Opts
 ) ->
     process_refund(State, PaymentInfo, Opts);
+
 handle_function(
     'ProcessPayment',
     {#prxprv_PaymentContext{
@@ -136,6 +127,7 @@ handle_function(
     Opts
 ) ->
     process_payment(Target, State, PaymentInfo, Opts);
+
 handle_function(
     'HandlePaymentCallback',
     {Payload, #prxprv_PaymentContext{
@@ -214,12 +206,12 @@ handle_token_callback(_Tag, <<"suspended">>, TokenInfo, _Opts) ->
 token_finish(#prxprv_RecurrentTokenInfo{payment_tool = PaymentTool}, Token) ->
     #prxprv_RecurrentTokenProxyResult{
         intent = ?recurrent_token_finish(Token),
-        trx = #domain_TransactionInfo{id = PaymentTool#prxprv_RecurrentPaymentTool.id, extra = #{}}
+        trx    = #domain_TransactionInfo{id = PaymentTool#prxprv_RecurrentPaymentTool.id, extra = #{}}
     }.
 
 token_sleep(Timeout, State) ->
     #prxprv_RecurrentTokenProxyResult{
-        intent = ?sleep(Timeout, undefined),
+        intent     = ?sleep(Timeout, undefined),
         next_state = State
     }.
 
@@ -229,30 +221,30 @@ token_suspend(<<"recurrent-suspend-timeout-failure-", _/binary>> = Tag, Timeout,
     },
     OperationFailure = {operation_failure, {failure, Failure}},
     #prxprv_RecurrentTokenProxyResult{
-        intent = ?suspend(Tag, Timeout, UserInteraction, OperationFailure),
+        intent     = ?suspend(Tag, Timeout, UserInteraction, OperationFailure),
         next_state = State
     };
 token_suspend(<<"recurrent-suspend-timeout-default-", _/binary>> = Tag, Timeout, State, UserInteraction) ->
     #prxprv_RecurrentTokenProxyResult{
-        intent = ?suspend(Tag, Timeout, UserInteraction, undefined),
+        intent     = ?suspend(Tag, Timeout, UserInteraction, undefined),
         next_state = State
     };
 token_suspend(<<"recurrent-suspend-timeout-", _/binary>> = Tag, Timeout, State, UserInteraction) ->
     Callback = {callback, Tag},
     #prxprv_RecurrentTokenProxyResult{
-        intent = ?suspend(Tag, Timeout, UserInteraction, Callback),
+        intent     = ?suspend(Tag, Timeout, UserInteraction, Callback),
         next_state = State
     };
 token_suspend(Tag, Timeout, State, UserInteraction) ->
     #prxprv_RecurrentTokenProxyResult{
-        intent = ?suspend(Tag, Timeout, UserInteraction),
+        intent     = ?suspend(Tag, Timeout, UserInteraction),
         next_state = State
     }.
 
 token_respond(Response, CallbackResult) ->
     #prxprv_RecurrentTokenCallbackResult{
-        response = Response,
-        result = CallbackResult
+        response   = Response,
+        result     = CallbackResult
     }.
 
 %
@@ -298,11 +290,10 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         terminal ->
             %% workflow for euroset terminal, similar to 3DS workflow
             SPID = get_short_payment_id(PaymentInfo),
-            UserInteraction =
-                {payment_terminal_reciept, #'PaymentTerminalReceipt'{
-                    short_payment_id = SPID,
-                    due = get_invoice_due_date(PaymentInfo)
-                }},
+            UserInteraction = {payment_terminal_reciept, #'PaymentTerminalReceipt'{
+               short_payment_id = SPID,
+               due = get_invoice_due_date(PaymentInfo)
+            }},
             suspend(SPID, 2, <<"suspended">>, UserInteraction);
         digital_wallet ->
             %% simple workflow
@@ -338,10 +329,8 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
         processed ->
             finish(success(PaymentInfo), get_payment_id(PaymentInfo));
         {pending, Count} when Count > 2 ->
-            Failure = payproc_errors:construct(
-                'PaymentFailure',
-                {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}
-            ),
+            Failure = payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}),
             finish(?failure(Failure));
         {pending, Count} ->
             set_transaction_state(Key, {pending, Count + 1}),
@@ -350,18 +339,22 @@ process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo,
             set_transaction_state(Key, {pending, 1}),
             sleep(1, <<"sleeping_with_user_interaction">>)
     end;
+
 process_payment(
     ?captured(),
     undefined,
     PaymentInfo = #prxprv_PaymentInfo{capture = Capture},
     _Opts
-) when Capture =/= undefined ->
+)
+    when Capture =/= undefined
+->
     case get_payment_info_scenario(PaymentInfo) of
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
             finish(success(PaymentInfo), get_payment_id(PaymentInfo))
     end;
+
 process_payment(?cancelled(), _, PaymentInfo, _) ->
     case get_payment_info_scenario(PaymentInfo) of
         {temporary_unavailability, Scenario} ->
@@ -372,21 +365,20 @@ process_payment(?cancelled(), _, PaymentInfo, _) ->
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
-        intent = undefined,
+        intent     = undefined,
         next_state = <<"suspended">>
     });
 handle_payment_callback(<<"mobile_commerce">>, ?processed(), <<"suspended">>, PaymentInfo, _Opts) ->
     InvoiceID = get_invoice_id(PaymentInfo),
     PaymentID = get_payment_id(PaymentInfo),
-    TimeoutBehaviour =
-        case get_mobile_commerce(PaymentInfo) of
-            {<<"777">>, <<"0000000000">>} ->
-                {callback, <<"mobile_commerce failure">>};
-            _Other ->
-                {callback, <<"mobile_commerce finish success">>}
-        end,
+    TimeoutBehaviour = case get_mobile_commerce(PaymentInfo) of
+        {<<"777">>, <<"0000000000">>} ->
+            {callback, <<"mobile_commerce failure">>};
+        _Other ->
+            {callback, <<"mobile_commerce finish success">>}
+    end,
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
-        intent = ?suspend(<<InvoiceID/binary, "/", PaymentID/binary>>, 1, undefined, TimeoutBehaviour),
+        intent     = ?suspend(<<InvoiceID/binary, "/", PaymentID/binary>>, 1, undefined, TimeoutBehaviour),
         next_state = <<"start">>
     });
 handle_payment_callback(<<"mobile_commerce failure">>, ?processed(), <<"start">>, PaymentInfo, _Opts) ->
@@ -395,34 +387,32 @@ handle_payment_callback(<<"mobile_commerce failure">>, ?processed(), <<"start">>
     Failure = #domain_Failure{
         code = <<"authorization_failed">>,
         reason = <<"test">>,
-        sub = #domain_SubFailure{code = <<"unknown">>}
-    },
+        sub = #domain_SubFailure{code = <<"unknown">>}},
     TimeoutBehaviour = {operation_failure, {failure, Failure}},
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
-        intent = ?suspend(<<InvoiceID/binary, "/", PaymentID/binary>>, 1, undefined, TimeoutBehaviour),
+        intent     = ?suspend(<<InvoiceID/binary, "/", PaymentID/binary>>, 1, undefined, TimeoutBehaviour),
         next_state = <<"start">>
     });
 handle_payment_callback(<<"mobile_commerce finish success">>, ?processed(), <<"start">>, _PaymentInfo, _Opts) ->
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
-        intent = ?finish(?success(undefined)),
+        intent     = ?finish(?success(undefined)),
         next_state = <<"finish">>
     });
 handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) ->
     {{ok, PaymentInfo}, _} = get_payment_info(Tag),
     respond(<<"sure">>, #prxprv_PaymentCallbackProxyResult{
-        intent = ?sleep(1, undefined),
+        intent     = ?sleep(1, undefined),
         next_state = <<"sleeping">>
     }).
 
 -spec do_failure_scenario_step(failure_scenario(), term()) -> failure_scenario_step().
 do_failure_scenario_step(Scenario, Key) ->
-    Step =
-        case get_transaction_state(Key) of
-            {scenario_step, S} ->
-                S;
-            undefined ->
-                1
-        end,
+    Step = case get_transaction_state(Key) of
+        {scenario_step, S} ->
+            S;
+        undefined ->
+            1
+    end,
     set_transaction_state(Key, {scenario_step, Step + 1}),
     get_failure_scenario_step(Scenario, Step).
 
@@ -447,16 +437,12 @@ process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
         good ->
             finish(success(PaymentInfo), PaymentId);
         temp ->
-            Failure = payproc_errors:construct(
-                'PaymentFailure',
-                {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}
-            ),
+            Failure = payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {temporarily_unavailable, #payprocerr_GeneralFailure{}}}),
             finish(?failure(Failure));
         fail ->
-            Failure = payproc_errors:construct(
-                'PaymentFailure',
-                {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}
-            ),
+            Failure = payproc_errors:construct('PaymentFailure',
+                {authorization_failed, {unknown, #payprocerr_GeneralFailure{}}}),
             finish(?failure(Failure));
         error ->
             error(planned_scenario_error)
@@ -466,7 +452,7 @@ finish(Status, TrxID) ->
     AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
     #prxprv_PaymentProxyResult{
         intent = ?finish(Status),
-        trx = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo}
+        trx    = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo}
     }.
 
 finish(Status) ->
@@ -479,45 +465,43 @@ sleep(Timeout, State) ->
 
 sleep(Timeout, State, UserInteraction) ->
     #prxprv_PaymentProxyResult{
-        intent = ?sleep(Timeout, UserInteraction),
+        intent     = ?sleep(Timeout, UserInteraction),
         next_state = State
     }.
 
 sleep(Timeout, State, UserInteraction, TrxID) ->
     AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
     #prxprv_PaymentProxyResult{
-        intent = ?sleep(Timeout, UserInteraction),
-        trx = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo},
+        intent     = ?sleep(Timeout, UserInteraction),
+        trx        = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo},
         next_state = State
     }.
 
 suspend(Tag, Timeout, State, UserInteraction) ->
     #prxprv_PaymentProxyResult{
-        intent = ?suspend(Tag, Timeout, UserInteraction),
+        intent     = ?suspend(Tag, Timeout, UserInteraction),
         next_state = State
     }.
-
 suspend(Tag, Timeout, State, UserInteraction, TimeoutBehaviour) ->
     #prxprv_PaymentProxyResult{
-        intent = ?suspend(Tag, Timeout, UserInteraction, TimeoutBehaviour),
+        intent     = ?suspend(Tag, Timeout, UserInteraction, TimeoutBehaviour),
         next_state = State
     }.
 
 respond(Response, CallbackResult) ->
     #prxprv_PaymentCallbackResult{
-        response = Response,
-        result = CallbackResult
+        response   = Response,
+        result     = CallbackResult
     }.
 
 success(PaymentInfo) ->
     #prxprv_PaymentInfo{payment = #prxprv_InvoicePayment{make_recurrent = MakeRecurrent}} = PaymentInfo,
-    Token =
-        case MakeRecurrent of
-            true ->
-                ?REC_TOKEN;
-            Other when Other =:= false orelse Other =:= undefined ->
-                undefined
-        end,
+    Token = case MakeRecurrent of
+        true ->
+            ?REC_TOKEN;
+        Other when Other =:= false orelse Other =:= undefined ->
+            undefined
+    end,
     ?success(Token).
 
 get_payment_id(#prxprv_PaymentInfo{payment = Payment}) ->
@@ -574,7 +558,8 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>
     forbidden;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_failure">>}}) ->
     unexpected_failure;
-get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_", BinScenario/binary>>}}) ->
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_",
+                                                                   BinScenario/binary>>}}) ->
     Scenario = decode_failure_scenario(BinScenario),
     {temporary_unavailability, Scenario};
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
@@ -589,6 +574,7 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = 
 -spec make_payment_tool(PaymenToolCode) -> PaymenTool when
     PaymenToolCode :: atom() | {temporary_unavailability, failure_scenario()},
     PaymenTool :: {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
 make_payment_tool(no_preauth_mc) ->
@@ -602,12 +588,12 @@ make_payment_tool(no_preauth_suspend_default) ->
 make_payment_tool(empty_cvv) ->
     {
         {bank_card, #domain_BankCard{
-            token = <<"empty_cvv">>,
+            token          = <<"empty_cvv">>,
             payment_system = visa,
-            bin = <<"424242">>,
-            last_digits = <<"4242">>,
+            bin            = <<"424242">>,
+            last_digits    = <<"4242">>,
             token_provider = undefined,
-            is_cvv_empty = true
+            is_cvv_empty   = true
         }},
         <<"SESSION42">>
     };
@@ -639,8 +625,8 @@ make_payment_tool(digital_wallet) ->
     {
         {digital_wallet, #domain_DigitalWallet{
             provider = qiwi,
-            id = <<"+79876543210">>,
-            token = <<"some_token">>
+            id       = <<"+79876543210">>,
+            token    = <<"some_token">>
         }},
         <<>>
     };
@@ -681,23 +667,16 @@ make_simple_payment_tool(Token, PaymentSystem, TokenProvider) ->
     make_simple_payment_tool(Token, PaymentSystem, TokenProvider, undefined).
 
 make_simple_payment_tool(Token, PaymentSystem, TokenProvider, TokenizationMethod) ->
-    construct_payment_tool_and_session(
-        Token,
-        PaymentSystem,
-        <<"424242">>,
-        <<"4242">>,
-        TokenProvider,
-        <<"SESSION42">>,
-        TokenizationMethod
-    ).
+    construct_payment_tool_and_session(Token, PaymentSystem, <<"424242">>, <<"4242">>,
+        TokenProvider, <<"SESSION42">>, TokenizationMethod).
 
 construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider, Session, TokenizationMethod) ->
     {
         {bank_card, #domain_BankCard{
-            token = Token,
+            token          = Token,
             payment_system = PaymentSystem,
-            bin = Bin,
-            last_digits = Pan,
+            bin            = Bin,
+            last_digits    = Pan,
             token_provider = TokenProvider,
             tokenization_method = TokenizationMethod
         }},
@@ -714,14 +693,17 @@ get_invoice_due_date(#prxprv_PaymentInfo{invoice = Invoice}) ->
     Invoice#prxprv_Invoice.due.
 
 -spec encode_failure_scenario(failure_scenario()) -> binary().
+
 encode_failure_scenario(Scenario) ->
-    <<<<(encode_failure_scenario_step(S)):8>> || S <- Scenario>>.
+    << <<(encode_failure_scenario_step(S)):8>> || S <- Scenario >>.
 
 -spec decode_failure_scenario(binary()) -> failure_scenario().
+
 decode_failure_scenario(BinScenario) ->
     [decode_failure_scenario_step(B) || <<B:8>> <= BinScenario].
 
 -spec encode_failure_scenario_step(failure_scenario_step()) -> byte().
+
 encode_failure_scenario_step(good) ->
     $g;
 encode_failure_scenario_step(temp) ->
@@ -732,6 +714,7 @@ encode_failure_scenario_step(error) ->
     $e.
 
 -spec decode_failure_scenario_step(byte()) -> failure_scenario_step().
+
 decode_failure_scenario_step($g) ->
     good;
 decode_failure_scenario_step($t) ->
@@ -744,35 +727,37 @@ decode_failure_scenario_step($e) ->
 %%
 
 -spec init(cowboy_req:req(), list()) -> {ok, cowboy_req:req(), list()}.
+
 init(Req, Opts) ->
     Method = cowboy_req:method(Req),
     Req2 = handle_user_interaction_response(Method, Req),
     {ok, Req2, Opts}.
 
 -spec terminate(term(), cowboy_req:req(), state) -> ok.
+
 terminate(_Reason, _Req, _State) ->
     ok.
 
 -spec get_callback_url() -> binary().
+
 get_callback_url() ->
     genlib:to_binary("http://127.0.0.1:" ++ integer_to_list(?COWBOY_PORT)).
 
 handle_user_interaction_response(<<"POST">>, Req) ->
     {ok, Body, Req2} = cowboy_req:read_body(Req),
     Form = maps:from_list(cow_qs:parse_qs(Body)),
-    RespCode =
-        case maps:get(<<"tag">>, Form, undefined) of
-            %% sleep intent
-            undefined ->
-                InvoiceID = maps:get(<<"invoice_id">>, Form),
-                PaymentID = maps:get(<<"payment_id">>, Form),
-                set_transaction_state({InvoiceID, PaymentID}, processed),
-                200;
-            %% suspend intent
-            Tag ->
-                Payload = maps:get(<<"payload">>, Form, Tag),
-                callback_to_hell(Tag, Payload)
-        end,
+    RespCode = case maps:get(<<"tag">>, Form, undefined) of
+        %% sleep intent
+        undefined ->
+            InvoiceID = maps:get(<<"invoice_id">>, Form),
+            PaymentID = maps:get(<<"payment_id">>, Form),
+            set_transaction_state({InvoiceID, PaymentID}, processed),
+            200;
+        %% suspend intent
+        Tag ->
+            Payload = maps:get(<<"payload">>, Form, Tag),
+            callback_to_hell(Tag, Payload)
+    end,
     cowboy_req:reply(RespCode, #{<<"content-type">> => <<"text/plain; charset=utf-8">>}, <<>>, Req2);
 handle_user_interaction_response(_, Req) ->
     %% Method not allowed.
@@ -780,24 +765,19 @@ handle_user_interaction_response(_, Req) ->
 
 callback_to_hell(Tag, Payload) ->
     % This case emulate precisely current proxy behaviour. HOLY MACKEREL!
-    Fun =
-        case Tag of
-            <<"payment-", _Rest/binary>> ->
-                'ProcessPaymentCallback';
-            <<"recurrent-", _Rest/binary>> ->
-                'ProcessRecurrentTokenCallback';
-            % FIXME adhoc for old tests, probably can be safely removed
-            _ ->
-                'ProcessPaymentCallback'
-        end,
-    case
-        hg_client_api:call(
-            proxy_host_provider,
-            Fun,
-            [Tag, Payload],
-            hg_client_api:new(hg_ct_helper:get_hellgate_url())
-        )
-    of
+    Fun = case Tag of
+        <<"payment-", _Rest/binary>> ->
+            'ProcessPaymentCallback';
+        <<"recurrent-", _Rest/binary>> ->
+            'ProcessRecurrentTokenCallback';
+        % FIXME adhoc for old tests, probably can be safely removed
+        _ ->
+            'ProcessPaymentCallback'
+    end,
+    case hg_client_api:call(
+        proxy_host_provider, Fun, [Tag, Payload],
+        hg_client_api:new(hg_ct_helper:get_hellgate_url())
+    ) of
         {{ok, _Response}, _} ->
             200;
         {{error, _}, _} ->
@@ -818,9 +798,7 @@ generate_tag(Prefix) ->
 
 get_payment_info(Tag) ->
     hg_client_api:call(
-        proxy_host_provider,
-        'GetPayment',
-        [Tag],
+        proxy_host_provider, 'GetPayment', [Tag],
         hg_client_api:new(hg_ct_helper:get_hellgate_url())
     ).
 

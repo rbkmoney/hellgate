@@ -1,5 +1,4 @@
 -module(pm_msgpack_marshalling).
-
 -include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 -include_lib("mg_proto/include/mg_proto_msgpack_thrift.hrl").
 
@@ -24,7 +23,8 @@
 
 %%
 
--spec marshal(msgpack_value()) -> dmsl_msgpack_thrift:'Value'().
+-spec marshal(msgpack_value()) ->
+    dmsl_msgpack_thrift:'Value'().
 marshal(undefined) ->
     {nl, #msgpack_Nil{}};
 marshal(Boolean) when is_boolean(Boolean) ->
@@ -38,18 +38,19 @@ marshal(String) when is_binary(String) ->
 marshal({bin, Binary}) ->
     {bin, Binary};
 marshal(Object) when is_map(Object) ->
-    {obj,
-        maps:fold(
-            fun(K, V, Acc) ->
-                maps:put(marshal(K), marshal(V), Acc)
-            end,
-            #{},
-            Object
-        )};
+    {obj, maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(marshal(K), marshal(V), Acc)
+        end,
+        #{},
+        Object
+    )};
 marshal(Array) when is_list(Array) ->
     {arr, lists:map(fun marshal/1, Array)}.
 
--spec unmarshal(dmsl_msgpack_thrift:'Value'()) -> msgpack_value().
+-spec unmarshal(dmsl_msgpack_thrift:'Value'()) ->
+    msgpack_value().
+
 unmarshal({nl, #msgpack_Nil{}}) ->
     undefined;
 unmarshal({b, Boolean}) ->

@@ -14,30 +14,25 @@
 -type object() :: pm_domain:object().
 
 -spec upsert(revision(), object() | [object()]) -> revision() | no_return().
+
 upsert(Revision, NewObject) when not is_list(NewObject) ->
     upsert(Revision, [NewObject]);
 upsert(Revision, NewObjects) ->
     Commit = #'Commit'{
         ops = lists:foldl(
-            fun(NewObject = {Tag, {ObjectName, Ref, NewData}}, Ops) ->
+            fun (NewObject = {Tag, {ObjectName, Ref, NewData}}, Ops) ->
                 case pm_domain:find(Revision, {Tag, Ref}) of
                     NewData ->
                         Ops;
                     notfound ->
-                        [
-                            {insert, #'InsertOp'{
-                                object = NewObject
-                            }}
-                            | Ops
-                        ];
+                        [{insert, #'InsertOp'{
+                            object = NewObject
+                        }} | Ops];
                     OldData ->
-                        [
-                            {update, #'UpdateOp'{
-                                old_object = {Tag, {ObjectName, Ref, OldData}},
-                                new_object = NewObject
-                            }}
-                            | Ops
-                        ]
+                        [{update, #'UpdateOp'{
+                            old_object = {Tag, {ObjectName, Ref, OldData}},
+                            new_object = NewObject
+                        }} | Ops]
                 end
             end,
             [],
@@ -48,21 +43,22 @@ upsert(Revision, NewObjects) ->
     pm_domain:head().
 
 -spec reset(revision()) -> ok | no_return().
+
 reset(ToRevision) ->
     upsert(hg_domain:head(), maps:values(pm_domain:all(ToRevision))).
 
 -spec commit(revision(), dmt_client:commit()) -> ok | no_return().
+
 commit(Revision, Commit) ->
     Revision = dmt_client:commit(Revision, Commit) - 1,
     _ = pm_domain:all(Revision + 1),
     ok.
 
--spec with(object() | [object()], fun((revision()) -> R)) -> R | no_return().
+-spec with(object() | [object()], fun ((revision()) -> R)) -> R | no_return().
+
 with(NewObjects, Fun) ->
     WasRevision = pm_domain:head(),
     Revision = upsert(WasRevision, NewObjects),
-    try
-        Fun(Revision)
-    after
+    try Fun(Revision) after
         reset(WasRevision)
     end.

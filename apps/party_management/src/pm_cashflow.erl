@@ -7,14 +7,13 @@
 %%%  - we should probably validate final cash flow somewhere here
 
 -module(pm_cashflow).
-
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
--type account() :: dmsl_domain_thrift:'CashFlowAccount'().
--type account_id() :: dmsl_domain_thrift:'AccountID'().
--type account_map() :: #{account() => account_id()}.
--type context() :: dmsl_domain_thrift:'CashFlowContext'().
--type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
+-type account()         :: dmsl_domain_thrift:'CashFlowAccount'().
+-type account_id()      :: dmsl_domain_thrift:'AccountID'().
+-type account_map()     :: #{account() => account_id()}.
+-type context()         :: dmsl_domain_thrift:'CashFlowContext'().
+-type cash_flow()       :: dmsl_domain_thrift:'CashFlow'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 
 %%
@@ -23,21 +22,25 @@
 
 %%
 
--define(posting(Source, Destination, Volume, Details), #domain_CashFlowPosting{
-    source = Source,
-    destination = Destination,
-    volume = Volume,
-    details = Details
-}).
+-define(posting(Source, Destination, Volume, Details),
+    #domain_CashFlowPosting{
+        source = Source,
+        destination = Destination,
+        volume = Volume,
+        details = Details
+    }).
 
--define(final_posting(Source, Destination, Volume, Details), #domain_FinalCashFlowPosting{
-    source = Source,
-    destination = Destination,
-    volume = Volume,
-    details = Details
-}).
+-define(final_posting(Source, Destination, Volume, Details),
+    #domain_FinalCashFlowPosting{
+        source = Source,
+        destination = Destination,
+        volume = Volume,
+        details = Details
+    }).
 
--spec finalize(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
+-spec finalize(cash_flow(), context(), account_map()) ->
+    final_cash_flow() | no_return().
+
 finalize(CF, Context, AccountMap) ->
     compute_postings(CF, Context, AccountMap).
 
@@ -48,14 +51,14 @@ compute_postings(CF, Context, AccountMap) ->
             construct_final_account(Destination, AccountMap),
             compute_volume(Volume, Context),
             Details
-        )
-        || ?posting(Source, Destination, Volume, Details) <- CF
+        ) ||
+            ?posting(Source, Destination, Volume, Details) <- CF
     ].
 
 construct_final_account(AccountType, AccountMap) ->
     #domain_FinalCashFlowAccount{
         account_type = AccountType,
-        account_id = resolve_account(AccountType, AccountMap)
+        account_id   = resolve_account(AccountType, AccountMap)
     }.
 
 resolve_account(AccountType, AccountMap) ->
@@ -69,18 +72,13 @@ resolve_account(AccountType, AccountMap) ->
 %%
 
 -define(fixed(Cash),
-    {fixed, #domain_CashVolumeFixed{cash = Cash}}
-).
-
+    {fixed, #domain_CashVolumeFixed{cash = Cash}}).
 -define(share(P, Q, Of, RoundingMethod),
-    {share, #domain_CashVolumeShare{'parts' = ?rational(P, Q), 'of' = Of, 'rounding_method' = RoundingMethod}}
-).
-
+    {share, #domain_CashVolumeShare{'parts' = ?rational(P, Q), 'of' = Of, 'rounding_method' = RoundingMethod}}).
 -define(product(Fun, CVs),
-    {product, {Fun, CVs}}
-).
-
--define(rational(P, Q), #'Rational'{p = P, q = Q}).
+    {product, {Fun, CVs}}).
+-define(rational(P, Q),
+    #'Rational'{p = P, q = Q}).
 
 compute_volume(?fixed(Cash), _Context) ->
     Cash;
@@ -95,19 +93,17 @@ compute_volume(?product(Fun, CVs) = CV0, Context) ->
     end.
 
 compute_parts_of(P, Q, Cash = #domain_Cash{amount = Amount}, RoundingMethod) ->
-    Cash#domain_Cash{
-        amount = genlib_rational:round(
-            genlib_rational:mul(
-                genlib_rational:new(Amount),
-                genlib_rational:new(P, Q)
-            ),
-            get_rounding_method(RoundingMethod)
-        )
-    }.
+    Cash#domain_Cash{amount = genlib_rational:round(
+        genlib_rational:mul(
+            genlib_rational:new(Amount),
+            genlib_rational:new(P, Q)
+        ),
+        get_rounding_method(RoundingMethod)
+    )}.
 
 compute_product(Fun, [CV | CVRest], CV0, Context) ->
     lists:foldl(
-        fun(CVN, CVMin) -> compute_product(Fun, CVN, CVMin, CV0, Context) end,
+        fun (CVN, CVMin) -> compute_product(Fun, CVN, CVMin, CV0, Context) end,
         compute_volume(CV, Context),
         CVRest
     ).

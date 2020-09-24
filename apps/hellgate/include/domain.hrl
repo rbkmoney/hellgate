@@ -1,44 +1,39 @@
 -ifndef(__hellgate_domain__).
 -define(__hellgate_domain__, 42).
 
--define(currency(SymCode), #domain_CurrencyRef{symbolic_code = SymCode}).
+-define(currency(SymCode),
+    #domain_CurrencyRef{symbolic_code = SymCode}).
 
--define(cash(Amount, SymCode), #domain_Cash{amount = Amount, currency = ?currency(SymCode)}).
+-define(cash(Amount, SymCode),
+    #domain_Cash{amount = Amount, currency = ?currency(SymCode)}).
 
--define(route(ProviderRef, TerminalRef), #domain_PaymentRoute{
-    provider = ProviderRef,
-    terminal = TerminalRef
-}).
+-define(route(ProviderRef, TerminalRef),
+    #domain_PaymentRoute{
+        provider = ProviderRef,
+        terminal = TerminalRef
+    }).
 
 -define(failure(Code),
-    ?failure(Code, undefined)
-).
-
+    ?failure(Code, undefined)).
 -define(failure(Code, Reason),
-    {failure, #domain_Failure{code = Code, reason = Reason}}
-).
+    {failure, #domain_Failure{code = Code, reason = Reason}}).
 
 -define(operation_timeout(),
-    {operation_timeout, #domain_OperationTimeout{}}
-).
+    {operation_timeout, #domain_OperationTimeout{}}).
 
 -define(invoice_payment_flow_instant(),
-    {instant, #domain_InvoicePaymentFlowInstant{}}
-).
+    {instant, #domain_InvoicePaymentFlowInstant{}}).
 
 -define(invoice_payment_flow_hold(OnHoldExpiration, HeldUntil),
-    {hold, #domain_InvoicePaymentFlowHold{on_hold_expiration = OnHoldExpiration, held_until = HeldUntil}}
-).
+    {hold, #domain_InvoicePaymentFlowHold{on_hold_expiration = OnHoldExpiration, held_until = HeldUntil}}).
 
--define(hold_lifetime(HoldLifetime), #domain_HoldLifetime{seconds = HoldLifetime}).
+-define(hold_lifetime(HoldLifetime),
+    #domain_HoldLifetime{seconds = HoldLifetime}).
 
 -define(payment_resource_payer(Resource, ContactInfo),
-    {payment_resource, #domain_PaymentResourcePayer{resource = Resource, contact_info = ContactInfo}}
-).
-
+    {payment_resource, #domain_PaymentResourcePayer{resource = Resource, contact_info = ContactInfo}}).
 -define(payment_resource_payer(),
-    {payment_resource, #domain_PaymentResourcePayer{}}
-).
+    {payment_resource, #domain_PaymentResourcePayer{}}).
 
 -define(customer_payer(CustomerID, CustomerBindingID, RecurrentPaytoolID, PaymentTool, ContactInfo),
     {customer, #domain_CustomerPayer{
@@ -49,7 +44,6 @@
         contact_info = ContactInfo
     }}
 ).
-
 -define(customer_payer(), {customer, #domain_CustomerPayer{}}).
 
 -define(recurrent_payer(PaymentTool, Parent, ContactInfo),
@@ -59,12 +53,9 @@
         contact_info = ContactInfo
     }}
 ).
-
 -define(recurrent_payer(), {recurrent, #domain_RecurrentPayer{}}).
 
--define(recurrent_parent(InvoiceID, PaymentID), #domain_RecurrentParentPayment{
-    invoice_id = InvoiceID,
-    payment_id = PaymentID
-}).
+-define(recurrent_parent(InvoiceID, PaymentID),
+    #domain_RecurrentParentPayment{invoice_id = InvoiceID, payment_id = PaymentID}).
 
 -endif.

@@ -5,7 +5,6 @@
 -behaviour(woody_server_thrift_handler).
 
 -export([handle_function/4]).
-
 -export_type([handler_opts/0]).
 -export_type([client_opts/0]).
 
@@ -16,16 +15,16 @@
 }.
 
 -type client_opts() :: #{
-    url := woody:url(),
+    url            := woody:url(),
     transport_opts => [{_, _}]
 }.
 
-% 30 seconds
--define(DEFAULT_HANDLING_TIMEOUT, 30000).
+-define(DEFAULT_HANDLING_TIMEOUT, 30000).  % 30 seconds
 
 %% Callbacks
 
--callback handle_function(woody:func(), woody:args(), handler_opts()) -> term() | no_return().
+-callback(handle_function(woody:func(), woody:args(), handler_opts()) ->
+    term() | no_return()).
 
 %% API
 
@@ -36,7 +35,9 @@
 
 -export([get_service_options/1]).
 
--spec handle_function(woody:func(), woody:args(), woody_context:ctx(), handler_opts()) -> {ok, term()} | no_return().
+-spec handle_function(woody:func(), woody:args(), woody_context:ctx(), handler_opts()) ->
+    {ok, term()} | no_return().
+
 handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
     WoodyContext = ensure_woody_deadline_set(WoodyContext0, Opts),
     ok = pm_context:save(create_context(WoodyContext)),
@@ -54,18 +55,24 @@ handle_function(Func, Args, WoodyContext0, #{handler := Handler} = Opts) ->
         pm_context:cleanup()
     end.
 
--spec call(atom(), woody:func(), list()) -> term().
+-spec call(atom(), woody:func(), list()) ->
+    term().
+
 call(ServiceName, Function, Args) ->
     Opts = get_service_options(ServiceName),
     Deadline = undefined,
     call(ServiceName, Function, Args, Opts, Deadline).
 
--spec call(atom(), woody:func(), list(), client_opts()) -> term().
+-spec call(atom(), woody:func(), list(), client_opts()) ->
+    term().
+
 call(ServiceName, Function, Args, Opts) ->
     Deadline = undefined,
     call(ServiceName, Function, Args, Opts, Deadline).
 
--spec call(atom(), woody:func(), list(), client_opts(), woody_deadline:deadline()) -> term().
+-spec call(atom(), woody:func(), list(), client_opts(), woody_deadline:deadline()) ->
+    term().
+
 call(ServiceName, Function, Args, Opts, Deadline) ->
     Service = get_service_modname(ServiceName),
     Context = pm_context:get_woody_context(pm_context:load()),
@@ -73,26 +80,28 @@ call(ServiceName, Function, Args, Opts, Deadline) ->
     Request = {Service, Function, ArgsTuple},
     woody_client:call(
         Request,
-        Opts#{
-            event_handler => {
-                scoper_woody_event_handler,
-                genlib_app:env(party_management, scoper_event_handler_options, #{})
-            }
-        },
+        Opts#{event_handler => {
+            scoper_woody_event_handler,
+            genlib_app:env(party_management, scoper_event_handler_options, #{})
+        }},
         attach_deadline(Deadline, Context)
     ).
 
--spec get_service_options(atom()) -> client_opts().
+-spec get_service_options(atom()) ->
+    client_opts().
 get_service_options(ServiceName) ->
     construct_opts(maps:get(ServiceName, genlib_app:env(party_management, services))).
 
 -spec attach_deadline(woody_deadline:deadline(), woody_context:ctx()) -> woody_context:ctx().
+
 attach_deadline(undefined, Context) ->
     Context;
 attach_deadline(Deadline, Context) ->
     woody_context:set_deadline(Deadline, Context).
 
--spec raise(term()) -> no_return().
+-spec raise(term()) ->
+    no_return().
+
 raise(Exception) ->
     woody_error:raise(business, Exception).
 
@@ -103,7 +112,9 @@ construct_opts(Opts = #{url := Url}) ->
 construct_opts(Url) ->
     #{url => genlib:to_binary(Url)}.
 
--spec get_service_modname(atom()) -> {module(), atom()}.
+-spec get_service_modname(atom()) ->
+    {module(), atom()}.
+
 get_service_modname(ServiceName) ->
     pm_proto:get_service(ServiceName).
 
@@ -113,7 +124,9 @@ create_context(WoodyContext) ->
     },
     pm_context:create(ContextOptions).
 
--spec ensure_woody_deadline_set(woody_context:ctx(), handler_opts()) -> woody_context:ctx().
+-spec ensure_woody_deadline_set(woody_context:ctx(), handler_opts()) ->
+    woody_context:ctx().
+
 ensure_woody_deadline_set(WoodyContext, Opts) ->
     case woody_context:get_deadline(WoodyContext) of
         undefined ->

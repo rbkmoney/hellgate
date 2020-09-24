@@ -8,56 +8,51 @@
 % Events
 
 -define(recurrent_payment_tool_event(RecurrentPaymentToolChanges),
-    {recurrent_payment_tool_changes, RecurrentPaymentToolChanges}
-).
+    {recurrent_payment_tool_changes, RecurrentPaymentToolChanges}).
 
 -define(recurrent_payment_tool_has_created(RecurrentPaymentTool),
-    {rec_payment_tool_created, #payproc_RecurrentPaymentToolHasCreated{
-        rec_payment_tool = RecurrentPaymentTool
-    }}
-).
+    {rec_payment_tool_created,
+        #payproc_RecurrentPaymentToolHasCreated{
+            rec_payment_tool = RecurrentPaymentTool
+        }}).
 
 -define(recurrent_payment_tool_risk_score_changed(RiskScore),
-    {rec_payment_tool_risk_score_changed, #payproc_RecurrentPaymentToolRiskScoreChanged{
-        risk_score = RiskScore
-    }}
-).
+    {rec_payment_tool_risk_score_changed,
+        #payproc_RecurrentPaymentToolRiskScoreChanged{
+            risk_score = RiskScore
+        }}).
 
 -define(recurrent_payment_tool_route_changed(Route),
-    {rec_payment_tool_route_changed, #payproc_RecurrentPaymentToolRouteChanged{
-        route = Route
-    }}
-).
+    {rec_payment_tool_route_changed,
+        #payproc_RecurrentPaymentToolRouteChanged{
+            route = Route
+        }}).
 
 -define(recurrent_payment_tool_has_acquired(Token),
-    {rec_payment_tool_acquired, #payproc_RecurrentPaymentToolHasAcquired{token = Token}}
-).
+    {rec_payment_tool_acquired,
+        #payproc_RecurrentPaymentToolHasAcquired{token = Token}}).
 
 -define(recurrent_payment_tool_has_abandoned(),
-    {rec_payment_tool_abandoned, #payproc_RecurrentPaymentToolHasAbandoned{}}
-).
+    {rec_payment_tool_abandoned,
+        #payproc_RecurrentPaymentToolHasAbandoned{}}).
 
 -define(recurrent_payment_tool_has_failed(Failure),
-    {rec_payment_tool_failed, #payproc_RecurrentPaymentToolHasFailed{failure = Failure}}
-).
+    {rec_payment_tool_failed,
+        #payproc_RecurrentPaymentToolHasFailed{failure = Failure}}).
 
 % Statuses
 
 -define(recurrent_payment_tool_created(),
-    {created, #payproc_RecurrentPaymentToolCreated{}}
-).
+    {created, #payproc_RecurrentPaymentToolCreated{}}).
 
 -define(recurrent_payment_tool_acquired(),
-    {acquired, #payproc_RecurrentPaymentToolAcquired{}}
-).
+    {acquired, #payproc_RecurrentPaymentToolAcquired{}}).
 
 -define(recurrent_payment_tool_abandoned(),
-    {abandoned, #payproc_RecurrentPaymentToolAbandoned{}}
-).
+    {abandoned, #payproc_RecurrentPaymentToolAbandoned{}}).
 
 -define(recurrent_payment_tool_failed(Failure),
-    {failed, #payproc_RecurrentPaymentToolFailed{failure = Failure}}
-).
+    {failed, #payproc_RecurrentPaymentToolFailed{failure = Failure}}).
 
 %% Sessions
 
@@ -68,44 +63,52 @@
 ).
 
 -define(session_started(),
-    {session_started, #payproc_SessionStarted{}}
+    {session_started,
+        #payproc_SessionStarted{}
+    }
 ).
-
 -define(session_finished(Result),
-    {session_finished, #payproc_SessionFinished{result = Result}}
+    {session_finished,
+        #payproc_SessionFinished{result = Result}
+    }
 ).
-
 -define(session_suspended(),
-    {session_suspended, #payproc_SessionSuspended{}}
+    {session_suspended,
+        #payproc_SessionSuspended{}
+    }
 ).
-
 -define(session_suspended(Tag, TimeoutBehaviour),
-    {session_suspended, #payproc_SessionSuspended{
-        tag = Tag,
-        timeout_behaviour = TimeoutBehaviour
-    }}
+    {session_suspended,
+        #payproc_SessionSuspended{
+            tag = Tag,
+            timeout_behaviour = TimeoutBehaviour
+        }
+    }
 ).
-
 -define(session_activated(),
-    {session_activated, #payproc_SessionActivated{}}
+    {session_activated,
+        #payproc_SessionActivated{}
+    }
 ).
-
 -define(trx_bound(Trx),
-    {session_transaction_bound, #payproc_SessionTransactionBound{trx = Trx}}
+    {session_transaction_bound,
+        #payproc_SessionTransactionBound{trx = Trx}
+    }
 ).
-
 -define(proxy_st_changed(ProxySt),
-    {session_proxy_state_changed, #payproc_SessionProxyStateChanged{proxy_state = ProxySt}}
+    {session_proxy_state_changed,
+        #payproc_SessionProxyStateChanged{proxy_state = ProxySt}
+    }
 ).
-
 -define(interaction_requested(UserInteraction),
-    {session_interaction_requested, #payproc_SessionInteractionRequested{interaction = UserInteraction}}
+    {session_interaction_requested,
+        #payproc_SessionInteractionRequested{interaction = UserInteraction}
+    }
 ).
 
 -define(session_succeeded(),
     {succeeded, #payproc_SessionSucceeded{}}
 ).
-
 -define(session_failed(Failure),
     {failed, #payproc_SessionFailed{failure = Failure}}
 ).

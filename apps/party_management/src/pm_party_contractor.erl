@@ -13,6 +13,7 @@
 -type party_contractor() :: dmsl_domain_thrift:'PartyContractor'().
 
 -spec create(id(), contractor()) -> party_contractor().
+
 create(ID, Contractor) ->
     #domain_PartyContractor{
         id = ID,

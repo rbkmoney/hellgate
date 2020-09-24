@@ -7,17 +7,16 @@
 %%%  - we should probably validate final cash flow somewhere here
 
 -module(hg_cashflow).
-
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
--type account() :: dmsl_domain_thrift:'CashFlowAccount'().
--type account_id() :: dmsl_domain_thrift:'AccountID'().
--type account_map() :: #{account() => account_id()}.
--type context() :: dmsl_domain_thrift:'CashFlowContext'().
--type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
--type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
--type cash() :: dmsl_domain_thrift:'Cash'().
--type cash_volume() :: dmsl_domain_thrift:'CashVolume'().
+-type account()                 :: dmsl_domain_thrift:'CashFlowAccount'().
+-type account_id()              :: dmsl_domain_thrift:'AccountID'().
+-type account_map()             :: #{account() => account_id()}.
+-type context()                 :: dmsl_domain_thrift:'CashFlowContext'().
+-type cash_flow()               :: dmsl_domain_thrift:'CashFlow'().
+-type final_cash_flow()         :: dmsl_domain_thrift:'FinalCashFlow'().
+-type cash()                    :: dmsl_domain_thrift:'Cash'().
+-type cash_volume()             :: dmsl_domain_thrift:'CashVolume'().
 -type final_cash_flow_account() :: dmsl_domain_thrift:'FinalCashFlowAccount'().
 
 %%
@@ -34,25 +33,31 @@
 
 %%
 
--define(posting(Source, Destination, Volume, Details), #domain_CashFlowPosting{
-    source = Source,
-    destination = Destination,
-    volume = Volume,
-    details = Details
-}).
+-define(posting(Source, Destination, Volume, Details),
+    #domain_CashFlowPosting{
+        source = Source,
+        destination = Destination,
+        volume = Volume,
+        details = Details
+    }).
 
--define(final_posting(Source, Destination, Volume, Details), #domain_FinalCashFlowPosting{
-    source = Source,
-    destination = Destination,
-    volume = Volume,
-    details = Details
-}).
+-define(final_posting(Source, Destination, Volume, Details),
+    #domain_FinalCashFlowPosting{
+        source = Source,
+        destination = Destination,
+        volume = Volume,
+        details = Details
+    }).
 
--spec finalize(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
+-spec finalize(cash_flow(), context(), account_map()) ->
+    final_cash_flow() | no_return().
+
 finalize(CF, Context, AccountMap) ->
     compute_postings(CF, Context, AccountMap).
 
--spec compute_postings(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
+-spec compute_postings(cash_flow(), context(), account_map()) ->
+    final_cash_flow() | no_return().
+
 compute_postings(CF, Context, AccountMap) ->
     [
         ?final_posting(
@@ -60,18 +65,22 @@ compute_postings(CF, Context, AccountMap) ->
             construct_final_account(Destination, AccountMap),
             compute_volume(Volume, Context),
             Details
-        )
-        || ?posting(Source, Destination, Volume, Details) <- CF
+        ) ||
+            ?posting(Source, Destination, Volume, Details) <- CF
     ].
 
--spec construct_final_account(account(), account_map()) -> final_cash_flow_account() | no_return().
+-spec construct_final_account(account(), account_map()) ->
+    final_cash_flow_account() | no_return().
+
 construct_final_account(AccountType, AccountMap) ->
     #domain_FinalCashFlowAccount{
         account_type = AccountType,
-        account_id = resolve_account(AccountType, AccountMap)
+        account_id   = resolve_account(AccountType, AccountMap)
     }.
 
--spec resolve_account(account(), account_map()) -> account_id() | no_return().
+-spec resolve_account(account(), account_map()) ->
+    account_id() | no_return().
+
 resolve_account(AccountType, AccountMap) ->
     case AccountMap of
         #{AccountType := V} ->
@@ -83,11 +92,10 @@ resolve_account(AccountType, AccountMap) ->
 %%
 
 -spec revert(final_cash_flow()) -> final_cash_flow().
+
 revert(CF) ->
-    [
-        ?final_posting(Destination, Source, Volume, revert_details(Details))
-        || ?final_posting(Source, Destination, Volume, Details) <- CF
-    ].
+    [?final_posting(Destination, Source, Volume, revert_details(Details))
+        || ?final_posting(Source, Destination, Volume, Details) <- CF].
 
 revert_details(undefined) ->
     undefined;
@@ -98,20 +106,17 @@ revert_details(Details) ->
 %%
 
 -define(fixed(Cash),
-    {fixed, #domain_CashVolumeFixed{cash = Cash}}
-).
-
+    {fixed, #domain_CashVolumeFixed{cash = Cash}}).
 -define(share(P, Q, Of, RoundingMethod),
-    {share, #domain_CashVolumeShare{'parts' = ?rational(P, Q), 'of' = Of, 'rounding_method' = RoundingMethod}}
-).
-
+    {share, #domain_CashVolumeShare{'parts' = ?rational(P, Q), 'of' = Of, 'rounding_method' = RoundingMethod}}).
 -define(product(Fun, CVs),
-    {product, {Fun, CVs}}
-).
+    {product, {Fun, CVs}}).
+-define(rational(P, Q),
+    #'Rational'{p = P, q = Q}).
 
--define(rational(P, Q), #'Rational'{p = P, q = Q}).
+-spec compute_volume(cash_volume(), context()) ->
+    cash() | no_return().
 
--spec compute_volume(cash_volume(), context()) -> cash() | no_return().
 compute_volume(?fixed(Cash), _Context) ->
     Cash;
 compute_volume(?share(P, Q, Of, RoundingMethod), Context) ->
@@ -125,19 +130,17 @@ compute_volume(?product(Fun, CVs) = CV0, Context) ->
     end.
 
 compute_parts_of(P, Q, Cash = #domain_Cash{amount = Amount}, RoundingMethod) ->
-    Cash#domain_Cash{
-        amount = genlib_rational:round(
-            genlib_rational:mul(
-                genlib_rational:new(Amount),
-                genlib_rational:new(P, Q)
-            ),
-            get_rounding_method(RoundingMethod)
-        )
-    }.
+    Cash#domain_Cash{amount = genlib_rational:round(
+        genlib_rational:mul(
+            genlib_rational:new(Amount),
+            genlib_rational:new(P, Q)
+        ),
+        get_rounding_method(RoundingMethod)
+    )}.
 
 compute_product(Fun, [CV | CVRest], CV0, Context) ->
     lists:foldl(
-        fun(CVN, CVMin) -> compute_product(Fun, CVN, CVMin, CV0, Context) end,
+        fun (CVN, CVMin) -> compute_product(Fun, CVN, CVMin, CV0, Context) end,
         compute_volume(CV, Context),
         CVRest
     ).
@@ -174,10 +177,12 @@ get_rounding_method(round_half_away_from_zero) ->
 
 -include("domain.hrl").
 
--spec get_partial_remainders(final_cash_flow()) -> #{account() => cash()}.
+-spec get_partial_remainders(final_cash_flow()) ->
+    #{account() => cash()}.
+
 get_partial_remainders(CashFlow) ->
     lists:foldl(
-        fun(?final_posting(Source, Destination, Volume, _), Acc) ->
+        fun (?final_posting(Source, Destination, Volume, _), Acc) ->
             decrement_remainder(Source, Volume, increment_remainder(Destination, Volume, Acc))
         end,
         #{},
@@ -193,8 +198,8 @@ decrement_remainder(AccountType, ?cash(Amount, Currency), Acc) ->
 modify_remainder(#domain_FinalCashFlowAccount{account_type = AccountType}, ?cash(Amount, Currency), Acc) ->
     maps:update_with(
         AccountType,
-        fun(?cash(A, C)) when C == Currency ->
-            ?cash(A + Amount, Currency)
+        fun (?cash(A, C)) when C == Currency ->
+             ?cash(A + Amount, Currency)
         end,
         ?cash(Amount, Currency),
         Acc
@@ -204,30 +209,35 @@ modify_remainder(#domain_FinalCashFlowAccount{account_type = AccountType}, ?cash
 
 -include("legacy_structures.hrl").
 
--spec marshal(final_cash_flow()) -> hg_msgpack_marshalling:value().
+-spec marshal(final_cash_flow()) ->
+    hg_msgpack_marshalling:value().
+
 marshal(CashFlow) ->
     marshal(final_cash_flow, CashFlow).
 
 marshal(final_cash_flow, CashFlow) ->
     [2, [marshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow]];
+
 marshal(final_cash_flow_posting, #domain_FinalCashFlowPosting{} = CashFlowPosting) ->
     genlib_map:compact(#{
-        <<"source">> =>
+        <<"source">>        =>
             marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.source),
-        <<"destination">> =>
+        <<"destination">>   =>
             marshal(final_cash_flow_account, CashFlowPosting#domain_FinalCashFlowPosting.destination),
-        <<"volume">> =>
+        <<"volume">>        =>
             hg_cash:marshal(CashFlowPosting#domain_FinalCashFlowPosting.volume),
-        <<"details">> =>
+        <<"details">>       =>
             marshal(str, CashFlowPosting#domain_FinalCashFlowPosting.details)
     });
+
 marshal(final_cash_flow_account, #domain_FinalCashFlowAccount{} = CashFlowAccount) ->
     #{
-        <<"type">> =>
+        <<"type">>  =>
             marshal(account_type, CashFlowAccount#domain_FinalCashFlowAccount.account_type),
-        <<"id">> =>
-            marshal(str, CashFlowAccount#domain_FinalCashFlowAccount.account_id)
+        <<"id">>    =>
+             marshal(str, CashFlowAccount#domain_FinalCashFlowAccount.account_id)
     };
+
 marshal(account_type, {merchant, settlement}) ->
     [<<"merchant">>, <<"settlement">>];
 marshal(account_type, {merchant, guarantee}) ->
@@ -242,58 +252,60 @@ marshal(account_type, {external, income}) ->
     [<<"external">>, <<"income">>];
 marshal(account_type, {external, outcome}) ->
     [<<"external">>, <<"outcome">>];
+
 marshal(_, Other) ->
     Other.
 
 %% Unmarshalling
 
 -spec unmarshal(hg_msgpack_marshalling:value()) -> final_cash_flow().
+
 unmarshal(CashFlow) ->
     unmarshal(final_cash_flow, CashFlow).
 
 unmarshal(final_cash_flow, [_, CashFlow]) ->
     [unmarshal(final_cash_flow_posting, CashFlowPosting) || CashFlowPosting <- CashFlow];
-unmarshal(
-    final_cash_flow_posting,
-    #{
-        <<"source">> := Source,
-        <<"destination">> := Destination,
-        <<"volume">> := Volume
-    } = CashFlow
-) ->
+
+unmarshal(final_cash_flow_posting, #{
+    <<"source">>        := Source,
+    <<"destination">>   := Destination,
+    <<"volume">>        := Volume
+} = CashFlow) ->
     Details = maps:get(<<"details">>, CashFlow, undefined),
     #domain_FinalCashFlowPosting{
-        source = unmarshal(final_cash_flow_account, Source),
-        destination = unmarshal(final_cash_flow_account, Destination),
-        volume = hg_cash:unmarshal(Volume),
-        details = unmarshal(str, Details)
+        source          = unmarshal(final_cash_flow_account, Source),
+        destination     = unmarshal(final_cash_flow_account, Destination),
+        volume          = hg_cash:unmarshal(Volume),
+        details         = unmarshal(str, Details)
     };
-unmarshal(
-    final_cash_flow_posting,
+
+unmarshal(final_cash_flow_posting,
     ?legacy_final_cash_flow_posting(Code, Source, Destination, Volume, Details)
 ) ->
     #domain_FinalCashFlowPosting{
-        source = unmarshal(final_cash_flow_account, Source),
-        destination = unmarshal(final_cash_flow_account, Destination),
-        volume = hg_cash:unmarshal([1, Volume]),
-        details = unmarshal(str, Details)
+        source          = unmarshal(final_cash_flow_account, Source),
+        destination     = unmarshal(final_cash_flow_account, Destination),
+        volume          = hg_cash:unmarshal([1, Volume]),
+        details         = unmarshal(str, Details)
     };
+
 unmarshal(final_cash_flow_account, #{
-    <<"type">> := AccountType,
-    <<"id">> := AccountId
+    <<"type">>  := AccountType,
+    <<"id">>    := AccountId
 }) ->
     #domain_FinalCashFlowAccount{
-        account_type = unmarshal(account_type, AccountType),
-        account_id = unmarshal(str, AccountId)
+        account_type    = unmarshal(account_type, AccountType),
+        account_id      = unmarshal(str, AccountId)
     };
-unmarshal(
-    final_cash_flow_account,
+
+unmarshal(final_cash_flow_account,
     ?legacy_final_cash_flow_account(AccountType, AccountId)
 ) ->
     #domain_FinalCashFlowAccount{
-        account_type = unmarshal(account_type, AccountType),
-        account_id = unmarshal(str, AccountId)
+        account_type    = unmarshal(account_type, AccountType),
+        account_id      = unmarshal(str, AccountId)
     };
+
 unmarshal(account_type, [<<"merchant">>, <<"settlement">>]) ->
     {merchant, settlement};
 unmarshal(account_type, [<<"merchant">>, <<"guarantee">>]) ->
@@ -308,7 +320,9 @@ unmarshal(account_type, [<<"external">>, <<"income">>]) ->
     {external, income};
 unmarshal(account_type, [<<"external">>, <<"outcome">>]) ->
     {external, outcome};
+
 unmarshal(account_type, {AccType1, AccType2} = AccType) when is_atom(AccType1), is_atom(AccType2) ->
     AccType;
+
 unmarshal(_, Other) ->
     Other.

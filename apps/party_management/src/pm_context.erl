@@ -13,7 +13,6 @@
     woody_context := woody_context(),
     user_identity => user_identity()
 }.
-
 -type options() :: #{
     user_identity => user_identity(),
     woody_context => woody_context()
@@ -42,13 +41,11 @@ create(Options0) ->
 
 -spec save(context()) -> ok.
 save(Context) ->
-    true =
-        try
-            gproc:reg(?REGISTRY_KEY, Context)
-        catch
-            error:badarg ->
-                gproc:set_value(?REGISTRY_KEY, Context)
-        end,
+    true = try gproc:reg(?REGISTRY_KEY, Context)
+    catch
+        error:badarg ->
+            gproc:set_value(?REGISTRY_KEY, Context)
+    end,
     ok.
 
 -spec load() -> context() | no_return().

@@ -21,14 +21,10 @@ inspect(
     #domain_InvoicePayment{
         domain_revision = Revision
     } = Payment,
-    #domain_Inspector{
-        fallback_risk_score = FallBackRiskScore,
-        proxy =
-            Proxy = #domain_Proxy{
-                ref = ProxyRef,
-                additional = ProxyAdditional
-            }
-    }
+    #domain_Inspector{fallback_risk_score = FallBackRiskScore, proxy = Proxy = #domain_Proxy{
+        ref = ProxyRef,
+        additional = ProxyAdditional
+    }}
 ) ->
     DeadLine = woody_deadline:from_timeout(genlib_app:env(hellgate, inspect_timeout, infinity)),
     ProxyDef = get_proxy_def(ProxyRef, Revision),
@@ -36,16 +32,8 @@ inspect(
         payment = get_payment_info(Shop, Invoice, Payment),
         options = maps:merge(ProxyDef#domain_ProxyDefinition.options, ProxyAdditional)
     },
-    Result = issue_call(
-        'InspectPayment',
-        [Context],
-        hg_proxy:get_call_options(
-            Proxy,
-            Revision
-        ),
-        FallBackRiskScore,
-        DeadLine
-    ),
+    Result = issue_call('InspectPayment', [Context], hg_proxy:get_call_options(Proxy,
+        Revision), FallBackRiskScore, DeadLine),
     case Result of
         {ok, RiskScore} when is_atom(RiskScore) ->
             RiskScore;
@@ -118,10 +106,9 @@ issue_call(Func, Args, CallOpts, Default, DeadLine) ->
             _ = logger:error("Fail to get RiskScore with error ~p", [Error]),
             {ok, Default}
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason when
-            Class =:= resource_unavailable orelse
-                Class =:= result_unknown
-        ->
+        error:{woody_error, {_Source, Class, _Details}} = Reason
+            when Class =:= resource_unavailable orelse
+                 Class =:= result_unknown ->
             _ = logger:warning("Fail to get RiskScore with error ~p:~p", [error, Reason]),
             {ok, Default};
         error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->

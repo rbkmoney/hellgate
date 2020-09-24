@@ -1,5 +1,4 @@
 -module(hg_proxy).
-
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %%
@@ -8,7 +7,10 @@
 
 %%
 
--spec get_call_options(dmsl_domain_thrift:'Proxy'(), hg_domain:revision()) -> hg_woody_wrapper:client_opts().
+
+-spec get_call_options(dmsl_domain_thrift:'Proxy'(), hg_domain:revision()) ->
+    hg_woody_wrapper:client_opts().
+
 get_call_options(#domain_Proxy{ref = ProxyRef}, Revision) ->
     ProxyDef = hg_domain:get(Revision, {proxy, ProxyRef}),
     construct_call_options(ProxyDef).

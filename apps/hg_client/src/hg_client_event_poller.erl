@@ -1,5 +1,4 @@
 -module(hg_client_event_poller).
-
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([new/2]).
@@ -14,8 +13,8 @@
 -type rpc() :: {Name :: atom(), woody:func(), [_]}.
 
 -opaque st(Event) :: #{
-    rpc := rpc(),
-    get_event_id := get_event_id(Event),
+    rpc           := rpc(),
+    get_event_id  := get_event_id(Event),
     last_event_id => integer()
 }.
 
@@ -23,15 +22,18 @@
 
 -define(POLL_INTERVAL, 1000).
 
--spec new(rpc(), get_event_id(Event)) -> st(Event).
+-spec new(rpc(), get_event_id(Event)) ->
+    st(Event).
+
 new(RPC, GetEventID) ->
     #{
-        rpc => RPC,
+        rpc          => RPC,
         get_event_id => GetEventID
     }.
 
 -spec poll(pos_integer(), non_neg_integer(), hg_client_api:t(), st(Event)) ->
     {[Event] | {exception | error, _}, hg_client_api:t(), st(Event)}.
+
 poll(N, Timeout, Client, St) ->
     poll(N, Timeout, [], Client, St).
 

@@ -1,7 +1,6 @@
 -module(hg_invoice_template_tests_SUITE).
 
 -include("hg_ct_domain.hrl").
-
 -include_lib("common_test/include/ct.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/domain.hrl").
@@ -47,6 +46,7 @@ cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
 
 -spec all() -> [test_case_name()].
+
 all() ->
     [
         create_invalid_party,
@@ -74,13 +74,13 @@ all() ->
 %% starting/stopping
 
 -spec init_per_suite(config()) -> config().
+
 init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({'hg_client_party', '_', '_'}, x),
     {Apps, Ret} = hg_ct_helper:start_apps(
-        [woody, scoper, dmt_client, party_client, party_management, hellgate, snowflake]
-    ),
+        [woody, scoper, dmt_client, party_client, party_management, hellgate, snowflake]),
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
@@ -96,6 +96,7 @@ init_per_suite(C) ->
     ].
 
 -spec end_per_suite(config()) -> _.
+
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
@@ -103,6 +104,7 @@ end_per_suite(C) ->
 %% tests
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
+
 init_per_testcase(_Name, C) ->
     RootUrl = cfg(root_url, C),
     PartyID = cfg(party_id, C),
@@ -110,10 +112,12 @@ init_per_testcase(_Name, C) ->
     [{client, Client} | C].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
+
 end_per_testcase(_Name, _C) ->
     ok.
 
 -spec create_invalid_party(config()) -> _ | no_return().
+
 create_invalid_party(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
@@ -122,6 +126,7 @@ create_invalid_party(C) ->
     {exception, #payproc_InvalidUser{}} = hg_client_invoice_templating:create(Params, Client).
 
 -spec create_invalid_shop(config()) -> _ | no_return().
+
 create_invalid_shop(C) ->
     Client = cfg(client, C),
     ShopID = ?MISSING_SHOP_ID,
@@ -130,6 +135,7 @@ create_invalid_shop(C) ->
     {exception, #payproc_ShopNotFound{}} = hg_client_invoice_templating:create(Params, Client).
 
 -spec create_invalid_party_status(config()) -> _ | no_return().
+
 create_invalid_party_status(C) ->
     PartyClient = cfg(party_client, C),
 
@@ -146,6 +152,7 @@ create_invalid_party_status(C) ->
     ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec create_invalid_shop_status(config()) -> _ | no_return().
+
 create_invalid_shop_status(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
@@ -163,16 +170,19 @@ create_invalid_shop_status(C) ->
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec create_invalid_cost_fixed_amount(config()) -> _ | no_return().
+
 create_invalid_cost_fixed_amount(C) ->
     Cost = make_cost(fixed, -100, <<"RUB">>),
     create_invalid_cost(Cost, amount, C).
 
 -spec create_invalid_cost_fixed_currency(config()) -> _ | no_return().
+
 create_invalid_cost_fixed_currency(C) ->
     Cost = make_cost(fixed, 100, <<"KEK">>),
     create_invalid_cost(Cost, currency, C).
 
 -spec create_invalid_cost_range(config()) -> _ | no_return().
+
 create_invalid_cost_range(C) ->
     Cost1 = make_cost(range, {exclusive, 100, <<"RUB">>}, {exclusive, 100, <<"RUB">>}),
     create_invalid_cost(Cost1, <<"Invalid cost range">>, C),
@@ -189,7 +199,9 @@ create_invalid_cost_range(C) ->
     Cost5 = make_cost(range, {inclusive, -100, <<"RUB">>}, {inclusive, 100, <<"RUB">>}),
     create_invalid_cost(Cost5, amount, C).
 
+
 -spec create_invoice_template(config()) -> _ | no_return().
+
 create_invoice_template(C) ->
     ok = create_cost(make_cost(unlim, sale, "50%"), C),
     ok = create_cost(make_cost(fixed, 42, <<"RUB">>), C),
@@ -208,6 +220,7 @@ create_cost(Cost, C) ->
     ok.
 
 -spec get_invoice_template_anyhow(config()) -> _ | no_return().
+
 get_invoice_template_anyhow(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -232,6 +245,7 @@ get_invoice_template_anyhow(C) ->
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client).
 
 -spec update_invalid_party_status(config()) -> _ | no_return().
+
 update_invalid_party_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -252,6 +266,7 @@ update_invalid_party_status(C) ->
     ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec update_invalid_shop_status(config()) -> _ | no_return().
+
 update_invalid_shop_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -273,6 +288,7 @@ update_invalid_shop_status(C) ->
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec update_invalid_cost_fixed_amount(config()) -> _ | no_return().
+
 update_invalid_cost_fixed_amount(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
@@ -280,6 +296,7 @@ update_invalid_cost_fixed_amount(C) ->
     update_invalid_cost(Cost, amount, TplID, Client).
 
 -spec update_invalid_cost_fixed_currency(config()) -> _ | no_return().
+
 update_invalid_cost_fixed_currency(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
@@ -287,6 +304,7 @@ update_invalid_cost_fixed_currency(C) ->
     update_invalid_cost(Cost, currency, TplID, Client).
 
 -spec update_invalid_cost_range(config()) -> _ | no_return().
+
 update_invalid_cost_range(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
@@ -307,6 +325,7 @@ update_invalid_cost_range(C) ->
     update_invalid_cost(Cost5, amount, TplID, Client).
 
 -spec update_invoice_template(config()) -> _ | no_return().
+
 update_invoice_template(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
@@ -321,19 +340,18 @@ update_invoice_template(C) ->
         product => NewProduct,
         invoice_lifetime => NewLifetime
     }),
-    Tpl1 =
-        #domain_InvoiceTemplate{
-            id = TplID,
-            owner_id = PartyID,
-            shop_id = ShopID,
-            product = NewProduct,
-            details = NewDetails,
-            invoice_lifetime = NewLifetime
-        } = hg_client_invoice_templating:update(TplID, Diff1, Client),
+    Tpl1 = #domain_InvoiceTemplate{
+        id = TplID,
+        owner_id = PartyID,
+        shop_id = ShopID,
+        product = NewProduct,
+        details = NewDetails,
+        invoice_lifetime = NewLifetime
+    } = hg_client_invoice_templating:update(TplID, Diff1, Client),
 
     Tpl2 = update_cost(make_cost(fixed, 42, <<"RUB">>), Tpl1, Client),
     Tpl3 = update_cost(make_cost(range, {inclusive, 42, <<"RUB">>}, {inclusive, 42, <<"RUB">>}), Tpl2, Client),
-    _ = update_cost(make_cost(range, {inclusive, 42, <<"RUB">>}, {inclusive, 100, <<"RUB">>}), Tpl3, Client).
+    _    = update_cost(make_cost(range, {inclusive, 42, <<"RUB">>}, {inclusive, 100, <<"RUB">>}), Tpl3, Client).
 
 update_cost(Cost, Tpl, Client) ->
     {product, #domain_InvoiceTemplateProduct{product = Product}} = Tpl#domain_InvoiceTemplate.details,
@@ -346,28 +364,26 @@ update_cost(Cost, Tpl, Client) ->
     ).
 
 -spec update_with_cart(config()) -> _ | no_return().
+
 update_with_cart(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
-    NewDetails =
-        {cart, #domain_InvoiceCart{
-            lines = [
-                #domain_InvoiceLine{
-                    product = <<"Awesome staff #1">>,
-                    quantity = 2,
-                    price = ?cash(1000, <<"RUB">>),
-                    metadata = #{}
-                },
-                #domain_InvoiceLine{
-                    product = <<"Awesome staff #2">>,
-                    quantity = 1,
-                    price = ?cash(10000, <<"RUB">>),
-                    metadata = #{<<"SomeKey">> => {b, true}}
-                }
-            ]
-        }},
+    NewDetails = {cart, #domain_InvoiceCart{lines = [
+        #domain_InvoiceLine{
+            product = <<"Awesome staff #1">>,
+            quantity = 2,
+            price = ?cash(1000, <<"RUB">>),
+            metadata = #{}
+        },
+        #domain_InvoiceLine{
+            product = <<"Awesome staff #2">>,
+            quantity = 1,
+            price = ?cash(10000, <<"RUB">>),
+            metadata = #{<<"SomeKey">> => {b, true}}
+        }
+    ]}},
     Diff = make_invoice_tpl_update_params(#{
         details => NewDetails
     }),
@@ -380,6 +396,7 @@ update_with_cart(C) ->
     #domain_InvoiceTemplate{} = hg_client_invoice_templating:get(TplID, Client).
 
 -spec delete_invalid_party_status(config()) -> _ | no_return().
+
 delete_invalid_party_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -398,6 +415,7 @@ delete_invalid_party_status(C) ->
     ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
 -spec delete_invalid_shop_status(config()) -> _ | no_return().
+
 delete_invalid_shop_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -417,6 +435,7 @@ delete_invalid_shop_status(C) ->
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
 -spec delete_invoice_template(config()) -> _ | no_return().
+
 delete_invoice_template(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
@@ -427,37 +446,31 @@ delete_invoice_template(C) ->
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoice_templating:delete(TplID, Client).
 
 -spec terms_retrieval(config()) -> _ | no_return().
+
 terms_retrieval(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID1) = create_invoice_tpl(C),
     Timestamp = hg_datetime:format_now(),
     TermSet1 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
-    #domain_TermSet{
-        payments = #domain_PaymentsServiceTerms{
-            payment_methods = undefined
-        }
-    } = TermSet1,
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = undefined
+    }} = TermSet1,
     ok = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
     TermSet2 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
-    #domain_TermSet{
-        payments = #domain_PaymentsServiceTerms{
-            payment_methods =
-                {value, [
-                    ?pmt(bank_card_deprecated, mastercard),
-                    ?pmt(bank_card_deprecated, visa),
-                    ?pmt(payment_terminal, euroset)
-                ]}
-        }
-    } = TermSet2,
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {value, [
+            ?pmt(bank_card_deprecated, mastercard),
+            ?pmt(bank_card_deprecated, visa),
+            ?pmt(payment_terminal, euroset)
+        ]}
+    }} = TermSet2,
     Lifetime = make_lifetime(0, 0, 2),
     Cost = make_cost(unlim, sale, "1%"),
     ?invoice_tpl(TplID2) = create_invoice_tpl(C, <<"rubberduck">>, Lifetime, Cost),
     TermSet3 = hg_client_invoice_templating:compute_terms(TplID2, Timestamp, {timestamp, Timestamp}, Client),
-    #domain_TermSet{
-        payments = #domain_PaymentsServiceTerms{
-            payment_methods = {decisions, _}
-        }
-    } = TermSet3.
+    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
+        payment_methods = {decisions, _}
+    }} = TermSet3.
 
 %%
 
@@ -555,17 +568,15 @@ construct_domain_fixture() ->
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
                 parent_terms = undefined,
-                term_sets = [
-                    #domain_TimedTermSet{
-                        action_time = #'TimestampInterval'{},
-                        terms = #domain_TermSet{
-                            payments = #domain_PaymentsServiceTerms{
-                                currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
-                                categories = {value, ordsets:from_list([?cat(1)])}
-                            }
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = #domain_TermSet{
+                        payments = #domain_PaymentsServiceTerms{
+                            currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
+                            categories = {value, ordsets:from_list([?cat(1)])}
                         }
                     }
-                ]
+                }]
             }
         }}
     ].
@@ -573,42 +584,34 @@ construct_domain_fixture() ->
 construct_term_set_for_cost(LowerBound, UpperBound) ->
     TermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            payment_methods =
-                {decisions, [
-                    #domain_PaymentMethodDecision{
-                        if_ =
-                            {condition,
-                                {cost_in,
-                                    ?cashrng(
-                                        {inclusive, ?cash(LowerBound, <<"RUB">>)},
-                                        {inclusive, ?cash(UpperBound, <<"RUB">>)}
-                                    )}},
-                        then_ =
-                            {value,
-                                ordsets:from_list(
-                                    [
-                                        ?pmt(bank_card_deprecated, mastercard),
-                                        ?pmt(bank_card_deprecated, visa),
-                                        ?pmt(payment_terminal, euroset)
-                                    ]
-                                )}
-                    },
-                    #domain_PaymentMethodDecision{
-                        if_ = {constant, true},
-                        then_ = {value, ordsets:from_list([])}
-                    }
-                ]}
+            payment_methods = {decisions, [
+                #domain_PaymentMethodDecision{
+                    if_   = {condition, {cost_in, ?cashrng(
+                        {inclusive, ?cash(LowerBound, <<"RUB">>)},
+                        {inclusive, ?cash(UpperBound, <<"RUB">>)}
+                    )}},
+                    then_ = {value, ordsets:from_list(
+                        [
+                            ?pmt(bank_card_deprecated, mastercard),
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(payment_terminal, euroset)
+                        ]
+                    )}
+                },
+                #domain_PaymentMethodDecision{
+                    if_   = {constant, true},
+                    then_ = {value, ordsets:from_list([])}
+                }
+            ]}
         }
     },
     {term_set_hierarchy, #domain_TermSetHierarchyObject{
         ref = ?trms(1),
         data = #domain_TermSetHierarchy{
             parent_terms = undefined,
-            term_sets = [
-                #domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = TermSet
-                }
-            ]
+            term_sets = [#domain_TimedTermSet{
+                action_time = #'TimestampInterval'{},
+                terms = TermSet
+            }]
         }
     }}.

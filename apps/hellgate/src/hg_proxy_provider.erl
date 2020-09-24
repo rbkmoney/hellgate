@@ -23,17 +23,18 @@
 -type trx_info() :: dmsl_domain_thrift:'TransactionInfo'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
 
--type change() :: dmsl_payment_processing_thrift:'SessionChangePayload'().
+-type change()      :: dmsl_payment_processing_thrift:'SessionChangePayload'().
 -type proxy_state() :: dmsl_base_thrift:'Opaque'().
 
 %%
 
--spec collect_proxy_options(route()) -> dmsl_domain_thrift:'ProxyOptions'().
+-spec collect_proxy_options(route()) ->
+    dmsl_domain_thrift:'ProxyOptions'().
 collect_proxy_options(#domain_PaymentRoute{provider = ProviderRef, terminal = TerminalRef}) ->
     Revision = hg_domain:head(),
     Provider = hg_domain:get(Revision, {provider, ProviderRef}),
     Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
-    Proxy = Provider#domain_Provider.proxy,
+    Proxy    = Provider#domain_Provider.proxy,
     ProxyDef = hg_domain:get(Revision, {proxy, Proxy#domain_Proxy.ref}),
     lists:foldl(
         fun
@@ -52,23 +53,30 @@ collect_proxy_options(#domain_PaymentRoute{provider = ProviderRef, terminal = Te
 
 %%
 
--spec process_payment(_ProxyContext, route()) -> term().
+-spec process_payment(_ProxyContext, route()) ->
+    term().
 process_payment(ProxyContext, Route) ->
     issue_call('ProcessPayment', [ProxyContext], Route).
 
--spec generate_token(_ProxyContext, route()) -> term().
+-spec generate_token(_ProxyContext, route()) ->
+    term().
 generate_token(ProxyContext, Route) ->
     issue_call('GenerateToken', [ProxyContext], Route).
 
--spec handle_payment_callback(_Payload, _ProxyContext, route()) -> term().
+-spec handle_payment_callback(_Payload, _ProxyContext, route()) ->
+    term().
 handle_payment_callback(Payload, ProxyContext, Route) ->
     issue_call('HandlePaymentCallback', [Payload, ProxyContext], Route).
 
--spec handle_recurrent_token_callback(_Payload, _ProxyContext, route()) -> term().
+-spec handle_recurrent_token_callback(_Payload, _ProxyContext, route()) ->
+    term().
 handle_recurrent_token_callback(Payload, ProxyContext, Route) ->
     issue_call('HandleRecurrentTokenCallback', [Payload, ProxyContext], Route).
 
--spec issue_call(woody:func(), list(), route()) -> term().
+
+
+-spec issue_call(woody:func(), list(), route()) ->
+    term().
 issue_call(Func, Args, Route) ->
     CallID = hg_utils:unique_id(),
     _ = notify_fault_detector(start, Route, CallID),
@@ -83,17 +91,17 @@ issue_call(Func, Args, Route) ->
     end.
 
 notify_fault_detector(Status, Route, CallID) ->
-    ServiceType = adapter_availability,
-    ProviderRef = get_route_provider(Route),
-    ProviderID = ProviderRef#domain_ProviderRef.id,
-    FDConfig = genlib_app:env(hellgate, fault_detector, #{}),
-    Config = genlib_map:get(availability, FDConfig, #{}),
-    SlidingWindow = genlib_map:get(sliding_window, Config, 60000),
-    OpTimeLimit = genlib_map:get(operation_time_limit, Config, 10000),
-    PreAggrSize = genlib_map:get(pre_aggregation_size, Config, 2),
+    ServiceType   = adapter_availability,
+    ProviderRef   = get_route_provider(Route),
+    ProviderID    = ProviderRef#domain_ProviderRef.id,
+    FDConfig      = genlib_app:env(hellgate, fault_detector, #{}),
+    Config        = genlib_map:get(availability, FDConfig, #{}),
+    SlidingWindow = genlib_map:get(sliding_window,       Config, 60000),
+    OpTimeLimit   = genlib_map:get(operation_time_limit, Config, 10000),
+    PreAggrSize   = genlib_map:get(pre_aggregation_size, Config, 2),
     ServiceConfig = hg_fault_detector_client:build_config(SlidingWindow, OpTimeLimit, PreAggrSize),
-    ServiceID = hg_fault_detector_client:build_service_id(ServiceType, ProviderID),
-    OperationID = hg_fault_detector_client:build_operation_id(ServiceType, CallID),
+    ServiceID     = hg_fault_detector_client:build_service_id(ServiceType, ProviderID),
+    OperationID   = hg_fault_detector_client:build_operation_id(ServiceType, CallID),
     fd_register(Status, ServiceID, OperationID, ServiceConfig).
 
 fd_register(start, ServiceID, OperationID, ServiceConfig) ->
@@ -120,7 +128,8 @@ get_route_provider(#domain_PaymentRoute{provider = ProviderRef}) ->
 
 %%
 
--spec bind_transaction(trx_info(), term()) -> [change()].
+-spec bind_transaction(trx_info(), term()) ->
+    [change()].
 bind_transaction(undefined, _Session) ->
     % no transaction yet
     [];
@@ -142,7 +151,8 @@ bind_transaction(Trx, #{trx := TrxWas}) ->
 
 %%
 
--spec update_proxy_state(proxy_state() | undefined, _Session) -> [change()].
+-spec update_proxy_state(proxy_state() | undefined, _Session) ->
+    [change()].
 update_proxy_state(undefined, _Session) ->
     [];
 update_proxy_state(ProxyState, Session) ->
@@ -159,7 +169,8 @@ get_session_proxy_state(Session) ->
 
 %%
 
--spec handle_proxy_intent(_Intent, _Action) -> {list(), _Action}.
+-spec handle_proxy_intent(_Intent, _Action) ->
+    {list(), _Action}.
 handle_proxy_intent(#'prxprv_FinishIntent'{status = {success, _}}, Action) ->
     Events = [?session_finished(?session_succeeded())],
     {Events, Action};
@@ -194,6 +205,7 @@ try_request_interaction(UserInteraction) ->
 
 %%
 
--spec wrap_session_events(list(), _Action) -> list().
+-spec wrap_session_events(list(), _Action) ->
+    list().
 wrap_session_events(SessionEvents, #{target := Target}) ->
     [?session_ev(Target, Ev) || Ev <- SessionEvents].

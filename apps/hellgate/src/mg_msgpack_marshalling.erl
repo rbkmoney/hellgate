@@ -20,7 +20,9 @@
     integer() |
     float().
 
--spec marshal(msgpack_value()) -> mg_proto_msgpack_thrift:'Value'().
+-spec marshal(msgpack_value()) ->
+    mg_proto_msgpack_thrift:'Value'().
+
 marshal(undefined) ->
     {nl, #mg_msgpack_Nil{}};
 marshal(Boolean) when is_boolean(Boolean) ->
@@ -36,16 +38,17 @@ marshal({bin, Binary}) ->
 marshal(Array) when is_list(Array) ->
     {arr, lists:map(fun marshal/1, Array)};
 marshal(Object) when is_map(Object) ->
-    {obj,
-        maps:fold(
-            fun(K, V, Acc) ->
-                maps:put(marshal(K), marshal(V), Acc)
-            end,
-            #{},
-            Object
-        )}.
+    {obj, maps:fold(
+        fun(K, V, Acc) ->
+            maps:put(marshal(K), marshal(V), Acc)
+        end,
+        #{},
+        Object
+    )}.
 
--spec unmarshal(mg_proto_msgpack_thrift:'Value'()) -> msgpack_value().
+-spec unmarshal(mg_proto_msgpack_thrift:'Value'()) ->
+    msgpack_value().
+
 unmarshal({nl, #mg_msgpack_Nil{}}) ->
     undefined;
 unmarshal({b, Boolean}) ->
@@ -62,3 +65,4 @@ unmarshal({obj, Object}) ->
     maps:fold(fun(K, V, Acc) -> maps:put(unmarshal(K), unmarshal(V), Acc) end, #{}, Object);
 unmarshal({arr, Array}) ->
     lists:map(fun unmarshal/1, Array).
+

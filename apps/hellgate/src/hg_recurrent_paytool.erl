@@ -19,66 +19,63 @@
 %% Woody handler called by hg_woody_wrapper
 
 -behaviour(hg_woody_wrapper).
-
 -export([handle_function/3]).
 
 %% Machine callbacks
 
 -behaviour(hg_machine).
-
--export([namespace/0]).
--export([init/2]).
+-export([namespace     /0]).
+-export([init          /2]).
 -export([process_signal/2]).
--export([process_call/2]).
+-export([process_call  /2]).
 
 %% Types
 -record(st, {
-    rec_payment_tool :: undefined | rec_payment_tool(),
-    route :: undefined | route(),
-    risk_score :: undefined | risk_score(),
-    session :: undefined | session(),
+    rec_payment_tool     :: undefined | rec_payment_tool(),
+    route                :: undefined | route(),
+    risk_score           :: undefined | risk_score(),
+    session              :: undefined | session(),
     minimal_payment_cost :: undefined | cash()
 }).
-
 -type st() :: #st{}.
-
 -export_type([st/0]).
 
--type rec_payment_tool() :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
+-type rec_payment_tool()        :: dmsl_payment_processing_thrift:'RecurrentPaymentTool'().
 -type rec_payment_tool_change() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolChange'().
 -type rec_payment_tool_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 
--type route() :: dmsl_domain_thrift:'PaymentRoute'().
--type risk_score() :: dmsl_domain_thrift:'RiskScore'().
--type cash() :: dmsl_domain_thrift:'Cash'().
--type shop() :: dmsl_domain_thrift:'Shop'().
--type party() :: dmsl_domain_thrift:'Party'().
--type merchant_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
--type domain_revision() :: hg_domain:revision().
--type action() :: hg_machine_action:t().
--type timeout_behaviour() :: dmsl_timeout_behaviour_thrift:'TimeoutBehaviour'().
+-type route()                   :: dmsl_domain_thrift:'PaymentRoute'().
+-type risk_score()              :: dmsl_domain_thrift:'RiskScore'().
+-type cash()                    :: dmsl_domain_thrift:'Cash'().
+-type shop()                    :: dmsl_domain_thrift:'Shop'().
+-type party()                   :: dmsl_domain_thrift:'Party'().
+-type merchant_terms()          :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
+-type domain_revision()         :: hg_domain:revision().
+-type action()                  :: hg_machine_action:t().
+-type timeout_behaviour()       :: dmsl_timeout_behaviour_thrift:'TimeoutBehaviour'().
 
 -type session() :: #{
-    status := active | suspended | finished,
-    result => session_result(),
-    trx => undefined | trx_info(),
-    proxy_state => proxy_state(),
+    status            := active | suspended | finished,
+    result            => session_result(),
+    trx               => undefined | trx_info(),
+    proxy_state       => proxy_state(),
     timeout_behaviour => timeout_behaviour()
 }.
 
--type proxy_state() :: dmsl_proxy_provider_thrift:'ProxyState'().
--type trx_info() :: dmsl_domain_thrift:'TransactionInfo'().
--type session_result() :: dmsl_payment_processing_thrift:'SessionResult'().
+-type proxy_state()             :: dmsl_proxy_provider_thrift:'ProxyState'().
+-type trx_info()                :: dmsl_domain_thrift:'TransactionInfo'().
+-type session_result()          :: dmsl_payment_processing_thrift:'SessionResult'().
 
--type tag() :: dmsl_base_thrift:'Tag'().
--type callback() :: {provider, dmsl_proxy_provider_thrift:'Callback'()}.
--type callback_response() :: dmsl_proxy_provider_thrift:'CallbackResponse'().
--type proxy_callback_result() :: dmsl_proxy_provider_thrift:'RecurrentTokenCallbackResult'().
--type token() :: dmsl_domain_thrift:'Token'().
+-type tag()                     :: dmsl_base_thrift:'Tag'().
+-type callback()                :: {provider, dmsl_proxy_provider_thrift:'Callback'()}.
+-type callback_response()       :: dmsl_proxy_provider_thrift:'CallbackResponse'().
+-type proxy_callback_result()   :: dmsl_proxy_provider_thrift:'RecurrentTokenCallbackResult'().
+-type token()                   :: dmsl_domain_thrift:'Token'().
 
 %% Woody handler
 
--spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
+-spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) ->
+    term() | no_return().
 handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, _Opts) ->
     case hg_event_sink:get_events(?NS, After, Limit) of
         {ok, Events} ->
@@ -95,8 +92,7 @@ handle_function('GetLastEventID', {}, _Opts) ->
     end;
 handle_function(Func, Args, Opts) ->
     ArgsList = tuple_to_list(Args),
-    scoper:scope(
-        recurrent_payment_tools,
+    scoper:scope(recurrent_payment_tools,
         fun() -> handle_function_(Func, ArgsList, Opts) end
     ).
 
@@ -118,7 +114,8 @@ handle_function_('GetEvents', [RecPaymentToolID, Range], _Opts) ->
     ok = set_meta(RecPaymentToolID),
     get_public_history(RecPaymentToolID, Range).
 
--spec validate_paytool_params(rec_payment_tool_params()) -> ok | no_return().
+-spec validate_paytool_params(rec_payment_tool_params()) ->
+    ok | no_return().
 validate_paytool_params(RecurrentPaymentToolParams) ->
     DomainRevison = RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.domain_revision,
     Party = ensure_party_accessible(RecurrentPaymentToolParams),
@@ -133,7 +130,8 @@ validate_paytool_params(RecurrentPaymentToolParams) ->
     ),
     ok.
 
--spec ensure_params_domain_revision_defined(rec_payment_tool_params()) -> rec_payment_tool_params().
+-spec ensure_params_domain_revision_defined(rec_payment_tool_params()) ->
+    rec_payment_tool_params().
 ensure_params_domain_revision_defined(Params) ->
     DomainRevision0 = Params#payproc_RecurrentPaymentToolParams.domain_revision,
     Params#payproc_RecurrentPaymentToolParams{
@@ -173,7 +171,8 @@ start(ID, Params) ->
 call(ID, Args) ->
     map_error(hg_machine:call(?NS, ID, Args)).
 
--spec map_error(ok | {ok, _Result} | {error, _Error}) -> _Result | no_return().
+-spec map_error(ok | {ok, _Result} | {error, _Error}) ->
+    _Result | no_return().
 map_error(ok) ->
     ok;
 map_error({ok, Result}) ->
@@ -200,7 +199,7 @@ get_state(RecPaymentToolID) ->
 
 collapse_history(History) ->
     lists:foldl(
-        fun({_ID, _, Events}, St0) ->
+        fun ({_ID, _, Events}, St0) ->
             lists:foldl(fun apply_change/2, St0, Events)
         end,
         #st{},
@@ -228,31 +227,32 @@ map_start_error({error, Reason}) ->
 
 -type create_params() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolParams'().
 
--spec namespace() -> hg_machine:ns().
+-spec namespace() ->
+    hg_machine:ns().
 namespace() ->
     ?NS.
 
--spec init(binary(), hg_machine:machine()) -> hg_machine:result().
+-spec init(binary(), hg_machine:machine()) ->
+    hg_machine:result().
 init(EncodedParams, #{id := RecPaymentToolID}) ->
-    Params = unmarshal_recurrent_paytool_params(EncodedParams),
+    Params      = unmarshal_recurrent_paytool_params(EncodedParams),
     PaymentTool = get_payment_tool(Params#payproc_RecurrentPaymentToolParams.payment_resource),
-    Revision = Params#payproc_RecurrentPaymentToolParams.domain_revision,
-    CreatedAt = hg_datetime:format_now(),
-    {Party, Shop} = get_party_shop(Params),
-    RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
-    VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
-    {RiskScore, VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
+    Revision           = Params#payproc_RecurrentPaymentToolParams.domain_revision,
+    CreatedAt          = hg_datetime:format_now(),
+    {Party, Shop}      = get_party_shop(Params),
+    RecPaymentTool     = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
+    VS0                = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
+    {RiskScore, VS1}   = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
     PaymentInstitutionRef = get_payment_institution_ref(Shop, Party),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
 
     Predestination = recurrent_paytool,
-    {Routes, RejectContext} =
-        case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision) of
-            {[], _} ->
-                hg_routing:gather_routes(Predestination, PaymentInstitution, VS1, Revision);
-            AcceptedRoutes ->
-                AcceptedRoutes
-        end,
+    {Routes, RejectContext} = case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision) of
+        {[], _} ->
+            hg_routing:gather_routes(Predestination, PaymentInstitution, VS1, Revision);
+        AcceptedRoutes ->
+            AcceptedRoutes
+    end,
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
     Route = validate_route(
         hg_routing:choose_route(FailRatedRoutes, RejectContext, VS1),
@@ -307,13 +307,14 @@ collect_varset(
     VS
 ) ->
     VS#{
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Category,
-        currency => Currency
+        party_id     => PartyID,
+        shop_id      => ShopID,
+        category     => Category,
+        currency     => Currency
     }.
 
--spec collect_rec_payment_tool_varset(rec_payment_tool()) -> pm_selector:varset().
+-spec collect_rec_payment_tool_varset(rec_payment_tool()) ->
+    pm_selector:varset().
 collect_rec_payment_tool_varset(RecPaymentTool) ->
     #payproc_RecurrentPaymentTool{
         party_id = PartyID,
@@ -348,11 +349,11 @@ validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentToo
 
     LogFun = fun(Msg, Param) ->
         _ = logger:log(
-            Level,
-            Msg,
-            [Reason, Param],
-            logger:get_process_metadata()
-        )
+                Level,
+                Msg,
+                [Reason, Param],
+                logger:get_process_metadata()
+            )
     end,
     _ = LogFun("No route found, reason = ~p, varset: ~p", maps:get(varset, RejectContext)),
     _ = LogFun("No route found, reason = ~p, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
@@ -364,7 +365,8 @@ start_session() ->
     Action = hg_machine_action:instant(),
     {ok, {Events, Action}}.
 
--spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
+-spec process_signal(hg_machine:signal(), hg_machine:machine()) ->
+    hg_machine:result().
 process_signal(Signal, #{history := History}) ->
     Result = handle_signal(Signal, collapse_history(unmarshal_history(History))),
     handle_result(Result).
@@ -413,9 +415,9 @@ get_route(#st{route = Route}) ->
 
 construct_proxy_context(St) ->
     #prxprv_RecurrentTokenContext{
-        session = construct_session(St),
+        session    = construct_session(St),
         token_info = construct_token_info(St),
-        options = hg_proxy_provider:collect_proxy_options(get_route(St))
+        options    = hg_proxy_provider:collect_proxy_options(get_route(St))
     }.
 
 construct_session(St) ->
@@ -426,8 +428,8 @@ construct_session(St) ->
 construct_token_info(St) ->
     #prxprv_RecurrentTokenInfo{
         payment_tool = construct_proxy_payment_tool(St),
-        trx = get_session_trx(get_session(St)),
-        shop = construct_proxy_shop(get_shop(St), get_domain_revision(St))
+        trx          = get_session_trx(get_session(St)),
+        shop         = construct_proxy_shop(get_shop(St), get_domain_revision(St))
     }.
 
 construct_proxy_shop(DomainShop, DomainRevision) ->
@@ -550,24 +552,25 @@ wrap_session_events(SessionEvents) ->
 
 %%
 
--spec finish_processing({[rec_payment_tool_change()], action(), token()}, st()) -> call_result().
+-spec finish_processing({[rec_payment_tool_change()], action(), token()}, st()) ->
+    call_result().
 finish_processing({Changes, Action, Token}, St) ->
     St1 = apply_changes(Changes, St),
     case get_session(St1) of
         #{status := finished, result := ?session_succeeded()} ->
             #{
                 changes => Changes ++ [?recurrent_payment_tool_has_acquired(Token)],
-                action => Action
+                action  => Action
             };
         #{status := finished, result := ?session_failed(Failure)} ->
             #{
                 changes => Changes ++ [?recurrent_payment_tool_has_failed(Failure)],
-                action => Action
+                action  => Action
             };
         #{} ->
             #{
                 changes => Changes,
-                action => Action
+                action  => Action
             }
     end.
 
@@ -576,6 +579,7 @@ apply_changes(Changes, St) ->
 
 apply_change(Event, undefined) ->
     apply_change(Event, #st{});
+
 apply_change(?recurrent_payment_tool_has_created(RecPaymentTool), St) ->
     St#st{
         rec_payment_tool = RecPaymentTool
@@ -645,34 +649,35 @@ create_session() ->
 
 -type call() :: abandon.
 -type call_result() :: #{
-    changes => [rec_payment_tool_change()],
-    action => action(),
-    response => ok | term()
+    changes   => [rec_payment_tool_change()],
+    action    => action(),
+    response  => ok | term()
 }.
 
--spec process_call(call(), hg_machine:machine()) -> {hg_machine:response(), hg_machine:result()}.
+-spec process_call(call(), hg_machine:machine()) ->
+    {hg_machine:response(), hg_machine:result()}.
 process_call(Call, #{history := History}) ->
     St = collapse_history(unmarshal_history(History)),
-    try
-        handle_result(handle_call(Call, St))
-    catch
+    try handle_result(handle_call(Call, St)) catch
         throw:Exception ->
             {{exception, Exception}, #{}}
     end.
 
--spec handle_call(call(), st()) -> call_result().
+-spec handle_call(call(), st()) ->
+    call_result().
 handle_call(abandon, St) ->
     ok = assert_rec_payment_tool_status(acquired, St),
     Changes = [?recurrent_payment_tool_has_abandoned()],
     St1 = apply_changes(Changes, St),
     #{
         response => get_rec_payment_tool(St1),
-        changes => Changes
+        changes  => Changes
     };
 handle_call({callback, Callback}, St) ->
     dispatch_callback(Callback, St).
 
--spec dispatch_callback(callback(), st()) -> call_result().
+-spec dispatch_callback(callback(), st()) ->
+    call_result().
 dispatch_callback({provider, Payload}, St) ->
     Action = hg_machine_action:new(),
     case get_session_status(get_session(St)) of
@@ -701,7 +706,8 @@ process_callback(Tag, Callback) ->
             Error
     end.
 
--spec handle_result(call_result()) -> {hg_machine:response(), hg_machine:result()} | hg_machine:result().
+-spec handle_result(call_result()) ->
+    {hg_machine:response(), hg_machine:result()} | hg_machine:result().
 handle_result(Params) ->
     Result = handle_result_changes(Params, handle_result_action(Params, #{})),
     case Params of
@@ -735,9 +741,8 @@ ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID}, Party)
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, DomainRevison) ->
     PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, DomainRevison),
-    _ =
-        hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
-            throw(#payproc_InvalidPaymentMethod{}),
+    _ = hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
+        throw(#payproc_InvalidPaymentMethod{}),
     PaymentTool.
 
 assert_party_shop_operable(Shop, Party) ->
@@ -762,6 +767,7 @@ assert_rec_payment_tool_status_(_StatusName, Status) ->
     throw(#payproc_InvalidRecurrentPaymentToolStatus{status = Status}).
 
 -spec assert_operation_permitted(shop(), party(), domain_revision()) -> merchant_terms().
+
 assert_operation_permitted(Shop, Party, DomainRevison) ->
     CreatedAt = hg_datetime:format_now(),
     Terms = get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, DomainRevison),
@@ -780,16 +786,16 @@ get_rec_payment_tool_status(RecPaymentTool) ->
 create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision) ->
     PaymentResource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
     #payproc_RecurrentPaymentTool{
-        id = RecPaymentToolID,
-        shop_id = Params#payproc_RecurrentPaymentToolParams.shop_id,
-        party_id = Party#domain_Party.id,
-        party_revision = Party#domain_Party.revision,
-        domain_revision = Revision,
-        status = ?recurrent_payment_tool_created(),
-        created_at = CreatedAt,
-        payment_resource = PaymentResource,
-        rec_token = undefined,
-        route = undefined
+        id                   = RecPaymentToolID,
+        shop_id              = Params#payproc_RecurrentPaymentToolParams.shop_id,
+        party_id             = Party#domain_Party.id,
+        party_revision       = Party#domain_Party.revision,
+        domain_revision      = Revision,
+        status               = ?recurrent_payment_tool_created(),
+        created_at           = CreatedAt,
+        payment_resource     = PaymentResource,
+        rec_token            = undefined,
+        route                = undefined
     }.
 
 set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision) ->
@@ -839,38 +845,44 @@ ensure_domain_revision_defined(Revision) ->
 %% Marshalling
 %%
 
--spec marshal_recurrent_paytool_params(create_params()) -> binary().
+-spec marshal_recurrent_paytool_params(create_params()) ->
+    binary().
 marshal_recurrent_paytool_params(Params) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolParams'}},
     hg_proto_utils:serialize(Type, Params).
 
--spec marshal_event_payload([rec_payment_tool_change()]) -> hg_machine:event_payload().
+-spec marshal_event_payload([rec_payment_tool_change()]) ->
+    hg_machine:event_payload().
 marshal_event_payload(Changes) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolEventData'}},
     Bin = hg_proto_utils:serialize(Type, #payproc_RecurrentPaymentToolEventData{changes = Changes}),
     #{
-        format_version => 1,
-        data => {bin, Bin}
+       format_version => 1,
+       data => {bin, Bin}
     }.
 
 %%
 %% Unmarshalling
 %%
 
--spec unmarshal_recurrent_paytool_params(binary()) -> create_params().
+-spec unmarshal_recurrent_paytool_params(binary()) ->
+    create_params().
 unmarshal_recurrent_paytool_params(Binary) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolParams'}},
     hg_proto_utils:deserialize(Type, Binary).
 
--spec unmarshal_history([hg_machine:event()]) -> [hg_machine:event([rec_payment_tool_change()])].
+-spec unmarshal_history([hg_machine:event()]) ->
+    [hg_machine:event([rec_payment_tool_change()])].
 unmarshal_history(Events) ->
     [unmarshal_event(Event) || Event <- Events].
 
--spec unmarshal_event(hg_machine:event()) -> hg_machine:event([rec_payment_tool_change()]).
+-spec unmarshal_event(hg_machine:event()) ->
+    hg_machine:event([rec_payment_tool_change()]).
 unmarshal_event({ID, Dt, Payload}) ->
     {ID, Dt, unmarshal_event_payload(Payload)}.
 
--spec unmarshal_event_payload(hg_machine:event_payload()) -> [rec_payment_tool_change()].
+-spec unmarshal_event_payload(hg_machine:event_payload()) ->
+    [rec_payment_tool_change()].
 unmarshal_event_payload(#{format_version := 1, data := {bin, Bin}}) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'RecurrentPaymentToolEventData'}},
     #payproc_RecurrentPaymentToolEventData{changes = Changes} = hg_proto_utils:deserialize(Type, Bin),
@@ -882,137 +894,117 @@ unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
 
 unmarshal({list, changes}, Changes) when is_list(Changes) ->
     lists:flatten([unmarshal(change, Change) || Change <- Changes]);
+
 %%
 
-unmarshal(change, [
-    1,
-    #{
-        <<"change">> := <<"created">>,
-        <<"rec_payment_tool">> := RecPaymentTool,
-        <<"risk_score">> := RiskScore,
-        <<"route">> := Route
-    }
-]) ->
+unmarshal(change, [1, #{
+    <<"change">>           := <<"created">>,
+    <<"rec_payment_tool">> := RecPaymentTool,
+    <<"risk_score">>       := RiskScore,
+    <<"route">>            := Route
+}]) ->
     [
         ?recurrent_payment_tool_has_created(unmarshal(rec_payment_tool, RecPaymentTool)),
         ?recurrent_payment_tool_risk_score_changed(unmarshal(risk_score, RiskScore)),
         ?recurrent_payment_tool_route_changed(hg_routing:unmarshal(Route))
     ];
-unmarshal(change, [
-    1,
-    #{
-        <<"change">> := <<"created">>,
-        <<"rec_payment_tool">> := RecPaymentTool
-    }
-]) ->
+unmarshal(change, [1, #{
+    <<"change">>           := <<"created">>,
+    <<"rec_payment_tool">> := RecPaymentTool
+}]) ->
     ?recurrent_payment_tool_has_created(unmarshal(rec_payment_tool, RecPaymentTool));
-unmarshal(change, [
-    1,
-    #{
-        <<"change">> := <<"risk_score_changed">>,
-        <<"risk_score">> := RiskScore
-    }
-]) ->
+unmarshal(change, [1, #{
+    <<"change">>           := <<"risk_score_changed">>,
+    <<"risk_score">>       := RiskScore
+}]) ->
     ?recurrent_payment_tool_risk_score_changed(unmarshal(risk_score, RiskScore));
-unmarshal(change, [
-    1,
-    #{
-        <<"change">> := <<"route_changed">>,
-        <<"route">> := Route
-    }
-]) ->
+unmarshal(change, [1, #{
+    <<"change">>           := <<"route_changed">>,
+    <<"route">>            := Route
+}]) ->
     ?recurrent_payment_tool_route_changed(hg_routing:unmarshal(Route));
-unmarshal(change, [
-    1,
-    #{
-        <<"change">> := <<"acquired">>,
-        <<"token">> := Token
-    }
-]) ->
+unmarshal(change, [1, #{
+    <<"change">> := <<"acquired">>,
+    <<"token">>  := Token
+}]) ->
     ?recurrent_payment_tool_has_acquired(unmarshal(str, Token));
-unmarshal(change, [
-    1,
-    #{
-        <<"change">> := <<"abandoned">>
-    }
-]) ->
+unmarshal(change, [1, #{
+    <<"change">> := <<"abandoned">>
+}]) ->
     ?recurrent_payment_tool_has_abandoned();
-unmarshal(change, [
-    1,
-    #{
-        <<"change">> := <<"failed">>,
-        <<"failure">> := Failure
-    }
-]) ->
+unmarshal(change, [1, #{
+    <<"change">>  := <<"failed">>,
+    <<"failure">> := Failure
+}]) ->
     ?recurrent_payment_tool_has_failed(unmarshal(failure, Failure));
-unmarshal(change, [
-    1,
-    #{
-        <<"change">> := <<"session_change">>,
-        <<"payload">> := Payload
-    }
-]) ->
+unmarshal(change, [1, #{
+    <<"change">>    := <<"session_change">>,
+    <<"payload">>   := Payload
+}]) ->
     ?session_ev(unmarshal(session_change, Payload));
+
 %%
 
-unmarshal(
-    rec_payment_tool,
-    #{
-        <<"id">> := ID,
-        <<"shop_id">> := ShopID,
-        <<"party_id">> := PartyID,
-        <<"domain_revision">> := Revision,
-        <<"status">> := Status,
-        <<"created_at">> := CreatedAt,
-        <<"payment_resource">> := PaymentResource,
-        <<"rec_token">> := RecToken,
-        <<"route">> := Route
-    } = MarshalledRecPaymentTool
-) ->
+unmarshal(rec_payment_tool, #{
+    <<"id">>                   := ID,
+    <<"shop_id">>              := ShopID,
+    <<"party_id">>             := PartyID,
+    <<"domain_revision">>      := Revision,
+    <<"status">>               := Status,
+    <<"created_at">>           := CreatedAt,
+    <<"payment_resource">>     := PaymentResource,
+    <<"rec_token">>            := RecToken,
+    <<"route">>                := Route
+} = MarshalledRecPaymentTool) ->
     PartyRevision = maps:get(<<"party_revision">>, MarshalledRecPaymentTool, undefined),
     MinimalPaymentCost = maps:get(<<"minimal_payment_cost">>, MarshalledRecPaymentTool, undefined),
     #payproc_RecurrentPaymentTool{
-        id = unmarshal(str, ID),
-        shop_id = unmarshal(str, ShopID),
-        party_id = unmarshal(str, PartyID),
-        party_revision = maybe_unmarshal_party_revision(PartyRevision),
-        domain_revision = unmarshal(int, Revision),
-        status = unmarshal(status, Status),
-        created_at = unmarshal(str, CreatedAt),
-        payment_resource = unmarshal(disposable_payment_resource, PaymentResource),
-        rec_token = unmarshal(str, RecToken),
-        route = hg_routing:unmarshal(Route),
+        id                   = unmarshal(str, ID),
+        shop_id              = unmarshal(str, ShopID),
+        party_id             = unmarshal(str, PartyID),
+        party_revision       = maybe_unmarshal_party_revision(PartyRevision),
+        domain_revision      = unmarshal(int, Revision),
+        status               = unmarshal(status, Status),
+        created_at           = unmarshal(str, CreatedAt),
+        payment_resource     = unmarshal(disposable_payment_resource, PaymentResource),
+        rec_token            = unmarshal(str, RecToken),
+        route                = hg_routing:unmarshal(Route),
         minimal_payment_cost = maybe_unmarshal_cash(MinimalPaymentCost)
     };
+
 unmarshal(risk_score, <<"low">>) ->
     low;
 unmarshal(risk_score, <<"high">>) ->
     high;
 unmarshal(risk_score, <<"fatal">>) ->
     fatal;
+
 unmarshal(sub_failure, undefined) ->
     undefined;
 unmarshal(sub_failure, #{<<"code">> := Code} = SubFailure) ->
     #domain_SubFailure{
-        code = unmarshal(str, Code),
-        sub = unmarshal(sub_failure, maps:get(<<"sub">>, SubFailure, undefined))
+        code   = unmarshal(str        , Code),
+        sub    = unmarshal(sub_failure, maps:get(<<"sub">>, SubFailure, undefined))
     };
+
 unmarshal(failure, [1, <<"operation_timeout">>]) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [1, [<<"failure">>, #{<<"code">> := Code} = Failure]]) ->
     {failure, #domain_Failure{
-        code = unmarshal(str, Code),
-        reason = unmarshal(str, maps:get(<<"reason">>, Failure, undefined)),
-        sub = unmarshal(sub_failure, maps:get(<<"sub">>, Failure, undefined))
+        code   = unmarshal(str        , Code),
+        reason = unmarshal(str        , maps:get(<<"reason">>, Failure, undefined)),
+        sub    = unmarshal(sub_failure, maps:get(<<"sub"   >>, Failure, undefined))
     }};
+
 unmarshal(failure, <<"operation_timeout">>) ->
     {operation_timeout, #domain_OperationTimeout{}};
 unmarshal(failure, [<<"external_failure">>, #{<<"code">> := Code} = ExternalFailure]) ->
     Description = maps:get(<<"description">>, ExternalFailure, undefined),
     {failure, #domain_Failure{
-        code = unmarshal(str, Code),
+        code   = unmarshal(str, Code),
         reason = unmarshal(str, Description)
     }};
+
 %% Session change
 
 unmarshal(session_change, <<"started">>) ->
@@ -1031,41 +1023,38 @@ unmarshal(session_change, [<<"proxy_state_changed">>, {bin, ProxySt}]) ->
     ?proxy_st_changed(unmarshal(bin, ProxySt));
 unmarshal(session_change, [<<"interaction_requested">>, UserInteraction]) ->
     ?interaction_requested(unmarshal(interaction, UserInteraction));
+
 unmarshal(session_status, <<"succeeded">>) ->
     ?session_succeeded();
 unmarshal(session_status, [<<"failed">>, Failure]) ->
     ?session_failed(unmarshal(failure, Failure));
+
 %%
 
-unmarshal(
-    trx,
-    #{
-        <<"id">> := ID,
-        <<"extra">> := Extra
-    } = TRX
-) ->
+unmarshal(trx, #{
+    <<"id">>    := ID,
+    <<"extra">> := Extra
+} = TRX) ->
     Timestamp = maps:get(<<"timestamp">>, TRX, undefined),
     #domain_TransactionInfo{
-        id = unmarshal(str, ID),
-        timestamp = unmarshal(str, Timestamp),
-        extra = unmarshal(map_str, Extra)
+        id          = unmarshal(str, ID),
+        timestamp   = unmarshal(str, Timestamp),
+        extra       = unmarshal(map_str, Extra)
     };
+
 unmarshal(interaction, #{<<"redirect">> := [<<"get_request">>, URI]}) ->
     {redirect, {get_request, #'BrowserGetRequest'{uri = URI}}};
-unmarshal(interaction, #{
-    <<"redirect">> := [
-        <<"post_request">>,
-        #{
-            <<"uri">> := URI,
-            <<"form">> := Form
+unmarshal(interaction, #{<<"redirect">> := [<<"post_request">>, #{
+    <<"uri">>   := URI,
+    <<"form">>  := Form
+}]}) ->
+    {redirect, {post_request,
+        #'BrowserPostRequest'{
+            uri     = unmarshal(str, URI),
+            form    = unmarshal(map_str, Form)
         }
-    ]
-}) ->
-    {redirect,
-        {post_request, #'BrowserPostRequest'{
-            uri = unmarshal(str, URI),
-            form = unmarshal(map_str, Form)
-        }}};
+    }};
+
 unmarshal(timeout_behaviour, #{<<"callback">> := Callback}) ->
     {callback, unmarshal(str, Callback)};
 unmarshal(timeout_behaviour, #{<<"operation_failure">> := Failure}) ->
@@ -1080,6 +1069,7 @@ unmarshal(status, <<"abandoned">>) ->
     ?recurrent_payment_tool_abandoned();
 unmarshal(status, [<<"failed">>, Failure]) ->
     ?recurrent_payment_tool_failed(unmarshal(failure, Failure));
+
 unmarshal(disposable_payment_resource, #{
     <<"payment_tool">> := PaymentTool,
     <<"payment_session_id">> := PaymentSessionId,
@@ -1090,15 +1080,17 @@ unmarshal(disposable_payment_resource, #{
         payment_session_id = unmarshal(str, PaymentSessionId),
         client_info = unmarshal(client_info, ClientInfo)
     };
+
 %%
 
 unmarshal(client_info, ClientInfo) ->
     IpAddress = maps:get(<<"ip_address">>, ClientInfo, undefined),
     Fingerprint = maps:get(<<"fingerprint">>, ClientInfo, undefined),
     #domain_ClientInfo{
-        ip_address = unmarshal(str, IpAddress),
-        fingerprint = unmarshal(str, Fingerprint)
+        ip_address      = unmarshal(str, IpAddress),
+        fingerprint     = unmarshal(str, Fingerprint)
     };
+
 %%
 
 unmarshal(_, Other) ->
@@ -1108,7 +1100,7 @@ maybe_unmarshal_cash(undefined) ->
     undefined;
 maybe_unmarshal_cash(#{<<"amount">> := Amount, <<"currency_ref">> := Code}) ->
     #domain_Cash{
-        amount = unmarshal(int, Amount),
+        amount   = unmarshal(int, Amount),
         currency = #domain_CurrencyRef{
             symbolic_code = unmarshal(str, Code)
         }
@@ -1132,9 +1124,9 @@ publish_rec_payment_tool_event({ID, _Ns, SourceID, {EventID, Dt, Payload}}) ->
 publish_rec_payment_tool_event(EventID, MachineID, {ID, Dt, Ev}) ->
     Payload = unmarshal_event_payload(Ev),
     #payproc_RecurrentPaymentToolEvent{
-        id = EventID,
-        source = MachineID,
+        id         = EventID,
+        source     = MachineID,
         created_at = Dt,
-        payload = Payload,
-        sequence = ID
+        payload    = Payload,
+        sequence   = ID
     }.

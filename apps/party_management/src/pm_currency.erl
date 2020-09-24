@@ -2,13 +2,12 @@
 %%%
 
 -module(pm_currency).
-
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([validate_currency/2]).
 
 -type currency() :: dmsl_domain_thrift:'CurrencyRef'().
--type shop() :: dmsl_domain_thrift:'Shop'().
+-type shop()     :: dmsl_domain_thrift:'Shop'().
 
 -spec validate_currency(currency(), shop()) -> ok.
 validate_currency(Currency, Shop = #domain_Shop{}) ->

@@ -3,13 +3,13 @@
 %% API
 -export([new/1]).
 
--type url() :: woody:url().
--type event_handler() :: woody:ev_handler().
+-type url()            :: woody:url().
+-type event_handler()  :: woody:ev_handler().
 -type transport_opts() :: woody_client_thrift_http_transport:transport_options().
 
 -type client() :: #{
-    url := url(),
-    event_handler := event_handler(),
+    url            := url(),
+    event_handler  := event_handler(),
     transport_opts => transport_opts()
 }.
 
@@ -19,7 +19,9 @@
     transport_opts => transport_opts()
 }.
 
--spec new(woody:url() | opts()) -> client().
+-spec new(woody:url() | opts()) ->
+    client().
+
 new(Opts = #{url := _}) ->
     EventHandlerOpts = genlib_app:env(party_management, scoper_event_handler_options, #{}),
     maps:merge(

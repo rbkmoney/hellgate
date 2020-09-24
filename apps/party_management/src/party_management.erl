@@ -2,7 +2,6 @@
 %%% @end
 
 -module(party_management).
-
 -behaviour(supervisor).
 -behaviour(application).
 
@@ -17,36 +16,39 @@
 -export([start/2]).
 -export([stop/1]).
 
-% 30 seconds
--define(DEFAULT_HANDLING_TIMEOUT, 30000).
+-define(DEFAULT_HANDLING_TIMEOUT, 30000).  % 30 seconds
 
 %%
 %% API
 %%
--spec start() -> {ok, _}.
+-spec start() ->
+    {ok, _}.
 start() ->
     application:ensure_all_started(?MODULE).
 
--spec stop() -> ok.
+-spec stop() ->
+    ok.
 stop() ->
     application:stop(?MODULE).
 
 %% Supervisor callbacks
 
--spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+-spec init([]) ->
+    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+
 init([]) ->
-    {ok,
-        {
-            #{strategy => one_for_all, intensity => 6, period => 30},
-            []
-        }}.
+    {ok, {
+        #{strategy => one_for_all, intensity => 6, period => 30}, []
+    }}.
 
 %% Application callbacks
 
--spec start(normal, any()) -> {ok, pid()} | {error, any()}.
+-spec start(normal, any()) ->
+    {ok, pid()} | {error, any()}.
 start(_StartType, _StartArgs) ->
     supervisor:start_link(?MODULE, []).
 
--spec stop(any()) -> ok.
+-spec stop(any()) ->
+    ok.
 stop(_State) ->
     ok.

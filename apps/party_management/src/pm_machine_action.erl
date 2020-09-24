@@ -13,5 +13,6 @@
 %%
 
 -spec new() -> t().
+
 new() ->
     #mg_stateproc_ComplexAction{}.

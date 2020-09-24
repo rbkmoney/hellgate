@@ -12,10 +12,11 @@
 
 -define(VERSION_PREFIX, "/v1").
 
--type service() :: woody:service().
+-type service()      :: woody:service().
 -type service_spec() :: {Path :: string(), service()}.
 
 -spec get_service(Name :: atom()) -> service().
+
 get_service(claim_committer) ->
     {dmsl_claim_management_thrift, 'ClaimCommitter'};
 get_service(party_management) ->
@@ -28,10 +29,12 @@ get_service(processor) ->
     {mg_proto_state_processing_thrift, 'Processor'}.
 
 -spec get_service_spec(Name :: atom()) -> service_spec().
+
 get_service_spec(Name) ->
     get_service_spec(Name, #{}).
 
 -spec get_service_spec(Name :: atom(), Opts :: #{namespace => binary()}) -> service_spec().
+
 get_service_spec(Name = claim_committer, #{}) ->
     {?VERSION_PREFIX ++ "/processing/claim_committer", get_service(Name)};
 get_service_spec(Name = party_management, #{}) ->

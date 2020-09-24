@@ -1,30 +1,29 @@
 -module(pm_claim_committer).
-
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
-
 -include("claim_management.hrl").
 -include("party_events.hrl").
 
 -export([from_claim_mgmt/1]).
 
--spec from_claim_mgmt(dmsl_claim_management_thrift:'Claim'()) -> dmsl_payment_processing_thrift:'Claim'() | undefined.
+-spec from_claim_mgmt(dmsl_claim_management_thrift:'Claim'()) ->
+    dmsl_payment_processing_thrift:'Claim'() | undefined.
+
 from_claim_mgmt(#claim_management_Claim{
-    id = ID,
-    changeset = Changeset,
-    revision = Revision,
+    id         = ID,
+    changeset  = Changeset,
+    revision   = Revision,
     created_at = CreatedAt,
     updated_at = UpdatedAt
 }) ->
     case from_cm_changeset(Changeset) of
-        [] ->
-            undefined;
+        [] -> undefined;
         Converted ->
             #payproc_Claim{
-                id = ID,
-                status = ?pending(),
-                changeset = Converted,
-                revision = Revision,
+                id         = ID,
+                status     = ?pending(),
+                changeset  = Converted,
+                revision   = Revision,
                 created_at = CreatedAt,
                 updated_at = UpdatedAt
             }
@@ -34,23 +33,18 @@ from_claim_mgmt(#claim_management_Claim{
 
 from_cm_changeset(Changeset) ->
     lists:filtermap(
-        fun
-            (
-                #claim_management_ModificationUnit{
-                    modification = {party_modification, PartyMod}
-                }
-            ) ->
-                case PartyMod of
-                    ?cm_cash_register_modification_unit_modification(_, _) ->
-                        false;
-                    PartyMod ->
-                        {true, from_cm_party_mod(PartyMod)}
-                end;
-            (
-                #claim_management_ModificationUnit{
-                    modification = {claim_modification, _}
-                }
-            ) ->
+        fun (#claim_management_ModificationUnit{
+                modification = {party_modification, PartyMod}
+            }) ->
+            case PartyMod of
+                ?cm_cash_register_modification_unit_modification(_, _) ->
+                    false;
+                PartyMod ->
+                    {true, from_cm_party_mod(PartyMod)}
+            end;
+            (#claim_management_ModificationUnit{
+                modification = {claim_modification, _}
+            }) ->
                 false
         end,
         Changeset
@@ -71,31 +65,32 @@ from_cm_party_mod(?cm_shop_modification(ShopID, ShopModification)) ->
 
 from_cm_contract_modification(
     {creation, #claim_management_ContractParams{
-        contractor_id = ContractorID,
-        template = ContractTemplateRef,
+        contractor_id       = ContractorID,
+        template            = ContractTemplateRef,
         payment_institution = PaymentInstitutionRef
     }}
 ) ->
     {creation, #payproc_ContractParams{
-        contractor_id = ContractorID,
-        template = ContractTemplateRef,
+        contractor_id       = ContractorID,
+        template            = ContractTemplateRef,
         payment_institution = PaymentInstitutionRef
     }};
 from_cm_contract_modification(?cm_contract_termination(Reason)) ->
     ?contract_termination(Reason);
-from_cm_contract_modification(?cm_adjustment_creation(ContractAdjustmentID, ContractTemplateRef)) ->
+from_cm_contract_modification(?cm_adjustment_creation(ContractAdjustmentID, ContractTemplateRef)
+) ->
     ?adjustment_creation(
         ContractAdjustmentID,
         #payproc_ContractAdjustmentParams{template = ContractTemplateRef}
     );
 from_cm_contract_modification(
     ?cm_payout_tool_creation(PayoutToolID, #claim_management_PayoutToolParams{
-        currency = CurrencyRef,
+        currency  = CurrencyRef,
         tool_info = PayoutToolInfo
     })
 ) ->
     ?payout_tool_creation(PayoutToolID, #payproc_PayoutToolParams{
-        currency = CurrencyRef,
+        currency  = CurrencyRef,
         tool_info = PayoutToolInfo
     });
 from_cm_contract_modification(
@@ -111,17 +106,17 @@ from_cm_contract_modification({contractor_modification, _ContractorID} = Contrac
 
 from_cm_shop_modification({creation, ShopParams}) ->
     #claim_management_ShopParams{
-        category = CategoryRef,
-        location = ShopLocation,
-        details = ShopDetails,
-        contract_id = ContractID,
+        category       = CategoryRef,
+        location       = ShopLocation,
+        details        = ShopDetails,
+        contract_id    = ContractID,
         payout_tool_id = PayoutToolID
     } = ShopParams,
     {creation, #payproc_ShopParams{
-        category = CategoryRef,
-        location = ShopLocation,
-        details = ShopDetails,
-        contract_id = ContractID,
+        category       = CategoryRef,
+        location       = ShopLocation,
+        details        = ShopDetails,
+        contract_id    = ContractID,
         payout_tool_id = PayoutToolID
     }};
 from_cm_shop_modification({category_modification, _CategoryRef} = CategoryModification) ->

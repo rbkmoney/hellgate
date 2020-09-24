@@ -1,11 +1,8 @@
 -module(hg_recurrent_paytools_tests_SUITE).
-
 -include_lib("common_test/include/ct.hrl").
 -include_lib("stdlib/include/assert.hrl").
-
 -include("hg_ct_domain.hrl").
 -include("hg_ct_json.hrl").
-
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/customer_events.hrl").
 -include_lib("hellgate/include/recurrent_payment_tools.hrl").
@@ -40,10 +37,11 @@
 %%
 
 -behaviour(supervisor).
-
 -export([init/1]).
 
--spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+-spec init([]) ->
+    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+
 init([]) ->
     {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
 
@@ -52,28 +50,23 @@ init([]) ->
 -define(MINIMAL_PAYMENT_COST_CURRENCY, <<"RUB">>).
 -define(MINIMAL_PAYMENT_COST_AMOUNT, 1000).
 
--type config() :: hg_ct_helper:config().
--type test_case_name() :: hg_ct_helper:test_case_name().
--type group_name() :: hg_ct_helper:group_name().
+-type config()           :: hg_ct_helper:config().
+-type test_case_name()   :: hg_ct_helper:test_case_name().
+-type group_name()       :: hg_ct_helper:group_name().
 -type test_case_result() :: _ | no_return().
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
 
 -spec init_per_suite(config()) -> config().
+
 init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({woody_client, '_', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([
-        woody,
-        scoper,
-        dmt_client,
-        party_client,
-        party_management,
-        hellgate,
-        {cowboy, CowboySpec}
+        woody, scoper, dmt_client, party_client, party_management, hellgate, {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
@@ -95,11 +88,13 @@ init_per_suite(C) ->
     C1.
 
 -spec end_per_suite(config()) -> _.
+
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 -spec all() -> [test_case_name()].
+
 all() ->
     [
         {group, invalid_recurrent_paytool_params},
@@ -115,6 +110,7 @@ all() ->
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
+
 groups() ->
     [
         {invalid_recurrent_paytool_params, [sequence], [
@@ -130,6 +126,7 @@ groups() ->
 %%
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
+
 init_per_testcase(Name, C) ->
     RootUrl = cfg(root_url, C),
     PartyID = cfg(party_id, C),
@@ -143,6 +140,7 @@ init_per_testcase(Name, C) ->
     ].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
+
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -211,13 +209,12 @@ invalid_payment_method(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    PaymentTool =
-        {bank_card, #domain_BankCard{
-            token = <<"TOKEN">>,
-            payment_system = mastercard,
-            bin = <<"666666">>,
-            last_digits = <<"666">>
-        }},
+    PaymentTool = {bank_card, #domain_BankCard{
+        token          = <<"TOKEN">>,
+        payment_system = mastercard,
+        bin            = <<"666666">>,
+        last_digits    = <<"666">>
+    }},
     PaymentResource = make_disposable_payment_resource(PaymentTool, <<"SESSION0">>),
     Params = #payproc_RecurrentPaymentToolParams{
         party_id = PartyID,
@@ -284,7 +281,7 @@ recurrent_paytool_event_sink(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = make_recurrent_paytool_params(PartyID, ShopID),
-    CreateResult = hg_client_recurrent_paytool:create(Params, Client),
+    CreateResult =  hg_client_recurrent_paytool:create(Params, Client),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = CreateResult,
     ok = await_acquirement(RecurrentPaytoolID, Client),
     AbandonResult = hg_client_recurrent_paytool:abandon(RecurrentPaytoolID, Client),
@@ -292,16 +289,13 @@ recurrent_paytool_event_sink(C) ->
     [?recurrent_payment_tool_has_abandoned()] = next_event(RecurrentPaytoolID, Client),
     Events = hg_client_recurrent_paytool:get_events(RecurrentPaytoolID, #payproc_EventRange{}, Client),
     ESEvents = hg_client_recurrent_paytool:get_events(#payproc_EventRange{}, Client),
-    SourceESEvents = lists:filter(
-        fun(Event) ->
-            Event#payproc_RecurrentPaymentToolEvent.source =:= RecurrentPaytoolID
-        end,
-        ESEvents
-    ),
-    EventIDs = lists:map(fun(Event) -> Event#payproc_RecurrentPaymentToolEvent.id end, Events),
+    SourceESEvents = lists:filter(fun(Event) ->
+        Event#payproc_RecurrentPaymentToolEvent.source =:= RecurrentPaytoolID
+    end, ESEvents),
+    EventIDs           = lists:map(fun(Event) -> Event#payproc_RecurrentPaymentToolEvent.id       end, Events),
     ESEventSequenceIDs = lists:map(fun(Event) -> Event#payproc_RecurrentPaymentToolEvent.sequence end, SourceESEvents),
     ?assertEqual(EventIDs, ESEventSequenceIDs),
-    EventPayloads = lists:map(fun(Event) -> Event#payproc_RecurrentPaymentToolEvent.payload end, Events),
+    EventPayloads   = lists:map(fun(Event) -> Event#payproc_RecurrentPaymentToolEvent.payload end, Events),
     ESEventPayloads = lists:map(fun(Event) -> Event#payproc_RecurrentPaymentToolEvent.payload end, SourceESEvents),
     ?assertEqual(EventPayloads, ESEventPayloads).
 
@@ -367,6 +361,7 @@ recurrent_paytool_abandoned(C) ->
 %%
 
 -spec recurrent_paytool_creation_not_permitted(config()) -> test_case_result().
+
 recurrent_paytool_creation_not_permitted(C) ->
     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     Client = cfg(client, C),
@@ -414,17 +409,15 @@ make_disposable_payment_resource(PaymentTool, Session) ->
 %%
 
 start_proxies(Proxies) ->
-    setup_proxies(
-        lists:map(
-            fun
-                Mapper({Module, ProxyID, Context}) ->
-                    Mapper({Module, ProxyID, #{}, Context});
-                Mapper({Module, ProxyID, ProxyOpts, Context}) ->
-                    construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
-            end,
-            Proxies
-        )
-    ).
+    setup_proxies(lists:map(
+        fun
+            Mapper({Module, ProxyID, Context}) ->
+                Mapper({Module, ProxyID, #{}, Context});
+            Mapper({Module, ProxyID, ProxyOpts, Context}) ->
+                construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
+        end,
+        Proxies
+    )).
 
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
@@ -447,10 +440,10 @@ construct_proxy(ID, Url, Options) ->
     {proxy, #domain_ProxyObject{
         ref = ?prx(ID),
         data = #domain_ProxyDefinition{
-            name = Url,
-            description = Url,
-            url = Url,
-            options = Options
+            name              = Url,
+            description       = Url,
+            url               = Url,
+            options           = Options
         }
     }}.
 
@@ -524,61 +517,52 @@ get_post_request({'redirect', {'post_request', #'BrowserPostRequest'{uri = URL, 
 %%
 
 -spec construct_term_set_w_recurrent_paytools() -> term().
+
 construct_term_set_w_recurrent_paytools() ->
     TermSet = construct_simple_term_set(),
-    TermSet#domain_TermSet{
-        recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
-            payment_methods =
-                {value,
-                    ordsets:from_list([
-                        ?pmt(bank_card_deprecated, visa)
-                    ])}
+    TermSet#domain_TermSet{recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card_deprecated, visa)
+            ])}
         }
     }.
 
 -spec construct_simple_term_set() -> term().
+
 construct_simple_term_set() ->
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            currencies =
-                {value,
-                    ordsets:from_list([
-                        ?cur(<<"RUB">>)
-                    ])},
-            categories =
-                {value,
-                    ordsets:from_list([
-                        ?cat(1)
-                    ])},
-            payment_methods =
-                {value,
-                    ordsets:from_list([
-                        ?pmt(bank_card_deprecated, visa),
-                        ?pmt(bank_card_deprecated, mastercard)
-                    ])},
-            cash_limit =
-                {decisions, [
-                    #domain_CashLimitDecision{
-                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ =
-                            {value, #domain_CashRange{
-                                lower = {inclusive, ?cash(1000, <<"RUB">>)},
-                                upper = {exclusive, ?cash(420000000, <<"RUB">>)}
-                            }}
-                    }
-                ]},
-            fees =
-                {value, [
-                    ?cfpost(
-                        {merchant, settlement},
-                        {system, settlement},
-                        ?share(45, 1000, operation_amount)
-                    )
-                ]}
+            currencies = {value, ordsets:from_list([
+                ?cur(<<"RUB">>)
+            ])},
+            categories = {value, ordsets:from_list([
+                ?cat(1)
+            ])},
+            payment_methods = {value, ordsets:from_list([
+                ?pmt(bank_card_deprecated, visa),
+                ?pmt(bank_card_deprecated, mastercard)
+            ])},
+            cash_limit = {decisions, [
+                #domain_CashLimitDecision{
+                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                    then_ = {value, #domain_CashRange{
+                        lower = {inclusive, ?cash(     1000, <<"RUB">>)},
+                        upper = {exclusive, ?cash(420000000, <<"RUB">>)}
+                    }}
+                }
+            ]},
+            fees = {value, [
+                ?cfpost(
+                    {merchant, settlement},
+                    {system, settlement},
+                    ?share(45, 1000, operation_amount)
+                )
+            ]}
         }
     }.
 
 -spec construct_domain_fixture(term()) -> [hg_domain:object()].
+
 construct_domain_fixture(TermSet) ->
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
@@ -604,18 +588,15 @@ construct_domain_fixture(TermSet) ->
                 name = <<"Test Inc.">>,
                 system_account_set = {value, ?sas(1)},
                 default_contract_template = {value, ?tmpl(1)},
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(1)
-                        ])},
-                inspector =
-                    {decisions, [
-                        #domain_InspectorDecision{
-                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                            then_ = {value, ?insp(1)}
-                        }
-                    ]},
+                providers = {value, ?ordset([
+                    ?prv(1)
+                ])},
+                inspector = {decisions, [
+                    #domain_InspectorDecision{
+                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ = {value, ?insp(1)}
+                    }
+                ]},
                 residences = [],
                 realm = test
             }
@@ -632,12 +613,10 @@ construct_domain_fixture(TermSet) ->
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
                 parent_terms = undefined,
-                term_sets = [
-                    #domain_TimedTermSet{
-                        action_time = #'TimestampInterval'{},
-                        terms = TermSet
-                    }
-                ]
+                term_sets = [#domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TermSet
+                }]
             }
         }},
         {provider, #domain_ProviderObject{
@@ -653,46 +632,38 @@ construct_domain_fixture(TermSet) ->
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods =
-                            {value,
-                                ?ordset([
-                                    ?pmt(bank_card_deprecated, visa),
-                                    ?pmt(bank_card_deprecated, mastercard)
-                                ])},
-                        cash_limit =
-                            {value,
-                                ?cashrng(
-                                    {inclusive, ?cash(1000, <<"RUB">>)},
-                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
-                                )},
-                        cash_flow =
-                            {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share(1, 1, operation_amount)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share(18, 1000, operation_amount)
-                                )
-                            ]}
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
+                        ])},
+                        cash_limit = {value, ?cashrng(
+                            {inclusive, ?cash(      1000, <<"RUB">>)},
+                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                        )},
+                        cash_flow = {value, [
+                            ?cfpost(
+                                {provider, settlement},
+                                {merchant, settlement},
+                                ?share(1, 1, operation_amount)
+                            ),
+                            ?cfpost(
+                                {system, settlement},
+                                {provider, settlement},
+                                ?share(18, 1000, operation_amount)
+                            )
+                        ]}
                     },
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods =
-                            {value,
-                                ?ordset([
-                                    ?pmt(bank_card_deprecated, visa)
-                                ])},
-                        cash_value =
-                            {decisions, [
-                                #domain_CashValueDecision{
-                                    if_ = {condition, {currency_is, ?cur(?MINIMAL_PAYMENT_COST_CURRENCY)}},
-                                    then_ = {value, ?cash(?MINIMAL_PAYMENT_COST_AMOUNT, ?MINIMAL_PAYMENT_COST_CURRENCY)}
-                                }
-                            ]}
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])},
+                        cash_value = {decisions, [
+                            #domain_CashValueDecision{
+                                if_   = {condition, {currency_is, ?cur(?MINIMAL_PAYMENT_COST_CURRENCY)}},
+                                then_ = {value, ?cash(?MINIMAL_PAYMENT_COST_AMOUNT, ?MINIMAL_PAYMENT_COST_CURRENCY)}
+                            }
+                        ]}
                     }
                 }
             }

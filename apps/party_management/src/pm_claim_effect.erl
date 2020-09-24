@@ -1,7 +1,6 @@
 -module(pm_claim_effect).
 
 -include("party_events.hrl").
-
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([make/3]).
@@ -11,14 +10,16 @@
 
 %% Interface
 
--type change() :: dmsl_payment_processing_thrift:'PartyModification'().
--type effect() :: dmsl_payment_processing_thrift:'ClaimEffect'().
--type timestamp() :: pm_datetime:timestamp().
--type revision() :: pm_domain:revision().
+-type change()      :: dmsl_payment_processing_thrift:'PartyModification'().
+-type effect()      :: dmsl_payment_processing_thrift:'ClaimEffect'().
+-type timestamp()   :: pm_datetime:timestamp().
+-type revision()    :: pm_domain:revision().
 
 -spec make(change(), timestamp(), revision()) -> effect() | no_return().
+
 make(?contractor_modification(ID, Modification), Timestamp, Revision) ->
     ?contractor_effect(ID, make_contractor_effect(ID, Modification, Timestamp, Revision));
+
 make(?contract_modification(ID, Modification), Timestamp, Revision) ->
     try
         ?contract_effect(ID, make_contract_effect(ID, Modification, Timestamp, Revision))
@@ -28,19 +29,21 @@ make(?contract_modification(ID, Modification), Timestamp, Revision) ->
         throw:{template_invalid, Ref} ->
             raise_invalid_object_ref({contract, ID}, make_optional_domain_ref(contract_template, Ref))
     end;
+
 make(?shop_modification(ID, Modification), Timestamp, Revision) ->
     ?shop_effect(ID, make_shop_effect(ID, Modification, Timestamp, Revision));
+
 make(?wallet_modification(ID, Modification), Timestamp, _Revision) ->
     ?wallet_effect(ID, make_wallet_effect(ID, Modification, Timestamp)).
 
 -spec make_safe(change(), timestamp(), revision()) -> effect() | no_return().
+
 make_safe(
     ?shop_modification(ID, {shop_account_creation, #payproc_ShopAccountParams{currency = Currency}}),
     _Timestamp,
     _Revision
 ) ->
-    ?shop_effect(
-        ID,
+    ?shop_effect(ID,
         {account_created, #domain_ShopAccount{
             currency = Currency,
             settlement = 0,
@@ -142,12 +145,15 @@ assert_valid_object_ref(Prefix, Ref, Revision) ->
 -spec raise_invalid_object_ref(
     {shop, dmsl_domain_thrift:'ShopID'()} | {contract, dmsl_domain_thrift:'ContractID'()},
     pm_domain:ref()
-) -> no_return().
+) ->
+    no_return().
+
 raise_invalid_object_ref(Prefix, Ref) ->
     Ex = {invalid_object_reference, #payproc_InvalidObjectReference{ref = Ref}},
     raise_invalid_object_ref_(Prefix, Ex).
 
 -spec raise_invalid_object_ref_(term(), term()) -> no_return().
+
 raise_invalid_object_ref_({shop, ID}, Ex) ->
     pm_claim:raise_invalid_changeset(?invalid_shop(ID, Ex));
 raise_invalid_object_ref_({contract, ID}, Ex) ->

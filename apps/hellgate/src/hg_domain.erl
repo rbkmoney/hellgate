@@ -5,7 +5,6 @@
 %%%    domain objects
 
 -module(hg_domain).
-
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("damsel/include/dmsl_domain_config_thrift.hrl").
 
@@ -38,15 +37,18 @@
 -export_type([data/0]).
 
 -spec head() -> revision().
+
 head() ->
     dmt_client:get_last_version().
 
 -spec all(revision()) -> dmsl_domain_thrift:'Domain'().
+
 all(Revision) ->
     #'Snapshot'{domain = Domain} = dmt_client:checkout({version, Revision}),
     Domain.
 
 -spec get(revision(), ref()) -> data() | no_return().
+
 get(Revision, Ref) ->
     try
         extract_data(dmt_client:checkout_object({version, Revision}, Ref))
@@ -56,6 +58,7 @@ get(Revision, Ref) ->
     end.
 
 -spec find(revision(), ref()) -> data() | notfound.
+
 find(Revision, Ref) ->
     try
         extract_data(dmt_client:checkout_object({version, Revision}, Ref))
@@ -65,6 +68,7 @@ find(Revision, Ref) ->
     end.
 
 -spec exists(revision(), ref()) -> boolean().
+
 exists(Revision, Ref) ->
     try
         _ = dmt_client:checkout_object({version, Revision}, Ref),
@@ -78,18 +82,21 @@ extract_data(#'VersionedObject'{object = {_Tag, {_Name, _Ref, Data}}}) ->
     Data.
 
 -spec commit(revision(), dmt_client:commit()) -> ok | no_return().
+
 commit(Revision, Commit) ->
     Revision = dmt_client:commit(Revision, Commit) - 1,
     _ = hg_domain:all(Revision + 1),
     ok.
 
 -spec reset(revision()) -> ok | no_return().
+
 reset(Revision) ->
     upsert(maps:values(all(Revision))).
 
 %% convenience shortcuts, use carefully
 
 -spec insert(object() | [object()]) -> ok | no_return().
+
 insert(Object) when not is_list(Object) ->
     insert([Object]);
 insert(Objects) ->
@@ -97,13 +104,14 @@ insert(Objects) ->
         ops = [
             {insert, #'InsertOp'{
                 object = Object
-            }}
-            || Object <- Objects
+            }} ||
+                Object <- Objects
         ]
     },
     commit(head(), Commit).
 
 -spec update(object() | [object()]) -> ok | no_return().
+
 update(NewObject) when not is_list(NewObject) ->
     update([NewObject]);
 update(NewObjects) ->
@@ -114,38 +122,33 @@ update(NewObjects) ->
                 old_object = {Tag, {ObjectName, Ref, OldData}},
                 new_object = NewObject
             }}
-            || NewObject = {Tag, {ObjectName, Ref, _Data}} <- NewObjects,
-               OldData <- [get(Revision, {Tag, Ref})]
+                || NewObject = {Tag, {ObjectName, Ref, _Data}} <- NewObjects,
+                    OldData <- [get(Revision, {Tag, Ref})]
         ]
     },
     commit(Revision, Commit).
 
 -spec upsert(object() | [object()]) -> ok | no_return().
+
 upsert(NewObject) when not is_list(NewObject) ->
     upsert([NewObject]);
 upsert(NewObjects) ->
     Revision = head(),
     Commit = #'Commit'{
         ops = lists:foldl(
-            fun(NewObject = {Tag, {ObjectName, Ref, NewData}}, Ops) ->
+            fun (NewObject = {Tag, {ObjectName, Ref, NewData}}, Ops) ->
                 case find(Revision, {Tag, Ref}) of
                     NewData ->
                         Ops;
                     notfound ->
-                        [
-                            {insert, #'InsertOp'{
-                                object = NewObject
-                            }}
-                            | Ops
-                        ];
+                        [{insert, #'InsertOp'{
+                            object = NewObject
+                        }} | Ops];
                     OldData ->
-                        [
-                            {update, #'UpdateOp'{
-                                old_object = {Tag, {ObjectName, Ref, OldData}},
-                                new_object = NewObject
-                            }}
-                            | Ops
-                        ]
+                        [{update, #'UpdateOp'{
+                            old_object = {Tag, {ObjectName, Ref, OldData}},
+                            new_object = NewObject
+                        }} | Ops]
                 end
             end,
             [],
@@ -155,6 +158,7 @@ upsert(NewObjects) ->
     commit(Revision, Commit).
 
 -spec remove(object() | [object()]) -> ok | no_return().
+
 remove(Object) when not is_list(Object) ->
     remove([Object]);
 remove(Objects) ->
@@ -162,13 +166,14 @@ remove(Objects) ->
         ops = [
             {remove, #'RemoveOp'{
                 object = Object
-            }}
-            || Object <- Objects
+            }} ||
+                Object <- Objects
         ]
     },
     commit(head(), Commit).
 
 -spec cleanup() -> ok | no_return().
+
 cleanup() ->
     Domain = all(head()),
     remove(maps:values(Domain)).

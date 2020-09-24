@@ -1,7 +1,6 @@
 -module(pm_wallet).
 
 -include("party_events.hrl").
-
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %%
@@ -12,13 +11,15 @@
 
 %% Interface
 
--type wallet() :: dmsl_domain_thrift:'Wallet'().
--type wallet_id() :: dmsl_domain_thrift:'WalletID'().
--type wallet_params() :: dmsl_payment_processing_thrift:'WalletParams'().
--type wallet_account() :: dmsl_domain_thrift:'WalletAccount'().
--type wallet_account_params() :: dmsl_payment_processing_thrift:'WalletAccountParams'().
+-type wallet()                  :: dmsl_domain_thrift:'Wallet'().
+-type wallet_id()               :: dmsl_domain_thrift:'WalletID'().
+-type wallet_params()           :: dmsl_payment_processing_thrift:'WalletParams'().
+-type wallet_account()          :: dmsl_domain_thrift:'WalletAccount'().
+-type wallet_account_params()   :: dmsl_payment_processing_thrift:'WalletAccountParams'().
 
--spec create(wallet_id(), wallet_params(), pm_datetime:timestamp()) -> wallet().
+-spec create(wallet_id(), wallet_params(), pm_datetime:timestamp()) ->
+    wallet().
+
 create(
     ID,
     #payproc_WalletParams{
@@ -36,7 +37,9 @@ create(
         contract = ContractID
     }.
 
--spec create_account(wallet_account_params()) -> wallet_account().
+-spec create_account(wallet_account_params()) ->
+    wallet_account().
+
 create_account(#payproc_WalletAccountParams{currency = Currency}) ->
     SymbolicCode = Currency#domain_CurrencyRef.symbolic_code,
     SettlementID = pm_accounting:create_account(SymbolicCode),
@@ -47,7 +50,9 @@ create_account(#payproc_WalletAccountParams{currency = Currency}) ->
         payout = PayoutID
     }.
 
--spec create_fake_account(wallet_account_params()) -> wallet_account().
+-spec create_fake_account(wallet_account_params()) ->
+    wallet_account().
+
 create_fake_account(#payproc_WalletAccountParams{currency = Currency}) ->
     #domain_WalletAccount{
         currency = Currency,
