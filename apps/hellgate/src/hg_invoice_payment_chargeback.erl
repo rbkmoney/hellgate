@@ -434,9 +434,10 @@ build_chargeback_cash_flow(State, Opts) ->
     ServiceCashFlow = collect_chargeback_service_cash_flow(ServiceTerms, VS, Revision),
     ProviderCashFlow = collect_chargeback_provider_cash_flow(ProviderTerms, VS, Revision),
     ProviderFees = collect_chargeback_provider_fees(ProviderTerms, VS, Revision),
-    PmntInstitution = get_payment_institution(Contract, Revision),
+    PaymentInstitutionRef = get_payment_institution_ref(Contract),
+    PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PmntInstitution, Provider, VS, Revision),
+    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
     ServiceContext = build_service_cash_flow_context(State),
     ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
     ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap),
@@ -731,9 +732,8 @@ get_route_provider(#domain_PaymentRoute{provider = ProviderRef}, Revision) ->
 
 %%
 
-get_payment_institution(Contract, Revision) ->
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+get_payment_institution_ref(Contract) ->
+    Contract#domain_Contract.payment_institution.
 
 %%
 

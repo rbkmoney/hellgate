@@ -238,10 +238,12 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     Revision = Params#payproc_RecurrentPaymentToolParams.domain_revision,
     CreatedAt = hg_datetime:format_now(),
     {Party, Shop} = get_party_shop(Params),
-    PaymentInstitution = get_payment_institution(Shop, Party, Revision),
     RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
     VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
     {RiskScore, VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
+    PaymentInstitutionRef = get_payment_institution_ref(Shop, Party),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
+
     Predestination = recurrent_paytool,
     {Routes, RejectContext} =
         case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision) of
@@ -278,10 +280,9 @@ get_party_shop(Params) ->
     Shop = hg_party:get_shop(ShopID, Party),
     {Party, Shop}.
 
-get_payment_institution(Shop, Party, Revision) ->
+get_payment_institution_ref(Shop, Party) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+    Contract#domain_Contract.payment_institution.
 
 get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
