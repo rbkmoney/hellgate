@@ -12,7 +12,7 @@
 -export([create_account/1]).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
--include_lib("shumpune_proto/include/shumpune_shumpune_thrift.hrl").
+-include_lib("shumpune_proto/include/shumaich_shumaich_thrift.hrl").
 
 -type amount() :: dmsl_domain_thrift:'Amount'().
 -type currency_code() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
@@ -41,49 +41,56 @@ get_account(AccountID) ->
     case call_accounter('GetAccountByID', {AccountID}) of
         {ok, Result} ->
             construct_account(AccountID, Result);
-        {exception, #shumpune_AccountNotFound{}} ->
+        {exception, #shumaich_AccountNotFound{}} ->
             pm_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 -spec get_balance(account_id()) -> balance().
 get_balance(AccountID) ->
-    get_balance(AccountID, {latest, #shumpune_LatestClock{}}).
+    get_balance(AccountID, {latest, #shumaich_LatestClock{}}).
 
 -spec get_balance(account_id(), clock()) -> balance().
 get_balance(AccountID, Clock) ->
     case call_accounter('GetBalanceByID', {AccountID, Clock}) of
         {ok, Result} ->
             construct_balance(AccountID, Result);
-        {exception, #shumpune_AccountNotFound{}} ->
+        {exception, #shumaich_AccountNotFound{}} ->
             pm_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 -spec create_account(currency_code()) -> account_id().
-create_account(CurrencyCode) ->
-    create_account(CurrencyCode, undefined).
-
--spec create_account(currency_code(), binary() | undefined) -> account_id().
-create_account(CurrencyCode, Description) ->
-    case call_accounter('CreateAccount', {construct_prototype(CurrencyCode, Description)}) of
-        {ok, Result} ->
-            Result;
-        {exception, Exception} ->
-            % FIXME
-            error({accounting, Exception})
+create_account(_CurrencyCode) ->
+    WoodyCtx = hg_context:get_woody_context(hg_context:load()),
+    case bender_generator_client:gen_sequence(<<"hellgate_create_account">>, WoodyCtx) of
+        {ok, {_, ID}} -> ID
     end.
 
-construct_prototype(CurrencyCode, Description) ->
-    #shumpune_AccountPrototype{
-        currency_sym_code = CurrencyCode,
-        description = Description
-    }.
+% -spec create_account(currency_code()) -> account_id().
+% create_account(CurrencyCode) ->
+%     create_account(CurrencyCode, undefined).
+
+% -spec create_account(currency_code(), binary() | undefined) -> account_id().
+% create_account(CurrencyCode, Description) ->
+%     case call_accounter('CreateAccount', {construct_prototype(CurrencyCode, Description)}) of
+%         {ok, Result} ->
+%             Result;
+%         {exception, Exception} ->
+%             % FIXME
+%             error({accounting, Exception})
+%     end.
+
+% construct_prototype(CurrencyCode, Description) ->
+%     #shumpune_AccountPrototype{
+%         currency_sym_code = CurrencyCode,
+%         description = Description
+%     }.
 
 %%
 
 construct_account(
     AccountID,
-    #shumpune_Account{
-        currency_sym_code = CurrencyCode
+    #shumaich_Account{
+        currency_symbolic_code = CurrencyCode
     }
 ) ->
     #{
@@ -93,7 +100,7 @@ construct_account(
 
 construct_balance(
     AccountID,
-    #shumpune_Balance{
+    #shumaich_Balance{
         own_amount = OwnAmount,
         min_available_amount = MinAvailableAmount,
         max_available_amount = MaxAvailableAmount
