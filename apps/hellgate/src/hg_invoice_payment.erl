@@ -573,7 +573,7 @@ construct_payment(
         PaymentTool,
         PaymentTerms#domain_PaymentsServiceTerms.payment_methods
     ),
-    ok = validate_payment_cost(
+    ok = validate_cash(
         Cost,
         PaymentTerms#domain_PaymentsServiceTerms.cash_limit
     ),
@@ -738,13 +738,6 @@ validate_payment_tool(PaymentTool, PaymentMethodSelector) ->
         hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
             throw_invalid_request(<<"Invalid payment method">>),
     ok.
-
-validate_payment_cost(Cost, CashLimitSelector) ->
-    ok = validate_cash(Cost, CashLimitSelector),
-    ok.
-
-validate_refund_cash(Cash, CashLimitSelector) ->
-    validate_cash(Cash, CashLimitSelector).
 
 validate_cash(Cash, CashLimitSelector) ->
     Limit = get_selector_value(cash_limit, CashLimitSelector),
@@ -1367,7 +1360,7 @@ validate_partial_refund(
     Payment
 ) when PRs /= undefined ->
     ok = validate_common_refund_terms(Terms, Refund, Payment),
-    ok = validate_refund_cash(
+    ok = validate_cash(
         get_refund_cash(Refund),
         PRs#domain_PartialRefundsServiceTerms.cash_limit
     ),
