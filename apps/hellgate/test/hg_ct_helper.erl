@@ -265,6 +265,19 @@ start_app(snowflake = AppName) ->
     {start_app(AppName, [
             {max_backward_clock_moving, 1000}
         ]), #{}};
+start_app(bender_client = AppName) ->
+    {start_app(AppName, [
+            {services, #{
+                'Bender' => <<"http://bender:8022/v1/bender">>,
+                'Generator' => <<"http://bender:8022/v1/generator">>
+            }},
+            {deadline, 60000}
+            %{retries, #{
+            %    'GenerateID' => finish,
+            %    'GetInternalID' => finish,
+            %    '_' => finish
+            %}}
+        ]), #{}};
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
 
