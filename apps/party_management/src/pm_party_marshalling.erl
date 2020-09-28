@@ -6,7 +6,6 @@
 -export([unmarshal/1]).
 
 -spec marshal(term()) -> pm_msgpack_marshalling:msgpack_value().
-
 marshal(undefined) ->
     undefined;
 marshal(Boolean) when is_boolean(Boolean) ->
@@ -31,12 +30,11 @@ marshal(V) when is_integer(V); is_float(V); is_binary(V) ->
     V.
 
 -spec unmarshal(pm_msgpack_marshalling:msgpack_value()) -> term().
-
 unmarshal([<<":atom:">>, Atom]) ->
     binary_to_existing_atom(Atom, utf8);
 unmarshal([<<":tuple:">>, Tuple]) ->
     list_to_tuple(lists:map(fun unmarshal/1, Tuple));
-unmarshal([<<":list:">>, List])->
+unmarshal([<<":list:">>, List]) ->
     lists:map(fun unmarshal/1, List);
 unmarshal(Map) when is_map(Map) ->
     maps:fold(fun(K, V, Acc) -> maps:put(unmarshal(K), unmarshal(V), Acc) end, #{}, Map);
@@ -44,5 +42,5 @@ unmarshal(undefined) ->
     undefined;
 unmarshal({bin, Binary}) when is_binary(Binary) ->
     {bin, Binary};
-unmarshal(V) when is_boolean(V); is_integer(V); is_float(V); is_binary(V)->
+unmarshal(V) when is_boolean(V); is_integer(V); is_float(V); is_binary(V) ->
     V.

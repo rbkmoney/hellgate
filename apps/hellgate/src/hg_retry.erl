@@ -1,23 +1,27 @@
 -module(hg_retry).
 
--export([next_step/1,
-         skip_steps/2,
-         new_strategy/1]).
+-export([
+    next_step/1,
+    skip_steps/2,
+    new_strategy/1
+]).
 
 -type retries_num() :: pos_integer() | infinity.
 -type policy_spec() ::
-      {linear, retries_num() | {max_total_timeout, pos_integer()}, pos_integer()}
-    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer()}
-    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer(), timeout()}
-    | {intervals, [pos_integer(), ...]}
-    | {timecap, timeout(), policy_spec()}
-    | no_retry.
+    {linear, retries_num() | {max_total_timeout, pos_integer()}, pos_integer()} |
+    {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer()} |
+    {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer(), timeout()} |
+    {intervals, [pos_integer(), ...]} |
+    {timecap, timeout(), policy_spec()} |
+    no_retry.
 
--type strategy()    :: genlib_retry:strategy().
+-type strategy() :: genlib_retry:strategy().
 
--export_type([strategy/0,
-              policy_spec/0,
-              retries_num/0]).
+-export_type([
+    strategy/0,
+    policy_spec/0,
+    retries_num/0
+]).
 
 %%% API
 
@@ -45,12 +49,13 @@ next_step(Strategy) ->
 skip_steps(Strategy, 0) ->
     Strategy;
 skip_steps(Strategy, N) when N > 0 ->
-    NewStrategy = case genlib_retry:next_step(Strategy) of
-        {wait, _Timeout, NextStrategy} ->
-            NextStrategy;
-        finish = NextStrategy ->
-            NextStrategy
-    end,
+    NewStrategy =
+        case genlib_retry:next_step(Strategy) of
+            {wait, _Timeout, NextStrategy} ->
+                NextStrategy;
+            finish = NextStrategy ->
+                NextStrategy
+        end,
     skip_steps(NewStrategy, N - 1).
 
 %%% Internal functions

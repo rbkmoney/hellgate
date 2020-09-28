@@ -18,31 +18,30 @@
 
 %%
 
--type contract()              :: dmsl_domain_thrift:'Contract'().
--type contract_id()           :: dmsl_domain_thrift:'ContractID'().
--type contract_params()       :: dmsl_payment_processing_thrift:'ContractParams'().
--type contract_template()     :: dmsl_domain_thrift:'ContractTemplate'().
--type adjustment()            :: dmsl_domain_thrift:'ContractAdjustment'().
--type adjustment_id()         :: dmsl_domain_thrift:'ContractAdjustmentID'().
--type adjustment_params()     :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
--type payout_tool()           :: dmsl_domain_thrift:'PayoutTool'().
--type payout_tool_id()        :: dmsl_domain_thrift:'PayoutToolID'().
--type category()              :: dmsl_domain_thrift:'CategoryRef'().
+-type contract() :: dmsl_domain_thrift:'Contract'().
+-type contract_id() :: dmsl_domain_thrift:'ContractID'().
+-type contract_params() :: dmsl_payment_processing_thrift:'ContractParams'().
+-type contract_template() :: dmsl_domain_thrift:'ContractTemplate'().
+-type adjustment() :: dmsl_domain_thrift:'ContractAdjustment'().
+-type adjustment_id() :: dmsl_domain_thrift:'ContractAdjustmentID'().
+-type adjustment_params() :: dmsl_payment_processing_thrift:'ContractAdjustmentParams'().
+-type payout_tool() :: dmsl_domain_thrift:'PayoutTool'().
+-type payout_tool_id() :: dmsl_domain_thrift:'PayoutToolID'().
+-type category() :: dmsl_domain_thrift:'CategoryRef'().
 -type contract_template_ref() :: dmsl_domain_thrift:'ContractTemplateRef'().
--type payment_inst_ref()      :: dmsl_domain_thrift:'PaymentInstitutionRef'().
+-type payment_inst_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 
--type timestamp()             :: pm_datetime:timestamp().
--type revision()              :: pm_domain:revision().
+-type timestamp() :: pm_datetime:timestamp().
+-type revision() :: pm_domain:revision().
 
 %%
 
--spec create(contract_id(), contract_params(), timestamp(), revision()) ->
-    contract().
-
+-spec create(contract_id(), contract_params(), timestamp(), revision()) -> contract().
 create(ID, Params, Timestamp, Revision) ->
     #payproc_ContractParams{
         contractor_id = ContractorID,
-        contractor = Contractor, %% Legacy
+        %% Legacy
+        contractor = Contractor,
         template = TemplateRef,
         payment_institution = PaymentInstitutionRef
     } = ensure_contract_creation_params(Params, Revision),
@@ -65,9 +64,7 @@ create(ID, Params, Timestamp, Revision) ->
         payout_tools = []
     }.
 
--spec update_status(contract(), timestamp()) ->
-    contract().
-
+-spec update_status(contract(), timestamp()) -> contract().
 update_status(
     #domain_Contract{
         valid_since = ValidSince,
@@ -88,9 +85,7 @@ update_status(Contract, _) ->
     Contract.
 
 %% TODO should be in separate module
--spec create_adjustment(adjustment_id(), adjustment_params(), timestamp(), revision()) ->
-    adjustment().
-
+-spec create_adjustment(adjustment_id(), adjustment_params(), timestamp(), revision()) -> adjustment().
 create_adjustment(ID, Params, Timestamp, Revision) ->
     #payproc_ContractAdjustmentParams{
         template = TemplateRef
@@ -110,7 +105,6 @@ create_adjustment(ID, Params, Timestamp, Revision) ->
 
 -spec get_categories(contract() | contract_template(), timestamp(), revision()) ->
     ordsets:ordset(category()) | no_return().
-
 get_categories(Contract, Timestamp, Revision) ->
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
@@ -125,9 +119,7 @@ get_categories(Contract, Timestamp, Revision) ->
             error({misconfiguration, {'Empty set in category selector\'s value', CategorySelector, Revision}})
     end.
 
--spec get_adjustment(adjustment_id(), contract()) ->
-    adjustment() | undefined.
-
+-spec get_adjustment(adjustment_id(), contract()) -> adjustment() | undefined.
 get_adjustment(AdjustmentID, #domain_Contract{adjustments = Adjustments}) ->
     case lists:keysearch(AdjustmentID, #domain_ContractAdjustment.id, Adjustments) of
         {value, Adjustment} ->
@@ -136,9 +128,7 @@ get_adjustment(AdjustmentID, #domain_Contract{adjustments = Adjustments}) ->
             undefined
     end.
 
--spec get_payout_tool(payout_tool_id(), contract()) ->
-    payout_tool() | undefined.
-
+-spec get_payout_tool(payout_tool_id(), contract()) -> payout_tool() | undefined.
 get_payout_tool(PayoutToolID, #domain_Contract{payout_tools = PayoutTools}) ->
     case lists:keysearch(PayoutToolID, #domain_PayoutTool.id, PayoutTools) of
         {value, PayoutTool} ->
@@ -147,25 +137,19 @@ get_payout_tool(PayoutToolID, #domain_Contract{payout_tools = PayoutTools}) ->
             undefined
     end.
 
--spec set_payout_tool(payout_tool(), contract()) ->
-    contract().
-
+-spec set_payout_tool(payout_tool(), contract()) -> contract().
 set_payout_tool(PayoutTool, Contract = #domain_Contract{payout_tools = PayoutTools}) ->
     Contract#domain_Contract{
         payout_tools = lists:keystore(PayoutTool#domain_PayoutTool.id, #domain_PayoutTool.id, PayoutTools, PayoutTool)
     }.
 
--spec is_active(contract()) ->
-    boolean().
-
+-spec is_active(contract()) -> boolean().
 is_active(#domain_Contract{status = {active, _}}) ->
     true;
 is_active(_) ->
     false.
 
--spec is_live(contract(), revision()) ->
-    boolean().
-
+-spec is_live(contract(), revision()) -> boolean().
 is_live(Contract, Revision) ->
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
@@ -173,9 +157,7 @@ is_live(Contract, Revision) ->
 
 %% Internals
 
--spec ensure_contract_creation_params(contract_params(), revision()) ->
-    contract_params() | no_return().
-
+-spec ensure_contract_creation_params(contract_params(), revision()) -> contract_params() | no_return().
 ensure_contract_creation_params(
     #payproc_ContractParams{
         template = TemplateRef,
@@ -191,15 +173,12 @@ ensure_contract_creation_params(
 
 -spec ensure_contract_template(contract_template_ref(), dmsl_domain_thrift:'PaymentInstitutionRef'(), revision()) ->
     contract_template_ref() | no_return().
-
 ensure_contract_template(#domain_ContractTemplateRef{} = TemplateRef, _, _) ->
     TemplateRef;
 ensure_contract_template(undefined, PaymentInstitutionRef, Revision) ->
     get_default_template_ref(PaymentInstitutionRef, Revision).
 
--spec ensure_payment_institution(payment_inst_ref()) ->
-    payment_inst_ref() | no_return().
-
+-spec ensure_payment_institution(payment_inst_ref()) -> payment_inst_ref() | no_return().
 ensure_payment_institution(#domain_PaymentInstitutionRef{} = PaymentInstitutionRef) ->
     PaymentInstitutionRef;
 ensure_payment_institution(undefined) ->

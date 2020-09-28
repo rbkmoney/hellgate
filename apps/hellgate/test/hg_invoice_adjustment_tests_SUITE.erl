@@ -1,6 +1,7 @@
 -module(hg_invoice_adjustment_tests_SUITE).
 
 -include("hg_ct_domain.hrl").
+
 -include_lib("common_test/include/ct.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
@@ -24,20 +25,19 @@
 -export([invoice_adjustment_invoice_expiration_after_capture/1]).
 
 -behaviour(supervisor).
+
 -export([init/1]).
 
--spec init([]) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-
+-spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
 
 %% tests descriptions
 
--type config()         :: hg_ct_helper:config().
+-type config() :: hg_ct_helper:config().
 -type test_case_name() :: hg_ct_helper:test_case_name().
--type group_name()     :: hg_ct_helper:group_name().
--type test_return()    :: _ | no_return().
+-type group_name() :: hg_ct_helper:group_name().
+-type test_return() :: _ | no_return().
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
@@ -74,7 +74,13 @@ init_per_suite(C) ->
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
     {Apps, Ret} = hg_ct_helper:start_apps([
-        woody, scoper, dmt_client, party_client, party_management, hellgate, {cowboy, CowboySpec}
+        woody,
+        scoper,
+        dmt_client,
+        party_client,
+        party_management,
+        hellgate,
+        {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
@@ -156,16 +162,18 @@ invoice_adjustment_capture(C) ->
     Unpaid = {unpaid, #domain_InvoiceUnpaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = Unpaid
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = Unpaid
+            }}
+    },
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
-    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))] = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
     ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     ok = hg_client_invoicing:capture_invoice_adjustment(InvoiceID, ID, Client),
-    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Captured))]  = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Captured))] = next_event(InvoiceID, Client),
     ?assertMatch({captured, #domain_InvoiceAdjustmentCaptured{}}, Captured),
     #payproc_Invoice{invoice = #domain_Invoice{status = FinalStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     ?assertMatch(Unpaid, FinalStatus).
@@ -184,12 +192,14 @@ invoice_adjustment_cancel(C) ->
     TargetInvoiceStatus = {unpaid, #domain_InvoiceUnpaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = TargetInvoiceStatus
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = TargetInvoiceStatus
+            }}
+    },
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
-    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))] = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
     ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     ok = hg_client_invoicing:cancel_invoice_adjustment(InvoiceID, ID, Client),
@@ -210,9 +220,11 @@ invoice_adjustment_invalid_invoice_status(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = {unpaid, #domain_InvoiceUnpaid{}}
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = {unpaid, #domain_InvoiceUnpaid{}}
+            }}
+    },
     ok = hg_client_invoicing:fulfill(InvoiceID, <<"ok">>, Client),
     {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch(#payproc_InvoiceAdjustmentStatusUnacceptable{}, E).
@@ -230,9 +242,11 @@ invoice_adjustment_existing_invoice_status(C) ->
     Paid = {paid, #domain_InvoicePaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = Paid
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = Paid
+            }}
+    },
     {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch(#payproc_InvoiceAlreadyHasStatus{status = Paid}, E).
 
@@ -249,12 +263,14 @@ invoice_adjustment_invalid_adjustment_status(C) ->
     #payproc_Invoice{invoice = #domain_Invoice{status = InvoiceStatus}} = hg_client_invoicing:get(InvoiceID, Client),
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}}
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}}
+            }}
+    },
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
-    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))] = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
     ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     ok = hg_client_invoicing:cancel_invoice_adjustment(InvoiceID, ID, Client),
@@ -277,9 +293,11 @@ invoice_adjustment_payment_pending(C) ->
     Paid = {paid, #domain_InvoicePaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = Paid
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = Paid
+            }}
+    },
     {exception, E} = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch(#payproc_InvoicePaymentPending{id = PaymentID}, E),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
@@ -303,14 +321,16 @@ invoice_adjustment_pending_blocks_payment(C) ->
     TargetInvoiceStatus = {cancelled, #domain_InvoiceCancelled{details = <<"hulk smash">>}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = TargetInvoiceStatus
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = TargetInvoiceStatus
+            }}
+    },
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
-    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))] = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
     ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     {exception, E} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
@@ -327,11 +347,13 @@ invoice_adjustment_pending_no_invoice_expiration(C) ->
     Paid = {paid, #domain_InvoicePaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = Paid
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = Paid
+            }}
+    },
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
-    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]        = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))] = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(_Processed))] = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, 6000, Client).
 
@@ -353,16 +375,18 @@ invoice_adjustment_invoice_expiration_after_capture(C) ->
     Unpaid = {unpaid, #domain_InvoiceUnpaid{}},
     AdjustmentParams = #payproc_InvoiceAdjustmentParams{
         reason = <<"kek">>,
-        scenario = {status_change, #domain_InvoiceAdjustmentStatusChange{
-            target_status = Unpaid
-    }}},
+        scenario =
+            {status_change, #domain_InvoiceAdjustmentStatusChange{
+                target_status = Unpaid
+            }}
+    },
     Adjustment = hg_client_invoicing:create_invoice_adjustment(InvoiceID, AdjustmentParams, Client),
     ?assertMatch({pending, #domain_InvoiceAdjustmentPending{}}, Adjustment#domain_InvoiceAdjustment.status),
-    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))]       = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_created(Adjustment))] = next_event(InvoiceID, Client),
     [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Processed))] = next_event(InvoiceID, Client),
     ?assertMatch({processed, #domain_InvoiceAdjustmentProcessed{}}, Processed),
     ok = hg_client_invoicing:capture_invoice_adjustment(InvoiceID, ID, Client),
-    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Captured))]  = next_event(InvoiceID, Client),
+    [?invoice_adjustment_ev(ID, ?invoice_adjustment_status_changed(Captured))] = next_event(InvoiceID, Client),
     ?assertMatch({captured, #domain_InvoiceAdjustmentCaptured{}}, Captured),
     #payproc_Invoice{invoice = #domain_Invoice{status = Unpaid}} = hg_client_invoicing:get(InvoiceID, Client),
     [?invoice_status_changed(?invoice_cancelled(_))] = next_event(InvoiceID, Client).
@@ -373,99 +397,128 @@ invoice_adjustment_invoice_expiration_after_capture(C) ->
 construct_domain_fixture() ->
     TestTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            currencies = {value, ?ordset([
-                ?cur(<<"RUB">>)
-            ])},
-            categories = {value, ?ordset([
-                ?cat(1)
-            ])},
-            payment_methods = {decisions, [
-                #domain_PaymentMethodDecision{
-                    if_   = {constant, true},
-                    then_ = {value, ?ordset([
-                        ?pmt(bank_card_deprecated, visa)
-                    ])}
-                }
-            ]},
-            cash_limit = {decisions, [
-                #domain_CashLimitDecision{
-                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, ?cashrng(
-                        {inclusive, ?cash(       10, <<"RUB">>)},
-                        {exclusive, ?cash(420000000, <<"RUB">>)}
-                    )}
-                }
-            ]},
-            fees = {decisions, [
-                #domain_CashFlowDecision{
-                    if_ = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                        definition = {category_is, ?bc_cat(1)}
-                    }}}},
-                    then_ = {value, [
-                        ?cfpost(
-                            {merchant, settlement},
-                            {system, settlement},
-                            ?merchant_to_system_share_2
-                        )
-                    ]}
-                },
-                #domain_CashFlowDecision{
-                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, [
-                        ?cfpost(
-                            {merchant, settlement},
-                            {system, settlement},
-                            ?merchant_to_system_share_1
-                        )
-                    ]}
-                }
-            ]},
-            holds = #domain_PaymentHoldsServiceTerms{
-                payment_methods = {value, ?ordset([
-                    ?pmt(bank_card_deprecated, visa)
-                ])},
-                lifetime = {decisions, [
-                    #domain_HoldLifetimeDecision{
-                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, #domain_HoldLifetime{seconds = 10}}
+            currencies =
+                {value,
+                    ?ordset([
+                        ?cur(<<"RUB">>)
+                    ])},
+            categories =
+                {value,
+                    ?ordset([
+                        ?cat(1)
+                    ])},
+            payment_methods =
+                {decisions, [
+                    #domain_PaymentMethodDecision{
+                        if_ = {constant, true},
+                        then_ =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])}
                     }
-                ]}
-            },
-            refunds = #domain_PaymentRefundsServiceTerms{
-                payment_methods = {value, ?ordset([
-                    ?pmt(bank_card_deprecated, visa)
-                ])},
-                fees = {value, [
-                    ?cfpost(
-                        {merchant, settlement},
-                        {system, settlement},
-                        ?fixed(100, <<"RUB">>)
-                    )
                 ]},
-                eligibility_time = {value, #'TimeSpan'{minutes = 1}},
-                partial_refunds = #domain_PartialRefundsServiceTerms{
-                    cash_limit = {decisions, [
-                        #domain_CashLimitDecision{
+            cash_limit =
+                {decisions, [
+                    #domain_CashLimitDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(10, <<"RUB">>)},
+                                    {exclusive, ?cash(420000000, <<"RUB">>)}
+                                )}
+                    }
+                ]},
+            fees =
+                {decisions, [
+                    #domain_CashFlowDecision{
+                        if_ =
+                            {condition,
+                                {payment_tool,
+                                    {bank_card, #domain_BankCardCondition{
+                                        definition = {category_is, ?bc_cat(1)}
+                                    }}}},
+                        then_ =
+                            {value, [
+                                ?cfpost(
+                                    {merchant, settlement},
+                                    {system, settlement},
+                                    ?merchant_to_system_share_2
+                                )
+                            ]}
+                    },
+                    #domain_CashFlowDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ =
+                            {value, [
+                                ?cfpost(
+                                    {merchant, settlement},
+                                    {system, settlement},
+                                    ?merchant_to_system_share_1
+                                )
+                            ]}
+                    }
+                ]},
+            holds = #domain_PaymentHoldsServiceTerms{
+                payment_methods =
+                    {value,
+                        ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])},
+                lifetime =
+                    {decisions, [
+                        #domain_HoldLifetimeDecision{
                             if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                            then_ = {value, ?cashrng(
-                                {inclusive, ?cash(      1000, <<"RUB">>)},
-                                {exclusive, ?cash(1000000000, <<"RUB">>)}
-                            )}
+                            then_ = {value, #domain_HoldLifetime{seconds = 10}}
                         }
                     ]}
-
+            },
+            refunds = #domain_PaymentRefundsServiceTerms{
+                payment_methods =
+                    {value,
+                        ?ordset([
+                            ?pmt(bank_card_deprecated, visa)
+                        ])},
+                fees =
+                    {value, [
+                        ?cfpost(
+                            {merchant, settlement},
+                            {system, settlement},
+                            ?fixed(100, <<"RUB">>)
+                        )
+                    ]},
+                eligibility_time = {value, #'TimeSpan'{minutes = 1}},
+                partial_refunds = #domain_PartialRefundsServiceTerms{
+                    cash_limit =
+                        {decisions, [
+                            #domain_CashLimitDecision{
+                                if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                then_ =
+                                    {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(1000, <<"RUB">>)},
+                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                        )}
+                            }
+                        ]}
                 }
             }
         },
         recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card_deprecated, visa)
-            ])}
+            payment_methods =
+                {value,
+                    ordsets:from_list([
+                        ?pmt(bank_card_deprecated, visa)
+                    ])}
         }
     },
     [
         hg_ct_fixture:construct_bank_card_category(
-            ?bc_cat(1), <<"Bank card category">>, <<"Corporative">>, [<<"*CORPORAT*">>]
+            ?bc_cat(1),
+            <<"Bank card category">>,
+            <<"Corporative">>,
+            [<<"*CORPORAT*">>]
         ),
 
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
@@ -490,23 +543,30 @@ construct_domain_fixture() ->
                 name = <<"Test Inc.">>,
                 system_account_set = {value, ?sas(1)},
                 default_contract_template = {value, ?tmpl(1)},
-                providers = {value, ?ordset([
-                    ?prv(1)
-                ])},
-                inspector = {decisions, [
-                    #domain_InspectorDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {decisions, [
-                            #domain_InspectorDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                    {inclusive, ?cash(        0, <<"RUB">>)},
-                                    {exclusive, ?cash(   500000, <<"RUB">>)}
-                                )}},
-                                then_ = {value, ?insp(1)}
-                            }
-                        ]}
-                    }
-                ]},
+                providers =
+                    {value,
+                        ?ordset([
+                            ?prv(1)
+                        ])},
+                inspector =
+                    {decisions, [
+                        #domain_InspectorDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ =
+                                {decisions, [
+                                    #domain_InspectorDecision{
+                                        if_ =
+                                            {condition,
+                                                {cost_in,
+                                                    ?cashrng(
+                                                        {inclusive, ?cash(0, <<"RUB">>)},
+                                                        {exclusive, ?cash(500000, <<"RUB">>)}
+                                                    )}},
+                                        then_ = {value, ?insp(1)}
+                                    }
+                                ]}
+                        }
+                    ]},
                 residences = [],
                 realm = test
             }
@@ -515,12 +575,13 @@ construct_domain_fixture() ->
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
-                external_account_set = {decisions, [
-                    #domain_ExternalAccountSetDecision{
-                        if_ = {constant, true},
-                        then_ = {value, ?eas(1)}
-                    }
-                ]},
+                external_account_set =
+                    {decisions, [
+                        #domain_ExternalAccountSetDecision{
+                            if_ = {constant, true},
+                            then_ = {value, ?eas(1)}
+                        }
+                    ]},
                 payment_institutions = ?ordset([?pinst(1)])
             }
         }},
@@ -528,10 +589,12 @@ construct_domain_fixture() ->
         {term_set_hierarchy, #domain_TermSetHierarchyObject{
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = TestTermSet
-                }]
+                term_sets = [
+                    #domain_TimedTermSet{
+                        action_time = #'TimestampInterval'{},
+                        terms = TestTermSet
+                    }
+                ]
             }
         }},
 
@@ -540,9 +603,11 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
-                terminal = {value, ?ordset([
-                    ?prvtrm(1)
-                ])},
+                terminal =
+                    {value,
+                        ?ordset([
+                            ?prvtrm(1)
+                        ])},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -553,78 +618,101 @@ construct_domain_fixture() ->
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
-                        currencies = {value, ?ordset([
-                            ?cur(<<"RUB">>)
-                        ])},
-                        categories = {value, ?ordset([
-                            ?cat(1)
-                        ])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa)
-                        ])},
-                        cash_limit = {value, ?cashrng(
-                            {inclusive, ?cash(      1000, <<"RUB">>)},
-                            {exclusive, ?cash(1000000000, <<"RUB">>)}
-                        )},
-                        cash_flow = {decisions, [
-                            #domain_CashFlowDecision{
-                                if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                    definition = {payment_system_is, visa}
-                                }}}},
-                                then_ = {value, [
-                                    ?cfpost(
-                                        {provider, settlement},
-                                        {merchant, settlement},
-                                        ?share(1, 1, operation_amount)
-                                    ),
-                                    ?cfpost(
-                                        {system, settlement},
-                                        {provider, settlement},
-                                        ?share(18, 1000, operation_amount)
-                                    )
-                                ]}
-                            }
-                        ]},
-                        holds = #domain_PaymentHoldsProvisionTerms{
-                            lifetime = {decisions, [
-                                #domain_HoldLifetimeDecision{
-                                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                                        definition = {payment_system_is, visa}
-                                    }}}},
-                                    then_ = {value, ?hold_lifetime(12)}
+                        currencies =
+                            {value,
+                                ?ordset([
+                                    ?cur(<<"RUB">>)
+                                ])},
+                        categories =
+                            {value,
+                                ?ordset([
+                                    ?cat(1)
+                                ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                )},
+                        cash_flow =
+                            {decisions, [
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {bank_card, #domain_BankCardCondition{
+                                                    definition = {payment_system_is, visa}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(18, 1000, operation_amount)
+                                            )
+                                        ]}
                                 }
-                            ]}
+                            ]},
+                        holds = #domain_PaymentHoldsProvisionTerms{
+                            lifetime =
+                                {decisions, [
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition = {payment_system_is, visa}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(12)}
+                                    }
+                                ]}
                         },
                         refunds = #domain_PaymentRefundsProvisionTerms{
-                            cash_flow = {value, [
-                                ?cfpost(
-                                    {merchant, settlement},
-                                    {provider, settlement},
-                                    ?share(1, 1, operation_amount)
-                                )
-                            ]},
+                            cash_flow =
+                                {value, [
+                                    ?cfpost(
+                                        {merchant, settlement},
+                                        {provider, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    )
+                                ]},
                             partial_refunds = #domain_PartialRefundsProvisionTerms{
-                                cash_limit = {value, ?cashrng(
-                                    {inclusive, ?cash(        10, <<"RUB">>)},
-                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
-                                )}
+                                cash_limit =
+                                    {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(10, <<"RUB">>)},
+                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                        )}
                             }
                         },
                         chargebacks = #domain_PaymentChargebackProvisionTerms{
-                            cash_flow = {value, [
-                                ?cfpost(
-                                    {merchant, settlement},
-                                    {provider, settlement},
-                                    ?share(1, 1, operation_amount)
-                                )
-                            ]}
+                            cash_flow =
+                                {value, [
+                                    ?cfpost(
+                                        {merchant, settlement},
+                                        {provider, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    )
+                                ]}
                         }
                     },
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa)
-                        ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
                 }
@@ -652,15 +740,17 @@ start_service_handler(Name, Module, C, HandlerOpts) ->
     hg_test_proxy:get_url(Module, IP, Port).
 
 start_proxies(Proxies) ->
-    setup_proxies(lists:map(
-        fun
-            Mapper({Module, ProxyID, Context}) ->
-                Mapper({Module, ProxyID, #{}, Context});
-            Mapper({Module, ProxyID, ProxyOpts, Context}) ->
-                construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
-        end,
-        Proxies
-    )).
+    setup_proxies(
+        lists:map(
+            fun
+                Mapper({Module, ProxyID, Context}) ->
+                    Mapper({Module, ProxyID, #{}, Context});
+                Mapper({Module, ProxyID, ProxyOpts, Context}) ->
+                    construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
+            end,
+            Proxies
+        )
+    ).
 
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
@@ -672,10 +762,10 @@ construct_proxy(ID, Url, Options) ->
     {proxy, #domain_ProxyObject{
         ref = ?prx(ID),
         data = #domain_ProxyDefinition{
-            name              = Url,
-            description       = Url,
-            url               = Url,
-            options           = Options
+            name = Url,
+            description = Url,
+            url = Url,
+            options = Options
         }
     }}.
 
@@ -704,7 +794,7 @@ next_event(InvoiceID, Timeout, Client) ->
                     L;
                 [] ->
                     next_event(InvoiceID, Timeout, Client)
-                end;
+            end;
         Result ->
             Result
     end.
@@ -745,21 +835,23 @@ make_tds_payment_params(FlowType) ->
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_payment_params(PaymentTool, Session, FlowType) ->
-    Flow = case FlowType of
-        instant ->
-            {instant, #payproc_InvoicePaymentParamsFlowInstant{}};
-        {hold, OnHoldExpiration} ->
-            {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
-    end,
+    Flow =
+        case FlowType of
+            instant ->
+                {instant, #payproc_InvoicePaymentParamsFlowInstant{}};
+            {hold, OnHoldExpiration} ->
+                {hold, #payproc_InvoicePaymentParamsFlowHold{on_hold_expiration = OnHoldExpiration}}
+        end,
     #payproc_InvoicePaymentParams{
-        payer = {payment_resource, #payproc_PaymentResourcePayerParams{
-            resource = #domain_DisposablePaymentResource{
-                payment_tool = PaymentTool,
-                payment_session_id = Session,
-                client_info = #domain_ClientInfo{}
-            },
-            contact_info = #domain_ContactInfo{}
-        }},
+        payer =
+            {payment_resource, #payproc_PaymentResourcePayerParams{
+                resource = #domain_DisposablePaymentResource{
+                    payment_tool = PaymentTool,
+                    payment_session_id = Session,
+                    client_info = #domain_ClientInfo{}
+                },
+                contact_info = #domain_ContactInfo{}
+            }},
         flow = Flow
     }.
 
@@ -834,8 +926,8 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
 
 await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
     [
-       ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
-       ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+        ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))

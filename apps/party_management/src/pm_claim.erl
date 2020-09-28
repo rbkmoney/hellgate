@@ -1,6 +1,7 @@
 -module(pm_claim).
 
 -include("party_events.hrl").
+
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
@@ -29,55 +30,45 @@
 
 %% Types
 
--type claim()           :: dmsl_payment_processing_thrift:'Claim'().
--type claim_id()        :: dmsl_payment_processing_thrift:'ClaimID'().
--type claim_status()    :: dmsl_payment_processing_thrift:'ClaimStatus'().
--type claim_revision()  :: dmsl_payment_processing_thrift:'ClaimRevision'().
--type changeset()       :: dmsl_payment_processing_thrift:'PartyChangeset'().
+-type claim() :: dmsl_payment_processing_thrift:'Claim'().
+-type claim_id() :: dmsl_payment_processing_thrift:'ClaimID'().
+-type claim_status() :: dmsl_payment_processing_thrift:'ClaimStatus'().
+-type claim_revision() :: dmsl_payment_processing_thrift:'ClaimRevision'().
+-type changeset() :: dmsl_payment_processing_thrift:'PartyChangeset'().
 
--type party()           :: pm_party:party().
+-type party() :: pm_party:party().
 
--type timestamp()       :: pm_datetime:timestamp().
--type revision()        :: pm_domain:revision().
+-type timestamp() :: pm_datetime:timestamp().
+-type revision() :: pm_domain:revision().
 
 %% Interface
 
--spec get_id(claim()) ->
-    claim_id().
-
+-spec get_id(claim()) -> claim_id().
 get_id(#payproc_Claim{id = ID}) ->
     ID.
 
--spec get_revision(claim()) ->
-    claim_revision().
-
+-spec get_revision(claim()) -> claim_revision().
 get_revision(#payproc_Claim{revision = Revision}) ->
     Revision.
 
--spec create(claim_id(), changeset(), party(), timestamp(), revision()) ->
-    claim() | no_return().
-
+-spec create(claim_id(), changeset(), party(), timestamp(), revision()) -> claim() | no_return().
 create(ID, Changeset, Party, Timestamp, Revision) ->
     ok = assert_changeset_applicable(Changeset, Timestamp, Revision, Party),
     #payproc_Claim{
-        id        = ID,
-        status    = ?pending(),
+        id = ID,
+        status = ?pending(),
         changeset = Changeset,
         revision = 1,
         created_at = Timestamp
     }.
 
--spec update(changeset(), claim(), party(), timestamp(), revision()) ->
-    claim() | no_return().
-
+-spec update(changeset(), claim(), party(), timestamp(), revision()) -> claim() | no_return().
 update(NewChangeset, #payproc_Claim{changeset = OldChangeset} = Claim, Party, Timestamp, Revision) ->
     TmpChangeset = merge_changesets(OldChangeset, NewChangeset),
     ok = assert_changeset_applicable(TmpChangeset, Timestamp, Revision, Party),
     update_changeset(NewChangeset, get_next_revision(Claim), Timestamp, Claim).
 
--spec update_changeset(changeset(), claim_revision(), timestamp(), claim()) ->
-    claim().
-
+-spec update_changeset(changeset(), claim_revision(), timestamp(), claim()) -> claim().
 update_changeset(NewChangeset, NewRevision, Timestamp, #payproc_Claim{changeset = OldChangeset} = Claim) ->
     Claim#payproc_Claim{
         revision = NewRevision,
@@ -85,29 +76,21 @@ update_changeset(NewChangeset, NewRevision, Timestamp, #payproc_Claim{changeset 
         changeset = merge_changesets(OldChangeset, NewChangeset)
     }.
 
--spec accept(timestamp(), revision(), party(), claim()) ->
-    claim() | no_return().
-
+-spec accept(timestamp(), revision(), party(), claim()) -> claim() | no_return().
 accept(Timestamp, DomainRevision, Party, Claim) ->
     ok = assert_acceptable(Claim, Timestamp, DomainRevision, Party),
     Effects = make_effects(Timestamp, DomainRevision, Claim),
     set_status(?accepted(Effects), get_next_revision(Claim), Timestamp, Claim).
 
--spec deny(binary(), timestamp(), claim()) ->
-    claim().
-
+-spec deny(binary(), timestamp(), claim()) -> claim().
 deny(Reason, Timestamp, Claim) ->
     set_status(?denied(Reason), get_next_revision(Claim), Timestamp, Claim).
 
--spec revoke(binary(), timestamp(), claim()) ->
-    claim().
-
+-spec revoke(binary(), timestamp(), claim()) -> claim().
 revoke(Reason, Timestamp, Claim) ->
     set_status(?revoked(Reason), get_next_revision(Claim), Timestamp, Claim).
 
--spec set_status(claim_status(), claim_revision(), timestamp(), claim()) ->
-    claim().
-
+-spec set_status(claim_status(), claim_revision(), timestamp(), claim()) -> claim().
 set_status(Status, NewRevision, Timestamp, Claim) ->
     Claim#payproc_Claim{
         revision = NewRevision,
@@ -115,43 +98,31 @@ set_status(Status, NewRevision, Timestamp, Claim) ->
         status = Status
     }.
 
--spec get_status(claim()) ->
-    claim_status().
-
+-spec get_status(claim()) -> claim_status().
 get_status(#payproc_Claim{status = Status}) ->
     Status.
 
--spec is_pending(claim()) ->
-    boolean().
-
+-spec is_pending(claim()) -> boolean().
 is_pending(#payproc_Claim{status = ?pending()}) ->
     true;
 is_pending(_) ->
     false.
 
--spec is_accepted(claim()) ->
-    boolean().
-
+-spec is_accepted(claim()) -> boolean().
 is_accepted(#payproc_Claim{status = ?accepted(_)}) ->
     true;
 is_accepted(_) ->
     false.
 
--spec is_need_acceptance(claim(), party(), revision()) ->
-    boolean().
-
+-spec is_need_acceptance(claim(), party(), revision()) -> boolean().
 is_need_acceptance(Claim, Party, Revision) ->
     is_changeset_need_acceptance(get_changeset(Claim), Party, Revision).
 
--spec is_conflicting(claim(), claim(), timestamp(), revision(), party()) ->
-    boolean().
-
+-spec is_conflicting(claim(), claim(), timestamp(), revision(), party()) -> boolean().
 is_conflicting(Claim1, Claim2, Timestamp, Revision, Party) ->
     has_changeset_conflict(get_changeset(Claim1), get_changeset(Claim2), Timestamp, Revision, Party).
 
--spec apply(claim(), timestamp(), party()) ->
-    party().
-
+-spec apply(claim(), timestamp(), party()) -> party().
 apply(#payproc_Claim{status = ?accepted(Effects)}, Timestamp, Party) ->
     apply_effects(Effects, Timestamp, Party).
 
@@ -243,20 +214,24 @@ make_effects(Timestamp, Revision, Claim) ->
     make_changeset_effects(get_changeset(Claim), Timestamp, Revision).
 
 make_changeset_effects(Changeset, Timestamp, Revision) ->
-    squash_effects(lists:map(
-        fun(Change) ->
-            pm_claim_effect:make(Change, Timestamp, Revision)
-        end,
-        Changeset
-    )).
+    squash_effects(
+        lists:map(
+            fun(Change) ->
+                pm_claim_effect:make(Change, Timestamp, Revision)
+            end,
+            Changeset
+        )
+    ).
 
 make_changeset_safe_effects(Changeset, Timestamp, Revision) ->
-    squash_effects(lists:map(
-        fun(Change) ->
-            pm_claim_effect:make_safe(Change, Timestamp, Revision)
-        end,
-        Changeset
-    )).
+    squash_effects(
+        lists:map(
+            fun(Change) ->
+                pm_claim_effect:make_safe(Change, Timestamp, Revision)
+            end,
+            Changeset
+        )
+    ).
 
 squash_effects(Effects) ->
     squash_effects(Effects, []).
@@ -421,37 +396,29 @@ apply_wallet_effect(ID, Effect, Party) ->
 update_wallet({account_created, Account}, Wallet) ->
     Wallet#domain_Wallet{account = Account}.
 
--spec raise_invalid_changeset(dmsl_payment_processing_thrift:'InvalidChangesetReason'()) ->
-    no_return().
-
+-spec raise_invalid_changeset(dmsl_payment_processing_thrift:'InvalidChangesetReason'()) -> no_return().
 raise_invalid_changeset(Reason) ->
     throw(#payproc_InvalidChangeset{reason = Reason}).
 
 %% Asserts
 
--spec assert_revision(claim(), claim_revision())    -> ok | no_return().
-
+-spec assert_revision(claim(), claim_revision()) -> ok | no_return().
 assert_revision(#payproc_Claim{revision = Revision}, Revision) ->
     ok;
 assert_revision(_, _) ->
     throw(#payproc_InvalidClaimRevision{}).
 
--spec assert_pending(claim())                       -> ok | no_return().
-
+-spec assert_pending(claim()) -> ok | no_return().
 assert_pending(#payproc_Claim{status = ?pending()}) ->
     ok;
 assert_pending(#payproc_Claim{status = Status}) ->
     throw(#payproc_InvalidClaimStatus{status = Status}).
 
--spec assert_applicable(claim(), timestamp(), revision(), party()) ->
-    ok | no_return().
-
+-spec assert_applicable(claim(), timestamp(), revision(), party()) -> ok | no_return().
 assert_applicable(Claim, Timestamp, Revision, Party) ->
     assert_changeset_applicable(get_changeset(Claim), Timestamp, Revision, Party).
 
--spec assert_changeset_applicable(changeset(), timestamp(), revision(), party()) ->
-    ok | no_return().
-
+-spec assert_changeset_applicable(changeset(), timestamp(), revision(), party()) -> ok | no_return().
 assert_changeset_applicable([Change | Others], Timestamp, Revision, Party) ->
     case Change of
         ?contract_modification(ID, Modification) ->
@@ -585,9 +552,7 @@ get_payment_institution_realm(Ref, Revision, ContractID) ->
             raise_invalid_payment_institution(ContractID, Ref)
     end.
 
--spec assert_acceptable(claim(), timestamp(), revision(), party()) ->
-    ok | no_return().
-
+-spec assert_acceptable(claim(), timestamp(), revision(), party()) -> ok | no_return().
 assert_acceptable(Claim, Timestamp, Revision, Party0) ->
     Changeset = get_changeset(Claim),
     Effects = make_changeset_safe_effects(Changeset, Timestamp, Revision),
@@ -597,16 +562,16 @@ assert_acceptable(Claim, Timestamp, Revision, Party0) ->
 -spec raise_invalid_payment_institution(
     dmsl_domain_thrift:'ContractID'(),
     dmsl_domain_thrift:'PaymentInstitutionRef'() | undefined
-) ->
-    no_return().
-
+) -> no_return().
 raise_invalid_payment_institution(ContractID, Ref) ->
-    raise_invalid_changeset(?invalid_contract(
-        ContractID,
-        {invalid_object_reference, #payproc_InvalidObjectReference{
-            ref = make_optional_domain_ref(payment_institution, Ref)
-        }}
-    )).
+    raise_invalid_changeset(
+        ?invalid_contract(
+            ContractID,
+            {invalid_object_reference, #payproc_InvalidObjectReference{
+                ref = make_optional_domain_ref(payment_institution, Ref)
+            }}
+        )
+    ).
 
 make_optional_domain_ref(_, undefined) ->
     undefined;

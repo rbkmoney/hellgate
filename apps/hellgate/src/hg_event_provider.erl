@@ -4,39 +4,36 @@
 
 -type source_event() :: _.
 -type public_event() :: {source(), payload()}.
--type source()   :: dmsl_payment_processing_thrift:'EventSource'().
--type payload()  :: dmsl_payment_processing_thrift:'EventPayload'().
+-type source() :: dmsl_payment_processing_thrift:'EventSource'().
+-type payload() :: dmsl_payment_processing_thrift:'EventPayload'().
 
 -export_type([public_event/0]).
 
--callback publish_event(hg_machine:id(), source_event()) ->
-    public_event().
+-callback publish_event(hg_machine:id(), source_event()) -> public_event().
 
 -export([publish_event/4]).
 
 %%
 
 -type event_id() :: dmsl_base_thrift:'EventID'().
--type event()    :: dmsl_payment_processing_thrift:'Event'().
+-type event() :: dmsl_payment_processing_thrift:'Event'().
 
--spec publish_event(hg_machine:ns(), event_id(), hg_machine:id(), hg_machine:event()) ->
-    event().
-
+-spec publish_event(hg_machine:ns(), event_id(), hg_machine:id(), hg_machine:event()) -> event().
 publish_event(Ns, EventID, MachineID, {ID, Dt, Ev}) ->
     Module = get_handler_module(Ns),
     {Source, Payload} = Module:publish_event(MachineID, Ev),
     #payproc_Event{
-        id         = EventID,
-        source     = Source,
+        id = EventID,
+        source = Source,
         created_at = Dt,
-        payload    = Payload,
-        sequence   = ID
+        payload = Payload,
+        sequence = ID
     }.
 
 get_handler_module(NS) ->
     Machines = [hg_machine, pm_machine],
     {value, Handler} = search_and_return(
-        fun (Machine) ->
+        fun(Machine) ->
             try Machine:get_handler_module(NS) of
                 Result ->
                     {true, Result}
@@ -45,7 +42,8 @@ get_handler_module(NS) ->
                     false
             end
         end,
-        Machines),
+        Machines
+    ),
     Handler.
 
 -spec search_and_return(Pred, List) -> {value, Value} | false when

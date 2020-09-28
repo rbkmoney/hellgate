@@ -2,6 +2,7 @@
 %%%
 
 -module(hg_invoice_utils).
+
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([validate_cost/2]).
@@ -18,25 +19,24 @@
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
 
--type amount()                :: dmsl_domain_thrift:'Amount'().
--type currency()              :: dmsl_domain_thrift:'CurrencyRef'().
--type cash()                  :: dmsl_domain_thrift:'Cash'().
--type cart()                  :: dmsl_domain_thrift:'InvoiceCart'().
--type cash_range()            :: dmsl_domain_thrift:'CashRange'().
--type party()                 :: dmsl_domain_thrift:'Party'().
--type shop()                  :: dmsl_domain_thrift:'Shop'().
--type contract()              :: dmsl_domain_thrift:'Contract'().
--type party_id()              :: dmsl_domain_thrift:'PartyID'().
--type shop_id()               :: dmsl_domain_thrift:'ShopID'().
--type term_set()              :: dmsl_domain_thrift:'TermSet'().
+-type amount() :: dmsl_domain_thrift:'Amount'().
+-type currency() :: dmsl_domain_thrift:'CurrencyRef'().
+-type cash() :: dmsl_domain_thrift:'Cash'().
+-type cart() :: dmsl_domain_thrift:'InvoiceCart'().
+-type cash_range() :: dmsl_domain_thrift:'CashRange'().
+-type party() :: dmsl_domain_thrift:'Party'().
+-type shop() :: dmsl_domain_thrift:'Shop'().
+-type contract() :: dmsl_domain_thrift:'Contract'().
+-type party_id() :: dmsl_domain_thrift:'PartyID'().
+-type shop_id() :: dmsl_domain_thrift:'ShopID'().
+-type term_set() :: dmsl_domain_thrift:'TermSet'().
 -type payment_service_terms() :: dmsl_domain_thrift:'PaymentsServiceTerms'().
--type domain_revision()       :: dmsl_domain_thrift:'DataRevision'().
--type timestamp()             :: dmsl_base_thrift:'Timestamp'().
--type user_info()             :: dmsl_payment_processing_thrift:'UserInfo'().
--type party_revision_param()  :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type domain_revision() :: dmsl_domain_thrift:'DataRevision'().
+-type timestamp() :: dmsl_base_thrift:'Timestamp'().
+-type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
 -spec validate_cost(cash(), shop()) -> ok.
-
 validate_cost(#domain_Cash{currency = Currency, amount = Amount}, Shop) ->
     _ = validate_amount(Amount),
     _ = validate_currency(Currency, Shop),
@@ -68,13 +68,12 @@ validate_cash_range(#domain_CashRange{
     upper = {UType, #domain_Cash{amount = UAmount, currency = Currency}}
 }) when
     LType =/= UType andalso UAmount >= LAmount orelse
-    LType =:= UType andalso UAmount > LAmount orelse
-    LType =:= UType andalso UType =:= inclusive andalso UAmount == LAmount
+        LType =:= UType andalso UAmount > LAmount orelse
+        LType =:= UType andalso UType =:= inclusive andalso UAmount == LAmount
 ->
     ok;
 validate_cash_range(_) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid cost range">>]}).
-
 
 -spec assert_party_operable(party()) -> party().
 assert_party_operable(#domain_Party{blocking = Blocking, suspension = Suspension} = V) ->
@@ -103,8 +102,7 @@ assert_contract_active(Contract = #domain_Contract{status = Status}) ->
             throw(#payproc_InvalidContractStatus{status = Status})
     end.
 
--spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) ->
-    cash().
+-spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) -> cash().
 assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
     VS = collect_validation_varset(Cost, Party, Shop),
     ReducedTerms = pm_selector:reduce(PaymentTerms#domain_PaymentsServiceTerms.cash_limit, VS, DomainRevision),
@@ -140,9 +138,9 @@ collect_validation_varset(Cost, Party, Shop) ->
         account = #domain_ShopAccount{currency = Currency}
     } = Shop,
     #{
-        cost     => Cost,
+        cost => Cost,
         party_id => PartyID,
-        shop_id  => ShopID,
+        shop_id => ShopID,
         category => Category,
         currency => Currency
     }.
@@ -173,12 +171,10 @@ assert_shop_unblocked(V = {Status, _}) ->
 assert_shop_active(V = {Status, _}) ->
     Status == active orelse throw(#payproc_InvalidShopStatus{status = {suspension, V}}).
 
--spec get_cart_amount(cart()) ->
-    cash().
-
+-spec get_cart_amount(cart()) -> cash().
 get_cart_amount(#domain_InvoiceCart{lines = [FirstLine | Cart]}) ->
     lists:foldl(
-        fun (Line, CashAcc) ->
+        fun(Line, CashAcc) ->
             hg_cash:add(get_line_amount(Line), CashAcc)
         end,
         get_line_amount(FirstLine),
@@ -191,8 +187,7 @@ get_line_amount(#domain_InvoiceLine{
 }) ->
     #domain_Cash{amount = Amount * Quantity, currency = Currency}.
 
--spec check_deadline(Deadline :: binary() | undefined) ->
-    ok | {error, deadline_reached}.
+-spec check_deadline(Deadline :: binary() | undefined) -> ok | {error, deadline_reached}.
 check_deadline(undefined) ->
     ok;
 check_deadline(Deadline) ->

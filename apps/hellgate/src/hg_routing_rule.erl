@@ -8,9 +8,9 @@
 -define(const(Bool), {constant, Bool}).
 
 -type route_predestination() :: hg_routing:route_predestination().
--type payment_institution()  :: dmsl_domain_thrift:'PaymentInstitution'().
+-type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type non_fail_rated_route() :: hg_routing:non_fail_rated_route().
--type reject_context()       :: hg_routing:reject_context().
+-type reject_context() :: hg_routing:reject_context().
 
 -spec gather_routes(
     route_predestination(),
@@ -18,7 +18,6 @@
     pm_selector:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
-
 gather_routes(_, #domain_PaymentInstitution{payment_routing = undefined}, VS, _) ->
     {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
@@ -103,9 +102,10 @@ filter_routes({Routes, Rejected}, Prohibitions) ->
     end, {[], Rejected}, Routes).
 
 get_route(TerminalRef, Revision) ->
-    Terminal = #domain_Terminal{
-        provider_ref = ProviderRef
-    } = hg_domain:get(Revision, {terminal, TerminalRef}),
+    Terminal =
+        #domain_Terminal{
+            provider_ref = ProviderRef
+        } = hg_domain:get(Revision, {terminal, TerminalRef}),
     {Terminal, hg_domain:get(Revision, {provider, ProviderRef})}.
 
 compute_rule_set(RuleSetRef, VS, Revision) ->

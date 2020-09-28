@@ -9,14 +9,11 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -type event_id() :: dmsl_base_thrift:'EventID'().
--type event()    :: dmsl_payment_processing_thrift:'Event'().
+-type event() :: dmsl_payment_processing_thrift:'Event'().
 
 -spec handle_function
-    ('GetEvents', woody:args(), hg_woody_wrapper:handler_opts()) ->
-        [event()] | no_return();
-    ('GetLastEventID', woody:args(), hg_woody_wrapper:handler_opts()) ->
-        event_id() | no_return().
-
+    ('GetEvents', woody:args(), hg_woody_wrapper:handler_opts()) -> [event()] | no_return();
+    ('GetLastEventID', woody:args(), hg_woody_wrapper:handler_opts()) -> event_id() | no_return().
 handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit}}, _Opts) ->
     case hg_event_sink:get_events(<<"payproc">>, After, Limit) of
         {ok, Events} ->
@@ -24,7 +21,6 @@ handle_function('GetEvents', {#payproc_EventRange{'after' = After, limit = Limit
         {error, event_not_found} ->
             throw(#payproc_EventNotFound{})
     end;
-
 handle_function('GetLastEventID', {}, _Opts) ->
     % TODO handle thrift exceptions here
     case hg_event_sink:get_last_event_id(<<"payproc">>) of
@@ -34,12 +30,10 @@ handle_function('GetLastEventID', {}, _Opts) ->
             throw(#payproc_NoLastEvent{})
     end.
 
--spec publish_events([hg_event_sink:sink_event()]) ->
-    [event()].
+-spec publish_events([hg_event_sink:sink_event()]) -> [event()].
 publish_events(Events) ->
     [publish_event(Event) || Event <- Events].
 
--spec publish_event(hg_event_sink:sink_event()) ->
-    event().
+-spec publish_event(hg_event_sink:sink_event()) -> event().
 publish_event({ID, Ns, SourceID, {EventID, Dt, Payload}}) ->
     hg_event_provider:publish_event(Ns, ID, SourceID, {EventID, Dt, Payload}).
