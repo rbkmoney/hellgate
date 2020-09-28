@@ -1223,16 +1223,16 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
 make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     Route = get_route(St),
     Shop = get_shop(Opts),
-    VS0 = collect_validation_varset(St, Opts),
-    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt, VS0)),
-    VS1 = validate_refund(MerchantTerms, Refund, Payment, VS0),
-    ProviderPaymentsTerms = get_provider_terminal_terms(Route, VS1, Revision),
+    VS = collect_validation_varset(St, Opts),
+    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt, VS)),
+    ok = validate_refund(MerchantTerms, Refund, Payment),
+    ProviderPaymentsTerms = get_provider_terminal_terms(Route, VS, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
-    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS1, Revision),
+    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
     construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
 
 assert_refund_cash(Cash, St) ->
@@ -1351,41 +1351,36 @@ get_provider_partial_refunds_terms(
 ) ->
     error({misconfiguration, {'No partial refund terms for a payment', Payment}}).
 
-validate_refund(Terms, Refund, Payment, VS0) ->
+validate_refund(Terms, Refund, Payment) ->
     Cost = get_payment_cost(Payment),
     Cash = get_refund_cash(Refund),
     case hg_cash:sub(Cost, Cash) of
         ?cash(0, _) ->
-            validate_common_refund_terms(Terms, Refund, Payment, VS0);
+            validate_common_refund_terms(Terms, Refund, Payment);
         ?cash(Amount, _) when Amount > 0 ->
-            validate_partial_refund(Terms, Refund, Payment, VS0)
+            validate_partial_refund(Terms, Refund, Payment)
     end.
 
 validate_partial_refund(
     #domain_PaymentRefundsServiceTerms{partial_refunds = PRs} = Terms,
     Refund,
-    Payment,
-    VS0
+    Payment
 ) when PRs /= undefined ->
-    VS1 = validate_common_refund_terms(Terms, Refund, Payment, VS0),
+    ok = validate_common_refund_terms(Terms, Refund, Payment),
     ok = validate_refund_cash(
         get_refund_cash(Refund),
         PRs#domain_PartialRefundsServiceTerms.cash_limit
     ),
-    VS1;
+    ok;
 validate_partial_refund(
     #domain_PaymentRefundsServiceTerms{partial_refunds = undefined},
     _Refund,
-    _Payment,
-    _VS0
+    _Payment
 ) ->
     throw(#payproc_OperationNotPermitted{}).
 
-validate_common_refund_terms(Terms, Refund, Payment, VS0) ->
+validate_common_refund_terms(Terms, Refund, Payment) ->
     PaymentTool = get_payment_tool(Payment),
-    VS1 = VS0#{
-        payment_tool => PaymentTool
-    },
     ok = validate_payment_tool(
         PaymentTool,
         Terms#domain_PaymentRefundsServiceTerms.payment_methods
@@ -1395,7 +1390,7 @@ validate_common_refund_terms(Terms, Refund, Payment, VS0) ->
         get_payment_created_at(Payment),
         Terms#domain_PaymentRefundsServiceTerms.eligibility_time
     ),
-    VS1.
+    ok.
 
 collect_refund_cashflow(
     #domain_PaymentRefundsServiceTerms{fees = MerchantCashflowSelector},
@@ -3431,7 +3426,7 @@ get_route_provider(Route, Revision) ->
     hg_domain:get(Revision, {provider, get_route_provider_ref(Route)}).
 
 inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentInstitution, Opts) ->
-    {value, InspectorRef} = PaymentInstitution#domain_PaymentInstitution.inspector,
+    InspectorRef = get_selector_value(inspector, PaymentInstitution#domain_PaymentInstitution.inspector),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
     RiskScore = hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector),
     % FIXME: move this logic to inspector
