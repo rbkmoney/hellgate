@@ -250,8 +250,7 @@ get_shop_account(ShopID, Client) ->
 -spec compute_provider(provider_ref(), domain_revision(), varset(), pid()) ->
     dmsl_domain_thrift:'Provider'() | woody_error:business_error().
 compute_provider(ProviderRef, Revision, Varset, Client) ->
-    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeProvider',
-        [ProviderRef, Revision, Varset]})).
+    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeProvider', [ProviderRef, Revision, Varset]})).
 
 -spec compute_provider_terminal_terms(
     provider_ref(),
@@ -261,8 +260,12 @@ compute_provider(ProviderRef, Revision, Varset, Client) ->
     pid()
 ) -> dmsl_domain_thrift:'ProvisionTermSet'() | woody_error:business_error().
 compute_provider_terminal_terms(ProviderRef, TerminalRef, Revision, Varset, Client) ->
-    map_result_error(gen_server:call(Client, {call_without_party, 'ComputeProviderTerminalTerms',
-        [ProviderRef, TerminalRef, Revision, Varset]})).
+    map_result_error(
+        gen_server:call(
+            Client,
+            {call_without_party, 'ComputeProviderTerminalTerms', [ProviderRef, TerminalRef, Revision, Varset]}
+        )
+    ).
 
 -spec compute_globals(globals_ref(), domain_revision(), varset(), pid()) ->
     dmsl_domain_thrift:'Globals'() | woody_error:business_error().
