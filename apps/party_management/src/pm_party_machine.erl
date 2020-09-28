@@ -277,7 +277,7 @@ handle_call('Accept', {_PartyID, Claim}, AuxSt, St) ->
     } = Claim,
     try
         Party = get_st_party(St),
-        ok = assert_cash_regisrty_modifications_applicable(Changeset, Party),
+        ok = assert_cash_regisrter_modifications_applicable(Changeset, Party),
         case pm_claim_committer:from_claim_mgmt(Claim) of
             undefined ->
                 ok;
@@ -320,7 +320,7 @@ handle_call('Commit', {_PartyID, CmClaim}, AuxSt, St) ->
         St
    ).
 
-assert_cash_regisrty_modifications_applicable(Changeset, Party) ->
+assert_cash_regisrter_modifications_applicable(Changeset, Party) ->
     CashRegisterShopIDs = get_cash_register_modifications_shop_ids(Changeset),
     ShopModificationsShopIDs = get_shop_modifications_shop_ids(Changeset),
     PartyShopIDs = maps:keys(pm_party:get_shops(Party)),
