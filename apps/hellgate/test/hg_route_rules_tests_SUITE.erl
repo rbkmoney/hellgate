@@ -58,7 +58,12 @@ groups() -> [].
 init_per_suite(C) ->
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, _Ret} = hg_ct_helper:start_apps([
-        woody, scoper, dmt_client, party_management, hellgate, {cowboy, CowboySpec}
+        woody,
+        scoper,
+        dmt_client,
+        party_management,
+        hellgate,
+        {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture()),
 
@@ -97,10 +102,13 @@ end_per_group(_GroupName, C) ->
 -spec init_per_testcase(test_case_name(), config()) -> config().
 init_per_testcase(_, C) ->
     Ctx0 = hg_context:set_party_client(cfg(party_client, C), hg_context:create()),
-    Ctx1 = hg_context:set_user_identity(#{
-        id => cfg(party_id, C),
-        realm => <<"internal">>
-    }, Ctx0),
+    Ctx1 = hg_context:set_user_identity(
+        #{
+            id => cfg(party_id, C),
+            realm => <<"internal">>
+        },
+        Ctx0
+    ),
     Ctx2 = hg_context:set_party_client_context(#{woody_context => woody_context:new()}, Ctx1),
     ok = hg_context:save(Ctx2),
     C.

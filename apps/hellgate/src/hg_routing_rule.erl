@@ -37,9 +37,13 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
 
 get_table_prohibitions(RuleSetDeny) ->
     Candidates = get_decisions_candidates(RuleSetDeny),
-    lists:foldr(fun(C, AccIn) ->
-        AccIn#{get_terminal_ref(C) => get_description(C)}
-    end, #{}, Candidates).
+    lists:foldr(
+        fun(C, AccIn) ->
+            AccIn#{get_terminal_ref(C) => get_description(C)}
+        end,
+        #{},
+        Candidates
+    ).
 
 get_decisions_candidates(RuleSet) ->
     #domain_PaymentRoutingRuleset{
@@ -90,16 +94,20 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
     ).
 
 filter_routes({Routes, Rejected}, Prohibitions) ->
-    lists:foldr(fun(Route, {AccIn, RejectedIn}) ->
-        {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
-        case maps:find(TerminalRef, Prohibitions) of
-            error ->
-                {[Route | AccIn], RejectedIn};
-            {ok, Description} ->
-                RejectedOut = [{ProviderRef, TerminalRef, {'RoutingRule', Description}} | RejectedIn],
-                {AccIn, RejectedOut}
-        end
-    end, {[], Rejected}, Routes).
+    lists:foldr(
+        fun(Route, {AccIn, RejectedIn}) ->
+            {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
+            case maps:find(TerminalRef, Prohibitions) of
+                error ->
+                    {[Route | AccIn], RejectedIn};
+                {ok, Description} ->
+                    RejectedOut = [{ProviderRef, TerminalRef, {'RoutingRule', Description}} | RejectedIn],
+                    {AccIn, RejectedOut}
+            end
+        end,
+        {[], Rejected},
+        Routes
+    ).
 
 get_route(TerminalRef, Revision) ->
     Terminal =
@@ -112,7 +120,12 @@ compute_rule_set(RuleSetRef, VS, Revision) ->
     {Client, Context} = get_party_client(),
     PreparedVarset = hg_varset:prepare_varset(VS),
     {ok, RuleSet} = party_client_thrift:compute_payment_routing_ruleset(
-        RuleSetRef, Revision, PreparedVarset, Client, Context),
+        RuleSetRef,
+        Revision,
+        PreparedVarset,
+        Client,
+        Context
+    ),
     RuleSet.
 
 get_terminal_ref(Candidate) ->
