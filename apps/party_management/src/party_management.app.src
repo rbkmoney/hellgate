@@ -10,7 +10,7 @@
         stdlib,
         genlib,
         pm_proto,
-        shumpune_proto,
+        shumaich_proto,
         cowboy,
         how_are_you,  % must be after ranch and before any woody usage
         woody,
@@ -19,6 +19,7 @@
         dmt_client,
         woody_user_identity,
         payproc_errors,
+        bender_client,
         erl_health
     ]},
     {env, []},
