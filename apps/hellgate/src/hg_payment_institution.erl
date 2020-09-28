@@ -68,3 +68,9 @@ choose_external_account(Currency, VS, Revision) ->
         _ ->
             undefined
     end.
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.
