@@ -116,7 +116,6 @@ cfg(Key, C) ->
     pm_ct_helper:cfg(Key, C).
 
 -spec all() -> [{group, group_name()}].
-
 all() ->
     [
         {group, party_access_control},
@@ -136,7 +135,6 @@ all() ->
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
-
 groups() ->
     [
         {party_creation, [sequence], [
@@ -271,14 +269,12 @@ groups() ->
 %% starting/stopping
 
 -spec init_per_suite(config()) -> config().
-
 init_per_suite(C) ->
     {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, party_management, hellgate]),
     ok = pm_domain:insert(construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
 
 -spec end_per_suite(config()) -> _.
-
 end_per_suite(C) ->
     ok = pm_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
@@ -286,7 +282,6 @@ end_per_suite(C) ->
 %% tests
 
 -spec init_per_group(group_name(), config()) -> config().
-
 init_per_group(shop_blocking_suspension, C) ->
     C;
 init_per_group(Group, C) ->
@@ -296,95 +291,145 @@ init_per_group(Group, C) ->
     [{party_id, PartyID}, {client, Client} | C].
 
 -spec end_per_group(group_name(), config()) -> _.
-
 end_per_group(_Group, C) ->
     Client = cfg(client, C),
     pm_client_party:stop(Client).
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
-
 init_per_testcase(_Name, C) ->
     C.
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
-
 end_per_testcase(_Name, _C) ->
     ok.
 
 %%
 
--define(party_w_status(ID, Blocking, Suspension),
-    #domain_Party{id = ID, blocking = Blocking, suspension = Suspension}).
--define(shop_w_status(ID, Blocking, Suspension),
-    #domain_Shop{id = ID, blocking = Blocking, suspension = Suspension}).
--define(wallet_w_status(ID, Blocking, Suspension),
-    #domain_Wallet{id = ID, blocking = Blocking, suspension = Suspension}).
+-define(party_w_status(ID, Blocking, Suspension), #domain_Party{
+    id = ID,
+    blocking = Blocking,
+    suspension = Suspension
+}).
+
+-define(shop_w_status(ID, Blocking, Suspension), #domain_Shop{
+    id = ID,
+    blocking = Blocking,
+    suspension = Suspension
+}).
+
+-define(wallet_w_status(ID, Blocking, Suspension), #domain_Wallet{
+    id = ID,
+    blocking = Blocking,
+    suspension = Suspension
+}).
 
 -define(invalid_user(),
-    {exception, #payproc_InvalidUser{}}).
+    {exception, #payproc_InvalidUser{}}
+).
+
 -define(invalid_request(Errors),
-    {exception, #'InvalidRequest'{errors = Errors}}).
+    {exception, #'InvalidRequest'{errors = Errors}}
+).
 
 -define(party_not_found(),
-    {exception, #payproc_PartyNotFound{}}).
+    {exception, #payproc_PartyNotFound{}}
+).
+
 -define(party_exists(),
-    {exception, #payproc_PartyExists{}}).
+    {exception, #payproc_PartyExists{}}
+).
+
 -define(invalid_party_revision(),
-    {exception, #payproc_InvalidPartyRevision{}}).
+    {exception, #payproc_InvalidPartyRevision{}}
+).
+
 -define(party_blocked(Reason),
-    {exception, #payproc_InvalidPartyStatus{status = {blocking, ?blocked(Reason, _)}}}).
+    {exception, #payproc_InvalidPartyStatus{status = {blocking, ?blocked(Reason, _)}}}
+).
+
 -define(party_unblocked(Reason),
-    {exception, #payproc_InvalidPartyStatus{status = {blocking, ?unblocked(Reason, _)}}}).
+    {exception, #payproc_InvalidPartyStatus{status = {blocking, ?unblocked(Reason, _)}}}
+).
+
 -define(party_suspended(),
-    {exception, #payproc_InvalidPartyStatus{status = {suspension, ?suspended(_)}}}).
+    {exception, #payproc_InvalidPartyStatus{status = {suspension, ?suspended(_)}}}
+).
+
 -define(party_active(),
-    {exception, #payproc_InvalidPartyStatus{status = {suspension, ?active(_)}}}).
+    {exception, #payproc_InvalidPartyStatus{status = {suspension, ?active(_)}}}
+).
 
 -define(namespace_not_found(),
-    {exception, #payproc_PartyMetaNamespaceNotFound{}}).
+    {exception, #payproc_PartyMetaNamespaceNotFound{}}
+).
 
 -define(contract_not_found(),
-    {exception, #payproc_ContractNotFound{}}).
+    {exception, #payproc_ContractNotFound{}}
+).
+
 -define(invalid_contract_status(Status),
-    {exception, #payproc_InvalidContractStatus{status = Status}}).
+    {exception, #payproc_InvalidContractStatus{status = Status}}
+).
+
 -define(payout_tool_not_found(),
-    {exception, #payproc_PayoutToolNotFound{}}).
+    {exception, #payproc_PayoutToolNotFound{}}
+).
 
 -define(shop_not_found(),
-    {exception, #payproc_ShopNotFound{}}).
+    {exception, #payproc_ShopNotFound{}}
+).
+
 -define(shop_blocked(Reason),
-    {exception, #payproc_InvalidShopStatus{status = {blocking, ?blocked(Reason, _)}}}).
+    {exception, #payproc_InvalidShopStatus{status = {blocking, ?blocked(Reason, _)}}}
+).
+
 -define(shop_unblocked(Reason),
-    {exception, #payproc_InvalidShopStatus{status = {blocking, ?unblocked(Reason, _)}}}).
+    {exception, #payproc_InvalidShopStatus{status = {blocking, ?unblocked(Reason, _)}}}
+).
+
 -define(shop_suspended(),
-    {exception, #payproc_InvalidShopStatus{status = {suspension, ?suspended(_)}}}).
+    {exception, #payproc_InvalidShopStatus{status = {suspension, ?suspended(_)}}}
+).
+
 -define(shop_active(),
-    {exception, #payproc_InvalidShopStatus{status = {suspension, ?active(_)}}}).
+    {exception, #payproc_InvalidShopStatus{status = {suspension, ?active(_)}}}
+).
 
 -define(wallet_not_found(),
-    {exception, #payproc_WalletNotFound{}}).
--define(wallet_blocked(Reason),
-    {exception, #payproc_InvalidWalletStatus{status = {blocking, ?blocked(Reason, _)}}}).
--define(wallet_unblocked(Reason),
-    {exception, #payproc_InvalidWalletStatus{status = {blocking, ?unblocked(Reason, _)}}}).
--define(wallet_suspended(),
-    {exception, #payproc_InvalidWalletStatus{status = {suspension, ?suspended(_)}}}).
--define(wallet_active(),
-    {exception, #payproc_InvalidWalletStatus{status = {suspension, ?active(_)}}}).
+    {exception, #payproc_WalletNotFound{}}
+).
 
--define(claim(ID),
-    #payproc_Claim{id = ID}).
--define(claim(ID, Status),
-    #payproc_Claim{id = ID, status = Status}).
--define(claim(ID, Status, Changeset),
-    #payproc_Claim{id = ID, status = Status, changeset = Changeset}).
+-define(wallet_blocked(Reason),
+    {exception, #payproc_InvalidWalletStatus{status = {blocking, ?blocked(Reason, _)}}}
+).
+
+-define(wallet_unblocked(Reason),
+    {exception, #payproc_InvalidWalletStatus{status = {blocking, ?unblocked(Reason, _)}}}
+).
+
+-define(wallet_suspended(),
+    {exception, #payproc_InvalidWalletStatus{status = {suspension, ?suspended(_)}}}
+).
+
+-define(wallet_active(),
+    {exception, #payproc_InvalidWalletStatus{status = {suspension, ?active(_)}}}
+).
+
+-define(claim(ID), #payproc_Claim{id = ID}).
+-define(claim(ID, Status), #payproc_Claim{id = ID, status = Status}).
+-define(claim(ID, Status, Changeset), #payproc_Claim{id = ID, status = Status, changeset = Changeset}).
 
 -define(claim_not_found(),
-    {exception, #payproc_ClaimNotFound{}}).
+    {exception, #payproc_ClaimNotFound{}}
+).
+
 -define(invalid_claim_status(Status),
-    {exception, #payproc_InvalidClaimStatus{status = Status}}).
+    {exception, #payproc_InvalidClaimStatus{status = Status}}
+).
+
 -define(invalid_changeset(Reason),
-    {exception, #payproc_InvalidChangeset{reason = Reason}}).
+    {exception, #payproc_InvalidChangeset{reason = Reason}}
+).
 
 -define(REAL_SHOP_ID, <<"SHOP1">>).
 -define(REAL_CONTRACTOR_ID, <<"CONTRACTOR1">>).
@@ -518,7 +563,8 @@ party_retrieval(C) ->
 
 party_revisioning(C) ->
     Client = cfg(client, C),
-    T0 = pm_datetime:add_interval(pm_datetime:format_now(), {undefined, undefined, -1}), % yesterday
+    % yesterday
+    T0 = pm_datetime:add_interval(pm_datetime:format_now(), {undefined, undefined, -1}),
     ?invalid_party_revision() = pm_client_party:checkout({timestamp, T0}, Client),
     Party1 = pm_client_party:get(Client),
     R1 = Party1#domain_Party.revision,
@@ -533,7 +579,8 @@ party_revisioning(C) ->
     Party2 = pm_client_party:checkout({revision, R2}, Client),
     Party3 = pm_client_party:get(Client),
     R3 = Party3#domain_Party.revision,
-    T3 = pm_datetime:add_interval(T2, {undefined, undefined, 1}), % tomorrow
+    % tomorrow
+    T3 = pm_datetime:add_interval(T2, {undefined, undefined, 1}),
     Party3 = pm_client_party:checkout({timestamp, T3}, Client),
     Party3 = pm_client_party:checkout({revision, R3}, Client),
     ?invalid_party_revision() = pm_client_party:checkout({revision, R3 + 1}, Client).
@@ -551,8 +598,10 @@ party_get_revision(C) ->
     R2 = R1 + 1,
     % some more
     Max = 7,
-    Claims = [assert_claim_pending(pm_client_party:create_claim(create_change_set(Num), Client), Client)
-        || Num <- lists:seq(1, Max)],
+    Claims = [
+        assert_claim_pending(pm_client_party:create_claim(create_change_set(Num), Client), Client)
+        || Num <- lists:seq(1, Max)
+    ],
     R2 = pm_client_party:get_revision(Client),
     _Oks = [accept_claim(Cl, Client) || Cl <- Claims],
     R3 = pm_client_party:get_revision(Client),
@@ -597,30 +646,46 @@ contract_terms_retrieval(C) ->
     DomainRevision1 = pm_domain:head(),
     Timstamp1 = pm_datetime:format_now(),
     TermSet1 = pm_client_party:compute_contract_terms(
-        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+        ContractID,
+        Timstamp1,
+        {revision, PartyRevision},
+        DomainRevision1,
+        Varset,
+        Client
     ),
-    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
-    }} = TermSet1,
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
+        }
+    } = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, undefined)),
     DomainRevision2 = pm_domain:head(),
     Timstamp2 = pm_datetime:format_now(),
     TermSet2 = pm_client_party:compute_contract_terms(
-        ContractID, Timstamp2, {revision, PartyRevision}, DomainRevision2, Varset, Client
+        ContractID,
+        Timstamp2,
+        {revision, PartyRevision},
+        DomainRevision2,
+        Varset,
+        Client
     ),
-    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
-    }} = TermSet2.
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
+        }
+    } = TermSet2.
 
 contract_already_exists(C) ->
     Client = cfg(client, C),
     ContractParams = make_contract_params(),
     ContractID = ?REAL_CONTRACT_ID,
     Changeset = [?contract_modification(ContractID, {creation, ContractParams})],
-    ?invalid_changeset(?invalid_contract(
-        ContractID,
-        {already_exists, ContractID}
-    )) = pm_client_party:create_claim(Changeset, Client).
+    ?invalid_changeset(
+        ?invalid_contract(
+            ContractID,
+            {already_exists, ContractID}
+        )
+    ) = pm_client_party:create_claim(Changeset, Client).
 
 contract_termination(C) ->
     Client = cfg(client, C),
@@ -639,10 +704,12 @@ contract_already_terminated(C) ->
     Changeset = [
         ?contract_modification(ContractID, ?contract_termination(<<"JUST TO BE SURE.">>))
     ],
-    ?invalid_changeset(?invalid_contract(
-        ContractID,
-        {invalid_status, _}
-    )) = pm_client_party:create_claim(Changeset, Client).
+    ?invalid_changeset(
+        ?invalid_contract(
+            ContractID,
+            {invalid_status, _}
+        )
+    ) = pm_client_party:create_claim(Changeset, Client).
 
 contract_expiration(C) ->
     Client = cfg(client, C),
@@ -707,31 +774,34 @@ contract_payout_tool_creation(C) ->
     PayoutToolID1 = <<"2">>,
     PayoutToolParams1 = #payproc_PayoutToolParams{
         currency = ?cur(<<"RUB">>),
-        tool_info  = {russian_bank_account, #domain_RussianBankAccount{
-            account = <<"4276300010908312893">>,
-            bank_name = <<"SomeBank">>,
-            bank_post_account = <<"123129876">>,
-            bank_bik = <<"66642666">>
-        }}
+        tool_info =
+            {russian_bank_account, #domain_RussianBankAccount{
+                account = <<"4276300010908312893">>,
+                bank_name = <<"SomeBank">>,
+                bank_post_account = <<"123129876">>,
+                bank_bik = <<"66642666">>
+            }}
     },
     PayoutToolID2 = <<"3">>,
     PayoutToolParams2 = #payproc_PayoutToolParams{
         currency = ?cur(<<"USD">>),
-        tool_info  = {international_bank_account, #domain_InternationalBankAccount{
-            bank = #domain_InternationalBankDetails{
-                name = <<"SomeBank">>,
-                address = <<"Bahamas">>,
-                bic = <<"66642666">>
-            },
-            iban = <<"DC6664266612312312">>
-        }}
+        tool_info =
+            {international_bank_account, #domain_InternationalBankAccount{
+                bank = #domain_InternationalBankDetails{
+                    name = <<"SomeBank">>,
+                    address = <<"Bahamas">>,
+                    bic = <<"66642666">>
+                },
+                iban = <<"DC6664266612312312">>
+            }}
     },
     PayoutToolID3 = <<"4">>,
     PayoutToolParams3 = #payproc_PayoutToolParams{
         currency = ?cur(<<"USD">>),
-        tool_info  = {wallet_info, #domain_WalletInfo{
-            wallet_id = <<"123">>
-        }}
+        tool_info =
+            {wallet_info, #domain_WalletInfo{
+                wallet_id = <<"123">>
+            }}
     },
     Changeset = [
         ?contract_modification(ContractID, ?payout_tool_creation(PayoutToolID1, PayoutToolParams1)),
@@ -752,18 +822,19 @@ contract_payout_tool_modification(C) ->
     Client = cfg(client, C),
     ContractID = ?REAL_CONTRACT_ID,
     PayoutToolID = <<"3">>,
-    ToolInfo = {international_bank_account, #domain_InternationalBankAccount{
-        number = <<"123456789">>,
-        bank = #domain_InternationalBankDetails{
-            name = <<"ABetterBank">>,
-            address = <<"Burkina Faso">>,
-            bic = <<"BCAOBFBFBOB">>
-        },
-        correspondent_account = #domain_InternationalBankAccount{
-            number = <<"1111222233334444">>
-        },
-        iban = <<"BF42BF0840101300463574000390">>
-    }},
+    ToolInfo =
+        {international_bank_account, #domain_InternationalBankAccount{
+            number = <<"123456789">>,
+            bank = #domain_InternationalBankDetails{
+                name = <<"ABetterBank">>,
+                address = <<"Burkina Faso">>,
+                bic = <<"BCAOBFBFBOB">>
+            },
+            correspondent_account = #domain_InternationalBankAccount{
+                number = <<"1111222233334444">>
+            },
+            iban = <<"BF42BF0840101300463574000390">>
+        }},
     Changeset = [
         ?contract_modification(ContractID, ?payout_tool_info_modification(PayoutToolID, ToolInfo))
     ],
@@ -774,7 +845,9 @@ contract_payout_tool_modification(C) ->
         payout_tools = PayoutTools
     } = pm_client_party:get_contract(ContractID, Client),
     #domain_PayoutTool{payout_tool_info = ToolInfo} = lists:keyfind(
-        PayoutToolID, #domain_PayoutTool.id, PayoutTools
+        PayoutToolID,
+        #domain_PayoutTool.id,
+        PayoutTools
     ).
 
 contract_adjustment_creation(C) ->
@@ -815,38 +888,44 @@ contract_adjustment_expiration(C) ->
         adjustments = Adjustments
     } = pm_client_party:get_contract(ContractID, Client),
     true = lists:keymember(ID, #domain_ContractAdjustment.id, Adjustments),
-    true = Terms /= pm_party:get_terms(
-        pm_client_party:get_contract(ContractID, Client),
-        pm_datetime:format_now(),
-        Revision
-    ),
+    true =
+        Terms /=
+            pm_party:get_terms(
+                pm_client_party:get_contract(ContractID, Client),
+                pm_datetime:format_now(),
+                Revision
+            ),
     AfterExpiration = pm_datetime:add_interval(pm_datetime:format_now(), {0, 1, 1}),
     Terms = pm_party:get_terms(pm_client_party:get_contract(ContractID, Client), AfterExpiration, Revision),
     pm_context:cleanup().
 
 compute_payment_institution_terms(C) ->
     Client = cfg(client, C),
-    #domain_TermSet{} = T1 = pm_client_party:compute_payment_institution_terms(
-        ?pinst(2),
-        #payproc_Varset{},
-        Client
-    ),
-    #domain_TermSet{} = T2 = pm_client_party:compute_payment_institution_terms(
-        ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(bank_card_deprecated, visa)},
-        Client
-    ),
+    #domain_TermSet{} =
+        T1 = pm_client_party:compute_payment_institution_terms(
+            ?pinst(2),
+            #payproc_Varset{},
+            Client
+        ),
+    #domain_TermSet{} =
+        T2 = pm_client_party:compute_payment_institution_terms(
+            ?pinst(2),
+            #payproc_Varset{payment_method = ?pmt(bank_card_deprecated, visa)},
+            Client
+        ),
     T1 /= T2 orelse error({equal_term_sets, T1, T2}),
-    #domain_TermSet{} = T3 = pm_client_party:compute_payment_institution_terms(
-        ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(payment_terminal, euroset)},
-        Client
-    ),
-    #domain_TermSet{} = T4 = pm_client_party:compute_payment_institution_terms(
-        ?pinst(2),
-        #payproc_Varset{payment_method = ?pmt(empty_cvv_bank_card_deprecated, visa)},
-        Client
-    ),
+    #domain_TermSet{} =
+        T3 = pm_client_party:compute_payment_institution_terms(
+            ?pinst(2),
+            #payproc_Varset{payment_method = ?pmt(payment_terminal, euroset)},
+            Client
+        ),
+    #domain_TermSet{} =
+        T4 = pm_client_party:compute_payment_institution_terms(
+            ?pinst(2),
+            #payproc_Varset{payment_method = ?pmt(empty_cvv_bank_card_deprecated, visa)},
+            Client
+        ),
     T1 /= T3 orelse error({equal_term_sets, T1, T3}),
     T2 /= T3 orelse error({equal_term_sets, T2, T3}),
     T1 /= T4 orelse error({equal_term_sets, T1, T4}),
@@ -899,7 +978,12 @@ contract_p2p_terms(C) ->
             p2p = P2PServiceTerms
         }
     } = pm_client_party:compute_contract_terms(
-        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+        ContractID,
+        Timstamp1,
+        {revision, PartyRevision},
+        DomainRevision1,
+        Varset,
+        Client
     ),
     #domain_P2PServiceTerms{fees = Fees} = P2PServiceTerms,
     {value, #domain_Fees{
@@ -923,7 +1007,12 @@ contract_p2p_template_terms(C) ->
             }
         }
     } = pm_client_party:compute_contract_terms(
-        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+        ContractID,
+        Timstamp1,
+        {revision, PartyRevision},
+        DomainRevision1,
+        Varset,
+        Client
     ),
     #domain_P2PTemplateServiceTerms{allow = Allow} = TemplateTerms,
     {constant, true} = Allow.
@@ -943,7 +1032,12 @@ contract_w2w_terms(C) ->
             w2w = W2WServiceTerms
         }
     } = pm_client_party:compute_contract_terms(
-        ContractID, Timstamp1, {revision, PartyRevision}, DomainRevision1, Varset, Client
+        ContractID,
+        Timstamp1,
+        {revision, PartyRevision},
+        DomainRevision1,
+        Varset,
+        Client
     ),
     #domain_W2WServiceTerms{fees = Fees} = W2WServiceTerms,
     {value, #domain_Fees{
@@ -962,7 +1056,7 @@ shop_creation(C) ->
     Params = #payproc_ShopParams{
         category = ?cat(2),
         location = {url, <<"https://somename.somedomain/p/123?redirect=1">>},
-        details  = Details,
+        details = Details,
         contract_id = ContractID,
         payout_tool_id = pm_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
@@ -986,14 +1080,18 @@ shop_terms_retrieval(C) ->
     ShopID = ?REAL_SHOP_ID,
     Timestamp = pm_datetime:format_now(),
     TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
-    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
-    }} = TermSet1,
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
+        }
+    } = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
     TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, Client),
-    #domain_TermSet{payments = #domain_PaymentsServiceTerms{
-        payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
-    }} = TermSet2.
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
+        }
+    } = TermSet2.
 
 shop_already_exists(C) ->
     Client = cfg(client, C),
@@ -1003,7 +1101,7 @@ shop_already_exists(C) ->
     Params = #payproc_ShopParams{
         category = ?cat(2),
         location = {url, <<"https://s0mename.s0med0main">>},
-        details  = Details,
+        details = Details,
         contract_id = ContractID,
         payout_tool_id = pm_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
@@ -1048,7 +1146,7 @@ shop_update_before_confirm(C) ->
     ShopID = <<"SHOP2">>,
     Params = #payproc_ShopParams{
         location = {url, <<"">>},
-        details  = pm_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
+        details = pm_ct_helper:make_shop_details(<<"THRIFT SHOP">>, <<"Hot. Fancy. Almost free.">>),
         contract_id = ContractID,
         payout_tool_id = pm_ct_helper:get_first_payout_tool_id(ContractID, Client)
     },
@@ -1082,13 +1180,14 @@ shop_update_with_bad_params(C) ->
     Claim = assert_claim_pending(pm_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
 
-    Claim1 = #payproc_Claim{id = ID1, revision = Rev1} = assert_claim_pending(
-        pm_client_party:create_claim(
-            [?shop_modification(ShopID, {category_modification, ?cat(1)})],
+    Claim1 =
+        #payproc_Claim{id = ID1, revision = Rev1} = assert_claim_pending(
+            pm_client_party:create_claim(
+                [?shop_modification(ShopID, {category_modification, ?cat(1)})],
+                Client
+            ),
             Client
         ),
-        Client
-    ),
     ?invalid_changeset(_CategoryError) = pm_client_party:accept_claim(ID1, Rev1, Client),
     ok = revoke_claim(Claim1, Client).
 
@@ -1122,7 +1221,7 @@ claim_revocation(C) ->
     ContractID = ?REAL_CONTRACT_ID,
     Params = #payproc_ShopParams{
         location = {url, <<"https://url3">>},
-        details  = pm_ct_helper:make_shop_details(<<"OOPS">>),
+        details = pm_ct_helper:make_shop_details(<<"OOPS">>),
         contract_id = ContractID,
         payout_tool_id = <<"1">>
     },
@@ -1139,7 +1238,7 @@ complex_claim_acceptance(C) ->
     Params1 = #payproc_ShopParams{
         location = {url, <<"https://url4">>},
         category = ?cat(2),
-        details  = Details1 = pm_ct_helper:make_shop_details(<<"SHOP4">>),
+        details = Details1 = pm_ct_helper:make_shop_details(<<"SHOP4">>),
         contract_id = ContractID,
         payout_tool_id = <<"1">>
     },
@@ -1147,7 +1246,7 @@ complex_claim_acceptance(C) ->
     Params2 = #payproc_ShopParams{
         location = {url, <<"http://url5">>},
         category = ?cat(3),
-        details  = Details2 = pm_ct_helper:make_shop_details(<<"SHOP5">>),
+        details = Details2 = pm_ct_helper:make_shop_details(<<"SHOP5">>),
         contract_id = ContractID,
         payout_tool_id = <<"1">>
     },
@@ -1158,7 +1257,8 @@ complex_claim_acceptance(C) ->
                 ?shop_modification(ShopID1, {creation, Params1}),
                 ?shop_modification(ShopID1, {shop_account_creation, ShopAccountParams})
             ],
-            Client),
+            Client
+        ),
         Client
     ),
     ok = pm_client_party:suspend(Client),
@@ -1244,7 +1344,8 @@ no_pending_claims(C) ->
     Client = cfg(client, C),
     Claims = pm_client_party:get_claims(Client),
     [] = lists:filter(
-        fun (?claim(_, ?pending())) ->
+        fun
+            (?claim(_, ?pending())) ->
                 true;
             (_) ->
                 false
@@ -1437,12 +1538,15 @@ contractor_modification(C) ->
     #domain_PartyContractor{} = C1 = pm_party:get_contractor(ContractorID, Party1),
     Changeset = [
         ?contractor_modification(ContractorID, {identification_level_modification, full}),
-        ?contractor_modification(ContractorID, {
-            identity_documents_modification,
-            #payproc_ContractorIdentityDocumentsModification{
-                identity_documents = [<<"some_binary">>, <<"and_even_more_binary">>]
+        ?contractor_modification(
+            ContractorID,
+            {
+                identity_documents_modification,
+                #payproc_ContractorIdentityDocumentsModification{
+                    identity_documents = [<<"some_binary">>, <<"and_even_more_binary">>]
+                }
             }
-        })
+        )
     ],
     Claim = assert_claim_pending(pm_client_party:create_claim(Changeset, Client), Client),
     ok = accept_claim(Claim, Client),
@@ -1523,10 +1627,12 @@ compute_provider_ok(C) ->
     CashFlow = ?cfpost(
         {system, settlement},
         {provider, settlement},
-        {product, {min_of, ?ordset([
-            ?fixed(10, <<"RUB">>),
-            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-        ])}}
+        {product,
+            {min_of,
+                ?ordset([
+                    ?fixed(10, <<"RUB">>),
+                    ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
+                ])}}
     ),
     #domain_Provider{
         terms = #domain_ProvisionTermSet{
@@ -1554,10 +1660,12 @@ compute_provider_terminal_terms_ok(C) ->
     CashFlow = ?cfpost(
         {system, settlement},
         {provider, settlement},
-        {product, {min_of, ?ordset([
-            ?fixed(10, <<"RUB">>),
-            ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
-        ])}}
+        {product,
+            {min_of,
+                ?ordset([
+                    ?fixed(10, <<"RUB">>),
+                    ?share_with_rounding_method(5, 100, operation_amount, round_half_towards_zero)
+                ])}}
     ),
     PaymentMethods = ?ordset([?pmt(bank_card_deprecated, visa)]),
     #domain_ProvisionTermSet{
@@ -1575,13 +1683,28 @@ compute_provider_terminal_terms_not_found(C) ->
     DomainRevision = pm_domain:head(),
     {exception, #payproc_TerminalNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(1), ?trm(?WRONG_DMT_OBJ_ID), DomainRevision, #payproc_Varset{}, Client)),
+            ?prv(1),
+            ?trm(?WRONG_DMT_OBJ_ID),
+            DomainRevision,
+            #payproc_Varset{},
+            Client
+        )),
     {exception, #payproc_ProviderNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(?WRONG_DMT_OBJ_ID), ?trm(1), DomainRevision, #payproc_Varset{}, Client)),
+            ?prv(?WRONG_DMT_OBJ_ID),
+            ?trm(1),
+            DomainRevision,
+            #payproc_Varset{},
+            Client
+        )),
     {exception, #payproc_ProviderNotFound{}} =
         (catch pm_client_party:compute_provider_terminal_terms(
-            ?prv(?WRONG_DMT_OBJ_ID), ?trm(?WRONG_DMT_OBJ_ID), DomainRevision, #payproc_Varset{}, Client)).
+            ?prv(?WRONG_DMT_OBJ_ID),
+            ?trm(?WRONG_DMT_OBJ_ID),
+            DomainRevision,
+            #payproc_Varset{},
+            Client
+        )).
 
 compute_globals_ok(C) ->
     Client = cfg(client, C),
@@ -1599,20 +1722,21 @@ compute_payment_routing_ruleset_ok(C) ->
     },
     #domain_PaymentRoutingRuleset{
         name = <<"Rule#1">>,
-        decisions = {candidates, [
-            #domain_PaymentRoutingCandidate{
-                terminal = ?trm(2),
-                allowed = {constant, true}
-            },
-            #domain_PaymentRoutingCandidate{
-                terminal = ?trm(3),
-                allowed = {constant, true}
-            },
-            #domain_PaymentRoutingCandidate{
-                terminal = ?trm(1),
-                allowed = {constant, true}
-            }
-        ]}
+        decisions =
+            {candidates, [
+                #domain_PaymentRoutingCandidate{
+                    terminal = ?trm(2),
+                    allowed = {constant, true}
+                },
+                #domain_PaymentRoutingCandidate{
+                    terminal = ?trm(3),
+                    allowed = {constant, true}
+                },
+                #domain_PaymentRoutingCandidate{
+                    terminal = ?trm(1),
+                    allowed = {constant, true}
+                }
+            ]}
     } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_unreducable(C) ->
@@ -1621,20 +1745,21 @@ compute_payment_routing_ruleset_unreducable(C) ->
     Varset = #payproc_Varset{},
     #domain_PaymentRoutingRuleset{
         name = <<"Rule#1">>,
-        decisions = {delegates, [
-            #domain_PaymentRoutingDelegate{
-                allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
-                ruleset = ?ruleset(2)
-            },
-            #domain_PaymentRoutingDelegate{
-                allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
-                ruleset = ?ruleset(3)
-            },
-            #domain_PaymentRoutingDelegate{
-                allowed = {constant, true},
-                ruleset = ?ruleset(4)
-            }
-        ]}
+        decisions =
+            {delegates, [
+                #domain_PaymentRoutingDelegate{
+                    allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
+                    ruleset = ?ruleset(2)
+                },
+                #domain_PaymentRoutingDelegate{
+                    allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
+                    ruleset = ?ruleset(3)
+                },
+                #domain_PaymentRoutingDelegate{
+                    allowed = {constant, true},
+                    ruleset = ?ruleset(4)
+                }
+            ]}
     } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_not_found(C) ->
@@ -1685,26 +1810,32 @@ compute_terms_w_criteria(C) ->
             pm_ct_fixture:construct_criterion(
                 CritBase,
                 <<"Visas">>,
-                {all_of, ?ordset([
-                    {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                        definition = {payment_system, #domain_PaymentSystemCondition{
-                            payment_system_is = visa
-                        }}
-                    }}}},
-                    {is_not,
-                        {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                            definition = {empty_cvv_is, true}
-                        }}}}
-                    }
-                ])}
+                {all_of,
+                    ?ordset([
+                        {condition,
+                            {payment_tool,
+                                {bank_card, #domain_BankCardCondition{
+                                    definition =
+                                        {payment_system, #domain_PaymentSystemCondition{
+                                            payment_system_is = visa
+                                        }}
+                                }}}},
+                        {is_not,
+                            {condition,
+                                {payment_tool,
+                                    {bank_card, #domain_BankCardCondition{
+                                        definition = {empty_cvv_is, true}
+                                    }}}}}
+                    ])}
             ),
             pm_ct_fixture:construct_criterion(
                 CritRef,
                 <<"Kazakh Visas">>,
-                {all_of, ?ordset([
-                    {condition, {currency_is, ?cur(<<"KZT">>)}},
-                    {criterion, CritBase}
-                ])}
+                {all_of,
+                    ?ordset([
+                        {condition, {currency_is, ?cur(<<"KZT">>)}},
+                        {criterion, CritBase}
+                    ])}
             ),
             pm_ct_fixture:construct_contract_template(
                 TemplateRef,
@@ -1715,21 +1846,22 @@ compute_terms_w_criteria(C) ->
                 ?trms(2),
                 #domain_TermSet{
                     payments = #domain_PaymentsServiceTerms{
-                        cash_limit = {decisions, [
-                            #domain_CashLimitDecision{
-                                if_ = {criterion, CritRef},
-                                then_ = {value, CashLimitHigh}
-                            },
-                            #domain_CashLimitDecision{
-                                if_ = {is_not, {criterion, CritRef}},
-                                then_ = {value, CashLimitLow}
-                            }
-                        ]}
+                        cash_limit =
+                            {decisions, [
+                                #domain_CashLimitDecision{
+                                    if_ = {criterion, CritRef},
+                                    then_ = {value, CashLimitHigh}
+                                },
+                                #domain_CashLimitDecision{
+                                    if_ = {is_not, {criterion, CritRef}},
+                                    then_ = {value, CashLimitLow}
+                                }
+                            ]}
                     }
                 }
             )
         ],
-        fun (Revision) ->
+        fun(Revision) ->
             ContractID = pm_ct_helper:create_contract(TemplateRef, ?pinst(1), Client),
             PartyRevision = pm_client_party:get_revision(Client),
             Timstamp = pm_datetime:format_now(),
@@ -1738,7 +1870,10 @@ compute_terms_w_criteria(C) ->
                     payments = #domain_PaymentsServiceTerms{cash_limit = {value, CashLimitHigh}}
                 },
                 pm_client_party:compute_contract_terms(
-                    ContractID, Timstamp, {revision, PartyRevision}, Revision,
+                    ContractID,
+                    Timstamp,
+                    {revision, PartyRevision},
+                    Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"KZT">>),
                         payment_method = ?pmt(bank_card_deprecated, visa)
@@ -1751,7 +1886,10 @@ compute_terms_w_criteria(C) ->
                     payments = #domain_PaymentsServiceTerms{cash_limit = {value, CashLimitLow}}
                 },
                 pm_client_party:compute_contract_terms(
-                    ContractID, Timstamp, {revision, PartyRevision}, Revision,
+                    ContractID,
+                    Timstamp,
+                    {revision, PartyRevision},
+                    Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"KZT">>),
                         payment_method = ?pmt(empty_cvv_bank_card_deprecated, visa)
@@ -1764,7 +1902,10 @@ compute_terms_w_criteria(C) ->
                     payments = #domain_PaymentsServiceTerms{cash_limit = {value, CashLimitLow}}
                 },
                 pm_client_party:compute_contract_terms(
-                    ContractID, Timstamp, {revision, PartyRevision}, Revision,
+                    ContractID,
+                    Timstamp,
+                    {revision, PartyRevision},
+                    Revision,
                     #payproc_Varset{
                         currency = ?cur(<<"RUB">>),
                         payment_method = ?pmt(bank_card_deprecated, visa)
@@ -1819,6 +1960,7 @@ next_event(Client) ->
 
 make_party_params() ->
     make_party_params(#domain_PartyContactInfo{email = <<?MODULE_STRING>>}).
+
 make_party_params(ContactInfo) ->
     #payproc_PartyParams{contact_info = ContactInfo}.
 
@@ -1844,41 +1986,49 @@ make_contractor_params() ->
 construct_term_set_for_party(PartyID, Def) ->
     TermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            currencies = {value, ordsets:from_list([
-                ?cur(<<"RUB">>),
-                ?cur(<<"USD">>)
-            ])},
-            categories = {value, ordsets:from_list([
-                ?cat(2),
-                ?cat(3)
-            ])},
-            payment_methods = {decisions, [
-                #domain_PaymentMethodDecision{
-                    if_   = ?partycond(PartyID, Def),
-                    then_ = {value, ordsets:from_list(?REAL_PARTY_PAYMENT_METHODS)}
-                },
-                #domain_PaymentMethodDecision{
-                    if_   = {constant, true},
-                    then_ = {value, ordsets:from_list([
-                        ?pmt(bank_card_deprecated, visa)
-                    ])}
-                }
-            ]}
+            currencies =
+                {value,
+                    ordsets:from_list([
+                        ?cur(<<"RUB">>),
+                        ?cur(<<"USD">>)
+                    ])},
+            categories =
+                {value,
+                    ordsets:from_list([
+                        ?cat(2),
+                        ?cat(3)
+                    ])},
+            payment_methods =
+                {decisions, [
+                    #domain_PaymentMethodDecision{
+                        if_ = ?partycond(PartyID, Def),
+                        then_ = {value, ordsets:from_list(?REAL_PARTY_PAYMENT_METHODS)}
+                    },
+                    #domain_PaymentMethodDecision{
+                        if_ = {constant, true},
+                        then_ =
+                            {value,
+                                ordsets:from_list([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])}
+                    }
+                ]}
         }
     },
     {term_set_hierarchy, #domain_TermSetHierarchyObject{
         ref = ?trms(2),
         data = #domain_TermSetHierarchy{
             parent_terms = undefined,
-            term_sets = [#domain_TimedTermSet{
-                action_time = #'TimestampInterval'{},
-                terms = TermSet
-            }]
+            term_sets = [
+                #domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TermSet
+                }
+            ]
         }
     }}.
 
 -spec construct_domain_fixture() -> [pm_domain:object()].
-
 construct_domain_fixture() ->
     TestTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
@@ -1888,287 +2038,351 @@ construct_domain_fixture() ->
     },
     DefaultTermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            currencies = {value, ordsets:from_list([
-                ?cur(<<"RUB">>),
-                ?cur(<<"USD">>)
-            ])},
-            categories = {value, ordsets:from_list([
-                ?cat(2),
-                ?cat(3)
-            ])},
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card_deprecated, visa)
-            ])}
+            currencies =
+                {value,
+                    ordsets:from_list([
+                        ?cur(<<"RUB">>),
+                        ?cur(<<"USD">>)
+                    ])},
+            categories =
+                {value,
+                    ordsets:from_list([
+                        ?cat(2),
+                        ?cat(3)
+                    ])},
+            payment_methods =
+                {value,
+                    ordsets:from_list([
+                        ?pmt(bank_card_deprecated, visa)
+                    ])}
         }
     },
     TermSet = #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            cash_limit = {value, #domain_CashRange{
-                lower = {inclusive, #domain_Cash{amount = 1000, currency = ?cur(<<"RUB">>)}},
-                upper = {exclusive, #domain_Cash{amount = 4200000, currency = ?cur(<<"RUB">>)}}
-            }},
-            fees = {value, [
-                ?cfpost(
-                    {merchant, settlement},
-                    {system, settlement},
-                    ?share(45, 1000, operation_amount)
-                )
-            ]}
+            cash_limit =
+                {value, #domain_CashRange{
+                    lower = {inclusive, #domain_Cash{amount = 1000, currency = ?cur(<<"RUB">>)}},
+                    upper = {exclusive, #domain_Cash{amount = 4200000, currency = ?cur(<<"RUB">>)}}
+                }},
+            fees =
+                {value, [
+                    ?cfpost(
+                        {merchant, settlement},
+                        {system, settlement},
+                        ?share(45, 1000, operation_amount)
+                    )
+                ]}
         },
         payouts = #domain_PayoutsServiceTerms{
-            payout_methods = {decisions, [
-                #domain_PayoutMethodDecision{
-                    if_   = {condition, {payment_tool,
-                        {bank_card, #domain_BankCardCondition{
-                            definition = {issuer_bank_is, ?bank(1)}
-                        }}
-                    }},
-                    then_ = {value, ordsets:from_list([?pomt(russian_bank_account), ?pomt(international_bank_account)])}
-                },
-                #domain_PayoutMethodDecision{
-                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{
-                        definition = {empty_cvv_is, true}
-                    }}}},
-                    then_ = {value, ordsets:from_list([])}
-                },
-                #domain_PayoutMethodDecision{
-                    if_   = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{}}}},
-                    then_ = {value, ordsets:from_list([?pomt(russian_bank_account)])}
-                },
-                #domain_PayoutMethodDecision{
-                    if_   = {condition, {payment_tool, {payment_terminal, #domain_PaymentTerminalCondition{}}}},
-                    then_ = {value, ordsets:from_list([?pomt(international_bank_account)])}
-                },
-                #domain_PayoutMethodDecision{
-                    if_   = {constant, true},
-                    then_ = {value, ordsets:from_list([])}
-                }
-            ]},
-            fees = {value, [
-                ?cfpost(
-                    {merchant, settlement},
-                    {merchant, payout},
-                    ?share(750, 1000, operation_amount)
-                ),
-                ?cfpost(
-                    {merchant, settlement},
-                    {system, settlement},
-                    ?share(250, 1000, operation_amount)
-                )
-            ]}
+            payout_methods =
+                {decisions, [
+                    #domain_PayoutMethodDecision{
+                        if_ =
+                            {condition,
+                                {payment_tool,
+                                    {bank_card, #domain_BankCardCondition{
+                                        definition = {issuer_bank_is, ?bank(1)}
+                                    }}}},
+                        then_ =
+                            {value, ordsets:from_list([?pomt(russian_bank_account), ?pomt(international_bank_account)])}
+                    },
+                    #domain_PayoutMethodDecision{
+                        if_ =
+                            {condition,
+                                {payment_tool,
+                                    {bank_card, #domain_BankCardCondition{
+                                        definition = {empty_cvv_is, true}
+                                    }}}},
+                        then_ = {value, ordsets:from_list([])}
+                    },
+                    #domain_PayoutMethodDecision{
+                        if_ = {condition, {payment_tool, {bank_card, #domain_BankCardCondition{}}}},
+                        then_ = {value, ordsets:from_list([?pomt(russian_bank_account)])}
+                    },
+                    #domain_PayoutMethodDecision{
+                        if_ = {condition, {payment_tool, {payment_terminal, #domain_PaymentTerminalCondition{}}}},
+                        then_ = {value, ordsets:from_list([?pomt(international_bank_account)])}
+                    },
+                    #domain_PayoutMethodDecision{
+                        if_ = {constant, true},
+                        then_ = {value, ordsets:from_list([])}
+                    }
+                ]},
+            fees =
+                {value, [
+                    ?cfpost(
+                        {merchant, settlement},
+                        {merchant, payout},
+                        ?share(750, 1000, operation_amount)
+                    ),
+                    ?cfpost(
+                        {merchant, settlement},
+                        {system, settlement},
+                        ?share(250, 1000, operation_amount)
+                    )
+                ]}
         },
         wallets = #domain_WalletServiceTerms{
             currencies = {value, ordsets:from_list([?cur(<<"RUB">>)])},
-            wallet_limit = {decisions, [
-                #domain_CashLimitDecision{
-                    if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, ?cashrng(
-                        {inclusive, ?cash(      0, <<"RUB">>)},
-                        {exclusive, ?cash(5000001, <<"RUB">>)}
-                    )}
-                },
-                #domain_CashLimitDecision{
-                    if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
-                    then_ = {value, ?cashrng(
-                        {inclusive, ?cash(       0, <<"USD">>)},
-                        {exclusive, ?cash(10000001, <<"USD">>)}
-                    )}
-                }
-            ]},
+            wallet_limit =
+                {decisions, [
+                    #domain_CashLimitDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(0, <<"RUB">>)},
+                                    {exclusive, ?cash(5000001, <<"RUB">>)}
+                                )}
+                    },
+                    #domain_CashLimitDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                        then_ =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(0, <<"USD">>)},
+                                    {exclusive, ?cash(10000001, <<"USD">>)}
+                                )}
+                    }
+                ]},
             p2p = #domain_P2PServiceTerms{
                 currencies = {value, ?ordset([?cur(<<"RUB">>)])},
-                cash_limit = {decisions, [
-                    #domain_CashLimitDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, ?cashrng(
-                            {inclusive, ?cash(       0, <<"RUB">>)},
-                            {exclusive, ?cash(10000001, <<"RUB">>)}
-                        )}
-                    }
-                ]},
-                cash_flow = {decisions, [
-                    #domain_CashFlowDecision{
-                        if_ = {condition, {cost_in, ?cashrng(
-                                {inclusive, ?cash(   0, <<"RUB">>)},
-                                {exclusive, ?cash(3000, <<"RUB">>)}
-                            )}
-                        },
-                        then_ = {
-                            value, [
-                                #domain_CashFlowPosting{
-                                    source = {wallet, receiver_destination},
-                                    destination = {system, settlement},
-                                    volume = ?fixed(50, <<"RUB">>)
-                                }
-                            ]
-                        }
-                    },
-                    #domain_CashFlowDecision{
-                        if_ = {condition, {cost_in, ?cashrng(
-                                {inclusive, ?cash(3001, <<"RUB">>)},
-                                {exclusive, ?cash(10000, <<"RUB">>)}
-                            )}
-                        },
-                        then_ = {
-                            value, [
-                                #domain_CashFlowPosting{
-                                    source = {wallet, receiver_destination},
-                                    destination = {system, settlement},
-                                    volume = ?share(1, 100, operation_amount)
-                                }
-                            ]
-                        }
-                    }
-                ]},
-                fees = {decisions, [
-                    #domain_FeeDecision{
-                        if_ = {condition, {p2p_tool, #domain_P2PToolCondition{
-                            sender_is = {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system, #domain_PaymentSystemCondition{
-                                    payment_system_is = visa
-                                }}
-                            }},
-                            receiver_is = {bank_card, #domain_BankCardCondition{
-                                definition = {payment_system, #domain_PaymentSystemCondition{
-                                    payment_system_is = visa
-                                }}
-                            }}
-                        }}},
-                        then_ = {decisions, [
-                            #domain_FeeDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                        {inclusive, ?cash(   0, <<"RUB">>)},
-                                        {exclusive, ?cash(3000, <<"RUB">>)}
+                cash_limit =
+                    {decisions, [
+                        #domain_CashLimitDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ =
+                                {value,
+                                    ?cashrng(
+                                        {inclusive, ?cash(0, <<"RUB">>)},
+                                        {exclusive, ?cash(10000001, <<"RUB">>)}
                                     )}
-                                },
-                                then_ = {value, #domain_Fees{fees = #{surplus => ?fixed(50, <<"RUB">>)}}}
-                            },
-                            #domain_FeeDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                        {inclusive, ?cash(3000, <<"RUB">>)},
-                                        {exclusive, ?cash(300000, <<"RUB">>)}
-                                    )}
-                                },
-                                then_ = {value, #domain_Fees{fees = #{surplus => ?share(4, 100, operation_amount)}}}
+                        }
+                    ]},
+                cash_flow =
+                    {decisions, [
+                        #domain_CashFlowDecision{
+                            if_ =
+                                {condition,
+                                    {cost_in,
+                                        ?cashrng(
+                                            {inclusive, ?cash(0, <<"RUB">>)},
+                                            {exclusive, ?cash(3000, <<"RUB">>)}
+                                        )}},
+                            then_ = {
+                                value,
+                                [
+                                    #domain_CashFlowPosting{
+                                        source = {wallet, receiver_destination},
+                                        destination = {system, settlement},
+                                        volume = ?fixed(50, <<"RUB">>)
+                                    }
+                                ]
                             }
-                        ]}
-                    }
-                ]},
+                        },
+                        #domain_CashFlowDecision{
+                            if_ =
+                                {condition,
+                                    {cost_in,
+                                        ?cashrng(
+                                            {inclusive, ?cash(3001, <<"RUB">>)},
+                                            {exclusive, ?cash(10000, <<"RUB">>)}
+                                        )}},
+                            then_ = {
+                                value,
+                                [
+                                    #domain_CashFlowPosting{
+                                        source = {wallet, receiver_destination},
+                                        destination = {system, settlement},
+                                        volume = ?share(1, 100, operation_amount)
+                                    }
+                                ]
+                            }
+                        }
+                    ]},
+                fees =
+                    {decisions, [
+                        #domain_FeeDecision{
+                            if_ =
+                                {condition,
+                                    {p2p_tool, #domain_P2PToolCondition{
+                                        sender_is =
+                                            {bank_card, #domain_BankCardCondition{
+                                                definition =
+                                                    {payment_system, #domain_PaymentSystemCondition{
+                                                        payment_system_is = visa
+                                                    }}
+                                            }},
+                                        receiver_is =
+                                            {bank_card, #domain_BankCardCondition{
+                                                definition =
+                                                    {payment_system, #domain_PaymentSystemCondition{
+                                                        payment_system_is = visa
+                                                    }}
+                                            }}
+                                    }}},
+                            then_ =
+                                {decisions, [
+                                    #domain_FeeDecision{
+                                        if_ =
+                                            {condition,
+                                                {cost_in,
+                                                    ?cashrng(
+                                                        {inclusive, ?cash(0, <<"RUB">>)},
+                                                        {exclusive, ?cash(3000, <<"RUB">>)}
+                                                    )}},
+                                        then_ = {value, #domain_Fees{fees = #{surplus => ?fixed(50, <<"RUB">>)}}}
+                                    },
+                                    #domain_FeeDecision{
+                                        if_ =
+                                            {condition,
+                                                {cost_in,
+                                                    ?cashrng(
+                                                        {inclusive, ?cash(3000, <<"RUB">>)},
+                                                        {exclusive, ?cash(300000, <<"RUB">>)}
+                                                    )}},
+                                        then_ =
+                                            {value, #domain_Fees{fees = #{surplus => ?share(4, 100, operation_amount)}}}
+                                    }
+                                ]}
+                        }
+                    ]},
                 templates = #domain_P2PTemplateServiceTerms{
                     allow = {constant, true}
                 }
             },
             w2w = #domain_W2WServiceTerms{
                 currencies = {value, ?ordset([?cur(<<"RUB">>)])},
-                cash_limit = {decisions, [
-                    #domain_CashLimitDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, ?cashrng(
-                            {inclusive, ?cash(       0, <<"RUB">>)},
-                            {exclusive, ?cash(10000001, <<"RUB">>)}
-                        )}
-                    }
-                ]},
-                cash_flow = {decisions, [
-                    #domain_CashFlowDecision{
-                        if_ = {condition, {cost_in, ?cashrng(
-                                {inclusive, ?cash(   0, <<"RUB">>)},
-                                {exclusive, ?cash(3000, <<"RUB">>)}
-                            )}
-                        },
-                        then_ = {
-                            value, [
-                                #domain_CashFlowPosting{
-                                    source = {wallet, receiver_destination},
-                                    destination = {system, settlement},
-                                    volume = ?fixed(50, <<"RUB">>)
-                                }
-                            ]
-                        }
-                    },
-                    #domain_CashFlowDecision{
-                        if_ = {condition, {cost_in, ?cashrng(
-                                {inclusive, ?cash(3001, <<"RUB">>)},
-                                {exclusive, ?cash(10000, <<"RUB">>)}
-                            )}
-                        },
-                        then_ = {
-                            value, [
-                                #domain_CashFlowPosting{
-                                    source = {wallet, receiver_destination},
-                                    destination = {system, settlement},
-                                    volume = ?share(1, 100, operation_amount)
-                                }
-                            ]
-                        }
-                    }
-                ]},
-                fees = {decisions, [
-                    #domain_FeeDecision{
-                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {decisions, [
-                            #domain_FeeDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                        {inclusive, ?cash(   0, <<"RUB">>)},
-                                        {exclusive, ?cash(3000, <<"RUB">>)}
+                cash_limit =
+                    {decisions, [
+                        #domain_CashLimitDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ =
+                                {value,
+                                    ?cashrng(
+                                        {inclusive, ?cash(0, <<"RUB">>)},
+                                        {exclusive, ?cash(10000001, <<"RUB">>)}
                                     )}
-                                },
-                                then_ = {value, #domain_Fees{fees = #{surplus => ?fixed(50, <<"RUB">>)}}}
-                            },
-                            #domain_FeeDecision{
-                                if_ = {condition, {cost_in, ?cashrng(
-                                        {inclusive, ?cash(3000, <<"RUB">>)},
-                                        {exclusive, ?cash(300000, <<"RUB">>)}
-                                    )}
-                                },
-                                then_ = {value, #domain_Fees{fees = #{surplus => ?share(4, 100, operation_amount)}}}
+                        }
+                    ]},
+                cash_flow =
+                    {decisions, [
+                        #domain_CashFlowDecision{
+                            if_ =
+                                {condition,
+                                    {cost_in,
+                                        ?cashrng(
+                                            {inclusive, ?cash(0, <<"RUB">>)},
+                                            {exclusive, ?cash(3000, <<"RUB">>)}
+                                        )}},
+                            then_ = {
+                                value,
+                                [
+                                    #domain_CashFlowPosting{
+                                        source = {wallet, receiver_destination},
+                                        destination = {system, settlement},
+                                        volume = ?fixed(50, <<"RUB">>)
+                                    }
+                                ]
                             }
-                        ]}
-                    }
-                ]}
+                        },
+                        #domain_CashFlowDecision{
+                            if_ =
+                                {condition,
+                                    {cost_in,
+                                        ?cashrng(
+                                            {inclusive, ?cash(3001, <<"RUB">>)},
+                                            {exclusive, ?cash(10000, <<"RUB">>)}
+                                        )}},
+                            then_ = {
+                                value,
+                                [
+                                    #domain_CashFlowPosting{
+                                        source = {wallet, receiver_destination},
+                                        destination = {system, settlement},
+                                        volume = ?share(1, 100, operation_amount)
+                                    }
+                                ]
+                            }
+                        }
+                    ]},
+                fees =
+                    {decisions, [
+                        #domain_FeeDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ =
+                                {decisions, [
+                                    #domain_FeeDecision{
+                                        if_ =
+                                            {condition,
+                                                {cost_in,
+                                                    ?cashrng(
+                                                        {inclusive, ?cash(0, <<"RUB">>)},
+                                                        {exclusive, ?cash(3000, <<"RUB">>)}
+                                                    )}},
+                                        then_ = {value, #domain_Fees{fees = #{surplus => ?fixed(50, <<"RUB">>)}}}
+                                    },
+                                    #domain_FeeDecision{
+                                        if_ =
+                                            {condition,
+                                                {cost_in,
+                                                    ?cashrng(
+                                                        {inclusive, ?cash(3000, <<"RUB">>)},
+                                                        {exclusive, ?cash(300000, <<"RUB">>)}
+                                                    )}},
+                                        then_ =
+                                            {value, #domain_Fees{fees = #{surplus => ?share(4, 100, operation_amount)}}}
+                                    }
+                                ]}
+                        }
+                    ]}
             }
         }
     },
-    Decision1 = {delegates, [
-        #domain_PaymentRoutingDelegate{
-            allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
-            ruleset = ?ruleset(2)
-        },
-        #domain_PaymentRoutingDelegate{
-            allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
-            ruleset = ?ruleset(3)
-        },
-        #domain_PaymentRoutingDelegate{
-            allowed = {constant, true},
-            ruleset = ?ruleset(4)
-        }
-    ]},
-    Decision2 = {candidates, [
-        #domain_PaymentRoutingCandidate{
-            allowed = {constant, true},
-            terminal = ?trm(1)
-        }
-    ]},
-    Decision3 = {candidates, [
-        #domain_PaymentRoutingCandidate{
-            allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
-            terminal = ?trm(2)
-        },
-        #domain_PaymentRoutingCandidate{
-            allowed = {constant, true},
-            terminal = ?trm(3)
-        },
-        #domain_PaymentRoutingCandidate{
-            allowed = {constant, true},
-            terminal = ?trm(1)
-        }
-    ]},
-    Decision4 = {candidates, [
-        #domain_PaymentRoutingCandidate{
-            allowed = {constant, true},
-            terminal = ?trm(3)
-        }
-    ]},
+    Decision1 =
+        {delegates, [
+            #domain_PaymentRoutingDelegate{
+                allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
+                ruleset = ?ruleset(2)
+            },
+            #domain_PaymentRoutingDelegate{
+                allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
+                ruleset = ?ruleset(3)
+            },
+            #domain_PaymentRoutingDelegate{
+                allowed = {constant, true},
+                ruleset = ?ruleset(4)
+            }
+        ]},
+    Decision2 =
+        {candidates, [
+            #domain_PaymentRoutingCandidate{
+                allowed = {constant, true},
+                terminal = ?trm(1)
+            }
+        ]},
+    Decision3 =
+        {candidates, [
+            #domain_PaymentRoutingCandidate{
+                allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
+                terminal = ?trm(2)
+            },
+            #domain_PaymentRoutingCandidate{
+                allowed = {constant, true},
+                terminal = ?trm(3)
+            },
+            #domain_PaymentRoutingCandidate{
+                allowed = {constant, true},
+                terminal = ?trm(1)
+            }
+        ]},
+    Decision4 =
+        {candidates, [
+            #domain_PaymentRoutingCandidate{
+                allowed = {constant, true},
+                terminal = ?trm(3)
+            }
+        ]},
     [
         pm_ct_fixture:construct_currency(?cur(<<"RUB">>)),
         pm_ct_fixture:construct_currency(?cur(<<"USD">>)),
@@ -2242,12 +2456,13 @@ construct_domain_fixture() ->
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
-                external_account_set = {decisions, [
-                    #domain_ExternalAccountSetDecision{
-                        if_ = {constant, true},
-                        then_ = {value, ?eas(1)}
-                    }
-                ]},
+                external_account_set =
+                    {decisions, [
+                        #domain_ExternalAccountSetDecision{
+                            if_ = {constant, true},
+                            then_ = {value, ?eas(1)}
+                        }
+                    ]},
                 payment_institutions = ?ordset([?pinst(1), ?pinst(2)])
             }
         }},
@@ -2283,21 +2498,27 @@ construct_domain_fixture() ->
             ?trms(3),
             #domain_TermSet{
                 payments = #domain_PaymentsServiceTerms{
-                    currencies = {value, ordsets:from_list([
-                        ?cur(<<"RUB">>)
-                    ])},
-                    categories = {value, ordsets:from_list([
-                        ?cat(2)
-                    ])},
-                    payment_methods = {value, ordsets:from_list([
-                        ?pmt(bank_card_deprecated, visa)
-                    ])}
+                    currencies =
+                        {value,
+                            ordsets:from_list([
+                                ?cur(<<"RUB">>)
+                            ])},
+                    categories =
+                        {value,
+                            ordsets:from_list([
+                                ?cat(2)
+                            ])},
+                    payment_methods =
+                        {value,
+                            ordsets:from_list([
+                                ?pmt(bank_card_deprecated, visa)
+                            ])}
                 }
             }
         ),
         {bank, #domain_BankObject{
             ref = ?bank(1),
-            data = #domain_Bank {
+            data = #domain_Bank{
                 name = <<"Test BIN range">>,
                 description = <<"Test BIN range">>,
                 bins = ordsets:from_list([<<"1234">>, <<"5678">>])
@@ -2317,63 +2538,83 @@ construct_domain_fixture() ->
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa),
-                            ?pmt(bank_card_deprecated, mastercard)
-                        ])},
-                        cash_limit = {value, ?cashrng(
-                            {inclusive, ?cash(      1000, <<"RUB">>)},
-                            {exclusive, ?cash(1000000000, <<"RUB">>)}
-                        )},
-                        cash_flow = {decisions, [
-                            #domain_CashFlowDecision{
-                                if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                                then_ = {value, [
-                                    ?cfpost(
-                                        {system, settlement},
-                                        {provider, settlement},
-                                        {product, {min_of, ?ordset([
-                                            ?fixed(10, <<"RUB">>),
-                                            ?share_with_rounding_method(
-                                                5, 100, operation_amount, round_half_towards_zero
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card_deprecated, mastercard)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                )},
+                        cash_flow =
+                            {decisions, [
+                                #domain_CashFlowDecision{
+                                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                {product,
+                                                    {min_of,
+                                                        ?ordset([
+                                                            ?fixed(10, <<"RUB">>),
+                                                            ?share_with_rounding_method(
+                                                                5,
+                                                                100,
+                                                                operation_amount,
+                                                                round_half_towards_zero
+                                                            )
+                                                        ])}}
                                             )
-                                        ])}}
-                                    )
-                                ]}
-                            },
-                            #domain_CashFlowDecision{
-                                if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
-                                then_ = {value, [
-                                    ?cfpost(
-                                        {system, settlement},
-                                        {provider, settlement},
-                                        {product, {min_of, ?ordset([
-                                            ?fixed(10, <<"USD">>),
-                                            ?share_with_rounding_method(
-                                                5, 100, operation_amount, round_half_towards_zero
+                                        ]}
+                                },
+                                #domain_CashFlowDecision{
+                                    if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                {product,
+                                                    {min_of,
+                                                        ?ordset([
+                                                            ?fixed(10, <<"USD">>),
+                                                            ?share_with_rounding_method(
+                                                                5,
+                                                                100,
+                                                                operation_amount,
+                                                                round_half_towards_zero
+                                                            )
+                                                        ])}}
                                             )
-                                        ])}}
-                                    )
-                                ]}
-                            }
-                        ]}
+                                        ]}
+                                }
+                            ]}
                     },
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa),
-                            ?pmt(bank_card_deprecated, mastercard)
-                        ])},
-                        cash_value = {decisions, [
-                            #domain_CashValueDecision{
-                                if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                                then_ = {value, ?cash(1000, <<"RUB">>)}
-                            },
-                            #domain_CashValueDecision{
-                                if_   = {condition, {currency_is, ?cur(<<"USD">>)}},
-                                then_ = {value, ?cash(1000, <<"USD">>)}
-                            }
-                        ]}
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card_deprecated, mastercard)
+                                ])},
+                        cash_value =
+                            {decisions, [
+                                #domain_CashValueDecision{
+                                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                                    then_ = {value, ?cash(1000, <<"RUB">>)}
+                                },
+                                #domain_CashValueDecision{
+                                    if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                                    then_ = {value, ?cash(1000, <<"USD">>)}
+                                }
+                            ]}
                     }
                 }
             }
@@ -2386,9 +2627,11 @@ construct_domain_fixture() ->
                 description = <<"Brominal 1">>,
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa)
-                        ])}
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])}
                     }
                 }
             }
@@ -2400,9 +2643,11 @@ construct_domain_fixture() ->
                 description = <<"Brominal 2">>,
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa)
-                        ])}
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])}
                     }
                 }
             }
@@ -2414,9 +2659,11 @@ construct_domain_fixture() ->
                 description = <<"Brominal 3">>,
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa)
-                        ])}
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])}
                     }
                 }
             }

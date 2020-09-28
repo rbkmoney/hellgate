@@ -1,6 +1,7 @@
 %%% Payment tools
 
 -module(hg_payment_tool).
+
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
 %%
@@ -18,37 +19,40 @@
 -type method() :: dmsl_domain_thrift:'PaymentMethodRef'().
 -type condition() :: dmsl_domain_thrift:'PaymentToolCondition'().
 
-
 -spec has_any_payment_method(t(), ordsets:ordset(method())) -> boolean().
-
 has_any_payment_method(PaymentTool, SupportedMethods) ->
     not ordsets:is_disjoint(get_possible_methods(PaymentTool), SupportedMethods).
 
 -spec get_possible_methods(t()) -> ordsets:ordset(method()).
-
 get_possible_methods({bank_card, #domain_BankCard{payment_system = PaymentSystem, is_cvv_empty = true} = BankCard}) ->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}},
         create_bank_card_payment_method_ref(BankCard)
     ]);
-get_possible_methods({bank_card,
-    #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined} = BankCard
-}) ->
+get_possible_methods(
+    {bank_card, #domain_BankCard{payment_system = PaymentSystem, token_provider = undefined} = BankCard}
+) ->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
         create_bank_card_payment_method_ref(BankCard)
     ]);
-get_possible_methods({bank_card, #domain_BankCard{
-    payment_system = PaymentSystem,
-    token_provider = TokenProvider,
-    tokenization_method = TokenizationMethod
-} = BankCard}) ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
+get_possible_methods(
+    {bank_card,
+        #domain_BankCard{
             payment_system = PaymentSystem,
             token_provider = TokenProvider,
             tokenization_method = TokenizationMethod
-        }}},
+        } = BankCard}
+) ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{
+            id =
+                {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
+                    payment_system = PaymentSystem,
+                    token_provider = TokenProvider,
+                    tokenization_method = TokenizationMethod
+                }}
+        },
         create_bank_card_payment_method_ref(BankCard)
     ]);
 get_possible_methods({payment_terminal, #domain_PaymentTerminal{terminal_type = TerminalType}}) ->
@@ -74,15 +78,17 @@ create_bank_card_payment_method_ref(#domain_BankCard{
     token_provider = TokenProvider,
     tokenization_method = TokenizationMethod
 }) ->
-    #domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
-        payment_system      = PaymentSystem,
-        is_cvv_empty        = genlib:define(IsCVVEmpty, false),
-        token_provider      = TokenProvider,
-        tokenization_method = TokenizationMethod
-    }}}.
+    #domain_PaymentMethodRef{
+        id =
+            {bank_card, #domain_BankCardPaymentMethod{
+                payment_system = PaymentSystem,
+                is_cvv_empty = genlib:define(IsCVVEmpty, false),
+                token_provider = TokenProvider,
+                tokenization_method = TokenizationMethod
+            }}
+    }.
 
 -spec create_from_method(method()) -> t().
-
 %% TODO empty strings - ugly hack for dialyzar
 create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}}) ->
     {bank_card, #domain_BankCard{
@@ -99,11 +105,14 @@ create_from_method(#domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentS
         bin = <<"">>,
         last_digits = <<"">>
     }};
-create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
-        payment_system = PaymentSystem,
-        token_provider = TokenProvider,
-        tokenization_method = TokenizationMethod
-}}}) ->
+create_from_method(#domain_PaymentMethodRef{
+    id =
+        {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
+            payment_system = PaymentSystem,
+            token_provider = TokenProvider,
+            tokenization_method = TokenizationMethod
+        }}
+}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
@@ -112,12 +121,15 @@ create_from_method(#domain_PaymentMethodRef{id = {tokenized_bank_card_deprecated
         token_provider = TokenProvider,
         tokenization_method = TokenizationMethod
     }};
-create_from_method(#domain_PaymentMethodRef{id = {bank_card, #domain_BankCardPaymentMethod{
-    is_cvv_empty = IsCVVEmpty,
-    payment_system = PaymentSystem,
-    token_provider = TokenProvider,
-    tokenization_method = TokenizationMethod
-}}}) ->
+create_from_method(#domain_PaymentMethodRef{
+    id =
+        {bank_card, #domain_BankCardPaymentMethod{
+            is_cvv_empty = IsCVVEmpty,
+            payment_system = PaymentSystem,
+            token_provider = TokenProvider,
+            tokenization_method = TokenizationMethod
+        }}
+}) ->
     {bank_card, #domain_BankCard{
         payment_system = PaymentSystem,
         token = <<"">>,
@@ -140,7 +152,6 @@ create_from_method(#domain_PaymentMethodRef{id = {crypto_currency, CC}}) ->
 %%
 
 -spec test_condition(condition(), t(), hg_domain:revision()) -> boolean() | undefined.
-
 test_condition({bank_card, C}, {bank_card, V = #domain_BankCard{}}, Rev) ->
     test_bank_card_condition(C, V, Rev);
 test_condition({payment_terminal, C}, {payment_terminal, V = #domain_PaymentTerminal{}}, Rev) ->
@@ -168,7 +179,6 @@ test_bank_card_condition_def(
     true;
 test_bank_card_condition_def({payment_system_is, _Ps}, #domain_BankCard{}, _Rev) ->
     false;
-
 test_bank_card_condition_def({payment_system, PaymentSystem}, V, Rev) ->
     test_payment_system_condition(PaymentSystem, V, Rev);
 test_bank_card_condition_def({issuer_country_is, IssuerCountry}, V, Rev) ->
@@ -219,7 +229,8 @@ test_issuer_bank_condition(BankRef, #domain_BankCard{bank_name = BankName, bin =
             test_bank_card_patterns(Patterns, BankName);
         % TODO т.к. BinBase не обладает полным объемом данных, при их отсутствии мы возвращаемся к проверкам по бинам.
         %      B будущем стоит избавиться от этого.
-        {_, _} -> test_bank_card_bins(BIN, BINs)
+        {_, _} ->
+            test_bank_card_bins(BIN, BINs)
     end.
 
 test_bank_card_bins(BIN, BINs) ->
@@ -257,55 +268,55 @@ test_mobile_commerce_condition_def({operator_is, C1}, #domain_MobileCommerce{ope
 
 -include("legacy_structures.hrl").
 
--spec unmarshal(hg_msgpack_marshalling:value()) ->
-    t().
-
+-spec unmarshal(hg_msgpack_marshalling:value()) -> t().
 unmarshal(PaymentTool) ->
     unmarshal(payment_tool, PaymentTool).
 
 unmarshal(payment_tool, [3, PMV, V]) ->
     PaymentMethod = unmarshal(payment_method, PMV),
     {PaymentMethod, unmarshal(PaymentMethod, V)};
-
-unmarshal(bank_card = T, #{
-    <<"token">>          := Token,
-    <<"payment_system">> := PaymentSystem,
-    <<"bin">>            := Bin,
-    <<"masked_pan">>     := MaskedPan
-} = V) ->
+unmarshal(
+    bank_card = T,
+    #{
+        <<"token">> := Token,
+        <<"payment_system">> := PaymentSystem,
+        <<"bin">> := Bin,
+        <<"masked_pan">> := MaskedPan
+    } = V
+) ->
     TokenProvider = genlib_map:get(<<"token_provider">>, V),
     IssuerCountry = genlib_map:get(<<"issuer_country">>, V),
-    BankName      = genlib_map:get(<<"bank_name">>, V),
-    MD            = genlib_map:get(<<"metadata">>, V),
-    IsCVVEmpty    = genlib_map:get(<<"is_cvv_empty">>, V),
+    BankName = genlib_map:get(<<"bank_name">>, V),
+    MD = genlib_map:get(<<"metadata">>, V),
+    IsCVVEmpty = genlib_map:get(<<"is_cvv_empty">>, V),
     #domain_BankCard{
-        token            = unmarshal(str, Token),
-        payment_system   = unmarshal({T, payment_system}, PaymentSystem),
-        bin              = unmarshal(str, Bin),
-        last_digits      = unmarshal(str, MaskedPan),
-        token_provider   = unmarshal({T, token_provider}, TokenProvider),
-        issuer_country   = unmarshal({T, issuer_country}, IssuerCountry),
-        bank_name        = unmarshal({T, bank_name}, BankName),
-        metadata         = unmarshal({T, metadata}, MD),
-        is_cvv_empty     = unmarshal({T, boolean}, IsCVVEmpty)
+        token = unmarshal(str, Token),
+        payment_system = unmarshal({T, payment_system}, PaymentSystem),
+        bin = unmarshal(str, Bin),
+        last_digits = unmarshal(str, MaskedPan),
+        token_provider = unmarshal({T, token_provider}, TokenProvider),
+        issuer_country = unmarshal({T, issuer_country}, IssuerCountry),
+        bank_name = unmarshal({T, bank_name}, BankName),
+        metadata = unmarshal({T, metadata}, MD),
+        is_cvv_empty = unmarshal({T, boolean}, IsCVVEmpty)
     };
 unmarshal(payment_terminal = T, TerminalType) ->
     #domain_PaymentTerminal{
-        terminal_type    = unmarshal({T, type}, TerminalType)
+        terminal_type = unmarshal({T, type}, TerminalType)
     };
 unmarshal(digital_wallet = T, #{
-    <<"provider">>       := Provider,
-    <<"id">>             := ID
+    <<"provider">> := Provider,
+    <<"id">> := ID
 }) ->
     #domain_DigitalWallet{
-        provider         = unmarshal({T, provider}, Provider),
-        id               = unmarshal(str, ID)
+        provider = unmarshal({T, provider}, Provider),
+        id = unmarshal(str, ID)
     };
 unmarshal(crypto_currency = T, CC) ->
     {crypto_currency, unmarshal({T, currency}, CC)};
 unmarshal(mobile_commerce = T, #{
     <<"operator">> := Operator,
-    <<"phone">>    := #{cc := CC, ctn := Ctn}
+    <<"phone">> := #{cc := CC, ctn := Ctn}
 }) ->
     #domain_MobileCommerce{
         operator = unmarshal({T, operator}, Operator),
@@ -314,22 +325,19 @@ unmarshal(mobile_commerce = T, #{
             ctn = unmarshal(str, Ctn)
         }
     };
-
-unmarshal(payment_tool, [2, #{<<"token">>:= _} = BankCard]) ->
+unmarshal(payment_tool, [2, #{<<"token">> := _} = BankCard]) ->
     {bank_card, unmarshal(bank_card, BankCard)};
 unmarshal(payment_tool, [2, TerminalType]) ->
     {payment_terminal, #domain_PaymentTerminal{
         terminal_type = unmarshal({payment_terminal, type}, TerminalType)
     }};
-
 unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
     {bank_card, #domain_BankCard{
-        token               = unmarshal(str, Token),
-        payment_system      = unmarshal({bank_card, payment_system}, PaymentSystem),
-        bin                 = unmarshal(str, Bin),
-        last_digits         = unmarshal(str, MaskedPan)
+        token = unmarshal(str, Token),
+        payment_system = unmarshal({bank_card, payment_system}, PaymentSystem),
+        bin = unmarshal(str, Bin),
+        last_digits = unmarshal(str, MaskedPan)
     }};
-
 unmarshal(payment_method, <<"card">>) ->
     bank_card;
 unmarshal(payment_method, <<"payterm">>) ->
@@ -340,7 +348,6 @@ unmarshal(payment_method, <<"crypto_currency">>) ->
     crypto_currency;
 unmarshal(payment_method, <<"mobile_commerce">>) ->
     mobile_commerce;
-
 unmarshal({bank_card, payment_system}, <<"visa">>) ->
     visa;
 unmarshal({bank_card, payment_system}, <<"mastercard">>) ->
@@ -365,46 +372,34 @@ unmarshal({bank_card, payment_system}, <<"jcb">>) ->
     jcb;
 unmarshal({bank_card, payment_system}, <<"nspkmir">>) ->
     nspkmir;
-
 unmarshal({bank_card, token_provider}, <<"applepay">>) ->
     applepay;
 unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
     googlepay;
 unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
     samsungpay;
-
 unmarshal({bank_card, issuer_country}, Residence) when is_binary(Residence) ->
     binary_to_existing_atom(unmarshal(str, Residence), utf8);
-
 unmarshal({bank_card, bank_name}, Name) when is_binary(Name) ->
     unmarshal(str, Name);
-
 unmarshal({bank_card, metadata}, MD) when is_map(MD) ->
-    maps:map(fun (_, V) -> hg_msgpack_marshalling:marshal(V) end, MD);
-
+    maps:map(fun(_, V) -> hg_msgpack_marshalling:marshal(V) end, MD);
 unmarshal({payment_terminal, type}, <<"euroset">>) ->
     euroset;
-
 unmarshal({payment_terminal, type}, <<"wechat">>) ->
     wechat;
-
 unmarshal({payment_terminal, type}, <<"alipay">>) ->
     alipay;
-
 unmarshal({payment_terminal, type}, <<"zotapay">>) ->
     zotapay;
-
 unmarshal({payment_terminal, type}, <<"qps">>) ->
     qps;
-
 unmarshal({digital_wallet, provider}, <<"qiwi">>) ->
     qiwi;
-
 unmarshal({bank_card, boolean}, <<"true">>) ->
     true;
 unmarshal({bank_card, boolean}, <<"false">>) ->
     false;
-
 unmarshal({crypto_currency, currency}, <<"bitcoin">>) ->
     bitcoin;
 unmarshal({crypto_currency, currency}, <<"litecoin">>) ->
@@ -417,7 +412,6 @@ unmarshal({crypto_currency, currency}, <<"ethereum">>) ->
     ethereum;
 unmarshal({crypto_currency, currency}, <<"zcash">>) ->
     zcash;
-
 unmarshal({mobile_commerce, operator}, <<"mts">>) ->
     mts;
 unmarshal({mobile_commerce, operator}, <<"megafone">>) ->
@@ -428,6 +422,5 @@ unmarshal({mobile_commerce, operator}, <<"tele2">>) ->
     tele2;
 unmarshal({mobile_commerce, operator}, <<"beeline">>) ->
     beeline;
-
 unmarshal(_, Other) ->
     Other.

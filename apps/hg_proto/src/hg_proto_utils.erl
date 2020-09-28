@@ -25,12 +25,12 @@
     thrift_struct_type().
 
 -type thrift_base_type() ::
-    bool   |
+    bool |
     double |
-    i8     |
-    i16    |
-    i32    |
-    i64    |
+    i8 |
+    i16 |
+    i32 |
+    i64 |
     string.
 
 -type thrift_collection_type() ::
@@ -67,30 +67,23 @@
 
 %% API
 
--spec serialize_function_args(thrift_fun_full_ref(), woody:args()) ->
-    binary().
-
+-spec serialize_function_args(thrift_fun_full_ref(), woody:args()) -> binary().
 serialize_function_args({Module, {Service, Function}}, Args) when is_tuple(Args) ->
     ArgsType = Module:function_info(Service, Function, params_type),
     serialize(ArgsType, Args).
 
--spec serialize_function_reply(thrift_fun_full_ref(), term()) ->
-    binary().
-
+-spec serialize_function_reply(thrift_fun_full_ref(), term()) -> binary().
 serialize_function_reply({Module, {Service, Function}}, Data) ->
     ArgsType = Module:function_info(Service, Function, reply_type),
     serialize(ArgsType, Data).
 
--spec serialize_function_exception(thrift_fun_full_ref(), thrift_exception()) ->
-    binary().
-
+-spec serialize_function_exception(thrift_fun_full_ref(), thrift_exception()) -> binary().
 serialize_function_exception(FunctionRef, Exception) ->
     ExceptionType = get_fun_exception_type(FunctionRef),
     Name = find_exception_name(FunctionRef, Exception),
     serialize(ExceptionType, {Name, Exception}).
 
 -spec serialize(thrift_type(), term()) -> binary().
-
 serialize(Type, Data) ->
     Codec0 = thrift_strict_binary_codec:new(),
     case thrift_strict_binary_codec:write(Codec0, Type, Data) of
@@ -100,9 +93,7 @@ serialize(Type, Data) ->
             erlang:error({thrift, {protocol, Reason}})
     end.
 
--spec deserialize(thrift_type(), binary()) ->
-    term().
-
+-spec deserialize(thrift_type(), binary()) -> term().
 deserialize(Type, Data) ->
     Codec0 = thrift_strict_binary_codec:new(Data),
     case thrift_strict_binary_codec:read(Codec0, Type) of
@@ -117,23 +108,17 @@ deserialize(Type, Data) ->
             erlang:error({thrift, {protocol, Reason}})
     end.
 
--spec deserialize_function_args(thrift_fun_full_ref(), binary()) ->
-    woody:args().
-
+-spec deserialize_function_args(thrift_fun_full_ref(), binary()) -> woody:args().
 deserialize_function_args({Module, {Service, Function}}, Data) ->
     ArgsType = Module:function_info(Service, Function, params_type),
     deserialize(ArgsType, Data).
 
--spec deserialize_function_reply(thrift_fun_full_ref(), binary()) ->
-    term().
-
+-spec deserialize_function_reply(thrift_fun_full_ref(), binary()) -> term().
 deserialize_function_reply({Module, {Service, Function}}, Data) ->
     ArgsType = Module:function_info(Service, Function, reply_type),
     deserialize(ArgsType, Data).
 
--spec deserialize_function_exception(thrift_fun_full_ref(), binary()) ->
-    thrift_exception().
-
+-spec deserialize_function_exception(thrift_fun_full_ref(), binary()) -> thrift_exception().
 deserialize_function_exception(FunctionRef, Data) ->
     ExceptionType = get_fun_exception_type(FunctionRef),
     {_Name, Exception} = deserialize(ExceptionType, Data),
@@ -142,24 +127,24 @@ deserialize_function_exception(FunctionRef, Data) ->
 %%
 
 -spec record_to_proplist(Record :: tuple(), RecordInfo :: [atom()]) -> [{atom(), _}].
-
 record_to_proplist(Record, RecordInfo) ->
-    element(1, lists:foldl(
-        fun (RecordField, {L, N}) ->
-            case element(N, Record) of
-                V when V /= undefined ->
-                    {[{RecordField, V} | L], N + 1};
-                undefined ->
-                    {L, N + 1}
-            end
-        end,
-        {[], 1 + 1},
-        RecordInfo
-    )).
+    element(
+        1,
+        lists:foldl(
+            fun(RecordField, {L, N}) ->
+                case element(N, Record) of
+                    V when V /= undefined ->
+                        {[{RecordField, V} | L], N + 1};
+                    undefined ->
+                        {L, N + 1}
+                end
+            end,
+            {[], 1 + 1},
+            RecordInfo
+        )
+    ).
 
--spec get_fun_exception_type(thrift_fun_full_ref()) ->
-    thrift_type().
-
+-spec get_fun_exception_type(thrift_fun_full_ref()) -> thrift_type().
 get_fun_exception_type({Module, {Service, Function}}) ->
     DeclaredType = Module:function_info(Service, Function, exceptions),
     % В сгенерированном коде исключения объявлены как структура.
@@ -167,9 +152,7 @@ get_fun_exception_type({Module, {Service, Function}}) ->
     {struct, struct, Exceptions} = DeclaredType,
     {struct, union, Exceptions}.
 
--spec find_exception_name(thrift_fun_full_ref(), thrift_exception()) ->
-    Name :: atom().
-
+-spec find_exception_name(thrift_fun_full_ref(), thrift_exception()) -> Name :: atom().
 find_exception_name({Module, {Service, Function}}, Exception) ->
     case thrift_processor_codec:match_exception({Module, Service}, Function, Exception) of
         {ok, {_Type, Name}} ->

@@ -3,7 +3,6 @@
 %%  * https://github.com/rbkmoney/coredocs/blob/529bc03/docs/domain/entities/merchant.md
 %%  * https://github.com/rbkmoney/coredocs/blob/529bc03/docs/domain/entities/contract.md
 
-
 %% @TODO
 %% * Deal with default shop services (will need to change thrift-protocol as well)
 %% * Access check before shop creation is weird (think about adding context)
@@ -29,47 +28,37 @@
 
 %%
 
--type party()                 :: dmsl_domain_thrift:'Party'().
--type party_id()              :: dmsl_domain_thrift:'PartyID'().
--type party_revision()        :: dmsl_domain_thrift:'PartyRevision'().
--type party_status()          :: dmsl_domain_thrift:'PartyStatus'().
--type contract()              :: dmsl_domain_thrift:'Contract'().
--type contract_id()           :: dmsl_domain_thrift:'ContractID'().
--type shop()                  :: dmsl_domain_thrift:'Shop'().
--type shop_id()               :: dmsl_domain_thrift:'ShopID'().
+-type party() :: dmsl_domain_thrift:'Party'().
+-type party_id() :: dmsl_domain_thrift:'PartyID'().
+-type party_revision() :: dmsl_domain_thrift:'PartyRevision'().
+-type party_status() :: dmsl_domain_thrift:'PartyStatus'().
+-type contract() :: dmsl_domain_thrift:'Contract'().
+-type contract_id() :: dmsl_domain_thrift:'ContractID'().
+-type shop() :: dmsl_domain_thrift:'Shop'().
+-type shop_id() :: dmsl_domain_thrift:'ShopID'().
 
 %% Interface
 
--spec get_party(party_id()) ->
-    party() | no_return().
-
+-spec get_party(party_id()) -> party() | no_return().
 get_party(PartyID) ->
     Revision = get_party_revision(PartyID),
     checkout(PartyID, {revision, Revision}).
 
--spec get_party_revision(party_id()) ->
-    party_revision() | no_return().
-
+-spec get_party_revision(party_id()) -> party_revision() | no_return().
 get_party_revision(PartyID) ->
     {Client, Context} = get_party_client(),
     unwrap_party_result(party_client_thrift:get_revision(PartyID, Client, Context)).
 
--spec checkout(party_id(), party_client_thrift:party_revision_param()) ->
-    party() | no_return().
-
+-spec checkout(party_id(), party_client_thrift:party_revision_param()) -> party() | no_return().
 checkout(PartyID, RevisionParam) ->
     {Client, Context} = get_party_client(),
     unwrap_party_result(party_client_thrift:checkout(PartyID, RevisionParam, Client, Context)).
 
--spec get_contract(contract_id(), party()) ->
-    contract() | undefined.
-
+-spec get_contract(contract_id(), party()) -> contract() | undefined.
 get_contract(ID, #domain_Party{contracts = Contracts}) ->
     maps:get(ID, Contracts, undefined).
 
--spec get_shop(shop_id(), party()) ->
-    shop() | undefined.
-
+-spec get_shop(shop_id(), party()) -> shop() | undefined.
 get_shop(ID, #domain_Party{shops = Shops}) ->
     maps:get(ID, Shops, undefined).
 
