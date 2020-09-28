@@ -276,15 +276,15 @@ handle_call('Accept', {_PartyID, Claim}, AuxSt, St) ->
         changeset = Changeset
     } = Claim,
     try
+        Party = get_st_party(St),
+        ok = assert_cash_regisrty_modifications_applicable(Changeset, Party),
         case pm_claim_committer:from_claim_mgmt(Claim) of
             undefined ->
                 ok;
             PayprocClaim ->
                 Timestamp = pm_datetime:format_now(),
                 Revision = pm_domain:head(),
-                Party = get_st_party(St),
 
-                ok = assert_cash_regisrty_modifications_applicable(Changeset, Party),
                 ok = pm_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
                 ok = pm_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party)
         end,
