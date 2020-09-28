@@ -24,6 +24,19 @@ services:
       machinegun:
         condition: service_healthy
 
+  bender:
+    image: dr2.rbkmoney.com/rbkmoney/bender:b392d600186e8de842db5f35ae2e53dda046ddd6
+    command: /opt/bender/bin/bender foreground
+    volumes:
+      - ./test/log/bender:/var/log/bender
+    healthcheck:
+      test: "curl http://localhost:8022/"
+      interval: 5s
+      timeout: 1s
+      retries: 20
+    depends_on:
+      - machinegun
+
   machinegun:
     image: dr2.rbkmoney.com/rbkmoney/machinegun:4986e50e2abcedbf589aaf8cce89c2b420589f04
     command: /opt/machinegun/bin/machinegun foreground
