@@ -426,8 +426,9 @@ get_merchant_payments_terms(Opts, Revision, Timestamp, VS) ->
     TermSet = get_merchant_terms(Party, Shop, Revision, Timestamp, VS),
     TermSet#domain_TermSet.payments.
 
-get_merchant_terms(Party, Shop, Revision, Timestamp, VS) ->
-    #domain_Contract{id = ContractID} = Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+get_merchant_terms(Party, Shop, DomainRevision, Timestamp, VS) ->
+    ContractID = Shop#domain_Shop.contract_id,
+    Contract = hg_party:get_contract(ContractID, Party),
     ok = assert_contract_active(Contract),
     PreparedVS = hg_varset:prepare_varset(VS),
     {Client, Context} = get_party_client(),
@@ -436,7 +437,7 @@ get_merchant_terms(Party, Shop, Revision, Timestamp, VS) ->
         ContractID,
         Timestamp,
         {revision, Party#domain_Party.revision},
-        Revision,
+        DomainRevision,
         PreparedVS,
         Client,
         Context
@@ -456,8 +457,7 @@ get_provider_terminal_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
         Client,
         Context
     ),
-    #domain_ProvisionTermSet{payments = Terms} = TermsSet,
-    Terms.
+    TermsSet#domain_ProvisionTermSet.payments.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;

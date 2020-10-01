@@ -3,7 +3,6 @@
 -module(hg_routing).
 
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
--include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
 -export([gather_routes/4]).
@@ -144,7 +143,7 @@ choose_route(FailRatedRoutes, RejectContext, VS) ->
     reject_context()
 ) -> {[provider_with_ref()], reject_context()}.
 select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
-    {value, ProviderRefs0} = PaymentInstitution#domain_PaymentInstitution.providers,
+    ProviderRefs0 = get_selector_value(providers, PaymentInstitution#domain_PaymentInstitution.providers),
     ProviderRefs1 = ordsets:to_list(ProviderRefs0),
     {Providers, RejectReasons} = lists:foldl(
         fun(ProviderRef, {Prvs, Reasons}) ->
@@ -774,6 +773,14 @@ test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
 
 reduce(Name, S, VS, Revision) ->
     case pm_selector:reduce(S, VS, Revision) of
+        {value, V} ->
+            V;
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
+
+get_selector_value(Name, Selector) ->
+    case Selector of
         {value, V} ->
             V;
         Ambiguous ->
