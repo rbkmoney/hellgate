@@ -5,14 +5,14 @@
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
--export([gather_routes/4]).
+-export([gather_routes/6]).
 -export([gather_fail_rates/1]).
 -export([choose_route/3]).
 
 -export([get_payments_terms/2]).
 -export([get_rec_paytools_terms/2]).
 
--export([acceptable_terminal/5]).
+-export([acceptable_terminal/7]).
 
 -export([marshal/1]).
 -export([unmarshal/1]).
@@ -95,6 +95,10 @@
     reject_reason => atom()
 }.
 
+-type invoice_payment_flow() :: instant | {hold, dmsl_domain_thrift:'HoldLifetime'()}.
+-type refunds_varset() :: undefined | #{partial => #{cash_limit := dmsl_domain_thrift:'CashLimitSelector'()}}.
+-type risk_score() :: dmsl_domain_thrift:'RiskScore'().
+
 -record(route_scores, {
     availability_condition :: condition_score(),
     conversion_condition :: condition_score(),
@@ -113,42 +117,54 @@
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
+    invoice_payment_flow() | undefined,
+    refunds_varset() | undefined,
     pm_selector:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
-gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
+gather_routes(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision) ->
     RejectContext0 = #{
         varset => VS,
         rejected_providers => [],
         rejected_routes => []
     },
-    {Providers, RejectContext1} = select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext0),
-    select_routes(Predestination, Providers, VS, Revision, RejectContext1).
+    {Providers, RejectContext1} = select_providers(
+        Predestination,
+        PaymentInstitution,
+        PaymentFlow,
+        RefundsVS,
+        VS,
+        Revision,
+        RejectContext0
+    ),
+    select_routes(Predestination, Providers, PaymentFlow, RefundsVS, VS, Revision, RejectContext1).
 
 -spec gather_fail_rates([non_fail_rated_route()]) -> [fail_rated_route()].
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([fail_rated_route()], reject_context(), pm_selector:varset()) ->
+-spec choose_route([fail_rated_route()], reject_context(), risk_score() | any()) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
-choose_route(FailRatedRoutes, RejectContext, VS) ->
-    do_choose_route(FailRatedRoutes, VS, RejectContext).
+choose_route(FailRatedRoutes, RejectContext, RiskScore) ->
+    do_choose_route(FailRatedRoutes, RiskScore, RejectContext).
 
 -spec select_providers(
     route_predestination(),
     payment_institution(),
+    invoice_payment_flow() | undefined,
+    refunds_varset() | undefined,
     pm_selector:varset(),
     hg_domain:revision(),
     reject_context()
 ) -> {[provider_with_ref()], reject_context()}.
-select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
+select_providers(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision, RejectContext) ->
     ProviderRefs0 = get_selector_value(providers, PaymentInstitution#domain_PaymentInstitution.providers),
     ProviderRefs1 = ordsets:to_list(ProviderRefs0),
     {Providers, RejectReasons} = lists:foldl(
         fun(ProviderRef, {Prvs, Reasons}) ->
             try
-                P = acceptable_provider(Predestination, ProviderRef, VS, Revision),
+                P = acceptable_provider(Predestination, ProviderRef, PaymentFlow, RefundsVS, VS, Revision),
                 {[P | Prvs], Reasons}
             catch
                 ?rejected(Reason) ->
@@ -165,14 +181,23 @@ select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext
 -spec select_routes(
     route_predestination(),
     [provider_with_ref()],
+    invoice_payment_flow() | undefined,
+    refunds_varset() | undefined,
     pm_selector:varset(),
     hg_domain:revision(),
     reject_context()
 ) -> {[route()], reject_context()}.
-select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
+select_routes(Predestination, Providers, PaymentFlow, RefundsVS, VS, Revision, RejectContext) ->
     {Accepted, Rejected} = lists:foldl(
         fun(Provider, {AcceptedTerminals, RejectedRoutes}) ->
-            {Accepts, Rejects} = collect_routes_for_provider(Predestination, Provider, VS, Revision),
+            {Accepts, Rejects} = collect_routes_for_provider(
+                Predestination,
+                Provider,
+                PaymentFlow,
+                RefundsVS,
+                VS,
+                Revision
+            ),
             {Accepts ++ AcceptedTerminals, Rejects ++ RejectedRoutes}
         end,
         {[], []},
@@ -180,16 +205,16 @@ select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
     ),
     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
--spec do_choose_route([fail_rated_route()], pm_selector:varset(), reject_context()) ->
+-spec do_choose_route([fail_rated_route()], risk_score() | any(), reject_context()) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
-do_choose_route(_Routes, #{risk_score := fatal}, RejectContext) ->
+do_choose_route(_Routes, fatal, RejectContext) ->
     {error, {no_route_found, {risk_score_is_too_high, RejectContext}}};
-do_choose_route([] = _Routes, _VS, RejectContext) ->
+do_choose_route([] = _Routes, _RiskScore, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
-do_choose_route(Routes, VS, _RejectContext) ->
+do_choose_route(Routes, _RiskScore, _RejectContext) ->
     BalancedRoutes = balance_routes(Routes),
-    ScoredRoutes = score_routes(BalancedRoutes, VS),
+    ScoredRoutes = score_routes(BalancedRoutes),
     {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
     RouteChoiceMeta = get_route_choice_meta(ChosenRoute, IdealRoute),
     {ok, export_route(ChosenRoute), RouteChoiceMeta}.
@@ -366,11 +391,11 @@ calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
             calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes])
     end.
 
--spec score_routes([fail_rated_route()], pm_selector:varset()) -> [scored_route()].
-score_routes(Routes, VS) ->
-    [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
+-spec score_routes([fail_rated_route()]) -> [scored_route()].
+score_routes(Routes) ->
+    [{score_route(R), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
 
-score_route({_Provider, {_TerminalRef, _Terminal, Priority}, ProviderStatus}, _VS) ->
+score_route({_Provider, {_TerminalRef, _Terminal, Priority}, ProviderStatus}) ->
     {AvailabilityStatus, ConversionStatus} = ProviderStatus,
     {AvailabilityCondition, Availability} = get_availability_score(AvailabilityStatus),
     {ConversionCondition, Conversion} = get_conversion_score(ConversionStatus),
@@ -464,30 +489,32 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
 -spec acceptable_provider(
     route_predestination(),
     provider_ref(),
+    invoice_payment_flow() | undefined,
+    refunds_varset() | undefined,
     pm_selector:varset(),
     hg_domain:revision()
 ) -> provider_with_ref() | no_return().
-acceptable_provider(payment, ProviderRef, VS, Revision) ->
+acceptable_provider(payment, ProviderRef, PaymentFlow, RefundsVS, VS, Revision) ->
     Provider =
         #domain_Provider{
             terms = Terms
         } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, PaymentFlow, RefundsVS, VS, Revision),
     {ProviderRef, Provider};
-acceptable_provider(recurrent_paytool, ProviderRef, VS, Revision) ->
+acceptable_provider(recurrent_paytool, ProviderRef, _PaymentFlow, _RefundsVS, VS, Revision) ->
     Provider =
         #domain_Provider{
             terms = Terms
         } = hg_domain:get(Revision, {provider, ProviderRef}),
     _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {ProviderRef, Provider};
-acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
+acceptable_provider(recurrent_payment, ProviderRef, PaymentFlow, RefundsVS, VS, Revision) ->
     % Use provider check combined from recurrent_paytool and payment check
     Provider =
         #domain_Provider{
             terms = Terms
         } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, PaymentFlow, RefundsVS, VS, Revision),
     _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {ProviderRef, Provider}.
 
@@ -496,10 +523,12 @@ acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
 -spec collect_routes_for_provider(
     route_predestination(),
     provider_with_ref(),
+    invoice_payment_flow() | undefined,
+    refunds_varset() | undefined,
     pm_selector:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], [rejected_route()]}.
-collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revision) ->
+collect_routes_for_provider(Predestination, {ProviderRef, Provider}, PaymentFlow, RefundsVS, VS, Revision) ->
     TerminalSelector = Provider#domain_Provider.terminal,
     ProviderTerminalRefs = reduce(terminal, TerminalSelector, VS, Revision),
     lists:foldl(
@@ -507,7 +536,15 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revisio
             TerminalRef = get_terminal_ref(ProviderTerminalRef),
             Priority = get_terminal_priority(ProviderTerminalRef),
             try
-                {TerminalRef, Terminal} = acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
+                {TerminalRef, Terminal} = acceptable_terminal(
+                    Predestination,
+                    TerminalRef,
+                    Provider,
+                    PaymentFlow,
+                    RefundsVS,
+                    VS,
+                    Revision
+                ),
                 {[{{ProviderRef, Provider}, {TerminalRef, Terminal, Priority}} | Accepted], Rejected}
             catch
                 ?rejected(Reason) ->
@@ -524,10 +561,12 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revisio
     route_predestination(),
     terminal_ref(),
     provider(),
+    invoice_payment_flow() | undefined,
+    refunds_varset() | undefined,
     pm_selector:varset(),
     hg_domain:revision()
 ) -> unweighted_terminal() | no_return().
-acceptable_terminal(payment, TerminalRef, Provider, VS, Revision) ->
+acceptable_terminal(payment, TerminalRef, Provider, PaymentFlow, RefundsVS, VS, Revision) ->
     #domain_Provider{
         terms = ProviderTerms
     } = Provider,
@@ -538,16 +577,16 @@ acceptable_terminal(payment, TerminalRef, Provider, VS, Revision) ->
     % TODO the ability to override any terms makes for uncommon sense
     %      is it better to allow to override only cash flow / refunds terms?
     Terms = merge_terms(ProviderTerms, TerminalTerms),
-    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, PaymentFlow, RefundsVS, VS, Revision),
     {TerminalRef, Terminal};
-acceptable_terminal(recurrent_paytool, TerminalRef, Provider, VS, Revision) ->
+acceptable_terminal(recurrent_paytool, TerminalRef, Provider, _PaymentFlow, _RefundsVS, VS, Revision) ->
     #domain_Provider{
         terms = Terms
     } = Provider,
     Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
     _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {TerminalRef, Terminal};
-acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
+acceptable_terminal(recurrent_payment, TerminalRef, Provider, PaymentFlow, RefundsVS, VS, Revision) ->
     % Use provider check combined from recurrent_paytool and payment check
     #domain_Provider{
         terms = ProviderTerms
@@ -557,7 +596,7 @@ acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
             terms = TerminalTerms
         } = hg_domain:get(Revision, {terminal, TerminalRef}),
     Terms = merge_terms(ProviderTerms, TerminalTerms),
-    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, PaymentFlow, RefundsVS, VS, Revision),
     _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
     {TerminalRef, Terminal}.
 
@@ -578,12 +617,14 @@ acceptable_provision_payment_terms(
     #domain_ProvisionTermSet{
         payments = PaymentTerms
     },
+    PaymentFlow,
+    RefundsVS,
     VS,
     Revision
 ) ->
-    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
+    _ = acceptable_payment_terms(PaymentTerms, PaymentFlow, RefundsVS, VS, Revision),
     true;
-acceptable_provision_payment_terms(undefined, _VS, _Revision) ->
+acceptable_provision_payment_terms(undefined, _PaymentFlow, _RefundsVS, _VS, _Revision) ->
     throw(?rejected({'ProvisionTermSet', undefined})).
 
 acceptable_provision_recurrent_terms(
@@ -605,9 +646,10 @@ acceptable_payment_terms(
         payment_methods = PMsSelector,
         cash_limit = CashLimitSelector,
         holds = HoldsTerms,
-        refunds = RefundsTerms,
-        chargebacks = ChargebackTerms
+        refunds = RefundsTerms
     },
+    PaymentFlow,
+    RefundsVS,
     VS,
     Revision
 ) ->
@@ -618,11 +660,10 @@ acceptable_payment_terms(
     _ = try_accept_term(ParentName, category, CategoriesSelector, VS, Revision),
     _ = try_accept_term(ParentName, payment_tool, PMsSelector, VS, Revision),
     _ = try_accept_term(ParentName, cost, CashLimitSelector, VS, Revision),
-    _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
-    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
-    _ = acceptable_chargeback_terms(ChargebackTerms, getv(chargebacks, VS, undefined), VS, Revision),
+    _ = acceptable_holds_terms(HoldsTerms, PaymentFlow, VS, Revision),
+    _ = acceptable_refunds_terms(RefundsTerms, RefundsVS, VS, Revision),
     true;
-acceptable_payment_terms(undefined, _VS, _Revision) ->
+acceptable_payment_terms(undefined, _PaymentFlow, _RefundsVS, _VS, _Revision) ->
     throw(?rejected({'PaymentsProvisionTerms', undefined})).
 
 acceptable_holds_terms(_Terms, undefined, _VS, _Revision) ->
@@ -671,13 +712,6 @@ acceptable_partial_refunds_terms(
         throw(?rejected({'PartialRefundsProvisionTerms', cash_limit}));
 acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
     throw(?rejected({'PartialRefundsProvisionTerms', undefined})).
-
-acceptable_chargeback_terms(_Terms, undefined, _VS, _Revision) ->
-    true;
-acceptable_chargeback_terms(_Terms, #{}, _VS, _Revision) ->
-    true;
-acceptable_chargeback_terms(undefined, _RVS, _VS, _Revision) ->
-    throw(?rejected({'PaymentChargebackProvisionTerms', undefined})).
 
 merge_terms(
     #domain_ProvisionTermSet{

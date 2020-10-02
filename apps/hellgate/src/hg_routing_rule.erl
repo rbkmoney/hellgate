@@ -2,7 +2,7 @@
 
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
--export([gather_routes/4]).
+-export([gather_routes/6]).
 
 %%
 -define(const(Bool), {constant, Bool}).
@@ -11,16 +11,20 @@
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type non_fail_rated_route() :: hg_routing:non_fail_rated_route().
 -type reject_context() :: hg_routing:reject_context().
+-type invoice_payment_flow() :: instant | {hold, dmsl_domain_thrift:'HoldLifetime'()}.
+-type refunds_varset() :: undefined | #{partial => #{cash_limit := dmsl_domain_thrift:'CashLimitSelector'()}}.
 
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
+    invoice_payment_flow() | undefined,
+    refunds_varset() | undefined,
     pm_selector:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
-gather_routes(_, #domain_PaymentInstitution{payment_routing = undefined}, VS, _) ->
+gather_routes(_, #domain_PaymentInstitution{payment_routing = undefined}, _PaymentFlow, _RefundsVS, VS, _) ->
     {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
-gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
+gather_routes(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision) ->
     RejectedContext = #{
         varset => VS,
         rejected_providers => [],
@@ -30,7 +34,7 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     RuleSet = get_rule_set(PaymentRouting#domain_PaymentRouting.policies, Revision),
     RuleSetDeny = get_rule_set(PaymentRouting#domain_PaymentRouting.prohibitions, Revision),
     Candidates = reduce(RuleSet, VS, Revision),
-    RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
+    RatedRoutes = collect_routes(Predestination, Candidates, PaymentFlow, RefundsVS, VS, Revision),
     Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
     {Accepted, RejectedRoutes} = filter_routes(RatedRoutes, Prohibitions),
     {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}.
@@ -97,7 +101,7 @@ reduce_candidates_decision(Candidates, VS, Rev) ->
         Candidates
     ).
 
-collect_routes(Predestination, Candidates, VS, Revision) ->
+collect_routes(Predestination, Candidates, PaymentFlow, RefundsVS, VS, Revision) ->
     lists:foldl(
         fun(Candidate, {Accepted, Rejected}) ->
             #domain_PaymentRoutingCandidate{
@@ -107,7 +111,15 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
             } = Candidate,
             {#domain_Terminal{provider_ref = ProviderRef}, Provider} = get_route(TerminalRef, Revision),
             try
-                {_, Terminal} = hg_routing:acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
+                {_, Terminal} = hg_routing:acceptable_terminal(
+                    Predestination,
+                    TerminalRef,
+                    Provider,
+                    PaymentFlow,
+                    RefundsVS,
+                    VS,
+                    Revision
+                ),
                 {[{{ProviderRef, Provider}, {TerminalRef, Terminal, {Priority, Weight}}} | Accepted], Rejected}
             catch
                 {rejected, Reason} ->

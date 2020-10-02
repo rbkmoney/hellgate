@@ -143,11 +143,19 @@ handle_uncomputable_provider_terms(_C) ->
         risk_score => low,
         flow => instant
     },
+    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Providers0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS0, Revision),
+    {Providers0, RejectContext0} = hg_routing:gather_routes(
+        payment,
+        PaymentInstitution,
+        Flow,
+        undefined,
+        VS0,
+        Revision
+    ),
     {[], #{
         rejected_providers := [
             {?prv(4), {'PaymentsProvisionTerms', currency}},
@@ -166,14 +174,13 @@ gathers_fail_rated_routes(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"12345">>,
-        risk_score => low,
-        flow => instant
+        party_id => <<"12345">>
     },
+    Flow = instant,
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes0, _RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {Routes0, _RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
     Result = hg_routing:gather_fail_rates(Routes0),
     [
         {{?prv(200), _}, _, {{dead, 0.9}, {lacking, 0.9}}},
@@ -194,13 +201,13 @@ fatal_risk_score_for_route_found(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {bank_card, #domain_BankCard{}},
-        party_id => <<"12345">>,
-        risk_score => fatal,
-        flow => instant
+        party_id => <<"12345">>
     },
-    {Routes0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS0, Revision),
+    RiskScore = fatal,
+    Flow = instant,
+    {Routes0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS0, Revision),
     FailRatedRoutes0 = hg_routing:gather_fail_rates(Routes0),
-    Result0 = hg_routing:choose_route(FailRatedRoutes0, RejectContext0, VS0),
+    Result0 = hg_routing:choose_route(FailRatedRoutes0, RejectContext0, RiskScore),
 
     {error,
         {no_route_found,
@@ -218,9 +225,9 @@ fatal_risk_score_for_route_found(_C) ->
     VS1 = VS0#{
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
     },
-    {Routes1, RejectContext1} = hg_routing:gather_routes(payment, PaymentInstitution, VS1, Revision),
+    {Routes1, RejectContext1} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS1, Revision),
     FailRatedRoutes1 = hg_routing:gather_fail_rates(Routes1),
-    Result1 = hg_routing:choose_route(FailRatedRoutes1, RejectContext1, VS1),
+    Result1 = hg_routing:choose_route(FailRatedRoutes1, RejectContext1, RiskScore),
     {error,
         {no_route_found,
             {risk_score_is_too_high, #{
@@ -247,11 +254,13 @@ no_route_found_for_payment(_C) ->
         risk_score => low,
         flow => instant
     },
+    RiskScore = low,
+    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS0, Revision),
+    {Routes0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS0, Revision),
     {[], #{
         rejected_providers := [
             {?prv(4), {'PaymentsProvisionTerms', currency}},
@@ -278,13 +287,13 @@ no_route_found_for_payment(_C) ->
                     rejected_routes => []
                 }}}},
 
-    Result0 = hg_routing:choose_route(FailRatedRoutes0, RejectContext0, VS0),
+    Result0 = hg_routing:choose_route(FailRatedRoutes0, RejectContext0, RiskScore),
 
     VS1 = VS0#{
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}}
     },
 
-    {Routes1, RejectContext1} = hg_routing:gather_routes(payment, PaymentInstitution, VS1, Revision),
+    {Routes1, RejectContext1} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS1, Revision),
     FailRatedRoutes1 = hg_routing:gather_fail_rates(Routes1),
 
     {ok,
@@ -292,7 +301,7 @@ no_route_found_for_payment(_C) ->
             provider = ?prv(3),
             terminal = ?trm(10)
         },
-        _Meta} = hg_routing:choose_route(FailRatedRoutes1, RejectContext1, VS1),
+        _Meta} = hg_routing:choose_route(FailRatedRoutes1, RejectContext1, RiskScore),
     hg_context:cleanup(),
     ok.
 
@@ -303,10 +312,10 @@ prefer_alive(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"12345">>,
-        risk_score => low,
-        flow => instant
+        party_id => <<"12345">>
     },
+    RiskScore = low,
+    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -316,7 +325,7 @@ prefer_alive(_C) ->
             {{?prv(201), _}, _},
             {{?prv(202), _}, _}
         ] = Routes,
-        RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+        RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
@@ -332,9 +341,9 @@ prefer_alive(_C) ->
     FailRatedRoutes1 = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses1),
     FailRatedRoutes2 = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses2),
 
-    Result0 = hg_routing:choose_route(FailRatedRoutes0, RejectContext, VS),
-    Result1 = hg_routing:choose_route(FailRatedRoutes1, RejectContext, VS),
-    Result2 = hg_routing:choose_route(FailRatedRoutes2, RejectContext, VS),
+    Result0 = hg_routing:choose_route(FailRatedRoutes0, RejectContext, RiskScore),
+    Result1 = hg_routing:choose_route(FailRatedRoutes1, RejectContext, RiskScore),
+    Result2 = hg_routing:choose_route(FailRatedRoutes2, RejectContext, RiskScore),
 
     {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, Meta0} = Result0,
     {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, Meta1} = Result1,
@@ -353,10 +362,10 @@ prefer_normal_conversion(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"12345">>,
-        risk_score => low,
-        flow => instant
+        party_id => <<"12345">>
     },
+    RiskScore = low,
+    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -366,7 +375,7 @@ prefer_normal_conversion(_C) ->
             {{?prv(201), _}, _},
             {{?prv(202), _}, _}
         ] = Routes,
-        RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+        RC} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -381,9 +390,9 @@ prefer_normal_conversion(_C) ->
     FailRatedRoutes1 = lists:zip3(Providers, TerminalData, ProviderStatuses1),
     FailRatedRoutes2 = lists:zip3(Providers, TerminalData, ProviderStatuses2),
 
-    Result0 = hg_routing:choose_route(FailRatedRoutes0, RC, VS),
-    Result1 = hg_routing:choose_route(FailRatedRoutes1, RC, VS),
-    Result2 = hg_routing:choose_route(FailRatedRoutes2, RC, VS),
+    Result0 = hg_routing:choose_route(FailRatedRoutes0, RC, RiskScore),
+    Result1 = hg_routing:choose_route(FailRatedRoutes1, RC, RiskScore),
+    Result2 = hg_routing:choose_route(FailRatedRoutes2, RC, RiskScore),
 
     {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, Meta0} = Result0,
     {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, Meta1} = Result1,
@@ -402,10 +411,10 @@ prefer_higher_availability(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"12345">>,
-        risk_score => low,
-        flow => instant
+        party_id => <<"12345">>
     },
+    RiskScore = low,
+    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -415,14 +424,14 @@ prefer_higher_availability(_C) ->
             {{?prv(201), _}, _},
             {{?prv(202), _}, _}
         ] = Routes,
-        RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+        RC} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
     ProviderStatuses = [{{alive, 0.5}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.6}, {normal, 0.5}}],
     FailRatedRoutes = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
 
-    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
+    Result = hg_routing:choose_route(FailRatedRoutes, RC, RiskScore),
 
     {ok, #domain_PaymentRoute{provider = ?prv(200), terminal = ?trm(111)}, #{
         reject_reason := availability,
@@ -438,9 +447,9 @@ prefer_higher_conversion(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"12345">>,
-        flow => instant
+        party_id => <<"12345">>
     },
+    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -450,14 +459,14 @@ prefer_higher_conversion(_C) ->
             {{?prv(201), _}, _},
             {{?prv(202), _}, _}
         ] = Routes,
-        RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+        RC} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
     ProviderStatuses = [{{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.5}}],
     FailRatedRoutes = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
-    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
+    Result = hg_routing:choose_route(FailRatedRoutes, RC, undefined),
     {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, #{
         reject_reason := conversion,
         preferable_route := #{provider_ref := 202}
@@ -471,10 +480,10 @@ prefer_weight_over_availability(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"54321">>,
-        risk_score => low,
-        flow => instant
+        party_id => <<"54321">>
     },
+    RiskScore = low,
+    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -484,14 +493,14 @@ prefer_weight_over_availability(_C) ->
             {{?prv(201), _}, _},
             {{?prv(202), _}, _}
         ] = Routes,
-        RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+        RC} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
     ProviderStatuses = [{{alive, 0.3}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
     FailRatedRoutes = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
-    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
+    Result = hg_routing:choose_route(FailRatedRoutes, RC, RiskScore),
 
     {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, _Meta} = Result,
 
@@ -504,10 +513,10 @@ prefer_weight_over_conversion(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"54321">>,
-        risk_score => low,
-        flow => instant
+        party_id => <<"54321">>
     },
+    RiskScore = low,
+    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -517,14 +526,14 @@ prefer_weight_over_conversion(_C) ->
             {{?prv(201), _}, _},
             {{?prv(202), _}, _}
         ] = Routes,
-        RC} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+        RC} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
     ProviderStatuses = [{{alive, 0.3}, {normal, 0.5}}, {{alive, 0.3}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
     FailRatedRoutes = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
-    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
+    Result = hg_routing:choose_route(FailRatedRoutes, RC, RiskScore),
 
     {ok, #domain_PaymentRoute{provider = ?prv(201), terminal = ?trm(111)}, _Meta} = Result,
 
@@ -556,15 +565,15 @@ terminal_priority_for_shop(PartyID, ShopID, _C) ->
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
         party_id => PartyID,
-        shop_id => ShopID,
-        risk_score => low,
-        flow => instant
+        shop_id => ShopID
     },
+    RiskScore = low,
+    Flow = instant,
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    {Routes, RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {Routes, RejectContext} = hg_routing:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
-    hg_routing:choose_route(FailRatedRoutes, RejectContext, VS).
+    hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore).
 
 %%% Domain config fixtures
 

@@ -203,6 +203,11 @@
 -type capture_params() :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
 -type payment_session() :: dmsl_payment_processing_thrift:'InvoicePaymentSession'().
 -type failure() :: dmsl_domain_thrift:'OperationFailure'().
+%%-type invoice_payment_flow() :: instant | {hold, dmsl_domain_thrift:'HoldLifetime'()}.
+%%-type refund_varset() :: undefined | #{partial => #{cash_limit := dmsl_domain_thrift:'CashLimitSelector'()}}.
+-type shop() :: dmsl_domain_thrift:'Shop'().
+-type payment_tool() :: dmsl_domain_thrift:'PaymentTool'().
+-type recurrent_paytool_service_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
 
 -type session_status() :: active | suspended | finished.
 
@@ -581,20 +586,10 @@ construct_payment(
         FlowParams,
         CreatedAt,
         PaymentTerms#domain_PaymentsServiceTerms.holds,
-        VS1
+        PaymentTool
     ),
-    RecurrentValidationVarset = #{
-        payer => Payer,
-        shop => Shop,
-        party => Party,
-        varset => VS1,
-        revision => Revision,
-        created_at => CreatedAt,
-        recurrent_terms => RecurrentTerms,
-        payment_tool => PaymentTool,
-        parent_payment => maps:get(parent_payment, VS1, undefined)
-    },
-    ok = validate_recurrent_intention(RecurrentValidationVarset, MakeRecurrent),
+    ParentPayment = maps:get(parent_payment, VS1, undefined),
+    ok = validate_recurrent_intention(Payer, RecurrentTerms, PaymentTool, Shop, ParentPayment, MakeRecurrent),
     #domain_InvoicePayment{
         id = PaymentID,
         created_at = CreatedAt,
@@ -612,19 +607,19 @@ construct_payment(
         processing_deadline = Deadline
     }.
 
-construct_payment_flow({instant, _}, _CreatedAt, _Terms, _VS) ->
+construct_payment_flow({instant, _}, _CreatedAt, _Terms, _PaymentTool) ->
     ?invoice_payment_flow_instant();
-construct_payment_flow({hold, Params}, CreatedAt, Terms, VS) ->
+construct_payment_flow({hold, Params}, CreatedAt, Terms, PaymentTool) ->
     OnHoldExpiration = Params#payproc_InvoicePaymentParamsFlowHold.on_hold_expiration,
-    ?hold_lifetime(Seconds) = validate_hold_lifetime(Terms, VS),
+    ?hold_lifetime(Seconds) = validate_hold_lifetime(Terms, PaymentTool),
     HeldUntil = hg_datetime:format_ts(hg_datetime:parse_ts(CreatedAt) + Seconds),
     ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil).
 
-reconstruct_payment_flow(?invoice_payment_flow_instant(), _CreatedAt, VS) ->
-    VS#{flow => instant};
-reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, HeldUntil), CreatedAt, VS) ->
+reconstruct_payment_flow(?invoice_payment_flow_instant(), _CreatedAt) ->
+    instant;
+reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, HeldUntil), CreatedAt) ->
     Seconds = hg_datetime:parse_ts(HeldUntil) - hg_datetime:parse_ts(CreatedAt),
-    VS#{flow => {hold, ?hold_lifetime(Seconds)}}.
+    {hold, ?hold_lifetime(Seconds)}.
 
 -spec get_predefined_route(payer()) -> {ok, route()} | undefined.
 get_predefined_route(?payment_resource_payer()) ->
@@ -656,44 +651,53 @@ validate_hold_lifetime(
         payment_methods = PMs,
         lifetime = LifetimeSelector
     },
-    VS
+    PaymentTool
 ) ->
-    PaymentTool = genlib_map:get(payment_tool, VS),
     ok = validate_payment_tool(PaymentTool, PMs),
     get_selector_value(hold_lifetime, LifetimeSelector);
-validate_hold_lifetime(undefined, _VS) ->
+validate_hold_lifetime(undefined, _PaymentTool) ->
     throw_invalid_request(<<"Holds are not available">>).
 
--spec validate_recurrent_intention(map(), make_recurrent()) -> ok | no_return().
-validate_recurrent_intention(#{payer := ?recurrent_payer()} = VS, MakeRecurrent) ->
-    ok = validate_recurrent_terms(VS),
-    ok = validate_recurrent_payer(VS, MakeRecurrent),
-    ok = validate_recurrent_parent(VS);
-validate_recurrent_intention(VS, true = MakeRecurrent) ->
-    ok = validate_recurrent_terms(VS),
-    ok = validate_recurrent_payer(VS, MakeRecurrent);
-validate_recurrent_intention(_VS, false = _MakeRecurrent) ->
+-spec validate_recurrent_intention(
+    payer(),
+    recurrent_paytool_service_terms(),
+    payment_tool(),
+    shop(),
+    payment(),
+    make_recurrent()
+) -> ok | no_return().
+validate_recurrent_intention(
+    ?recurrent_payer() = Payer,
+    RecurrentTerms,
+    PaymentTool,
+    Shop,
+    ParentPayment,
+    MakeRecurrent
+) ->
+    ok = validate_recurrent_terms(RecurrentTerms, PaymentTool),
+    ok = validate_recurrent_payer(Payer, MakeRecurrent),
+    ok = validate_recurrent_parent(Shop, ParentPayment);
+validate_recurrent_intention(Payer, RecurrentTerms, PaymentTool, _Shop, _ParentPayment, true = MakeRecurrent) ->
+    ok = validate_recurrent_terms(RecurrentTerms, PaymentTool),
+    ok = validate_recurrent_payer(Payer, MakeRecurrent);
+validate_recurrent_intention(_Payer, _RecurrentTerms, _PaymentTool, _Shop, _ParentPayment, false = _MakeRecurrent) ->
     ok.
 
--spec validate_recurrent_terms(map()) -> ok | no_return().
-validate_recurrent_terms(#{recurrent_terms := undefined}) ->
+-spec validate_recurrent_terms(recurrent_paytool_service_terms(), payment_tool()) -> ok | no_return().
+validate_recurrent_terms(undefined, _PaymentTool) ->
     throw(#payproc_OperationNotPermitted{});
-validate_recurrent_terms(VS) ->
-    #{
-        recurrent_terms := Terms,
-        payment_tool := PaymentTool
-    } = VS,
-    #domain_RecurrentPaytoolsServiceTerms{payment_methods = PaymentMethodSelector} = Terms,
+validate_recurrent_terms(RecurrentTerms, PaymentTool) ->
+    #domain_RecurrentPaytoolsServiceTerms{payment_methods = PaymentMethodSelector} = RecurrentTerms,
     PMs = get_selector_value(recurrent_payment_methods, PaymentMethodSelector),
     _ =
         hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
             throw_invalid_request(<<"Invalid payment method">>),
     ok.
 
--spec validate_recurrent_parent(map()) -> ok | no_return().
-validate_recurrent_parent(#{parent_payment := ParentPayment} = VS) ->
+-spec validate_recurrent_parent(shop(), st()) -> ok | no_return().
+validate_recurrent_parent(Shop, ParentPayment) ->
     ok = validate_recurrent_token_present(ParentPayment),
-    ok = validate_recurrent_parent_shop(VS, ParentPayment),
+    ok = validate_recurrent_parent_shop(Shop, ParentPayment),
     ok = validate_recurrent_parent_status(ParentPayment).
 
 -spec validate_recurrent_token_present(st()) -> ok | no_return().
@@ -705,8 +709,8 @@ validate_recurrent_token_present(PaymentState) ->
             throw_invalid_recurrent_parent(<<"Parent payment has no recurrent token">>)
     end.
 
--spec validate_recurrent_parent_shop(map(), st()) -> ok | no_return().
-validate_recurrent_parent_shop(#{shop := Shop}, PaymentState) ->
+-spec validate_recurrent_parent_shop(shop(), st()) -> ok | no_return().
+validate_recurrent_parent_shop(Shop, PaymentState) ->
     PaymentShopID = get_payment_shop_id(get_payment(PaymentState)),
     case Shop of
         #domain_Shop{id = ShopID} when ShopID =:= PaymentShopID ->
@@ -724,12 +728,12 @@ validate_recurrent_parent_status(PaymentState) ->
             ok
     end.
 
--spec validate_recurrent_payer(map(), make_recurrent()) -> ok | no_return().
-validate_recurrent_payer(#{payer := ?recurrent_payer()}, _MakeRecurrent) ->
+-spec validate_recurrent_payer(dmsl_domain_thrift:'Payer'(), make_recurrent()) -> ok | no_return().
+validate_recurrent_payer(?recurrent_payer(), _MakeRecurrent) ->
     ok;
-validate_recurrent_payer(#{payer := ?payment_resource_payer()}, true) ->
+validate_recurrent_payer(?payment_resource_payer(), true) ->
     ok;
-validate_recurrent_payer(#{payer := _Other}, true) ->
+validate_recurrent_payer(_OtherPayer, true) ->
     throw_invalid_request(<<"Invalid payer">>).
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector) ->
@@ -753,7 +757,7 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-choose_route(PaymentInstitution, VS, Revision, St) ->
+choose_route(PaymentInstitution, PaymentFlow, RefundsVS, RiskScore, VS, Revision, St) ->
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
         {ok, _Route} = Result ->
@@ -764,11 +768,13 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
             {Routes, RejectContext} = gather_routes(
                 Predestination,
                 PaymentInstitution,
+                PaymentFlow,
+                RefundsVS,
                 VS,
                 Revision
             ),
             FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
-            case hg_routing:choose_route(FailRatedRoutes, RejectContext, VS) of
+            case hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore) of
                 {ok, Route, ChoiceMeta} ->
                     _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext),
@@ -779,10 +785,10 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
             end
     end.
 
-gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
-    case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS, Revision) of
+gather_routes(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision) ->
+    case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision) of
         {[], _} ->
-            hg_routing:gather_routes(Predestination, PaymentInstitution, VS, Revision);
+            hg_routing:gather_routes(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision);
         Routes ->
             Routes
     end.
@@ -864,19 +870,17 @@ collect_refund_varset(
         payment_methods = PaymentMethodSelector,
         partial_refunds = PartialRefundsServiceTerms
     },
-    VS
+    PaymentTool
 ) ->
     RPMs = get_selector_value(payment_methods, PaymentMethodSelector),
-    PaymentTool = maps:get(payment_tool, VS),
     case hg_payment_tool:has_any_payment_method(PaymentTool, RPMs) of
         true ->
-            RVS = collect_partial_refund_varset(PartialRefundsServiceTerms),
-            VS#{refunds => RVS};
+            collect_partial_refund_varset(PartialRefundsServiceTerms);
         false ->
-            VS
+            undefined
     end;
-collect_refund_varset(undefined, VS) ->
-    VS.
+collect_refund_varset(undefined, _PaymentTool) ->
+    undefined.
 
 collect_partial_refund_varset(
     #domain_PartialRefundsServiceTerms{
@@ -922,17 +926,18 @@ collect_routing_varset(Payment, Opts, VS0) ->
         domain_revision = Revision,
         flow = DomainFlow
     } = Payment,
-    VS2 = reconstruct_payment_flow(DomainFlow, CreatedAt, VS1),
-    MerchantTerms0 = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS2),
-    VS3 = collect_refund_varset(
-        MerchantTerms0#domain_PaymentsServiceTerms.refunds,
-        VS2
+    #{payment_tool := PaymentTool} = VS1,
+    PaymentFlow = reconstruct_payment_flow(DomainFlow, CreatedAt),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
+    RefundVS = collect_refund_varset(
+        MerchantTerms#domain_PaymentsServiceTerms.refunds,
+        PaymentTool
     ),
-    MerchantTerms1 = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS3),
-    collect_chargeback_varset(
-        MerchantTerms1#domain_PaymentsServiceTerms.chargebacks,
-        VS3
-    ).
+    VS2 = collect_chargeback_varset(
+        MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
+        VS1
+    ),
+    {VS2, PaymentFlow, RefundVS}.
 
 %%
 
@@ -1855,14 +1860,13 @@ process_routing(Action, St) ->
     Revision = get_payment_revision(St),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     Payment = get_payment(St),
-    VS0 = collect_routing_varset(Payment, Opts, #{}),
-    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS0, Revision),
+    {VS, PaymentFlow, RefundsVS} = collect_routing_varset(Payment, Opts, #{}),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     RiskScore = repair_inspect(Payment, PaymentInstitution, Opts, St),
     Events0 = [?risk_score_changed(RiskScore)],
-    VS1 = VS0#{risk_score => RiskScore},
-    case choose_route(PaymentInstitution, VS1, Revision, St) of
+    case choose_route(PaymentInstitution, PaymentFlow, RefundsVS, RiskScore, VS, Revision, St) of
         {ok, Route} ->
-            process_cash_flow_building(Route, VS1, Payment, Revision, Opts, Events0, Action);
+            process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action);
         {error, {no_route_found, {Reason, _Details}}} ->
             Failure =
                 {failure,
