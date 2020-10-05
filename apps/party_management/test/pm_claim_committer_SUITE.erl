@@ -339,7 +339,6 @@ shop_complex_modification(C) ->
     }} = get_shop(PartyID, ShopID, C).
 
 -spec invalid_cash_register_modification(config()) -> _.
-
 invalid_cash_register_modification(C) ->
     PartyID = cfg(party_id, C),
     CashRegisterModificationUnit = #claim_management_CashRegisterModificationUnit{
@@ -347,7 +346,7 @@ invalid_cash_register_modification(C) ->
         modification = ?cm_cash_register_unit_creation(1, #{})
     },
     NewDetails = #domain_ShopDetails{
-        name        = <<"UPDATED SHOP NAME">>,
+        name = <<"UPDATED SHOP NAME">>,
         description = <<"Updated shop description.">>
     },
     AnotherShopID = <<"Totaly not the valid one">>,
@@ -356,8 +355,9 @@ invalid_cash_register_modification(C) ->
         ?cm_shop_modification(AnotherShopID, {cash_register_modification_unit, CashRegisterModificationUnit})
     ],
     Claim = claim(Modifications, PartyID),
-    Reason =  <<"{invalid_shop,{payproc_InvalidShop,<<\"", AnotherShopID/binary,
-        "\">>,{not_exists,<<\"", AnotherShopID/binary, "\">>}}}">>,
+    Reason =
+        <<"{invalid_shop,{payproc_InvalidShop,<<\"", AnotherShopID/binary, "\">>,{not_exists,<<\"",
+            AnotherShopID/binary, "\">>}}}">>,
     {exception, #claim_management_InvalidChangeset{
         reason = Reason
     }} = accept_claim(Claim, C).

@@ -5,6 +5,7 @@
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
+
 -include("claim_management.hrl").
 
 %% Machine callbacks
@@ -302,13 +303,15 @@ assert_cash_regisrter_modifications_applicable(Changeset, Party) ->
     CashRegisterShopIDs = get_cash_register_modifications_shop_ids(Changeset),
     ShopModificationsShopIDs = get_shop_modifications_shop_ids(Changeset),
     PartyShopIDs = maps:keys(pm_party:get_shops(Party)),
-    ShopIDs = ShopModificationsShopIDs ++ PartyShopIDs, % Ignoring duplicates for now
+    % Ignoring duplicates for now
+    ShopIDs = ShopModificationsShopIDs ++ PartyShopIDs,
     lists:foreach(
-        fun(ShopID) -> case lists:member(ShopID, ShopIDs) of
-            true ->
-                ok;
-            false ->
-                throw(#payproc_InvalidChangeset{reason = ?invalid_shop(ShopID, {not_exists, ShopID})})
+        fun(ShopID) ->
+            case lists:member(ShopID, ShopIDs) of
+                true ->
+                    ok;
+                false ->
+                    throw(#payproc_InvalidChangeset{reason = ?invalid_shop(ShopID, {not_exists, ShopID})})
             end
         end,
         CashRegisterShopIDs
@@ -316,26 +319,36 @@ assert_cash_regisrter_modifications_applicable(Changeset, Party) ->
 
 get_cash_register_modifications_shop_ids(Changeset) ->
     lists:filtermap(
-        fun(#claim_management_ModificationUnit{
-                modification = {party_modification, ?cm_cash_register_modification_unit_modification(ShopID, _)}}
-        ) ->
-            {true, ShopID};
-        (_) ->
-            false
+        fun
+            (
+                #claim_management_ModificationUnit{
+                    modification = {party_modification, ?cm_cash_register_modification_unit_modification(ShopID, _)}
+                }
+            ) ->
+                {true, ShopID};
+            (_) ->
+                false
         end,
         Changeset
     ).
 
 get_shop_modifications_shop_ids(Changeset) ->
-    lists:filtermap(fun
-        (#claim_management_ModificationUnit{
-                modification = {party_modification, ?cm_cash_register_modification_unit_modification(_, _)}}) ->
-            false;
-        (#claim_management_ModificationUnit{
-                modification = {party_modification, ?cm_shop_modification(ShopID, _)}}) ->
-            {true, ShopID};
-        (_) ->
-            false
+    lists:filtermap(
+        fun
+            (
+                #claim_management_ModificationUnit{
+                    modification = {party_modification, ?cm_cash_register_modification_unit_modification(_, _)}
+                }
+            ) ->
+                false;
+            (
+                #claim_management_ModificationUnit{
+                    modification = {party_modification, ?cm_shop_modification(ShopID, _)}
+                }
+            ) ->
+                {true, ShopID};
+            (_) ->
+                false
         end,
         Changeset
     ).
