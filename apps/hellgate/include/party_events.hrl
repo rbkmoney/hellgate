@@ -8,9 +8,11 @@
         id = PartyID,
         contact_info = ContactInfo,
         created_at = Timestamp
-    }}).
+    }}
+).
 
 -define(shop_modification(ID, Modification),
-    {shop_modification, #payproc_ShopModificationUnit{id = ID, modification = Modification}}).
+    {shop_modification, #payproc_ShopModificationUnit{id = ID, modification = Modification}}
+).
 
 -endif.

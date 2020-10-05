@@ -5,7 +5,7 @@
 
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
--type sink_event()    :: {
+-type sink_event() :: {
     hg_machine:event_id(),
     hg_machine:ns(),
     hg_machine:id(),
@@ -17,12 +17,11 @@
 %% Internal types
 
 -type event_sink_id() :: dmsl_base_thrift:'ID'().
--type event_id()      :: dmsl_base_thrift:'EventID'().
+-type event_id() :: dmsl_base_thrift:'EventID'().
 
 %% API
 
--spec get_events(event_sink_id(), event_id(), integer()) ->
-    {ok, [sink_event()]} | {error, event_not_found}.
+-spec get_events(event_sink_id(), event_id(), integer()) -> {ok, [sink_event()]} | {error, event_not_found}.
 get_events(EventSinkID, After, Limit) ->
     try
         {ok, get_history_range(EventSinkID, After, Limit)}
@@ -31,8 +30,7 @@ get_events(EventSinkID, After, Limit) ->
             {error, event_not_found}
     end.
 
--spec get_last_event_id(event_sink_id()) ->
-    {ok, event_id()} | {error, no_last_event}.
+-spec get_last_event_id(event_sink_id()) -> {ok, event_id()} | {error, no_last_event}.
 get_last_event_id(EventSinkID) ->
     case get_history_range(EventSinkID, undefined, 1, backward) of
         [{ID, _, _, _}] ->
@@ -57,10 +55,10 @@ map_sink_events(History) ->
 
 map_sink_event(#mg_stateproc_SinkEvent{id = ID, source_ns = Ns, source_id = SourceID, event = Event}) ->
     #mg_stateproc_Event{
-        id             = EventID,
-        created_at     = Dt,
+        id = EventID,
+        created_at = Dt,
         format_version = FormatVer,
-        data           = Payload
+        data = Payload
     } = Event,
     DecodedPayload = #{
         format_version => FormatVer,

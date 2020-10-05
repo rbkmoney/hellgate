@@ -1,7 +1,10 @@
 -module(hg_customer_tests_SUITE).
+
 -include_lib("common_test/include/ct.hrl").
+
 -include("hg_ct_domain.hrl").
 -include("hg_ct_json.hrl").
+
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/customer_events.hrl").
 
@@ -38,33 +41,38 @@
 %%
 
 -behaviour(supervisor).
+
 -export([init/1]).
 
--spec init([]) ->
-    {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-
+-spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     {ok, {#{strategy => one_for_all, intensity => 1, period => 1}, []}}.
 
 %%
 
--type config()           :: hg_ct_helper:config().
--type test_case_name()   :: hg_ct_helper:test_case_name().
--type group_name()       :: hg_ct_helper:group_name().
+-type config() :: hg_ct_helper:config().
+-type test_case_name() :: hg_ct_helper:test_case_name().
+-type group_name() :: hg_ct_helper:group_name().
 -type test_case_result() :: _ | no_return().
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
 
 -spec init_per_suite(config()) -> config().
-
 init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({'hg_dummy_provider', 'handle_function', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
     {Apps, Ret} = hg_ct_helper:start_apps([
-        woody, scoper, dmt_client, party_client, party_management, hellgate, snowflake, {cowboy, CowboySpec}
+        woody,
+        scoper,
+        dmt_client,
+        party_client,
+        party_management,
+        hellgate,
+        snowflake,
+        {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
@@ -86,13 +94,11 @@ init_per_suite(C) ->
     C1.
 
 -spec end_per_suite(config()) -> _.
-
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 -spec all() -> [test_case_name()].
-
 all() ->
     [
         {group, invalid_customer_params},
@@ -101,7 +107,6 @@ all() ->
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
-
 groups() ->
     [
         {invalid_customer_params, [sequence], [
@@ -133,7 +138,6 @@ groups() ->
 %%
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
-
 init_per_testcase(Name, C) ->
     RootUrl = cfg(root_url, C),
     PartyID = cfg(party_id, C),
@@ -147,7 +151,6 @@ init_per_testcase(Name, C) ->
     ].
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
-
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -362,14 +365,14 @@ start_binding_w_suspend_failure(C) ->
     [
         ?customer_binding_changed(ID, ?customer_binding_started(_, _))
     ] = next_event(CustomerID, Client),
-    OperationFailure = {failure, #domain_Failure{
-        code = <<"preauthorization_failed">>
-    }},
+    OperationFailure =
+        {failure, #domain_Failure{
+            code = <<"preauthorization_failed">>
+        }},
     SuccessChanges = [
         ?customer_binding_changed(ID, ?customer_binding_status_changed(?customer_binding_failed(OperationFailure)))
     ],
     _ = await_for_changes(SuccessChanges, CustomerID, Client).
-
 
 start_binding(C) ->
     Client = cfg(client, C),
@@ -432,9 +435,11 @@ start_two_bindings(C) ->
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     CustomerBindingParams =
         hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
-    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1} =
+    CustomerBinding1 =
+        #payproc_CustomerBinding{id = CustomerBindingID1} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
+    CustomerBinding2 =
+        #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     [
         ?customer_created(_, _, _, _, _, _)
@@ -458,9 +463,11 @@ start_two_bindings_w_tds(C) ->
     CustomerBindingParams = #payproc_CustomerBindingParams{
         payment_resource = make_disposable_payment_resource(PaymentTool, Session)
     },
-    CustomerBinding1 = #payproc_CustomerBinding{id = CustomerBindingID1} =
+    CustomerBinding1 =
+        #payproc_CustomerBinding{id = CustomerBindingID1} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
-    CustomerBinding2 = #payproc_CustomerBinding{id = CustomerBindingID2} =
+    CustomerBinding2 =
+        #payproc_CustomerBinding{id = CustomerBindingID2} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     [
         ?customer_created(_, _, _, _, _, _)
@@ -544,7 +551,7 @@ await_for_changes(MatchSpecs, CustomerID, _Client, _Acc, _TimeLeft) ->
 
 run_match_specs(MatchSpecs0, Changes) ->
     lists:foldl(
-        fun (Change, {Acc, MatchSpecs}) ->
+        fun(Change, {Acc, MatchSpecs}) ->
             case run_match_specs_(MatchSpecs, Change) of
                 [{N, _} | _] ->
                     {[{N, Change} | Acc], lists:keydelete(N, 1, MatchSpecs)};
@@ -558,7 +565,7 @@ run_match_specs(MatchSpecs0, Changes) ->
 
 run_match_specs_(MatchSpecs, Change) ->
     lists:dropwhile(
-        fun ({_N, MS}) ->
+        fun({_N, MS}) ->
             length(ets:match_spec_run([Change], MS)) == 0
         end,
         MatchSpecs
@@ -567,15 +574,17 @@ run_match_specs_(MatchSpecs, Change) ->
 %%
 
 start_proxies(Proxies) ->
-    setup_proxies(lists:map(
-        fun
-            Mapper({Module, ProxyID, Context}) ->
-                Mapper({Module, ProxyID, #{}, Context});
-            Mapper({Module, ProxyID, ProxyOpts, Context}) ->
-                construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
-        end,
-        Proxies
-    )).
+    setup_proxies(
+        lists:map(
+            fun
+                Mapper({Module, ProxyID, Context}) ->
+                    Mapper({Module, ProxyID, #{}, Context});
+                Mapper({Module, ProxyID, ProxyOpts, Context}) ->
+                    construct_proxy(ProxyID, start_service_handler(Module, Context, #{}), ProxyOpts)
+            end,
+            Proxies
+        )
+    ).
 
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
@@ -598,10 +607,10 @@ construct_proxy(ID, Url, Options) ->
     {proxy, #domain_ProxyObject{
         ref = ?prx(ID),
         data = #domain_ProxyDefinition{
-            name              = Url,
-            description       = Url,
-            url               = Url,
-            options           = Options
+            name = Url,
+            description = Url,
+            url = Url,
+            options = Options
         }
     }}.
 
@@ -639,53 +648,62 @@ assert_success_post_request(Req) ->
 %%
 
 -spec construct_term_set_w_recurrent_paytools() -> term().
-
 construct_term_set_w_recurrent_paytools() ->
     TermSet = construct_simple_term_set(),
-    TermSet#domain_TermSet{recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card_deprecated, visa),
-                ?pmt(bank_card_deprecated, mastercard)
-            ])}
+    TermSet#domain_TermSet{
+        recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
+            payment_methods =
+                {value,
+                    ordsets:from_list([
+                        ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card_deprecated, mastercard)
+                    ])}
         }
     }.
 
 -spec construct_simple_term_set() -> term().
-
 construct_simple_term_set() ->
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
-            currencies = {value, ordsets:from_list([
-                ?cur(<<"RUB">>)
-            ])},
-            categories = {value, ordsets:from_list([
-                ?cat(1)
-            ])},
-            payment_methods = {value, ordsets:from_list([
-                ?pmt(bank_card_deprecated, visa),
-                ?pmt(bank_card_deprecated, mastercard)
-            ])},
-            cash_limit = {decisions, [
-                #domain_CashLimitDecision{
-                    if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                    then_ = {value, #domain_CashRange{
-                        lower = {inclusive, ?cash(     1000, <<"RUB">>)},
-                        upper = {exclusive, ?cash(420000000, <<"RUB">>)}
-                    }}
-                }
-            ]},
-            fees = {value, [
-                ?cfpost(
-                    {merchant, settlement},
-                    {system, settlement},
-                    ?share(45, 1000, operation_amount)
-                )
-            ]}
+            currencies =
+                {value,
+                    ordsets:from_list([
+                        ?cur(<<"RUB">>)
+                    ])},
+            categories =
+                {value,
+                    ordsets:from_list([
+                        ?cat(1)
+                    ])},
+            payment_methods =
+                {value,
+                    ordsets:from_list([
+                        ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card_deprecated, mastercard)
+                    ])},
+            cash_limit =
+                {decisions, [
+                    #domain_CashLimitDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                        then_ =
+                            {value, #domain_CashRange{
+                                lower = {inclusive, ?cash(1000, <<"RUB">>)},
+                                upper = {exclusive, ?cash(420000000, <<"RUB">>)}
+                            }}
+                    }
+                ]},
+            fees =
+                {value, [
+                    ?cfpost(
+                        {merchant, settlement},
+                        {system, settlement},
+                        ?share(45, 1000, operation_amount)
+                    )
+                ]}
         }
     }.
 
 -spec construct_domain_fixture(term()) -> [hg_domain:object()].
-
 construct_domain_fixture(TermSet) ->
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
@@ -711,15 +729,18 @@ construct_domain_fixture(TermSet) ->
                 name = <<"Test Inc.">>,
                 system_account_set = {value, ?sas(1)},
                 default_contract_template = {value, ?tmpl(1)},
-                providers = {value, ?ordset([
-                    ?prv(1)
-                ])},
-                inspector = {decisions, [
-                    #domain_InspectorDecision{
-                        if_   = {condition, {currency_is, ?cur(<<"RUB">>)}},
-                        then_ = {value, ?insp(1)}
-                    }
-                ]},
+                providers =
+                    {value,
+                        ?ordset([
+                            ?prv(1)
+                        ])},
+                inspector =
+                    {decisions, [
+                        #domain_InspectorDecision{
+                            if_ = {condition, {currency_is, ?cur(<<"RUB">>)}},
+                            then_ = {value, ?insp(1)}
+                        }
+                    ]},
                 residences = [],
                 realm = test
             }
@@ -737,10 +758,12 @@ construct_domain_fixture(TermSet) ->
             ref = ?trms(1),
             data = #domain_TermSetHierarchy{
                 parent_terms = undefined,
-                term_sets = [#domain_TimedTermSet{
-                    action_time = #'TimestampInterval'{},
-                    terms = TermSet
-                }]
+                term_sets = [
+                    #domain_TimedTermSet{
+                        action_time = #'TimestampInterval'{},
+                        terms = TermSet
+                    }
+                ]
             }
         }},
 
@@ -757,33 +780,40 @@ construct_domain_fixture(TermSet) ->
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([?cur(<<"RUB">>)])},
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa),
-                            ?pmt(bank_card_deprecated, mastercard)
-                        ])},
-                        cash_limit = {value, ?cashrng(
-                            {inclusive, ?cash(      1000, <<"RUB">>)},
-                            {exclusive, ?cash(1000000000, <<"RUB">>)}
-                        )},
-                        cash_flow = {value, [
-                            ?cfpost(
-                                {provider, settlement},
-                                {merchant, settlement},
-                                ?share(1, 1, operation_amount)
-                            ),
-                            ?cfpost(
-                                {system, settlement},
-                                {provider, settlement},
-                                ?share(18, 1000, operation_amount)
-                            )
-                        ]}
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card_deprecated, mastercard)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                )},
+                        cash_flow =
+                            {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(18, 1000, operation_amount)
+                                )
+                            ]}
                     },
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1)])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa),
-                            ?pmt(bank_card_deprecated, mastercard)
-                        ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card_deprecated, mastercard)
+                                ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
                 }
