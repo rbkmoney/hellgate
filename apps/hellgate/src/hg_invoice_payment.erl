@@ -203,8 +203,6 @@
 -type capture_params() :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
 -type payment_session() :: dmsl_payment_processing_thrift:'InvoicePaymentSession'().
 -type failure() :: dmsl_domain_thrift:'OperationFailure'().
-%%-type invoice_payment_flow() :: instant | {hold, dmsl_domain_thrift:'HoldLifetime'()}.
-%%-type refund_varset() :: undefined | #{partial => #{cash_limit := dmsl_domain_thrift:'CashLimitSelector'()}}.
 -type shop() :: dmsl_domain_thrift:'Shop'().
 -type payment_tool() :: dmsl_domain_thrift:'PaymentTool'().
 -type recurrent_paytool_service_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
