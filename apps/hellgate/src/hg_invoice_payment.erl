@@ -1845,9 +1845,9 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
 process_routing(Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
-    CreatedAt = get_payment_created_at(St),
-    PaymentInstitutionRef = get_payment_institution_ref(Opts),
     Payment = get_payment(St),
+    CreatedAt = get_payment_created_at(Payment),
+    PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentFlow = reconstruct_payment_flow(Payment),
     #{payment_tool := PaymentTool} = VS0 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, #{}),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS0),
