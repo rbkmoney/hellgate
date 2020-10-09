@@ -20,7 +20,7 @@
 -type batch_id() :: dmsl_accounter_thrift:'BatchID'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type batch() :: {batch_id(), final_cash_flow()}.
--type clock() :: shumpune_shumpune_thrift:'Clock'().
+-type clock() :: shumaich_shumaich_thrift:'Clock'().
 
 -export_type([batch/0]).
 
@@ -61,29 +61,9 @@ get_balance(AccountID, Clock) ->
 -spec create_account(currency_code()) -> account_id().
 create_account(_CurrencyCode) ->
     WoodyCtx = hg_context:get_woody_context(hg_context:load()),
-    case bender_generator_client:gen_sequence(<<"hellgate_create_account">>, WoodyCtx) of
-        {ok, {_, ID}} -> ID
-    end.
-
-% -spec create_account(currency_code()) -> account_id().
-% create_account(CurrencyCode) ->
-%     create_account(CurrencyCode, undefined).
-
-% -spec create_account(currency_code(), binary() | undefined) -> account_id().
-% create_account(CurrencyCode, Description) ->
-%     case call_accounter('CreateAccount', {construct_prototype(CurrencyCode, Description)}) of
-%         {ok, Result} ->
-%             Result;
-%         {exception, Exception} ->
-%             % FIXME
-%             error({accounting, Exception})
-%     end.
-
-% construct_prototype(CurrencyCode, Description) ->
-%     #shumpune_AccountPrototype{
-%         currency_sym_code = CurrencyCode,
-%         description = Description
-%     }.
+    % FIXME: placeholder, the sequence id should probably be passed externally
+    %        not sure about the minimum too
+    hg_utils:gen_sequence(<<"create_shumaich_account">>, WoodyCtx, #{minimum => 10000}).
 
 %%
 
