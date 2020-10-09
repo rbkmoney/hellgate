@@ -201,6 +201,12 @@ handle_function_(
     ContractTemplate = get_default_contract_template(PaymentInstitution, VS, Revision),
     Terms = pm_party:get_terms(ContractTemplate, pm_datetime:format_now(), Revision),
     pm_party:reduce_terms(Terms, VS, Revision);
+handle_function_('ComputePaymentInstitution', Args, _Opts) ->
+    {UserInfo, PaymentInstitutionRef, DomainRevision, Varset} = Args,
+    ok = assume_user_identity(UserInfo),
+    PaymentInstitution = get_payment_institution(PaymentInstitutionRef, DomainRevision),
+    VS = prepare_varset(Varset),
+    pm_payment_institution:reduce_payment_institution(PaymentInstitution, VS, DomainRevision);
 %% Payouts adhocs
 
 handle_function_(
@@ -375,17 +381,8 @@ prepare_varset(PartyID, #payproc_Varset{} = V) ->
 
 prepare_varset(PartyID0, #payproc_Varset{} = V, VS0) ->
     PartyID1 = get_party_id(V, PartyID0),
-    genlib_map:compact(VS0#{
-        party_id => PartyID1,
-        category => V#payproc_Varset.category,
-        currency => V#payproc_Varset.currency,
-        cost => V#payproc_Varset.amount,
-        payment_tool => prepare_payment_tool_var(V#payproc_Varset.payment_method, V#payproc_Varset.payment_tool),
-        payout_method => V#payproc_Varset.payout_method,
-        wallet_id => V#payproc_Varset.wallet_id,
-        p2p_tool => V#payproc_Varset.p2p_tool,
-        identification_level => V#payproc_Varset.identification_level
-    }).
+    VS1 = pm_varset:decode_varset(V, VS0),
+    genlib_map:compact(VS1#{party_id => PartyID1}).
 
 get_party_id(V, undefined) ->
     V#payproc_Varset.party_id;
@@ -398,13 +395,6 @@ get_party_id(#payproc_Varset{party_id = PartyID1}, PartyID2) when PartyID1 =/= P
         varset_party_id = PartyID1,
         agrument_party_id = PartyID2
     }).
-
-prepare_payment_tool_var(_PaymentMethodRef, PaymentTool) when PaymentTool /= undefined ->
-    PaymentTool;
-prepare_payment_tool_var(PaymentMethodRef = #domain_PaymentMethodRef{}, _PaymentTool) ->
-    pm_payment_tool:create_from_method(PaymentMethodRef);
-prepare_payment_tool_var(undefined, undefined) ->
-    undefined.
 
 get_identification_level(#domain_Contract{contractor_id = undefined, contractor = Contractor}, _) ->
     %% TODO legacy, remove after migration

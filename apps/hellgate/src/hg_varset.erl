@@ -32,5 +32,6 @@ prepare_varset(Varset) ->
         p2p_tool = genlib_map:get(p2p_tool, Varset),
         payment_tool = genlib_map:get(payment_tool, Varset),
         identification_level = genlib_map:get(identification_level, Varset),
-        party_id = genlib_map:get(party_id, Varset)
+        party_id = genlib_map:get(party_id, Varset),
+        shop_id = genlib_map:get(shop_id, Varset)
     }.
