@@ -843,15 +843,20 @@ checkout_party_by_revision(PartyID, Revision) ->
                 end,
             Limit = get_limit(FromEventID, get_snapshot_index(AuxSt)),
             ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
-            {ok, Party} =
+            {St, Events} =
                 case parse_history(ReversedHistory) of
-                    {undefined, Events} ->
-                        checkout_history_by_revision(Events, Revision, #st{});
-                    {St, Events} ->
-                        checkout_history_by_revision(Events, Revision, St)
+                    {undefined, Events0} ->
+                        {#st{}, Events0};
+                    {St0, Events0} ->
+                        {St0, Events0}
                 end,
-            ok = update_party_cache({PartyID, Revision}, Party),
-            {ok, Party}
+            case checkout_history_by_revision(Events, Revision, St) of
+                {ok, Party} = Res ->
+                    ok = update_party_cache({PartyID, Revision}, Party),
+                    Res;
+                OtherRes ->
+                    OtherRes
+            end
     end.
 
 checkout_history_by_revision([Ev | Rest], Revision, St) ->
@@ -1809,7 +1814,7 @@ get_party_from_cache(Key) ->
     case cache:get(party, Key) of
         undefined ->
             not_found;
-        {_, Value} ->
+        Value ->
             {ok, Value}
     end.
 
