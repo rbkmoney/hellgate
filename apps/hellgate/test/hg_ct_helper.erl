@@ -127,7 +127,7 @@ start_app(hellgate = AppName) ->
                 }
             }},
             {services, #{
-                accounter => <<"http://shumway:8022/shumpune">>,
+                accounter => <<"http://shumway:8022/shumaich">>,
                 automaton => <<"http://machinegun:8022/v1/automaton">>,
                 customer_management => #{
                     url => <<"http://hellgate:8022/v1/processing/customer_management">>,
@@ -228,7 +228,7 @@ start_app(party_management = AppName) ->
                 }
             }},
             {services, #{
-                accounter => <<"http://shumway:8022/shumpune">>,
+                accounter => <<"http://shumway:8022/shumaich">>,
                 automaton => <<"http://machinegun:8022/v1/automaton">>,
                 party_management => #{
                     url => <<"http://hellgate:8022/v1/processing/partymgmt">>,
