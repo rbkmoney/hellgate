@@ -1,6 +1,6 @@
 #!/bin/bash
 cat <<EOF
-version: '2.1'
+version: '2.4'
 services:
 
   ${SERVICE_NAME}:
@@ -80,8 +80,14 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     volumes:
-      - /tmp/shumway/temp/zoo1/data:/var/lib/zookeeper/data
-      - /tmp/shumway/temp/zoo1/datalog:/var/lib/zookeeper/log
+      - type: volume
+        target: /var/lib/zookeeper/data
+        volume:
+          nocopy: true
+      - type: volume
+        target: /var/lib/zookeeper/log
+        volume:
+          nocopy: true
 
   broker:
     image: confluentinc/cp-enterprise-kafka:5.0.1
@@ -103,7 +109,10 @@ services:
       CONFLUENT_METRICS_ENABLE: 'true'
       CONFLUENT_SUPPORT_CUSTOMER_ID: 'anonymous'
     volumes:
-      - /tmp/docker/kafka2/data:/var/lib/kafka/data
+      - type: volume
+        target: /var/lib/kafka/data
+        volume:
+          nocopy: true
 
   kafka-setup:
     image: confluentinc/cp-kafka:5.1.1
@@ -121,6 +130,7 @@ services:
     container_name: shumaich
     ports:
       - "8033:8033"
+    restart: on-failure
     environment:
       SPRING_APPLICATION_JSON: '{
           "server.port": "8033",
@@ -132,8 +142,12 @@ services:
         }'
     depends_on:
       - broker
+      - kafka-setup
     volumes:
-      - /temp/rocksdb/shumaich:/temp/rocksdb/shumaich
+      - type: volume
+        target: /temp/rocksdb/shumaich
+        volume:
+          nocopy: true
 
   holmes:
     image: dr2.rbkmoney.com/rbkmoney/holmes:7d496d0886a1489044c57eee4ba4bfcf8f8b6a48
@@ -149,5 +163,8 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: shumway
     volumes:
-      - /tmp/shumway/temp/postgres:/var/lib/postgresql/data/ # persist data even if container shuts down
+      - type: volume
+        target: /var/lib/postgresql/data/
+        volume:
+          nocopy: true
 EOF
