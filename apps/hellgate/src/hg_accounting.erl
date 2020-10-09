@@ -21,10 +21,17 @@
 -export([collect_system_account_map/5]).
 -export([collect_external_account_map/4]).
 
--export([hold/2]).
--export([plan/2]).
--export([commit/2]).
--export([rollback/2]).
+-export([hold/3]).
+-export([hold/4]).
+
+-export([plan/3]).
+-export([plan/4]).
+
+-export([commit/3]).
+-export([commit/4]).
+
+-export([rollback/3]).
+-export([rollback/4]).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
@@ -37,7 +44,7 @@
 -type batch_id() :: dmsl_accounter_thrift:'BatchID'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type batch() :: {batch_id(), final_cash_flow()}.
--type clock() :: shumpune_shumpune_thrift:'Clock'().
+-type clock() :: domain_thrift:'AccounterClock'().
 
 -type payment() :: dmsl_domain_thrift:'InvoicePayment'().
 -type shop() :: dmsl_domain_thrift:'Shop'().
@@ -57,16 +64,17 @@
     account_id => account_id(),
     own_amount => amount(),
     min_available_amount => amount(),
-    max_available_amount => amount()
+    max_available_amount => amount(),
+    clock => clock()
 }.
 
 -spec get_account(account_id()) -> account().
 get_account(AccountID) ->
-    get_account(AccountID, {latest, #shumaich_LatestClock{}}).
+    get_account(AccountID, {latest, #domain_LatestClock{}}).
 
 -spec get_account(account_id(), clock()) -> account().
 get_account(AccountID, Clock) ->
-    case call_accounter('GetAccountByID', {AccountID, Clock}) of
+    case call_accounter('GetAccountByID', {AccountID, to_accounter_clock(Clock)}) of
         {ok, Result} ->
             construct_account(AccountID, Result);
         {exception, #shumaich_AccountNotFound{}} ->
@@ -78,11 +86,11 @@ get_account(AccountID, Clock) ->
 
 -spec get_balance(account_id()) -> balance().
 get_balance(AccountID) ->
-    get_balance(AccountID, {latest, #shumaich_LatestClock{}}).
+    get_balance(AccountID, {latest, #domain_LatestClock{}}).
 
 -spec get_balance(account_id(), clock()) -> balance().
 get_balance(AccountID, Clock) ->
-    case call_accounter('GetBalanceByID', {AccountID, Clock}) of
+    case call_accounter('GetBalanceByID', {AccountID, to_accounter_clock(Clock)}) of
         {ok, Result} ->
             construct_balance(AccountID, Result);
         {exception, #shumaich_AccountNotFound{}} ->
@@ -92,9 +100,9 @@ get_balance(AccountID, Clock) ->
 -spec create_account(currency_code()) -> account_id().
 create_account(_CurrencyCode) ->
     WoodyCtx = hg_context:get_woody_context(hg_context:load()),
-    case bender_generator_client:gen_sequence(<<"hellgate_create_account">>, WoodyCtx) of
-        {ok, {_, ID}} -> ID
-    end.
+    % FIXME: placeholder, the sequence id should probably be passed externally
+    %        not sure about the minimum too
+    hg_utils:gen_sequence(<<"create_shumaich_account">>, WoodyCtx, #{minimum => 10000}).
 
 -spec collect_account_map(payment(), shop(), payment_institution(), provider(), varset(), revision()) -> map().
 collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
@@ -141,54 +149,84 @@ collect_external_account_map(Payment, VS, Revision, Acc) ->
     end.
 
 %%
--spec plan(plan_id(), [batch()]) -> clock().
-plan(_PlanID, []) ->
+-spec plan(plan_id(), [batch()], hg_datetime:timestamp()) -> clock().
+plan(_PlanID, [], _Timestamp) ->
     error(badarg);
-plan(_PlanID, Batches) when not is_list(Batches) ->
+plan(_PlanID, Batches, _Timestamp) when not is_list(Batches) ->
     error(badarg);
-plan(PlanID, Batches) ->
+plan(PlanID, Batches, Timestamp) ->
     lists:foldl(
-        fun(Batch, _) -> hold(PlanID, Batch) end,
+        fun(Batch, _) -> hold(PlanID, Batch, Timestamp) end,
         undefined,
         Batches
     ).
 
--spec hold(plan_id(), batch()) -> clock().
-hold(PlanID, Batch) ->
-    do('Hold', construct_plan_change(PlanID, Batch)).
+-spec plan(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+plan(_PlanID, [], _Timestamp, _Clock) ->
+    error(badarg);
+plan(_PlanID, Batches, _Timestamp, _Clock) when not is_list(Batches) ->
+    error(badarg);
+plan(PlanID, Batches, Timestamp, Clock) ->
+    lists:foldl(
+        fun(Batch, _) -> hold(PlanID, Batch, Timestamp, Clock) end,
+        undefined,
+        Batches
+    ).
 
--spec commit(plan_id(), [batch()]) -> clock().
-commit(PlanID, Batches) ->
-    do('CommitPlan', construct_plan(PlanID, Batches)).
+-spec hold(plan_id(), batch(), hg_datetime:timestamp()) -> clock().
+hold(PlanID, Batch, Timestamp) ->
+    do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
 
--spec rollback(plan_id(), [batch()]) -> clock().
-rollback(PlanID, Batches) ->
-    do('RollbackPlan', construct_plan(PlanID, Batches)).
+-spec hold(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+hold(PlanID, Batches, Timestamp, Clock) ->
+    AccounterClock = to_accounter_clock(Clock),
+    do('Hold', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
+
+-spec commit(plan_id(), [batch()], hg_datetime:timestamp()) -> clock().
+commit(PlanID, Batches, Timestamp) ->
+    do('CommitPlan', construct_plan(PlanID, Batches, Timestamp)).
+
+-spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+commit(PlanID, Batches, Timestamp, Clock) ->
+    AccounterClock = to_accounter_clock(Clock),
+    do('CommitPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
+
+-spec rollback(plan_id(), [batch()], hg_datetime:timestamp()) -> clock().
+rollback(PlanID, Batches, Timestamp) ->
+    do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp)).
+
+-spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+rollback(PlanID, Batches, Timestamp, Clock) ->
+    AccounterClock = to_accounter_clock(Clock),
+    do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
 
 do(Op, Plan) ->
     do(Op, Plan, {latest, #shumaich_LatestClock{}}).
 
-do(Op, Plan, Clock) ->
-    case call_accounter(Op, {Plan, Clock}) of
+do(Op, Plan, PreviousClock) ->
+    % case Op of 'Hold' -> erlang:display(Plan); _ -> ok end,
+    case call_accounter(Op, {Plan, PreviousClock}) of
         {ok, Clock} ->
-            Clock;
+            to_domain_clock(Clock);
         {exception, Exception} ->
             % FIXME
             error({accounting, Exception})
     end.
 
-construct_plan_change(PlanID, {BatchID, Cashflow}) ->
+construct_plan_change(PlanID, {BatchID, Cashflow}, Timestamp) ->
     #shumaich_PostingPlanChange{
         id = PlanID,
+        creation_time = Timestamp,
         batch = #shumaich_PostingBatch{
             id = BatchID,
             postings = collect_postings(Cashflow)
         }
     }.
 
-construct_plan(PlanID, Batches) ->
+construct_plan(PlanID, Batches, Timestamp) ->
     #shumaich_PostingPlan{
         id = PlanID,
+        creation_time = Timestamp,
         batch_list = [
             #shumaich_PostingBatch{
                 id = BatchID,
@@ -241,14 +279,16 @@ construct_balance(
     #shumaich_Balance{
         own_amount = OwnAmount,
         min_available_amount = MinAvailableAmount,
-        max_available_amount = MaxAvailableAmount
+        max_available_amount = MaxAvailableAmount,
+        clock = Clock
     }
 ) ->
     #{
         account_id => AccountID,
         own_amount => OwnAmount,
         min_available_amount => MinAvailableAmount,
-        max_available_amount => MaxAvailableAmount
+        max_available_amount => MaxAvailableAmount,
+        clock => to_domain_clock(Clock)
     }.
 
 %%
@@ -261,3 +301,15 @@ get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
 
 get_currency(#domain_Cash{currency = Currency}) ->
     Currency.
+
+to_domain_clock({latest, _}) ->
+    {latest, #domain_LatestClock{}};
+to_domain_clock({vector, #shumaich_VectorClock{state = State}}) ->
+    {vector, #domain_VectorClock{state = State}}.
+
+to_accounter_clock(undefined) ->
+    {latest, #shumaich_LatestClock{}};
+to_accounter_clock({latest, _}) ->
+    {latest, #shumaich_LatestClock{}};
+to_accounter_clock({vector, #domain_VectorClock{state = State}}) ->
+    {vector, #shumaich_VectorClock{state = State}}.
