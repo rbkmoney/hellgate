@@ -843,12 +843,13 @@ checkout_party_by_revision(PartyID, Revision) ->
                 end,
             Limit = get_limit(FromEventID, get_snapshot_index(AuxSt)),
             ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
-            {ok, Party} = case parse_history(ReversedHistory) of
-                {undefined, Events} ->
-                    checkout_history_by_revision(Events, Revision, #st{});
-                {St, Events} ->
-                    checkout_history_by_revision(Events, Revision, St)
-            end,
+            {ok, Party} =
+                case parse_history(ReversedHistory) of
+                    {undefined, Events} ->
+                        checkout_history_by_revision(Events, Revision, #st{});
+                    {St, Events} ->
+                        checkout_history_by_revision(Events, Revision, St)
+                end,
             ok = update_party_cache({PartyID, Revision}, Party),
             {ok, Party}
     end.
@@ -1803,8 +1804,7 @@ transmute_payout_schedule_ref(3, 4, ?legacy_payout_schedule_ref(ID)) ->
 transmute_payout_schedule_ref(3, 4, undefined) ->
     undefined.
 
--spec get_party_from_cache({party_id(), party_revision_param()}) ->
-    not_found | {ok, st()}.
+-spec get_party_from_cache({party_id(), party_revision_param()}) -> not_found | {ok, st()}.
 get_party_from_cache(Key) ->
     case cache:get(party, Key) of
         undefined ->
