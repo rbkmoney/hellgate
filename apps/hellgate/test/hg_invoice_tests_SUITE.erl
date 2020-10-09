@@ -958,8 +958,9 @@ payment_success(C) ->
     ) = hg_client_invoicing:get(InvoiceID, Client),
     ?payment_w_status(PaymentID, ?captured()) = Payment,
     ?payment_w_context(Context) = Payment.
-    % erlang:display({Shop, hg_ct_helper:get_balance(SettlementID)})
-    % .
+
+% erlang:display({Shop, hg_ct_helper:get_balance(SettlementID)})
+% .
 
 -spec payment_success_ruleset(config()) -> test_return().
 payment_success_ruleset(C) ->

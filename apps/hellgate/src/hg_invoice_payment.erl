@@ -2887,9 +2887,9 @@ merge_change(Change = ?payment_clock_update(Clock), #st{activity = Activity} = S
         _ ->
             St
     end;
-    % St#st{
-    %     clock = Clock
-    % };
+% St#st{
+%     clock = Clock
+% };
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
