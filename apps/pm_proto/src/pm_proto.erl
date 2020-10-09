@@ -21,7 +21,7 @@ get_service(claim_committer) ->
 get_service(party_management) ->
     {dmsl_payment_processing_thrift, 'PartyManagement'};
 get_service(accounter) ->
-    {shumpune_shumpune_thrift, 'Accounter'};
+    {shumaich_shumaich_thrift, 'Accounter'};
 get_service(automaton) ->
     {mg_proto_state_processing_thrift, 'Automaton'};
 get_service(processor) ->
