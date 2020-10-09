@@ -1804,7 +1804,7 @@ transmute_payout_schedule_ref(3, 4, undefined) ->
     undefined.
 
 -spec get_party_from_cache({party_id(), party_revision_param()}) ->
-    not_found | {ok, party()}.
+    not_found | {ok, st()}.
 get_party_from_cache(Key) ->
     case cache:get(party, Key) of
         undefined ->
@@ -1813,6 +1813,6 @@ get_party_from_cache(Key) ->
             {ok, Value}
     end.
 
--spec update_party_cache({party_id(), party_revision_param()}, party()) -> ok.
+-spec update_party_cache({party_id(), party_revision_param()}, st()) -> ok.
 update_party_cache(Key, Value) ->
     cache:put(party, Key, Value).
