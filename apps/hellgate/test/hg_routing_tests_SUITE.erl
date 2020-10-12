@@ -321,10 +321,11 @@ prefer_alive(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[
-        {{?prv(200), _}, _},
-        {{?prv(201), _}, _},
-        {{?prv(202), _}, _}
-    ] = Routes, RejectContext} = gather_routes(PaymentInstitution, Flow, VS, Revision),
+            {{?prv(200), _}, _},
+            {{?prv(201), _}, _},
+            {{?prv(202), _}, _}
+        ] = Routes,
+        RejectContext} = gather_routes(PaymentInstitution, Flow, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
@@ -370,10 +371,11 @@ prefer_normal_conversion(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[
-        {{?prv(200), _}, _},
-        {{?prv(201), _}, _},
-        {{?prv(202), _}, _}
-    ] = Routes, RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
+            {{?prv(200), _}, _},
+            {{?prv(201), _}, _},
+            {{?prv(202), _}, _}
+        ] = Routes,
+        RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -418,10 +420,11 @@ prefer_higher_availability(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[
-        {{?prv(200), _}, _},
-        {{?prv(201), _}, _},
-        {{?prv(202), _}, _}
-    ] = Routes, RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
+            {{?prv(200), _}, _},
+            {{?prv(201), _}, _},
+            {{?prv(202), _}, _}
+        ] = Routes,
+        RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
@@ -452,10 +455,11 @@ prefer_higher_conversion(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[
-        {{?prv(200), _}, _},
-        {{?prv(201), _}, _},
-        {{?prv(202), _}, _}
-    ] = Routes, RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
+            {{?prv(200), _}, _},
+            {{?prv(201), _}, _},
+            {{?prv(202), _}, _}
+        ] = Routes,
+        RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -485,10 +489,11 @@ prefer_weight_over_availability(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[
-        {{?prv(200), _}, _},
-        {{?prv(201), _}, _},
-        {{?prv(202), _}, _}
-    ] = Routes, RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
+            {{?prv(200), _}, _},
+            {{?prv(201), _}, _},
+            {{?prv(202), _}, _}
+        ] = Routes,
+        RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -517,10 +522,11 @@ prefer_weight_over_conversion(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[
-        {{?prv(200), _}, _},
-        {{?prv(201), _}, _},
-        {{?prv(202), _}, _}
-    ] = Routes, RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
+            {{?prv(200), _}, _},
+            {{?prv(201), _}, _},
+            {{?prv(202), _}, _}
+        ] = Routes,
+        RC} = gather_routes(PaymentInstitution, Flow, VS, Revision),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
