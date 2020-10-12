@@ -56,6 +56,7 @@
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
 -export([party_revision_check/1]).
+-export([payment_customer_risk_score_check/1]).
 -export([payment_risk_score_check/1]).
 -export([payment_risk_score_check_fail/1]).
 -export([payment_risk_score_check_timeout/1]).
@@ -208,6 +209,8 @@ groups() ->
     [
         {all_non_destructive_tests, [parallel], [
             {group, base_payments},
+            payment_w_customer_success,
+            payment_customer_risk_score_check,
             payment_risk_score_check,
             payment_risk_score_check_fail,
             payment_risk_score_check_timeout,
@@ -5528,6 +5531,28 @@ payment_risk_score_check(Cat, C) ->
     PaymentID1 = await_payment_process_finish(InvoiceID1, PaymentID1, Client),
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client).
 
+-spec payment_customer_risk_score_check(config()) -> test_return().
+
+payment_customer_risk_score_check(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceID1 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 100000001, C),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
+    PaymentParams = make_customer_payment_params(CustomerID),
+    ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID1, Client),
+    [
+        ?payment_ev(PaymentID1, ?risk_score_changed(fatal)),
+        ?payment_ev(PaymentID1, ?payment_status_changed(?failed(Failure)))
+    ] = next_event(InvoiceID1, Client),
+    {failure, #domain_Failure{
+        code = <<"no_route_found">>,
+        sub = #domain_SubFailure{code = <<"risk_score_is_too_high">>}}} = Failure.
+
 -spec construct_domain_fixture() -> [hg_domain:object()].
 construct_domain_fixture() ->
     TestTermSet = #domain_TermSet{
@@ -6313,13 +6338,11 @@ construct_domain_fixture() ->
                         }
                     },
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
-                        categories = {value, ?ordset([?cat(1)])},
-                        payment_methods =
-                            {value,
-                                ?ordset([
-                                    ?pmt(bank_card_deprecated, visa),
-                                    ?pmt(bank_card_deprecated, mastercard)
-                                ])},
+                        categories = {value, ?ordset([?cat(1), ?cat(4)])},
+                        payment_methods = {value, ?ordset([
+                            ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card_deprecated, mastercard)
+                        ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
                 }
