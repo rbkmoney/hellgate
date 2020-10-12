@@ -763,7 +763,7 @@ choose_route(PaymentInstitution, VS, Revision, St) ->
                     _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext),
                     {ok, Route};
-                {error, {no_route_found, {RejectReason, RejectContext1}}}  ->
+                {error, {no_route_found, {RejectReason, RejectContext1}}} ->
                     _ = log_reject_context(RejectReason, RejectContext1),
                     {error, {no_route_found, RejectReason}}
             end
@@ -1873,9 +1873,12 @@ process_routing(Action, St) ->
         {ok, Route} ->
             process_cash_flow_building(Route, VS1, Payment, Revision, Opts, Events0, Action);
         {error, {no_route_found, Reason}} ->
-            Failure = {failure, payproc_errors:construct('PaymentFailure',
-                {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
-            )},
+            Failure =
+                {failure,
+                    payproc_errors:construct(
+                        'PaymentFailure',
+                        {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
+                    )},
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
 

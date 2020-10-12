@@ -5532,7 +5532,6 @@ payment_risk_score_check(Cat, C) ->
     PaymentID1 = await_payment_capture(InvoiceID1, PaymentID1, Client).
 
 -spec payment_customer_risk_score_check(config()) -> test_return().
-
 payment_customer_risk_score_check(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
@@ -5551,7 +5550,8 @@ payment_customer_risk_score_check(C) ->
     ] = next_event(InvoiceID1, Client),
     {failure, #domain_Failure{
         code = <<"no_route_found">>,
-        sub = #domain_SubFailure{code = <<"risk_score_is_too_high">>}}} = Failure.
+        sub = #domain_SubFailure{code = <<"risk_score_is_too_high">>}
+    }} = Failure.
 
 -spec construct_domain_fixture() -> [hg_domain:object()].
 construct_domain_fixture() ->
@@ -6339,10 +6339,12 @@ construct_domain_fixture() ->
                     },
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1), ?cat(4)])},
-                        payment_methods = {value, ?ordset([
-                            ?pmt(bank_card_deprecated, visa),
-                            ?pmt(bank_card_deprecated, mastercard)
-                        ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card_deprecated, mastercard)
+                                ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
                 }

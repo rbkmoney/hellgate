@@ -141,9 +141,7 @@ choose_route(FailRatedRoutes, RejectContext, VS) ->
             {error, {no_route_found, {Reason, RejectContext}}}
     end.
 
--spec check_risk_score(pm_selector:varset()) ->
-    ok | {error, risk_score_is_too_high}.
-
+-spec check_risk_score(pm_selector:varset()) -> ok | {error, risk_score_is_too_high}.
 check_risk_score(#{risk_score := fatal}) ->
     {error, risk_score_is_too_high};
 check_risk_score(_VS) ->
@@ -198,7 +196,6 @@ select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
 -spec do_choose_route([fail_rated_route()], pm_selector:varset(), reject_context()) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {unknown, reject_context()}}}.
-
 do_choose_route([] = _Routes, _VS, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
 do_choose_route(Routes, VS, _RejectContext) ->
