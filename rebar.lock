@@ -1,6 +1,6 @@
 {"1.1.0",
 [{<<"bear">>,{pkg,<<"bear">>,<<"0.8.7">>},2},
- {<<"cache">>,{pkg,<<"cache">>,<<"2.2.0">>},1},
+ {<<"cache">>,{pkg,<<"cache">>,<<"2.3.2">>},0},
  {<<"certifi">>,{pkg,<<"certifi">>,<<"2.5.1">>},2},
  {<<"cg_mon">>,
   {git,"https://github.com/rbkmoney/cg_mon.git",
@@ -93,7 +93,7 @@
 [
 {pkg_hash,[
  {<<"bear">>, <<"16264309AE5D005D03718A5C82641FCC259C9E8F09ADEB6FD79CA4271168656F">>},
- {<<"cache">>, <<"3C11DBF4CD8FCD5787C95A5FB2A04038E3729CFCA0386016EEA8C953AB48A5AB">>},
+ {<<"cache">>, <<"1E585CD9777C1F71E9038D61059D07438643C0022FDC6E2F7C2899B4A45C593E">>},
  {<<"certifi">>, <<"867CE347F7C7D78563450A18A6A28A8090331E77FA02380B4A21962A65D36EE5">>},
  {<<"cowboy">>, <<"91ED100138A764355F43316B1D23D7FF6BDB0DE4EA618CB5D8677C93A7A2F115">>},
  {<<"cowlib">>, <<"FD0FF1787DB84AC415B8211573E9A30A3EBE71B5CBFF7F720089972B2319C8A4">>},

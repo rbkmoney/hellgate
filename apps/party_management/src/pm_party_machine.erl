@@ -812,7 +812,7 @@ checkout_party(PartyID, {timestamp, Timestamp}) ->
     Events = unwrap_events(get_history(PartyID, undefined, undefined)),
     checkout_history_by_timestamp(Events, Timestamp, #st{});
 checkout_party(PartyID, {revision, Revision}) ->
-    checkout_party_by_revision(PartyID, Revision).
+    checkout_cached_party_by_revision(PartyID, Revision).
 
 checkout_history_by_timestamp([Ev | Rest], Timestamp, #st{timestamp = PrevTimestamp} = St) ->
     St1 = merge_event(Ev, St),
@@ -828,35 +828,36 @@ checkout_history_by_timestamp([Ev | Rest], Timestamp, #st{timestamp = PrevTimest
 checkout_history_by_timestamp([], Timestamp, St) ->
     {ok, St#st{timestamp = Timestamp}}.
 
-checkout_party_by_revision(PartyID, Revision) ->
-    case get_party_from_cache({PartyID, Revision}) of
+checkout_cached_party_by_revision(PartyID, Revision) ->
+    case pm_party_cache:get_party({PartyID, Revision}) of
         {ok, Party} ->
             {ok, Party};
         not_found ->
-            AuxSt = get_aux_state(PartyID),
-            FromEventID =
-                case get_party_revision_range(Revision, get_party_revision_index(AuxSt)) of
-                    {_, undefined} ->
-                        undefined;
-                    {_, EventID} ->
-                        EventID + 1
-                end,
-            Limit = get_limit(FromEventID, get_snapshot_index(AuxSt)),
-            ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
-            {St, Events} =
-                case parse_history(ReversedHistory) of
-                    {undefined, Events0} ->
-                        {#st{}, Events0};
-                    {St0, Events0} ->
-                        {St0, Events0}
-                end,
-            case checkout_history_by_revision(Events, Revision, St) of
+            case checkout_party_by_revision(PartyID, Revision) of
                 {ok, Party} = Res ->
-                    ok = update_party_cache({PartyID, Revision}, Party),
+                    ok = pm_party_cache:update_party({PartyID, Revision}, Party),
                     Res;
                 OtherRes ->
                     OtherRes
             end
+    end.
+
+checkout_party_by_revision(PartyID, Revision) ->
+    AuxSt = get_aux_state(PartyID),
+    FromEventID =
+        case get_party_revision_range(Revision, get_party_revision_index(AuxSt)) of
+            {_, undefined} ->
+                undefined;
+            {_, EventID} ->
+                EventID + 1
+        end,
+    Limit = get_limit(FromEventID, get_snapshot_index(AuxSt)),
+    ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
+    case parse_history(ReversedHistory) of
+        {undefined, Events} ->
+            checkout_history_by_revision(Events, Revision, #st{});
+        {St, Events} ->
+            checkout_history_by_revision(Events, Revision, St)
     end.
 
 checkout_history_by_revision([Ev | Rest], Revision, St) ->
@@ -1808,16 +1809,3 @@ transmute_payout_schedule_ref(3, 4, ?legacy_payout_schedule_ref(ID)) ->
     #domain_BusinessScheduleRef{id = ID};
 transmute_payout_schedule_ref(3, 4, undefined) ->
     undefined.
-
--spec get_party_from_cache({party_id(), party_revision_param()}) -> not_found | {ok, st()}.
-get_party_from_cache(Key) ->
-    case cache:get(party, Key) of
-        undefined ->
-            not_found;
-        Value ->
-            {ok, Value}
-    end.
-
--spec update_party_cache({party_id(), party_revision_param()}, st()) -> ok.
-update_party_cache(Key, Value) ->
-    cache:put(party, Key, Value).
