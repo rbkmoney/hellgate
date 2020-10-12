@@ -20,6 +20,10 @@
     heir => atom() | pid()
 }.
 
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type party_id() :: dmsl_domain_thrift:'PartyID'().
+-type party_st() :: pm_party_machine:st().
+
 -define(CACHE_NS, party).
 
 -spec cache_child_spec(atom(), cache_options()) -> supervisor:child_spec().
@@ -31,7 +35,7 @@ cache_child_spec(ChildID, Options) ->
         type => supervisor
     }.
 
--spec get_party({party_id(), party_revision_param()}) -> not_found | {ok, st()}.
+-spec get_party({party_id(), party_revision_param()}) -> not_found | {ok, party_st()}.
 get_party(Key) ->
     case cache:get(?CACHE_NS, Key) of
         undefined ->
@@ -40,7 +44,7 @@ get_party(Key) ->
             {ok, Value}
     end.
 
--spec update_party({party_id(), party_revision_param()}, st()) -> ok.
+-spec update_party({party_id(), party_revision_param()}, party_st()) -> ok.
 update_party(Key, Value) ->
     cache:put(?CACHE_NS, Key, Value).
 

@@ -90,6 +90,7 @@
 }.
 
 -export_type([party_revision/0]).
+-export_type([st/0]).
 
 -spec namespace() -> pm_machine:ns().
 namespace() ->
