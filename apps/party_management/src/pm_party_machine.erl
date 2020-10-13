@@ -257,7 +257,7 @@ handle_call('Accept', {_PartyID, Claim}, AuxSt, St) ->
     } = Claim,
     try
         Party = get_st_party(St),
-        ok = assert_cash_regisrter_modifications_applicable(Changeset, Party),
+        ok = pm_claim_committer:assert_cash_regisrter_modifications_applicable(Changeset, Party),
         case pm_claim_committer:from_claim_mgmt(Claim) of
             undefined ->
                 ok;
@@ -297,65 +297,6 @@ handle_call('Commit', {_PartyID, CmClaim}, AuxSt, St) ->
         Changes,
         AuxSt,
         St
-    ).
-
-assert_cash_regisrter_modifications_applicable(Changeset, Party) ->
-    CashRegisterShopIDs = get_cash_register_modifications_shop_ids(Changeset),
-    ShopIDs = get_all_valid_shop_ids(Changeset, Party),
-    case sets:is_subset(CashRegisterShopIDs, ShopIDs) of
-        true ->
-            ok;
-        false ->
-            ShopID = hd(sets:to_list(sets:subtract(CashRegisterShopIDs, ShopIDs))),
-            throw(#payproc_InvalidChangeset{reason = ?invalid_shop(ShopID, {not_exists, ShopID})})
-    end.
-
-get_all_valid_shop_ids(Changeset, Party) ->
-    ShopModificationsShopIDs = get_shop_modifications_shop_ids(Changeset),
-    PartyShopIDs = get_party_shop_ids(Party),
-    sets:union(ShopModificationsShopIDs, PartyShopIDs).
-
-get_party_shop_ids(Party) ->
-    sets:from_list(maps:keys(pm_party:get_shops(Party))).
-
-get_cash_register_modifications_shop_ids(Changeset) ->
-    sets:from_list(
-        lists:filtermap(
-            fun
-                (
-                    #claim_management_ModificationUnit{
-                        modification = {party_modification, ?cm_cash_register_modification_unit_modification(ShopID, _)}
-                    }
-                ) ->
-                    {true, ShopID};
-                (_) ->
-                    false
-            end,
-            Changeset
-        )
-    ).
-
-get_shop_modifications_shop_ids(Changeset) ->
-    sets:from_list(
-        lists:filtermap(
-            fun
-                (
-                    #claim_management_ModificationUnit{
-                        modification = {party_modification, ?cm_cash_register_modification_unit_modification(_, _)}
-                    }
-                ) ->
-                    false;
-                (
-                    #claim_management_ModificationUnit{
-                        modification = {party_modification, ?cm_shop_modification(ShopID, _)}
-                    }
-                ) ->
-                    {true, ShopID};
-                (_) ->
-                    false
-            end,
-            Changeset
-        )
     ).
 
 get_changes(undefined, _St) ->
