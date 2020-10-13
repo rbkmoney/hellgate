@@ -158,7 +158,8 @@
     cash_flow :: undefined | cash_flow(),
     sessions = [] :: [session()],
     transaction_info :: undefined | trx_info(),
-    failure :: undefined | failure()
+    failure :: undefined | failure(),
+    clock :: undefined | clock()
 }).
 
 -type chargeback_state() :: hg_invoice_payment_chargeback:state().
@@ -1409,17 +1410,42 @@ collect_refund_cashflow(
     ProviderCashflow = reduce_selector(provider_refund_cash_flow, ProviderCashflowSelector, VS, Revision),
     MerchantCashflow ++ ProviderCashflow.
 
-prepare_refund_cashflow(RefundSt, St) ->
+prepare_refund_cashflow(RefundSt, St = #st{clock = Clock}) ->
     #{timestamp := Timestamp} = get_opts(St),
-    hg_accounting:hold(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt), Timestamp).
+    erlang:display(Timestamp),
+    hg_accounting:hold(
+        construct_refund_plan_id(RefundSt, St),
+        get_refund_cashflow_plan(RefundSt),
+        Timestamp,
+        Clock
+    ).
 
 commit_refund_cashflow(RefundSt, St) ->
+    Clock = case RefundSt#refund_st.clock of
+        undefined -> St#st.clock;
+        RefundClock -> RefundClock
+    end,
     #{timestamp := Timestamp} = get_opts(St),
-    hg_accounting:commit(construct_refund_plan_id(RefundSt, St), [get_refund_cashflow_plan(RefundSt)], Timestamp).
+    hg_accounting:commit(
+        construct_refund_plan_id(RefundSt, St),
+        [get_refund_cashflow_plan(RefundSt)],
+        Timestamp,
+        Clock
+    ).
 
 rollback_refund_cashflow(RefundSt, St) ->
+    Clock = case RefundSt#refund_st.clock of
+        undefined -> St#st.clock;
+        RefundClock -> RefundClock
+    end,
+    erlang:display({'CLOCK', Clock}),
     #{timestamp := Timestamp} = get_opts(St),
-    hg_accounting:rollback(construct_refund_plan_id(RefundSt, St), [get_refund_cashflow_plan(RefundSt)], Timestamp).
+    hg_accounting:rollback(
+        construct_refund_plan_id(RefundSt, St),
+        [get_refund_cashflow_plan(RefundSt)],
+        Timestamp,
+        Clock
+    ).
 
 construct_refund_plan_id(RefundSt, St) ->
     hg_utils:construct_complex_id([
@@ -1892,7 +1918,7 @@ process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) 
         {1, FinalCashflow},
         Timestamp
     ),
-    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow), ?payment_clock_update(Clock)],
+    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow), ?clock_update(Clock)],
     {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
@@ -1936,7 +1962,7 @@ process_refund_cashflow(ID, Action, St) ->
     case get_available_amount(SettlementID, Clock) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
-            Events0 = [?session_ev(?refunded(), ?session_started())],
+            Events0 = [?clock_update(Clock), ?session_ev(?refunded(), ?session_started())],
             Events1 = get_manual_refund_events(RefundSt),
             {next, {
                 [?refund_ev(ID, C) || C <- Events0 ++ Events1],
@@ -1992,7 +2018,7 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
     ),
     erlang:display({'UNUSED CLOCK', NewClock}),
     Events = start_session(?captured(Reason, Cost, Cart)),
-    {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}}.
+    {next, {[?clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}}.
 
 %%
 
@@ -2134,7 +2160,7 @@ process_result({payment, processing_failure}, Action, St = #st{failure = Failure
     NewAction = hg_machine_action:set_timeout(0, Action),
     Clock = rollback_payment_cashflow(St),
     % erlang:display({'CLOCK', Clock}),
-    {done, {[?payment_clock_update(Clock), ?payment_status_changed(?failed(Failure))], NewAction}};
+    {done, {[?clock_update(Clock), ?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
     Clock =
@@ -2147,13 +2173,14 @@ process_result({payment, finalizing_accounter}, Action, St) ->
     % erlang:display({'CLOCK', Clock}),
     check_recurrent_token(St),
     NewAction = get_action(Target, Action, St),
-    {done, {[?payment_clock_update(Clock), ?payment_status_changed(Target)], NewAction}};
+    {done, {[?clock_update(Clock), ?payment_status_changed(Target)], NewAction}};
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Failure = RefundSt#refund_st.failure,
     Clock = rollback_refund_cashflow(RefundSt, St),
     erlang:display({'CLOCK', Clock}),
     Events = [
+        ?refund_ev(ID, ?clock_update(Clock)),
         ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
     ],
     {done, {Events, Action}};
@@ -2162,6 +2189,7 @@ process_result({refund_accounter, ID}, Action, St) ->
     Clock = commit_refund_cashflow(RefundSt, St),
     erlang:display({'CLOCK', Clock}),
     Events2 = [
+        ?refund_ev(ID, ?clock_update(Clock)),
         ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
     ],
     Events3 =
@@ -2855,7 +2883,7 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
         _ ->
             St
     end;
-merge_change(Change = ?payment_clock_update(Clock), #st{activity = Activity} = St, Opts) ->
+merge_change(Change = ?clock_update(Clock), #st{activity = Activity} = St, Opts) ->
     % erlang:display(Activity),
     _ = validate_transition(
         [
@@ -3001,6 +3029,18 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
             ?refund_created(_, _, _) ->
                 _ = validate_transition(idle, Change, St, Opts),
                 St#st{activity = {refund_new, ID}};
+            ?clock_update(_Clock) ->
+                _ = validate_transition(
+                    [
+                        {refund_new, ID},
+                        {refund_accounter, ID},
+                        {refund_failure, ID}
+                    ],
+                    Change,
+                    St,
+                    Opts
+                ),
+                St;
             ?session_ev(?refunded(), ?session_started()) ->
                 _ = validate_transition([{refund_new, ID}, {refund_session, ID}], Change, St, Opts),
                 St#st{activity = {refund_session, ID}};
@@ -3127,6 +3167,8 @@ merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?refund_rollback_started(Failure), RefundSt) ->
     RefundSt#refund_st{failure = Failure};
+merge_refund_change(?clock_update(Clock), RefundSt) ->
+    RefundSt#refund_st{clock = Clock};
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
     add_refund_session(create_session(?refunded(), undefined), St);
 merge_refund_change(?session_ev(?refunded(), Change), St) ->

@@ -33,7 +33,7 @@
     {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}}
 ).
 
--define(payment_clock_update(Clock),
+-define(clock_update(Clock),
     {invoice_payment_clock_update, #payproc_InvoicePaymentClockUpdate{clock = Clock}}
 ).
 
