@@ -6,6 +6,8 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
+-include("claim_management.hrl").
+
 %% Machine callbacks
 
 -behaviour(pm_machine).
@@ -255,13 +257,15 @@ handle_call('Accept', {_PartyID, Claim}, AuxSt, St) ->
         changeset = Changeset
     } = Claim,
     try
+        Party = get_st_party(St),
+        ok = pm_claim_committer:assert_cash_regisrter_modifications_applicable(Changeset, Party),
         case pm_claim_committer:from_claim_mgmt(Claim) of
             undefined ->
                 ok;
             PayprocClaim ->
                 Timestamp = pm_datetime:format_now(),
                 Revision = pm_domain:head(),
-                Party = get_st_party(St),
+
                 ok = pm_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
                 ok = pm_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party)
         end,
