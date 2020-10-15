@@ -7,20 +7,18 @@
 
 -export_type([cache_options/0]).
 
+%% see `cache:start_link/1`
 -type cache_options() :: #{
     type => set | ordered_set,
     policy => lru | mru,
     memory => integer(),
     size => integer(),
     n => integer(),
-    %% seconds
     ttl => integer(),
-    check => integer(),
-    stats => function() | {module(), atom()},
-    heir => atom() | pid()
+    check => integer()
 }.
 
--type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type party_revision() :: pm_party:party_revision().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type party_st() :: pm_party_machine:st().
 
@@ -35,7 +33,7 @@ cache_child_spec(ChildID, Options) ->
         type => supervisor
     }.
 
--spec get_party({party_id(), party_revision_param()}) -> not_found | {ok, party_st()}.
+-spec get_party({party_id(), party_revision()}) -> not_found | {ok, party_st()}.
 get_party(Key) ->
     case cache:get(?CACHE_NS, Key) of
         undefined ->
@@ -44,10 +42,19 @@ get_party(Key) ->
             {ok, Value}
     end.
 
--spec update_party({party_id(), party_revision_param()}, party_st()) -> ok.
+-spec update_party({party_id(), party_revision()}, party_st()) -> ok.
 update_party(Key, Value) ->
     cache:put(?CACHE_NS, Key, Value).
 
 -spec cache_options(cache_options()) -> list().
 cache_options(Options) ->
-    maps:to_list(Options).
+    Opt0 = genlib_list:compact(#{
+        type => genlib_map:get(type, Options),
+        policy => genlib_map:get(policy, Options),
+        memory => genlib_map:get(memory, Options),
+        size => genlib_map:get(size, Options),
+        n => genlib_map:get(n, Options),
+        ttl => genlib_map:get(ttl, Options),
+        check => genlib_map:get(check, Options)
+    }),
+    maps:to_list(Opt0).
