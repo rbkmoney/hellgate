@@ -11,11 +11,16 @@
 -type cache_options() :: #{
     type => set | ordered_set,
     policy => lru | mru,
-    memory => integer(), % bytes
-    size => integer(), % number of items
-    n => integer(), % number of items
-    ttl => integer(), % seconds
-    check => integer() % seconds
+    % bytes
+    memory => integer(),
+    % number of items
+    size => integer(),
+    % number of items
+    n => integer(),
+    % seconds
+    ttl => integer(),
+    % seconds
+    check => integer()
 }.
 
 -type party_revision() :: pm_party:party_revision().
