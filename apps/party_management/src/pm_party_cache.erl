@@ -48,7 +48,7 @@ update_party(Key, Value) ->
 
 -spec cache_options(cache_options()) -> list().
 cache_options(Options) ->
-    Opt0 = genlib_list:compact(#{
+    Opt0 = genlib_map:compact(#{
         type => genlib_map:get(type, Options),
         policy => genlib_map:get(policy, Options),
         memory => genlib_map:get(memory, Options),
