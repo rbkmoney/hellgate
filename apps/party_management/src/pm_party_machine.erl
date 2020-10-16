@@ -834,13 +834,13 @@ checkout_history_by_timestamp([], Timestamp, St) ->
     {ok, St#st{timestamp = Timestamp}}.
 
 checkout_cached_party_by_revision(PartyID, Revision) ->
-    case pm_party_cache:get_party({PartyID, Revision}) of
+    case pm_party_cache:get_party(PartyID, Revision) of
         {ok, Party} ->
             {ok, Party};
         not_found ->
             case checkout_party_by_revision(PartyID, Revision) of
                 {ok, Party} = Res ->
-                    ok = pm_party_cache:update_party({PartyID, Revision}, Party),
+                    ok = pm_party_cache:update_party(PartyID, Revision, Party),
                     Res;
                 OtherRes ->
                     OtherRes

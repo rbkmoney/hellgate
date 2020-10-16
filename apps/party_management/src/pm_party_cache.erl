@@ -2,8 +2,8 @@
 
 %% API
 -export([cache_child_spec/2]).
--export([get_party/1]).
--export([update_party/2]).
+-export([get_party/2]).
+-export([update_party/3]).
 
 -export_type([cache_options/0]).
 
@@ -11,11 +11,11 @@
 -type cache_options() :: #{
     type => set | ordered_set,
     policy => lru | mru,
-    memory => integer(),
-    size => integer(),
-    n => integer(),
-    ttl => integer(),
-    check => integer()
+    memory => integer(), % bytes
+    size => integer(), % number of items
+    n => integer(), % number of items
+    ttl => integer(), % seconds
+    check => integer() % seconds
 }.
 
 -type party_revision() :: pm_party:party_revision().
@@ -33,28 +33,21 @@ cache_child_spec(ChildID, Options) ->
         type => supervisor
     }.
 
--spec get_party({party_id(), party_revision()}) -> not_found | {ok, party_st()}.
-get_party(Key) ->
-    case cache:get(?CACHE_NS, Key) of
+-spec get_party(party_id(), party_revision()) -> not_found | {ok, party_st()}.
+get_party(PartyID, PartyRevision) ->
+    case cache:get(?CACHE_NS, {PartyID, PartyRevision}) of
         undefined ->
             not_found;
         Value ->
             {ok, Value}
     end.
 
--spec update_party({party_id(), party_revision()}, party_st()) -> ok.
-update_party(Key, Value) ->
-    cache:put(?CACHE_NS, Key, Value).
+-spec update_party(party_id(), party_revision(), party_st()) -> ok.
+update_party(PartyID, PartyRevision, Value) ->
+    cache:put(?CACHE_NS, {PartyID, PartyRevision}, Value).
 
 -spec cache_options(cache_options()) -> list().
 cache_options(Options) ->
-    Opt0 = genlib_map:compact(#{
-        type => genlib_map:get(type, Options),
-        policy => genlib_map:get(policy, Options),
-        memory => genlib_map:get(memory, Options),
-        size => genlib_map:get(size, Options),
-        n => genlib_map:get(n, Options),
-        ttl => genlib_map:get(ttl, Options),
-        check => genlib_map:get(check, Options)
-    }),
+    KeyList = [type, policy, memory, size, n, ttl, check],
+    Opt0 = maps:with(KeyList, Options),
     maps:to_list(Opt0).
