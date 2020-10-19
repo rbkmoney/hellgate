@@ -672,6 +672,8 @@ acceptable_payment_terms(
     _ = try_accept_term(ParentName, cost, CashLimitSelector, VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, PaymentFlow, VS, Revision),
     _ = acceptable_refunds_terms(RefundsTerms, RefundsVS, VS, Revision),
+    %% TODO Check chargeback terms when there will be any
+    %% _ = acceptable_chargeback_terms(...)
     true;
 acceptable_payment_terms(undefined, _PaymentFlow, _RefundsVS, _VS, _Revision) ->
     throw(?rejected({'PaymentsProvisionTerms', undefined})).
