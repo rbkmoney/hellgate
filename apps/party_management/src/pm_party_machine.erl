@@ -836,10 +836,12 @@ checkout_history_by_timestamp([], Timestamp, St) ->
 checkout_cached_party_by_revision(PartyID, Revision) ->
     case pm_party_cache:get_party(PartyID, Revision) of
         {ok, Party} ->
+            _ = logger:info("PartyID: ~p Revision: ~p cache hit", [PartyID, Revision]),
             {ok, Party};
         not_found ->
             case checkout_party_by_revision(PartyID, Revision) of
                 {ok, Party} = Res ->
+                    _ = logger:info("PartyID: ~p Revision: ~p cache miss", [PartyID, Revision]),
                     ok = pm_party_cache:update_party(PartyID, Revision, Party),
                     Res;
                 OtherRes ->
