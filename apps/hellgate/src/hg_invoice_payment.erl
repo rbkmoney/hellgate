@@ -613,18 +613,18 @@ construct_payment_flow({hold, Params}, CreatedAt, Terms, PaymentTool) ->
     HeldUntil = hg_datetime:format_ts(hg_datetime:parse_ts(CreatedAt) + Seconds),
     ?invoice_payment_flow_hold(OnHoldExpiration, HeldUntil).
 
-reconstruct_payment_flow(Payment) ->
+reconstruct_payment_flow(Payment, VS) ->
     #domain_InvoicePayment{
         flow = Flow,
         created_at = CreatedAt
     } = Payment,
-    reconstruct_payment_flow(Flow, CreatedAt).
+    reconstruct_payment_flow(Flow, CreatedAt, VS).
 
-reconstruct_payment_flow(?invoice_payment_flow_instant(), _CreatedAt) ->
-    instant;
-reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, HeldUntil), CreatedAt) ->
+reconstruct_payment_flow(?invoice_payment_flow_instant(), _CreatedAt, VS) ->
+    VS#{flow => instant};
+reconstruct_payment_flow(?invoice_payment_flow_hold(_OnHoldExpiration, HeldUntil), CreatedAt, VS) ->
     Seconds = hg_datetime:parse_ts(HeldUntil) - hg_datetime:parse_ts(CreatedAt),
-    {hold, ?hold_lifetime(Seconds)}.
+    VS#{flow => {hold, ?hold_lifetime(Seconds)}}.
 
 -spec get_predefined_route(payer()) -> {ok, route()} | undefined.
 get_predefined_route(?payment_resource_payer()) ->
@@ -762,7 +762,7 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-choose_route(PaymentInstitution, PaymentFlow, RefundsVS, RiskScore, VS, Revision, St) ->
+choose_route(PaymentInstitution, RiskScore, VS, Revision, St) ->
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
         {ok, Route} ->
@@ -773,8 +773,6 @@ choose_route(PaymentInstitution, PaymentFlow, RefundsVS, RiskScore, VS, Revision
             {Routes, RejectContext} = gather_routes(
                 Predestination,
                 PaymentInstitution,
-                PaymentFlow,
-                RefundsVS,
                 VS,
                 Revision
             ),
@@ -798,10 +796,10 @@ check_risk_score(Route, RiskScore) ->
             {error, {no_route_found, Reason}}
     end.
 
-gather_routes(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision) ->
-    case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision) of
+gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
+    case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS, Revision) of
         {[], _} ->
-            hg_routing:gather_routes(Predestination, PaymentInstitution, PaymentFlow, RefundsVS, VS, Revision);
+            hg_routing:gather_routes(Predestination, PaymentInstitution, VS, Revision);
         Routes ->
             Routes
     end.
@@ -883,17 +881,19 @@ collect_refund_varset(
         payment_methods = PaymentMethodSelector,
         partial_refunds = PartialRefundsServiceTerms
     },
-    PaymentTool
+    PaymentTool,
+    VS
 ) ->
     RPMs = get_selector_value(payment_methods, PaymentMethodSelector),
     case hg_payment_tool:has_any_payment_method(PaymentTool, RPMs) of
         true ->
-            collect_partial_refund_varset(PartialRefundsServiceTerms);
+            RVS = collect_partial_refund_varset(PartialRefundsServiceTerms),
+            VS#{refunds => RVS};
         false ->
-            undefined
+            VS
     end;
-collect_refund_varset(undefined, _PaymentTool) ->
-    undefined.
+collect_refund_varset(undefined, _PaymentTool, VS) ->
+    VS.
 
 collect_partial_refund_varset(
     #domain_PartialRefundsServiceTerms{
@@ -1854,23 +1854,24 @@ process_routing(Action, St) ->
     Payment = get_payment(St),
     CreatedAt = get_payment_created_at(Payment),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
-    PaymentFlow = reconstruct_payment_flow(Payment),
-    #{payment_tool := PaymentTool} = VS0 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, #{}),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS0),
-    RefundsVS = collect_refund_varset(
+    VS0 = reconstruct_payment_flow(Payment, #{}),
+    #{payment_tool := PaymentTool} = VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
+    VS2 = collect_refund_varset(
         MerchantTerms#domain_PaymentsServiceTerms.refunds,
-        PaymentTool
+        PaymentTool,
+        VS1
     ),
-    VS1 = collect_chargeback_varset(
+    VS3 = collect_chargeback_varset(
         MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
-        VS0
+        VS2
     ),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     RiskScore = repair_inspect(Payment, PaymentInstitution, Opts, St),
     Events0 = [?risk_score_changed(RiskScore)],
-    case choose_route(PaymentInstitution, PaymentFlow, RefundsVS, RiskScore, VS1, Revision, St) of
+    case choose_route(PaymentInstitution, RiskScore, VS3, Revision, St) of
         {ok, Route} ->
-            process_cash_flow_building(Route, VS1, Payment, Revision, Opts, Events0, Action);
+            process_cash_flow_building(Route, VS3, Payment, Revision, Opts, Events0, Action);
         {error, {no_route_found, Reason}} ->
             Failure =
                 {failure,

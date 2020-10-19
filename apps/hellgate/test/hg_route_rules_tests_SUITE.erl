@@ -106,14 +106,14 @@ no_route_found_for_payment(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(999, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"12345">>
+        party_id => <<"12345">>,
+        flow => instant
     },
-    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
+    {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     #{
         rejected_routes := [
             {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}},
@@ -129,9 +129,9 @@ gather_route_success(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"12345">>
+        party_id => <<"12345">>,
+        flow => instant
     },
-    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -139,8 +139,6 @@ gather_route_success(_C) ->
     {[{_, {?trm(10), _, _}}], RejectContext} = hg_routing_rule:gather_routes(
         payment,
         PaymentInstitution,
-        Flow,
-        undefined,
         VS,
         Revision
     ),
@@ -158,14 +156,14 @@ rejected_by_table_prohibitions(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"67890">>
+        party_id => <<"67890">>,
+        flow => instant
     },
-    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
+    {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     #{
         rejected_routes := [
@@ -188,9 +186,9 @@ empty_candidate_ok(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(101010, <<"RUB">>),
         payment_tool => {bank_card, BankCard},
-        party_id => <<"12345">>
+        party_id => <<"12345">>,
+        flow => instant
     },
-    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
@@ -198,14 +196,14 @@ empty_candidate_ok(_C) ->
         varset := VS,
         rejected_routes := [],
         rejected_providers := []
-    }} = hg_routing_rule:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision).
+    }} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
 
 -spec ruleset_misconfig(config()) -> test_return().
 ruleset_misconfig(_C) ->
     VS = #{
-        party_id => <<"12345">>
+        party_id => <<"12345">>,
+        flow => instant
     },
-    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -214,7 +212,7 @@ ruleset_misconfig(_C) ->
         varset := VS,
         rejected_routes := [],
         rejected_providers := []
-    }} = hg_routing_rule:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision).
+    }} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision).
 
 -spec prefer_better_risk_score(config()) -> test_return().
 prefer_better_risk_score(_C) ->
@@ -223,15 +221,15 @@ prefer_better_risk_score(_C) ->
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
-        party_id => <<"12345">>
+        party_id => <<"12345">>,
+        flow => instant
     },
     RiskScore = low,
-    Flow = instant,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {Routes, RC} = hg_routing_rule:gather_routes(payment, PaymentInstitution, Flow, undefined, VS, Revision),
+    {Routes, RC} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
