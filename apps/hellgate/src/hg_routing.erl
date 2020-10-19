@@ -8,6 +8,7 @@
 -export([gather_routes/6]).
 -export([gather_fail_rates/1]).
 -export([choose_route/3]).
+-export([check_risk_score/1]).
 
 -export([get_payments_terms/2]).
 -export([get_rec_paytools_terms/2]).
@@ -147,7 +148,18 @@ gather_fail_rates(Routes) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 choose_route(FailRatedRoutes, RejectContext, RiskScore) ->
-    do_choose_route(FailRatedRoutes, RiskScore, RejectContext).
+    case check_risk_score(RiskScore) of
+        ok ->
+            do_choose_route(FailRatedRoutes, RiskScore, RejectContext);
+        {error, Reason} ->
+            {error, {no_route_found, {Reason, RejectContext}}}
+    end.
+
+-spec check_risk_score(risk_score()) -> ok | {error, risk_score_is_too_high}.
+check_risk_score(fatal) ->
+    {error, risk_score_is_too_high};
+check_risk_score(_RiskScore) ->
+    ok.
 
 -spec select_providers(
     route_predestination(),
@@ -207,9 +219,7 @@ select_routes(Predestination, Providers, PaymentFlow, RefundsVS, VS, Revision, R
 
 -spec do_choose_route([fail_rated_route()], risk_score() | any(), reject_context()) ->
     {ok, route(), route_choice_meta()} |
-    {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
-do_choose_route(_Routes, fatal, RejectContext) ->
-    {error, {no_route_found, {risk_score_is_too_high, RejectContext}}};
+    {error, {no_route_found, {unknown, reject_context()}}}.
 do_choose_route([] = _Routes, _RiskScore, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
 do_choose_route(Routes, _RiskScore, _RejectContext) ->

@@ -36,6 +36,7 @@
 -export([shop_suspension/3]).
 -export([set_shop/2]).
 
+-export([get_shops/1]).
 -export([get_shop/2]).
 -export([get_shop_account/2]).
 -export([get_account_state/2]).
@@ -159,6 +160,10 @@ create_shop(ID, ShopParams, Timestamp) ->
 -spec get_shop(shop_id(), party()) -> shop() | undefined.
 get_shop(ID, #domain_Party{shops = Shops}) ->
     maps:get(ID, Shops, undefined).
+
+-spec get_shops(party()) -> #{shop_id() => shop()}.
+get_shops(#domain_Party{shops = Shops}) ->
+    Shops.
 
 -spec set_shop(shop(), party()) -> party().
 set_shop(Shop = #domain_Shop{id = ID}, Party = #domain_Party{shops = Shops}) ->

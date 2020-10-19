@@ -6,6 +6,8 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
+-include("claim_management.hrl").
+
 %% Machine callbacks
 
 -behaviour(pm_machine).
@@ -90,6 +92,7 @@
 }.
 
 -export_type([party_revision/0]).
+-export_type([st/0]).
 
 -spec namespace() -> pm_machine:ns().
 namespace() ->
@@ -254,13 +257,15 @@ handle_call('Accept', {_PartyID, Claim}, AuxSt, St) ->
         changeset = Changeset
     } = Claim,
     try
+        Party = get_st_party(St),
+        ok = pm_claim_committer:assert_cash_regisrter_modifications_applicable(Changeset, Party),
         case pm_claim_committer:from_claim_mgmt(Claim) of
             undefined ->
                 ok;
             PayprocClaim ->
                 Timestamp = pm_datetime:format_now(),
                 Revision = pm_domain:head(),
-                Party = get_st_party(St),
+
                 ok = pm_claim:assert_applicable(PayprocClaim, Timestamp, Revision, Party),
                 ok = pm_claim:assert_acceptable(PayprocClaim, Timestamp, Revision, Party)
         end,
@@ -812,7 +817,7 @@ checkout_party(PartyID, {timestamp, Timestamp}) ->
     Events = unwrap_events(get_history(PartyID, undefined, undefined)),
     checkout_history_by_timestamp(Events, Timestamp, #st{});
 checkout_party(PartyID, {revision, Revision}) ->
-    checkout_party_by_revision(PartyID, Revision).
+    checkout_cached_party_by_revision(PartyID, Revision).
 
 checkout_history_by_timestamp([Ev | Rest], Timestamp, #st{timestamp = PrevTimestamp} = St) ->
     St1 = merge_event(Ev, St),
@@ -827,6 +832,20 @@ checkout_history_by_timestamp([Ev | Rest], Timestamp, #st{timestamp = PrevTimest
     end;
 checkout_history_by_timestamp([], Timestamp, St) ->
     {ok, St#st{timestamp = Timestamp}}.
+
+checkout_cached_party_by_revision(PartyID, Revision) ->
+    case pm_party_cache:get_party(PartyID, Revision) of
+        {ok, Party} ->
+            {ok, Party};
+        not_found ->
+            case checkout_party_by_revision(PartyID, Revision) of
+                {ok, Party} = Res ->
+                    ok = pm_party_cache:update_party(PartyID, Revision, Party),
+                    Res;
+                OtherRes ->
+                    OtherRes
+            end
+    end.
 
 checkout_party_by_revision(PartyID, Revision) ->
     AuxSt = get_aux_state(PartyID),
