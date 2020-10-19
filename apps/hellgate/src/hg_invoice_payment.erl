@@ -766,7 +766,7 @@ choose_route(PaymentInstitution, PaymentFlow, RefundsVS, RiskScore, VS, Revision
     Payer = get_payment_payer(St),
     case get_predefined_route(Payer) of
         {ok, Route} ->
-            check_risk_score(Route, VS);
+            check_risk_score(Route, RiskScore);
         undefined ->
             Payment = get_payment(St),
             Predestination = choose_routing_predestination(Payment),
@@ -790,8 +790,8 @@ choose_route(PaymentInstitution, PaymentFlow, RefundsVS, RiskScore, VS, Revision
             end
     end.
 
-check_risk_score(Route, VS) ->
-    case hg_routing:check_risk_score(VS) of
+check_risk_score(Route, RiskScore) ->
+    case hg_routing:check_risk_score(RiskScore) of
         ok ->
             {ok, Route};
         {error, risk_score_is_too_high = Reason} ->
