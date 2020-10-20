@@ -479,29 +479,32 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
     pm_selector:varset(),
     hg_domain:revision()
 ) -> provider_with_ref() | no_return().
-acceptable_provider(payment, ProviderRef, VS, Revision) ->
-    Provider =
-        #domain_Provider{
-            terms = Terms
-        } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
-    {ProviderRef, Provider};
-acceptable_provider(recurrent_paytool, ProviderRef, VS, Revision) ->
-    Provider =
-        #domain_Provider{
-            terms = Terms
-        } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
-    {ProviderRef, Provider};
-acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
-    % Use provider check combined from recurrent_paytool and payment check
-    Provider =
-        #domain_Provider{
-            terms = Terms
-        } = hg_domain:get(Revision, {provider, ProviderRef}),
-    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
-    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
+acceptable_provider(Predestination, ProviderRef, VS, Revision) ->
+    {Client, Context} = get_party_client(),
+    {ok, Provider = #domain_Provider{terms = Terms}} = party_client_thrift:compute_provider(
+        ProviderRef,
+        Revision,
+        hg_varset:prepare_varset(VS),
+        Client,
+        Context
+    ),
+    case Predestination of
+        payment ->
+            _ = acceptable_provision_payment_terms(Terms, VS, Revision);
+        recurrent_paytool ->
+            _ = acceptable_provision_recurrent_terms(Terms, VS, Revision);
+        recurrent_payment ->
+            % Use provider check combined from recurrent_paytool and payment check
+            _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+            _ = acceptable_provision_recurrent_terms(Terms, VS, Revision)
+    end,
     {ProviderRef, Provider}.
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.
 
 %%
 
