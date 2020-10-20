@@ -2490,7 +2490,7 @@ reject_payment_chargeback_no_fees(C) ->
     LevyAmount = 4000,
     Levy = ?cash(LevyAmount, <<"RUB">>),
     CBParams = make_chargeback_params(Levy),
-    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, ?pinst(1)),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, ?cat(1), ?tmpl(1)),
     CBID = CB#domain_InvoicePaymentChargeback.id,
     [
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
@@ -3414,12 +3414,12 @@ reopen_payment_chargeback_arbitration_reopen_fails(C) ->
 %% CHARGEBACK HELPERS
 
 start_chargeback(C, Cost, CBParams) ->
-    start_chargeback(C, Cost, CBParams, ?pinst(2)).
+    start_chargeback(C, Cost, CBParams, ?cat(2), ?tmpl(2)).
 
-start_chargeback(C, Cost, CBParams, PInst) ->
+start_chargeback(C, Cost, CBParams, Category, Template) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), PInst, PartyClient),
+    ShopID = hg_ct_helper:create_battle_ready_shop(Category, <<"RUB">>, Template, ?pinst(2), PartyClient),
     Party = hg_client_party:get(PartyClient),
     Shop = maps:get(ShopID, Party#domain_Party.shops),
     Account = Shop#domain_Shop.account,
