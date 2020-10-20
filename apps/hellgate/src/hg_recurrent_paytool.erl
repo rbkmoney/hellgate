@@ -238,24 +238,26 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     Revision = Params#payproc_RecurrentPaymentToolParams.domain_revision,
     CreatedAt = hg_datetime:format_now(),
     {Party, Shop} = get_party_shop(Params),
-    PaymentInstitution = get_payment_institution(Shop, Party, Revision),
     RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
-    VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
-    {RiskScore, VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
+    VS = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
+    RiskScore = validate_risk_score(inspect(RecPaymentTool, VS)),
+    PaymentInstitutionRef = get_payment_institution_ref(Shop, Party),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
+
     Predestination = recurrent_paytool,
     {Routes, RejectContext} =
-        case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision) of
+        case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS, Revision) of
             {[], _} ->
-                hg_routing:gather_routes(Predestination, PaymentInstitution, VS1, Revision);
+                hg_routing:gather_routes(Predestination, PaymentInstitution, VS, Revision);
             AcceptedRoutes ->
                 AcceptedRoutes
         end,
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
     Route = validate_route(
-        hg_routing:choose_route(FailRatedRoutes, RejectContext, VS1),
+        hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore),
         RecPaymentTool
     ),
-    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS1, Revision),
+    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision),
     {ok, {Changes, Action}} = start_session(),
     StartChanges = [
         ?recurrent_payment_tool_has_created(RecPaymentTool2),
@@ -278,10 +280,9 @@ get_party_shop(Params) ->
     Shop = hg_party:get_shop(ShopID, Party),
     {Party, Shop}.
 
-get_payment_institution(Shop, Party, Revision) ->
+get_payment_institution_ref(Shop, Party) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+    Contract#domain_Contract.payment_institution.
 
 get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
@@ -331,8 +332,8 @@ inspect(_RecPaymentTool, _VS) ->
     % FIXME please senpai
     high.
 
-validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
-    {RiskScore, VS#{risk_score => RiskScore}}.
+validate_risk_score(RiskScore) when RiskScore == low; RiskScore == high ->
+    RiskScore.
 
 validate_route({ok, Route, ChoiceMeta}, _RecPaymentTool) ->
     _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),

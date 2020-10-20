@@ -96,6 +96,8 @@
     reject_reason => atom()
 }.
 
+-type risk_score() :: dmsl_domain_thrift:'RiskScore'().
+
 -record(route_scores, {
     availability_condition :: condition_score(),
     conversion_condition :: condition_score(),
@@ -130,21 +132,21 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([fail_rated_route()], reject_context(), pm_selector:varset()) ->
+-spec choose_route([fail_rated_route()], reject_context(), risk_score() | undefined) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
-choose_route(FailRatedRoutes, RejectContext, VS) ->
-    case check_risk_score(VS) of
+choose_route(FailRatedRoutes, RejectContext, RiskScore) ->
+    case check_risk_score(RiskScore) of
         ok ->
-            do_choose_route(FailRatedRoutes, VS, RejectContext);
+            do_choose_route(FailRatedRoutes, RejectContext);
         {error, Reason} ->
             {error, {no_route_found, {Reason, RejectContext}}}
     end.
 
--spec check_risk_score(pm_selector:varset()) -> ok | {error, risk_score_is_too_high}.
-check_risk_score(#{risk_score := fatal}) ->
+-spec check_risk_score(risk_score() | undefined) -> ok | {error, risk_score_is_too_high}.
+check_risk_score(fatal) ->
     {error, risk_score_is_too_high};
-check_risk_score(_VS) ->
+check_risk_score(_RiskScore) ->
     ok.
 
 -spec select_providers(
@@ -155,8 +157,7 @@ check_risk_score(_VS) ->
     reject_context()
 ) -> {[provider_with_ref()], reject_context()}.
 select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
-    ProviderSelector = PaymentInstitution#domain_PaymentInstitution.providers,
-    ProviderRefs0 = reduce(provider, ProviderSelector, VS, Revision),
+    ProviderRefs0 = get_selector_value(providers, PaymentInstitution#domain_PaymentInstitution.providers),
     ProviderRefs1 = ordsets:to_list(ProviderRefs0),
     {Providers, RejectReasons} = lists:foldl(
         fun(ProviderRef, {Prvs, Reasons}) ->
@@ -193,14 +194,14 @@ select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
     ),
     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
--spec do_choose_route([fail_rated_route()], pm_selector:varset(), reject_context()) ->
+-spec do_choose_route([fail_rated_route()], reject_context()) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {unknown, reject_context()}}}.
-do_choose_route([] = _Routes, _VS, RejectContext) ->
+do_choose_route([] = _Routes, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
-do_choose_route(Routes, VS, _RejectContext) ->
+do_choose_route(Routes, _RejectContext) ->
     BalancedRoutes = balance_routes(Routes),
-    ScoredRoutes = score_routes(BalancedRoutes, VS),
+    ScoredRoutes = score_routes(BalancedRoutes),
     {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
     RouteChoiceMeta = get_route_choice_meta(ChosenRoute, IdealRoute),
     {ok, export_route(ChosenRoute), RouteChoiceMeta}.
@@ -377,11 +378,11 @@ calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
             calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes])
     end.
 
--spec score_routes([fail_rated_route()], pm_selector:varset()) -> [scored_route()].
-score_routes(Routes, VS) ->
-    [{score_route(R, VS), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
+-spec score_routes([fail_rated_route()]) -> [scored_route()].
+score_routes(Routes) ->
+    [{score_route(R), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
 
-score_route({_Provider, {_TerminalRef, _Terminal, Priority}, ProviderStatus}, _VS) ->
+score_route({_Provider, {_TerminalRef, _Terminal, Priority}, ProviderStatus}) ->
     {AvailabilityStatus, ConversionStatus} = ProviderStatus,
     {AvailabilityCondition, Availability} = get_availability_score(AvailabilityStatus),
     {ConversionCondition, Conversion} = get_conversion_score(ConversionStatus),
@@ -616,8 +617,7 @@ acceptable_payment_terms(
         payment_methods = PMsSelector,
         cash_limit = CashLimitSelector,
         holds = HoldsTerms,
-        refunds = RefundsTerms,
-        chargebacks = ChargebackTerms
+        refunds = RefundsTerms
     },
     VS,
     Revision
@@ -631,7 +631,8 @@ acceptable_payment_terms(
     _ = try_accept_term(ParentName, cost, CashLimitSelector, VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
     _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
-    _ = acceptable_chargeback_terms(ChargebackTerms, getv(chargebacks, VS, undefined), VS, Revision),
+    %% TODO Check chargeback terms when there will be any
+    %% _ = acceptable_chargeback_terms(...)
     true;
 acceptable_payment_terms(undefined, _VS, _Revision) ->
     throw(?rejected({'PaymentsProvisionTerms', undefined})).
@@ -682,13 +683,6 @@ acceptable_partial_refunds_terms(
         throw(?rejected({'PartialRefundsProvisionTerms', cash_limit}));
 acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
     throw(?rejected({'PartialRefundsProvisionTerms', undefined})).
-
-acceptable_chargeback_terms(_Terms, undefined, _VS, _Revision) ->
-    true;
-acceptable_chargeback_terms(_Terms, #{}, _VS, _Revision) ->
-    true;
-acceptable_chargeback_terms(undefined, _RVS, _VS, _Revision) ->
-    throw(?rejected({'PaymentChargebackProvisionTerms', undefined})).
 
 merge_terms(
     #domain_ProvisionTermSet{
@@ -784,6 +778,14 @@ test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
 
 reduce(Name, S, VS, Revision) ->
     case pm_selector:reduce(S, VS, Revision) of
+        {value, V} ->
+            V;
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
+
+get_selector_value(Name, Selector) ->
+    case Selector of
         {value, V} ->
             V;
         Ambiguous ->

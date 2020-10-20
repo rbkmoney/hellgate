@@ -107,7 +107,6 @@ no_route_found_for_payment(_C) ->
         cost => ?cash(999, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
         party_id => <<"12345">>,
-        risk_score => low,
         flow => instant
     },
 
@@ -131,14 +130,18 @@ gather_route_success(_C) ->
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
         party_id => <<"12345">>,
-        risk_score => low,
         flow => instant
     },
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {[{_, {?trm(10), _, _}}], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {[{_, {?trm(10), _, _}}], RejectContext} = hg_routing_rule:gather_routes(
+        payment,
+        PaymentInstitution,
+        VS,
+        Revision
+    ),
     #{
         rejected_routes := [
             {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}},
@@ -154,7 +157,6 @@ rejected_by_table_prohibitions(_C) ->
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
         party_id => <<"67890">>,
-        risk_score => low,
         flow => instant
     },
 
@@ -185,7 +187,6 @@ empty_candidate_ok(_C) ->
         cost => ?cash(101010, <<"RUB">>),
         payment_tool => {bank_card, BankCard},
         party_id => <<"12345">>,
-        risk_score => low,
         flow => instant
     },
 
@@ -201,7 +202,6 @@ empty_candidate_ok(_C) ->
 ruleset_misconfig(_C) ->
     VS = #{
         party_id => <<"12345">>,
-        risk_score => low,
         flow => instant
     },
 
@@ -222,9 +222,9 @@ prefer_better_risk_score(_C) ->
         cost => ?cash(1000, <<"RUB">>),
         payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
         party_id => <<"12345">>,
-        risk_score => low,
         flow => instant
     },
+    RiskScore = low,
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
@@ -236,7 +236,7 @@ prefer_better_risk_score(_C) ->
     ProviderStatuses = [{{dead, 1.0}, {normal, 0.0}}],
     FailRatedRoutes = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
 
-    Result = hg_routing:choose_route(FailRatedRoutes, RC, VS),
+    Result = hg_routing:choose_route(FailRatedRoutes, RC, RiskScore),
 
     {ok, #domain_PaymentRoute{provider = ?prv(3)}, Meta} = Result,
     false = maps:is_key(reject_reason, Meta),
