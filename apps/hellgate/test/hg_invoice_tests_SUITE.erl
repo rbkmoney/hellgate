@@ -2490,7 +2490,7 @@ reject_payment_chargeback_no_fees(C) ->
     LevyAmount = 4000,
     Levy = ?cash(LevyAmount, <<"RUB">>),
     CBParams = make_chargeback_params(Levy),
-    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, ?cat(1), ?tmpl(1)),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_wallet_payment_params()),
     CBID = CB#domain_InvoicePaymentChargeback.id,
     [
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
@@ -3414,12 +3414,12 @@ reopen_payment_chargeback_arbitration_reopen_fails(C) ->
 %% CHARGEBACK HELPERS
 
 start_chargeback(C, Cost, CBParams) ->
-    start_chargeback(C, Cost, CBParams, ?cat(2), ?tmpl(2)).
+    start_chargeback(C, Cost, CBParams, make_payment_params()).
 
-start_chargeback(C, Cost, CBParams, Category, Template) ->
+start_chargeback(C, Cost, CBParams, PaymentParams) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ShopID = hg_ct_helper:create_battle_ready_shop(Category, <<"RUB">>, Template, ?pinst(2), PartyClient),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     Party = hg_client_party:get(PartyClient),
     Shop = maps:get(ShopID, Party#domain_Party.shops),
     Account = Shop#domain_Shop.account,
@@ -3429,7 +3429,7 @@ start_chargeback(C, Cost, CBParams, Category, Template) ->
     Fee = 1890,
     ?assertEqual(0, maps:get(min_available_amount, Settlement0)),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     Settlement1 = hg_ct_helper:get_balance(SettlementID),
     ?assertEqual(Cost - Fee, maps:get(min_available_amount, Settlement1)),
@@ -5701,17 +5701,6 @@ construct_domain_fixture() ->
                         }
                     ]}
             },
-            chargebacks = #domain_PaymentChargebackServiceTerms{
-                allow = {constant, true},
-                fees =
-                    {value, [
-                        ?cfpost(
-                            {merchant, settlement},
-                            {system, settlement},
-                            ?share(1, 1, surplus)
-                        )
-                    ]}
-            },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods =
                     {value,
@@ -5774,6 +5763,7 @@ construct_domain_fixture() ->
             payment_methods =
                 {value,
                     ?ordset([
+                        ?pmt(digital_wallet, qiwi),
                         ?pmt(bank_card_deprecated, visa),
                         ?pmt(bank_card_deprecated, mastercard)
                     ])},
@@ -6214,11 +6204,13 @@ construct_domain_fixture() ->
                         categories =
                             {value,
                                 ?ordset([
-                                    ?cat(1)
+                                    ?cat(1),
+                                    ?cat(2)
                                 ])},
                         payment_methods =
                             {value,
                                 ?ordset([
+                                    ?pmt(digital_wallet, qiwi),
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
@@ -6234,6 +6226,27 @@ construct_domain_fixture() ->
                                 )},
                         cash_flow =
                             {decisions, [
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {digital_wallet, #domain_DigitalWalletCondition{
+                                                    definition = {provider_is, qiwi}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(18, 1000, operation_amount)
+                                            )
+                                        ]}
+                                },
                                 #domain_CashFlowDecision{
                                     if_ =
                                         {condition,
