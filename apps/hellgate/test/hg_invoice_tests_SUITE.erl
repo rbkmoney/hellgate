@@ -5701,6 +5701,17 @@ construct_domain_fixture() ->
                         }
                     ]}
             },
+            chargebacks = #domain_PaymentChargebackServiceTerms{
+                allow = {constant, true},
+                fees =
+                    {value, [
+                        ?cfpost(
+                            {merchant, settlement},
+                            {system, settlement},
+                            ?share(1, 1, surplus)
+                        )
+                    ]}
+            },
             refunds = #domain_PaymentRefundsServiceTerms{
                 payment_methods =
                     {value,
