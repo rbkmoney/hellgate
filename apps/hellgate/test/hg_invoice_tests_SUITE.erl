@@ -96,6 +96,7 @@
 -export([cancel_payment_chargeback_refund/1]).
 -export([reject_payment_chargeback_inconsistent/1]).
 -export([reject_payment_chargeback/1]).
+-export([reject_payment_chargeback_no_fees/1]).
 -export([reject_payment_chargeback_new_levy/1]).
 -export([accept_payment_chargeback_inconsistent/1]).
 -export([accept_payment_chargeback_exceeded/1]).
@@ -294,6 +295,7 @@ groups() ->
             cancel_payment_chargeback_refund,
             reject_payment_chargeback_inconsistent,
             reject_payment_chargeback,
+            reject_payment_chargeback_no_fees,
             reject_payment_chargeback_new_levy,
             accept_payment_chargeback_inconsistent,
             accept_payment_chargeback_exceeded,
@@ -2479,6 +2481,41 @@ reject_payment_chargeback(C) ->
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)).
 
+-spec reject_payment_chargeback_no_fees(config()) -> _ | no_return().
+reject_payment_chargeback_no_fees(C) ->
+    Client = cfg(client, C),
+    Cost = 42000,
+    Fee = 1890,
+    Paid = Cost - Fee,
+    LevyAmount = 4000,
+    Levy = ?cash(LevyAmount, <<"RUB">>),
+    CBParams = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, ?pinst(1)),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0 = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount, maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)).
+
 -spec reject_payment_chargeback_new_levy(config()) -> _ | no_return().
 reject_payment_chargeback_new_levy(C) ->
     Client = cfg(client, C),
@@ -3377,9 +3414,12 @@ reopen_payment_chargeback_arbitration_reopen_fails(C) ->
 %% CHARGEBACK HELPERS
 
 start_chargeback(C, Cost, CBParams) ->
+    start_chargeback(C, Cost, CBParams, ?pinst(2)).
+
+start_chargeback(C, Cost, CBParams, PInst) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), PInst, PartyClient),
     Party = hg_client_party:get(PartyClient),
     Shop = maps:get(ShopID, Party#domain_Party.shops),
     Account = Shop#domain_Shop.account,
@@ -6455,24 +6495,24 @@ construct_domain_fixture() ->
                             }
                         },
                         chargebacks = #domain_PaymentChargebackProvisionTerms{
-                            % fees =
-                            %     {value, #domain_Fees{
-                            %         fees = #{
-                            %             surplus => ?fixed(?CB_PROVIDER_LEVY, <<"RUB">>)
-                            %         }
-                            %     }},
+                            fees =
+                                {value, #domain_Fees{
+                                    fees = #{
+                                        surplus => ?fixed(?CB_PROVIDER_LEVY, <<"RUB">>)
+                                    }
+                                }},
                             cash_flow =
                                 {value, [
                                     ?cfpost(
                                         {merchant, settlement},
                                         {provider, settlement},
                                         ?share(1, 1, operation_amount)
+                                    ),
+                                    ?cfpost(
+                                        {system, settlement},
+                                        {provider, settlement},
+                                        ?share(1, 1, surplus)
                                     )
-                                    % ?cfpost(
-                                    %     {system, settlement},
-                                    %     {provider, settlement},
-                                    %     ?share(1, 1, surplus)
-                                    % )
                                 ]}
                         }
                     }
