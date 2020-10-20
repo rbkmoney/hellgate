@@ -6455,12 +6455,12 @@ construct_domain_fixture() ->
                             }
                         },
                         chargebacks = #domain_PaymentChargebackProvisionTerms{
-                            fees =
-                                {value, #domain_Fees{
-                                    fees = #{
-                                        surplus => ?fixed(?CB_PROVIDER_LEVY, <<"RUB">>)
-                                    }
-                                }},
+                            % fees =
+                            %     {value, #domain_Fees{
+                            %         fees = #{
+                            %             surplus => ?fixed(?CB_PROVIDER_LEVY, <<"RUB">>)
+                            %         }
+                            %     }},
                             cash_flow =
                                 {value, [
                                     ?cfpost(
