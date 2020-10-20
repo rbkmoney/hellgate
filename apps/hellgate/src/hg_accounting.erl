@@ -15,7 +15,7 @@
 -export([collect_account_map/6]).
 -export([collect_merchant_account_map/2]).
 -export([collect_provider_account_map/3]).
--export([collect_system_account_map/5]).
+-export([collect_system_account_map/4]).
 -export([collect_external_account_map/4]).
 
 -export([hold/2]).
@@ -97,7 +97,7 @@ create_account(CurrencyCode, Description) ->
 collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
     Map0 = collect_merchant_account_map(Shop, #{}),
     Map1 = collect_provider_account_map(Payment, Provider, Map0),
-    Map2 = collect_system_account_map(Payment, PaymentInstitution, VS, Revision, Map1),
+    Map2 = collect_system_account_map(Payment, PaymentInstitution, Revision, Map1),
     collect_external_account_map(Payment, VS, Revision, Map2).
 
 -spec collect_merchant_account_map(shop(), map()) -> map().
@@ -115,10 +115,10 @@ collect_provider_account_map(Payment, #domain_Provider{accounts = ProviderAccoun
         {provider, settlement} => ProviderAccount#domain_ProviderAccount.settlement
     }.
 
--spec collect_system_account_map(payment(), payment_institution(), varset(), revision(), map()) -> map().
-collect_system_account_map(Payment, PaymentInstitution, VS, Revision, Acc) ->
+-spec collect_system_account_map(payment(), payment_institution(), revision(), map()) -> map().
+collect_system_account_map(Payment, PaymentInstitution, Revision, Acc) ->
     Currency = get_currency(get_payment_cost(Payment)),
-    SystemAccount = hg_payment_institution:get_system_account(Currency, VS, Revision, PaymentInstitution),
+    SystemAccount = hg_payment_institution:get_system_account(Currency, Revision, PaymentInstitution),
     Acc#{
         {system, settlement} => SystemAccount#domain_SystemAccount.settlement,
         {system, subagent} => SystemAccount#domain_SystemAccount.subagent
