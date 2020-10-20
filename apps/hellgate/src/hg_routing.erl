@@ -132,18 +132,18 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([fail_rated_route()], reject_context(), risk_score() | any()) ->
+-spec choose_route([fail_rated_route()], reject_context(), risk_score() | undefined) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 choose_route(FailRatedRoutes, RejectContext, RiskScore) ->
     case check_risk_score(RiskScore) of
         ok ->
-            do_choose_route(FailRatedRoutes, RiskScore, RejectContext);
+            do_choose_route(FailRatedRoutes, RejectContext);
         {error, Reason} ->
             {error, {no_route_found, {Reason, RejectContext}}}
     end.
 
--spec check_risk_score(risk_score()) -> ok | {error, risk_score_is_too_high}.
+-spec check_risk_score(risk_score() | undefined) -> ok | {error, risk_score_is_too_high}.
 check_risk_score(fatal) ->
     {error, risk_score_is_too_high};
 check_risk_score(_RiskScore) ->
@@ -194,12 +194,12 @@ select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
     ),
     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
--spec do_choose_route([fail_rated_route()], risk_score() | any(), reject_context()) ->
+-spec do_choose_route([fail_rated_route()], reject_context()) ->
     {ok, route(), route_choice_meta()} |
     {error, {no_route_found, {unknown, reject_context()}}}.
-do_choose_route([] = _Routes, _RiskScore, RejectContext) ->
+do_choose_route([] = _Routes, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
-do_choose_route(Routes, _RiskScore, _RejectContext) ->
+do_choose_route(Routes, _RejectContext) ->
     BalancedRoutes = balance_routes(Routes),
     ScoredRoutes = score_routes(BalancedRoutes),
     {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
