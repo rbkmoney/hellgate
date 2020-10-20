@@ -440,6 +440,7 @@ build_chargeback_cash_flow(State, Opts) ->
     ServiceContext = build_service_cash_flow_context(State),
     ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
     ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap),
+    erlang:display({ProviderCashFlow, ProviderContext, AccountMap}),
     ProviderFinalCF = hg_cashflow:finalize(ProviderCashFlow, ProviderContext, AccountMap),
     ServiceFinalCF ++ ProviderFinalCF.
 
@@ -449,6 +450,7 @@ build_service_cash_flow_context(State) ->
 build_provider_cash_flow_context(State, Fees) ->
     FeesContext = #{operation_amount => get_body(State)},
     ComputedFees = maps:map(fun(_K, V) -> hg_cashflow:compute_volume(V, FeesContext) end, Fees),
+    erlang:display(ComputedFees),
     case get_target_status(State) of
         ?chargeback_status_rejected() ->
             ?cash(_Amount, SymCode) = get_body(State),
@@ -467,8 +469,13 @@ collect_chargeback_provider_cash_flow(ProviderTerms, VS, Revision) ->
 
 collect_chargeback_provider_fees(ProviderTerms, VS, Revision) ->
     #domain_PaymentChargebackProvisionTerms{fees = ProviderFeesSelector} = ProviderTerms,
-    Fees = reduce_selector(provider_chargeback_fees, ProviderFeesSelector, VS, Revision),
-    Fees#domain_Fees.fees.
+    case ProviderFeesSelector of
+        undefined ->
+            #{};
+        ProviderFeesSelector ->
+            Fees = reduce_selector(provider_chargeback_fees, ProviderFeesSelector, VS, Revision),
+            Fees#domain_Fees.fees
+    end.
 
 reduce_selector(Name, Selector, VS, Revision) ->
     case pm_selector:reduce(Selector, VS, Revision) of
