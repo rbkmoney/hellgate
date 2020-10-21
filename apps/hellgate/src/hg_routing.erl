@@ -488,23 +488,8 @@ acceptable_provider(Predestination, ProviderRef, VS, Revision) ->
         Client,
         Context
     ),
-    case Predestination of
-        payment ->
-            _ = acceptable_provision_payment_terms(Terms, VS);
-        recurrent_paytool ->
-            _ = acceptable_provision_recurrent_terms(Terms, VS);
-        recurrent_payment ->
-            % Use provider check combined from recurrent_paytool and payment check
-            _ = acceptable_provision_payment_terms(Terms, VS),
-            _ = acceptable_provision_recurrent_terms(Terms, VS)
-    end,
+    _ = check_terms_acceptability(Predestination, Terms, VS),
     {ProviderRef, Provider}.
-
-get_party_client() ->
-    HgContext = hg_context:load(),
-    Client = hg_context:get_party_client(HgContext),
-    Context = hg_context:get_party_client_context(HgContext),
-    {Client, Context}.
 
 %%
 
@@ -552,16 +537,7 @@ acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
         Client,
         Context
     ),
-    case Predestination of
-        payment ->
-            _ = acceptable_provision_payment_terms(Terms, VS);
-        recurrent_paytool ->
-            _ = acceptable_provision_recurrent_terms(Terms, VS);
-        recurrent_payment ->
-            % Use provider check combined from recurrent_paytool and payment check
-            _ = acceptable_provision_payment_terms(Terms, VS),
-            _ = acceptable_provision_recurrent_terms(Terms, VS)
-    end,
+    _ = check_terms_acceptability(Predestination, Terms, VS),
     {TerminalRef, hg_domain:get(Revision, {terminal, TerminalRef})}.
 
 -spec get_terminal_ref(provider_terminal_ref()) -> terminal_ref().
@@ -576,6 +552,21 @@ get_terminal_priority(#domain_ProviderTerminalRef{
     {Priority, Weight}.
 
 %%
+
+get_party_client() ->
+    HgContext = hg_context:load(),
+    Client = hg_context:get_party_client(HgContext),
+    Context = hg_context:get_party_client_context(HgContext),
+    {Client, Context}.
+
+check_terms_acceptability(payment, Terms, VS) ->
+    _ = acceptable_provision_payment_terms(Terms, VS);
+check_terms_acceptability(recurrent_paytool, Terms, VS) ->
+    _ = acceptable_provision_recurrent_terms(Terms, VS);
+check_terms_acceptability(recurrent_payment, Terms, VS) ->
+    % Use provider check combined from recurrent_paytool and payment check
+    _ = acceptable_provision_payment_terms(Terms, VS),
+    _ = acceptable_provision_recurrent_terms(Terms, VS).
 
 acceptable_provision_payment_terms(
     #domain_ProvisionTermSet{
