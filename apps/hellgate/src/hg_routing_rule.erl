@@ -108,14 +108,7 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
             #domain_Terminal{
                 provider_ref = ProviderRef
             } = hg_domain:get(Revision, {terminal, TerminalRef}),
-            {Client, Context} = get_party_client(),
-            {ok, Provider} = party_client_thrift:compute_provider(
-                ProviderRef,
-                Revision,
-                hg_varset:prepare_varset(VS),
-                Client,
-                Context
-            ),
+            Provider = hg_domain:get(Revision, {provider, ProviderRef}),
             try
                 {_, Terminal} = hg_routing:acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
                 {[{{ProviderRef, Provider}, {TerminalRef, Terminal, {Priority, Weight}}} | Accepted], Rejected}
@@ -145,12 +138,6 @@ filter_routes({Routes, Rejected}, Prohibitions) ->
         {[], Rejected},
         Routes
     ).
-
-get_party_client() ->
-    HgContext = hg_context:load(),
-    Client = hg_context:get_party_client(HgContext),
-    Context = hg_context:get_party_client_context(HgContext),
-    {Client, Context}.
 
 get_rule_set(RuleSetRef, Revision) ->
     hg_domain:get(Revision, {payment_routing_rules, RuleSetRef}).
