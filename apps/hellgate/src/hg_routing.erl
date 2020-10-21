@@ -625,11 +625,11 @@ acceptable_payment_terms(
     % TODO varsets getting mixed up
     %      it seems better to pass down here hierarchy of contexts w/ appropriate module accessors
     ParentName = 'PaymentsProvisionTerms',
-    _ = try_accept_term(ParentName, currency, CurrenciesSelector, VS),
-    _ = try_accept_term(ParentName, category, CategoriesSelector, VS),
-    _ = try_accept_term(ParentName, payment_tool, PMsSelector, VS),
-    _ = try_accept_term(ParentName, cost, CashLimitSelector, VS),
-    _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS),
+    _ = try_accept_term(ParentName, currency, getv(currency, VS), CurrenciesSelector),
+    _ = try_accept_term(ParentName, category, getv(category, VS), CategoriesSelector),
+    _ = try_accept_term(ParentName, payment_tool, getv(payment_tool, VS), PMsSelector),
+    _ = try_accept_term(ParentName, cost, getv(cost, VS), CashLimitSelector),
+    _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined)),
     _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined)),
     %% TODO Check chargeback terms when there will be any
     %% _ = acceptable_chargeback_terms(...)
@@ -637,14 +637,14 @@ acceptable_payment_terms(
 acceptable_payment_terms(undefined, _VS) ->
     throw(?rejected({'PaymentsProvisionTerms', undefined})).
 
-acceptable_holds_terms(_Terms, undefined, _VS) ->
+acceptable_holds_terms(_Terms, undefined) ->
     true;
-acceptable_holds_terms(_Terms, instant, _VS) ->
+acceptable_holds_terms(_Terms, instant) ->
     true;
-acceptable_holds_terms(Terms, {hold, Lifetime}, VS) ->
+acceptable_holds_terms(Terms, {hold, Lifetime}) ->
     case Terms of
         #domain_PaymentHoldsProvisionTerms{lifetime = LifetimeSelector} ->
-            _ = try_accept_term('PaymentHoldsProvisionTerms', lifetime, Lifetime, LifetimeSelector, VS),
+            _ = try_accept_term('PaymentHoldsProvisionTerms', lifetime, Lifetime, LifetimeSelector),
             true;
         undefined ->
             throw(?rejected({'PaymentHoldsProvisionTerms', undefined}))
@@ -741,19 +741,16 @@ acceptable_recurrent_paytool_terms(
     },
     VS
 ) ->
-    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', category, CategoriesSelector, VS),
-    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', payment_tool, PMsSelector, VS),
+    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', category, getv(category, VS), CategoriesSelector),
+    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', payment_tool, getv(payment_tool, VS), PMsSelector),
     true;
 acceptable_recurrent_paytool_terms(undefined, _VS) ->
     throw(?rejected({'RecurrentPaytoolsProvisionTerms', undefined})).
 
-try_accept_term(ParentName, Name, Selector, VS) ->
-    try_accept_term(ParentName, Name, getv(Name, VS), Selector, VS).
-
-try_accept_term(ParentName, Name, Value, Selector, _VS) when Selector /= undefined ->
+try_accept_term(ParentName, Name, Value, Selector) when Selector /= undefined ->
     Values = get_selector_value(Name, Selector),
     test_term(Name, Value, Values) orelse throw(?rejected({ParentName, Name}));
-try_accept_term(ParentName, Name, _Value, undefined, _VS) ->
+try_accept_term(ParentName, Name, _Value, undefined) ->
     throw(?rejected({ParentName, Name})).
 
 test_term(currency, V, Vs) ->
