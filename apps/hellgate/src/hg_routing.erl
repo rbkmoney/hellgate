@@ -490,13 +490,13 @@ acceptable_provider(Predestination, ProviderRef, VS, Revision) ->
     ),
     case Predestination of
         payment ->
-            _ = acceptable_provision_payment_terms(Terms, VS, Revision);
+            _ = acceptable_provision_payment_terms(Terms, VS);
         recurrent_paytool ->
-            _ = acceptable_provision_recurrent_terms(Terms, VS, Revision);
+            _ = acceptable_provision_recurrent_terms(Terms, VS);
         recurrent_payment ->
             % Use provider check combined from recurrent_paytool and payment check
-            _ = acceptable_provision_payment_terms(Terms, VS, Revision),
-            _ = acceptable_provision_recurrent_terms(Terms, VS, Revision)
+            _ = acceptable_provision_payment_terms(Terms, VS),
+            _ = acceptable_provision_recurrent_terms(Terms, VS)
     end,
     {ProviderRef, Provider}.
 
@@ -516,7 +516,7 @@ get_party_client() ->
 ) -> {[non_fail_rated_route()], [rejected_route()]}.
 collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revision) ->
     TerminalSelector = Provider#domain_Provider.terminal,
-    ProviderTerminalRefs = reduce(terminal, TerminalSelector, VS, Revision),
+    ProviderTerminalRefs = get_selector_value(terminal, TerminalSelector),
     lists:foldl(
         fun(ProviderTerminalRef, {Accepted, Rejected}) ->
             TerminalRef = get_terminal_ref(ProviderTerminalRef),
@@ -553,14 +553,14 @@ acceptable_terminal(payment, TerminalRef, Provider, VS, Revision) ->
     % TODO the ability to override any terms makes for uncommon sense
     %      is it better to allow to override only cash flow / refunds terms?
     Terms = merge_terms(ProviderTerms, TerminalTerms),
-    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, VS),
     {TerminalRef, Terminal};
 acceptable_terminal(recurrent_paytool, TerminalRef, Provider, VS, Revision) ->
     #domain_Provider{
         terms = Terms
     } = Provider,
     Terminal = hg_domain:get(Revision, {terminal, TerminalRef}),
-    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
+    _ = acceptable_provision_recurrent_terms(Terms, VS),
     {TerminalRef, Terminal};
 acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
     % Use provider check combined from recurrent_paytool and payment check
@@ -572,8 +572,8 @@ acceptable_terminal(recurrent_payment, TerminalRef, Provider, VS, Revision) ->
             terms = TerminalTerms
         } = hg_domain:get(Revision, {terminal, TerminalRef}),
     Terms = merge_terms(ProviderTerms, TerminalTerms),
-    _ = acceptable_provision_payment_terms(Terms, VS, Revision),
-    _ = acceptable_provision_recurrent_terms(Terms, VS, Revision),
+    _ = acceptable_provision_payment_terms(Terms, VS),
+    _ = acceptable_provision_recurrent_terms(Terms, VS),
     {TerminalRef, Terminal}.
 
 -spec get_terminal_ref(provider_terminal_ref()) -> terminal_ref().
@@ -593,24 +593,22 @@ acceptable_provision_payment_terms(
     #domain_ProvisionTermSet{
         payments = PaymentTerms
     },
-    VS,
-    Revision
+    VS
 ) ->
-    _ = acceptable_payment_terms(PaymentTerms, VS, Revision),
+    _ = acceptable_payment_terms(PaymentTerms, VS),
     true;
-acceptable_provision_payment_terms(undefined, _VS, _Revision) ->
+acceptable_provision_payment_terms(undefined, _VS) ->
     throw(?rejected({'ProvisionTermSet', undefined})).
 
 acceptable_provision_recurrent_terms(
     #domain_ProvisionTermSet{
         recurrent_paytools = RecurrentTerms
     },
-    VS,
-    Revision
+    VS
 ) ->
-    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS, Revision),
+    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS),
     true;
-acceptable_provision_recurrent_terms(undefined, _VS, _Revision) ->
+acceptable_provision_recurrent_terms(undefined, _VS) ->
     throw(?rejected({'ProvisionTermSet', undefined})).
 
 acceptable_payment_terms(
@@ -622,69 +620,65 @@ acceptable_payment_terms(
         holds = HoldsTerms,
         refunds = RefundsTerms
     },
-    VS,
-    Revision
+    VS
 ) ->
     % TODO varsets getting mixed up
     %      it seems better to pass down here hierarchy of contexts w/ appropriate module accessors
     ParentName = 'PaymentsProvisionTerms',
-    _ = try_accept_term(ParentName, currency, CurrenciesSelector, VS, Revision),
-    _ = try_accept_term(ParentName, category, CategoriesSelector, VS, Revision),
-    _ = try_accept_term(ParentName, payment_tool, PMsSelector, VS, Revision),
-    _ = try_accept_term(ParentName, cost, CashLimitSelector, VS, Revision),
-    _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
-    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
+    _ = try_accept_term(ParentName, currency, CurrenciesSelector, VS),
+    _ = try_accept_term(ParentName, category, CategoriesSelector, VS),
+    _ = try_accept_term(ParentName, payment_tool, PMsSelector, VS),
+    _ = try_accept_term(ParentName, cost, CashLimitSelector, VS),
+    _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS),
+    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS),
     %% TODO Check chargeback terms when there will be any
     %% _ = acceptable_chargeback_terms(...)
     true;
-acceptable_payment_terms(undefined, _VS, _Revision) ->
+acceptable_payment_terms(undefined, _VS) ->
     throw(?rejected({'PaymentsProvisionTerms', undefined})).
 
-acceptable_holds_terms(_Terms, undefined, _VS, _Revision) ->
+acceptable_holds_terms(_Terms, undefined, _VS) ->
     true;
-acceptable_holds_terms(_Terms, instant, _VS, _Revision) ->
+acceptable_holds_terms(_Terms, instant, _VS) ->
     true;
-acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
+acceptable_holds_terms(Terms, {hold, Lifetime}, VS) ->
     case Terms of
         #domain_PaymentHoldsProvisionTerms{lifetime = LifetimeSelector} ->
-            _ = try_accept_term('PaymentHoldsProvisionTerms', lifetime, Lifetime, LifetimeSelector, VS, Revision),
+            _ = try_accept_term('PaymentHoldsProvisionTerms', lifetime, Lifetime, LifetimeSelector, VS),
             true;
         undefined ->
             throw(?rejected({'PaymentHoldsProvisionTerms', undefined}))
     end.
 
-acceptable_refunds_terms(_Terms, undefined, _VS, _Revision) ->
+acceptable_refunds_terms(_Terms, undefined, _VS) ->
     true;
 acceptable_refunds_terms(
     #domain_PaymentRefundsProvisionTerms{
         partial_refunds = PartialRefundsTerms
     },
     RVS,
-    VS,
-    Revision
+    VS
 ) ->
     _ = acceptable_partial_refunds_terms(
         PartialRefundsTerms,
         getv(partial, RVS, undefined),
-        VS,
-        Revision
+        VS
     ),
     true;
-acceptable_refunds_terms(undefined, _RVS, _VS, _Revision) ->
+acceptable_refunds_terms(undefined, _RVS, _VS) ->
     throw(?rejected({'PaymentRefundsProvisionTerms', undefined})).
 
-acceptable_partial_refunds_terms(_Terms, undefined, _VS, _Revision) ->
+acceptable_partial_refunds_terms(_Terms, undefined, _VS) ->
     true;
 acceptable_partial_refunds_terms(
     #domain_PartialRefundsProvisionTerms{cash_limit = CashLimitSelector},
     #{cash_limit := MerchantLimit},
-    VS,
-    Revision
+    _VS
 ) ->
-    ProviderLimit = reduce(cash_limit, CashLimitSelector, VS, Revision),
+    ProviderLimit = get_selector_value(cash_limit, CashLimitSelector),
     hg_cash_range:is_subrange(MerchantLimit, ProviderLimit) == true orelse
         throw(?rejected({'PartialRefundsProvisionTerms', cash_limit}));
-acceptable_partial_refunds_terms(undefined, _RVS, _VS, _Revision) ->
+acceptable_partial_refunds_terms(undefined, _RVS, _VS) ->
     throw(?rejected({'PartialRefundsProvisionTerms', undefined})).
 
 merge_terms(
@@ -748,22 +742,21 @@ acceptable_recurrent_paytool_terms(
         categories = CategoriesSelector,
         payment_methods = PMsSelector
     },
-    VS,
-    Revision
+    VS
 ) ->
-    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', category, CategoriesSelector, VS, Revision),
-    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', payment_tool, PMsSelector, VS, Revision),
+    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', category, CategoriesSelector, VS),
+    _ = try_accept_term('RecurrentPaytoolsProvisionTerms', payment_tool, PMsSelector, VS),
     true;
-acceptable_recurrent_paytool_terms(undefined, _VS, _Revision) ->
+acceptable_recurrent_paytool_terms(undefined, _VS) ->
     throw(?rejected({'RecurrentPaytoolsProvisionTerms', undefined})).
 
-try_accept_term(ParentName, Name, Selector, VS, Revision) ->
-    try_accept_term(ParentName, Name, getv(Name, VS), Selector, VS, Revision).
+try_accept_term(ParentName, Name, Selector, VS) ->
+    try_accept_term(ParentName, Name, getv(Name, VS), Selector, VS).
 
-try_accept_term(ParentName, Name, Value, Selector, VS, Revision) when Selector /= undefined ->
-    Values = reduce(Name, Selector, VS, Revision),
+try_accept_term(ParentName, Name, Value, Selector, _VS) when Selector /= undefined ->
+    Values = get_selector_value(Name, Selector),
     test_term(Name, Value, Values) orelse throw(?rejected({ParentName, Name}));
-try_accept_term(ParentName, Name, _Value, undefined, _VS, _Revision) ->
+try_accept_term(ParentName, Name, _Value, undefined, _VS) ->
     throw(?rejected({ParentName, Name})).
 
 test_term(currency, V, Vs) ->
@@ -778,14 +771,6 @@ test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
     Lifetime =< Allowed.
 
 %%
-
-reduce(Name, S, VS, Revision) ->
-    case pm_selector:reduce(S, VS, Revision) of
-        {value, V} ->
-            V;
-        Ambiguous ->
-            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
-    end.
 
 get_selector_value(Name, Selector) ->
     case Selector of
