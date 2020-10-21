@@ -212,12 +212,13 @@ fatal_risk_score_for_route_found(_C) ->
         cost => ?cash(1000, <<"RUB">>),
         party_id => <<"12345">>,
         flow => instant,
-        payment_tool => {bank_card, #domain_BankCard{
-            token = <<"token">>,
-            payment_system = maestro,
-            bin = <<"424242">>,
-            last_digits = <<"4242">>
-        }}
+        payment_tool =>
+            {bank_card, #domain_BankCard{
+                token = <<"token">>,
+                payment_system = maestro,
+                bin = <<"424242">>,
+                last_digits = <<"4242">>
+            }}
     },
     RiskScore = fatal,
     {Routes0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS0, Revision),
@@ -264,12 +265,13 @@ no_route_found_for_payment(_C) ->
         cost => ?cash(1000, <<"RUB">>),
         party_id => <<"12345">>,
         flow => instant,
-        payment_tool => {bank_card, #domain_BankCard{
-            token = <<"token">>,
-            payment_system = maestro,
-            bin = <<"424242">>,
-            last_digits = <<"4242">>
-        }}
+        payment_tool =>
+            {bank_card, #domain_BankCard{
+                token = <<"token">>,
+                payment_system = maestro,
+                bin = <<"424242">>,
+                last_digits = <<"4242">>
+            }}
     },
     RiskScore = low,
 
