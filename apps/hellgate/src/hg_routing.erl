@@ -630,7 +630,7 @@ acceptable_payment_terms(
     _ = try_accept_term(ParentName, payment_tool, PMsSelector, VS),
     _ = try_accept_term(ParentName, cost, CashLimitSelector, VS),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS),
-    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS),
+    _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined)),
     %% TODO Check chargeback terms when there will be any
     %% _ = acceptable_chargeback_terms(...)
     true;
@@ -650,35 +650,32 @@ acceptable_holds_terms(Terms, {hold, Lifetime}, VS) ->
             throw(?rejected({'PaymentHoldsProvisionTerms', undefined}))
     end.
 
-acceptable_refunds_terms(_Terms, undefined, _VS) ->
+acceptable_refunds_terms(_Terms, undefined) ->
     true;
 acceptable_refunds_terms(
     #domain_PaymentRefundsProvisionTerms{
         partial_refunds = PartialRefundsTerms
     },
-    RVS,
-    VS
+    RVS
 ) ->
     _ = acceptable_partial_refunds_terms(
         PartialRefundsTerms,
-        getv(partial, RVS, undefined),
-        VS
+        getv(partial, RVS, undefined)
     ),
     true;
-acceptable_refunds_terms(undefined, _RVS, _VS) ->
+acceptable_refunds_terms(undefined, _RVS) ->
     throw(?rejected({'PaymentRefundsProvisionTerms', undefined})).
 
-acceptable_partial_refunds_terms(_Terms, undefined, _VS) ->
+acceptable_partial_refunds_terms(_Terms, undefined) ->
     true;
 acceptable_partial_refunds_terms(
     #domain_PartialRefundsProvisionTerms{cash_limit = CashLimitSelector},
-    #{cash_limit := MerchantLimit},
-    _VS
+    #{cash_limit := MerchantLimit}
 ) ->
     ProviderLimit = get_selector_value(cash_limit, CashLimitSelector),
     hg_cash_range:is_subrange(MerchantLimit, ProviderLimit) == true orelse
         throw(?rejected({'PartialRefundsProvisionTerms', cash_limit}));
-acceptable_partial_refunds_terms(undefined, _RVS, _VS) ->
+acceptable_partial_refunds_terms(undefined, _RVS) ->
     throw(?rejected({'PartialRefundsProvisionTerms', undefined})).
 
 merge_terms(
