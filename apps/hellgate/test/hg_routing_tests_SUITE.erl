@@ -80,26 +80,18 @@ init_per_suite(C) ->
         woody,
         scoper,
         dmt_client,
-        party_client,
         hellgate,
         snowflake,
         {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture()),
-    PartyID = hg_utils:unique_id(),
-    PartyClient = party_client:create_client(),
+
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
     FDConfig = genlib_app:env(hellgate, fault_detector),
     application:set_env(hellgate, fault_detector, FDConfig#{enabled => true}),
     _ = unlink(SupPid),
-    [
-        {apps, Apps},
-        {test_sup, SupPid},
-        {party_client, PartyClient},
-        {party_id, PartyID}
-        | C
-    ].
+    [{apps, Apps}, {test_sup, SupPid} | C].
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -130,21 +122,10 @@ end_per_group(_GroupName, C) ->
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 init_per_testcase(_, C) ->
-    Ctx0 = hg_context:set_party_client(cfg(party_client, C), hg_context:create()),
-    Ctx1 = hg_context:set_user_identity(
-        #{
-            id => cfg(party_id, C),
-            realm => <<"internal">>
-        },
-        Ctx0
-    ),
-    Ctx2 = hg_context:set_party_client_context(#{woody_context => woody_context:new()}, Ctx1),
-    ok = hg_context:save(Ctx2),
     C.
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
 end_per_testcase(_Name, _C) ->
-    ok = hg_context:cleanup(),
     ok.
 
 cfg(Key, C) ->
@@ -152,6 +133,7 @@ cfg(Key, C) ->
 
 -spec handle_uncomputable_provider_terms(config()) -> test_return().
 handle_uncomputable_provider_terms(_C) ->
+    ok = hg_context:save(hg_context:create()),
     VS0 = #{
         category => ?cat(1),
         currency => ?cur(<<"EUR">>),
@@ -182,6 +164,8 @@ handle_uncomputable_provider_terms(_C) ->
 
 -spec gathers_fail_rated_routes(config()) -> test_return().
 gathers_fail_rated_routes(_C) ->
+    ok = hg_context:save(hg_context:create()),
+
     VS = #{
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
@@ -200,25 +184,22 @@ gathers_fail_rated_routes(_C) ->
         {{?prv(201), _}, _, {{alive, 0.1}, {normal, 0.1}}},
         {{?prv(202), _}, _, {{alive, 0.0}, {normal, 0.0}}}
     ] = Result,
+
+    hg_context:cleanup(),
     ok.
 
 -spec fatal_risk_score_for_route_found(config()) -> test_return().
 fatal_risk_score_for_route_found(_C) ->
+    ok = hg_context:save(hg_context:create()),
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     VS0 = #{
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
+        payment_tool => {bank_card, #domain_BankCard{}},
         party_id => <<"12345">>,
-        flow => instant,
-        payment_tool =>
-            {bank_card, #domain_BankCard{
-                token = <<"token">>,
-                payment_system = maestro,
-                bin = <<"424242">>,
-                last_digits = <<"4242">>
-            }}
+        flow => instant
     },
     RiskScore = fatal,
     {Routes0, RejectContext0} = hg_routing:gather_routes(payment, PaymentInstitution, VS0, Revision),
@@ -255,23 +236,19 @@ fatal_risk_score_for_route_found(_C) ->
                 ],
                 rejected_routes := []
             }}}} = Result1,
+    hg_context:cleanup(),
     ok.
 
 -spec no_route_found_for_payment(config()) -> test_return().
 no_route_found_for_payment(_C) ->
+    ok = hg_context:save(hg_context:create()),
     VS0 = #{
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
+        payment_tool => {bank_card, #domain_BankCard{}},
         party_id => <<"12345">>,
-        flow => instant,
-        payment_tool =>
-            {bank_card, #domain_BankCard{
-                token = <<"token">>,
-                payment_system = maestro,
-                bin = <<"424242">>,
-                last_digits = <<"4242">>
-            }}
+        flow => instant
     },
     RiskScore = low,
 
@@ -320,6 +297,7 @@ no_route_found_for_payment(_C) ->
             terminal = ?trm(10)
         },
         _Meta} = hg_routing:choose_route(FailRatedRoutes1, RejectContext1, RiskScore),
+    hg_context:cleanup(),
     ok.
 
 -spec prefer_alive(config()) -> test_return().
@@ -560,6 +538,7 @@ prefer_weight_over_conversion(_C) ->
 
 -spec terminal_priority_for_shop(config()) -> test_return().
 terminal_priority_for_shop(C) ->
+    ok = hg_context:save(hg_context:create()),
     {ok,
         #domain_PaymentRoute{
             provider = ?prv(300),
@@ -571,7 +550,8 @@ terminal_priority_for_shop(C) ->
             provider = ?prv(300),
             terminal = ?trm(222)
         },
-        _Meta1} = terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C).
+        _Meta1} = terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C),
+    ok = hg_context:cleanup().
 
 terminal_priority_for_shop(PartyID, ShopID, _C) ->
     VS = #{
