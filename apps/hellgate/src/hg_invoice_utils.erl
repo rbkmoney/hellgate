@@ -15,9 +15,10 @@
 -export([assert_shop_operable/1]).
 -export([assert_contract_active/1]).
 -export([assert_cost_payable/5]).
--export([compute_shop_terms/5]).
+-export([compute_shop_terms/6]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
+-export([get_identification_level/2]).
 
 -type amount() :: dmsl_domain_thrift:'Amount'().
 -type currency() :: dmsl_domain_thrift:'CurrencyRef'().
@@ -35,6 +36,8 @@
 -type timestamp() :: dmsl_base_thrift:'Timestamp'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+-type identification_level() :: dmsl_domain_thrift:'ContractorIdentificationLevel'().
+-type varset() :: dmsl_payment_processing_thrift:'Varset'().
 
 -spec validate_cost(cash(), shop()) -> ok.
 validate_cost(#domain_Cash{currency = Currency, amount = Amount}, Shop) ->
@@ -145,9 +148,9 @@ collect_validation_varset(Cost, Party, Shop) ->
         currency => Currency
     }.
 
--spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param()) -> term_set().
-compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision) ->
-    Args = {UserInfo, PartyID, ShopID, Timestamp, PartyRevision},
+-spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param(), varset()) -> term_set().
+compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision, Varset) ->
+    Args = {UserInfo, PartyID, ShopID, Timestamp, PartyRevision, Varset},
     {ok, TermSet} = hg_woody_wrapper:call(party_management, 'ComputeShopTerms', Args),
     TermSet.
 
@@ -197,3 +200,17 @@ check_deadline(Deadline) ->
         _ ->
             {error, deadline_reached}
     end.
+
+-spec get_identification_level(contract(), party()) ->
+    identification_level().
+get_identification_level(#domain_Contract{contractor_id = undefined, contractor = Contractor}, _) ->
+    %% TODO legacy, remove after migration
+    case Contractor of
+        {legal_entity, _} ->
+            full;
+        _ ->
+            none
+    end;
+get_identification_level(#domain_Contract{contractor_id = ContractorID}, #domain_Party{contractors = Contractors}) ->
+    Contractor = maps:get(ContractorID, Contractors, undefined),
+    Contractor#domain_PartyContractor.status.
