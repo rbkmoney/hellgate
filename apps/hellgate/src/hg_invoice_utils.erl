@@ -148,7 +148,8 @@ collect_validation_varset(Cost, Party, Shop) ->
         currency => Currency
     }.
 
--spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param(), varset()) -> term_set().
+-spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param(), varset()) ->
+    term_set().
 compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision, Varset) ->
     Args = {UserInfo, PartyID, ShopID, Timestamp, PartyRevision, Varset},
     {ok, TermSet} = hg_woody_wrapper:call(party_management, 'ComputeShopTerms', Args),
@@ -201,8 +202,7 @@ check_deadline(Deadline) ->
             {error, deadline_reached}
     end.
 
--spec get_identification_level(contract(), party()) ->
-    identification_level().
+-spec get_identification_level(contract(), party()) -> identification_level().
 get_identification_level(#domain_Contract{contractor_id = undefined, contractor = Contractor}, _) ->
     %% TODO legacy, remove after migration
     case Contractor of
