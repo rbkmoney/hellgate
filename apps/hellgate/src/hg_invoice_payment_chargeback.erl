@@ -468,8 +468,13 @@ collect_chargeback_provider_cash_flow(ProviderTerms, VS, Revision) ->
 
 collect_chargeback_provider_fees(ProviderTerms, VS, Revision) ->
     #domain_PaymentChargebackProvisionTerms{fees = ProviderFeesSelector} = ProviderTerms,
-    Fees = reduce_selector(provider_chargeback_fees, ProviderFeesSelector, VS, Revision),
-    Fees#domain_Fees.fees.
+    case ProviderFeesSelector of
+        undefined ->
+            #{};
+        ProviderFeesSelector ->
+            Fees = reduce_selector(provider_chargeback_fees, ProviderFeesSelector, VS, Revision),
+            Fees#domain_Fees.fees
+    end.
 
 reduce_selector(Name, Selector, VS, Revision) ->
     case pm_selector:reduce(Selector, VS, Revision) of

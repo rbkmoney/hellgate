@@ -96,6 +96,7 @@
 -export([cancel_payment_chargeback_refund/1]).
 -export([reject_payment_chargeback_inconsistent/1]).
 -export([reject_payment_chargeback/1]).
+-export([reject_payment_chargeback_no_fees/1]).
 -export([reject_payment_chargeback_new_levy/1]).
 -export([accept_payment_chargeback_inconsistent/1]).
 -export([accept_payment_chargeback_exceeded/1]).
@@ -294,6 +295,7 @@ groups() ->
             cancel_payment_chargeback_refund,
             reject_payment_chargeback_inconsistent,
             reject_payment_chargeback,
+            reject_payment_chargeback_no_fees,
             reject_payment_chargeback_new_levy,
             accept_payment_chargeback_inconsistent,
             accept_payment_chargeback_exceeded,
@@ -2479,6 +2481,41 @@ reject_payment_chargeback(C) ->
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)).
 
+-spec reject_payment_chargeback_no_fees(config()) -> _ | no_return().
+reject_payment_chargeback_no_fees(C) ->
+    Client = cfg(client, C),
+    Cost = 42000,
+    Fee = 1890,
+    Paid = Cost - Fee,
+    LevyAmount = 4000,
+    Levy = ?cash(LevyAmount, <<"RUB">>),
+    CBParams = make_chargeback_params(Levy),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_wallet_payment_params()),
+    CBID = CB#domain_InvoicePaymentChargeback.id,
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    Settlement0 = hg_ct_helper:get_balance(SID),
+    RejectParams = make_chargeback_reject_params(Levy),
+    ok = hg_client_invoicing:reject_chargeback(IID, PID, CBID, RejectParams, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_target_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(IID, Client),
+    [
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_rejected())))
+    ] = next_event(IID, Client),
+    Settlement1 = hg_ct_helper:get_balance(SID),
+    ?assertEqual(Paid - Cost - LevyAmount, maps:get(min_available_amount, Settlement0)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
+    ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)).
+
 -spec reject_payment_chargeback_new_levy(config()) -> _ | no_return().
 reject_payment_chargeback_new_levy(C) ->
     Client = cfg(client, C),
@@ -3377,6 +3414,9 @@ reopen_payment_chargeback_arbitration_reopen_fails(C) ->
 %% CHARGEBACK HELPERS
 
 start_chargeback(C, Cost, CBParams) ->
+    start_chargeback(C, Cost, CBParams, make_payment_params()).
+
+start_chargeback(C, Cost, CBParams, PaymentParams) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
@@ -3389,7 +3429,7 @@ start_chargeback(C, Cost, CBParams) ->
     Fee = 1890,
     ?assertEqual(0, maps:get(min_available_amount, Settlement0)),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     Settlement1 = hg_ct_helper:get_balance(SettlementID),
     ?assertEqual(Cost - Fee, maps:get(min_available_amount, Settlement1)),
@@ -5723,6 +5763,7 @@ construct_domain_fixture() ->
             payment_methods =
                 {value,
                     ?ordset([
+                        ?pmt(digital_wallet, qiwi),
                         ?pmt(bank_card_deprecated, visa),
                         ?pmt(bank_card_deprecated, mastercard)
                     ])},
@@ -6163,11 +6204,13 @@ construct_domain_fixture() ->
                         categories =
                             {value,
                                 ?ordset([
-                                    ?cat(1)
+                                    ?cat(1),
+                                    ?cat(2)
                                 ])},
                         payment_methods =
                             {value,
                                 ?ordset([
+                                    ?pmt(digital_wallet, qiwi),
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
@@ -6183,6 +6226,27 @@ construct_domain_fixture() ->
                                 )},
                         cash_flow =
                             {decisions, [
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {digital_wallet, #domain_DigitalWalletCondition{
+                                                    definition = {provider_is, qiwi}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(18, 1000, operation_amount)
+                                            )
+                                        ]}
+                                },
                                 #domain_CashFlowDecision{
                                     if_ =
                                         {condition,
