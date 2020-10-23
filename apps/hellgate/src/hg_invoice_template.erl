@@ -98,21 +98,23 @@ handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _
     Party = hg_party:get_party(PartyID),
     Shop = hg_party:get_shop(ShopID, Party),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    VS = hg_varset:prepare_varset(#{
+    Cost = case Tpl#domain_InvoiceTemplate.details of
+        {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
+           Cash;
+        _ ->
+            undefined
+    end,
+    VS0 = #{
         party_id => PartyID,
         shop_id => ShopID,
         category => Shop#domain_Shop.category,
         currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
-        identification_level => hg_invoice_utils:get_identification_level(Contract, Party)
-    }),
-    ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision1, VS),
-    case Tpl#domain_InvoiceTemplate.details of
-        {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
-            Revision = hg_domain:head(),
-            pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
-        _ ->
-            ShopTerms
-    end.
+        identification_level => hg_invoice_utils:get_identification_level(Contract, Party),
+        cost => Cost
+    },
+    VS = hg_varset:prepare_varset(genlib_map:compact(VS0)),
+    hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision1, VS).
+
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
