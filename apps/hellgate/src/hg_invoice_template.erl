@@ -98,12 +98,13 @@ handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _
     Party = hg_party:get_party(PartyID),
     Shop = hg_party:get_shop(ShopID, Party),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    Cost = case Tpl#domain_InvoiceTemplate.details of
-        {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
-           Cash;
-        _ ->
-            undefined
-    end,
+    Cost =
+        case Tpl#domain_InvoiceTemplate.details of
+            {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
+                Cash;
+            _ ->
+                undefined
+        end,
     VS0 = #{
         party_id => PartyID,
         shop_id => ShopID,
@@ -114,7 +115,6 @@ handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _
     },
     VS = hg_varset:prepare_varset(genlib_map:compact(VS0)),
     hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision1, VS).
-
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
