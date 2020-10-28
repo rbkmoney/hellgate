@@ -140,6 +140,13 @@ handle_function_('GetShopAccount', {UserInfo, PartyID, ShopID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = pm_party_machine:get_party(PartyID),
     pm_party:get_shop_account(ShopID, Party);
+%% Routes
+
+handle_function_('CollectRoutes', Args, _Opts) ->
+    {UserInfo, Predestination, PaymentInstitution, Revision, Varset} = Args,
+    ok = assume_user_identity(UserInfo),
+    VS = prepare_varset(Varset),
+    pm_routing:collect_routes(Predestination, PaymentInstitution, VS, Revision);
 %% Providers
 
 handle_function_('ComputeProvider', Args, _Opts) ->
