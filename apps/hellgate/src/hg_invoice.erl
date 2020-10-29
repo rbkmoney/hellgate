@@ -228,17 +228,13 @@ handle_function_('ComputeTerms', {UserInfo, InvoiceID, PartyRevision0}, _Opts) -
         identification_level => hg_invoice_utils:get_identification_level(Contract, Party),
         cost => Cash
     }),
-    ShopTerms = hg_invoice_utils:compute_shop_terms(
+    hg_invoice_utils:compute_shop_terms(
         PartyID,
         ShopID,
         Timestamp,
         PartyRevision1,
         VS
-    ),
-    % TODO: remove once PM is updated
-    Revision = hg_domain:head(),
-    Cash = get_cost(St),
-    pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
+    );
 handle_function_(Fun, Args, _Opts) when
     Fun =:= 'StartPayment' orelse
         Fun =:= 'CapturePayment' orelse

@@ -114,16 +114,7 @@ handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _
         cost => Cost
     },
     VS = hg_varset:prepare_varset(genlib_map:compact(VS0)),
-    ShopTerms = hg_invoice_utils:compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision1, VS),
-    % TODO: remove once PM is updated
-    case Cost of
-        undefined ->
-            ShopTerms;
-        _ ->
-            Revision = hg_domain:head(),
-            pm_party:reduce_terms(ShopTerms, #{cost => Cost}, Revision)
-    end.
-
+    hg_invoice_utils:compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision1, VS).
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
