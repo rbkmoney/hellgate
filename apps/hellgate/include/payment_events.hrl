@@ -356,4 +356,8 @@
     {failed, #domain_InvoicePaymentRefundFailed{failure = Failure}}
 ).
 
+-define(payment_terminal_reciept(SPID, DueDate),
+    {payment_terminal_reciept, {'PaymentTerminalReceipt', SPID, DueDate}}
+).
+
 -endif.
