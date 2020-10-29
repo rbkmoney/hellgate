@@ -115,6 +115,7 @@ handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _
     },
     VS = hg_varset:prepare_varset(genlib_map:compact(VS0)),
     hg_invoice_utils:compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision1, VS).
+
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
 
