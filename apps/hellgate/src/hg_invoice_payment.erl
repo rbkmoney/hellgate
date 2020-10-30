@@ -3051,13 +3051,14 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
     St1 = update_session(Target, Session, St),
     % FIXME leaky transactions
     St2 = set_trx(get_session_trx(Session), St1),
-    St3 = case Event of
-        ?interaction_requested(?payment_terminal_reciept(ShortID, _)) ->
-            Payment = get_payment(St2),
-            St2#st{payment = Payment#domain_InvoicePayment{short_payment_id = ShortID}};
-        _ ->
-            St2
-    end,
+    St3 =
+        case Event of
+            ?interaction_requested(?payment_terminal_reciept(ShortID, _)) ->
+                Payment = get_payment(St2),
+                St2#st{payment = Payment#domain_InvoicePayment{short_payment_id = ShortID}};
+            _ ->
+                St2
+        end,
     case Session of
         #{status := finished, result := ?session_succeeded()} ->
             NextActivity =
