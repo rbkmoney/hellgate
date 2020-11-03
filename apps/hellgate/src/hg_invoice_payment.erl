@@ -150,7 +150,8 @@
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
     latest_change_at :: undefined | hg_datetime:timestamp(),
-    clock :: undefined | clock()
+    clock :: undefined | clock(),
+    adjustment_clock :: undefined | clock()
 }).
 
 -record(refund_st, {
@@ -1412,7 +1413,6 @@ collect_refund_cashflow(
 
 prepare_refund_cashflow(RefundSt, St = #st{clock = Clock}) ->
     #{timestamp := Timestamp} = get_opts(St),
-    erlang:display(Timestamp),
     hg_accounting:hold(
         construct_refund_plan_id(RefundSt, St),
         get_refund_cashflow_plan(RefundSt),
@@ -1438,7 +1438,6 @@ rollback_refund_cashflow(RefundSt, St) ->
         undefined -> St#st.clock;
         RefundClock -> RefundClock
     end,
-    erlang:display({'CLOCK', Clock}),
     #{timestamp := Timestamp} = get_opts(St),
     hg_accounting:rollback(
         construct_refund_plan_id(RefundSt, St),
@@ -1721,7 +1720,6 @@ finalize_adjustment(ID, Intent, St, Options = #{timestamp := Timestamp}) ->
     Adjustment = get_adjustment(ID, St),
     ok = assert_adjustment_status(processed, Adjustment),
     Clock = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
-    erlang:display({'CLOCK', Clock}),
     Status =
         case Intent of
             capture ->
@@ -1729,24 +1727,23 @@ finalize_adjustment(ID, Intent, St, Options = #{timestamp := Timestamp}) ->
             cancel ->
                 ?adjustment_cancelled(Timestamp)
         end,
+    ClockEvent = ?adjustment_ev(ID, ?adjustment_clock_update(Clock)),
     Event = ?adjustment_ev(ID, ?adjustment_status_changed(Status)),
-    {ok, {[Event], hg_machine_action:new()}}.
+    {ok, {[ClockEvent, Event], hg_machine_action:new()}}.
 
-prepare_adjustment_cashflow(Adjustment, St, Options) ->
-    #{timestamp := Timestamp} = get_opts(St),
+prepare_adjustment_cashflow(Adjustment, St, Options = #{timestamp := Timestamp}) ->
     PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
     Plan = get_adjustment_cashflow_plan(Adjustment),
-    plan(PlanID, Plan, Timestamp).
+    plan(PlanID, Plan, Timestamp, St#st.clock).
 
-finalize_adjustment_cashflow(Intent, Adjustment, St, Options) ->
-    #{timestamp := Timestamp} = get_opts(St),
+finalize_adjustment_cashflow(Intent, Adjustment, St, Options = #{timestamp := Timestamp}) ->
     PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
     Plan = get_adjustment_cashflow_plan(Adjustment),
     case Intent of
         capture ->
-            commit(PlanID, Plan, Timestamp);
+            commit(PlanID, Plan, Timestamp, St#st.adjustment_clock);
         cancel ->
-            rollback(PlanID, Plan, Timestamp)
+            rollback(PlanID, Plan, Timestamp, St#st.adjustment_clock)
     end.
 
 get_adjustment_cashflow_plan(#domain_InvoicePaymentAdjustment{
@@ -1762,20 +1759,20 @@ number_plan([[] | Tail], Number, Acc) ->
 number_plan([NonEmpty | Tail], Number, Acc) ->
     number_plan(Tail, Number + 1, [{Number, NonEmpty} | Acc]).
 
-plan(_PlanID, [], _Timestamp) ->
-    undefined;
-plan(PlanID, Plan, Timestamp) ->
+plan(_PlanID, [], _Timestamp, Clock) ->
+    Clock;
+plan(PlanID, Plan, Timestamp, _Clock) ->
     hg_accounting:plan(PlanID, Plan, Timestamp).
 
-commit(_PlanID, [], _Timestamp) ->
-    undefined;
-commit(PlanID, Plan, Timestamp) ->
-    hg_accounting:commit(PlanID, Plan, Timestamp).
+commit(_PlanID, [], _Timestamp, Clock) ->
+    Clock;
+commit(PlanID, Plan, Timestamp, Clock) ->
+    hg_accounting:commit(PlanID, Plan, Timestamp, Clock).
 
-rollback(_PlanID, [], _Timestamp) ->
-    undefined;
-rollback(PlanID, Plan, Timestamp) ->
-    hg_accounting:rollback(PlanID, Plan, Timestamp).
+rollback(_PlanID, [], _Timestamp, Clock) ->
+    Clock;
+rollback(PlanID, Plan, Timestamp, Clock) ->
+    hg_accounting:rollback(PlanID, Plan, Timestamp, Clock).
 
 assert_adjustment_status(Status, #domain_InvoicePaymentAdjustment{status = {Status, _}}) ->
     ok;
@@ -1918,7 +1915,7 @@ process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) 
         {1, FinalCashflow},
         Timestamp
     ),
-    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow), ?clock_update(Clock)],
+    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow), ?payment_clock_update(Clock)],
     {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
@@ -1962,7 +1959,7 @@ process_refund_cashflow(ID, Action, St) ->
     case get_available_amount(SettlementID, Clock) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
-            Events0 = [?clock_update(Clock), ?session_ev(?refunded(), ?session_started())],
+            Events0 = [?refund_clock_update(Clock), ?session_ev(?refunded(), ?session_started())],
             Events1 = get_manual_refund_events(RefundSt),
             {next, {
                 [?refund_ev(ID, C) || C <- Events0 ++ Events1],
@@ -1993,8 +1990,10 @@ process_adjustment_cashflow(ID, _Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
     Clock = prepare_adjustment_cashflow(Adjustment, St, Opts),
-    erlang:display({'CLOCK', Clock}),
-    Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
+    Events = [
+        ?adjustment_ev(ID, ?adjustment_clock_update(Clock)),
+        ?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))
+    ],
     {done, {Events, hg_machine_action:new()}}.
 
 process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
@@ -2016,9 +2015,8 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
         Timestamp,
         St#st.clock
     ),
-    erlang:display({'UNUSED CLOCK', NewClock}),
     Events = start_session(?captured(Reason, Cost, Cart)),
-    {next, {[?clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}}.
+    {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}}.
 
 %%
 
@@ -2159,8 +2157,7 @@ process_result({payment, processing_accounter}, Action, St) ->
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
     Clock = rollback_payment_cashflow(St),
-    % erlang:display({'CLOCK', Clock}),
-    {done, {[?clock_update(Clock), ?payment_status_changed(?failed(Failure))], NewAction}};
+    {done, {[?payment_clock_update(Clock), ?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
     Clock =
@@ -2170,26 +2167,23 @@ process_result({payment, finalizing_accounter}, Action, St) ->
             ?cancelled() ->
                 rollback_payment_cashflow(St)
         end,
-    % erlang:display({'CLOCK', Clock}),
     check_recurrent_token(St),
     NewAction = get_action(Target, Action, St),
-    {done, {[?clock_update(Clock), ?payment_status_changed(Target)], NewAction}};
+    {done, {[?payment_clock_update(Clock), ?payment_status_changed(Target)], NewAction}};
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Failure = RefundSt#refund_st.failure,
     Clock = rollback_refund_cashflow(RefundSt, St),
-    erlang:display({'CLOCK', Clock}),
     Events = [
-        ?refund_ev(ID, ?clock_update(Clock)),
+        ?refund_ev(ID, ?refund_clock_update(Clock)),
         ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
     ],
     {done, {Events, Action}};
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Clock = commit_refund_cashflow(RefundSt, St),
-    erlang:display({'CLOCK', Clock}),
     Events2 = [
-        ?refund_ev(ID, ?clock_update(Clock)),
+        ?refund_ev(ID, ?refund_clock_update(Clock)),
         ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
     ],
     Events3 =
@@ -2883,7 +2877,7 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
         _ ->
             St
     end;
-merge_change(Change = ?clock_update(Clock), #st{activity = Activity} = St, Opts) ->
+merge_change(Change = ?payment_clock_update(Clock), #st{activity = Activity} = St, Opts) ->
     % erlang:display(Activity),
     _ = validate_transition(
         [
@@ -3000,9 +2994,16 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
             ?chargeback_cash_flow_changed(_) ->
                 Valid = [{chargeback, ID, Activity} || Activity <- [preparing_initial_cash_flow, updating_cash_flow]],
                 _ = validate_transition(Valid, Change, St, Opts),
+                St;
+            ?chargeback_clock_update(_) ->
+                Activities = [preparing_initial_cash_flow, updating_cash_flow, finalising_accounter],
+                Valid = [{chargeback, ID, Activity} || Activity <- Activities],
+                _ = validate_transition(Valid, Change, St, Opts),
                 case St of
                     #st{activity = {chargeback, ID, preparing_initial_cash_flow}} ->
                         St#st{activity = idle};
+                    #st{activity = {chargeback, ID, finalising_accounter}} ->
+                        St#st{activity = {chargeback, ID, finalising_accounter}};
                     #st{activity = {chargeback, ID, updating_cash_flow}} ->
                         St#st{activity = {chargeback, ID, finalising_accounter}}
                 end;
@@ -3029,7 +3030,7 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
             ?refund_created(_, _, _) ->
                 _ = validate_transition(idle, Change, St, Opts),
                 St#st{activity = {refund_new, ID}};
-            ?clock_update(_Clock) ->
+            ?refund_clock_update(_Clock) ->
                 _ = validate_transition(
                     [
                         {refund_new, ID},
@@ -3077,12 +3078,15 @@ merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
             ?adjustment_status_changed(?adjustment_processed()) ->
                 _ = validate_transition({adjustment_new, ID}, Change, St, Opts),
                 St#st{activity = {adjustment_pending, ID}};
+            ?adjustment_clock_update(_) ->
+                _ = validate_transition([{adjustment_new, ID}, {adjustment_pending, ID}], Change, St, Opts),
+                St;
             ?adjustment_status_changed(_) ->
                 _ = validate_transition({adjustment_pending, ID}, Change, St, Opts),
                 St#st{activity = idle}
         end,
     Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St1)),
-    St2 = set_adjustment(ID, Adjustment, St1),
+    St2 = set_adjustment_clock(set_adjustment(ID, Adjustment, St1), Event),
     % TODO new cashflow imposed implicitly on the payment state? rough
     case get_adjustment_status(Adjustment) of
         ?adjustment_captured(_) ->
@@ -3167,7 +3171,7 @@ merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?refund_rollback_started(Failure), RefundSt) ->
     RefundSt#refund_st{failure = Failure};
-merge_refund_change(?clock_update(Clock), RefundSt) ->
+merge_refund_change(?refund_clock_update(Clock), RefundSt) ->
     RefundSt#refund_st{clock = Clock};
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
     add_refund_session(create_session(?refunded(), undefined), St);
@@ -3175,6 +3179,8 @@ merge_refund_change(?session_ev(?refunded(), Change), St) ->
     update_refund_session(merge_session_change(Change, get_refund_session(St), #{}), St).
 
 merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
+    Adjustment;
+merge_adjustment_change(?adjustment_clock_update(_), Adjustment) ->
     Adjustment;
 merge_adjustment_change(?adjustment_status_changed(Status), Adjustment) ->
     Adjustment#domain_InvoicePaymentAdjustment{status = Status}.
@@ -3352,6 +3358,13 @@ try_get_adjustment(ID, #st{adjustments = As}) ->
 
 set_adjustment(ID, Adjustment, St = #st{adjustments = As}) ->
     St#st{adjustments = lists:keystore(ID, #domain_InvoicePaymentAdjustment.id, As, Adjustment)}.
+
+set_adjustment_clock(St = #st{activity = {adjustment_new, _}}, ?adjustment_clock_update(Clock)) ->
+    St#st{adjustment_clock = Clock};
+set_adjustment_clock(St = #st{activity = {adjustment_pending, _}}, ?adjustment_clock_update(Clock)) ->
+    St#st{clock = Clock};
+set_adjustment_clock(St = #st{}, _) ->
+    St.
 
 merge_session_change(?session_finished(Result), Session, Opts) ->
     Session2 = Session#{status := finished, result => Result},
