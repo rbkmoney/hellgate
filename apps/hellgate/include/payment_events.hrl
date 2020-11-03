@@ -33,7 +33,7 @@
     {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}}
 ).
 
--define(clock_update(Clock),
+-define(payment_clock_update(Clock),
     {invoice_payment_clock_update, #payproc_InvoicePaymentClockUpdate{clock = Clock}}
 ).
 
@@ -338,6 +338,18 @@
         cash_flow = CashFlow,
         transaction_info = TrxInfo
     }}
+).
+
+-define(chargeback_clock_update(Clock),
+    {invoice_payment_chargeback_clock_update, #payproc_InvoicePaymentClockUpdate{clock = Clock}}
+).
+
+-define(refund_clock_update(Clock),
+    {invoice_payment_refund_clock_update, #payproc_InvoicePaymentClockUpdate{clock = Clock}}
+).
+
+-define(adjustment_clock_update(Clock),
+    {invoice_payment_adjustment_clock_update, #payproc_InvoicePaymentClockUpdate{clock = Clock}}
 ).
 
 -define(refund_rollback_started(Failure),
