@@ -13,6 +13,7 @@
 -export([create_battle_ready_shop/5]).
 -export([get_account/1]).
 -export([get_balance/1]).
+-export([get_balance/2]).
 -export([get_first_contract_id/1]).
 -export([get_first_battle_ready_contract_id/1]).
 -export([get_first_payout_tool_id/2]).
@@ -493,6 +494,11 @@ get_account(AccountID) ->
 get_balance(AccountID) ->
     % TODO we sure need to proxy this through the hellgate interfaces
     hg_accounting:get_balance(AccountID).
+
+-spec get_balance(account_id(), hg_accounting:clock()) -> balance().
+get_balance(AccountID, Clock) ->
+    % TODO we sure need to proxy this through the hellgate interfaces
+    hg_accounting:get_balance(AccountID, Clock).
 
 -spec get_first_payout_tool_id(contract_id(), Client :: pid()) -> dmsl_domain_thrift:'PayoutToolID'().
 get_first_payout_tool_id(ContractID, Client) ->
