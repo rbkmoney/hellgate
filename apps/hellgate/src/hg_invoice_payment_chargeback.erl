@@ -54,6 +54,7 @@
 
 -record(chargeback_st, {
     chargeback :: undefined | chargeback(),
+    clock  :: undefined | clock(),
     target_status :: undefined | status(),
     cash_flow = [] :: cash_flow(),
     cash_flow_plans = #{
@@ -80,6 +81,9 @@
 
 -type payment_state() ::
     hg_invoice_payment:st().
+
+-type clock() ::
+    hg_accounter:clock().
 
 -type party() ::
     dmsl_domain_thrift:'Party'().
@@ -263,6 +267,8 @@ merge_change(?chargeback_target_status_changed(Status), State) ->
     set_target_status(Status, State);
 merge_change(?chargeback_status_changed(Status), State) ->
     set_target_status(undefined, set_status(Status, State));
+merge_change(?chargeback_clock_update(Clock), State) ->
+    set_clock(Clock, State);
 merge_change(?chargeback_cash_flow_changed(CashFlow), State) ->
     set_cash_flow(CashFlow, State).
 
@@ -277,7 +283,7 @@ process_timeout(finalising_accounter, State, Action, Opts) ->
 %% Private
 
 -spec do_create(opts(), create_params()) -> {chargeback(), result()} | no_return().
-do_create(Opts, CreateParams = ?chargeback_params(Levy, Body, _Reason)) ->
+do_create(Opts, CreateParams = ?chargeback_params(Levy, Body, _Reason, _OccurredAt)) ->
     Revision = hg_domain:head(),
     CreatedAt = hg_datetime:format_now(),
     Invoice = get_opts_invoice(Opts),
@@ -345,8 +351,9 @@ do_reopen(State, PaymentState, ReopenParams = ?reopen_params(Levy, Body)) ->
 update_cash_flow(State, Action, Opts) ->
     FinalCashFlow = build_chargeback_cash_flow(State, Opts),
     UpdatedPlan = build_updated_plan(FinalCashFlow, State),
-    _ = prepare_cash_flow(State, UpdatedPlan, Opts),
-    {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}.
+    Clock = prepare_cash_flow(State, UpdatedPlan, Opts),
+    % erlang:display({'CHARGEBACK CLOCK', Clock}),
+    {[?chargeback_cash_flow_changed(FinalCashFlow), ?chargeback_clock_update(Clock)], Action}.
 
 -spec finalise(state(), action(), opts()) -> result() | no_return().
 finalise(#chargeback_st{target_status = Status = ?chargeback_status_pending()}, Action, _Opts) ->
@@ -356,7 +363,8 @@ finalise(State = #chargeback_st{target_status = Status}, Action, Opts) when
     Status =:= ?chargeback_status_accepted();
     Status =:= ?chargeback_status_cancelled()
 ->
-    _ = commit_cash_flow(State, Opts),
+    Clock = commit_cash_flow(State, Opts),
+    erlang:display({'FINALISE CLOCK', Clock}),
     {[?chargeback_status_changed(Status)], Action}.
 
 -spec build_chargeback(opts(), create_params(), revision(), timestamp()) -> chargeback() | no_return().
@@ -500,13 +508,17 @@ define_body(Cash, _PaymentState) ->
     Cash.
 
 prepare_cash_flow(State, CashFlowPlan, Opts) ->
+    Clock = get_clock(State),
     PlanID = construct_chargeback_plan_id(State, Opts),
-    hg_accounting:plan(PlanID, CashFlowPlan).
+    % FIXME: occurred_at should be used as the timestamp
+    hg_accounting:plan(PlanID, CashFlowPlan, maps:get(timestamp, Opts), Clock).
 
 commit_cash_flow(State, Opts) ->
+    Clock = get_clock(State),
     CashFlowPlan = get_current_plan(State),
     PlanID = construct_chargeback_plan_id(State, Opts),
-    hg_accounting:commit(PlanID, CashFlowPlan).
+    % FIXME: occurred_at should be used as the timestamp
+    hg_accounting:commit(PlanID, CashFlowPlan, maps:get(timestamp, Opts), Clock).
 
 construct_chargeback_plan_id(State, Opts) ->
     {Stage, _} = get_stage(State),
@@ -617,6 +629,10 @@ get_current_plan(#chargeback_st{cash_flow_plans = Plans} = State) ->
     #{Stage := Plan} = Plans,
     Plan.
 
+-spec get_clock(state()) -> clock().
+get_clock(#chargeback_st{clock = Clock}) ->
+    Clock.
+
 -spec get_reverted_previous_stage(state()) -> [batch()].
 get_reverted_previous_stage(State) ->
     case get_previous_stage(State) of
@@ -695,6 +711,10 @@ set_cash_flow(CashFlow, #chargeback_st{cash_flow_plans = Plans} = State) ->
     Stage = get_stage(State),
     Plan = build_updated_plan(CashFlow, State),
     State#chargeback_st{cash_flow_plans = Plans#{Stage := Plan}, cash_flow = CashFlow}.
+
+-spec set_clock(clock(), state()) -> state().
+set_clock(Clock, #chargeback_st{} = State) ->
+    State#chargeback_st{clock = Clock}.
 
 -spec set_target_status(status() | undefined, state()) -> state().
 set_target_status(TargetStatus, #chargeback_st{} = State) ->
