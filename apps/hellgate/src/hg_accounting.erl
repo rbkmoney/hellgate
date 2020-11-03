@@ -70,7 +70,7 @@
 
 -spec get_account(account_id()) -> account().
 get_account(AccountID) ->
-    get_account(AccountID, {latest, #domain_LatestClock{}}).
+    get_account(AccountID, undefined).
 
 -spec get_account(account_id(), clock()) -> account().
 get_account(AccountID, Clock) ->
@@ -79,14 +79,14 @@ get_account(AccountID, Clock) ->
             construct_account(AccountID, Result);
         {exception, #shumaich_AccountNotFound{}} ->
             hg_woody_wrapper:raise(#payproc_AccountNotFound{});
-        % FIXME: this should probably work differently
+        % FIXME: this should probably work differently, hg_retry?
         {exception, #shumaich_NotReady{}} ->
-            error(not_ready)
+            get_account(AccountID, Clock)
     end.
 
 -spec get_balance(account_id()) -> balance().
 get_balance(AccountID) ->
-    get_balance(AccountID, {latest, #domain_LatestClock{}}).
+    get_balance(AccountID, undefined).
 
 -spec get_balance(account_id(), clock()) -> balance().
 get_balance(AccountID, Clock) ->
@@ -94,7 +94,10 @@ get_balance(AccountID, Clock) ->
         {ok, Result} ->
             construct_balance(AccountID, Result);
         {exception, #shumaich_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
+            hg_woody_wrapper:raise(#payproc_AccountNotFound{});
+        % FIXME: this should probably work differently, hg_retry?
+        {exception, #shumaich_NotReady{}} ->
+            get_balance(AccountID, Clock)
     end.
 
 -spec create_account(currency_code()) -> account_id().
@@ -177,10 +180,10 @@ plan(PlanID, Batches, Timestamp, Clock) ->
 hold(PlanID, Batch, Timestamp) ->
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
 
--spec hold(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+-spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock()) -> clock().
 hold(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
-    do('Hold', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
+    do('Hold', construct_plan_change(PlanID, Batches, Timestamp), AccounterClock).
 
 -spec commit(plan_id(), [batch()], hg_datetime:timestamp()) -> clock().
 commit(PlanID, Batches, Timestamp) ->
@@ -204,10 +207,14 @@ do(Op, Plan) ->
     do(Op, Plan, {latest, #shumaich_LatestClock{}}).
 
 do(Op, Plan, PreviousClock) ->
-    % case Op of 'Hold' -> erlang:display(Plan); _ -> ok end,
     case call_accounter(Op, {Plan, PreviousClock}) of
         {ok, Clock} ->
             to_domain_clock(Clock);
+        {exception, #shumaich_NotReady{}} ->
+            erlang:display({'NOT READY', Op, Plan#shumaich_PostingPlan.id}),
+            % FIXME: maybe some other way?
+            ok = timer:sleep(200),
+            do(Op, Plan, PreviousClock);
         {exception, Exception} ->
             % FIXME
             error({accounting, Exception})
@@ -279,16 +286,16 @@ construct_balance(
     #shumaich_Balance{
         own_amount = OwnAmount,
         min_available_amount = MinAvailableAmount,
-        max_available_amount = MaxAvailableAmount,
-        clock = Clock
+        max_available_amount = MaxAvailableAmount
+        % clock = Clock
     }
 ) ->
     #{
         account_id => AccountID,
         own_amount => OwnAmount,
         min_available_amount => MinAvailableAmount,
-        max_available_amount => MaxAvailableAmount,
-        clock => to_domain_clock(Clock)
+        max_available_amount => MaxAvailableAmount
+        % clock => to_domain_clock(Clock)
     }.
 
 %%
@@ -302,14 +309,10 @@ get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
 get_currency(#domain_Cash{currency = Currency}) ->
     Currency.
 
-to_domain_clock({latest, _}) ->
-    {latest, #domain_LatestClock{}};
 to_domain_clock({vector, #shumaich_VectorClock{state = State}}) ->
     {vector, #domain_VectorClock{state = State}}.
 
 to_accounter_clock(undefined) ->
-    {latest, #shumaich_LatestClock{}};
-to_accounter_clock({latest, _}) ->
     {latest, #shumaich_LatestClock{}};
 to_accounter_clock({vector, #domain_VectorClock{state = State}}) ->
     {vector, #shumaich_VectorClock{state = State}}.
