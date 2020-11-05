@@ -216,26 +216,13 @@ handle_function_('ComputeTerms', {UserInfo, InvoiceID, PartyRevision0}, _Opts) -
     PartyID = get_party_id(St),
     Timestamp = get_created_at(St),
     PartyRevision1 = hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
-    Party = hg_party:get_party(PartyID),
-    Shop = hg_party:get_shop(ShopID, Party),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    Cash = get_cost(St),
-    VS = hg_varset:prepare_varset(#{
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Shop#domain_Shop.category,
-        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
-        identification_level => hg_invoice_utils:get_identification_level(Contract, Party),
-        cost => Cash
-    }),
     ShopTerms = hg_invoice_utils:compute_shop_terms(
+        UserInfo,
         PartyID,
         ShopID,
         Timestamp,
-        PartyRevision1,
-        VS
+        PartyRevision1
     ),
-    % TODO: remove once PM is updated
     Revision = hg_domain:head(),
     Cash = get_cost(St),
     pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
