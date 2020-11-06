@@ -712,7 +712,8 @@ merge_payment_terms(
         cash_flow = PCashflow,
         holds = PHolds,
         refunds = PRefunds,
-        chargebacks = PChargebacks
+        chargebacks = PChargebacks,
+        risk_coverage = PRiskCoverage
     },
     #domain_PaymentsProvisionTerms{
         currencies = TCurrencies,
@@ -722,7 +723,8 @@ merge_payment_terms(
         cash_flow = TCashflow,
         holds = THolds,
         refunds = TRefunds,
-        chargebacks = TChargebacks
+        chargebacks = TChargebacks,
+        risk_coverage = TRiskCoverage
     }
 ) ->
     #domain_PaymentsProvisionTerms{
@@ -733,7 +735,8 @@ merge_payment_terms(
         cash_flow = hg_utils:select_defined(TCashflow, PCashflow),
         holds = hg_utils:select_defined(THolds, PHolds),
         refunds = hg_utils:select_defined(TRefunds, PRefunds),
-        chargebacks = hg_utils:select_defined(TChargebacks, PChargebacks)
+        chargebacks = hg_utils:select_defined(TChargebacks, PChargebacks),
+        risk_coverage = hg_utils:select_defined(TRiskCoverage, PRiskCoverage)
     };
 merge_payment_terms(ProviderTerms, TerminalTerms) ->
     hg_utils:select_defined(TerminalTerms, ProviderTerms).
