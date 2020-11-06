@@ -617,7 +617,8 @@ acceptable_payment_terms(
         payment_methods = PMsSelector,
         cash_limit = CashLimitSelector,
         holds = HoldsTerms,
-        refunds = RefundsTerms
+        refunds = RefundsTerms,
+        risk_coverage = RiskCoverageSelector
     },
     VS,
     Revision
@@ -631,6 +632,8 @@ acceptable_payment_terms(
     _ = try_accept_term(ParentName, cost, CashLimitSelector, VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
     _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
+    _ = try_accept_term(ParentName, risk_score, getv(risk_score, VS, undefined), RiskCoverageSelector, VS, Revision),
+
     %% TODO Check chargeback terms when there will be any
     %% _ = acceptable_chargeback_terms(...)
     true;
@@ -775,7 +778,11 @@ test_term(payment_tool, PT, PMs) ->
 test_term(cost, Cost, CashRange) ->
     hg_cash_range:is_inside(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
-    Lifetime =< Allowed.
+    Lifetime =< Allowed;
+test_term(risk_score, _, undefined) ->
+    true;
+test_term(risk_score, Value, RiskScore) ->
+    Value =:= RiskScore.
 
 %%
 
