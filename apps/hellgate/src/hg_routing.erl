@@ -632,7 +632,7 @@ acceptable_payment_terms(
     _ = try_accept_term(ParentName, cost, CashLimitSelector, VS, Revision),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined), VS, Revision),
     _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined), VS, Revision),
-    _ = try_accept_term(ParentName, risk_score, getv(risk_score, VS, undefined), RiskCoverageSelector, VS, Revision),
+    _ = acceptable_risk_score_term(ParentName, RiskCoverageSelector, VS, Revision),
 
     %% TODO Check chargeback terms when there will be any
     %% _ = acceptable_chargeback_terms(...)
@@ -651,6 +651,17 @@ acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
             true;
         undefined ->
             throw(?rejected({'PaymentHoldsProvisionTerms', undefined}))
+    end.
+
+acceptable_risk_score_term(_ParentName, undefined, _VS, _Revision) ->
+    true;
+acceptable_risk_score_term(ParentName, Selector, VS, Revision) ->
+    case getv(risk_score, VS, undefined) of
+        undefined ->
+            %% TODO Adjust with recurrent's inspector (currently default value is 'high')
+            true;
+        RiskScore ->
+            try_accept_term(ParentName, risk_score, RiskScore, Selector, VS, Revision)
     end.
 
 acceptable_refunds_terms(_Terms, undefined, _VS, _Revision) ->
