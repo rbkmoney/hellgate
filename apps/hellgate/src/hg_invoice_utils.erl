@@ -147,7 +147,8 @@ collect_validation_varset(Cost, Party, Shop) ->
 
 -spec compute_shop_terms(user_info(), party_id(), shop_id(), timestamp(), party_revision_param()) -> term_set().
 compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision) ->
-    Args = {UserInfo, PartyID, ShopID, Timestamp, PartyRevision},
+    % TODO: fetch changes from master
+    Args = {UserInfo, PartyID, ShopID, Timestamp, PartyRevision, #payproc_Varset{}},
     {ok, TermSet} = hg_woody_wrapper:call(party_management, 'ComputeShopTerms', Args),
     TermSet.
 
