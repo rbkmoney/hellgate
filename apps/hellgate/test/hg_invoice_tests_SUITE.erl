@@ -1223,7 +1223,21 @@ payment_w_terminal_success(C) ->
     _ = assert_invalid_post_request({URL, BadForm}),
     _ = assert_success_post_request({URL, GoodForm}),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    Cost = get_payment_cost(InvoiceID, PaymentID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    Target = ?captured(Reason, Cost, undefined),
+    PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, 0),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?captured(), ?trx_bound(?trx_info(_)))),
+        ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(Target)),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
