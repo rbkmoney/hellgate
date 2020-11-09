@@ -1079,14 +1079,21 @@ shop_terms_retrieval(C) ->
     PartyID = cfg(party_id, C),
     ShopID = ?REAL_SHOP_ID,
     Timestamp = pm_datetime:format_now(),
-    TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
+    VS = #payproc_Varset{
+        shop_id = ShopID,
+        party_id = PartyID,
+        category = ?cat(2),
+        currency = ?cur(<<"RUB">>),
+        identification_level = full
+    },
+    TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, VS, Client),
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
         }
     } = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
-    TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, Client),
+    TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, VS, Client),
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
