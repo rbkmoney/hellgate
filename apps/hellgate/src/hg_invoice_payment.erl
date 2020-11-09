@@ -2390,7 +2390,6 @@ handle_proxy_result(
     Events0,
     Session
 ) ->
-    % ct:log("Session: ~p", [Session]),
     Events1 = wrap_session_events(hg_proxy_provider:bind_transaction(Trx, Session), Session),
     Events2 = update_proxy_state(ProxyState, Session),
     {Events3, Action} = handle_proxy_intent(Intent, Action0, Session),
@@ -3277,8 +3276,6 @@ merge_session_change(?session_suspended(Tag, TimeoutBehaviour), Session, Opts) -
     Session4 = mark_session_timing_event(suspended, Opts, Session3),
     Session4#{status := suspended};
 merge_session_change(?trx_bound(Trx0), Session, _Opts) ->
-    % ct:log("Incoming trx: ~p", [Trx0]),
-    % ct:log("Session: ~p", [Session]),
     Trx =
         case genlib_map:get(payment_short_id, Session) of
             undefined ->
@@ -3292,7 +3289,6 @@ merge_session_change(?trx_bound(Trx0), Session, _Opts) ->
                     additional_info = AdditionalInfo#domain_AdditionalTransactionInfo{short_payment_id = ShortID}
                 }
         end,
-    % ct:log("Trx after enrichment: ~p", [Trx]),
     Session#{trx := Trx};
 merge_session_change(?proxy_st_changed(ProxyState), Session, _Opts) ->
     Session#{proxy_state => ProxyState};
