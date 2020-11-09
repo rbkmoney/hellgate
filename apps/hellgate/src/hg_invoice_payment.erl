@@ -16,6 +16,7 @@
 
 -module(hg_invoice_payment).
 
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("damsel/include/dmsl_base_thrift.hrl").
 -include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
@@ -2389,6 +2390,7 @@ handle_proxy_result(
     Events0,
     Session
 ) ->
+    % ct:log("Session: ~p", [Session]),
     Events1 = wrap_session_events(hg_proxy_provider:bind_transaction(Trx, Session), Session),
     Events2 = update_proxy_state(ProxyState, Session),
     {Events3, Action} = handle_proxy_intent(Intent, Action0, Session),
@@ -3051,14 +3053,6 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
     St1 = update_session(Target, Session, St),
     % FIXME leaky transactions
     St2 = set_trx(get_session_trx(Session), St1),
-    St3 =
-        case Event of
-            ?interaction_requested(?payment_terminal_reciept(ShortID, _)) ->
-                Payment = get_payment(St2),
-                St2#st{payment = Payment#domain_InvoicePayment{short_payment_id = ShortID}};
-            _ ->
-                St2
-        end,
     case Session of
         #{status := finished, result := ?session_succeeded()} ->
             NextActivity =
@@ -3070,9 +3064,9 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
                     _ ->
                         Activity
                 end,
-            St3#st{activity = NextActivity};
+            St2#st{activity = NextActivity};
         _ ->
-            St3
+            St2
     end.
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
@@ -3282,10 +3276,22 @@ merge_session_change(?session_suspended(Tag, TimeoutBehaviour), Session, Opts) -
     Session3 = set_timeout_behaviour(TimeoutBehaviour, Session2),
     Session4 = mark_session_timing_event(suspended, Opts, Session3),
     Session4#{status := suspended};
-merge_session_change(?trx_bound(Trx), Session, _Opts) ->
+merge_session_change(?trx_bound(Trx0), Session, _Opts) ->
+    % ct:log("Incoming trx: ~p", [Trx0]),
+    % ct:log("Session: ~p", [Session]),
+    Trx = case genlib_map:get(payment_short_id, Session) of
+        undefined ->
+            Trx0;
+        ShortID ->
+            AdditionalInfo = genlib:define(Trx0#domain_TransactionInfo.additional_info, #domain_AdditionalTransactionInfo{}),
+            Trx0#domain_TransactionInfo{additional_info = AdditionalInfo#domain_AdditionalTransactionInfo{short_payment_id = ShortID}}
+    end,
+    % ct:log("Trx after enrichment: ~p", [Trx]),
     Session#{trx := Trx};
 merge_session_change(?proxy_st_changed(ProxyState), Session, _Opts) ->
     Session#{proxy_state => ProxyState};
+merge_session_change(?interaction_requested(?payment_terminal_reciept(ShortID, _)), Session, _Opts) ->
+    Session#{payment_short_id => ShortID};
 merge_session_change(?interaction_requested(_), Session, _Opts) ->
     Session.
 
