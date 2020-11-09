@@ -3279,13 +3279,19 @@ merge_session_change(?session_suspended(Tag, TimeoutBehaviour), Session, Opts) -
 merge_session_change(?trx_bound(Trx0), Session, _Opts) ->
     % ct:log("Incoming trx: ~p", [Trx0]),
     % ct:log("Session: ~p", [Session]),
-    Trx = case genlib_map:get(payment_short_id, Session) of
-        undefined ->
-            Trx0;
-        ShortID ->
-            AdditionalInfo = genlib:define(Trx0#domain_TransactionInfo.additional_info, #domain_AdditionalTransactionInfo{}),
-            Trx0#domain_TransactionInfo{additional_info = AdditionalInfo#domain_AdditionalTransactionInfo{short_payment_id = ShortID}}
-    end,
+    Trx =
+        case genlib_map:get(payment_short_id, Session) of
+            undefined ->
+                Trx0;
+            ShortID ->
+                AdditionalInfo = genlib:define(
+                    Trx0#domain_TransactionInfo.additional_info,
+                    #domain_AdditionalTransactionInfo{}
+                ),
+                Trx0#domain_TransactionInfo{
+                    additional_info = AdditionalInfo#domain_AdditionalTransactionInfo{short_payment_id = ShortID}
+                }
+        end,
     % ct:log("Trx after enrichment: ~p", [Trx]),
     Session#{trx := Trx};
 merge_session_change(?proxy_st_changed(ProxyState), Session, _Opts) ->
