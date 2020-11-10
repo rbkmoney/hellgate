@@ -656,13 +656,7 @@ acceptable_holds_terms(Terms, {hold, Lifetime}, VS, Revision) ->
 acceptable_risk_score_term(_ParentName, undefined, _VS, _Revision) ->
     true;
 acceptable_risk_score_term(ParentName, Selector, VS, Revision) ->
-    case getv(risk_score, VS, undefined) of
-        undefined ->
-            %% TODO Adjust with recurrent's inspector (currently default value is 'high')
-            true;
-        RiskScore ->
-            try_accept_term(ParentName, risk_score, RiskScore, Selector, VS, Revision)
-    end.
+    try_accept_term(ParentName, risk_score, Selector, VS, Revision).
 
 acceptable_refunds_terms(_Terms, undefined, _VS, _Revision) ->
     true;
