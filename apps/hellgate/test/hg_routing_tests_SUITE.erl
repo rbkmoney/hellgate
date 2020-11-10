@@ -589,7 +589,6 @@ routes_selected_for_low_risk_score(C) ->
 routes_selected_for_high_risk_score(C) ->
     routes_selected_with_risk_score(C, high, [201, 202]).
 
-
 routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     ok = hg_context:save(hg_context:create()),
 
@@ -771,7 +770,6 @@ routing_with_fail_rate_and_risk_score_fixture(Revision, AddRiskScore) ->
                                 )
                             ]},
                         risk_coverage = maybe_set_risk_coverage(AddRiskScore, high)
-
                     }
                 }
             }
