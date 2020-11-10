@@ -36,7 +36,7 @@
 -define(rejected(Reason), {rejected, Reason}).
 
 -type reject_context() :: #{
-    varset := pm_selector:varset(),
+    varset := varset(),
     rejected_providers := list(rejected_provider()),
     rejected_routes := list(rejected_route())
 }.
@@ -98,6 +98,21 @@
 
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 
+-type varset() :: #{
+    category => dmsl_domain_thrift:'CategoryRef'(),
+    currency => dmsl_domain_thrift:'CurrencyRef'(),
+    cost => dmsl_domain_thrift:'Cash'(),
+    payment_tool => dmsl_domain_thrift:'PaymentTool'(),
+    party_id => dmsl_domain_thrift:'PartyID'(),
+    shop_id => dmsl_domain_thrift:'ShopID'(),
+    risk_score := dmsl_domain_thrift:'RiskScore'(),
+    flow => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
+    payout_method => dmsl_domain_thrift:'PayoutMethodRef'(),
+    wallet_id => dmsl_domain_thrift:'WalletID'(),
+    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'(),
+    p2p_tool => dmsl_domain_thrift:'P2PTool'()
+}.
+
 -record(route_scores, {
     availability_condition :: condition_score(),
     conversion_condition :: condition_score(),
@@ -112,11 +127,12 @@
 -export_type([route_predestination/0]).
 -export_type([non_fail_rated_route/0]).
 -export_type([reject_context/0]).
+-export_type([varset/0]).
 
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
-    pm_selector:varset(),
+    varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
@@ -152,7 +168,7 @@ check_risk_score(_RiskScore) ->
 -spec select_providers(
     route_predestination(),
     payment_institution(),
-    pm_selector:varset(),
+    varset(),
     hg_domain:revision(),
     reject_context()
 ) -> {[provider_with_ref()], reject_context()}.
@@ -179,7 +195,7 @@ select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext
 -spec select_routes(
     route_predestination(),
     [provider_with_ref()],
-    pm_selector:varset(),
+    varset(),
     hg_domain:revision(),
     reject_context()
 ) -> {[route()], reject_context()}.
@@ -476,7 +492,7 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
 -spec acceptable_provider(
     route_predestination(),
     provider_ref(),
-    pm_selector:varset(),
+    varset(),
     hg_domain:revision()
 ) -> provider_with_ref() | no_return().
 acceptable_provider(payment, ProviderRef, VS, Revision) ->
@@ -508,7 +524,7 @@ acceptable_provider(recurrent_payment, ProviderRef, VS, Revision) ->
 -spec collect_routes_for_provider(
     route_predestination(),
     provider_with_ref(),
-    pm_selector:varset(),
+    varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], [rejected_route()]}.
 collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revision) ->
@@ -536,7 +552,7 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revisio
     route_predestination(),
     terminal_ref(),
     provider(),
-    pm_selector:varset(),
+    varset(),
     hg_domain:revision()
 ) -> unweighted_terminal() | no_return().
 acceptable_terminal(payment, TerminalRef, Provider, VS, Revision) ->
