@@ -331,7 +331,6 @@ collect_rec_payment_tool_varset(RecPaymentTool) ->
 
 inspect(_RecPaymentTool, _VS) ->
     % FIXME please senpai
-    %% TODO Drop value or use inspector here
     high.
 
 validate_risk_score(RiskScore) when RiskScore == low; RiskScore == high ->
