@@ -178,7 +178,29 @@ handle_uncomputable_provider_terms(_C) ->
             {?prv(2), {'PaymentsProvisionTerms', currency}},
             {?prv(1), {'PaymentsProvisionTerms', currency}}
         ]
-    }} = {Providers0, RejectContext0}.
+    }} = {Providers0, RejectContext0},
+
+    VS1 = VS0#{
+        currency => ?cur(<<"RUB">>),
+        cost => ?cash(100, <<"RUB">>)
+    },
+    {Providers1, RejectContext1} = hg_routing:gather_routes(
+        payment,
+        PaymentInstitution,
+        VS1,
+        Revision
+    ),
+    {[], #{
+        rejected_providers := [
+            {?prv(4), {'PaymentsProvisionTerms', currency}},
+            {?prv(2), {'PaymentsProvisionTerms', category}},
+            {?prv(1), {'PaymentsProvisionTerms', payment_tool}}
+        ],
+        rejected_routes := [
+            {?prv(3), ?trm(10), {'Misconfiguration', _}}
+        ]
+    }} = {Providers1, RejectContext1},
+    ok.
 
 -spec gathers_fail_rated_routes(config()) -> test_return().
 gathers_fail_rated_routes(_C) ->
@@ -1666,7 +1688,7 @@ construct_domain_fixture() ->
                         cash_limit =
                             {value,
                                 ?cashrng(
-                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {inclusive, ?cash(100, <<"RUB">>)},
                                     {exclusive, ?cash(10000000, <<"RUB">>)}
                                 )},
                         cash_flow =
@@ -1690,7 +1712,36 @@ construct_domain_fixture() ->
             ref = ?trm(10),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>
+                description = <<"Euroset">>,
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        cash_limit = {
+                            decisions, [
+                                #domain_CashLimitDecision{
+                                    if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(1000, <<"RUB">>)},
+                                        {exclusive, ?cash(10000000, <<"RUB">>)}
+                                    )}},
+                                    then_ = {value, ?cashrng(
+                                        {inclusive, ?cash(1000, <<"RUB">>)},
+                                        {exclusive, ?cash(10000000, <<"RUB">>)}
+                                    )}
+                                },
+                                % invalid cash range check
+                                #domain_CashLimitDecision{
+                                    if_ = {condition, {cost_in, ?cashrng(
+                                        {inclusive, ?cash(1000, <<"RUB">>)},
+                                        {exclusive, ?cash(10000000, <<"EUR">>)}
+                                    )}},
+                                    then_ = {value, ?cashrng(
+                                        {inclusive, ?cash(1000, <<"RUB">>)},
+                                        {exclusive, ?cash(10000000, <<"RUB">>)}
+                                    )}
+                                }
+                            ]
+                         }
+                    }
+                }
             }
         }},
 
