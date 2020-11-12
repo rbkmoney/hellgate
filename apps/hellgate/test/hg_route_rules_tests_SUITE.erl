@@ -61,15 +61,23 @@ init_per_suite(C) ->
         woody,
         scoper,
         dmt_client,
+        party_client,
         hellgate,
         {cowboy, CowboySpec}
     ]),
     ok = hg_domain:insert(construct_domain_fixture()),
-
+    PartyID = hg_utils:unique_id(),
+    PartyClient = party_client:create_client(),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
     _ = unlink(SupPid),
-    [{apps, Apps}, {test_sup, SupPid} | C].
+    [
+        {apps, Apps},
+        {test_sup, SupPid},
+        {party_client, PartyClient},
+        {party_id, PartyID}
+        | C
+    ].
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -91,10 +99,23 @@ end_per_group(_GroupName, C) ->
     end.
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
-init_per_testcase(_, C) -> C.
+init_per_testcase(_, C) ->
+    Ctx0 = hg_context:set_party_client(cfg(party_client, C), hg_context:create()),
+    Ctx1 = hg_context:set_user_identity(
+        #{
+            id => cfg(party_id, C),
+            realm => <<"internal">>
+        },
+        Ctx0
+    ),
+    Ctx2 = hg_context:set_party_client_context(#{woody_context => woody_context:new()}, Ctx1),
+    ok = hg_context:save(Ctx2),
+    C.
 
 -spec end_per_testcase(test_case_name(), config()) -> config().
-end_per_testcase(_Name, _C) -> ok.
+end_per_testcase(_Name, _C) ->
+    ok = hg_context:cleanup(),
+    ok.
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
