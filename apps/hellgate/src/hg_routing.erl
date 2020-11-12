@@ -800,6 +800,8 @@ test_term(cost, Cost, CashRange) ->
     hg_cash_range:is_inside(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
     Lifetime =< Allowed;
+test_term(risk_score, low, high) ->
+    true;
 test_term(risk_score, Value, RiskScore) ->
     Value =:= RiskScore.
 

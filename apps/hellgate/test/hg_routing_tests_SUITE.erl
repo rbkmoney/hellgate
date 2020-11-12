@@ -583,7 +583,7 @@ terminal_priority_for_shop(PartyID, ShopID, _C) ->
 
 -spec routes_selected_for_low_risk_score(config()) -> test_return().
 routes_selected_for_low_risk_score(C) ->
-    routes_selected_with_risk_score(C, low, [200, 202]).
+    routes_selected_with_risk_score(C, low, [200, 201, 202]).
 
 -spec routes_selected_for_high_risk_score(config()) -> test_return().
 routes_selected_for_high_risk_score(C) ->
