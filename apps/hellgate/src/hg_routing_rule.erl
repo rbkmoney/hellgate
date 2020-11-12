@@ -105,9 +105,12 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
                 priority = Priority,
                 weight = Weight
             } = Candidate,
-            {#domain_Terminal{provider_ref = ProviderRef}, Provider} = get_route(TerminalRef, Revision),
+            #domain_Terminal{
+                provider_ref = ProviderRef
+            } = hg_domain:get(Revision, {terminal, TerminalRef}),
+            Provider = hg_domain:get(Revision, {provider, ProviderRef}),
             try
-                {_, Terminal} = hg_routing:acceptable_terminal(Predestination, TerminalRef, Provider, VS, Revision),
+                {_, Terminal} = hg_routing:acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
                 {[{{ProviderRef, Provider}, {TerminalRef, Terminal, {Priority, Weight}}} | Accepted], Rejected}
             catch
                 {rejected, Reason} ->
@@ -135,13 +138,6 @@ filter_routes({Routes, Rejected}, Prohibitions) ->
         {[], Rejected},
         Routes
     ).
-
-get_route(TerminalRef, Revision) ->
-    Terminal =
-        #domain_Terminal{
-            provider_ref = ProviderRef
-        } = hg_domain:get(Revision, {terminal, TerminalRef}),
-    {Terminal, hg_domain:get(Revision, {provider, ProviderRef})}.
 
 get_rule_set(RuleSetRef, Revision) ->
     hg_domain:get(Revision, {payment_routing_rules, RuleSetRef}).
