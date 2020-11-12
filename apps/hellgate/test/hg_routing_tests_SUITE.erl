@@ -1716,30 +1716,41 @@ construct_domain_fixture() ->
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         cash_limit = {
-                            decisions, [
+                            decisions,
+                            [
                                 #domain_CashLimitDecision{
-                                    if_ = {condition, {cost_in, ?cashrng(
-                                        {inclusive, ?cash(1000, <<"RUB">>)},
-                                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                                    )}},
-                                    then_ = {value, ?cashrng(
-                                        {inclusive, ?cash(1000, <<"RUB">>)},
-                                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                                    )}
+                                    if_ =
+                                        {condition,
+                                            {cost_in,
+                                                ?cashrng(
+                                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                                    {exclusive, ?cash(10000000, <<"RUB">>)}
+                                                )}},
+                                    then_ =
+                                        {value,
+                                            ?cashrng(
+                                                {inclusive, ?cash(1000, <<"RUB">>)},
+                                                {exclusive, ?cash(10000000, <<"RUB">>)}
+                                            )}
                                 },
                                 % invalid cash range check
                                 #domain_CashLimitDecision{
-                                    if_ = {condition, {cost_in, ?cashrng(
-                                        {inclusive, ?cash(1000, <<"RUB">>)},
-                                        {exclusive, ?cash(10000000, <<"EUR">>)}
-                                    )}},
-                                    then_ = {value, ?cashrng(
-                                        {inclusive, ?cash(1000, <<"RUB">>)},
-                                        {exclusive, ?cash(10000000, <<"RUB">>)}
-                                    )}
+                                    if_ =
+                                        {condition,
+                                            {cost_in,
+                                                ?cashrng(
+                                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                                    {exclusive, ?cash(10000000, <<"EUR">>)}
+                                                )}},
+                                    then_ =
+                                        {value,
+                                            ?cashrng(
+                                                {inclusive, ?cash(1000, <<"RUB">>)},
+                                                {exclusive, ?cash(10000000, <<"RUB">>)}
+                                            )}
                                 }
                             ]
-                         }
+                        }
                     }
                 }
             }
