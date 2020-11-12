@@ -69,6 +69,9 @@ handle_function_('GetShop', {UserInfo, PartyID, ID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = pm_party_machine:get_party(PartyID),
     ensure_shop(pm_party:get_shop(ID, Party));
+handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, PartyRevision, _Varset}, Opts) ->
+    % TODO: remove once clients migrated
+    handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, PartyRevision}, Opts);
 handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, PartyRevision}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, pm_maybe:get_defined(PartyRevision, {timestamp, Timestamp})),

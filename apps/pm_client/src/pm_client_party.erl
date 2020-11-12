@@ -25,7 +25,7 @@
 -export([get_contract/2]).
 -export([compute_contract_terms/6]).
 -export([get_shop/2]).
--export([compute_shop_terms/4]).
+-export([compute_shop_terms/5]).
 -export([compute_payment_institution_terms/3]).
 -export([compute_payout_cash_flow/2]).
 
@@ -205,10 +205,10 @@ suspend_shop(ID, Client) ->
 activate_shop(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'ActivateShop', [ID]})).
 
--spec compute_shop_terms(shop_id(), timestamp(), party_revision_param(), pid()) ->
+-spec compute_shop_terms(shop_id(), timestamp(), party_revision_param(), varset(), pid()) ->
     dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
-compute_shop_terms(ID, Timestamp, PartyRevision, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ComputeShopTerms', [ID, Timestamp, PartyRevision]})).
+compute_shop_terms(ID, Timestamp, PartyRevision, VS, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputeShopTerms', [ID, Timestamp, PartyRevision, VS]})).
 
 -spec get_claim(claim_id(), pid()) -> claim() | woody_error:business_error().
 get_claim(ID, Client) ->
