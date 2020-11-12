@@ -652,8 +652,8 @@ acceptable_risk(_ParentName, undefined, _VS) ->
 acceptable_risk(ParentName, Selector, VS) ->
     RiskCoverage = get_selector_value(risk_coverage, Selector),
     RiskScore = getv(risk_score, VS),
-    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0
-    orelse throw(?rejected({ParentName, risk_coverage})).
+    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0 orelse
+        throw(?rejected({ParentName, risk_coverage})).
 
 acceptable_refunds_terms(_Terms, undefined) ->
     true;
