@@ -627,7 +627,7 @@ acceptable_payment_terms(
     _ = try_accept_term(ParentName, cost, getv(cost, VS), CashLimitSelector),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined)),
     _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined)),
-    _ = acceptable_risk_score_term(ParentName, RiskCoverageSelector, VS),
+    _ = acceptable_risk(ParentName, RiskCoverageSelector, VS),
     %% TODO Check chargeback terms when there will be any
     %% _ = acceptable_chargeback_terms(...)
     true;
@@ -647,10 +647,13 @@ acceptable_holds_terms(Terms, {hold, Lifetime}) ->
             throw(?rejected({'PaymentHoldsProvisionTerms', undefined}))
     end.
 
-acceptable_risk_score_term(_ParentName, undefined, _VS) ->
+acceptable_risk(_ParentName, undefined, _VS) ->
     true;
-acceptable_risk_score_term(ParentName, Selector, VS) ->
-    try_accept_term(ParentName, risk_score, getv(risk_score, VS), Selector).
+acceptable_risk(ParentName, Selector, VS) ->
+    RiskCoverage = get_selector_value(risk_coverage, Selector),
+    RiskScore = getv(risk_score, VS),
+    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0
+    orelse throw(?rejected({ParentName, risk_coverage})).
 
 acceptable_refunds_terms(_Terms, undefined) ->
     true;
@@ -767,11 +770,7 @@ test_term(payment_tool, PT, PMs) ->
 test_term(cost, Cost, CashRange) ->
     hg_cash_range:is_inside(Cost, CashRange) == within;
 test_term(lifetime, ?hold_lifetime(Lifetime), ?hold_lifetime(Allowed)) ->
-    Lifetime =< Allowed;
-test_term(risk_score, low, high) ->
-    true;
-test_term(risk_score, Value, RiskScore) ->
-    Value =:= RiskScore.
+    Lifetime =< Allowed.
 
 %%
 
