@@ -24,8 +24,7 @@ is_inside(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper}) ->
         {true, false} ->
             {exceeds, upper};
         _ ->
-            logger:warning("Invalid cash range specified, ~p, ~p", [CashRange, Cash]),
-            undefined
+            error({misconfiguration, {'Invalid cash range specified', CashRange, Cash}})
     end.
 
 compare_cash(_, V, {inclusive, V}) ->
