@@ -241,14 +241,15 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
     VS = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
     RiskScore = validate_risk_score(inspect(RecPaymentTool, VS)),
+    VS1 = VS#{risk_score => RiskScore},
     PaymentInstitutionRef = get_payment_institution_ref(Shop, Party),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
 
     Predestination = recurrent_paytool,
     {Routes, RejectContext} =
-        case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS, Revision) of
+        case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision) of
             {[], _} ->
-                hg_routing:gather_routes(Predestination, PaymentInstitution, VS, Revision);
+                hg_routing:gather_routes(Predestination, PaymentInstitution, VS1, Revision);
             AcceptedRoutes ->
                 AcceptedRoutes
         end,

@@ -773,7 +773,7 @@ choose_route(PaymentInstitution, RiskScore, VS, Revision, St) ->
             {Routes, RejectContext} = gather_routes(
                 Predestination,
                 PaymentInstitution,
-                VS,
+                VS#{risk_score => RiskScore},
                 Revision
             ),
             FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
