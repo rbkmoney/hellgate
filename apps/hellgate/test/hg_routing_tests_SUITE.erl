@@ -26,6 +26,8 @@
 -export([prefer_weight_over_availability/1]).
 -export([prefer_weight_over_conversion/1]).
 -export([handle_uncomputable_provider_terms/1]).
+-export([routes_selected_for_high_risk_score/1]).
+-export([routes_selected_for_low_risk_score/1]).
 
 -export([terminal_priority_for_shop/1]).
 
@@ -53,7 +55,8 @@ all() ->
         no_route_found_for_payment,
         handle_uncomputable_provider_terms,
         {group, routing_with_fail_rate},
-        {group, terminal_priority}
+        {group, terminal_priority},
+        {group, routing_with_risk_coverage_set}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -70,6 +73,10 @@ groups() ->
         ]},
         {terminal_priority, [], [
             terminal_priority_for_shop
+        ]},
+        {routing_with_risk_coverage_set, [parallel], [
+            routes_selected_for_low_risk_score,
+            routes_selected_for_high_risk_score
         ]}
     ].
 
@@ -110,7 +117,11 @@ end_per_suite(C) ->
 -spec init_per_group(group_name(), config()) -> config().
 init_per_group(routing_with_fail_rate, C) ->
     Revision = hg_domain:head(),
-    ok = hg_domain:upsert(routing_with_fail_rate_fixture(Revision)),
+    ok = hg_domain:upsert(routing_with_fail_rate_and_risk_score_fixture(Revision, false)),
+    [{original_domain_revision, Revision} | C];
+init_per_group(routing_with_risk_coverage_set, C) ->
+    Revision = hg_domain:head(),
+    ok = hg_domain:upsert(routing_with_fail_rate_and_risk_score_fixture(Revision, true)),
     [{original_domain_revision, Revision} | C];
 init_per_group(terminal_priority, C) ->
     Revision = hg_domain:head(),
@@ -612,9 +623,35 @@ terminal_priority_for_shop(PartyID, ShopID, _C) ->
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
     hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore).
 
+-spec routes_selected_for_low_risk_score(config()) -> test_return().
+routes_selected_for_low_risk_score(C) ->
+    routes_selected_with_risk_score(C, low, [200, 201, 202]).
+
+-spec routes_selected_for_high_risk_score(config()) -> test_return().
+routes_selected_for_high_risk_score(C) ->
+    routes_selected_with_risk_score(C, high, [201, 202]).
+
+routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
+    VS = #{
+        category => ?cat(1),
+        currency => ?cur(<<"RUB">>),
+        cost => ?cash(1000, <<"RUB">>),
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        party_id => <<"12345">>,
+        flow => instant,
+        risk_score => RiskScore
+    },
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+
+    {SelectedProviders, _} = gather_routes(PaymentInstitution, VS, Revision),
+    %% Ensure list of selected provider ID match to given
+    PrvIDList = [P || {{?prv(P), _}, _} <- SelectedProviders],
+    ok.
+
 %%% Domain config fixtures
 
-routing_with_fail_rate_fixture(Revision) ->
+routing_with_fail_rate_and_risk_score_fixture(Revision, AddRiskScore) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     [
         {payment_institution, #domain_PaymentInstitutionObject{
@@ -703,7 +740,8 @@ routing_with_fail_rate_fixture(Revision) ->
                                     {provider, settlement},
                                     ?share(21, 1000, operation_amount)
                                 )
-                            ]}
+                            ]},
+                        risk_coverage = maybe_set_risk_coverage(AddRiskScore, low)
                     }
                 }
             }
@@ -768,7 +806,8 @@ routing_with_fail_rate_fixture(Revision) ->
                                     {provider, settlement},
                                     ?share(21, 1000, operation_amount)
                                 )
-                            ]}
+                            ]},
+                        risk_coverage = maybe_set_risk_coverage(AddRiskScore, high)
                     }
                 }
             }
@@ -839,6 +878,11 @@ routing_with_fail_rate_fixture(Revision) ->
             }
         }}
     ].
+
+maybe_set_risk_coverage(false, _) ->
+    undefined;
+maybe_set_risk_coverage(true, V) ->
+    {value, V}.
 
 construct_domain_fixture() ->
     TestTermSet = #domain_TermSet{

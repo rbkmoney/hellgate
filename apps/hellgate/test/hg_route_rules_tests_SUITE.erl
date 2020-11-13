@@ -22,6 +22,8 @@
 -export([empty_candidate_ok/1]).
 -export([ruleset_misconfig/1]).
 -export([prefer_better_risk_score/1]).
+-export([routes_selected_for_high_risk_score/1]).
+-export([routes_selected_for_low_risk_score/1]).
 
 -behaviour(supervisor).
 
@@ -48,11 +50,18 @@ all() ->
         rejected_by_table_prohibitions,
         empty_candidate_ok,
         ruleset_misconfig,
-        prefer_better_risk_score
+        prefer_better_risk_score,
+        {group, routing_with_risk_coverage_set}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
-groups() -> [].
+groups() ->
+    [
+        {routing_with_risk_coverage_set, [parallel], [
+            routes_selected_for_low_risk_score,
+            routes_selected_for_high_risk_score
+        ]}
+    ].
 
 -spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
@@ -86,6 +95,10 @@ end_per_suite(C) ->
     ok = hg_domain:cleanup().
 
 -spec init_per_group(group_name(), config()) -> config().
+init_per_group(routing_with_risk_coverage_set, C) ->
+    Revision = hg_domain:head(),
+    ok = hg_domain:upsert(routing_with_risk_score_fixture(Revision)),
+    C;
 init_per_group(_, C) ->
     C.
 
@@ -264,7 +277,261 @@ prefer_better_risk_score(_C) ->
 
     ok.
 
+-spec routes_selected_for_low_risk_score(config()) -> test_return().
+routes_selected_for_low_risk_score(C) ->
+    routes_selected_with_risk_score(C, low, [200, 201, 202]).
+
+-spec routes_selected_for_high_risk_score(config()) -> test_return().
+routes_selected_for_high_risk_score(C) ->
+    routes_selected_with_risk_score(C, high, [201, 202]).
+
+routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
+    VS = #{
+        category => ?cat(1),
+        currency => ?cur(<<"RUB">>),
+        cost => ?cash(1000, <<"RUB">>),
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        party_id => <<"12345">>,
+        flow => instant,
+        risk_score => RiskScore
+    },
+    Revision = hg_domain:head(),
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+
+    {SelectedProviders, _} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    %% Ensure list of selected provider ID match to given
+    PrvIDList = [P || {{?prv(P), _}, _} <- SelectedProviders],
+    ok.
+
 %%% Domain config fixtures
+
+routing_with_risk_score_fixture(Revision) ->
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+    [
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = PaymentInstitution#domain_PaymentInstitution{
+                providers =
+                    {value,
+                        ?ordset([
+                            ?prv(200),
+                            ?prv(201),
+                            ?prv(202)
+                        ])}
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(111),
+            data = #domain_Terminal{
+                name = <<"Payment Terminal Terminal">>,
+                description = <<"Euroset">>
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(222),
+            data = #domain_Terminal{
+                name = <<"Payment Terminal Terminal">>,
+                description = <<"Euroset">>
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(200),
+            data = #domain_Provider{
+                name = <<"Biba">>,
+                description = <<"Payment terminal provider">>,
+                terminal =
+                    {decisions, [
+                        #domain_TerminalDecision{
+                            if_ = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
+                            then_ = {value, [#domain_ProviderTerminalRef{id = 111}]}
+                        },
+                        #domain_TerminalDecision{
+                            if_ = {condition, {party, #domain_PartyCondition{id = <<"54321">>}}},
+                            then_ = {value, [#domain_ProviderTerminalRef{id = 111}]}
+                        }
+                    ]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"biba">>
+                    }
+                },
+                abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies =
+                            {value,
+                                ?ordset([
+                                    ?cur(<<"RUB">>)
+                                ])},
+                        categories =
+                            {value,
+                                ?ordset([
+                                    ?cat(1)
+                                ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(payment_terminal, euroset),
+                                    ?pmt(digital_wallet, qiwi)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(10000000, <<"RUB">>)}
+                                )},
+                        cash_flow =
+                            {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(21, 1000, operation_amount)
+                                )
+                            ]},
+                        risk_coverage = {value, low}
+                    }
+                }
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(201),
+            data = #domain_Provider{
+                name = <<"Boba">>,
+                description = <<"Payment terminal provider">>,
+                terminal =
+                    {decisions, [
+                        #domain_TerminalDecision{
+                            if_ = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
+                            then_ = {value, [#domain_ProviderTerminalRef{id = 111}]}
+                        },
+                        #domain_TerminalDecision{
+                            if_ = {condition, {party, #domain_PartyCondition{id = <<"54321">>}}},
+                            then_ = {value, [#domain_ProviderTerminalRef{id = 111, priority = 1005}]}
+                        }
+                    ]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"biba">>
+                    }
+                },
+                abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies =
+                            {value,
+                                ?ordset([
+                                    ?cur(<<"RUB">>)
+                                ])},
+                        categories =
+                            {value,
+                                ?ordset([
+                                    ?cat(1)
+                                ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(payment_terminal, euroset),
+                                    ?pmt(digital_wallet, qiwi)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(10000000, <<"RUB">>)}
+                                )},
+                        cash_flow =
+                            {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(21, 1000, operation_amount)
+                                )
+                            ]},
+                        risk_coverage = {value, high}
+                    }
+                }
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(202),
+            data = #domain_Provider{
+                name = <<"Buba">>,
+                description = <<"Payment terminal provider">>,
+                terminal =
+                    {decisions, [
+                        #domain_TerminalDecision{
+                            if_ = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
+                            then_ = {value, [#domain_ProviderTerminalRef{id = 222}]}
+                        },
+                        #domain_TerminalDecision{
+                            if_ = {condition, {party, #domain_PartyCondition{id = <<"54321">>}}},
+                            then_ = {value, [#domain_ProviderTerminalRef{id = 111}]}
+                        }
+                    ]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"buba">>
+                    }
+                },
+                abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies =
+                            {value,
+                                ?ordset([
+                                    ?cur(<<"RUB">>)
+                                ])},
+                        categories =
+                            {value,
+                                ?ordset([
+                                    ?cat(1)
+                                ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(payment_terminal, euroset),
+                                    ?pmt(digital_wallet, qiwi)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(10000000, <<"RUB">>)}
+                                )},
+                        cash_flow =
+                            {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(21, 1000, operation_amount)
+                                )
+                            ]}
+                    }
+                }
+            }
+        }}
+    ].
 
 construct_domain_fixture() ->
     Prohibitions =
