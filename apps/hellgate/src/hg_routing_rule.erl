@@ -18,7 +18,7 @@
     pm_selector:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
-gather_routes(_, #domain_PaymentInstitution{payment_routing = undefined}, VS, _) ->
+gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, VS, _) ->
     {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     RejectedContext = #{
@@ -26,9 +26,9 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
         rejected_providers => [],
         rejected_routes => []
     },
-    PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing,
-    RuleSet = get_rule_set(PaymentRouting#domain_PaymentRouting.policies, Revision),
-    RuleSetDeny = get_rule_set(PaymentRouting#domain_PaymentRouting.prohibitions, Revision),
+    PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing_rules,
+    RuleSet = get_rule_set(PaymentRouting#domain_RoutingRules.policies, Revision),
+    RuleSetDeny = get_rule_set(PaymentRouting#domain_RoutingRules.prohibitions, Revision),
     Candidates = reduce(RuleSet, VS, Revision),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
     Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
@@ -46,7 +46,7 @@ get_table_prohibitions(RuleSetDeny, VS, Revision) ->
     ).
 
 reduce(RuleSet, VS, Revision) ->
-    #domain_PaymentRoutingRuleset{
+    #domain_RoutingRuleset{
         decisions = Decisions
     } = RuleSet,
     reduce_decisions(Decisions, VS, Revision).
@@ -61,8 +61,8 @@ reduce_decisions({candidates, Candidates}, VS, Rev) ->
 reduce_delegates_decision([], _VS, _Rev) ->
     [];
 reduce_delegates_decision([D | Delegates], VS, Rev) ->
-    Predicate = D#domain_PaymentRoutingDelegate.allowed,
-    RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
+    Predicate = D#domain_RoutingDelegate.allowed,
+    RuleSetRef = D#domain_RoutingDelegate.ruleset,
     case pm_selector:reduce_predicate(Predicate, VS, Rev) of
         ?const(false) ->
             reduce_delegates_decision(Delegates, VS, Rev);
@@ -79,7 +79,7 @@ reduce_delegates_decision([D | Delegates], VS, Rev) ->
 reduce_candidates_decision(Candidates, VS, Rev) ->
     lists:foldl(
         fun(C, AccIn) ->
-            Predicate = C#domain_PaymentRoutingCandidate.allowed,
+            Predicate = C#domain_RoutingCandidate.allowed,
             case pm_selector:reduce_predicate(Predicate, VS, Rev) of
                 ?const(false) ->
                     AccIn;
@@ -100,7 +100,7 @@ reduce_candidates_decision(Candidates, VS, Rev) ->
 collect_routes(Predestination, Candidates, VS, Revision) ->
     lists:foldl(
         fun(Candidate, {Accepted, Rejected}) ->
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 terminal = TerminalRef,
                 priority = Priority,
                 weight = Weight
@@ -143,7 +143,7 @@ get_rule_set(RuleSetRef, Revision) ->
     hg_domain:get(Revision, {payment_routing_rules, RuleSetRef}).
 
 get_terminal_ref(Candidate) ->
-    Candidate#domain_PaymentRoutingCandidate.terminal.
+    Candidate#domain_RoutingCandidate.terminal.
 
 get_description(Candidate) ->
-    Candidate#domain_PaymentRoutingCandidate.description.
+    Candidate#domain_RoutingCandidate.description.

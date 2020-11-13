@@ -5957,7 +5957,7 @@ construct_domain_fixture() ->
             ?ruleset(1),
             <<"SubMain">>,
             {candidates, [
-                #domain_PaymentRoutingCandidate{
+                #domain_RoutingCandidate{
                     allowed = {constant, true},
                     terminal = #domain_TerminalRef{id = 1}
                 }
@@ -5967,10 +5967,10 @@ construct_domain_fixture() ->
             ?ruleset(2),
             <<"Main">>,
             {delegates, [
-                #domain_PaymentRoutingDelegate{
+                #domain_RoutingDelegate{
                     description = <<"Important merch">>,
                     allowed = {condition, {party, #domain_PartyCondition{id = <<"bIg merch">>}}},
-                    ruleset = #domain_PaymentRoutingRulesetRef{id = 1}
+                    ruleset = #domain_RoutingRulesetRef{id = 1}
                 }
             ]}
         ),
@@ -5990,7 +5990,7 @@ construct_domain_fixture() ->
                             ?prv(3),
                             ?prv(4)
                         ])},
-                payment_routing = #domain_PaymentRouting{
+                payment_routing_rules = #domain_RoutingRules{
                     policies = ?ruleset(2),
                     prohibitions = ?ruleset(3)
                 },

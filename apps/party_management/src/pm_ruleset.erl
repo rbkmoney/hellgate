@@ -8,15 +8,15 @@
 
 -define(const(Bool), {constant, Bool}).
 
--type payment_routing_ruleset() :: dmsl_domain_thrift:'PaymentRoutingRuleset'().
+-type payment_routing_ruleset() :: dmsl_domain_thrift:'RoutingRuleset'().
 -type varset() :: pm_selector:varset().
 -type domain_revision() :: pm_domain:revision().
 
 -spec reduce_payment_routing_ruleset(payment_routing_ruleset(), varset(), domain_revision()) ->
     payment_routing_ruleset().
 reduce_payment_routing_ruleset(RuleSet, VS, DomainRevision) ->
-    RuleSet#domain_PaymentRoutingRuleset{
-        decisions = reduce_payment_routing_decisions(RuleSet#domain_PaymentRoutingRuleset.decisions, VS, DomainRevision)
+    RuleSet#domain_RoutingRuleset{
+        decisions = reduce_payment_routing_decisions(RuleSet#domain_RoutingRuleset.decisions, VS, DomainRevision)
     }.
 
 reduce_payment_routing_decisions({delegates, Delegates}, VS, Rev) ->
@@ -27,13 +27,13 @@ reduce_payment_routing_decisions({candidates, Candidates}, VS, Rev) ->
 reduce_payment_routing_delegates([], _VS, _Rev) ->
     {delegates, []};
 reduce_payment_routing_delegates([D | Delegates], VS, Rev) ->
-    Predicate = D#domain_PaymentRoutingDelegate.allowed,
-    RuleSetRef = D#domain_PaymentRoutingDelegate.ruleset,
+    Predicate = D#domain_RoutingDelegate.allowed,
+    RuleSetRef = D#domain_RoutingDelegate.ruleset,
     case pm_selector:reduce_predicate(Predicate, VS, Rev) of
         ?const(false) ->
             reduce_payment_routing_delegates(Delegates, VS, Rev);
         ?const(true) ->
-            #domain_PaymentRoutingRuleset{
+            #domain_RoutingRuleset{
                 decisions = Decisions
             } = get_payment_routing_ruleset(RuleSetRef, Rev),
             reduce_payment_routing_decisions(Decisions, VS, Rev);
@@ -49,12 +49,12 @@ reduce_payment_routing_candidates(Candidates, VS, Rev) ->
     {candidates,
         lists:foldr(
             fun(C, AccIn) ->
-                Predicate = C#domain_PaymentRoutingCandidate.allowed,
+                Predicate = C#domain_RoutingCandidate.allowed,
                 case pm_selector:reduce_predicate(Predicate, VS, Rev) of
                     ?const(false) ->
                         AccIn;
                     ?const(true) = ReducedPredicate ->
-                        ReducedCandidate = C#domain_PaymentRoutingCandidate{
+                        ReducedCandidate = C#domain_RoutingCandidate{
                             allowed = ReducedPredicate
                         },
                         [ReducedCandidate | AccIn];

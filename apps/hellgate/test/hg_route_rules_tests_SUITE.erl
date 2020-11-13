@@ -346,7 +346,7 @@ construct_domain_fixture() ->
                             ?prv(2),
                             ?prv(3)
                         ])},
-                payment_routing = #domain_PaymentRouting{
+                payment_routing_rules = #domain_RoutingRules{
                     policies = ?ruleset(1),
                     prohibitions = ?ruleset(5)
                 },
@@ -370,7 +370,7 @@ construct_domain_fixture() ->
                             ?prv(2),
                             ?prv(3)
                         ])},
-                payment_routing = #domain_PaymentRouting{
+                payment_routing_rules = #domain_RoutingRules{
                     policies = ?ruleset(7),
                     prohibitions = ?ruleset(6)
                 },
@@ -684,7 +684,7 @@ delegate(Allowed, RuleSetRef) ->
     delegate(undefined, Allowed, RuleSetRef).
 
 delegate(Descr, Allowed, RuleSetRef) ->
-    #domain_PaymentRoutingDelegate{
+    #domain_RoutingDelegate{
         description = Descr,
         allowed = Allowed,
         ruleset = RuleSetRef
@@ -694,7 +694,7 @@ candidate(Allowed, Terminal) ->
     candidate(undefined, Allowed, Terminal).
 
 candidate(Descr, Allowed, Terminal) ->
-    #domain_PaymentRoutingCandidate{
+    #domain_RoutingCandidate{
         description = Descr,
         allowed = Allowed,
         terminal = Terminal
