@@ -36,7 +36,7 @@
 -define(rejected(Reason), {rejected, Reason}).
 
 -type reject_context() :: #{
-    varset := varset(),
+    varset := pm_selector:varset(),
     rejected_providers := list(rejected_provider()),
     rejected_routes := list(rejected_route())
 }.
@@ -98,21 +98,6 @@
 
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 
--type varset() :: #{
-    category => dmsl_domain_thrift:'CategoryRef'(),
-    currency => dmsl_domain_thrift:'CurrencyRef'(),
-    cost => dmsl_domain_thrift:'Cash'(),
-    payment_tool => dmsl_domain_thrift:'PaymentTool'(),
-    party_id => dmsl_domain_thrift:'PartyID'(),
-    shop_id => dmsl_domain_thrift:'ShopID'(),
-    risk_score := dmsl_domain_thrift:'RiskScore'(),
-    flow => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
-    payout_method => dmsl_domain_thrift:'PayoutMethodRef'(),
-    wallet_id => dmsl_domain_thrift:'WalletID'(),
-    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'(),
-    p2p_tool => dmsl_domain_thrift:'P2PTool'()
-}.
-
 -record(route_scores, {
     availability_condition :: condition_score(),
     conversion_condition :: condition_score(),
@@ -127,12 +112,11 @@
 -export_type([route_predestination/0]).
 -export_type([non_fail_rated_route/0]).
 -export_type([reject_context/0]).
--export_type([varset/0]).
 
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
-    varset(),
+    pm_selector:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
@@ -168,7 +152,7 @@ check_risk_score(_RiskScore) ->
 -spec select_providers(
     route_predestination(),
     payment_institution(),
-    varset(),
+    pm_selector:varset(),
     hg_domain:revision(),
     reject_context()
 ) -> {[provider_with_ref()], reject_context()}.
@@ -195,7 +179,7 @@ select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext
 -spec select_routes(
     route_predestination(),
     [provider_with_ref()],
-    varset(),
+    pm_selector:varset(),
     hg_domain:revision(),
     reject_context()
 ) -> {[route()], reject_context()}.
@@ -492,7 +476,7 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
 -spec acceptable_provider(
     route_predestination(),
     provider_ref(),
-    varset(),
+    pm_selector:varset(),
     hg_domain:revision()
 ) -> provider_with_ref() | no_return().
 acceptable_provider(Predestination, ProviderRef, VS, Revision) ->
@@ -512,7 +496,7 @@ acceptable_provider(Predestination, ProviderRef, VS, Revision) ->
 -spec collect_routes_for_provider(
     route_predestination(),
     provider_with_ref(),
-    varset(),
+    pm_selector:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], [rejected_route()]}.
 collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revision) ->
@@ -540,7 +524,7 @@ collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revisio
     route_predestination(),
     provider_ref(),
     terminal_ref(),
-    varset(),
+    pm_selector:varset(),
     hg_domain:revision()
 ) -> unweighted_terminal() | no_return().
 acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
@@ -613,8 +597,7 @@ acceptable_payment_terms(
         payment_methods = PMsSelector,
         cash_limit = CashLimitSelector,
         holds = HoldsTerms,
-        refunds = RefundsTerms,
-        risk_coverage = RiskCoverageSelector
+        refunds = RefundsTerms
     },
     VS
 ) ->
@@ -627,7 +610,6 @@ acceptable_payment_terms(
     _ = try_accept_term(ParentName, cost, getv(cost, VS), CashLimitSelector),
     _ = acceptable_holds_terms(HoldsTerms, getv(flow, VS, undefined)),
     _ = acceptable_refunds_terms(RefundsTerms, getv(refunds, VS, undefined)),
-    _ = acceptable_risk(ParentName, RiskCoverageSelector, VS),
     %% TODO Check chargeback terms when there will be any
     %% _ = acceptable_chargeback_terms(...)
     true;
@@ -646,14 +628,6 @@ acceptable_holds_terms(Terms, {hold, Lifetime}) ->
         undefined ->
             throw(?rejected({'PaymentHoldsProvisionTerms', undefined}))
     end.
-
-acceptable_risk(_ParentName, undefined, _VS) ->
-    true;
-acceptable_risk(ParentName, Selector, VS) ->
-    RiskCoverage = get_selector_value(risk_coverage, Selector),
-    RiskScore = getv(risk_score, VS),
-    hg_inspector:compare_risk_score(RiskCoverage, RiskScore) >= 0 orelse
-        throw(?rejected({ParentName, risk_coverage})).
 
 acceptable_refunds_terms(_Terms, undefined) ->
     true;
@@ -711,8 +685,7 @@ merge_payment_terms(
         cash_flow = PCashflow,
         holds = PHolds,
         refunds = PRefunds,
-        chargebacks = PChargebacks,
-        risk_coverage = PRiskCoverage
+        chargebacks = PChargebacks
     },
     #domain_PaymentsProvisionTerms{
         currencies = TCurrencies,
@@ -722,8 +695,7 @@ merge_payment_terms(
         cash_flow = TCashflow,
         holds = THolds,
         refunds = TRefunds,
-        chargebacks = TChargebacks,
-        risk_coverage = TRiskCoverage
+        chargebacks = TChargebacks
     }
 ) ->
     #domain_PaymentsProvisionTerms{
@@ -734,8 +706,7 @@ merge_payment_terms(
         cash_flow = hg_utils:select_defined(TCashflow, PCashflow),
         holds = hg_utils:select_defined(THolds, PHolds),
         refunds = hg_utils:select_defined(TRefunds, PRefunds),
-        chargebacks = hg_utils:select_defined(TChargebacks, PChargebacks),
-        risk_coverage = hg_utils:select_defined(TRiskCoverage, PRiskCoverage)
+        chargebacks = hg_utils:select_defined(TChargebacks, PChargebacks)
     };
 merge_payment_terms(ProviderTerms, TerminalTerms) ->
     hg_utils:select_defined(TerminalTerms, ProviderTerms).
