@@ -69,23 +69,14 @@ handle_function_('GetShop', {UserInfo, PartyID, ID}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = pm_party_machine:get_party(PartyID),
     ensure_shop(pm_party:get_shop(ID, Party));
-handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, PartyRevision, _Varset}, Opts) ->
-    % TODO: remove once clients migrated
-    handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, PartyRevision}, Opts);
-handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, PartyRevision}, _Opts) ->
+handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, PartyRevision, Varset}, _Opts) ->
     ok = set_meta_and_check_access(UserInfo, PartyID),
-    Party = checkout_party(PartyID, pm_maybe:get_defined(PartyRevision, {timestamp, Timestamp})),
+    Party = checkout_party(PartyID, PartyRevision),
     Shop = ensure_shop(pm_party:get_shop(ShopID, Party)),
     Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Revision = pm_domain:head(),
-    VS = #{
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Shop#domain_Shop.category,
-        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
-        identification_level => get_identification_level(Contract, Party)
-    },
-    pm_party:reduce_terms(pm_party:get_terms(Contract, Timestamp, Revision), VS, Revision);
+    DecodedVS = pm_varset:decode_varset(Varset),
+    pm_party:reduce_terms(pm_party:get_terms(Contract, Timestamp, Revision), DecodedVS, Revision);
 handle_function_(Fun, Args, _Opts) when
     Fun =:= 'BlockShop' orelse
         Fun =:= 'UnblockShop' orelse
