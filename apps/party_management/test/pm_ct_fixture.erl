@@ -41,7 +41,7 @@
 -type template() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms() :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime() :: dmsl_domain_thrift:'Lifetime'() | undefined.
--type payment_routing_ruleset() :: dmsl_domain_thrift:'PaymentRoutingRulesetRef'().
+-type payment_routing_ruleset() :: dmsl_domain_thrift:'RoutingRulesetRef'().
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
@@ -291,11 +291,11 @@ construct_term_set_hierarchy(Ref, ParentRef, TermSet) ->
     }}.
 
 -spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) ->
-    dmsl_domain_thrift:'PaymentRoutingRulesetObject'().
+    dmsl_domain_thrift:'RoutingRulesetObject'().
 construct_payment_routing_ruleset(Ref, Name, Decisions) ->
-    {payment_routing_rules, #domain_PaymentRoutingRulesObject{
+    {payment_routing_rules, #domain_RoutingRulesObject{
         ref = Ref,
-        data = #domain_PaymentRoutingRuleset{
+        data = #domain_RoutingRuleset{
             name = Name,
             decisions = Decisions
         }

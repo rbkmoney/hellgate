@@ -22,7 +22,7 @@
 -define(pinst(ID), #domain_PaymentInstitutionRef{id = ID}).
 -define(bank(ID), #domain_BankRef{id = ID}).
 -define(bussched(ID), #domain_BusinessScheduleRef{id = ID}).
--define(ruleset(ID), #domain_PaymentRoutingRulesetRef{id = ID}).
+-define(ruleset(ID), #domain_RoutingRulesetRef{id = ID}).
 -define(bc_cat(ID), #domain_BankCardCategoryRef{id = ID}).
 
 -define(cashrng(Lower, Upper), #domain_CashRange{lower = Lower, upper = Upper}).

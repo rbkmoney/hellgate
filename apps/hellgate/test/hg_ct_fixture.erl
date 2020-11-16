@@ -43,7 +43,7 @@
 -type template() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms() :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime() :: dmsl_domain_thrift:'Lifetime'() | undefined.
--type payment_routing_ruleset() :: dmsl_domain_thrift:'PaymentRoutingRulesetRef'().
+-type payment_routing_ruleset() :: dmsl_domain_thrift:'RoutingRulesetRef'().
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
@@ -267,26 +267,26 @@ construct_dummy_additional_info() ->
     #domain_AdditionalTransactionInfo{rrn = <<"rrn">>, approval_code = <<"code">>}.
 
 -spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) ->
-    dmsl_domain_thrift:'PaymentRoutingRulesetObject'().
+    dmsl_domain_thrift:'RoutingRulesetObject'().
 construct_payment_routing_ruleset(Ref, Name, Decisions) ->
-    {payment_routing_rules, #domain_PaymentRoutingRulesObject{
+    {payment_routing_rules, #domain_RoutingRulesObject{
         ref = Ref,
-        data = #domain_PaymentRoutingRuleset{
+        data = #domain_RoutingRuleset{
             name = Name,
             decisions = Decisions
         }
     }}.
 
--spec construct_routing_delegate(_RuleSetRef, _Predicate) -> dmsl_domain_thrift:'PaymentRoutingDelegate'().
+-spec construct_routing_delegate(_RuleSetRef, _Predicate) -> dmsl_domain_thrift:'RoutingDelegate'().
 construct_routing_delegate(Ref, Predicate) ->
-    #domain_PaymentRoutingDelegate{
+    #domain_RoutingDelegate{
         allowed = Predicate,
         ruleset = Ref
     }.
 
--spec construct_routing_candidate(_, _) -> dmsl_domain_thrift:'PaymentRoutingCandidate'().
+-spec construct_routing_candidate(_, _) -> dmsl_domain_thrift:'RoutingCandidate'().
 construct_routing_candidate(TerminalRef, Predicate) ->
-    #domain_PaymentRoutingCandidate{
+    #domain_RoutingCandidate{
         allowed = Predicate,
         terminal = TerminalRef
     }.

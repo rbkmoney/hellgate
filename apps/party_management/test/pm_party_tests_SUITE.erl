@@ -1727,53 +1727,53 @@ compute_payment_routing_ruleset_ok(C) ->
     Varset = #payproc_Varset{
         party_id = <<"67890">>
     },
-    #domain_PaymentRoutingRuleset{
+    #domain_RoutingRuleset{
         name = <<"Rule#1">>,
         decisions =
             {candidates, [
-                #domain_PaymentRoutingCandidate{
+                #domain_RoutingCandidate{
                     terminal = ?trm(2),
                     allowed = {constant, true}
                 },
-                #domain_PaymentRoutingCandidate{
+                #domain_RoutingCandidate{
                     terminal = ?trm(3),
                     allowed = {constant, true}
                 },
-                #domain_PaymentRoutingCandidate{
+                #domain_RoutingCandidate{
                     terminal = ?trm(1),
                     allowed = {constant, true}
                 }
             ]}
-    } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
+    } = pm_client_party:compute_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_unreducable(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     Varset = #payproc_Varset{},
-    #domain_PaymentRoutingRuleset{
+    #domain_RoutingRuleset{
         name = <<"Rule#1">>,
         decisions =
             {delegates, [
-                #domain_PaymentRoutingDelegate{
+                #domain_RoutingDelegate{
                     allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
                     ruleset = ?ruleset(2)
                 },
-                #domain_PaymentRoutingDelegate{
+                #domain_RoutingDelegate{
                     allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
                     ruleset = ?ruleset(3)
                 },
-                #domain_PaymentRoutingDelegate{
+                #domain_RoutingDelegate{
                     allowed = {constant, true},
                     ruleset = ?ruleset(4)
                 }
             ]}
-    } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
+    } = pm_client_party:compute_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_not_found(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     {exception, #payproc_RuleSetNotFound{}} =
-        (catch pm_client_party:compute_payment_routing_ruleset(?ruleset(5), DomainRevision, #payproc_Varset{}, Client)).
+        (catch pm_client_party:compute_routing_ruleset(?ruleset(5), DomainRevision, #payproc_Varset{}, Client)).
 
 %%
 
@@ -2348,44 +2348,44 @@ construct_domain_fixture() ->
     },
     Decision1 =
         {delegates, [
-            #domain_PaymentRoutingDelegate{
+            #domain_RoutingDelegate{
                 allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
                 ruleset = ?ruleset(2)
             },
-            #domain_PaymentRoutingDelegate{
+            #domain_RoutingDelegate{
                 allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
                 ruleset = ?ruleset(3)
             },
-            #domain_PaymentRoutingDelegate{
+            #domain_RoutingDelegate{
                 allowed = {constant, true},
                 ruleset = ?ruleset(4)
             }
         ]},
     Decision2 =
         {candidates, [
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {constant, true},
                 terminal = ?trm(1)
             }
         ]},
     Decision3 =
         {candidates, [
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
                 terminal = ?trm(2)
             },
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {constant, true},
                 terminal = ?trm(3)
             },
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {constant, true},
                 terminal = ?trm(1)
             }
         ]},
     Decision4 =
         {candidates, [
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {constant, true},
                 terminal = ?trm(3)
             }
