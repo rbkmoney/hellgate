@@ -292,7 +292,7 @@ do_create(Opts, CreateParams = ?chargeback_params(Levy, Body, _Reason, _Occurred
     ShopID = get_invoice_shop_id(Invoice),
     Shop = pm_party:get_shop(ShopID, Party),
     ContractID = get_shop_contract_id(Shop),
-    Contract = pm_party:get_contract(ContractID, Party),
+    Contract = hg_party:get_contract(ContractID, Party),
     TermSet = pm_party:get_terms(Contract, CreatedAt, Revision),
     ServiceTerms = get_merchant_chargeback_terms(TermSet),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
@@ -365,7 +365,7 @@ finalise(State = #chargeback_st{target_status = Status}, Action, Opts) when
 ->
     Clock = commit_cash_flow(State, Opts),
     erlang:display({'FINALISE CLOCK', Clock}),
-    {[?chargeback_status_changed(Status)], Action}.
+    {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action}.
 
 -spec build_chargeback(opts(), create_params(), revision(), timestamp()) -> chargeback() | no_return().
 build_chargeback(Opts, Params = ?chargeback_params(Levy, Body, Reason), Revision, CreatedAt) ->
