@@ -384,23 +384,25 @@ init_per_suite(C) ->
     ok = application:set_env(kernel, logger_sasl_compatible, false),
     ok = application:set_env(kernel, logger_level, info),
     ok = application:set_env(kernel, logger, [
-            {handler, default, logger_std_h, #{
-                level => error,
-                config => #{
-                    type => standard_error
-                },
-                formatter => {logger_formatter, #{
+        {handler, default, logger_std_h, #{
+            level => error,
+            config => #{
+                type => standard_error
+            },
+            formatter =>
+                {logger_formatter, #{
                     depth => 30
                 }}
-            }},
-            {handler, console_logger, logger_std_h, #{
-                level => debug,
-                config => #{
-                    type => {file, "/var/log/hellgate/console.json"},
-                    sync_mode_qlen => 20
-                },
-                formatter => {logger_logstash_formatter, #{}}
-            }}]),
+        }},
+        {handler, console_logger, logger_std_h, #{
+            level => debug,
+            config => #{
+                type => {file, "/var/log/hellgate/console.json"},
+                sync_mode_qlen => 20
+            },
+            formatter => {logger_logstash_formatter, #{}}
+        }}
+    ]),
 
     {Apps, Ret} = hg_ct_helper:start_apps([
         woody,
@@ -3559,7 +3561,8 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
     Account = Shop#domain_Shop.account,
     SettlementID = Account#domain_ShopAccount.settlement,
     % Settlement0 = hg_ct_helper:get_balance(SettlementID),
-    Fee          = 450, % 0.045
+    Fee = 450,
+    % 0.045
     % ?assertEqual(0, maps:get(min_available_amount, Settlement0)),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth_mc),
@@ -3575,7 +3578,7 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash),
-    Settlement1  = hg_ct_helper:get_balance(SettlementID),
+    Settlement1 = hg_ct_helper:get_balance(SettlementID),
     ?assertEqual(Partial - Fee, maps:get(min_available_amount, Settlement1)),
     Chargeback = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
     {InvoiceID, PaymentID, SettlementID, Chargeback}.

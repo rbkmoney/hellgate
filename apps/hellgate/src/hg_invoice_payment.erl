@@ -1429,10 +1429,11 @@ prepare_refund_cashflow(RefundSt, St = #st{clock = Clock}) ->
     ).
 
 commit_refund_cashflow(RefundSt, St) ->
-    Clock = case RefundSt#refund_st.clock of
-        undefined -> St#st.clock;
-        RefundClock -> RefundClock
-    end,
+    Clock =
+        case RefundSt#refund_st.clock of
+            undefined -> St#st.clock;
+            RefundClock -> RefundClock
+        end,
     #{timestamp := Timestamp} = get_opts(St),
     hg_accounting:commit(
         construct_refund_plan_id(RefundSt, St),
@@ -1442,10 +1443,11 @@ commit_refund_cashflow(RefundSt, St) ->
     ).
 
 rollback_refund_cashflow(RefundSt, St) ->
-    Clock = case RefundSt#refund_st.clock of
-        undefined -> St#st.clock;
-        RefundClock -> RefundClock
-    end,
+    Clock =
+        case RefundSt#refund_st.clock of
+            undefined -> St#st.clock;
+            RefundClock -> RefundClock
+        end,
     #{timestamp := Timestamp} = get_opts(St),
     hg_accounting:rollback(
         construct_refund_plan_id(RefundSt, St),
