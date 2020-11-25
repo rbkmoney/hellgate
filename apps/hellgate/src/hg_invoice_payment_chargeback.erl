@@ -74,6 +74,7 @@
 }.
 
 -type opts() :: #{
+    timestamp := any(),
     payment_state := payment_state(),
     party := party(),
     invoice := invoice()
@@ -83,7 +84,7 @@
     hg_invoice_payment:st().
 
 -type clock() ::
-    hg_accounter:clock().
+    hg_accounting:clock().
 
 -type party() ::
     dmsl_domain_thrift:'Party'().

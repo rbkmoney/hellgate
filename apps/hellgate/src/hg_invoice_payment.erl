@@ -168,7 +168,7 @@
 -type refund_state() :: #refund_st{}.
 -type st() :: #st{}.
 
--type clock() :: hg_accounter:clock().
+-type clock() :: hg_accounting:clock().
 
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cart() :: dmsl_domain_thrift:'InvoiceCart'().
