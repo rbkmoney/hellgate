@@ -21,6 +21,7 @@
         woody_user_identity,
         payproc_errors,
         erl_health,
+        bender_client,
         cache
     ]},
     {env, []},
