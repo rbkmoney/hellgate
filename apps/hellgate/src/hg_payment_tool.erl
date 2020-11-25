@@ -394,7 +394,7 @@ unmarshal({payment_terminal, type}, <<"zotapay">>) ->
     zotapay;
 unmarshal({payment_terminal, type}, <<"qps">>) ->
     qps;
-unmarshal({payment_terminal, type}, <<"uzcard>>) ->
+unmarshal({payment_terminal, type}, <<"uzcard">>) ->
     uzcard;
 unmarshal({digital_wallet, provider}, <<"qiwi">>) ->
     qiwi;
