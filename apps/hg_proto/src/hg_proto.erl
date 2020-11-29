@@ -41,7 +41,7 @@ get_service(proxy_host_provider) ->
 get_service(accounter) ->
     {shumpune_shumpune_thrift, 'Accounter'};
 get_service(accounter_new) ->
-    {shumpune_shumpune_thrift, 'Accounter'};
+    {shumaich_shumaich_thrift, 'Accounter'};
 get_service(automaton) ->
     {mg_proto_state_processing_thrift, 'Automaton'};
 get_service(processor) ->
