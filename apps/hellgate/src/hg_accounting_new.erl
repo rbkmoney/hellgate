@@ -302,7 +302,7 @@ construct_balance(
 %%
 
 call_accounter(Function, Args) ->
-    hg_woody_wrapper:call(accounter, Function, Args).
+    hg_woody_wrapper:call(accounter_new, Function, Args).
 
 get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
     Cost.
