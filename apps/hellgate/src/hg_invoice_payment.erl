@@ -158,7 +158,7 @@
     sessions = [] :: [session()],
     transaction_info :: undefined | trx_info(),
     failure :: undefined | failure(),
-    clock :: hg_accounting_new:clock()
+    clock :: undefined | hg_accounting_new:clock()
 }).
 
 -type chargeback_state() :: hg_invoice_payment_chargeback:state().
