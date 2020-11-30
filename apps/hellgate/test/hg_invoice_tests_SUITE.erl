@@ -996,7 +996,10 @@ processing_deadline_reached_test(C) ->
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_sessions_restarts(PaymentID, ?processed(), InvoiceID, Client, 0),
     [?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))] = next_event(InvoiceID, Client),
-    [?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
+    ] = next_event(InvoiceID, Client),
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
@@ -1242,7 +1245,8 @@ payment_w_crypto_currency_success(C) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(low)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
     ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
@@ -1266,7 +1270,8 @@ payment_bank_card_category_condition(C) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(low)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     ?cash(200, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
 
@@ -1283,7 +1288,8 @@ payment_w_mobile_commerce(C) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
@@ -1306,7 +1312,8 @@ payment_suspend_timeout_failure(C) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
@@ -1314,6 +1321,7 @@ payment_suspend_timeout_failure(C) ->
         ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
@@ -1540,7 +1548,8 @@ payment_risk_score_check(C) ->
         % low risk score...
         % ...covered with high risk coverage terminal
         ?payment_ev(PaymentID1, ?route_changed(?route(?prv(1), ?trm(1)))),
-        ?payment_ev(PaymentID1, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID1, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID1, ?payment_clock_update(_))
     ] = next_event(InvoiceID1, Client),
     [
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
@@ -1558,7 +1567,8 @@ payment_risk_score_check(C) ->
         % high risk score...
         % ...covered with the same terminal
         ?payment_ev(PaymentID2, ?route_changed(?route(?prv(1), ?trm(1)))),
-        ?payment_ev(PaymentID2, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID2, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID2, ?payment_clock_update(_))
     ] = next_event(InvoiceID2, Client),
     [
         ?payment_ev(PaymentID2, ?session_ev(?processed(), ?session_started()))
@@ -1650,7 +1660,8 @@ payment_adjustment_success(C) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(low)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF1))
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF1)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
@@ -2184,7 +2195,8 @@ external_account_posting(C) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(low)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, InvoicingClient),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
@@ -2217,7 +2229,12 @@ terminal_cashflow_overrides_provider(C) ->
     _ = next_event(InvoiceID, InvoicingClient),
     _ = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
     _ = next_event(InvoiceID, InvoicingClient),
-    [_, _, ?payment_ev(PaymentID, ?cash_flow_changed(CF))] = next_event(InvoiceID, InvoicingClient),
+    [
+        _,
+        _,
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
+    ] = next_event(InvoiceID, InvoicingClient),
     _ = next_event(InvoiceID, InvoicingClient),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
@@ -3458,6 +3475,7 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash),
@@ -4199,6 +4217,7 @@ payment_hold_partial_capturing(C) ->
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash).
@@ -4218,6 +4237,7 @@ payment_hold_partial_capturing_with_cart(C) ->
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash, Cart), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
@@ -4237,6 +4257,7 @@ payment_hold_partial_capturing_with_cart_missing_cash(C) ->
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash, Cart), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash, Cart).
@@ -4309,7 +4330,8 @@ rounding_cashflow_volume(C) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
+        ?payment_ev(PaymentID, ?cash_flow_changed(CF)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
@@ -4632,6 +4654,7 @@ payment_with_offsite_preauth_failed(C) ->
         ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
     ] = next_event(InvoiceID, 8000, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, 8000, Client),
     ok = payproc_errors:match('PaymentFailure', Failure, fun({authorization_failed, _}) -> ok end),
@@ -4688,7 +4711,8 @@ repair_skip_inspector_succeeded(C) ->
         % we send low risk score in create repair...
         ?payment_ev(PaymentID, ?risk_score_changed(low)),
         ?payment_ev(PaymentID, ?route_changed(?route(?prv(2), ?trm(7)))),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
@@ -4718,6 +4742,7 @@ repair_fail_session_succeeded(C) ->
         ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
@@ -4764,7 +4789,8 @@ repair_complex_succeeded_first(C) ->
         % we send low risk score in create repair...
         ?payment_ev(PaymentID, ?risk_score_changed(low)),
         ?payment_ev(PaymentID, ?route_changed(?route(?prv(2), ?trm(7)))),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
@@ -4794,6 +4820,7 @@ repair_complex_succeeded_second(C) ->
         ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
@@ -5222,7 +5249,8 @@ start_payment(InvoiceID, PaymentParams, Client) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
@@ -5244,7 +5272,8 @@ await_payment_cash_flow(InvoiceID, PaymentID, Client) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CashFlow))
+        ?payment_ev(PaymentID, ?cash_flow_changed(CashFlow)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     CashFlow.
 
@@ -5308,6 +5337,7 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restar
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cash).
@@ -5363,6 +5393,7 @@ await_payment_process_failure(InvoiceID, PaymentID, Client, Restarts, Target) ->
         ?payment_ev(PaymentID, ?payment_rollback_started(Failure))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(?failed(Failure)))
     ] = next_event(InvoiceID, Client),
     {failed, PaymentID, Failure}.
@@ -5505,7 +5536,8 @@ make_payment_and_get_revision(InvoiceID, Client) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client, 0),
@@ -5580,7 +5612,8 @@ payment_risk_score_check(Cat, C) ->
         % default low risk score...
         ?payment_ev(PaymentID1, ?risk_score_changed(low)),
         ?payment_ev(PaymentID1, ?route_changed(?route(?prv(2), ?trm(7)))),
-        ?payment_ev(PaymentID1, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID1, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID1, ?payment_clock_update(_))
     ] = next_event(InvoiceID1, Client),
     [
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
