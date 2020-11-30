@@ -18,7 +18,7 @@
 -export([collect_account_map/6]).
 -export([collect_merchant_account_map/2]).
 -export([collect_provider_account_map/3]).
--export([collect_system_account_map/5]).
+-export([collect_system_account_map/4]).
 -export([collect_external_account_map/4]).
 
 -export([hold/3]).
@@ -112,7 +112,7 @@ create_account(_CurrencyCode) ->
 collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
     Map0 = collect_merchant_account_map(Shop, #{}),
     Map1 = collect_provider_account_map(Payment, Provider, Map0),
-    Map2 = collect_system_account_map(Payment, PaymentInstitution, VS, Revision, Map1),
+    Map2 = collect_system_account_map(Payment, PaymentInstitution, Revision, Map1),
     collect_external_account_map(Payment, VS, Revision, Map2).
 
 -spec collect_merchant_account_map(shop(), map()) -> map().
