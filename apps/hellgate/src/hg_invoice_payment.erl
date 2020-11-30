@@ -1887,11 +1887,12 @@ process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) 
     Timestamp = get_payment_created_at(Payment),
     FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts),
     Invoice = get_invoice(Opts),
-    _Clock = hg_accounting:hold(
+    Clock = hg_accounting_new:hold(
         construct_payment_plan_id(Invoice, Payment),
-        {1, FinalCashflow}
+        {1, FinalCashflow},
+        Timestamp
     ),
-    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
+    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow), ?payment_clock_update(Clock)],
     {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
@@ -1970,7 +1971,7 @@ process_adjustment_cashflow(ID, _Action, St) ->
     {done, {Events, hg_machine_action:new()}}.
 
 process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
-    Opts = get_opts(St),
+    #{timestamp := Timestamp} = Opts = get_opts(St),
     #payproc_InvoicePaymentCaptureParams{
         reason = Reason,
         cash = Cost,
@@ -1979,15 +1980,17 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
     Invoice = get_invoice(Opts),
     Payment = get_payment(St),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
-    _Clock = hg_accounting:plan(
+    NewClock = hg_accounting_new:plan(
         construct_payment_plan_id(Invoice, Payment2),
         [
             {2, hg_cashflow:revert(get_cashflow(St))},
             {3, FinalCashflow}
-        ]
+        ],
+        Timestamp,
+        St#st.clock
     ),
     Events = start_session(?captured(Reason, Cost, Cart)),
-    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+    {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}}.
 
 %%
 
@@ -2127,8 +2130,8 @@ process_result({payment, processing_accounter}, Action, St) ->
     {done, {[?payment_status_changed(Target)], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
-    _Clocks = rollback_payment_cashflow(St),
-    {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
+    Clock = rollback_payment_cashflow(St),
+    {done, {[?payment_clock_update(Clock), ?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
     _Clocks =
@@ -2488,11 +2491,17 @@ try_request_interaction(undefined) ->
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
 
-commit_payment_cashflow(St) ->
-    hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
+% commit_payment_cashflow(St) ->
+%     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
+commit_payment_cashflow(St = #st{clock = Clock}) ->
+    #{timestamp := Timestamp} = get_opts(St),
+    hg_accounting_new:commit(construct_payment_plan_id(St), get_cashflow_plan(St), Timestamp, Clock).
 
-rollback_payment_cashflow(St) ->
-    hg_accounting:rollback(construct_payment_plan_id(St), get_cashflow_plan(St)).
+% rollback_payment_cashflow(St) ->
+%     hg_accounting:rollback(construct_payment_plan_id(St), get_cashflow_plan(St)).
+rollback_payment_cashflow(St = #st{clock = Clock}) ->
+    #{timestamp := Timestamp} = get_opts(St),
+    hg_accounting_new:rollback(construct_payment_plan_id(St), get_cashflow_plan(St), Timestamp, Clock).
 
 get_cashflow_plan(St = #st{partial_cash_flow = PartialCashFlow}) when PartialCashFlow =/= undefined ->
     [
@@ -2832,12 +2841,44 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
     case Activity of
         {payment, cash_flow_building} ->
             St#st{
-                cash_flow = Cashflow,
-                activity = {payment, processing_session}
+                cash_flow = Cashflow
+                % activity = {payment, processing_session}
             };
         {payment, processing_capture} ->
             St#st{
                 partial_cash_flow = Cashflow,
+                activity = {payment, updating_accounter}
+            };
+        _ ->
+            St
+    end;
+merge_change(Change = ?payment_clock_update(Clock), #st{activity = Activity} = St, Opts) ->
+    % erlang:display(Activity),
+    _ = validate_transition(
+        [
+            {payment, S}
+            || S <- [
+                   cash_flow_building,
+                   % processing_capture,
+                   processing_session,
+                   processing_failure,
+                   finalizing_accounter,
+                   updating_accounter
+               ]
+        ],
+        Change,
+        St,
+        Opts
+    ),
+    case Activity of
+        {payment, cash_flow_building} ->
+            St#st{
+                clock = Clock,
+                activity = {payment, processing_session}
+            };
+        {payment, processing_capture} ->
+            St#st{
+                clock = Clock,
                 activity = {payment, updating_accounter}
             };
         _ ->
