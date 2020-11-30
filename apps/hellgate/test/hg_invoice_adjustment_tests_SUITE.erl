@@ -869,7 +869,8 @@ start_payment(InvoiceID, PaymentParams, Client) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
         ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
