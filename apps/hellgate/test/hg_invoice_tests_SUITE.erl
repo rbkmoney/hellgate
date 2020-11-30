@@ -184,22 +184,22 @@ cfg(Key, C) ->
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        invalid_party_status,
-        invalid_shop_status,
+        % invalid_party_status,
+        % invalid_shop_status,
 
-        % With constant domain config
-        {group, all_non_destructive_tests},
+        % % With constant domain config
+        % {group, all_non_destructive_tests},
 
-        payments_w_bank_card_issuer_conditions,
-        payments_w_bank_conditions,
+        % payments_w_bank_card_issuer_conditions,
+        % payments_w_bank_conditions,
 
-        % With variable domain config
-        {group, adjustments},
-        {group, holds_management_with_custom_config},
+        % % With variable domain config
+        % {group, adjustments},
+        % {group, holds_management_with_custom_config},
         {group, refunds},
-        {group, chargebacks},
-        rounding_cashflow_volume,
-        terms_retrieval,
+        % {group, chargebacks},
+        % rounding_cashflow_volume,
+        % terms_retrieval,
 
         consistent_account_balances,
         consistent_history
@@ -3563,6 +3563,7 @@ payment_refund_idempotency(C) ->
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
@@ -3599,6 +3600,7 @@ payment_refund_success(C) ->
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(Failure)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
@@ -3618,6 +3620,7 @@ payment_refund_success(C) ->
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
@@ -3655,6 +3658,7 @@ payment_refund_failure(C) ->
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
@@ -3674,6 +3678,7 @@ payment_refund_failure(C) ->
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_rollback_started(Failure)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure))))
     ] = next_event(InvoiceID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_failed(Failure)} =
@@ -3710,6 +3715,7 @@ deadline_doesnt_affect_payment_refund(C) ->
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
@@ -3729,6 +3735,7 @@ deadline_doesnt_affect_payment_refund(C) ->
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
@@ -3765,6 +3772,7 @@ payment_manual_refund(C) ->
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_status_changed(?refund_failed(NoFunds))))
     ] = next_event(InvoiceID, Client),
     % top up merchant account
@@ -3785,11 +3793,13 @@ payment_manual_refund(C) ->
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _, TrxInfo)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started()))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?trx_bound(TrxInfo)))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
@@ -3866,6 +3876,7 @@ payment_partial_refunds_success(C) ->
         ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(_, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(_, ?refund_status_changed(?refund_succeeded()))),
         ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
@@ -5409,17 +5420,20 @@ await_partial_manual_refund_succeeded(Refund, TrxInfo, InvoiceID, PaymentID, Ref
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _, TrxInfo)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started()))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?trx_bound(TrxInfo)))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_status_changed(?refund_succeeded())))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
 await_refund_session_started(InvoiceID, PaymentID, RefundID, Client) ->
     [
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))
     ] = next_event(InvoiceID, Client),
     PaymentID.
@@ -5434,6 +5448,7 @@ await_refund_payment_process_finish(InvoiceID, PaymentID, Client, Restarts) ->
         ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?refund_ev(_, ?refund_clock_update(_))),
         ?payment_ev(PaymentID, ?refund_ev(_, ?refund_status_changed(?refund_succeeded())))
     ] = next_event(InvoiceID, Client),
     PaymentID.
