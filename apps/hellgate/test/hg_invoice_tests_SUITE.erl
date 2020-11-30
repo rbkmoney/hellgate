@@ -4843,10 +4843,10 @@ consistent_account_balances(C) ->
     Party = hg_client_party:get(PartyClient),
     Shops = maps:values(Party#domain_Party.shops),
     _ = [
-         {
+        {
             consistent_account_balance(AccountID, Shop),
             consistent_account_balance_new(AccountID, Shop)
-         }
+        }
         || #domain_Shop{account = ShopAccount} = Shop <- Shops,
            #domain_ShopAccount{settlement = AccountID1, guarantee = AccountID2} <- [ShopAccount],
            AccountID <- [AccountID1, AccountID2]
