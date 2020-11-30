@@ -931,6 +931,7 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restar
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cash).
