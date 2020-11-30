@@ -1692,6 +1692,7 @@ payment_adjustment_success(C) ->
     ?invalid_adjustment_pending(AdjustmentID) =
         hg_client_invoicing:create_payment_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
     ok =
@@ -1701,6 +1702,7 @@ payment_adjustment_success(C) ->
     ?invalid_adjustment_status(?adjustment_captured(_)) =
         hg_client_invoicing:cancel_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     %% verify that cash deposited correctly everywhere
@@ -1755,10 +1757,12 @@ partial_captured_payment_adjustment(C) ->
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
     ok = hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     % verify that cash deposited correctly everywhere
@@ -1826,10 +1830,12 @@ payment_adjustment_captured_from_failed(C) ->
         ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_created(_)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
     ok = hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, FailedAdjustmentID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(FailedAdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     ?assertMatch(
@@ -1850,10 +1856,12 @@ payment_adjustment_captured_from_failed(C) ->
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
     ok = hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     ?payment_state(Payment) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
@@ -1912,10 +1920,12 @@ payment_adjustment_failed_from_captured(C) ->
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
     ok = hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     ?assertMatch(
@@ -5562,11 +5572,13 @@ make_payment_adjustment_and_get_revision(PaymentID, InvoiceID, Client) ->
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
     ok =
         hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     AdjustmentRev.
