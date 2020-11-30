@@ -44,7 +44,7 @@
 -type batch_id() :: dmsl_accounter_thrift:'BatchID'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type batch() :: {batch_id(), final_cash_flow()}.
--type clock() :: domain_thrift:'AccounterClock'().
+-type clock() :: dmsl_domain_thrift:'AccounterClock'().
 
 -type payment() :: dmsl_domain_thrift:'InvoicePayment'().
 -type shop() :: dmsl_domain_thrift:'Shop'().
