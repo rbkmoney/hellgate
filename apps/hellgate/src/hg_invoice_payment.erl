@@ -149,8 +149,8 @@
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
     latest_change_at :: undefined | hg_datetime:timestamp(),
-    clock :: hg_accounting_new:clock(),
-    adjustment_clock :: hg_accounting_new:clock()
+    clock :: undefined | hg_accounting_new:clock(),
+    adjustment_clock :: undefined | hg_accounting_new:clock()
 }).
 
 -record(refund_st, {
