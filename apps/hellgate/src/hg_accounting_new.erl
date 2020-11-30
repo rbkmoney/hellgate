@@ -54,6 +54,7 @@
 -type revision() :: hg_domain:revision().
 
 -export_type([batch/0]).
+-export_type([clock/0]).
 
 -type account() :: #{
     account_id => account_id(),
