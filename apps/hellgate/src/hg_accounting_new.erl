@@ -54,6 +54,7 @@
 -type revision() :: hg_domain:revision().
 
 -export_type([batch/0]).
+-export_type([clock/0]).
 
 -type account() :: #{
     account_id => account_id(),
@@ -72,7 +73,7 @@
 get_account(AccountID) ->
     get_account(AccountID, undefined).
 
--spec get_account(account_id(), clock()) -> account().
+-spec get_account(account_id(), undefined | clock()) -> account().
 get_account(AccountID, Clock) ->
     case call_accounter('GetAccountByID', {AccountID, to_accounter_clock(Clock)}) of
         {ok, Result} ->
@@ -89,7 +90,7 @@ get_account(AccountID, Clock) ->
 get_balance(AccountID) ->
     get_balance(AccountID, undefined).
 
--spec get_balance(account_id(), clock()) -> balance().
+-spec get_balance(account_id(), undefined | clock()) -> balance().
 get_balance(AccountID, Clock) ->
     case call_accounter('GetBalanceByID', {AccountID, to_accounter_clock(Clock)}) of
         {ok, Result} ->
