@@ -21,7 +21,7 @@ BUILD_IMAGE_NAME := build-erlang
 BUILD_IMAGE_TAG := 12beabfb5b6968c7566fa3d872ad1b3e8d612f46
 
 CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze plt_update \
-				start devrel release clean distclean format check_format
+				release clean distclean format check_format
 
 CALL_W_CONTAINER := $(CALL_ANYWHERE) test
 
@@ -63,11 +63,6 @@ dialyze: submodules
 plt_update:
 	$(REBAR) dialyzer -u true -s false
 
-start: submodules
-	$(REBAR) run
-
-devrel: submodules
-	$(REBAR) release
 
 release: submodules
 	$(REBAR) as prod release
