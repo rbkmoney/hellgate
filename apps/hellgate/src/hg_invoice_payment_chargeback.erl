@@ -54,6 +54,7 @@
 
 -record(chargeback_st, {
     chargeback :: undefined | chargeback(),
+    clock :: undefined | clock(),
     target_status :: undefined | status(),
     cash_flow = [] :: cash_flow(),
     cash_flow_plans = #{
@@ -80,6 +81,9 @@
 
 -type payment_state() ::
     hg_invoice_payment:st().
+
+-type clock() ::
+    hg_accounting_new:clock().
 
 -type party() ::
     dmsl_domain_thrift:'Party'().
@@ -263,6 +267,8 @@ merge_change(?chargeback_target_status_changed(Status), State) ->
     set_target_status(Status, State);
 merge_change(?chargeback_status_changed(Status), State) ->
     set_target_status(undefined, set_status(Status, State));
+merge_change(?chargeback_clock_update(Clock), State) ->
+    set_clock(Clock, State);
 merge_change(?chargeback_cash_flow_changed(CashFlow), State) ->
     set_cash_flow(CashFlow, State).
 
@@ -701,6 +707,10 @@ set_cash_flow(CashFlow, #chargeback_st{cash_flow_plans = Plans} = State) ->
     Stage = get_stage(State),
     Plan = build_updated_plan(CashFlow, State),
     State#chargeback_st{cash_flow_plans = Plans#{Stage := Plan}, cash_flow = CashFlow}.
+
+-spec set_clock(clock(), state()) -> state().
+set_clock(Clock, #chargeback_st{} = State) ->
+    State#chargeback_st{clock = Clock}.
 
 -spec set_target_status(status() | undefined, state()) -> state().
 set_target_status(TargetStatus, #chargeback_st{} = State) ->
