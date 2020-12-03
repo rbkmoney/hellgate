@@ -291,6 +291,10 @@
     }}
 ).
 
+-define(chargeback_clock_update(Clock),
+    {invoice_payment_chargeback_clock_update, #payproc_InvoicePaymentClockUpdate{clock = Clock}}
+).
+
 -define(chargeback_stage_chargeback(),
     {chargeback, #domain_InvoicePaymentChargebackStageChargeback{}}
 ).
