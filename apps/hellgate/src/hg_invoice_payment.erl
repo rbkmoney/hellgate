@@ -2964,10 +2964,13 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
                 _ = validate_transition([idle, {chargeback, ID, updating_chargeback}], Change, St, Opts),
                 St#st{activity = {chargeback, ID, updating_chargeback}};
             ?chargeback_cash_flow_changed(_) ->
-                Valid = [{chargeback, ID, Activity} || Activity <- [
-                    preparing_initial_cash_flow,
-                    updating_cash_flow
-                ]],
+                Valid = [
+                    {chargeback, ID, Activity}
+                    || Activity <- [
+                           preparing_initial_cash_flow,
+                           updating_cash_flow
+                       ]
+                ],
                 _ = validate_transition(Valid, Change, St, Opts),
                 case St of
                     #st{activity = {chargeback, ID, preparing_initial_cash_flow}} ->
@@ -2976,11 +2979,14 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
                         St#st{activity = {chargeback, ID, holding_updated_cash_flow}}
                 end;
             ?chargeback_clock_update(_) ->
-                Valid = [{chargeback, ID, Activity} || Activity <- [
-                    finalising_accounter,
-                    holding_initial_cash_flow,
-                    holding_updated_cash_flow
-                ]],
+                Valid = [
+                    {chargeback, ID, Activity}
+                    || Activity <- [
+                           finalising_accounter,
+                           holding_initial_cash_flow,
+                           holding_updated_cash_flow
+                       ]
+                ],
                 _ = validate_transition(Valid, Change, St, Opts),
                 case St of
                     #st{activity = {chargeback, ID, holding_initial_cash_flow}} ->
