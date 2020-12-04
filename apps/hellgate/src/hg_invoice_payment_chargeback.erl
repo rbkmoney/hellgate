@@ -356,8 +356,6 @@ do_reopen(State, PaymentState, ReopenParams = ?reopen_params(Levy, Body)) ->
 -spec update_cash_flow(state(), action(), opts()) -> result() | no_return().
 update_cash_flow(State, Action, Opts) ->
     FinalCashFlow = build_chargeback_cash_flow(State, Opts),
-    % UpdatedPlan = build_updated_plan(FinalCashFlow, State),
-    % Clock = prepare_cash_flow(State, UpdatedPlan, Opts),
     {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}.
 
 -spec hold_cash_flow(state(), action(), opts()) -> result() | no_return().
