@@ -378,6 +378,8 @@ unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
     googlepay;
 unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
     samsungpay;
+unmarshal({bank_card, token_provider}, <<"yandexpay">>) ->
+    yandexpay;
 unmarshal({bank_card, issuer_country}, Residence) when is_binary(Residence) ->
     binary_to_existing_atom(unmarshal(str, Residence), utf8);
 unmarshal({bank_card, bank_name}, Name) when is_binary(Name) ->
