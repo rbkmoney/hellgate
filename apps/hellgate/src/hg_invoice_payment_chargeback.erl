@@ -116,7 +116,7 @@
     dmsl_domain_thrift:'FinalCashFlow'().
 
 -type batch() ::
-    hg_accounting:batch().
+    hg_accounting_new:batch().
 
 -type create_params() ::
     dmsl_payment_processing_thrift:'InvoicePaymentChargebackParams'().
@@ -144,8 +144,10 @@
 
 -type activity() ::
     preparing_initial_cash_flow |
+    holding_initial_cash_flow |
     updating_chargeback |
     updating_cash_flow |
+    holding_updated_cash_flow |
     finalising_accounter.
 
 -spec get(state()) -> chargeback().
@@ -453,7 +455,7 @@ build_chargeback_cash_flow(State, Opts) ->
     PaymentInstitutionRef = get_payment_institution_ref(Contract),
     PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
+    AccountMap = hg_accounting_new:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
     ServiceContext = build_service_cash_flow_context(State),
     ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
     ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap),
@@ -525,7 +527,6 @@ prepare_cash_flow(State, CashFlowPlan, Opts) ->
     #{timestamp := Timestamp} = Opts,
     Clock = get_clock(State),
     PlanID = construct_chargeback_plan_id(State, Opts),
-    % hg_accounting:plan(PlanID, CashFlowPlan).
     hg_accounting_new:plan(PlanID, CashFlowPlan, Timestamp, Clock).
 
 commit_cash_flow(State, Opts) ->
@@ -533,7 +534,6 @@ commit_cash_flow(State, Opts) ->
     Clock = get_clock(State),
     CashFlowPlan = get_current_plan(State),
     PlanID = construct_chargeback_plan_id(State, Opts),
-    % hg_accounting:commit(PlanID, CashFlowPlan).
     hg_accounting_new:commit(PlanID, CashFlowPlan, Timestamp, Clock).
 
 construct_chargeback_plan_id(State, Opts) ->
