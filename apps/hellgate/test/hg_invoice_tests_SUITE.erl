@@ -452,6 +452,7 @@ end_per_suite(C) ->
 -define(payment_state(Payment), #payproc_InvoicePayment{payment = Payment}).
 -define(payment_route(Route), #payproc_InvoicePayment{route = Route}).
 -define(payment_cashflow(CashFlow), #payproc_InvoicePayment{cash_flow = CashFlow}).
+-define(payment_last_trx(Trx), #payproc_InvoicePayment{last_transaction_info = Trx}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
@@ -1052,11 +1053,13 @@ payment_has_optional_fields(C) ->
     ?payment_state(Payment) = InvoicePayment,
     ?payment_route(Route) = InvoicePayment,
     ?payment_cashflow(CashFlow) = InvoicePayment,
+    ?payment_last_trx(TrxInfo) = InvoicePayment,
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment,
     false = Route =:= undefined,
-    false = CashFlow =:= undefined.
+    false = CashFlow =:= undefined,
+    false = TrxInfo =:= undefined.
 
 -spec payment_capture_failed(config()) -> test_return().
 payment_capture_failed(C) ->
