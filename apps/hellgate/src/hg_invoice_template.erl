@@ -19,6 +19,7 @@
 -export([init/2]).
 -export([process_signal/2]).
 -export([process_call/2]).
+-export([process_repair/2]).
 
 %% Event provider callbacks
 
@@ -244,6 +245,10 @@ create_invoice_template(ID, P) ->
         details = P#payproc_InvoiceTemplateCreateParams.details,
         context = P#payproc_InvoiceTemplateCreateParams.context
     }.
+
+-spec process_repair(hg_machine:args(), hg_machine:machine()) -> no_return().
+process_repair(_Args, _Machine) ->
+    erlang:error({not_implemented, repair}).
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(timeout, _Machine) ->

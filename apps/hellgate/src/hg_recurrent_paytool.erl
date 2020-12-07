@@ -30,6 +30,7 @@
 -export([init/2]).
 -export([process_signal/2]).
 -export([process_call/2]).
+-export([process_repair/2]).
 
 %% Types
 -record(st, {
@@ -363,6 +364,10 @@ start_session() ->
     Events = [?session_ev(?session_started())],
     Action = hg_machine_action:instant(),
     {ok, {Events, Action}}.
+
+-spec process_repair(hg_machine:signal(), hg_machine:machine()) -> no_return().
+process_repair(_, _) ->
+    erlang:error({not_implemented, repair}).
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(Signal, #{history := History}) ->
