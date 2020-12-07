@@ -349,7 +349,6 @@ marshal_call_result(Response, Result, #{aux_state := AuxStWas}) ->
 -spec dispatch_repair(ns(), Args, machine()) -> Result when
     Args :: mg_proto_state_processing_thrift:'Args'(),
     Result :: mg_proto_state_processing_thrift:'RepairResult'().
-
 dispatch_repair(Ns, Payload, Machine) ->
     Args = unwrap_args(Payload),
     _ = log_dispatch(repair, Args, Machine),
@@ -357,8 +356,9 @@ dispatch_repair(Ns, Payload, Machine) ->
     try
         Result = Module:process_repair(Args, Machine),
         marshal_repair_result(ok, Result, Machine)
-    catch throw:{exception, _} = Error ->
-        marshal_repair_failed(Error)
+    catch
+        throw:{exception, _} = Error ->
+            marshal_repair_failed(Error)
     end.
 
 marshal_repair_result(Response, RepairResult = #{}, #{aux_state := AuxStWas}) ->
@@ -377,6 +377,7 @@ marshal_repair_failed({exception, _} = Error) ->
     #mg_stateproc_RepairFailed{
         reason = marshal_response(Error)
     }.
+
 %%
 
 -type service_handler() ::

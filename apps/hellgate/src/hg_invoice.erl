@@ -497,9 +497,7 @@ handle_repair({changes, Changes, RepairAction, Params}, St) ->
         % Validating that these changes are at least applicable
         validate => should_validate_transitions(Params)
     };
-handle_repair({scenario, _}, #st{activity = Activity}) when
-    Activity =:= invoice orelse Activity =:= undefined
-->
+handle_repair({scenario, _}, #st{activity = Activity}) when Activity =:= invoice orelse Activity =:= undefined ->
     throw({exception, invoice_has_no_active_payment});
 handle_repair({scenario, Scenario}, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),

@@ -204,7 +204,7 @@ init(EncodedParams, #{id := CustomerID}) ->
         auxst => #{}
     }).
 
--spec process_repair(hg_machine:args(), hg_machine:machine()) ->  no_return().
+-spec process_repair(hg_machine:args(), hg_machine:machine()) -> no_return().
 process_repair(_, _) ->
     erlang:error({not_implemented, repair}).
 
