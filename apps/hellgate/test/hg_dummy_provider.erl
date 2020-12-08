@@ -438,7 +438,6 @@ process_refund(undefined, PaymentInfo, _) ->
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, PaymentId);
         _ ->
-
             finish(success(PaymentInfo), PaymentId)
     end.
 
