@@ -308,7 +308,7 @@ get_payment_state(PaymentSession) ->
         legacy_refunds = LegacyRefunds,
         refunds = Refunds,
         sessions = hg_invoice_payment:get_sessions(PaymentSession),
-        last_transaction_info = hg_invoice_payment:get_trx(PaymentSession)
+        last_transaction_info = hg_invoice_payment:get_last_trx(PaymentSession)
     }.
 
 set_invoicing_meta(InvoiceID) ->
