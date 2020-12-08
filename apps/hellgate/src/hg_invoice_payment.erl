@@ -36,7 +36,7 @@
 -export([get_route/1]).
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
--export([get_last_trx/1]).
+-export([get_trx/1]).
 
 -export([get_final_cashflow/1]).
 -export([get_sessions/1]).
@@ -136,8 +136,7 @@
     cash_flow :: undefined | cash_flow(),
     partial_cash_flow :: undefined | cash_flow(),
     final_cash_flow :: undefined | cash_flow(),
-    payment_trx :: undefined | trx_info(),
-    last_trx :: undefined | trx_info(),
+    trx :: undefined | trx_info(),
     target :: undefined | target(),
     sessions = #{} :: #{target_type() => [session()]},
     retry_attempts = #{} :: #{target_type() => non_neg_integer()},
@@ -2521,7 +2520,7 @@ construct_payment_info(St, Opts) ->
         #prxprv_PaymentInfo{
             shop = construct_proxy_shop(get_shop(Opts)),
             invoice = construct_proxy_invoice(get_invoice(Opts)),
-            payment = construct_proxy_payment(get_payment(St), get_payment_trx(St))
+            payment = construct_proxy_payment(get_payment(St), get_trx(St))
         }
     ).
 
@@ -2976,7 +2975,7 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
         end,
     RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St1)),
     St2 = set_refund_state(ID, RefundSt, St1),
-    St3 = maybe_update_last_trx(Event, get_refund_session(RefundSt), St2),
+    St3 = maybe_update_trx(Event, get_refund_session(RefundSt), St2),
     case get_refund_status(get_refund(RefundSt)) of
         {S, _} when S == succeeded; S == failed ->
             St3#st{activity = idle};
@@ -3026,7 +3025,7 @@ merge_change(
         Opts
     ),
     % FIXME why the hell dedicated handling
-    Session = mark_session_timing_event(started, Opts, create_session(Target, get_payment_trx(St))),
+    Session = mark_session_timing_event(started, Opts, create_session(Target, get_trx(St))),
     St1 = add_session(Target, Session, St#st{target = Target}),
     St2 = save_retry_attempt(Target, St1),
     case Activity of
@@ -3053,8 +3052,7 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
     Session = merge_session_change(Event, get_session(Target, St), Opts),
     St1 = update_session(Target, Session, St),
     % FIXME leaky transactions
-    St2 = set_payment_trx(get_session_trx(Session), St1),
-    St3 = maybe_update_last_trx(Change, Session, St2),
+    St2 = set_trx(get_session_trx(Session), St1),
     case Session of
         #{status := finished, result := ?session_succeeded()} ->
             NextActivity =
@@ -3066,9 +3064,9 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
                     _ ->
                         Activity
                 end,
-            St3#st{activity = NextActivity};
+            St2#st{activity = NextActivity};
         _ ->
-            St3
+            St2
     end.
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
@@ -3094,9 +3092,9 @@ create_refund_session() ->
 merge_refund_session_change(Change, RefundSt) ->
     merge_session_change(Change, get_refund_session(RefundSt), #{}).
 
-maybe_update_last_trx(?session_ev(_Target, _Event), Session, St) ->
-    set_last_trx(get_session_trx(Session), St);
-maybe_update_last_trx(_Change, _Session, St) ->
+maybe_update_trx(?session_ev(_Target, _Event), Session, St) ->
+    set_trx(get_session_trx(Session), St);
+maybe_update_trx(_Change, _Session, St) ->
     St.
 
 merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
@@ -3177,18 +3175,12 @@ set_cashflow(Cashflow, St = #st{}) ->
 get_final_cashflow(#st{final_cash_flow = Cashflow}) ->
     Cashflow.
 
-get_payment_trx(#st{payment_trx = Trx}) ->
+-spec get_trx(st()) -> trx_info().
+get_trx(#st{trx = Trx}) ->
     Trx.
 
-set_payment_trx(Trx, St = #st{}) ->
-    St#st{payment_trx = Trx}.
-
--spec get_last_trx(st()) -> trx_info().
-get_last_trx(#st{last_trx = Trx}) ->
-    Trx.
-
-set_last_trx(Trx, St = #st{}) ->
-    St#st{last_trx = Trx}.
+set_trx(Trx, St = #st{}) ->
+    St#st{trx = Trx}.
 
 try_get_refund_state(ID, #st{refunds = Rs}) ->
     case Rs of
