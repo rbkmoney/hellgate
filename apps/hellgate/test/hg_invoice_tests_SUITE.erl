@@ -1077,23 +1077,7 @@ payment_last_trx_correct(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    ?payment_last_trx(TrxInfo0) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
-    RefundParams = make_refund_params(),
-    Refund =
-        #domain_InvoicePaymentRefund{id = RefundID} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
-    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?trx_bound(TrxInfo1)))),
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
-    ] = next_event(InvoiceID, Client),
-    ?payment_last_trx(TrxInfo1) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
-    false = TrxInfo0 =:= TrxInfo1.
+    ?payment_last_trx(TrxInfo0) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client).
 
 -spec payment_capture_failed(config()) -> test_return().
 payment_capture_failed(C) ->

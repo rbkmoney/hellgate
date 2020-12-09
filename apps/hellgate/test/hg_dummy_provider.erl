@@ -433,12 +433,12 @@ get_failure_scenario_step(Scenario, Step) ->
     lists:nth(Step, Scenario).
 
 process_refund(undefined, PaymentInfo, _) ->
-    PaymentId = hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)]),
     case get_payment_info_scenario(PaymentInfo) of
         {temporary_unavailability, Scenario} ->
+            PaymentId = hg_utils:construct_complex_id([get_payment_id(PaymentInfo), get_refund_id(PaymentInfo)]),
             process_failure_scenario(PaymentInfo, Scenario, PaymentId);
         _ ->
-            finish(success(PaymentInfo), PaymentId)
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
     end.
 
 process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
