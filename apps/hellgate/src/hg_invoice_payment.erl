@@ -802,7 +802,7 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
         {[], RejectContext} ->
             RejectReason = unknown,
             _ = log_reject_context(warning, RejectReason, RejectContext),
-            logger:log(info, "Try to gather routes using select providers", logger:get_process_metadata()),
+            logger:log(info, "Fallback to legacy method of routes gathering"),
             hg_routing:gather_routes(Predestination, PaymentInstitution, VS, Revision);
         Routes ->
             Routes
