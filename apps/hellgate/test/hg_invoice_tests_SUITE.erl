@@ -139,6 +139,7 @@
 -export([payment_with_tokenized_bank_card/1]).
 -export([terms_retrieval/1]).
 -export([payment_has_optional_fields/1]).
+-export([payment_last_trx_correct/1]).
 -export([payment_capture_failed/1]).
 -export([payment_capture_retries_exceeded/1]).
 -export([payment_partial_capture_success/1]).
@@ -267,6 +268,7 @@ groups() ->
             payment_temporary_unavailability_retry_success,
             payment_temporary_unavailability_too_many_retries,
             payment_has_optional_fields,
+            payment_last_trx_correct,
             invoice_success_on_third_payment,
             payment_capture_failed,
             payment_capture_retries_exceeded,
@@ -453,6 +455,7 @@ end_per_suite(C) ->
 -define(payment_state(Payment), #payproc_InvoicePayment{payment = Payment}).
 -define(payment_route(Route), #payproc_InvoicePayment{route = Route}).
 -define(payment_cashflow(CashFlow), #payproc_InvoicePayment{cash_flow = CashFlow}).
+-define(payment_last_trx(Trx), #payproc_InvoicePayment{last_transaction_info = Trx}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
@@ -1053,11 +1056,29 @@ payment_has_optional_fields(C) ->
     ?payment_state(Payment) = InvoicePayment,
     ?payment_route(Route) = InvoicePayment,
     ?payment_cashflow(CashFlow) = InvoicePayment,
+    ?payment_last_trx(TrxInfo) = InvoicePayment,
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment,
     false = Route =:= undefined,
-    false = CashFlow =:= undefined.
+    false = CashFlow =:= undefined,
+    false = TrxInfo =:= undefined.
+
+-spec payment_last_trx_correct(config()) -> _ | no_return().
+payment_last_trx_correct(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = start_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(TrxInfo0))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?payment_last_trx(TrxInfo0) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client).
 
 -spec payment_capture_failed(config()) -> test_return().
 payment_capture_failed(C) ->
@@ -1335,7 +1356,7 @@ payment_w_customer_success(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(60), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -1352,7 +1373,7 @@ payment_w_another_shop_customer(C) ->
     ShopID = cfg(shop_id, C),
     PartyClient = cfg(party_client, C),
     AnotherShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(60), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
@@ -1364,7 +1385,7 @@ payment_w_another_party_customer(C) ->
     ShopID = cfg(shop_id, C),
     AnotherShopID = cfg(another_shop_id, C),
     CustomerID = make_customer_w_rec_tool(AnotherPartyID, AnotherShopID, cfg(another_customer_client, C)),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(60), 42000, C),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
 
@@ -1374,7 +1395,7 @@ payment_w_deleted_customer(C) ->
     CustomerClient = cfg(customer_client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(60), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, CustomerClient),
     ok = hg_client_customer:delete(CustomerID, CustomerClient),
     PaymentParams = make_customer_payment_params(CustomerID),

@@ -36,6 +36,7 @@
 -export([get_route/1]).
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
+-export([get_trx/1]).
 
 -export([get_final_cashflow/1]).
 -export([get_sessions/1]).
@@ -3162,6 +3163,7 @@ set_cashflow(Cashflow, St = #st{}) ->
 get_final_cashflow(#st{final_cash_flow = Cashflow}) ->
     Cashflow.
 
+-spec get_trx(st()) -> trx_info().
 get_trx(#st{trx = Trx}) ->
     Trx.
 
