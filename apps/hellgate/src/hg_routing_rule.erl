@@ -36,7 +36,7 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     logger:log(info, "RoutingRuleset: ~p", [RuleSet]),
     RuleSetDeny = get_rule_set(PaymentRouting#domain_RoutingRules.prohibitions, Revision),
     Candidates = reduce(RuleSet, VS, Revision),
-    logger:info(info, "Gather route candidates: ~p", [Candidates]),
+    logger:log(info, "Gather route candidates: ~p", [Candidates]),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
     logger:log(info, "RatedRoutes: ~p", [RatedRoutes]),
     Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
