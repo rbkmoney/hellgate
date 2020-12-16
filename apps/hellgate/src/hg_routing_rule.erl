@@ -18,7 +18,11 @@
     pm_selector:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
-gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, VS, _) ->
+gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined} = PayInst, VS, _) ->
+    logger:log(
+        warning,
+        "Payment routing rules is undefined, PaymentInstitution: ~p",
+        [PayInst]),
     {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     RejectedContext = #{
@@ -28,10 +32,14 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     },
     PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing_rules,
     RuleSet = get_rule_set(PaymentRouting#domain_RoutingRules.policies, Revision),
+    logger:log(info, "RoutingRuleset: ~p", [RuleSet]),
     RuleSetDeny = get_rule_set(PaymentRouting#domain_RoutingRules.prohibitions, Revision),
     Candidates = reduce(RuleSet, VS, Revision),
+    logger:info(info, "Gather route candidates: ~p", [Candidates]),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
+    logger:log(info, "RatedRoutes: ~p", [RatedRoutes]),
     Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
+    logger:log(info, "Denied terminals: ~p", [Prohibitions]),
     {Accepted, RejectedRoutes} = filter_routes(RatedRoutes, Prohibitions),
     {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}.
 
