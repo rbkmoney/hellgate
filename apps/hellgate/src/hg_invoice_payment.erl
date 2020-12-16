@@ -3435,9 +3435,7 @@ get_route_provider(Route, Revision) ->
 inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentInstitution, Opts) ->
     InspectorRef = get_selector_value(inspector, PaymentInstitution#domain_PaymentInstitution.inspector),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
-    RiskScore = hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector),
-    % FIXME: move this logic to inspector
-    check_payment_type_risk(RiskScore, Payment).
+    hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector).
 
 repair_inspect(Payment, PaymentInstitution, Opts, #st{repair_scenario = Scenario}) ->
     case hg_invoice_repair:check_for_action(skip_inspector, Scenario) of
@@ -3446,11 +3444,6 @@ repair_inspect(Payment, PaymentInstitution, Opts, #st{repair_scenario = Scenario
         call ->
             inspect(Payment, PaymentInstitution, Opts)
     end.
-
-check_payment_type_risk(low, #domain_InvoicePayment{make_recurrent = true}) ->
-    high;
-check_payment_type_risk(Score, _Payment) ->
-    Score.
 
 get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
     #{
