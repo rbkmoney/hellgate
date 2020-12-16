@@ -22,7 +22,8 @@ gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined} =
     logger:log(
         warning,
         "Payment routing rules is undefined, PaymentInstitution: ~p",
-        [PayInst]),
+        [PayInst]
+    ),
     {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     RejectedContext = #{
