@@ -32,20 +32,21 @@ gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
         rejected_routes => []
     },
     PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing_rules,
-    RuleSet = get_rule_set(PaymentRouting#domain_RoutingRules.policies, Revision),
-    logger:log(info, "RoutingRuleset: ~p", [RuleSet]),
-    RuleSetDeny = get_rule_set(PaymentRouting#domain_RoutingRules.prohibitions, Revision),
-    Candidates = reduce(RuleSet, VS, Revision),
-    logger:log(info, "Gather route candidates: ~p", [Candidates]),
+    Candidates = get_candidates(PaymentRouting#domain_RoutingRules.policies, VS, Revision),
     RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
-    logger:log(info, "RatedRoutes: ~p", [RatedRoutes]),
+    RuleSetDeny = get_rule_set(PaymentRouting#domain_RoutingRules.prohibitions, Revision),
     Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
-    logger:log(info, "Denied terminals: ~p", [Prohibitions]),
     {Accepted, RejectedRoutes} = filter_routes(RatedRoutes, Prohibitions),
     {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}.
 
+get_candidates(RoutingRuleRef, VS, Revision) ->
+    RuleSet = get_rule_set(RoutingRuleRef, Revision),
+    {Candidates, RoutingRuleTrace} = reduce(RuleSet, VS, Revision, [RoutingRuleRef]),
+    logger:info("Routing computation trace: ~p. Candidates: ~p", [lists:reverse(RoutingRuleTrace), Candidates]),
+    Candidates.
+
 get_table_prohibitions(RuleSetDeny, VS, Revision) ->
-    Candidates = reduce(RuleSetDeny, VS, Revision),
+    {Candidates, _} = reduce(RuleSetDeny, VS, Revision, []),
     lists:foldl(
         fun(C, AccIn) ->
             AccIn#{get_terminal_ref(C) => get_description(C)}
@@ -54,35 +55,36 @@ get_table_prohibitions(RuleSetDeny, VS, Revision) ->
         Candidates
     ).
 
-reduce(RuleSet, VS, Revision) ->
+reduce(RuleSet, VS, Revision, RoutingRuleTrace) ->
     #domain_RoutingRuleset{
         decisions = Decisions
     } = RuleSet,
-    reduce_decisions(Decisions, VS, Revision).
+    reduce_decisions(Decisions, VS, Revision, RoutingRuleTrace).
 
-reduce_decisions({_, []}, _, _) ->
-    [];
-reduce_decisions({delegates, Delegates}, VS, Rev) ->
-    reduce_delegates_decision(Delegates, VS, Rev);
-reduce_decisions({candidates, Candidates}, VS, Rev) ->
-    reduce_candidates_decision(Candidates, VS, Rev).
+reduce_decisions({_, []}, _, _, RoutingRuleTrace) ->
+    {[], RoutingRuleTrace};
+reduce_decisions({delegates, Delegates}, VS, Rev, Trace) ->
+    reduce_delegates_decision(Delegates, VS, Rev, Trace);
+reduce_decisions({candidates, Candidates}, VS, Rev, Trace) ->
+    Candidates = reduce_candidates_decision(Candidates, VS, Rev),
+    {Candidates, Trace}.
 
-reduce_delegates_decision([], _VS, _Rev) ->
-    [];
-reduce_delegates_decision([D | Delegates], VS, Rev) ->
+reduce_delegates_decision([], _VS, _Rev, Trace) ->
+    {[], Trace};
+reduce_delegates_decision([D | Delegates], VS, Rev, Trace) ->
     Predicate = D#domain_RoutingDelegate.allowed,
     RuleSetRef = D#domain_RoutingDelegate.ruleset,
     case pm_selector:reduce_predicate(Predicate, VS, Rev) of
         ?const(false) ->
-            reduce_delegates_decision(Delegates, VS, Rev);
+            reduce_delegates_decision(Delegates, VS, Rev, Trace);
         ?const(true) ->
-            reduce(get_rule_set(RuleSetRef, Rev), VS, Rev);
+            reduce(get_rule_set(RuleSetRef, Rev), VS, Rev, [RuleSetRef | Trace]);
         _ ->
             logger:warning(
                 "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~n Varset:~n~p",
                 [Predicate, VS]
             ),
-            []
+            {[], Trace}
     end.
 
 reduce_candidates_decision(Candidates, VS, Rev) ->
