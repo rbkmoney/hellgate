@@ -65,8 +65,8 @@ reduce_decisions({_, []}, _, _, RoutingRuleTrace) ->
     {[], RoutingRuleTrace};
 reduce_decisions({delegates, Delegates}, VS, Rev, Trace) ->
     reduce_delegates_decision(Delegates, VS, Rev, Trace);
-reduce_decisions({candidates, Candidates}, VS, Rev, Trace) ->
-    Candidates = reduce_candidates_decision(Candidates, VS, Rev),
+reduce_decisions({candidates, C}, VS, Rev, Trace) ->
+    Candidates = reduce_candidates_decision(C, VS, Rev),
     {Candidates, Trace}.
 
 reduce_delegates_decision([], _VS, _Rev, Trace) ->
