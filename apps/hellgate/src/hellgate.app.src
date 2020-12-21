@@ -19,6 +19,7 @@
         gproc,
         dmt_client,
         party_client,
+        limiter_client,
         woody_user_identity,
         payproc_errors,
         erl_health,
