@@ -151,7 +151,7 @@ filter_routes({Routes, Rejected}, Prohibitions) ->
     ).
 
 get_rule_set(RuleSetRef, Revision) ->
-    hg_domain:get(Revision, {payment_routing_rules, RuleSetRef}).
+    hg_domain:get(Revision, {routing_rules, RuleSetRef}).
 
 get_terminal_ref(Candidate) ->
     Candidate#domain_RoutingCandidate.terminal.
