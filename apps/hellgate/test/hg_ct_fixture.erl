@@ -269,7 +269,7 @@ construct_dummy_additional_info() ->
 -spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) ->
     dmsl_domain_thrift:'RoutingRulesetObject'().
 construct_payment_routing_ruleset(Ref, Name, Decisions) ->
-    {payment_routing_rules, #domain_RoutingRulesObject{
+    {routing_rules, #domain_RoutingRulesObject{
         ref = Ref,
         data = #domain_RoutingRuleset{
             name = Name,

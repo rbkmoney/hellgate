@@ -186,6 +186,10 @@ start_app(hellgate = AppName) ->
                         pool => recurrent_paytool_eventsink,
                         max_connections => 300
                     }
+                },
+                limiter => #{
+                    url => <<"http://127.0.0.1:30001/test/proxy/limiter/dummy">>,
+                    transport_opts => #{}
                 }
             }},
             {proxy_opts, #{
@@ -214,6 +218,9 @@ start_app(hellgate = AppName) ->
                     operation_time_limit => 1200000,
                     pre_aggregation_size => 2
                 }
+            }},
+            {limiter, #{
+                level => production
             }}
         ]), #{
             hellgate_root_url => get_hellgate_url()

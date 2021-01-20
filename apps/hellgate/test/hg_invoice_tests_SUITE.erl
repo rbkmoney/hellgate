@@ -37,6 +37,7 @@
 
 -export([payment_start_idempotency/1]).
 -export([payment_success/1]).
+-export([payment_limit_success/1]).
 -export([processing_deadline_reached_test/1]).
 -export([payment_success_empty_cvv/1]).
 -export([payment_success_additional_info/1]).
@@ -185,55 +186,59 @@ cfg(Key, C) ->
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        invalid_party_status,
-        invalid_shop_status,
+        % invalid_party_status,
+        % invalid_shop_status,
 
         % With constant domain config
-        {group, all_non_destructive_tests},
+        {group, all_non_destructive_tests}
 
-        payments_w_bank_card_issuer_conditions,
-        payments_w_bank_conditions,
+        % payments_w_bank_card_issuer_conditions,
+        % payments_w_bank_conditions,
 
-        % With variable domain config
-        {group, adjustments},
-        {group, holds_management_with_custom_config},
-        {group, refunds},
-        {group, chargebacks},
-        rounding_cashflow_volume,
-        terms_retrieval,
+        % % With variable domain config
+        % {group, adjustments},
+        % {group, holds_management_with_custom_config},
+        % {group, refunds},
+        % {group, chargebacks},
+        % rounding_cashflow_volume,
+        % terms_retrieval,
 
-        consistent_account_balances,
-        consistent_history
+        % consistent_account_balances,
+        % consistent_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
 groups() ->
     [
         {all_non_destructive_tests, [parallel], [
-            {group, base_payments},
-            payment_w_customer_success,
-            payment_customer_risk_score_check,
-            payment_risk_score_check,
-            payment_risk_score_check_fail,
-            payment_risk_score_check_timeout,
-            party_revision_check,
+            {group, base_payments}
+            % payment_w_customer_success,
+            % payment_customer_risk_score_check,
+            % payment_risk_score_check,
+            % payment_risk_score_check_fail,
+            % payment_risk_score_check_timeout,
+            % party_revision_check,
 
-            invalid_payment_w_deprived_party,
-            external_account_posting,
-            terminal_cashflow_overrides_provider,
+            % invalid_payment_w_deprived_party,
+            % external_account_posting,
+            % terminal_cashflow_overrides_provider,
 
-            {group, holds_management},
+            % {group, holds_management},
 
-            {group, offsite_preauth_payment},
+            % {group, offsite_preauth_payment},
 
-            payment_with_tokenized_bank_card,
+            % payment_with_tokenized_bank_card,
 
-            {group, adhoc_repairs},
+            % {group, adhoc_repairs},
 
-            {group, repair_scenarios}
+            % {group, repair_scenarios}
         ]},
 
         {base_payments, [parallel], [
+            payment_limit_success
+        ]},
+
+        {base_payments_, [parallel], [
             invoice_creation_idempotency,
             invalid_invoice_shop,
             invalid_invoice_amount,
@@ -428,6 +433,7 @@ init_per_suite(C) ->
     ],
 
     ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
+    start_limiter(hg_dummy_limiter, NewC),
     NewC.
 
 -spec end_per_suite(config()) -> _.
@@ -946,6 +952,31 @@ payment_start_idempotency(C) ->
 payment_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(Payment)]
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    ?payment_w_status(PaymentID, ?captured()) = Payment,
+    ?payment_w_context(Context) = Payment.
+
+-spec payment_limit_success(config()) -> test_return().
+payment_limit_success(C) ->
+    PartyID = <<"bIg merch limit">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+
     Context = #'Content'{
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
@@ -4906,6 +4937,14 @@ start_proxies(Proxies) ->
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
 
+start_limiter(Module, Context) ->
+    IP = "127.0.0.1",
+    Port = hg_dummy_limiter:get_port(),
+    Opts = #{hellgate_root_url => cfg(root_url, Context)},
+    ChildSpec = hg_test_proxy:get_child_spec(Module, Module, IP, Port, Opts),
+    {ok, _} = supervisor:start_child(cfg(test_sup, Context), ChildSpec),
+    hg_test_proxy:get_url(Module, IP, Port).
+
 start_kv_store(SupPid) ->
     ChildSpec = #{
         id => hg_kv_store,
@@ -5992,6 +6031,21 @@ construct_domain_fixture() ->
                     description = <<"Important merch">>,
                     allowed = {condition, {party, #domain_PartyCondition{id = <<"bIg merch">>}}},
                     ruleset = #domain_RoutingRulesetRef{id = 1}
+                },
+                #domain_RoutingDelegate{
+                    description = <<"Provider with turnover limit">>,
+                    allowed = {condition, {party, #domain_PartyCondition{id = <<"bIg merch limit">>}}},
+                    ruleset = #domain_RoutingRulesetRef{id = 4}
+                }
+            ]}
+        ),
+        hg_ct_fixture:construct_payment_routing_ruleset(
+            ?ruleset(4),
+            <<"SubMain">>,
+            {candidates, [
+                #domain_RoutingCandidate{
+                    allowed = {constant, true},
+                    terminal = #domain_TerminalRef{id = 12}
                 }
             ]}
         ),
@@ -6009,7 +6063,8 @@ construct_domain_fixture() ->
                             ?prv(1),
                             ?prv(2),
                             ?prv(3),
-                            ?prv(4)
+                            ?prv(4),
+                            ?prv(5)
                         ])},
                 payment_routing_rules = #domain_RoutingRules{
                     policies = ?ruleset(2),
@@ -6784,7 +6839,109 @@ construct_domain_fixture() ->
                     <<"prefix">> => <<"1234567890">>
                 }
             }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(5),
+            data = #domain_Provider{
+                name = <<"UnionTelecom">>,
+                description = <<"Mobile commerce terminal provider">>,
+                terminal = {value, [?prvtrm(12)]},
+                proxy = #domain_Proxy{
+                    ref = ?prx(1),
+                    additional = #{
+                        <<"override">> => <<"Union Telecom">>
+                    }
+                },
+                abs_account = <<"0987654321">>,
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies =
+                            {value,
+                                ?ordset([
+                                    ?cur(<<"RUB">>)
+                                ])},
+                        categories =
+                            {value,
+                                ?ordset([
+                                    ?cat(1)
+                                ])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(mobile, mts)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(10000000, <<"RUB">>)}
+                                )},
+                        cash_flow =
+                            {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share(1, 1, operation_amount)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share(21, 1000, operation_amount)
+                                )
+                            ]},
+                        refunds = #domain_PaymentRefundsProvisionTerms{
+                            cash_flow =
+                                {value, [
+                                    ?cfpost(
+                                        {merchant, settlement},
+                                        {provider, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    )
+                                ]},
+                            partial_refunds = #domain_PartialRefundsProvisionTerms{
+                                cash_limit =
+                                    {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(10, <<"RUB">>)},
+                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                        )}
+                            }
+                        },
+                        turnover_limits = {value, [
+                            #domain_TurnoverLimit{
+                                id = <<"1">>,
+                                upper_boundary = #domain_Cash{
+                                    amount = 100000,
+                                    currency = #domain_CurrencyRef{
+                                        symbolic_code = <<"RUB">>
+                                }}
+                            }
+                        ]}
+                    },
+                    recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
+                        categories = {value, ?ordset([?cat(1), ?cat(4)])},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card_deprecated, mastercard)
+                                ])},
+                        cash_value = {value, ?cash(1000, <<"RUB">>)}
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(12),
+            data = #domain_Terminal{
+                name = <<"Parking Payment Terminal">>,
+                description = <<"Terminal">>,
+                provider_ref = #domain_ProviderRef{id = 5}
+            }
         }}
+
     ].
 
 construct_term_set_for_cost(LowerBound, UpperBound) ->
