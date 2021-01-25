@@ -8,6 +8,8 @@
 -type varset() :: hg_routing:varset().
 -type revision() :: hg_domain:revision().
 -type cash() :: dmsl_domain_thrift:'Cash'().
+-type cash_range() :: dmsl_domain_thrift:'CashRange'().
+-type level() :: production | development.
 
 -type turnover_limit() :: dmsl_proto_limiter_thrift:'TurnoverLimits'().
 
@@ -15,7 +17,10 @@
 -export([check_limits/3]).
 -export([hold/4]).
 -export([commit/1]).
+-export([partial_commit/1]).
 -export([rollback/1]).
+
+-export([handle_result/2]).
 
 -define(const(Bool), {constant, Bool}).
 
@@ -38,33 +43,27 @@ check_limits([], _, _, Limits) ->
     {ok, Limits};
 check_limits([T | TurnoverLimits], OperationAmount, Timestamp, Acc) ->
     #domain_TurnoverLimit{id = LimitID} = T,
-
     case hg_limiter_client:get(LimitID, Timestamp) of
         {ok, Limit} ->
             #proto_limiter_Limit{
                 id = LimitID,
                 cash = Cash
-            %% TODO Limit has got creation_time$reload_time. Should we consider it,
-            %% when check limit
             } = Limit,
             LimiterAmount = Cash#domain_Cash.amount,
             Amount = LimiterAmount + OperationAmount#domain_Cash.amount,
             UpperBoundary = T#domain_TurnoverLimit.upper_boundary,
-
-            case Amount < UpperBoundary of
+            case Amount < UpperBoundary#domain_Cash.amount of
                 true ->
                     check_limits(TurnoverLimits, OperationAmount, Timestamp, [Limit | Acc]);
                 false ->
                     logger:warning("Limit with id ~p is overflow", [LimitID]),
                     {error, {limit_overflow, Limit}}
             end;
-        {error, {not_found, LimitID}} = Error ->
+        {error, {ErrorType, LimitID}} = Error when
+        ErrorType == not_found orelse
+        ErrorType == invalid_request ->
             ErrorMsg = "Unable get limit by id ~p from proto limiter, ~p:~p",
             logger:error(ErrorMsg, [LimitID, error, not_found]),
-            Error;
-        {error, {invalid_request, Description}} = Error ->
-            ErrorMsg = "Unable get limit by id ~p from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [LimitID, invalid_request, Description]),
             Error
     end.
 
@@ -81,26 +80,23 @@ hold(Limits, LimitChangeID, Cash, Timestamp) ->
             case hg_limiter_client:hold(LimitChange) of
                 ok ->
                     ok;
-                {error, {_, _} = Error} ->
+                {error, Error} ->
                     throw(Error)
             end
         end, LimitChanges)
     catch
-        {error, {not_found, LimitID}} = Error ->
-            ErrorMsg = "Unable hold limit with id ~p from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [LimitID, error, not_found]),
-            Error;
-        {error, {invalid_request, Description}} = Error ->
-            ErrorMsg = "Unable hold limit from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [invalid_request, Description]),
-            Error;
-        {error, {currency_conflict, Description}} = Error ->
-            ErrorMsg = "Unable hold limit from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [currency_conflict, Description]),
-            Error
+        throw:{ErrorType, _} = Error when
+        ErrorType == not_found orelse
+        ErrorType == invalid_request orelse
+        ErrorType == currency_conflict ->
+            {error, Error}
     end.
 
--spec commit([hg_limiter_client:limit_change()]) -> ok.
+-spec commit([hg_limiter_client:limit_change()]) ->
+    ok |
+    {error, {not_found, hg_limiter_client:limit_id()}} |
+    {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
+    {error, {invalid_request, Description :: binary()}}.
 
 commit(LimitChanges) ->
     try
@@ -108,22 +104,47 @@ commit(LimitChanges) ->
             case hg_limiter_client:commit(LimitChange) of
                 ok ->
                     ok;
-                {error, {_, _} = Error} ->
+                {error, _} = Error ->
                     throw(Error)
             end
         end, LimitChanges)
     catch
-        {error, {not_found, LimitID}} = Error ->
-            ErrorMsg = "Unable commit limit with id ~p from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [LimitID, error, not_found]),
-            Error;
-        {error, {invalid_request, Description}} = Error ->
-            ErrorMsg = "Unable commit limit from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [invalid_request, Description]),
-            Error
+        throw:{ErrorType, _} = Error when
+        ErrorType == not_found orelse
+        ErrorType == invalid_request ->
+            {error, Error}
     end.
 
--spec rollback([hg_limiter_client:limit_change()]) -> ok.
+-spec partial_commit([hg_limiter_client:limit_change()]) ->
+    ok |
+    {error, {not_found, hg_limiter_client:limit_id()}} |
+    {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
+    {error, {forbidden_operation_amount, {cash(), cash_range()}}} |
+    {error, {invalid_request, Description :: binary()}}.
+
+partial_commit(LimitChanges) ->
+    try
+        lists:foreach(fun(LimitChange) ->
+            case hg_limiter_client:partial_commit(LimitChange) of
+                ok ->
+                    ok;
+                {error, _} = Error ->
+                    throw(Error)
+            end
+        end, LimitChanges)
+    catch
+        throw:{ErrorType, _} = Error when
+        ErrorType == not_found orelse
+        ErrorType == invalid_request orelse
+        ErrorType == forbidden_operation_amount ->
+            {error, Error}
+    end.
+
+-spec rollback([hg_limiter_client:limit_change()]) ->
+    ok |
+    {error, {not_found, hg_limiter_client:limit_id()}} |
+    {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
+    {error, {invalid_request, Description :: binary()}}.
 
 rollback(LimitChanges) ->
     try
@@ -131,19 +152,15 @@ rollback(LimitChanges) ->
             case hg_limiter_client:rollback(LimitChange) of
                 ok ->
                     ok;
-                {error, {_, _} = Error} ->
+                {error, _} = Error ->
                     throw(Error)
             end
         end, LimitChanges)
     catch
-        {error, {not_found, LimitID}} = Error ->
-            ErrorMsg = "Unable rollback limit with id ~p from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [LimitID, error, not_found]),
-            Error;
-        {error, {invalid_request, Description}} = Error ->
-            ErrorMsg = "Unable rollback limit from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [invalid_request, Description]),
-            Error
+        throw:{ErrorType, _} = Error when
+        ErrorType == not_found orelse
+        ErrorType == invalid_request ->
+            {error, Error}
     end.
 
 -spec gen_limit_changes([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
@@ -157,8 +174,31 @@ gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp) ->
         operation_timestamp = Timestamp
     } || Limit <- Limits].
 
+-spec handle_result(level(), function()) -> ok.
+
+handle_result(production, ProcessLimitFun) ->
+    case ProcessLimitFun() of
+        ok ->
+            ok;
+        {error, Error} ->
+            error(Error)
+    end;
+handle_result(development, ProcessLimitFun) ->
+    try
+        _ = ProcessLimitFun(),
+        ok
+    catch
+        error:{woody_error, {_Source, Class, _Details}} when
+            Class =:= resource_unavailable orelse
+            Class =:= result_unknown orelse
+            Class =:= result_unexpected
+        ->
+            ok
+    end.
+
+
 reduce_limits(undefined, _, _) ->
-    logger:warning("Operation limits haven't been set on provider terms."),
+    logger:info("Operation limits haven't been set on provider terms."),
     [];
 reduce_limits({decisions, Decisions}, VS, Revision) ->
     reduce_limits_decisions(Decisions, VS, Revision);

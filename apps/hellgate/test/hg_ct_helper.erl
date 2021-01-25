@@ -220,6 +220,7 @@ start_app(hellgate = AppName) ->
                 }
             }},
             {limiter, #{
+                error_handler => hg_ct_limiter_handler,
                 level => production
             }}
         ]), #{

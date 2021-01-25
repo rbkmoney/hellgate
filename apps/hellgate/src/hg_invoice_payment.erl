@@ -23,7 +23,7 @@
 -include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
-
+-include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 %% API
 
 %% St accessors
@@ -1822,7 +1822,7 @@ repair_process_timeout(Activity, Action, St = #st{repair_scenario = Scenario}) -
         {result, Result} ->
             Result;
         call ->
-            ct:print("process_step: ~p", [Activity]),
+            % ct:print("process_step: ~p", [Activity]),
             process_timeout(Activity, Action, St)
     end.
 
@@ -1907,28 +1907,9 @@ process_operation_limit(Route, VS, Payment, Revision, Opts) ->
 
 handle_operation_limit_result(ProcessLimitFun) ->
     LimiterConfig = genlib_app:env(hellgate, limiter, #{}),
+    Handler = genlib_map:get(error_handler, LimiterConfig, hg_limiter),
     LimiterLevel = genlib_map:get(level, LimiterConfig, development),
-    handle_operation_limit_result(LimiterLevel, ProcessLimitFun).
-
-handle_operation_limit_result(production, ProcessLimitFun) ->
-    case ProcessLimitFun() of
-        ok ->
-            ok;
-        {error, Error} ->
-            error(Error)
-    end;
-handle_operation_limit_result(development, ProcessLimitFun) ->
-    try
-        _ = ProcessLimitFun(),
-        ok
-    catch
-        error:{woody_error, {_Source, Class, _Details}} when
-            Class =:= resource_unavailable orelse
-            Class =:= result_unknown orelse
-            Class =:= result_unexpected
-        ->
-            ok
-    end.
+    Handler:handle_result(LimiterLevel, ProcessLimitFun).
 
 process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
     Timestamp = get_payment_created_at(Payment),
@@ -2174,12 +2155,11 @@ process_result({payment, processing_accounter}, Action, St) ->
     {done, {[?payment_status_changed(Target)], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
-    rollback_operation_limits(St),
+    _ = rollback_operation_limits(St),
     _Clocks = rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
-    ct:print("finalizing_accounter Target ~p", [Target]),
     _Clocks =
         case Target of
             ?captured() ->
@@ -2202,7 +2182,7 @@ process_result({refund_failure, ID}, Action, St) ->
     {done, {Events, Action}};
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    %% TODO Refund operation limits
+    _ = commit_refund_limits(RefundSt, St),
     _Clocks = commit_refund_cashflow(RefundSt, St),
     Events2 = [
         ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
@@ -2540,19 +2520,37 @@ try_request_interaction(undefined) ->
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
 
--include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
-
 commit_operation_limits(St) ->
-    %% TODO handle result
     LimitChanges = get_limit_changes(St),
-    Result = hg_limiter:commit(LimitChanges),
-    ct:print("commit Result ~p", [Result]),
-    ok.
+    handle_operation_limit_result(fun() ->
+        hg_limiter:commit(LimitChanges)
+    end).
+
+commit_refund_limits(RefundSt, St) ->
+    LimitChanges0 = get_limit_changes(St),
+    Refund = get_refund(RefundSt),
+    RefundCash0 = Refund#domain_InvoicePaymentRefund.cash,
+    RefundCashAmount = RefundCash0#domain_Cash.amount,
+    InvoicePayment = get_payment(St),
+    InvoicePaymentCash = InvoicePayment#domain_InvoicePayment.cost,
+    case InvoicePaymentCash#domain_Cash.amount of
+        Amount when Amount > RefundCashAmount ->
+            RefundCash1 = RefundCash0#domain_Cash{amount = -RefundCashAmount},
+            LimitChanges2 = [L#proto_limiter_LimitChange{cash = RefundCash1} || L <- LimitChanges0],
+            handle_operation_limit_result(fun() ->
+                hg_limiter:partial_commit(LimitChanges2)
+            end);
+        RefundCashAmount ->
+            handle_operation_limit_result(fun() ->
+                hg_limiter:commit(LimitChanges0)
+            end)
+    end.
 
 rollback_operation_limits(St) ->
-    %% TODO handle result
     LimitChanges = get_limit_changes(St),
-    hg_limiter:rollback(LimitChanges).
+    handle_operation_limit_result(fun() ->
+        hg_limiter:rollback(LimitChanges)
+    end).
 
 get_limit_changes(St) ->
     Opts = get_opts(St),
@@ -2561,21 +2559,10 @@ get_limit_changes(St) ->
     Invoice = get_invoice(Opts),
     Cash = Invoice#domain_Invoice.cost,
     LimitChangeID = construct_payment_plan_id(Invoice, Payment),
-    CreatedAt = get_payment_created_at(Payment),
     Timestamp = get_payment_created_at(Payment),
     Route = get_route(St),
     VS0 = reconstruct_payment_flow(Payment, #{}),
-    #{payment_tool := PaymentTool} = VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
-    VS2 = collect_refund_varset(
-        MerchantTerms#domain_PaymentsServiceTerms.refunds,
-        PaymentTool,
-        VS1
-    ),
-    Varset = collect_chargeback_varset(
-        MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
-        VS2
-    ),
+    Varset = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     ProviderTerms = get_provider_terminal_terms(Route, Varset, Revision),
     TurnoverLimits = hg_limiter:get_turnover_limits(ProviderTerms, Varset, Revision),
     [#proto_limiter_LimitChange{

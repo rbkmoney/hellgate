@@ -9,6 +9,8 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
+-include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
+
 -include_lib("stdlib/include/assert.hrl").
 
 -export([all/0]).
@@ -37,7 +39,14 @@
 
 -export([payment_start_idempotency/1]).
 -export([payment_success/1]).
+
 -export([payment_limit_success/1]).
+-export([payment_limit_not_found/1]).
+-export([payment_limit_overflow/1]).
+-export([refund_limit_success/1]).
+-export([partial_refund_limit_success/1]).
+-export([refund_limit_change_not_found/1]).
+
 -export([processing_deadline_reached_test/1]).
 -export([payment_success_empty_cvv/1]).
 -export([payment_success_additional_info/1]).
@@ -211,7 +220,7 @@ all() ->
 groups() ->
     [
         {all_non_destructive_tests, [parallel], [
-            {group, base_payments}
+            {group, operation_limits}
             % payment_w_customer_success,
             % payment_customer_risk_score_check,
             % payment_risk_score_check,
@@ -232,10 +241,6 @@ groups() ->
             % {group, adhoc_repairs},
 
             % {group, repair_scenarios}
-        ]},
-
-        {base_payments, [parallel], [
-            payment_limit_success
         ]},
 
         {base_payments_, [parallel], [
@@ -320,6 +325,15 @@ groups() ->
             reopen_payment_chargeback_accept_new_levy,
             reopen_payment_chargeback_arbitration,
             reopen_payment_chargeback_arbitration_reopen_fails
+        ]},
+
+        {operation_limits, [], [
+            payment_limit_success,
+            payment_limit_not_found,
+            payment_limit_overflow,
+            refund_limit_success,
+            refund_limit_change_not_found,
+            partial_refund_limit_success
         ]},
 
         {refunds, [], [
@@ -968,11 +982,12 @@ payment_success(C) ->
 
 -spec payment_limit_success(config()) -> test_return().
 payment_limit_success(C) ->
+    hg_ct_limiter_handler:create_storage(),
     PartyID = <<"bIg merch limit">>,
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
@@ -989,7 +1004,176 @@ payment_limit_success(C) ->
         [?payment_state(Payment)]
     ) = hg_client_invoicing:get(InvoiceID, Client),
     ?payment_w_status(PaymentID, ?captured()) = Payment,
-    ?payment_w_context(Context) = Payment.
+    ?payment_w_context(Context) = Payment,
+    hg_ct_limiter_handler:delete_storage().
+
+-spec payment_limit_not_found(config()) -> test_return().
+payment_limit_not_found(C) ->
+    hg_ct_limiter_handler:create_storage(),
+    PartyID = <<"bIg merch limit">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(9), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+    _ = next_event(InvoiceID, Client),
+    ?assertEqual({not_found, <<"3">>}, hg_ct_limiter_handler:get_error()),
+    hg_ct_limiter_handler:delete_storage().
+
+-spec payment_limit_overflow(config()) -> test_return().
+payment_limit_overflow(C) ->
+    hg_ct_limiter_handler:create_storage(),
+    PartyID = <<"bIg merch limit">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID2 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID2, <<"rubberduck">>, make_due_date(10), 100001),
+    InvoiceID2 = create_invoice(InvoiceParams2, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
+    Context = #'Content'{
+        type = <<"application/x-erlang-binary">>,
+        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
+    },
+    PaymentParams = set_payment_context(Context, make_payment_params()),
+    ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID2, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID2, Client),
+    _ = next_event(InvoiceID2, Client),
+
+    ?assertMatch({limit_overflow, #proto_limiter_Limit{
+        id = <<"1">>,
+        cash = ?cash(0, <<"RUB">>)
+    }}, hg_ct_limiter_handler:get_error()),
+    hg_ct_limiter_handler:delete_storage().
+
+-spec refund_limit_success(config()) -> test_return().
+refund_limit_success(C) ->
+    hg_ct_limiter_handler:create_storage(),
+    PartyID = <<"bIg merch limit">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+
+    InvoiceID2 = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+
+    % create a refund finally
+    RefundParams = make_refund_params(),
+
+    Refund =
+        #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
+    ] = next_event(InvoiceID, Client),
+
+    #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    % no more refunds for you
+    ?invalid_payment_status(?refunded()) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    hg_ct_limiter_handler:delete_storage().
+
+-spec partial_refund_limit_success(config()) -> test_return().
+partial_refund_limit_success(C) ->
+    hg_ct_limiter_handler:create_storage(),
+    PartyID = <<"bIg merch limit">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+
+    % create a refund finally
+    RefundParams = make_refund_params(10000, <<"RUB">>),
+
+    Refund =
+        #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    Refund =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+
+    [
+        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
+        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    hg_ct_limiter_handler:delete_storage().
+
+-spec refund_limit_change_not_found(config()) -> test_return().
+refund_limit_change_not_found(C) ->
+    hg_ct_limiter_handler:create_storage(),
+    PartyID = <<"bIg merch limit">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(10), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+
+    InvoiceID2 = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
+    PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
+    PaymentID2 = await_payment_capture(InvoiceID2, PaymentID2, Client),
+
+    % create a refund finally
+    RefundParams = make_refund_params(1000, <<"RUB">>),
+
+    Refund =
+        #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    ?assertMatch([?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _)))], next_event(InvoiceID, Client)),
+    ?assertMatch([?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))], next_event(InvoiceID, Client)),
+    _ = next_event(InvoiceID, Client),
+    ?assertMatch({not_found, {limit_change, _}}, hg_ct_limiter_handler:get_error()),
+    hg_ct_limiter_handler:delete_storage().
 
 -spec payment_success_ruleset(config()) -> test_return().
 payment_success_ruleset(C) ->
@@ -5665,7 +5849,10 @@ construct_domain_fixture() ->
             categories =
                 {value,
                     ?ordset([
-                        ?cat(1)
+                        ?cat(1),
+                        ?cat(8),
+                        ?cat(9),
+                        ?cat(10)
                     ])},
             payment_methods =
                 {decisions, [
@@ -5960,6 +6147,11 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(5), <<"Timeouter">>, live),
         hg_ct_fixture:construct_category(?cat(6), <<"MachineFailer">>, live),
         hg_ct_fixture:construct_category(?cat(7), <<"TempFailer">>, live),
+
+        %% categories influents in limits choice
+        hg_ct_fixture:construct_category(?cat(8), <<"commit success">>),
+        hg_ct_fixture:construct_category(?cat(9), <<"hold limit not found">>),
+        hg_ct_fixture:construct_category(?cat(10), <<"commit changes not found">>),
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
@@ -6862,10 +7054,11 @@ construct_domain_fixture() ->
                                     ?cur(<<"RUB">>)
                                 ])},
                         categories =
-                            {value,
-                                ?ordset([
-                                    ?cat(1)
-                                ])},
+                            {value, ?ordset([
+                                ?cat(8),
+                                ?cat(9),
+                                ?cat(10)
+                            ])},
                         payment_methods =
                             {value,
                                 ?ordset([
@@ -6909,14 +7102,37 @@ construct_domain_fixture() ->
                                         )}
                             }
                         },
-                        turnover_limits = {value, [
-                            #domain_TurnoverLimit{
-                                id = <<"1">>,
-                                upper_boundary = #domain_Cash{
-                                    amount = 100000,
-                                    currency = #domain_CurrencyRef{
-                                        symbolic_code = <<"RUB">>
-                                }}
+                        turnover_limits = {decisions, [
+                            #domain_TurnoverLimitDecision{
+                                if_ = {condition, {category_is, ?cat(8)}},
+                                then_ = {value, [
+                                    #domain_TurnoverLimit{
+                                        id = <<"1">>,
+                                        upper_boundary = ?cash(100000, <<"RUB">>)
+                                    },
+                                    #domain_TurnoverLimit{
+                                        id = <<"2">>,
+                                        upper_boundary = ?cash(100000, <<"RUB">>)
+                                    }
+                                ]}
+                            },
+                            #domain_TurnoverLimitDecision{
+                                if_ = {condition, {category_is, ?cat(9)}},
+                                then_ = {value, [
+                                    #domain_TurnoverLimit{
+                                        id = <<"3">>,
+                                        upper_boundary = ?cash(100000, <<"RUB">>)
+                                    }
+                                ]}
+                            },
+                            #domain_TurnoverLimitDecision{
+                                if_ = {condition, {category_is, ?cat(10)}},
+                                then_ = {value, [
+                                    #domain_TurnoverLimit{
+                                        id = <<"4">>,
+                                        upper_boundary = ?cash(100000, <<"RUB">>)
+                                    }
+                                ]}
                             }
                         ]}
                     },
@@ -6941,7 +7157,6 @@ construct_domain_fixture() ->
                 provider_ref = #domain_ProviderRef{id = 5}
             }
         }}
-
     ].
 
 construct_term_set_for_cost(LowerBound, UpperBound) ->

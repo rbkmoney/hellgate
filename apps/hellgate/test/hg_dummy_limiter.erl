@@ -20,9 +20,11 @@ get_port() ->
 
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
 
+handle_function('Get', {<<"3">>, _Timestamp}, _Opts) ->
+    throw(#proto_limiter_LimitNotFound{});
 handle_function('Get', {LimitID, Timestamp}, _Opts) ->
     Cash = #domain_Cash{
-        amount = 10000,
+        amount = 0,
         currency = #domain_CurrencyRef{symbolic_code = <<"RUB">>}
     },
     #proto_limiter_Limit{
@@ -30,13 +32,15 @@ handle_function('Get', {LimitID, Timestamp}, _Opts) ->
         cash = Cash,
         creation_time = Timestamp
     };
+
 handle_function('Hold', {_LimitChange}, _Opts) ->
     ok;
-handle_function('Commit', {_LimitChange}, _Opts) ->
+handle_function('PartialCommit', {#proto_limiter_LimitChange{id = <<"4">>}}, _Opts) ->
+    throw(#proto_limiter_LimitChangeNotFound{});
+handle_function('PartialCommit', {_LimitChange}, _Opts) ->
     ok;
-handle_function(F, A, _O) ->
-    ct:print("LIMITER handler not_impl ~p:~p", [F, A]),
-    no_impl.
+handle_function('Commit', {_LimitChange}, _Opts) ->
+    ok.
 
 -spec get_service_spec() -> hg_proto:service_spec().
 get_service_spec() ->
