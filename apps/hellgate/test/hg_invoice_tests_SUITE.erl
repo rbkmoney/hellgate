@@ -195,52 +195,53 @@ cfg(Key, C) ->
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        % invalid_party_status,
-        % invalid_shop_status,
+        invalid_party_status,
+        invalid_shop_status,
 
         % With constant domain config
-        {group, all_non_destructive_tests}
+        {group, all_non_destructive_tests},
 
-        % payments_w_bank_card_issuer_conditions,
-        % payments_w_bank_conditions,
+        payments_w_bank_card_issuer_conditions,
+        payments_w_bank_conditions,
 
         % % With variable domain config
-        % {group, adjustments},
-        % {group, holds_management_with_custom_config},
-        % {group, refunds},
-        % {group, chargebacks},
-        % rounding_cashflow_volume,
-        % terms_retrieval,
+        {group, adjustments},
+        {group, holds_management_with_custom_config},
+        {group, refunds},
+        {group, chargebacks},
+        rounding_cashflow_volume,
+        terms_retrieval,
 
-        % consistent_account_balances,
-        % consistent_history
+        consistent_account_balances,
+        consistent_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
 groups() ->
     [
         {all_non_destructive_tests, [parallel], [
-            {group, operation_limits}
-            % payment_w_customer_success,
-            % payment_customer_risk_score_check,
-            % payment_risk_score_check,
-            % payment_risk_score_check_fail,
-            % payment_risk_score_check_timeout,
-            % party_revision_check,
+            {group, operation_limits},
 
-            % invalid_payment_w_deprived_party,
-            % external_account_posting,
-            % terminal_cashflow_overrides_provider,
+            payment_w_customer_success,
+            payment_customer_risk_score_check,
+            payment_risk_score_check,
+            payment_risk_score_check_fail,
+            payment_risk_score_check_timeout,
+            party_revision_check,
 
-            % {group, holds_management},
+            invalid_payment_w_deprived_party,
+            external_account_posting,
+            terminal_cashflow_overrides_provider,
 
-            % {group, offsite_preauth_payment},
+            {group, holds_management},
 
-            % payment_with_tokenized_bank_card,
+            {group, offsite_preauth_payment},
 
-            % {group, adhoc_repairs},
+            payment_with_tokenized_bank_card,
 
-            % {group, repair_scenarios}
+            {group, adhoc_repairs},
+
+            {group, repair_scenarios}
         ]},
 
         {base_payments_, [parallel], [
@@ -1168,10 +1169,11 @@ refund_limit_change_not_found(C) ->
 
     Refund =
         #domain_InvoicePaymentRefund{id = RefundID} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    ?assertMatch([?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _)))], next_event(InvoiceID, Client)),
-    ?assertMatch([?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))], next_event(InvoiceID, Client)),
-    _ = next_event(InvoiceID, Client),
+        hg_client_invoicing:refund_payment(InvoiceID2, PaymentID2, RefundParams, Client),
+    ?assertMatch([?payment_ev(PaymentID2, ?refund_ev(RefundID, ?refund_created(Refund, _)))], next_event(InvoiceID2, Client)),
+    ?assertMatch([?payment_ev(PaymentID2, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))], next_event(InvoiceID2, Client)),
+    _ = next_event(InvoiceID2, Client),
+
     ?assertMatch({not_found, {limit_change, _}}, hg_ct_limiter_handler:get_error()),
     hg_ct_limiter_handler:delete_storage().
 

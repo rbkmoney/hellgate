@@ -3,15 +3,15 @@
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
--type timestamp() :: limiter_client:timestamp().
--type terms() :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
+-type timestamp() :: binary().
+-type terms() :: dmsl_domain_thrift:'ProvisionTermSet'().
 -type varset() :: hg_routing:varset().
 -type revision() :: hg_domain:revision().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 -type level() :: production | development.
 
--type turnover_limit() :: dmsl_proto_limiter_thrift:'TurnoverLimits'().
+-type turnover_limit() :: dmsl_domain_thrift:'TurnoverLimit'().
 
 -export([get_turnover_limits/3]).
 -export([check_limits/3]).
@@ -104,7 +104,7 @@ commit(LimitChanges) ->
             case hg_limiter_client:commit(LimitChange) of
                 ok ->
                     ok;
-                {error, _} = Error ->
+                {error, Error} ->
                     throw(Error)
             end
         end, LimitChanges)
@@ -128,7 +128,7 @@ partial_commit(LimitChanges) ->
             case hg_limiter_client:partial_commit(LimitChange) of
                 ok ->
                     ok;
-                {error, _} = Error ->
+                {error, Error} ->
                     throw(Error)
             end
         end, LimitChanges)
@@ -152,7 +152,7 @@ rollback(LimitChanges) ->
             case hg_limiter_client:rollback(LimitChange) of
                 ok ->
                     ok;
-                {error, _} = Error ->
+                {error, Error}  ->
                     throw(Error)
             end
         end, LimitChanges)

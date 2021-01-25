@@ -1,5 +1,7 @@
 -module(hg_limiter_client).
 
+-include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
+
 -type limit_id() :: dmsl_proto_limiter_thrift:'LimitID'().
 -type change_id() :: dmsl_proto_limiter_thrift:'LimitChangeID'().
 -type limit() :: dmsl_proto_limiter_thrift:'Limit'().
@@ -9,9 +11,12 @@
 -type symbolic_code() :: binary().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
--include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
+
 
 -export_type([limit/0]).
+-export_type([limit_id/0]).
+-export_type([change_id/0]).
+-export_type([limit_change/0]).
 
 -export([get/2]).
 -export([hold/1]).

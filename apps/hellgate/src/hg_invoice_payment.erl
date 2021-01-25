@@ -1822,7 +1822,6 @@ repair_process_timeout(Activity, Action, St = #st{repair_scenario = Scenario}) -
         {result, Result} ->
             Result;
         call ->
-            % ct:print("process_step: ~p", [Activity]),
             process_timeout(Activity, Action, St)
     end.
 
