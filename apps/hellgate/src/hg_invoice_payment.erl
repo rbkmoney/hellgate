@@ -1908,10 +1908,11 @@ process_operation_limit(Route, VS, Payment, Revision, Opts) ->
 
 handle_operation_limit_result(ProcessLimitFun) ->
     hg_limiter:handle_result(ProcessLimitFun).
-    % LimiterConfig = genlib_app:env(hellgate, limiter, #{}),
-    % Handler = genlib_map:get(error_handler, LimiterConfig, hg_limiter),
-    % LimiterLevel = genlib_map:get(level, LimiterConfig, development),
-    % Handler:handle_result(LimiterLevel, ProcessLimitFun).
+
+% LimiterConfig = genlib_app:env(hellgate, limiter, #{}),
+% Handler = genlib_map:get(error_handler, LimiterConfig, hg_limiter),
+% LimiterLevel = genlib_map:get(level, LimiterConfig, development),
+% Handler:handle_result(LimiterLevel, ProcessLimitFun).
 
 process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
     Timestamp = get_payment_created_at(Payment),

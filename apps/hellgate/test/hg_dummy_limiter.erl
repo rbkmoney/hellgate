@@ -2,6 +2,8 @@
 
 -behaviour(hg_woody_wrapper).
 
+-include_lib("hellgate/include/domain.hrl").
+
 -export([handle_function/3]).
 -export([get_port/0]).
 
@@ -14,6 +16,12 @@
 
 -define(COWBOY_PORT, 30001).
 
+-define(limit(LimitID, Cash, Timestamp), #proto_limiter_Limit{
+    id = LimitID,
+    cash = Cash,
+    creation_time = Timestamp
+}).
+
 -spec get_port() -> integer().
 get_port() ->
     ?COWBOY_PORT.
@@ -21,16 +29,10 @@ get_port() ->
 -spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
 handle_function('Get', {<<"3">>, _Timestamp}, _Opts) ->
     throw(#proto_limiter_LimitNotFound{});
+handle_function('Get', {<<"5">> = LimitID, Timestamp}, _Opts) ->
+    ?limit(LimitID, ?cash(1000001, <<"RUB">>), Timestamp);
 handle_function('Get', {LimitID, Timestamp}, _Opts) ->
-    Cash = #domain_Cash{
-        amount = 0,
-        currency = #domain_CurrencyRef{symbolic_code = <<"RUB">>}
-    },
-    #proto_limiter_Limit{
-        id = LimitID,
-        cash = Cash,
-        creation_time = Timestamp
-    };
+    ?limit(LimitID, ?cash(0, <<"RUB">>), Timestamp);
 handle_function('Hold', {_LimitChange}, _Opts) ->
     ok;
 handle_function('PartialCommit', {#proto_limiter_LimitChange{id = <<"4">>}}, _Opts) ->

@@ -1031,7 +1031,7 @@ payment_limit_overflow(C) ->
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID2 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID2 = hg_ct_helper:create_party_and_shop(?cat(11), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     InvoiceParams2 = make_invoice_params(PartyID, ShopID2, <<"rubberduck">>, make_due_date(10), 100001),
     InvoiceID2 = create_invoice(InvoiceParams2, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
@@ -1044,8 +1044,8 @@ payment_limit_overflow(C) ->
 
     ?assertMatch(
         {limit_overflow, #proto_limiter_Limit{
-            id = <<"1">>,
-            cash = ?cash(0, <<"RUB">>)
+            id = <<"5">>,
+            cash = ?cash(1000001, <<"RUB">>)
         }},
         hg_ct_limiter_handler:get_error()
     ),
@@ -5850,7 +5850,8 @@ construct_domain_fixture() ->
                         ?cat(1),
                         ?cat(8),
                         ?cat(9),
-                        ?cat(10)
+                        ?cat(10),
+                        ?cat(11)
                     ])},
             payment_methods =
                 {decisions, [
@@ -6150,6 +6151,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(8), <<"commit success">>),
         hg_ct_fixture:construct_category(?cat(9), <<"hold limit not found">>),
         hg_ct_fixture:construct_category(?cat(10), <<"commit changes not found">>),
+        hg_ct_fixture:construct_category(?cat(11), <<"limit overflow">>),
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
@@ -7056,7 +7058,8 @@ construct_domain_fixture() ->
                                 ?ordset([
                                     ?cat(8),
                                     ?cat(9),
-                                    ?cat(10)
+                                    ?cat(10),
+                                    ?cat(11)
                                 ])},
                         payment_methods =
                             {value,
@@ -7133,6 +7136,16 @@ construct_domain_fixture() ->
                                         {value, [
                                             #domain_TurnoverLimit{
                                                 id = <<"4">>,
+                                                upper_boundary = ?cash(100000, <<"RUB">>)
+                                            }
+                                        ]}
+                                },
+                                #domain_TurnoverLimitDecision{
+                                    if_ = {condition, {category_is, ?cat(11)}},
+                                    then_ =
+                                        {value, [
+                                            #domain_TurnoverLimit{
+                                                id = <<"5">>,
                                                 upper_boundary = ?cash(100000, <<"RUB">>)
                                             }
                                         ]}
