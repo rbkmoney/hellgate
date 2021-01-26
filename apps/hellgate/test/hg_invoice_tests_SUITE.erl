@@ -993,11 +993,7 @@ payment_limit_success(C) ->
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
 
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PaymentParams = make_payment_params(),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
@@ -1005,7 +1001,6 @@ payment_limit_success(C) ->
         [?payment_state(Payment)]
     ) = hg_client_invoicing:get(InvoiceID, Client),
     ?payment_w_status(PaymentID, ?captured()) = Payment,
-    ?payment_w_context(Context) = Payment,
     hg_ct_limiter_handler:delete_storage().
 
 -spec payment_limit_not_found(config()) -> test_return().
@@ -1020,11 +1015,7 @@ payment_limit_not_found(C) ->
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
 
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
@@ -1044,11 +1035,7 @@ payment_limit_overflow(C) ->
     InvoiceParams2 = make_invoice_params(PartyID, ShopID2, <<"rubberduck">>, make_due_date(10), 100001),
     InvoiceID2 = create_invoice(InvoiceParams2, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
     [
         ?payment_ev(PaymentID2, ?payment_started(?payment_w_status(?pending())))
