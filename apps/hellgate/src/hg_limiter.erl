@@ -26,7 +26,6 @@
 -define(const(Bool), {constant, Bool}).
 
 -spec get_turnover_limits(turnover_selector(), varset(), revision()) -> [turnover_limit()].
-
 get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
     % TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
     reduce_limits(TurnoverLimitSelector, VS, Revision).
@@ -34,9 +33,8 @@ get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
 -spec check_limits([turnover_limit()], cash(), timestamp()) ->
     {ok, [hg_limiter_client:limit()]} |
     {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {invalid_request, Reason::binary()}} |
+    {error, {invalid_request, Reason :: binary()}} |
     {error, {limit_overflow, hg_limiter_client:limit()}}.
-
 check_limits(TurnoverLimits, OperationAmount, Timestamp) ->
     check_limits(TurnoverLimits, OperationAmount, Timestamp, []).
 
@@ -61,8 +59,9 @@ check_limits([T | TurnoverLimits], OperationAmount, Timestamp, Acc) ->
                     {error, {limit_overflow, Limit}}
             end;
         {error, {ErrorType, LimitID}} = Error when
-        ErrorType == not_found orelse
-        ErrorType == invalid_request ->
+            ErrorType == not_found orelse
+                ErrorType == invalid_request
+        ->
             ErrorMsg = "Unable get limit by id ~p from proto limiter, ~p:~p",
             logger:error(ErrorMsg, [LimitID, error, not_found]),
             Error
@@ -71,25 +70,28 @@ check_limits([T | TurnoverLimits], OperationAmount, Timestamp, Acc) ->
 -spec hold([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
     ok |
     {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {invalid_request, Reason::binary()}} |
-    {error, {error, {currency_conflict, {LimitCurrency::binary(), ChangeCurrency::binary()}}}}.
-
+    {error, {invalid_request, Reason :: binary()}} |
+    {error, {error, {currency_conflict, {LimitCurrency :: binary(), ChangeCurrency :: binary()}}}}.
 hold(Limits, LimitChangeID, Cash, Timestamp) ->
     LimitChanges = gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp),
     try
-        lists:foreach(fun(LimitChange) ->
-            case hg_limiter_client:hold(LimitChange) of
-                ok ->
-                    ok;
-                {error, Error} ->
-                    throw(Error)
-            end
-        end, LimitChanges)
+        lists:foreach(
+            fun(LimitChange) ->
+                case hg_limiter_client:hold(LimitChange) of
+                    ok ->
+                        ok;
+                    {error, Error} ->
+                        throw(Error)
+                end
+            end,
+            LimitChanges
+        )
     catch
         throw:{ErrorType, _} = Error when
-        ErrorType == not_found orelse
-        ErrorType == invalid_request orelse
-        ErrorType == currency_conflict ->
+            ErrorType == not_found orelse
+                ErrorType == invalid_request orelse
+                ErrorType == currency_conflict
+        ->
             {error, Error}
     end.
 
@@ -98,21 +100,24 @@ hold(Limits, LimitChangeID, Cash, Timestamp) ->
     {error, {not_found, hg_limiter_client:limit_id()}} |
     {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
     {error, {invalid_request, Description :: binary()}}.
-
 commit(LimitChanges) ->
     try
-        lists:foreach(fun(LimitChange) ->
-            case hg_limiter_client:commit(LimitChange) of
-                ok ->
-                    ok;
-                {error, Error} ->
-                    throw(Error)
-            end
-        end, LimitChanges)
+        lists:foreach(
+            fun(LimitChange) ->
+                case hg_limiter_client:commit(LimitChange) of
+                    ok ->
+                        ok;
+                    {error, Error} ->
+                        throw(Error)
+                end
+            end,
+            LimitChanges
+        )
     catch
         throw:{ErrorType, _} = Error when
-        ErrorType == not_found orelse
-        ErrorType == invalid_request ->
+            ErrorType == not_found orelse
+                ErrorType == invalid_request
+        ->
             {error, Error}
     end.
 
@@ -122,22 +127,25 @@ commit(LimitChanges) ->
     {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
     {error, {forbidden_operation_amount, {cash(), cash_range()}}} |
     {error, {invalid_request, Description :: binary()}}.
-
 partial_commit(LimitChanges) ->
     try
-        lists:foreach(fun(LimitChange) ->
-            case hg_limiter_client:partial_commit(LimitChange) of
-                ok ->
-                    ok;
-                {error, Error} ->
-                    throw(Error)
-            end
-        end, LimitChanges)
+        lists:foreach(
+            fun(LimitChange) ->
+                case hg_limiter_client:partial_commit(LimitChange) of
+                    ok ->
+                        ok;
+                    {error, Error} ->
+                        throw(Error)
+                end
+            end,
+            LimitChanges
+        )
     catch
         throw:{ErrorType, _} = Error when
-        ErrorType == not_found orelse
-        ErrorType == invalid_request orelse
-        ErrorType == forbidden_operation_amount ->
+            ErrorType == not_found orelse
+                ErrorType == invalid_request orelse
+                ErrorType == forbidden_operation_amount
+        ->
             {error, Error}
     end.
 
@@ -146,37 +154,41 @@ partial_commit(LimitChanges) ->
     {error, {not_found, hg_limiter_client:limit_id()}} |
     {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
     {error, {invalid_request, Description :: binary()}}.
-
 rollback(LimitChanges) ->
     try
-        lists:foreach(fun(LimitChange) ->
-            case hg_limiter_client:rollback(LimitChange) of
-                ok ->
-                    ok;
-                {error, Error}  ->
-                    throw(Error)
-            end
-        end, LimitChanges)
+        lists:foreach(
+            fun(LimitChange) ->
+                case hg_limiter_client:rollback(LimitChange) of
+                    ok ->
+                        ok;
+                    {error, Error} ->
+                        throw(Error)
+                end
+            end,
+            LimitChanges
+        )
     catch
         throw:{ErrorType, _} = Error when
-        ErrorType == not_found orelse
-        ErrorType == invalid_request ->
+            ErrorType == not_found orelse
+                ErrorType == invalid_request
+        ->
             {error, Error}
     end.
 
 -spec gen_limit_changes([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
     [hg_limiter_client:limit_change()].
-
 gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp) ->
-    [#proto_limiter_LimitChange{
-        id = Limit#proto_limiter_Limit.id,
-        change_id = LimitChangeID,
-        cash = Cash,
-        operation_timestamp = Timestamp
-    } || Limit <- Limits].
+    [
+        #proto_limiter_LimitChange{
+            id = Limit#proto_limiter_Limit.id,
+            change_id = LimitChangeID,
+            cash = Cash,
+            operation_timestamp = Timestamp
+        }
+        || Limit <- Limits
+    ].
 
 -spec handle_result(level(), function()) -> ok.
-
 handle_result(production, ProcessLimitFun) ->
     case ProcessLimitFun() of
         ok ->
@@ -191,12 +203,11 @@ handle_result(development, ProcessLimitFun) ->
     catch
         error:{woody_error, {_Source, Class, _Details}} when
             Class =:= resource_unavailable orelse
-            Class =:= result_unknown orelse
-            Class =:= result_unexpected
+                Class =:= result_unknown orelse
+                Class =:= result_unexpected
         ->
             ok
     end.
-
 
 reduce_limits(undefined, _, _) ->
     logger:info("Operation limits haven't been set on provider terms."),

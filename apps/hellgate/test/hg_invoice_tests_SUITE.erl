@@ -1042,10 +1042,13 @@ payment_limit_overflow(C) ->
     ] = next_event(InvoiceID2, Client),
     _ = next_event(InvoiceID2, Client),
 
-    ?assertMatch({limit_overflow, #proto_limiter_Limit{
-        id = <<"1">>,
-        cash = ?cash(0, <<"RUB">>)
-    }}, hg_ct_limiter_handler:get_error()),
+    ?assertMatch(
+        {limit_overflow, #proto_limiter_Limit{
+            id = <<"1">>,
+            cash = ?cash(0, <<"RUB">>)
+        }},
+        hg_ct_limiter_handler:get_error()
+    ),
     hg_ct_limiter_handler:delete_storage().
 
 -spec refund_limit_success(config()) -> test_return().
@@ -1157,8 +1160,14 @@ refund_limit_change_not_found(C) ->
     Refund =
         #domain_InvoicePaymentRefund{id = RefundID} =
         hg_client_invoicing:refund_payment(InvoiceID2, PaymentID2, RefundParams, Client),
-    ?assertMatch([?payment_ev(PaymentID2, ?refund_ev(RefundID, ?refund_created(Refund, _)))], next_event(InvoiceID2, Client)),
-    ?assertMatch([?payment_ev(PaymentID2, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))], next_event(InvoiceID2, Client)),
+    ?assertMatch(
+        [?payment_ev(PaymentID2, ?refund_ev(RefundID, ?refund_created(Refund, _)))],
+        next_event(InvoiceID2, Client)
+    ),
+    ?assertMatch(
+        [?payment_ev(PaymentID2, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))],
+        next_event(InvoiceID2, Client)
+    ),
     _ = next_event(InvoiceID2, Client),
 
     ?assertMatch({not_found, {limit_change, _}}, hg_ct_limiter_handler:get_error()),
@@ -7043,11 +7052,12 @@ construct_domain_fixture() ->
                                     ?cur(<<"RUB">>)
                                 ])},
                         categories =
-                            {value, ?ordset([
-                                ?cat(8),
-                                ?cat(9),
-                                ?cat(10)
-                            ])},
+                            {value,
+                                ?ordset([
+                                    ?cat(8),
+                                    ?cat(9),
+                                    ?cat(10)
+                                ])},
                         payment_methods =
                             {value,
                                 ?ordset([
@@ -7091,39 +7101,43 @@ construct_domain_fixture() ->
                                         )}
                             }
                         },
-                        turnover_limits = {decisions, [
-                            #domain_TurnoverLimitDecision{
-                                if_ = {condition, {category_is, ?cat(8)}},
-                                then_ = {value, [
-                                    #domain_TurnoverLimit{
-                                        id = <<"1">>,
-                                        upper_boundary = ?cash(100000, <<"RUB">>)
-                                    },
-                                    #domain_TurnoverLimit{
-                                        id = <<"2">>,
-                                        upper_boundary = ?cash(100000, <<"RUB">>)
-                                    }
-                                ]}
-                            },
-                            #domain_TurnoverLimitDecision{
-                                if_ = {condition, {category_is, ?cat(9)}},
-                                then_ = {value, [
-                                    #domain_TurnoverLimit{
-                                        id = <<"3">>,
-                                        upper_boundary = ?cash(100000, <<"RUB">>)
-                                    }
-                                ]}
-                            },
-                            #domain_TurnoverLimitDecision{
-                                if_ = {condition, {category_is, ?cat(10)}},
-                                then_ = {value, [
-                                    #domain_TurnoverLimit{
-                                        id = <<"4">>,
-                                        upper_boundary = ?cash(100000, <<"RUB">>)
-                                    }
-                                ]}
-                            }
-                        ]}
+                        turnover_limits =
+                            {decisions, [
+                                #domain_TurnoverLimitDecision{
+                                    if_ = {condition, {category_is, ?cat(8)}},
+                                    then_ =
+                                        {value, [
+                                            #domain_TurnoverLimit{
+                                                id = <<"1">>,
+                                                upper_boundary = ?cash(100000, <<"RUB">>)
+                                            },
+                                            #domain_TurnoverLimit{
+                                                id = <<"2">>,
+                                                upper_boundary = ?cash(100000, <<"RUB">>)
+                                            }
+                                        ]}
+                                },
+                                #domain_TurnoverLimitDecision{
+                                    if_ = {condition, {category_is, ?cat(9)}},
+                                    then_ =
+                                        {value, [
+                                            #domain_TurnoverLimit{
+                                                id = <<"3">>,
+                                                upper_boundary = ?cash(100000, <<"RUB">>)
+                                            }
+                                        ]}
+                                },
+                                #domain_TurnoverLimitDecision{
+                                    if_ = {condition, {category_is, ?cat(10)}},
+                                    then_ =
+                                        {value, [
+                                            #domain_TurnoverLimit{
+                                                id = <<"4">>,
+                                                upper_boundary = ?cash(100000, <<"RUB">>)
+                                            }
+                                        ]}
+                                }
+                            ]}
                     },
                     recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
                         categories = {value, ?ordset([?cat(1), ?cat(4)])},

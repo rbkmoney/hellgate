@@ -24,6 +24,7 @@
 
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
+
 %% API
 
 %% St accessors
@@ -2566,12 +2567,15 @@ get_limit_changes(St) ->
     ProviderTerms = get_provider_terminal_terms(Route, Varset, Revision),
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
     TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, Varset, Revision),
-    [#proto_limiter_LimitChange{
-        id = T#domain_TurnoverLimit.id,
-        change_id = LimitChangeID,
-        cash = Cash,
-        operation_timestamp = Timestamp
-    } || T <- TurnoverLimits].
+    [
+        #proto_limiter_LimitChange{
+            id = T#domain_TurnoverLimit.id,
+            change_id = LimitChangeID,
+            cash = Cash,
+            operation_timestamp = Timestamp
+        }
+        || T <- TurnoverLimits
+    ].
 
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).

@@ -12,7 +12,6 @@
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 
-
 -export_type([limit/0]).
 -export_type([limit_id/0]).
 -export_type([change_id/0]).
@@ -28,7 +27,6 @@
     {ok, limit()} |
     {error, {not_found, limit_id()}} |
     {error, {invalid_request, Description :: binary()}}.
-
 get(LimitID, Timestamp) ->
     Args = {LimitID, Timestamp},
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -59,8 +57,7 @@ get(LimitID, Timestamp) ->
     ok |
     {error, {not_found, limit_id()}} |
     {error, invalid_request} |
-    {error, {currency_conflict, {LimitCurrency::symbolic_code(), ChangeCurrency::symbolic_code()}}}.
-
+    {error, {currency_conflict, {LimitCurrency :: symbolic_code(), ChangeCurrency :: symbolic_code()}}}.
 hold(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -97,7 +94,6 @@ hold(LimitChange) ->
     {error, {not_found, limit_id()}} |
     {error, {not_found, {limit_change, change_id()}}} |
     {error, {invalid_request, Description :: binary()}}.
-
 commit(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -132,7 +128,6 @@ commit(LimitChange) ->
     {error, {not_found, {limit_change, change_id()}}} |
     {error, {forbidden_operation_amount, {cash(), cash_range()}}} |
     {error, {invalid_request, Description :: binary()}}.
-
 partial_commit(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -168,7 +163,6 @@ partial_commit(LimitChange) ->
     {error, {not_found, limit_id()}} |
     {error, {not_found, {limit_change, change_id()}}} |
     {error, {invalid_request, Description :: binary()}}.
-
 rollback(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),

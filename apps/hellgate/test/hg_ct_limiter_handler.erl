@@ -10,7 +10,6 @@
 -type level() :: production | development.
 
 -spec handle_result(level(), function()) -> ok.
-
 handle_result(_, ProcessLimitFun) ->
     case ProcessLimitFun() of
         ok ->
@@ -21,7 +20,6 @@ handle_result(_, ProcessLimitFun) ->
     end.
 
 -spec get_error() -> ok | {error, _}.
-
 get_error() ->
     case ets:lookup(?MODULE, error) of
         [] -> ok;
@@ -29,12 +27,10 @@ get_error() ->
     end.
 
 -spec await_error(integer()) -> ok | {error, _}.
-
 await_error(200) ->
     case ets:lookup(?MODULE, error) of
         [] -> ok;
-        [{error, _} = Error] ->
-            Error
+        [{error, _} = Error] -> Error
     end;
 await_error(N) ->
     case get_error() of
@@ -44,7 +40,6 @@ await_error(N) ->
         [{error, Error}] ->
             Error
     end.
-
 
 -spec create_storage() -> capi_idemp_features:event_handler().
 create_storage() ->
