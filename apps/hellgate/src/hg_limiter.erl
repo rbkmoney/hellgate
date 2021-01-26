@@ -4,7 +4,6 @@
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
 -type timestamp() :: binary().
-% -type payment_terms() :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
 -type varset() :: pm_selector:varset().
 -type revision() :: hg_domain:revision().
 -type cash() :: dmsl_domain_thrift:'Cash'().
@@ -21,13 +20,17 @@
 -export([partial_commit/1]).
 -export([rollback/1]).
 
+-export([handle_result/1]).
+
+%% Callback
+-callback handle_result(level(), function()) -> ok.
+
 -export([handle_result/2]).
 
 -define(const(Bool), {constant, Bool}).
 
 -spec get_turnover_limits(turnover_selector(), varset(), revision()) -> [turnover_limit()].
 get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
-    % TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
     reduce_limits(TurnoverLimitSelector, VS, Revision).
 
 -spec check_limits([turnover_limit()], cash(), timestamp()) ->
@@ -187,6 +190,13 @@ gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp) ->
         }
         || Limit <- Limits
     ].
+
+-spec handle_result(function()) -> ok.
+handle_result(Fun) ->
+    LimiterConfig = genlib_app:env(hellgate, limiter, #{}),
+    Handler = genlib_map:get(error_handler, LimiterConfig, hg_limiter),
+    LimiterLevel = genlib_map:get(level, LimiterConfig, development),
+    Handler:handle_result(LimiterLevel, Fun).
 
 -spec handle_result(level(), function()) -> ok.
 handle_result(production, ProcessLimitFun) ->
