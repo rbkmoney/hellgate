@@ -4,13 +4,14 @@
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
 -type timestamp() :: binary().
--type terms() :: dmsl_domain_thrift:'ProvisionTermSet'().
--type varset() :: hg_routing:varset().
+% -type payment_terms() :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
+-type varset() :: pm_selector:varset().
 -type revision() :: hg_domain:revision().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 -type level() :: production | development.
 
+-type turnover_selector() :: dmsl_domain_thrift:'TurnoverLimitSelector'().
 -type turnover_limit() :: dmsl_domain_thrift:'TurnoverLimit'().
 
 -export([get_turnover_limits/3]).
@@ -24,10 +25,10 @@
 
 -define(const(Bool), {constant, Bool}).
 
--spec get_turnover_limits(terms(), varset(), revision()) -> [turnover_limit()].
+-spec get_turnover_limits(turnover_selector(), varset(), revision()) -> [turnover_limit()].
 
-get_turnover_limits(ProviderTerms, VS, Revision) ->
-    TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
+get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
+    % TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
     reduce_limits(TurnoverLimitSelector, VS, Revision).
 
 -spec check_limits([turnover_limit()], cash(), timestamp()) ->

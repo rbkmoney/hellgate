@@ -1876,7 +1876,7 @@ process_routing(Action, St) ->
     case choose_route(PaymentInstitution, RiskScore, VS3, Revision, St) of
         {ok, Route} ->
             ProcessLimitFun = fun() ->
-                process_operation_limit(Route, VS3, Payment, Revision, Opts)
+                process_operation_limit(Route, VS1, Payment, Revision, Opts)
             end,
             ok = handle_operation_limit_result(ProcessLimitFun),
             process_cash_flow_building(Route, VS3, Payment, Revision, Opts, Events0, Action);
@@ -1895,8 +1895,9 @@ process_operation_limit(Route, VS, Payment, Revision, Opts) ->
     Invoice = get_invoice(Opts),
     Cash = Invoice#domain_Invoice.cost,
     LimitChangeID = construct_payment_plan_id(Invoice, Payment),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
-    TurnoverLimits = hg_limiter:get_turnover_limits(ProviderTerms, VS, Revision),
+    PaymentsProvisionTerms = get_provider_terminal_terms(Route, VS, Revision),
+    TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS, Revision),
     case hg_limiter:check_limits(TurnoverLimits, Cash, Timestamp) of
         {ok, Limits} ->
             hg_limiter:hold(Limits, LimitChangeID, Cash, Timestamp);
@@ -2563,7 +2564,8 @@ get_limit_changes(St) ->
     VS0 = reconstruct_payment_flow(Payment, #{}),
     Varset = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     ProviderTerms = get_provider_terminal_terms(Route, Varset, Revision),
-    TurnoverLimits = hg_limiter:get_turnover_limits(ProviderTerms, Varset, Revision),
+    TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, Varset, Revision),
     [#proto_limiter_LimitChange{
         id = T#domain_TurnoverLimit.id,
         change_id = LimitChangeID,
