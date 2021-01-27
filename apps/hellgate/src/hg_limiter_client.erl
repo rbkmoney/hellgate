@@ -8,7 +8,6 @@
 -type limit_change() :: dmsl_proto_limiter_thrift:'LimitChange'().
 
 -type timestamp() :: binary().
--type symbolic_code() :: binary().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 
@@ -56,8 +55,7 @@ get(LimitID, Timestamp) ->
 -spec hold(limit_change()) ->
     ok |
     {error, {not_found, limit_id()}} |
-    {error, invalid_request} |
-    {error, {currency_conflict, {LimitCurrency :: symbolic_code(), ChangeCurrency :: symbolic_code()}}}.
+    {error, invalid_request}.
 hold(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -67,11 +65,6 @@ hold(LimitChange) ->
                 ok;
             {exception, #proto_limiter_LimitNotFound{}} ->
                 {error, {not_found, LimitID}};
-            {exception, #proto_limiter_InconsistentLimitCurrency{
-                limit_currency = LimitCurrency,
-                change_currency = ChangeCurrency
-            }} ->
-                {error, {currency_conflict, {LimitCurrency, ChangeCurrency}}};
             {exception, #'InvalidRequest'{errors = Errors}} ->
                 {error, {invalid_request, Errors}}
         end

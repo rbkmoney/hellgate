@@ -3,42 +3,29 @@
 -export([create_storage/0]).
 -export([delete_storage/0]).
 -export([get_error/0]).
--export([await_error/1]).
 
--export([handle_result/2]).
+-export([handle_error/1]).
 
--type level() :: production | development.
 
--spec handle_result(level(), function()) -> ok.
-handle_result(_, ProcessLimitFun) ->
-    case ProcessLimitFun() of
-        ok ->
-            ok;
-        {error, _} = Error ->
-            ets:insert(?MODULE, Error),
-            error(Error)
-    end.
+-spec handle_error(ok | {error, any()}) -> ok.
+handle_error(ok) ->
+    ok;
+handle_error({error, Error}) ->
+    try
+        ets:insert(?MODULE, {error, Error})
+    catch
+        error:badarg ->
+            create_storage(),
+            ct:print("can't insert value ~p", [Error]),
+            ets:insert(?MODULE, {error, Error})
+    end,
+    error(Error).
 
 -spec get_error() -> ok | {error, _}.
 get_error() ->
     case ets:lookup(?MODULE, error) of
         [] -> ok;
         [{error, Error}] -> Error
-    end.
-
--spec await_error(integer()) -> ok | {error, _}.
-await_error(200) ->
-    case ets:lookup(?MODULE, error) of
-        [] -> ok;
-        [{error, _} = Error] -> Error
-    end;
-await_error(N) ->
-    case get_error() of
-        ok ->
-            timer:sleep(300),
-            await_error(N + 1);
-        [{error, Error}] ->
-            Error
     end.
 
 -spec create_storage() -> capi_idemp_features:event_handler().

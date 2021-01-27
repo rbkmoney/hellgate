@@ -8,7 +8,6 @@
 -type revision() :: hg_domain:revision().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
--type level() :: production | development.
 
 -type turnover_selector() :: dmsl_domain_thrift:'TurnoverLimitSelector'().
 -type turnover_limit() :: dmsl_domain_thrift:'TurnoverLimit'().
@@ -19,13 +18,16 @@
 -export([commit/1]).
 -export([partial_commit/1]).
 -export([rollback/1]).
+-export([rollback/4]).
+
+-import(hg_pipeline, [do/1, unwrap/1]).
 
 -export([handle_result/1]).
 
 %% Callback
--callback handle_result(level(), function()) -> ok.
+-callback handle_error(ok | {error, any()}) -> ok.
 
--export([handle_result/2]).
+-export([handle_error/1]).
 
 -define(const(Bool), {constant, Bool}).
 
@@ -62,40 +64,20 @@ check_limits([T | TurnoverLimits], OperationAmount, Timestamp, Acc) ->
             end;
         {error, {ErrorType, LimitID}} = Error when
             ErrorType == not_found orelse
-                ErrorType == invalid_request
-        ->
-            ErrorMsg = "Unable get limit by id ~p from proto limiter, ~p:~p",
-            logger:error(ErrorMsg, [LimitID, error, not_found]),
+            ErrorType == invalid_request ->
             Error
     end.
 
 -spec hold([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
     ok |
     {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {invalid_request, Reason :: binary()}} |
-    {error, {error, {currency_conflict, {LimitCurrency :: binary(), ChangeCurrency :: binary()}}}}.
+    {error, {invalid_request, Reason :: binary()}}.
 hold(Limits, LimitChangeID, Cash, Timestamp) ->
     LimitChanges = gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp),
-    try
-        lists:foreach(
-            fun(LimitChange) ->
-                case hg_limiter_client:hold(LimitChange) of
-                    ok ->
-                        ok;
-                    {error, Error} ->
-                        throw(Error)
-                end
-            end,
-            LimitChanges
-        )
-    catch
-        throw:{ErrorType, _} = Error when
-            ErrorType == not_found orelse
-                ErrorType == invalid_request orelse
-                ErrorType == currency_conflict
-        ->
-            {error, Error}
-    end.
+    do(fun() ->
+        [unwrap(hg_limiter_client:hold(Change)) || Change <- LimitChanges],
+        ok
+    end).
 
 -spec commit([hg_limiter_client:limit_change()]) ->
     ok |
@@ -103,25 +85,10 @@ hold(Limits, LimitChangeID, Cash, Timestamp) ->
     {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
     {error, {invalid_request, Description :: binary()}}.
 commit(LimitChanges) ->
-    try
-        lists:foreach(
-            fun(LimitChange) ->
-                case hg_limiter_client:commit(LimitChange) of
-                    ok ->
-                        ok;
-                    {error, Error} ->
-                        throw(Error)
-                end
-            end,
-            LimitChanges
-        )
-    catch
-        throw:{ErrorType, _} = Error when
-            ErrorType == not_found orelse
-                ErrorType == invalid_request
-        ->
-            {error, Error}
-    end.
+    do(fun() ->
+        [unwrap(hg_limiter_client:commit(Change)) || Change <- LimitChanges],
+        ok
+    end).
 
 -spec partial_commit([hg_limiter_client:limit_change()]) ->
     ok |
@@ -130,26 +97,19 @@ commit(LimitChanges) ->
     {error, {forbidden_operation_amount, {cash(), cash_range()}}} |
     {error, {invalid_request, Description :: binary()}}.
 partial_commit(LimitChanges) ->
-    try
-        lists:foreach(
-            fun(LimitChange) ->
-                case hg_limiter_client:partial_commit(LimitChange) of
-                    ok ->
-                        ok;
-                    {error, Error} ->
-                        throw(Error)
-                end
-            end,
-            LimitChanges
-        )
-    catch
-        throw:{ErrorType, _} = Error when
-            ErrorType == not_found orelse
-                ErrorType == invalid_request orelse
-                ErrorType == forbidden_operation_amount
-        ->
-            {error, Error}
-    end.
+    do(fun() ->
+        [unwrap(hg_limiter_client:partial_commit(Change)) || Change <- LimitChanges],
+        ok
+    end).
+
+-spec rollback([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
+    ok |
+    {error, {not_found, hg_limiter_client:limit_id()}} |
+    {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
+    {error, {invalid_request, Description :: binary()}}.
+rollback(Limits, LimitChangeID, Cash, Timestamp) ->
+    LimitChanges = gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp),
+    rollback(LimitChanges).
 
 -spec rollback([hg_limiter_client:limit_change()]) ->
     ok |
@@ -157,25 +117,10 @@ partial_commit(LimitChanges) ->
     {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
     {error, {invalid_request, Description :: binary()}}.
 rollback(LimitChanges) ->
-    try
-        lists:foreach(
-            fun(LimitChange) ->
-                case hg_limiter_client:rollback(LimitChange) of
-                    ok ->
-                        ok;
-                    {error, Error} ->
-                        throw(Error)
-                end
-            end,
-            LimitChanges
-        )
-    catch
-        throw:{ErrorType, _} = Error when
-            ErrorType == not_found orelse
-                ErrorType == invalid_request
-        ->
-            {error, Error}
-    end.
+     do(fun() ->
+        [unwrap(hg_limiter_client:rollback(Change)) || Change <- LimitChanges],
+        ok
+    end).
 
 -spec gen_limit_changes([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
     [hg_limiter_client:limit_change()].
@@ -190,33 +135,17 @@ gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp) ->
         || Limit <- Limits
     ].
 
--spec handle_result(function()) -> ok.
+-spec handle_result(any()) -> ok.
 handle_result(Fun) ->
     LimiterConfig = genlib_app:env(hellgate, limiter, #{}),
     Handler = genlib_map:get(error_handler, LimiterConfig, hg_limiter),
-    LimiterLevel = genlib_map:get(level, LimiterConfig, development),
-    Handler:handle_result(LimiterLevel, Fun).
+    Handler:handle_error(Fun).
 
--spec handle_result(level(), function()) -> ok.
-handle_result(production, ProcessLimitFun) ->
-    case ProcessLimitFun() of
-        ok ->
-            ok;
-        {error, Error} ->
-            error(Error)
-    end;
-handle_result(development, ProcessLimitFun) ->
-    try
-        _ = ProcessLimitFun(),
-        ok
-    catch
-        error:{woody_error, {_Source, Class, _Details}} when
-            Class =:= resource_unavailable orelse
-                Class =:= result_unknown orelse
-                Class =:= result_unexpected
-        ->
-            ok
-    end.
+-spec handle_error(ok | {error, any()}) -> ok.
+handle_error(ok) ->
+    ok;
+handle_error({error, Error}) ->
+    error(Error).
 
 reduce_limits(undefined, _, _) ->
     logger:info("Operation limits haven't been set on provider terms."),

@@ -25,6 +25,8 @@
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
+-import(hg_pipeline, [do/1, unwrap/1]).
+
 %% API
 
 %% St accessors
@@ -1876,10 +1878,9 @@ process_routing(Action, St) ->
     Events0 = [?risk_score_changed(RiskScore)],
     case choose_route(PaymentInstitution, RiskScore, VS3, Revision, St) of
         {ok, Route} ->
-            ProcessLimitFun = fun() ->
+            ok = hg_limiter:handle_result(
                 process_operation_limit(Route, VS1, Payment, Revision, Opts)
-            end,
-            ok = handle_operation_limit_result(ProcessLimitFun),
+            ),
             process_cash_flow_building(Route, VS3, Payment, Revision, Opts, Events0, Action);
         {error, {no_route_found, Reason}} ->
             Failure =
@@ -1899,20 +1900,17 @@ process_operation_limit(Route, VS, Payment, Revision, Opts) ->
     PaymentsProvisionTerms = get_provider_terminal_terms(Route, VS, Revision),
     TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
     TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS, Revision),
-    case hg_limiter:check_limits(TurnoverLimits, Cash, Timestamp) of
-        {ok, Limits} ->
-            hg_limiter:hold(Limits, LimitChangeID, Cash, Timestamp);
-        {error, _} = Error ->
-            Error
-    end.
 
-handle_operation_limit_result(ProcessLimitFun) ->
-    hg_limiter:handle_result(ProcessLimitFun).
-
-% LimiterConfig = genlib_app:env(hellgate, limiter, #{}),
-% Handler = genlib_map:get(error_handler, LimiterConfig, hg_limiter),
-% LimiterLevel = genlib_map:get(level, LimiterConfig, development),
-% Handler:handle_result(LimiterLevel, ProcessLimitFun).
+    do(fun() ->
+        Limits = unwrap(hg_limiter:check_limits(TurnoverLimits, Cash, Timestamp)),
+        ok = unwrap(hg_limiter:hold(Limits, LimitChangeID, Cash, Timestamp)),
+        case hg_limiter:check_limits(TurnoverLimits, Cash, Timestamp) of
+            {ok, _Limits} ->
+                ok;
+            {error, {limit_overflow, _}} ->
+                hg_limiter:rollback(Limits, LimitChangeID, Cash, Timestamp)
+        end
+    end).
 
 process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
     Timestamp = get_payment_created_at(Payment),
@@ -2158,18 +2156,20 @@ process_result({payment, processing_accounter}, Action, St) ->
     {done, {[?payment_status_changed(Target)], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
-    _ = rollback_operation_limits(St),
+    LimitChanges = get_limit_changes(St),
+    _ = rollback_operation_limits(LimitChanges),
     _Clocks = rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
+    LimitChanges = get_limit_changes(St),
     _Clocks =
         case Target of
             ?captured() ->
-                commit_operation_limits(St),
+                commit_operation_limits(LimitChanges),
                 commit_payment_cashflow(St);
             ?cancelled() ->
-                rollback_operation_limits(St),
+                rollback_operation_limits(LimitChanges),
                 rollback_payment_cashflow(St)
         end,
     check_recurrent_token(St),
@@ -2523,11 +2523,20 @@ try_request_interaction(undefined) ->
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
 
-commit_operation_limits(St) ->
-    LimitChanges = get_limit_changes(St),
-    handle_operation_limit_result(fun() ->
+commit_operation_limits(LimitChanges) ->
+    ok = hg_limiter:handle_result(
         hg_limiter:commit(LimitChanges)
-    end).
+    ).
+
+partial_commit_operation_limits(LimitChanges) ->
+    ok = hg_limiter:handle_result(
+        hg_limiter:partial_commit(LimitChanges)
+    ).
+
+rollback_operation_limits(LimitChanges) ->
+    ok = hg_limiter:handle_result(
+        hg_limiter:rollback(LimitChanges)
+    ).
 
 commit_refund_limits(RefundSt, St) ->
     LimitChanges0 = get_limit_changes(St),
@@ -2540,20 +2549,10 @@ commit_refund_limits(RefundSt, St) ->
         Amount when Amount > RefundCashAmount ->
             RefundCash1 = RefundCash0#domain_Cash{amount = -RefundCashAmount},
             LimitChanges2 = [L#proto_limiter_LimitChange{cash = RefundCash1} || L <- LimitChanges0],
-            handle_operation_limit_result(fun() ->
-                hg_limiter:partial_commit(LimitChanges2)
-            end);
+            partial_commit_operation_limits(LimitChanges2);
         RefundCashAmount ->
-            handle_operation_limit_result(fun() ->
-                hg_limiter:commit(LimitChanges0)
-            end)
+            commit_operation_limits(LimitChanges0)
     end.
-
-rollback_operation_limits(St) ->
-    LimitChanges = get_limit_changes(St),
-    handle_operation_limit_result(fun() ->
-        hg_limiter:rollback(LimitChanges)
-    end).
 
 get_limit_changes(St) ->
     Opts = get_opts(St),

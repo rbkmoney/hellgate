@@ -204,7 +204,7 @@ all() ->
         payments_w_bank_card_issuer_conditions,
         payments_w_bank_conditions,
 
-        % % With variable domain config
+        % With variable domain config
         {group, adjustments},
         {group, holds_management_with_custom_config},
         {group, refunds},
@@ -7151,16 +7151,6 @@ construct_domain_fixture() ->
                                         ]}
                                 }
                             ]}
-                    },
-                    recurrent_paytools = #domain_RecurrentPaytoolsProvisionTerms{
-                        categories = {value, ?ordset([?cat(1), ?cat(4)])},
-                        payment_methods =
-                            {value,
-                                ?ordset([
-                                    ?pmt(bank_card_deprecated, visa),
-                                    ?pmt(bank_card_deprecated, mastercard)
-                                ])},
-                        cash_value = {value, ?cash(1000, <<"RUB">>)}
                     }
                 }
             }
