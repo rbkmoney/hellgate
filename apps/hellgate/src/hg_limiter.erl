@@ -64,7 +64,8 @@ check_limits([T | TurnoverLimits], OperationAmount, Timestamp, Acc) ->
             end;
         {error, {ErrorType, LimitID}} = Error when
             ErrorType == not_found orelse
-            ErrorType == invalid_request ->
+                ErrorType == invalid_request
+        ->
             Error
     end.
 
@@ -117,7 +118,7 @@ rollback(Limits, LimitChangeID, Cash, Timestamp) ->
     {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
     {error, {invalid_request, Description :: binary()}}.
 rollback(LimitChanges) ->
-     do(fun() ->
+    do(fun() ->
         [unwrap(hg_limiter_client:rollback(Change)) || Change <- LimitChanges],
         ok
     end).

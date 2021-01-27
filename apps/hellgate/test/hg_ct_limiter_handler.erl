@@ -6,7 +6,6 @@
 
 -export([handle_error/1]).
 
-
 -spec handle_error(ok | {error, any()}) -> ok.
 handle_error(ok) ->
     ok;
