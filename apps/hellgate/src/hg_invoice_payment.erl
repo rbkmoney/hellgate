@@ -92,41 +92,41 @@
 -export_type([payment/0]).
 
 -type activity() ::
-    payment_activity() |
-    refund_activity() |
-    adjustment_activity() |
-    chargeback_activity() |
-    idle.
+    payment_activity()
+    | refund_activity()
+    | adjustment_activity()
+    | chargeback_activity()
+    | idle.
 
 -type payment_activity() :: {payment, payment_step()}.
 
 -type refund_activity() ::
-    {refund_new, refund_id()} |
-    {refund_session, refund_id()} |
-    {refund_failure, refund_id()} |
-    {refund_accounter, refund_id()}.
+    {refund_new, refund_id()}
+    | {refund_session, refund_id()}
+    | {refund_failure, refund_id()}
+    | {refund_accounter, refund_id()}.
 
 -type adjustment_activity() ::
-    {adjustment_new, adjustment_id()} |
-    {adjustment_pending, adjustment_id()}.
+    {adjustment_new, adjustment_id()}
+    | {adjustment_pending, adjustment_id()}.
 
 -type chargeback_activity() :: {chargeback, chargeback_id(), chargeback_activity_type()}.
 
 -type chargeback_activity_type() :: hg_invoice_payment_chargeback:activity().
 
 -type payment_step() ::
-    new |
-    risk_scoring |
-    routing |
-    cash_flow_building |
-    processing_session |
-    processing_accounter |
-    processing_capture |
-    processing_failure |
-    updating_accounter |
-    flow_waiting |
-    finalizing_session |
-    finalizing_accounter.
+    new
+    | risk_scoring
+    | routing
+    | cash_flow_building
+    | processing_session
+    | processing_accounter
+    | processing_capture
+    | processing_failure
+    | updating_accounter
+    | flow_waiting
+    | finalizing_session
+    | finalizing_accounter.
 
 -record(st, {
     activity :: activity(),

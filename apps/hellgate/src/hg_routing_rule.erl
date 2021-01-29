@@ -15,7 +15,7 @@
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
-    pm_selector:varset(),
+    hg_routing:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
 gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined} = PayInst, VS, _) ->

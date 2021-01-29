@@ -97,8 +97,8 @@ construct_payment_method(?pmt(_Type, ?tkz_bank_card(Name, _)) = Ref) when is_ato
     construct_payment_method(Name, Ref);
 construct_payment_method(?pmt(_Type, Name) = Ref) when is_atom(Name) ->
     construct_payment_method(Name, Ref);
-construct_payment_method(?pmt(_Type, #domain_BankCardPaymentMethod{}) = Ref) ->
-    construct_payment_method(Ref#domain_BankCardPaymentMethod.payment_system, Ref).
+construct_payment_method(?pmt(_Type, #domain_BankCardPaymentMethod{} = Card) = Ref) ->
+    construct_payment_method(Card#domain_BankCardPaymentMethod.payment_system, Ref).
 
 construct_payment_method(Name, Ref) ->
     Def = erlang:atom_to_binary(Name, unicode),
@@ -147,7 +147,7 @@ construct_inspector(Ref, Name, ProxyRef) ->
 construct_inspector(Ref, Name, ProxyRef, Additional) ->
     construct_inspector(Ref, Name, ProxyRef, Additional, undefined).
 
--spec construct_inspector(inspector(), name(), proxy(), Additional :: map(), risk_score()) ->
+-spec construct_inspector(inspector(), name(), proxy(), Additional :: map(), undefined | risk_score()) ->
     {inspector, dmsl_domain_thrift:'InspectorObject'()}.
 construct_inspector(Ref, Name, ProxyRef, Additional, FallBackScore) ->
     {inspector, #domain_InspectorObject{
@@ -220,12 +220,12 @@ construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
     }}.
 
 -spec construct_external_account_set(external_account_set()) ->
-    {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
+    {external_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 construct_external_account_set(Ref) ->
     construct_external_account_set(Ref, <<"Primaries">>, ?cur(<<"RUB">>)).
 
 -spec construct_external_account_set(external_account_set(), name(), currency()) ->
-    {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
+    {external_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
     ok = pm_context:save(pm_context:create()),
     AccountID1 = pm_accounting:create_account(CurrencyCode),
@@ -274,7 +274,7 @@ construct_criterion(Ref, Name, Pred) ->
         }
     }}.
 
--spec construct_term_set_hierarchy(term_set_hierarchy(), term_set_hierarchy(), term_set()) ->
+-spec construct_term_set_hierarchy(term_set_hierarchy(), undefined | term_set_hierarchy(), term_set()) ->
     {term_set_hierarchy, dmsl_domain_thrift:'TermSetHierarchyObject'()}.
 construct_term_set_hierarchy(Ref, ParentRef, TermSet) ->
     {term_set_hierarchy, #domain_TermSetHierarchyObject{
@@ -290,8 +290,7 @@ construct_term_set_hierarchy(Ref, ParentRef, TermSet) ->
         }
     }}.
 
--spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) ->
-    dmsl_domain_thrift:'RoutingRulesetObject'().
+-spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) -> dmsl_domain_thrift:'DomainObject'().
 construct_payment_routing_ruleset(Ref, Name, Decisions) ->
     {routing_rules, #domain_RoutingRulesObject{
         ref = Ref,

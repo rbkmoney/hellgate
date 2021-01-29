@@ -46,8 +46,8 @@
 
 -type id() :: binary() | atom() | number().
 -type fd_service_type() ::
-    adapter_availability |
-    provider_conversion.
+    adapter_availability
+    | provider_conversion.
 
 %% API
 

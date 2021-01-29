@@ -272,7 +272,7 @@ groups() ->
 init_per_suite(C) ->
     {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, party_management, hellgate]),
     ok = pm_domain:insert(construct_domain_fixture()),
-    [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
+    [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps}] ++ C.
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -299,7 +299,7 @@ end_per_group(_Group, C) ->
 init_per_testcase(_Name, C) ->
     C.
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok.
 

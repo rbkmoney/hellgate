@@ -109,11 +109,11 @@ init_per_testcase(_Name, C) ->
     Client = hg_client_invoice_templating:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     [{client, Client} | C].
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok.
 
--spec create_invalid_party(config()) -> _ | no_return().
+-spec create_invalid_party(config()) -> _.
 create_invalid_party(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
@@ -121,7 +121,7 @@ create_invalid_party(C) ->
     Params = make_invoice_tpl_create_params(PartyID, ShopID),
     {exception, #payproc_InvalidUser{}} = hg_client_invoice_templating:create(Params, Client).
 
--spec create_invalid_shop(config()) -> _ | no_return().
+-spec create_invalid_shop(config()) -> _.
 create_invalid_shop(C) ->
     Client = cfg(client, C),
     ShopID = ?MISSING_SHOP_ID,
@@ -129,7 +129,7 @@ create_invalid_shop(C) ->
     Params = make_invoice_tpl_create_params(PartyID, ShopID),
     {exception, #payproc_ShopNotFound{}} = hg_client_invoice_templating:create(Params, Client).
 
--spec create_invalid_party_status(config()) -> _ | no_return().
+-spec create_invalid_party_status(config()) -> _.
 create_invalid_party_status(C) ->
     PartyClient = cfg(party_client, C),
 
@@ -145,7 +145,7 @@ create_invalid_party_status(C) ->
     }} = create_invoice_tpl(C),
     ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
--spec create_invalid_shop_status(config()) -> _ | no_return().
+-spec create_invalid_shop_status(config()) -> _.
 create_invalid_shop_status(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
@@ -162,34 +162,34 @@ create_invalid_shop_status(C) ->
     }} = create_invoice_tpl(C),
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
--spec create_invalid_cost_fixed_amount(config()) -> _ | no_return().
+-spec create_invalid_cost_fixed_amount(config()) -> _.
 create_invalid_cost_fixed_amount(C) ->
     Cost = make_cost(fixed, -100, <<"RUB">>),
-    create_invalid_cost(Cost, amount, C).
+    ok = create_invalid_cost(Cost, amount, C).
 
--spec create_invalid_cost_fixed_currency(config()) -> _ | no_return().
+-spec create_invalid_cost_fixed_currency(config()) -> _.
 create_invalid_cost_fixed_currency(C) ->
     Cost = make_cost(fixed, 100, <<"KEK">>),
-    create_invalid_cost(Cost, currency, C).
+    ok = create_invalid_cost(Cost, currency, C).
 
--spec create_invalid_cost_range(config()) -> _ | no_return().
+-spec create_invalid_cost_range(config()) -> _.
 create_invalid_cost_range(C) ->
     Cost1 = make_cost(range, {exclusive, 100, <<"RUB">>}, {exclusive, 100, <<"RUB">>}),
-    create_invalid_cost(Cost1, <<"Invalid cost range">>, C),
+    ok = create_invalid_cost(Cost1, <<"Invalid cost range">>, C),
 
     Cost2 = make_cost(range, {inclusive, 10000, <<"RUB">>}, {inclusive, 100, <<"RUB">>}),
-    create_invalid_cost(Cost2, <<"Invalid cost range">>, C),
+    ok = create_invalid_cost(Cost2, <<"Invalid cost range">>, C),
 
     Cost3 = make_cost(range, {inclusive, 100, <<"RUB">>}, {inclusive, 10000, <<"KEK">>}),
-    create_invalid_cost(Cost3, <<"Invalid cost range">>, C),
+    ok = create_invalid_cost(Cost3, <<"Invalid cost range">>, C),
 
     Cost4 = make_cost(range, {inclusive, 100, <<"KEK">>}, {inclusive, 10000, <<"KEK">>}),
-    create_invalid_cost(Cost4, currency, C),
+    ok = create_invalid_cost(Cost4, currency, C),
 
     Cost5 = make_cost(range, {inclusive, -100, <<"RUB">>}, {inclusive, 100, <<"RUB">>}),
-    create_invalid_cost(Cost5, amount, C).
+    ok = create_invalid_cost(Cost5, amount, C).
 
--spec create_invoice_template(config()) -> _ | no_return().
+-spec create_invoice_template(config()) -> _.
 create_invoice_template(C) ->
     ok = create_cost(make_cost(unlim, sale, "50%"), C),
     ok = create_cost(make_cost(fixed, 42, <<"RUB">>), C),
@@ -207,7 +207,7 @@ create_cost(Cost, C) ->
     } = create_invoice_tpl(C, Product, Lifetime, Cost),
     ok.
 
--spec get_invoice_template_anyhow(config()) -> _ | no_return().
+-spec get_invoice_template_anyhow(config()) -> _.
 get_invoice_template_anyhow(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -231,7 +231,7 @@ get_invoice_template_anyhow(C) ->
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client).
 
--spec update_invalid_party_status(config()) -> _ | no_return().
+-spec update_invalid_party_status(config()) -> _.
 update_invalid_party_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -251,7 +251,7 @@ update_invalid_party_status(C) ->
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
     ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
--spec update_invalid_shop_status(config()) -> _ | no_return().
+-spec update_invalid_shop_status(config()) -> _.
 update_invalid_shop_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -272,41 +272,41 @@ update_invalid_shop_status(C) ->
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
--spec update_invalid_cost_fixed_amount(config()) -> _ | no_return().
+-spec update_invalid_cost_fixed_amount(config()) -> _.
 update_invalid_cost_fixed_amount(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
     Cost = make_cost(fixed, -100, <<"RUB">>),
     update_invalid_cost(Cost, amount, TplID, Client).
 
--spec update_invalid_cost_fixed_currency(config()) -> _ | no_return().
+-spec update_invalid_cost_fixed_currency(config()) -> _.
 update_invalid_cost_fixed_currency(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
     Cost = make_cost(fixed, 100, <<"KEK">>),
     update_invalid_cost(Cost, currency, TplID, Client).
 
--spec update_invalid_cost_range(config()) -> _ | no_return().
+-spec update_invalid_cost_range(config()) -> _.
 update_invalid_cost_range(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
     Cost1 = make_cost(range, {exclusive, 100, <<"RUB">>}, {exclusive, 100, <<"RUB">>}),
-    update_invalid_cost(Cost1, <<"Invalid cost range">>, TplID, Client),
+    ok = update_invalid_cost(Cost1, <<"Invalid cost range">>, TplID, Client),
 
     Cost2 = make_cost(range, {inclusive, 10000, <<"RUB">>}, {inclusive, 100, <<"RUB">>}),
-    update_invalid_cost(Cost2, <<"Invalid cost range">>, TplID, Client),
+    ok = update_invalid_cost(Cost2, <<"Invalid cost range">>, TplID, Client),
 
     Cost3 = make_cost(range, {inclusive, 100, <<"RUB">>}, {inclusive, 10000, <<"KEK">>}),
-    update_invalid_cost(Cost3, <<"Invalid cost range">>, TplID, Client),
+    ok = update_invalid_cost(Cost3, <<"Invalid cost range">>, TplID, Client),
 
     Cost4 = make_cost(range, {inclusive, 100, <<"KEK">>}, {inclusive, 10000, <<"KEK">>}),
-    update_invalid_cost(Cost4, currency, TplID, Client),
+    ok = update_invalid_cost(Cost4, currency, TplID, Client),
 
     Cost5 = make_cost(range, {inclusive, -100, <<"RUB">>}, {inclusive, 100, <<"RUB">>}),
-    update_invalid_cost(Cost5, amount, TplID, Client).
+    ok = update_invalid_cost(Cost5, amount, TplID, Client).
 
--spec update_invoice_template(config()) -> _ | no_return().
+-spec update_invoice_template(config()) -> _.
 update_invoice_template(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
@@ -345,7 +345,7 @@ update_cost(Cost, Tpl, Client) ->
         Client
     ).
 
--spec update_with_cart(config()) -> _ | no_return().
+-spec update_with_cart(config()) -> _.
 update_with_cart(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
@@ -379,7 +379,7 @@ update_with_cart(C) ->
     } = hg_client_invoice_templating:update(TplID, Diff, Client),
     #domain_InvoiceTemplate{} = hg_client_invoice_templating:get(TplID, Client).
 
--spec delete_invalid_party_status(config()) -> _ | no_return().
+-spec delete_invalid_party_status(config()) -> _.
 delete_invalid_party_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -397,7 +397,7 @@ delete_invalid_party_status(C) ->
     }} = hg_client_invoice_templating:delete(TplID, Client),
     ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
 
--spec delete_invalid_shop_status(config()) -> _ | no_return().
+-spec delete_invalid_shop_status(config()) -> _.
 delete_invalid_shop_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
@@ -416,7 +416,7 @@ delete_invalid_shop_status(C) ->
     }} = hg_client_invoice_templating:delete(TplID, Client),
     ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
 
--spec delete_invoice_template(config()) -> _ | no_return().
+-spec delete_invoice_template(config()) -> _.
 delete_invoice_template(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
@@ -426,7 +426,7 @@ delete_invoice_template(C) ->
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoice_templating:update(TplID, Diff, Client),
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoice_templating:delete(TplID, Client).
 
--spec terms_retrieval(config()) -> _ | no_return().
+-spec terms_retrieval(config()) -> _.
 terms_retrieval(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID1) = create_invoice_tpl(C),
@@ -483,9 +483,8 @@ update_invalid_cost(Cost, currency, TplID, Client) ->
 update_invalid_cost(Cost, Error, TplID, Client) ->
     Details = hg_ct_helper:make_invoice_tpl_details(<<"RNGName">>, Cost),
     Diff = make_invoice_tpl_update_params(#{details => Details}),
-    {exception, #'InvalidRequest'{
-        errors = [Error]
-    }} = hg_client_invoice_templating:update(TplID, Diff, Client).
+    {exception, #'InvalidRequest'{errors = [Error]}} = hg_client_invoice_templating:update(TplID, Diff, Client),
+    ok.
 
 create_invalid_cost(Cost, amount, Config) ->
     create_invalid_cost(Cost, <<"Invalid amount">>, Config);
@@ -494,9 +493,8 @@ create_invalid_cost(Cost, currency, Config) ->
 create_invalid_cost(Cost, Error, Config) ->
     Product = <<"rubberduck">>,
     Lifetime = make_lifetime(0, 0, 2),
-    {exception, #'InvalidRequest'{
-        errors = [Error]
-    }} = create_invoice_tpl(Config, Product, Lifetime, Cost).
+    {exception, #'InvalidRequest'{errors = [Error]}} = create_invoice_tpl(Config, Product, Lifetime, Cost),
+    ok.
 
 make_invoice_tpl_create_params(PartyID, ShopID) ->
     Lifetime = make_lifetime(0, 0, 2),

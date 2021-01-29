@@ -14,11 +14,11 @@ SERVICE_IMAGE_PUSH_TAG ?= $(SERVICE_IMAGE_TAG)
 
 # Base image for the service
 BASE_IMAGE_NAME := service-erlang
-BASE_IMAGE_TAG := b2c2a3f8c46842488eef78a2574ba880eeff07b9
+BASE_IMAGE_TAG := 51bd5f25d00cbf75616e2d672601dfe7351dcaa4
 
 # Build image tag to be used
 BUILD_IMAGE_NAME := build-erlang
-BUILD_IMAGE_TAG := 1333d0926b203e00c47e4fad7e10d2252a020305
+BUILD_IMAGE_TAG := 620863fa1e648382c7b8f02c93d1d6168ea80f5d
 
 CALL_ANYWHERE := all submodules rebar-update compile xref lint dialyze plt_update \
 				release clean distclean format check_format
@@ -49,7 +49,7 @@ xref: submodules
 	$(REBAR) xref
 
 lint:
-	elvis rock
+	elvis rock -V
 
 check_format:
 	$(REBAR) fmt -c
@@ -58,7 +58,7 @@ format:
 	$(REBAR) fmt -w
 
 dialyze: submodules
-	$(REBAR) dialyzer
+	$(REBAR) as test dialyzer
 
 plt_update:
 	$(REBAR) dialyzer -u true -s false

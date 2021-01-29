@@ -66,10 +66,10 @@
 -type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
 
 -type activity() ::
-    invoice |
-    {payment, payment_id()} |
-    {adjustment_new, adjustment_id()} |
-    {adjustment_pending, adjustment_id()}.
+    invoice
+    | {payment, payment_id()}
+    | {adjustment_new, adjustment_id()}
+    | {adjustment_pending, adjustment_id()}.
 
 -type adjustment_id() :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
 
@@ -1652,9 +1652,10 @@ create_dummy_refund_with_id(ID) ->
             party_revision = 42,
             status = ?refund_pending(),
             reason = <<"No reason">>,
-            cash = 1000,
-            cart = unefined
-        }
+            cash = ?cash(1000, <<"RUB">>),
+            cart = undefined
+        },
+        sessions = []
     }.
 
 -spec construct_refund_id_test() -> _.

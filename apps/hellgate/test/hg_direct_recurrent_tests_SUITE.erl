@@ -71,7 +71,7 @@ init([]) ->
 
 %% Common tests callbacks
 
--spec all() -> [test_case_name()].
+-spec all() -> [{group, test_case_name()}].
 all() ->
     [
         {group, basic_operations},
@@ -386,7 +386,8 @@ start_invoice(Product, Due, Amount, C) ->
 start_invoice(ShopID, Product, Due, Amount, C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, Amount),
+    Cash = hg_ct_helper:make_cash(Amount, <<"RUB">>),
+    InvoiceParams = hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cash),
     InvoiceID = create_invoice(InvoiceParams, Client),
     _Events = await_events(InvoiceID, [?evp(?invoice_created(?invoice_w_status(?invoice_unpaid())))], Client),
     InvoiceID.
@@ -398,9 +399,6 @@ start_payment(InvoiceID, PaymentParams, Client) ->
         {exception, Exception} ->
             {error, Exception}
     end.
-
-make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
-    hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cost).
 
 create_invoice(InvoiceParams, Client) ->
     ?invoice_state(?invoice(InvoiceID)) = hg_client_invoicing:create(InvoiceParams, Client),
