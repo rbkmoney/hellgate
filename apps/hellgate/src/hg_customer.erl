@@ -162,7 +162,7 @@ call(ID, Function, Args) ->
 
 -spec map_error(notfound | any()) -> no_return().
 map_error(notfound) ->
-    throw(#payproc_InvoiceTemplateNotFound{});
+    throw(#payproc_CustomerNotFound{});
 map_error(Reason) ->
     error(Reason).
 

@@ -15,17 +15,17 @@ services:
         condition: service_healthy
       shumway:
         condition: service_healthy
-    mem_limit: 256M
+    mem_limit: 512M
 
   dominant:
-    image: dr2.rbkmoney.com/rbkmoney/dominant:de2a937b3b92eb4fa6888be5aef3bde7d3c8b409
+    image: dr2.rbkmoney.com/rbkmoney/dominant:1313973ee38e30116d14aa007cdf551f702900f5
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
         condition: service_healthy
 
   machinegun:
-    image: dr2.rbkmoney.com/rbkmoney/machinegun:c89c2cecc6fa72895492c718f042a7ec90fd2442
+    image: dr2.rbkmoney.com/rbkmoney/machinegun:c35e8a08500fbc2f0f0fa376a145a7324d18a062
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
@@ -37,7 +37,7 @@ services:
       retries: 20
 
   shumway:
-    image: dr2.rbkmoney.com/rbkmoney/shumway:d36bcf5eb8b1dbba634594cac11c97ae9c66db9f
+    image: dr2.rbkmoney.com/rbkmoney/shumway:658c9aec229b5a70d745a49cb938bb1a132b5ca2
     restart: unless-stopped
     entrypoint:
       - java

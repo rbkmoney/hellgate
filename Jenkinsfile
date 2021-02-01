@@ -18,5 +18,5 @@ build('hellgate', 'docker-host', finalHook) {
     pipeErlangService = load("${env.JENKINS_LIB}/pipeErlangService.groovy")
   }
 
-  pipeErlangService.runPipe(true,false)
+  pipeErlangService.runPipe(true, true, 'test')
 }

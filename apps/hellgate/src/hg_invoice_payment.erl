@@ -36,6 +36,7 @@
 -export([get_route/1]).
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
+-export([get_trx/1]).
 
 -export([get_final_cashflow/1]).
 -export([get_sessions/1]).
@@ -91,41 +92,41 @@
 -export_type([payment/0]).
 
 -type activity() ::
-    payment_activity() |
-    refund_activity() |
-    adjustment_activity() |
-    chargeback_activity() |
-    idle.
+    payment_activity()
+    | refund_activity()
+    | adjustment_activity()
+    | chargeback_activity()
+    | idle.
 
 -type payment_activity() :: {payment, payment_step()}.
 
 -type refund_activity() ::
-    {refund_new, refund_id()} |
-    {refund_session, refund_id()} |
-    {refund_failure, refund_id()} |
-    {refund_accounter, refund_id()}.
+    {refund_new, refund_id()}
+    | {refund_session, refund_id()}
+    | {refund_failure, refund_id()}
+    | {refund_accounter, refund_id()}.
 
 -type adjustment_activity() ::
-    {adjustment_new, adjustment_id()} |
-    {adjustment_pending, adjustment_id()}.
+    {adjustment_new, adjustment_id()}
+    | {adjustment_pending, adjustment_id()}.
 
 -type chargeback_activity() :: {chargeback, chargeback_id(), chargeback_activity_type()}.
 
 -type chargeback_activity_type() :: hg_invoice_payment_chargeback:activity().
 
 -type payment_step() ::
-    new |
-    risk_scoring |
-    routing |
-    cash_flow_building |
-    processing_session |
-    processing_accounter |
-    processing_capture |
-    processing_failure |
-    updating_accounter |
-    flow_waiting |
-    finalizing_session |
-    finalizing_accounter.
+    new
+    | risk_scoring
+    | routing
+    | cash_flow_building
+    | processing_session
+    | processing_accounter
+    | processing_capture
+    | processing_failure
+    | updating_accounter
+    | flow_waiting
+    | finalizing_session
+    | finalizing_accounter.
 
 -record(st, {
     activity :: activity(),
@@ -798,7 +799,10 @@ check_risk_score(Route, RiskScore) ->
 
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
     case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS, Revision) of
-        {[], _} ->
+        {[], RejectContext} ->
+            RejectReason = unknown,
+            _ = log_reject_context(warning, RejectReason, RejectContext),
+            logger:log(info, "Fallback to legacy method of routes gathering"),
             hg_routing:gather_routes(Predestination, PaymentInstitution, VS, Revision);
         Routes ->
             Routes
@@ -3162,6 +3166,7 @@ set_cashflow(Cashflow, St = #st{}) ->
 get_final_cashflow(#st{final_cash_flow = Cashflow}) ->
     Cashflow.
 
+-spec get_trx(st()) -> trx_info().
 get_trx(#st{trx = Trx}) ->
     Trx.
 
@@ -3430,9 +3435,7 @@ get_route_provider(Route, Revision) ->
 inspect(Payment = #domain_InvoicePayment{domain_revision = Revision}, PaymentInstitution, Opts) ->
     InspectorRef = get_selector_value(inspector, PaymentInstitution#domain_PaymentInstitution.inspector),
     Inspector = hg_domain:get(Revision, {inspector, InspectorRef}),
-    RiskScore = hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector),
-    % FIXME: move this logic to inspector
-    check_payment_type_risk(RiskScore, Payment).
+    hg_inspector:inspect(get_shop(Opts), get_invoice(Opts), Payment, Inspector).
 
 repair_inspect(Payment, PaymentInstitution, Opts, #st{repair_scenario = Scenario}) ->
     case hg_invoice_repair:check_for_action(skip_inspector, Scenario) of
@@ -3441,11 +3444,6 @@ repair_inspect(Payment, PaymentInstitution, Opts, #st{repair_scenario = Scenario
         call ->
             inspect(Payment, PaymentInstitution, Opts)
     end.
-
-check_payment_type_risk(low, #domain_InvoicePayment{make_recurrent = true}) ->
-    high;
-check_payment_type_risk(Score, _Payment) ->
-    Score.
 
 get_st_meta(#st{payment = #domain_InvoicePayment{id = ID}}) ->
     #{

@@ -74,19 +74,19 @@ pull_history(Client) ->
 
 -type event() :: dmsl_payment_processing_thrift:'Event'().
 
--record(st, {
+-record(state, {
     poller :: hg_client_event_poller:st(event()),
     client :: hg_client_api:t()
 }).
 
--type st() :: #st{}.
+-type state() :: #state{}.
 -type callref() :: {pid(), Tag :: reference()}.
 
 -define(SERVICE, payment_processing_eventsink).
 
--spec init(hg_client_api:t()) -> {ok, st()}.
+-spec init(hg_client_api:t()) -> {ok, state()}.
 init(ApiClient) ->
-    {ok, #st{
+    {ok, #state{
         client = ApiClient,
         poller = hg_client_event_poller:new(
             {?SERVICE, 'GetEvents', []},
@@ -94,10 +94,10 @@ init(ApiClient) ->
         )
     }}.
 
--spec handle_call(term(), callref(), st()) -> {reply, term(), st()} | {noreply, st()}.
-handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
+-spec handle_call(term(), callref(), state()) -> {reply, term(), state()} | {noreply, state()}.
+handle_call({call, Function, Args}, _From, St = #state{client = Client}) ->
     {Result, ClientNext} = hg_client_api:call(?SERVICE, Function, Args, Client),
-    {reply, Result, St#st{client = ClientNext}};
+    {reply, Result, St#state{client = ClientNext}};
 handle_call({pull_events, N, Timeout}, _From, St) ->
     {Result, StNext} = poll_events(N, Timeout, St),
     {reply, Result, StNext};
@@ -108,29 +108,29 @@ handle_call(Call, _From, State) ->
     _ = logger:warning("unexpected call received: ~tp", [Call]),
     {noreply, State}.
 
--spec handle_cast(_, st()) -> {noreply, st()}.
+-spec handle_cast(_, state()) -> {noreply, state()}.
 handle_cast(Cast, State) ->
     _ = logger:warning("unexpected cast received: ~tp", [Cast]),
     {noreply, State}.
 
--spec handle_info(_, st()) -> {noreply, st()}.
+-spec handle_info(_, state()) -> {noreply, state()}.
 handle_info(Info, State) ->
     _ = logger:warning("unexpected info received: ~tp", [Info]),
     {noreply, State}.
 
--spec terminate(Reason, st()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
+-spec terminate(Reason, state()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
 terminate(_Reason, _State) ->
     ok.
 
--spec code_change(Vsn | {down, Vsn}, st(), term()) -> {error, noimpl} when Vsn :: term().
+-spec code_change(Vsn | {down, Vsn}, state(), term()) -> {error, noimpl} when Vsn :: term().
 code_change(_OldVsn, _State, _Extra) ->
     {error, noimpl}.
 
 %%
 
-poll_events(N, Timeout, St = #st{client = Client, poller = Poller}) ->
+poll_events(N, Timeout, St = #state{client = Client, poller = Poller}) ->
     {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(N, Timeout, Client, Poller),
-    {Result, St#st{client = ClientNext, poller = PollerNext}}.
+    {Result, St#state{client = ClientNext, poller = PollerNext}}.
 
 poll_history(BatchSize, St) ->
     poll_history(BatchSize, [], St).

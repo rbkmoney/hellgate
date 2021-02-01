@@ -139,10 +139,10 @@
     hg_machine_action:t().
 
 -type activity() ::
-    preparing_initial_cash_flow |
-    updating_chargeback |
-    updating_cash_flow |
-    finalising_accounter.
+    preparing_initial_cash_flow
+    | updating_chargeback
+    | updating_cash_flow
+    | finalising_accounter.
 
 -spec get(state()) -> chargeback().
 get(#chargeback_st{chargeback = Chargeback}) ->

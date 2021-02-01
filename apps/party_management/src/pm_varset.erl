@@ -101,7 +101,7 @@ encode_decode_test() ->
                 provider = qiwi,
                 id = <<"digital_wallet_id">>
             }},
-        payout_method => #domain_PayoutMethodRef{id = 1},
+        payout_method => #domain_PayoutMethodRef{id = any},
         wallet_id => <<"wallet_id">>,
         p2p_tool => #domain_P2PTool{
             sender =

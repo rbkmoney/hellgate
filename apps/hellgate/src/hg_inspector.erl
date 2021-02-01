@@ -72,7 +72,8 @@ get_payment_info(
         created_at = CreatedAt,
         domain_revision = Revision,
         payer = Payer,
-        cost = Cost
+        cost = Cost,
+        make_recurrent = MakeRecurrent
     }
 ) ->
     Party = #proxy_inspector_Party{
@@ -98,7 +99,8 @@ get_payment_info(
         id = PaymentID,
         created_at = CreatedAt,
         payer = Payer,
-        cost = Cost
+        cost = Cost,
+        make_recurrent = MakeRecurrent
     },
     #proxy_inspector_PaymentInfo{
         party = Party,

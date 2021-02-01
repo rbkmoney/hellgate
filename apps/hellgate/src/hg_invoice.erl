@@ -67,10 +67,10 @@
 -type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
 
 -type activity() ::
-    invoice |
-    {payment, payment_id()} |
-    {adjustment_new, adjustment_id()} |
-    {adjustment_pending, adjustment_id()}.
+    invoice
+    | {payment, payment_id()}
+    | {adjustment_new, adjustment_id()}
+    | {adjustment_pending, adjustment_id()}.
 
 -type adjustment_id() :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
 
@@ -308,7 +308,8 @@ get_payment_state(PaymentSession) ->
         cash_flow = hg_invoice_payment:get_final_cashflow(PaymentSession),
         legacy_refunds = LegacyRefunds,
         refunds = Refunds,
-        sessions = hg_invoice_payment:get_sessions(PaymentSession)
+        sessions = hg_invoice_payment:get_sessions(PaymentSession),
+        last_transaction_info = hg_invoice_payment:get_trx(PaymentSession)
     }.
 
 set_invoicing_meta(InvoiceID) ->
@@ -1656,9 +1657,10 @@ create_dummy_refund_with_id(ID) ->
             party_revision = 42,
             status = ?refund_pending(),
             reason = <<"No reason">>,
-            cash = 1000,
-            cart = unefined
-        }
+            cash = ?cash(1000, <<"RUB">>),
+            cart = undefined
+        },
+        sessions = []
     }.
 
 -spec construct_refund_id_test() -> _.

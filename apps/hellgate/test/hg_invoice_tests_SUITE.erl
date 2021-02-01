@@ -139,6 +139,7 @@
 -export([payment_with_tokenized_bank_card/1]).
 -export([terms_retrieval/1]).
 -export([payment_has_optional_fields/1]).
+-export([payment_last_trx_correct/1]).
 -export([payment_capture_failed/1]).
 -export([payment_capture_retries_exceeded/1]).
 -export([payment_partial_capture_success/1]).
@@ -267,6 +268,7 @@ groups() ->
             payment_temporary_unavailability_retry_success,
             payment_temporary_unavailability_too_many_retries,
             payment_has_optional_fields,
+            payment_last_trx_correct,
             invoice_success_on_third_payment,
             payment_capture_failed,
             payment_capture_retries_exceeded,
@@ -431,7 +433,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
-    [application:stop(App) || App <- cfg(apps, C)],
+    _ = [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
 
 %% tests
@@ -452,6 +454,7 @@ end_per_suite(C) ->
 -define(payment_state(Payment), #payproc_InvoicePayment{payment = Payment}).
 -define(payment_route(Route), #payproc_InvoicePayment{route = Route}).
 -define(payment_cashflow(CashFlow), #payproc_InvoicePayment{cash_flow = CashFlow}).
+-define(payment_last_trx(Trx), #payproc_InvoicePayment{last_transaction_info = Trx}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
@@ -591,7 +594,7 @@ init_per_testcase(C) ->
     ok = hg_context:save(hg_context:create()),
     [{client, Client}, {client_tpl, ClientTpl} | C].
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, C) ->
     ok = hg_context:cleanup(),
     _ =
@@ -609,7 +612,7 @@ invoice_creation_idempotency(C) ->
     PartyID = cfg(party_id, C),
     InvoiceID = hg_utils:unique_id(),
     ExternalID = <<"123">>,
-    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100000, <<"RUB">>)),
     InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
         id = InvoiceID,
         external_id = ExternalID
@@ -630,7 +633,7 @@ invalid_invoice_shop(C) ->
     Client = cfg(client, C),
     ShopID = genlib:unique(),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     {exception, #payproc_ShopNotFound{}} = hg_client_invoicing:create(InvoiceParams, Client).
 
 -spec invalid_invoice_amount(config()) -> test_return().
@@ -638,14 +641,14 @@ invalid_invoice_amount(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(-10000)),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount">>]
     }} = hg_client_invoicing:create(InvoiceParams0, Client),
-    InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 5),
+    InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(5)),
     {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}} =
         hg_client_invoicing:create(InvoiceParams1, Client),
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 42000000000),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(42000000000)),
     {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}} =
         hg_client_invoicing:create(InvoiceParams2, Client).
 
@@ -654,7 +657,7 @@ invalid_invoice_currency(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100, <<"KEK">>}),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100, <<"KEK">>)),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid currency">>]
     }} = hg_client_invoicing:create(InvoiceParams, Client).
@@ -665,7 +668,7 @@ invalid_party_status(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100000)),
     TplID = create_invoice_tpl(C),
     InvoiceParamsWithTpl = make_invoice_params_tpl(TplID),
 
@@ -693,7 +696,7 @@ invalid_shop_status(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100000)),
     TplID = create_invoice_tpl(C),
     InvoiceParamsWithTpl = make_invoice_params_tpl(TplID),
 
@@ -875,7 +878,7 @@ invoice_cancellation(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     ?invalid_invoice_status(_) = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
     ok = hg_client_invoicing:rescind(InvoiceID, <<"whynot">>, Client).
@@ -964,7 +967,7 @@ payment_success_ruleset(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     %%
@@ -1052,11 +1055,29 @@ payment_has_optional_fields(C) ->
     ?payment_state(Payment) = InvoicePayment,
     ?payment_route(Route) = InvoicePayment,
     ?payment_cashflow(CashFlow) = InvoicePayment,
+    ?payment_last_trx(TrxInfo) = InvoicePayment,
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     #domain_InvoicePayment{owner_id = PartyID, shop_id = ShopID} = Payment,
     false = Route =:= undefined,
-    false = CashFlow =:= undefined.
+    false = CashFlow =:= undefined,
+    false = TrxInfo =:= undefined.
+
+-spec payment_last_trx_correct(config()) -> _ | no_return().
+payment_last_trx_correct(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentID = start_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(TrxInfo0))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    ?payment_last_trx(TrxInfo0) = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client).
 
 -spec payment_capture_failed(config()) -> test_return().
 payment_capture_failed(C) ->
@@ -1334,7 +1355,7 @@ payment_w_customer_success(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(60), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
@@ -1351,7 +1372,7 @@ payment_w_another_shop_customer(C) ->
     ShopID = cfg(shop_id, C),
     PartyClient = cfg(party_client, C),
     AnotherShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(60), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
@@ -1363,7 +1384,7 @@ payment_w_another_party_customer(C) ->
     ShopID = cfg(shop_id, C),
     AnotherShopID = cfg(another_shop_id, C),
     CustomerID = make_customer_w_rec_tool(AnotherPartyID, AnotherShopID, cfg(another_customer_client, C)),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(60), 42000, C),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
 
@@ -1373,7 +1394,7 @@ payment_w_deleted_customer(C) ->
     CustomerClient = cfg(customer_client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(60), 42000, C),
     CustomerID = make_customer_w_rec_tool(PartyID, ShopID, CustomerClient),
     ok = hg_client_customer:delete(CustomerID, CustomerClient),
     PaymentParams = make_customer_payment_params(CustomerID),
@@ -1608,7 +1629,7 @@ party_revision_check(C) ->
     party_revision_increment(ShopID, PartyClient),
 
     % add some cash to make smooth refund after
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 200000),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(200000)),
     InvoiceID2 = create_invoice(InvoiceParams2, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
@@ -2158,7 +2179,7 @@ invalid_payment_w_deprived_party(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
     PaymentParams = make_payment_params(),
@@ -2172,7 +2193,7 @@ external_account_posting(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
     ?payment_state(
@@ -2212,7 +2233,7 @@ terminal_cashflow_overrides_provider(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     _ = next_event(InvoiceID, InvoicingClient),
     _ = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
@@ -4912,7 +4933,6 @@ construct_proxy(ID, Url, Options) ->
     }}.
 
 %%
-
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).
 
@@ -4933,6 +4953,9 @@ make_invoice_context() ->
 
 make_invoice_context(Ctx) ->
     hg_ct_helper:make_invoice_context(Ctx).
+
+make_cash(Amount) ->
+    make_cash(Amount, <<"RUB">>).
 
 make_cash(Amount, Currency) ->
     hg_ct_helper:make_cash(Amount, Currency).
@@ -5192,7 +5215,7 @@ start_invoice(Product, Due, Amount, C) ->
 start_invoice(ShopID, Product, Due, Amount, C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, Amount),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, make_cash(Amount)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     InvoiceID.
@@ -5471,7 +5494,7 @@ party_revision_check_init_params(C) ->
     {PartyID, PartyClient, Client, ShopID}.
 
 invoice_create_and_get_revision(PartyID, Client, ShopID) ->
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, make_due_date(10), 5000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, make_due_date(10), make_cash(5000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()) = ?invoice_w_revision(InvoiceRev))] =
         next_event(InvoiceID, Client),

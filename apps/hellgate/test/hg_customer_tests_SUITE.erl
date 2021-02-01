@@ -98,7 +98,7 @@ end_per_suite(C) ->
     ok = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
--spec all() -> [test_case_name()].
+-spec all() -> [{group, test_case_name()}].
 all() ->
     [
         {group, invalid_customer_params},
@@ -150,7 +150,7 @@ init_per_testcase(Name, C) ->
         | C
     ].
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -445,8 +445,8 @@ start_two_bindings(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     StartChanges = [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, ?match('_'))),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, ?match('_'))),
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_status_changed(?customer_binding_succeeded())),
         ?customer_status_changed(?customer_ready())
@@ -473,10 +473,10 @@ start_two_bindings_w_tds(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     StartChanges = [
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, '_')),
-        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested('_')),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, '_')),
-        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested('_'))
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, ?match('_'))),
+        ?customer_binding_changed(CustomerBindingID1, ?customer_binding_interaction_requested(?match('_'))),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_started(CustomerBinding2, ?match('_'))),
+        ?customer_binding_changed(CustomerBindingID2, ?customer_binding_interaction_requested(?match('_')))
     ],
     [
         ?customer_binding_changed(CustomerBindingID1, ?customer_binding_started(CustomerBinding1, _)),
