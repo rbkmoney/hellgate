@@ -523,35 +523,7 @@ handle_signal(timeout, St = #st{activity = {adjustment_new, ID}}) ->
     #{changes => Change, state => St};
 handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
-    handle_expiration(St);
-handle_signal({repair, {changes, Changes, RepairAction, Params}}, St0) ->
-    Result =
-        case Changes of
-            [_ | _] ->
-                #{changes => Changes};
-            [] ->
-                #{}
-        end,
-    Action = construct_repair_action(RepairAction),
-    Result#{
-        state => St0,
-        action => Action,
-        % Validating that these changes are at least applicable
-        validate => should_validate_transitions(Params)
-    };
-handle_signal({repair, {scenario, _}}, #st{activity = Activity}) when
-    Activity =:= invoice orelse Activity =:= undefined
-->
-    throw({exception, invoice_has_no_active_payment});
-handle_signal({repair, {scenario, Scenario}}, St = #st{activity = {payment, PaymentID}}) ->
-    PaymentSession = get_payment_session(PaymentID, St),
-    Activity = hg_invoice_payment:get_activity(PaymentSession),
-    case {Scenario, Activity} of
-        {_, idle} ->
-            throw({exception, cant_fail_payment_in_idle_state});
-        {Scenario, Activity} ->
-            try_to_get_repair_state(Scenario, St)
-    end.
+    handle_expiration(St).
 
 construct_repair_action(CA) when CA /= undefined ->
     lists:foldl(

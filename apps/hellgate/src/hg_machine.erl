@@ -241,7 +241,7 @@ call_automaton(Function, Args) ->
 
 %%
 
--type func() :: 'ProcessSignal' | 'ProcessCall'.
+-type func() :: 'ProcessSignal' | 'ProcessCall' | 'ProcessRepair'.
 
 -spec handle_function(func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
 handle_function(Func, Args, Opts) ->
@@ -302,7 +302,7 @@ dispatch_signal(Ns, #mg_stateproc_RepairSignal{arg = Payload}, Machine) ->
     Args = unwrap_args(Payload),
     _ = log_dispatch(repair, Args, Machine),
     Module = get_handler_module(Ns),
-    Result = Module:process_signal({repair, Args}, Machine),
+    Result = Module:process_repair(Args, Machine),
     marshal_signal_result(Result, Machine).
 
 marshal_signal_result(Result = #{}, #{aux_state := AuxStWas}) ->
@@ -357,7 +357,8 @@ dispatch_repair(Ns, Payload, Machine) ->
         Result = Module:process_repair(Args, Machine),
         marshal_repair_result(ok, Result, Machine)
     catch
-        throw:{exception, _} = Error ->
+        throw:{exception, Reason} = Error ->
+            logger:error("Process repair failed, ~p", [Reason]),
             marshal_repair_failed(Error)
     end.
 
