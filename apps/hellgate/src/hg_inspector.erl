@@ -66,7 +66,7 @@ get_payment_info(
         created_at = InvoiceCreatedAt,
         due = InvoiceDue,
         details = InvoiceDetails,
-        trusted_client = IsTrusted
+        client_info = ClientInfo
     },
     #domain_InvoicePayment{
         id = PaymentID,
@@ -95,7 +95,7 @@ get_payment_info(
         created_at = InvoiceCreatedAt,
         due = InvoiceDue,
         details = InvoiceDetails,
-        trusted_client = IsTrusted
+        client_info = ClientInfo
     },
     ProxyPayment = #proxy_inspector_InvoicePayment{
         id = PaymentID,
