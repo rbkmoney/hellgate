@@ -8,8 +8,6 @@
 -type limit_change() :: dmsl_proto_limiter_thrift:'LimitChange'().
 
 -type timestamp() :: binary().
--type cash() :: dmsl_domain_thrift:'Cash'().
--type cash_range() :: dmsl_domain_thrift:'CashRange'().
 
 -export_type([limit/0]).
 -export_type([limit_id/0]).
@@ -23,20 +21,18 @@
 -export([rollback/1]).
 
 -spec get(limit_id(), timestamp()) ->
-    {ok, limit()} |
-    {error, {not_found, limit_id()}} |
-    {error, {invalid_request, Description :: binary()}}.
+    limit().
 get(LimitID, Timestamp) ->
     Args = {LimitID, Timestamp},
     Opts = hg_woody_wrapper:get_service_options(limiter),
     try
         case hg_woody_wrapper:call(limiter, 'Get', Args, Opts) of
             {ok, Limit} ->
-                {ok, Limit};
+                Limit;
             {exception, #proto_limiter_LimitNotFound{}} ->
-                {error, {not_found, LimitID}};
+                error({not_found, LimitID});
             {exception, #'InvalidRequest'{errors = Errors}} ->
-                {error, {invalid_request, Errors}}
+                error({invalid_request, Errors})
         end
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason when
@@ -53,9 +49,7 @@ get(LimitID, Timestamp) ->
     end.
 
 -spec hold(limit_change()) ->
-    ok |
-    {error, {not_found, limit_id()}} |
-    {error, invalid_request}.
+    ok.
 hold(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -64,9 +58,9 @@ hold(LimitChange) ->
             {ok, ok} ->
                 ok;
             {exception, #proto_limiter_LimitNotFound{}} ->
-                {error, {not_found, LimitID}};
+                error({not_found, LimitID});
             {exception, #'InvalidRequest'{errors = Errors}} ->
-                {error, {invalid_request, Errors}}
+                error({invalid_request, Errors})
         end
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason when
@@ -83,10 +77,7 @@ hold(LimitChange) ->
     end.
 
 -spec commit(limit_change()) ->
-    ok |
-    {error, {not_found, limit_id()}} |
-    {error, {not_found, {limit_change, change_id()}}} |
-    {error, {invalid_request, Description :: binary()}}.
+    ok.
 commit(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -95,11 +86,11 @@ commit(LimitChange) ->
             {ok, ok} ->
                 ok;
             {exception, #proto_limiter_LimitNotFound{}} ->
-                {error, {not_found, LimitChange#proto_limiter_LimitChange.id}};
+                error({not_found, LimitChange#proto_limiter_LimitChange.id});
             {exception, #proto_limiter_LimitChangeNotFound{}} ->
-                {error, {not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}}};
+                error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
             {exception, #'InvalidRequest'{errors = Errors}} ->
-                {error, {invalid_request, Errors}}
+                error({invalid_request, Errors})
         end
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason when
@@ -116,11 +107,7 @@ commit(LimitChange) ->
     end.
 
 -spec partial_commit(limit_change()) ->
-    ok |
-    {error, {not_found, limit_id()}} |
-    {error, {not_found, {limit_change, change_id()}}} |
-    {error, {forbidden_operation_amount, {cash(), cash_range()}}} |
-    {error, {invalid_request, Description :: binary()}}.
+    ok.
 partial_commit(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -129,13 +116,13 @@ partial_commit(LimitChange) ->
             {ok, ok} ->
                 ok;
             {exception, #proto_limiter_LimitNotFound{}} ->
-                {error, {not_found, LimitChange#proto_limiter_LimitChange.id}};
+                error({not_found, LimitChange#proto_limiter_LimitChange.id});
             {exception, #proto_limiter_LimitChangeNotFound{}} ->
-                {error, {not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}}};
+                error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
             {exception, #proto_limiter_ForbiddenOperationAmount{amount = Amount, allowed_range = CashRange}} ->
-                {error, {forbidden_operation_amount, {Amount, CashRange}}};
+                error({forbidden_operation_amount, {Amount, CashRange}});
             {exception, #'InvalidRequest'{errors = Errors}} ->
-                {error, {invalid_request, Errors}}
+                error({invalid_request, Errors})
         end
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason when
@@ -152,10 +139,7 @@ partial_commit(LimitChange) ->
     end.
 
 -spec rollback(limit_change()) ->
-    ok |
-    {error, {not_found, limit_id()}} |
-    {error, {not_found, {limit_change, change_id()}}} |
-    {error, {invalid_request, Description :: binary()}}.
+    ok.
 rollback(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -164,11 +148,11 @@ rollback(LimitChange) ->
             {ok, ok} ->
                 ok;
             {exception, #proto_limiter_LimitNotFound{}} ->
-                {error, {not_found, LimitID}};
+                error({not_found, LimitID});
             {exception, #proto_limiter_LimitChangeNotFound{}} ->
-                {error, {not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}}};
+                error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
             {exception, #'InvalidRequest'{errors = Errors}} ->
-                {error, {invalid_request, Errors}}
+                error({invalid_request, Errors})
         end
     catch
         error:{woody_error, {_Source, Class, _Details}} = Reason when

@@ -7,27 +7,18 @@
 -type varset() :: pm_selector:varset().
 -type revision() :: hg_domain:revision().
 -type cash() :: dmsl_domain_thrift:'Cash'().
--type cash_range() :: dmsl_domain_thrift:'CashRange'().
 
 -type turnover_selector() :: dmsl_domain_thrift:'TurnoverLimitSelector'().
 -type turnover_limit() :: dmsl_domain_thrift:'TurnoverLimit'().
 
 -export([get_turnover_limits/3]).
--export([check_limits/3]).
+-export([check_limits/2]).
+-export([hold/1]).
 -export([hold/4]).
 -export([commit/1]).
 -export([partial_commit/1]).
 -export([rollback/1]).
 -export([rollback/4]).
-
--import(hg_pipeline, [do/1, unwrap/1]).
-
--export([handle_result/1]).
-
-%% Callback
--callback handle_error(ok | {error, any()}) -> ok.
-
--export([handle_error/1]).
 
 -define(const(Bool), {constant, Bool}).
 
@@ -35,93 +26,65 @@
 get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
     reduce_limits(TurnoverLimitSelector, VS, Revision).
 
--spec check_limits([turnover_limit()], cash(), timestamp()) ->
-    {ok, [hg_limiter_client:limit()]} |
-    {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {invalid_request, Reason :: binary()}} |
-    {error, {limit_overflow, hg_limiter_client:limit()}}.
-check_limits(TurnoverLimits, OperationAmount, Timestamp) ->
-    check_limits(TurnoverLimits, OperationAmount, Timestamp, []).
+-spec check_limits([turnover_limit()], timestamp()) ->
+    [hg_limiter_client:limit()].
 
-check_limits([], _, _, Limits) ->
-    {ok, Limits};
-check_limits([T | TurnoverLimits], OperationAmount, Timestamp, Acc) ->
+check_limits(TurnoverLimits, Timestamp) ->
+    check_limits(TurnoverLimits, Timestamp, []).
+
+check_limits([], _, Limits) ->
+    Limits;
+check_limits([T | TurnoverLimits], Timestamp, Acc) ->
     #domain_TurnoverLimit{id = LimitID} = T,
-    case hg_limiter_client:get(LimitID, Timestamp) of
-        {ok, Limit} ->
-            #proto_limiter_Limit{
-                id = LimitID,
-                cash = Cash
-            } = Limit,
-            LimiterAmount = Cash#domain_Cash.amount,
-            UpperBoundary = T#domain_TurnoverLimit.upper_boundary,
-            case LimiterAmount < UpperBoundary#domain_Cash.amount of
-                true ->
-                    check_limits(TurnoverLimits, OperationAmount, Timestamp, [Limit | Acc]);
-                false ->
-                    logger:warning("Limit with id ~p is overflow", [LimitID]),
-                    {error, {limit_overflow, Limit}}
-            end;
-        {error, {ErrorType, LimitID}} = Error when
-            ErrorType == not_found orelse
-                ErrorType == invalid_request
-        ->
-            Error
+    Limit = hg_limiter_client:get(LimitID, Timestamp),
+    #proto_limiter_Limit{
+        id = LimitID,
+        cash = Cash
+    } = Limit,
+    LimiterAmount = Cash#domain_Cash.amount,
+    UpperBoundary = T#domain_TurnoverLimit.upper_boundary,
+    case LimiterAmount < UpperBoundary#domain_Cash.amount of
+        true ->
+            check_limits(TurnoverLimits, Timestamp, [Limit | Acc]);
+        false ->
+            logger:info("Limit with id ~p is overflow", [LimitID]),
+            throw({limit_overflow, Limit})
     end.
 
 -spec hold([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
-    ok |
-    {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {invalid_request, Reason :: binary()}}.
+    ok.
 hold(Limits, LimitChangeID, Cash, Timestamp) ->
     LimitChanges = gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp),
-    do(fun() ->
-        [unwrap(hg_limiter_client:hold(Change)) || Change <- LimitChanges],
-        ok
-    end).
+    hold(LimitChanges).
+
+-spec hold([hg_limiter_client:limit_change()]) -> ok.
+hold(LimitChanges) ->
+    [hg_limiter_client:hold(Change) || Change <- LimitChanges],
+    ok.
 
 -spec commit([hg_limiter_client:limit_change()]) ->
-    ok |
-    {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
-    {error, {invalid_request, Description :: binary()}}.
+    ok.
 commit(LimitChanges) ->
-    do(fun() ->
-        [unwrap(hg_limiter_client:commit(Change)) || Change <- LimitChanges],
-        ok
-    end).
+    [hg_limiter_client:commit(Change) || Change <- LimitChanges],
+    ok.
 
 -spec partial_commit([hg_limiter_client:limit_change()]) ->
-    ok |
-    {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
-    {error, {forbidden_operation_amount, {cash(), cash_range()}}} |
-    {error, {invalid_request, Description :: binary()}}.
+    ok.
 partial_commit(LimitChanges) ->
-    do(fun() ->
-        [unwrap(hg_limiter_client:partial_commit(Change)) || Change <- LimitChanges],
-        ok
-    end).
+    [hg_limiter_client:partial_commit(Change) || Change <- LimitChanges],
+    ok.
 
 -spec rollback([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
-    ok |
-    {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
-    {error, {invalid_request, Description :: binary()}}.
+    ok.
 rollback(Limits, LimitChangeID, Cash, Timestamp) ->
     LimitChanges = gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp),
     rollback(LimitChanges).
 
 -spec rollback([hg_limiter_client:limit_change()]) ->
-    ok |
-    {error, {not_found, hg_limiter_client:limit_id()}} |
-    {error, {not_found, {limit_change, hg_limiter_client:change_id()}}} |
-    {error, {invalid_request, Description :: binary()}}.
+    ok.
 rollback(LimitChanges) ->
-    do(fun() ->
-        [unwrap(hg_limiter_client:rollback(Change)) || Change <- LimitChanges],
-        ok
-    end).
+    [hg_limiter_client:rollback(Change) || Change <- LimitChanges],
+    ok.
 
 -spec gen_limit_changes([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
     [hg_limiter_client:limit_change()].
@@ -135,18 +98,6 @@ gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp) ->
         }
         || Limit <- Limits
     ].
-
--spec handle_result(any()) -> ok.
-handle_result(Fun) ->
-    LimiterConfig = genlib_app:env(hellgate, limiter, #{}),
-    Handler = genlib_map:get(error_handler, LimiterConfig, hg_limiter),
-    Handler:handle_error(Fun).
-
--spec handle_error(ok | {error, any()}) -> ok.
-handle_error(ok) ->
-    ok;
-handle_error({error, Error}) ->
-    error(Error).
 
 reduce_limits(undefined, _, _) ->
     logger:info("Operation limits haven't been set on provider terms."),
