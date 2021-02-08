@@ -26,9 +26,7 @@
 get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
     reduce_limits(TurnoverLimitSelector, VS, Revision).
 
--spec check_limits([turnover_limit()], timestamp()) ->
-    [hg_limiter_client:limit()].
-
+-spec check_limits([turnover_limit()], timestamp()) -> [hg_limiter_client:limit()].
 check_limits(TurnoverLimits, Timestamp) ->
     check_limits(TurnoverLimits, Timestamp, []).
 
@@ -51,8 +49,7 @@ check_limits([T | TurnoverLimits], Timestamp, Acc) ->
             throw({limit_overflow, Limit})
     end.
 
--spec hold([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
-    ok.
+-spec hold([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) -> ok.
 hold(Limits, LimitChangeID, Cash, Timestamp) ->
     LimitChanges = gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp),
     hold(LimitChanges).
@@ -62,26 +59,22 @@ hold(LimitChanges) ->
     [hg_limiter_client:hold(Change) || Change <- LimitChanges],
     ok.
 
--spec commit([hg_limiter_client:limit_change()]) ->
-    ok.
+-spec commit([hg_limiter_client:limit_change()]) -> ok.
 commit(LimitChanges) ->
     [hg_limiter_client:commit(Change) || Change <- LimitChanges],
     ok.
 
--spec partial_commit([hg_limiter_client:limit_change()]) ->
-    ok.
+-spec partial_commit([hg_limiter_client:limit_change()]) -> ok.
 partial_commit(LimitChanges) ->
     [hg_limiter_client:partial_commit(Change) || Change <- LimitChanges],
     ok.
 
--spec rollback([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) ->
-    ok.
+-spec rollback([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) -> ok.
 rollback(Limits, LimitChangeID, Cash, Timestamp) ->
     LimitChanges = gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp),
     rollback(LimitChanges).
 
--spec rollback([hg_limiter_client:limit_change()]) ->
-    ok.
+-spec rollback([hg_limiter_client:limit_change()]) -> ok.
 rollback(LimitChanges) ->
     [hg_limiter_client:rollback(Change) || Change <- LimitChanges],
     ok.

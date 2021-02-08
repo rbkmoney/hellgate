@@ -20,8 +20,7 @@
 -export([partial_commit/1]).
 -export([rollback/1]).
 
--spec get(limit_id(), timestamp()) ->
-    limit().
+-spec get(limit_id(), timestamp()) -> limit().
 get(LimitID, Timestamp) ->
     Args = {LimitID, Timestamp},
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -48,8 +47,7 @@ get(LimitID, Timestamp) ->
             error(Reason)
     end.
 
--spec hold(limit_change()) ->
-    ok.
+-spec hold(limit_change()) -> ok.
 hold(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -76,8 +74,7 @@ hold(LimitChange) ->
             error(Reason)
     end.
 
--spec commit(limit_change()) ->
-    ok.
+-spec commit(limit_change()) -> ok.
 commit(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -106,8 +103,7 @@ commit(LimitChange) ->
             error(Reason)
     end.
 
--spec partial_commit(limit_change()) ->
-    ok.
+-spec partial_commit(limit_change()) -> ok.
 partial_commit(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
@@ -138,8 +134,7 @@ partial_commit(LimitChange) ->
             error(Reason)
     end.
 
--spec rollback(limit_change()) ->
-    ok.
+-spec rollback(limit_change()) -> ok.
 rollback(LimitChange) ->
     LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),

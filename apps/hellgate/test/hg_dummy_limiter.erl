@@ -4,13 +4,18 @@
 
 -include_lib("hellgate/include/domain.hrl").
 
+-type limit_id() :: binary().
+-type amount() :: integer().
+
 -export([handle_function/3]).
 -export([get_port/0]).
 
--behaviour(hg_test_proxy).
-
 -export([get_service_spec/0]).
 -export([get_http_cowboy_spec/0]).
+-export([init/0]).
+-export([init/2]).
+-export([delete/0]).
+-export([get_amount/1]).
 
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
@@ -26,21 +31,83 @@
 get_port() ->
     ?COWBOY_PORT.
 
--spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
-handle_function('Get', {<<"3">>, _Timestamp}, _Opts) ->
-    throw(#proto_limiter_LimitNotFound{});
-handle_function('Get', {<<"5">> = LimitID, Timestamp}, _Opts) ->
-    ?limit(LimitID, ?cash(1000001, <<"RUB">>), Timestamp);
-handle_function('Get', {LimitID, Timestamp}, _Opts) ->
-    ?limit(LimitID, ?cash(0, <<"RUB">>), Timestamp);
-handle_function('Hold', {_LimitChange}, _Opts) ->
-    ok;
-handle_function('PartialCommit', {#proto_limiter_LimitChange{id = <<"4">>}}, _Opts) ->
-    throw(#proto_limiter_LimitChangeNotFound{});
-handle_function('PartialCommit', {_LimitChange}, _Opts) ->
-    ok;
-handle_function('Commit', {_LimitChange}, _Opts) ->
+-spec init() -> ok.
+init() ->
+    ets:new(?MODULE, [set, named_table, public]),
+    ets:insert(?MODULE, {limiter, #{}}),
     ok.
+
+-spec init(limit_id(), amount()) -> ok.
+init(LimitID, Amount) ->
+    ets:new(?MODULE, [set, named_table, public]),
+    ets:insert(
+        ?MODULE,
+        {limiter, #{
+            LimitID => #{hold => false, amount => Amount}
+        }}
+    ),
+    ok.
+
+-spec delete() -> ok.
+delete() ->
+    true = ets:delete(?MODULE).
+
+-spec get_amount(limit_id()) -> integer().
+get_amount(ID) ->
+    [{limiter, L}] = ets:lookup(?MODULE, limiter),
+    case maps:get(ID, L, undefined) of
+        undefined ->
+            0;
+        Limit ->
+            maps:get(amount, Limit)
+    end.
+
+set_hold(LimitID, Flag) when is_boolean(Flag) ->
+    [{limiter, L}] = ets:lookup(?MODULE, limiter),
+    Limit = maps:get(LimitID, L, #{amount => 0}),
+    ets:insert(
+        ?MODULE,
+        {limiter, L#{
+            LimitID => Limit#{hold => Flag}
+        }}
+    ),
+    ok.
+
+commit_hold(ID, Amount) ->
+    [{limiter, L}] = ets:lookup(?MODULE, limiter),
+    case maps:get(ID, L) of
+        #{hold := false} ->
+            error;
+        #{hold := true, amount := A} ->
+            ets:insert(
+                ?MODULE,
+                {limiter, L#{
+                    ID => #{hold => false, amount => A + Amount}
+                }}
+            ),
+            ok
+    end.
+
+-spec handle_function(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
+handle_function('Get', {LimitID, Timestamp}, _Opts) ->
+    Amount = get_amount(LimitID),
+    ?limit(LimitID, ?cash(Amount, <<"RUB">>), Timestamp);
+handle_function('Hold', {#proto_limiter_LimitChange{id = ID}}, _Opts) ->
+    set_hold(ID, true);
+handle_function('PartialCommit', {#proto_limiter_LimitChange{id = ID, cash = #domain_Cash{amount = Amount}}}, _Opts) ->
+    case commit_hold(ID, Amount) of
+        ok ->
+            ok;
+        error ->
+            throw({error, {ID, <<"hold not set before partial commit">>}})
+    end;
+handle_function('Commit', {#proto_limiter_LimitChange{id = ID, cash = #domain_Cash{amount = Amount}}}, _Opts) ->
+    case commit_hold(ID, Amount) of
+        ok ->
+            ok;
+        error ->
+            throw({error, {ID, <<"hold not set before commit">>}})
+    end.
 
 -spec get_service_spec() -> hg_proto:service_spec().
 get_service_spec() ->

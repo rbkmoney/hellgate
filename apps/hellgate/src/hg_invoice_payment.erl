@@ -1907,7 +1907,6 @@ process_operation_limit(Route, VS, Payment, Revision, St, Opts) ->
     PaymentsProvisionTerms = get_provider_terminal_terms(Route, VS, Revision),
     TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
     TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS, Revision),
-
     Limits = hg_limiter:check_limits(TurnoverLimits, Timestamp),
     ok = hg_limiter:hold(Limits, LimitChangeID, Cash, Timestamp),
     _ = hg_limiter:check_limits(TurnoverLimits, Timestamp),
@@ -2588,12 +2587,15 @@ construct_payment_limit_change(St) ->
 
 construct_limit_change(LimitChangeID, Cash, St) ->
     Timestamp = get_payment_created_at(get_payment(St)),
-    [#proto_limiter_LimitChange{
-        id = LimitID,
-        change_id = LimitChangeID,
-        cash = Cash,
-        operation_timestamp = Timestamp
-    } || LimitID <- get_limit_ids(St)].
+    [
+        #proto_limiter_LimitChange{
+            id = LimitID,
+            change_id = LimitChangeID,
+            cash = Cash,
+            operation_timestamp = Timestamp
+        }
+        || LimitID <- get_limit_ids(St)
+    ].
 
 get_limit_ids(St) ->
     Opts = get_opts(St),

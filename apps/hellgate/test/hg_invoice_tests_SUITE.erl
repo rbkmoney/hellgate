@@ -43,6 +43,7 @@
 -export([payment_limit_success/1]).
 -export([payment_limit_overflow/1]).
 -export([refund_limit_success/1]).
+-export([payment_partial_capture_limit_success/1]).
 
 -export([processing_deadline_reached_test/1]).
 -export([payment_success_empty_cvv/1]).
@@ -329,7 +330,8 @@ groups() ->
         {operation_limits, [], [
             payment_limit_success,
             payment_limit_overflow,
-            refund_limit_success
+            refund_limit_success,
+            payment_partial_capture_limit_success
         ]},
 
         {refunds, [], [
@@ -978,6 +980,7 @@ payment_success(C) ->
 
 -spec payment_limit_success(config()) -> test_return().
 payment_limit_success(C) ->
+    hg_dummy_limiter:init(),
     PartyID = <<"bIg merch limit">>,
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -993,16 +996,19 @@ payment_limit_success(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(_Payment)]
-    ) = hg_client_invoicing:get(InvoiceID, Client).
+    ) = hg_client_invoicing:get(InvoiceID, Client),
+    hg_dummy_limiter:delete().
 
 -spec payment_limit_overflow(config()) -> test_return().
 payment_limit_overflow(C) ->
+    LimitID = <<"1">>,
+    hg_dummy_limiter:init(LimitID, 100000),
     PartyID = <<"bIg merch limit">>,
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID2 = hg_ct_helper:create_party_and_shop(?cat(11), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID2, <<"rubberduck">>, make_due_date(10), 100001),
+    ShopID2 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID2, <<"rubberduck">>, make_due_date(10), 10000),
     InvoiceID2 = create_invoice(InvoiceParams2, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
     PaymentParams = make_payment_params(),
@@ -1018,10 +1024,12 @@ payment_limit_overflow(C) ->
         'PaymentFailure',
         Failure,
         fun({authorization_failed, {provider_limit_exceeded, _}}) -> ok end
-    ).
+    ),
+    hg_dummy_limiter:delete().
 
 -spec refund_limit_success(config()) -> test_return().
 refund_limit_success(C) ->
+    hg_dummy_limiter:init(),
     PartyID = <<"bIg merch limit">>,
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -1061,7 +1069,51 @@ refund_limit_success(C) ->
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     % no more refunds for you
     ?invalid_payment_status(?refunded()) =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client).
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    ?assertEqual(42000, hg_dummy_limiter:get_amount(<<"1">>)),
+    hg_dummy_limiter:delete().
+
+-spec payment_partial_capture_limit_success(config()) -> test_return().
+payment_partial_capture_limit_success(C) ->
+    hg_dummy_limiter:init(),
+    InitialCost = 1000 * 100,
+    PartialCost = 700 * 100,
+    PaymentParams = make_payment_params({hold, cancel}),
+
+    PartyID = <<"bIg merch limit">>,
+    RootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(100), InitialCost),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+
+    % start payment
+    ?payment_state(?payment(PaymentID)) =
+        hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
+    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
+    PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
+    % do a partial capture
+    Cash = ?cash(PartialCost, <<"RUB">>),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
+    PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
+
+    % let's check results
+    InvoiceState = hg_client_invoicing:get(InvoiceID, Client),
+    ?invoice_state(Invoice, [PaymentState]) = InvoiceState,
+    ?assertMatch(?invoice_w_status(?invoice_paid()), Invoice),
+    ?assertMatch(?payment_state(?payment_w_status(PaymentID, ?captured(Reason, Cash))), PaymentState),
+    #payproc_InvoicePayment{cash_flow = CF2} = PaymentState,
+    ?assertNotEqual(undefined, CF2),
+    ?assertNotEqual(CF1, CF2),
+
+    ?assertEqual(PartialCost, hg_dummy_limiter:get_amount(<<"1">>)),
+    hg_dummy_limiter:delete().
 
 -spec payment_success_ruleset(config()) -> test_return().
 payment_success_ruleset(C) ->
@@ -5738,10 +5790,7 @@ construct_domain_fixture() ->
                 {value,
                     ?ordset([
                         ?cat(1),
-                        ?cat(8),
-                        ?cat(9),
-                        ?cat(10),
-                        ?cat(11)
+                        ?cat(8)
                     ])},
             payment_methods =
                 {decisions, [
@@ -6039,9 +6088,6 @@ construct_domain_fixture() ->
 
         %% categories influents in limits choice
         hg_ct_fixture:construct_category(?cat(8), <<"commit success">>),
-        hg_ct_fixture:construct_category(?cat(9), <<"hold limit not found">>),
-        hg_ct_fixture:construct_category(?cat(10), <<"commit changes not found">>),
-        hg_ct_fixture:construct_category(?cat(11), <<"limit overflow">>),
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
@@ -6946,10 +6992,7 @@ construct_domain_fixture() ->
                         categories =
                             {value,
                                 ?ordset([
-                                    ?cat(8),
-                                    ?cat(9),
-                                    ?cat(10),
-                                    ?cat(11)
+                                    ?cat(8)
                                 ])},
                         payment_methods =
                             {value,
@@ -6976,6 +7019,20 @@ construct_domain_fixture() ->
                                     ?share(21, 1000, operation_amount)
                                 )
                             ]},
+                        holds = #domain_PaymentHoldsProvisionTerms{
+                            lifetime =
+                                {decisions, [
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition = {payment_system_is, visa}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(12)}
+                                    }
+                                ]}
+                        },
                         refunds = #domain_PaymentRefundsProvisionTerms{
                             cash_flow =
                                 {value, [
@@ -7006,36 +7063,6 @@ construct_domain_fixture() ->
                                             },
                                             #domain_TurnoverLimit{
                                                 id = <<"2">>,
-                                                upper_boundary = ?cash(100000, <<"RUB">>)
-                                            }
-                                        ]}
-                                },
-                                #domain_TurnoverLimitDecision{
-                                    if_ = {condition, {category_is, ?cat(9)}},
-                                    then_ =
-                                        {value, [
-                                            #domain_TurnoverLimit{
-                                                id = <<"3">>,
-                                                upper_boundary = ?cash(100000, <<"RUB">>)
-                                            }
-                                        ]}
-                                },
-                                #domain_TurnoverLimitDecision{
-                                    if_ = {condition, {category_is, ?cat(10)}},
-                                    then_ =
-                                        {value, [
-                                            #domain_TurnoverLimit{
-                                                id = <<"4">>,
-                                                upper_boundary = ?cash(100000, <<"RUB">>)
-                                            }
-                                        ]}
-                                },
-                                #domain_TurnoverLimitDecision{
-                                    if_ = {condition, {category_is, ?cat(11)}},
-                                    then_ =
-                                        {value, [
-                                            #domain_TurnoverLimit{
-                                                id = <<"5">>,
                                                 upper_boundary = ?cash(100000, <<"RUB">>)
                                             }
                                         ]}
