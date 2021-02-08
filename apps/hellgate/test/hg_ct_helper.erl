@@ -218,9 +218,6 @@ start_app(hellgate = AppName) ->
                     operation_time_limit => 1200000,
                     pre_aggregation_size => 2
                 }
-            }},
-            {limiter, #{
-                error_handler => hg_ct_limiter_handler
             }}
         ]), #{
             hellgate_root_url => get_hellgate_url()
