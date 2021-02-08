@@ -2564,11 +2564,7 @@ construct_limit_change_id(St) ->
     genlib_string:join($., [<<"limiter">>, ComplexID]).
 
 construct_refund_limit_change_id(RefundSt, St) ->
-    ComplexID = hg_utils:construct_complex_id([
-        get_invoice_id(get_invoice(get_opts(St))),
-        get_payment_id(get_payment(St)),
-        {refund_session, get_refund_id(get_refund(RefundSt))}
-    ]),
+    ComplexID = construct_refund_plan_id(RefundSt, St),
     genlib_string:join($., [<<"limiter">>, ComplexID]).
 
 construct_refund_limit_change(RefundSt, St) ->
