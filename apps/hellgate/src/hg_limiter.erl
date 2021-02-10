@@ -28,7 +28,8 @@ get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
 
 -spec check_limits([turnover_limit()], timestamp()) -> [hg_limiter_client:limit()].
 check_limits(TurnoverLimits, Timestamp) ->
-    try check_limits(TurnoverLimits, Timestamp, [])
+    try
+        check_limits(TurnoverLimits, Timestamp, [])
     catch
         throw:limit_overflow ->
             IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],

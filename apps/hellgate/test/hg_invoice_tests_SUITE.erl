@@ -1013,13 +1013,9 @@ payment_limit_overflow(C) ->
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
-    [
-        ?payment_ev(PaymentID2, ?payment_started(?payment_w_status(?pending())))
-    ] = next_event(InvoiceID2, Client),
-    [
-        ?payment_ev(PaymentID2, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID2, ?payment_status_changed(?failed({failure, Failure})))
-    ] = next_event(InvoiceID2, Client),
+    PaymentID2 = await_payment_started(InvoiceID2, PaymentID2, Client),
+    Failure = await_payment_cash_flow_failed(InvoiceID2, PaymentID2, Client),
+
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
@@ -1049,7 +1045,6 @@ refund_limit_success(C) ->
 
     % create a refund finally
     RefundParams = make_refund_params(),
-
     Refund =
         #domain_InvoicePaymentRefund{id = RefundID} =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
@@ -1057,14 +1052,8 @@ refund_limit_success(C) ->
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
-    ] = next_event(InvoiceID, Client),
+    PaymentID = refund_session_finished(InvoiceID, PaymentID, Client),
+    PaymentID = await_refund_succeeded(InvoiceID, PaymentID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     % no more refunds for you
@@ -5415,6 +5404,13 @@ await_payment_cash_flow(InvoiceID, PaymentID, Client) ->
     ] = next_event(InvoiceID, Client),
     CashFlow.
 
+await_payment_cash_flow_failed(InvoiceID, PaymentID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
+    ] = next_event(InvoiceID, Client),
+    Failure.
+
 await_payment_session_started(InvoiceID, PaymentID, Client, Target) ->
     [
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_started()))
@@ -5557,6 +5553,20 @@ await_partial_manual_refund_succeeded(Refund, TrxInfo, InvoiceID, PaymentID, Ref
 await_refund_session_started(InvoiceID, PaymentID, RefundID, Client) ->
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started())))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
+
+refund_session_finished(InvoiceID, PaymentID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?trx_bound(_)))),
+        ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
+    ] = next_event(InvoiceID, Client),
+    PaymentID.
+
+await_refund_succeeded(InvoiceID, PaymentID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?refund_ev(_, ?refund_status_changed(?refund_succeeded()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
@@ -7051,16 +7061,17 @@ construct_domain_fixture() ->
                                         )}
                             }
                         },
-                        turnover_limits = {value, [
-                            #domain_TurnoverLimit{
-                                id = <<"1">>,
-                                upper_boundary = ?cash(100000, <<"RUB">>)
-                            },
-                            #domain_TurnoverLimit{
-                                id = <<"2">>,
-                                upper_boundary = ?cash(100000, <<"RUB">>)
-                            }
-                        ]}
+                        turnover_limits =
+                            {value, [
+                                #domain_TurnoverLimit{
+                                    id = <<"1">>,
+                                    upper_boundary = ?cash(100000, <<"RUB">>)
+                                },
+                                #domain_TurnoverLimit{
+                                    id = <<"2">>,
+                                    upper_boundary = ?cash(100000, <<"RUB">>)
+                                }
+                            ]}
                     }
                 }
             }

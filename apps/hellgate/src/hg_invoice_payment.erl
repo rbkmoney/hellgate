@@ -1892,7 +1892,9 @@ process_routing(Action, St) ->
             process_failure(get_activity(St), Events0, Action, Failure, St);
         throw:{limit_overflow, LimitIDs} ->
             ok = hg_limiter:rollback(construct_limit_change(LimitIDs, LimitChangeID, Cash, Timestamp)),
-            Failure = failure({authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}),
+            Failure = failure(
+                {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
+            ),
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
 
@@ -1901,8 +1903,7 @@ failure(Reason) ->
         payproc_errors:construct(
             'PaymentFailure',
             Reason
-        )
-    }.
+        )}.
 
 process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
     Timestamp = get_payment_created_at(Payment),
