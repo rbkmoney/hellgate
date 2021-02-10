@@ -1050,7 +1050,8 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
         details = V#payproc_InvoiceParams.details,
         context = V#payproc_InvoiceParams.context,
         template_id = InvoiceTplID,
-        external_id = V#payproc_InvoiceParams.external_id
+        external_id = V#payproc_InvoiceParams.external_id,
+        client_info = V#payproc_InvoiceParams.client_info
     }.
 
 create_payment_id(#st{payments = Payments}) ->
