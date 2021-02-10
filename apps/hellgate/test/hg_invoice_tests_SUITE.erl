@@ -7051,23 +7051,16 @@ construct_domain_fixture() ->
                                         )}
                             }
                         },
-                        turnover_limits =
-                            {decisions, [
-                                #domain_TurnoverLimitDecision{
-                                    if_ = {condition, {category_is, ?cat(8)}},
-                                    then_ =
-                                        {value, [
-                                            #domain_TurnoverLimit{
-                                                id = <<"1">>,
-                                                upper_boundary = ?cash(100000, <<"RUB">>)
-                                            },
-                                            #domain_TurnoverLimit{
-                                                id = <<"2">>,
-                                                upper_boundary = ?cash(100000, <<"RUB">>)
-                                            }
-                                        ]}
-                                }
-                            ]}
+                        turnover_limits = {value, [
+                            #domain_TurnoverLimit{
+                                id = <<"1">>,
+                                upper_boundary = ?cash(100000, <<"RUB">>)
+                            },
+                            #domain_TurnoverLimit{
+                                id = <<"2">>,
+                                upper_boundary = ?cash(100000, <<"RUB">>)
+                            }
+                        ]}
                     }
                 }
             }

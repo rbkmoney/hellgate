@@ -28,7 +28,12 @@ get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
 
 -spec check_limits([turnover_limit()], timestamp()) -> [hg_limiter_client:limit()].
 check_limits(TurnoverLimits, Timestamp) ->
-    check_limits(TurnoverLimits, Timestamp, []).
+    try check_limits(TurnoverLimits, Timestamp, [])
+    catch
+        throw:limit_overflow ->
+            IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
+            throw({limit_overflow, IDs})
+    end.
 
 check_limits([], _, Limits) ->
     Limits;
@@ -45,8 +50,8 @@ check_limits([T | TurnoverLimits], Timestamp, Acc) ->
         true ->
             check_limits(TurnoverLimits, Timestamp, [Limit | Acc]);
         false ->
-            logger:info("Limit with id ~p is overflow", [LimitID]),
-            throw({limit_overflow, Limit})
+            logger:info("Limit with id ~p overflowed", [LimitID]),
+            throw(limit_overflow)
     end.
 
 -spec hold([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) -> ok.
@@ -109,11 +114,5 @@ reduce_limits_decisions([D | Decisions], VS, Rev) ->
         ?const(false) ->
             reduce_limits_decisions(Decisions, VS, Rev);
         ?const(true) ->
-            reduce_limits(TurnoverLimitSelector, VS, Rev);
-        _ ->
-            logger:warning(
-                "Operation limit misconfiguration, can't reduce decision. Predicate: ~p Varset: ~p",
-                [Predicate, VS]
-            ),
-            []
+            reduce_limits(TurnoverLimitSelector, VS, Rev)
     end.

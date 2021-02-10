@@ -94,6 +94,8 @@ handle_function('Get', {LimitID, Timestamp}, _Opts) ->
     ?limit(LimitID, ?cash(Amount, <<"RUB">>), Timestamp);
 handle_function('Hold', {#proto_limiter_LimitChange{id = ID}}, _Opts) ->
     set_hold(ID, true);
+handle_function('Rollback', {#proto_limiter_LimitChange{id = ID}}, _Opts) ->
+    set_hold(ID, false);
 handle_function('PartialCommit', {#proto_limiter_LimitChange{id = ID, cash = #domain_Cash{amount = Amount}}}, _Opts) ->
     case commit_hold(ID, Amount) of
         ok ->

@@ -783,19 +783,19 @@ choose_route(PaymentInstitution, RiskScore, VS, Revision, St) ->
                 {ok, Route, ChoiceMeta} ->
                     _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext),
-                    {ok, Route};
+                    Route;
                 {error, {no_route_found, {RejectReason, RejectContext1}}} ->
                     _ = log_reject_context(RejectReason, RejectContext1),
-                    {error, {no_route_found, RejectReason}}
+                    throw({no_route_found, RejectReason})
             end
     end.
 
 check_risk_score(Route, RiskScore) ->
     case hg_routing:check_risk_score(RiskScore) of
         ok ->
-            {ok, Route};
+            Route;
         {error, risk_score_is_too_high = Reason} ->
-            {error, {no_route_found, Reason}}
+            throw({no_route_found, Reason})
     end.
 
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
@@ -1871,46 +1871,38 @@ process_routing(Action, St) ->
         MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
         VS2
     ),
+    Timestamp = get_payment_created_at(Payment),
+    Cash = Payment#domain_InvoicePayment.cost,
+    LimitChangeID = construct_limit_change_id(St),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     RiskScore = repair_inspect(Payment, PaymentInstitution, Opts, St),
     Events0 = [?risk_score_changed(RiskScore)],
     try
-        case choose_route(PaymentInstitution, RiskScore, VS3, Revision, St) of
-            {ok, Route} ->
-                process_operation_limit(Route, VS1, Payment, Revision, St, Opts),
-                process_cash_flow_building(Route, VS3, Payment, Revision, Opts, Events0, Action);
-            {error, {no_route_found, Reason}} ->
-                Failure =
-                    {failure,
-                        payproc_errors:construct(
-                            'PaymentFailure',
-                            {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
-                        )},
-                process_failure(get_activity(St), Events0, Action, Failure, St)
-        end
+        Route = choose_route(PaymentInstitution, RiskScore, VS3, Revision, St),
+        PaymentsProvisionTerms = get_provider_terminal_terms(Route, VS1, Revision),
+        TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
+        TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS1, Revision),
+        IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
+        ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
+        _ = hg_limiter:check_limits(TurnoverLimits, Timestamp),
+        process_cash_flow_building(Route, VS3, Payment, Revision, Opts, Events0, Action)
     catch
-        throw:{limit_overflow, _} ->
-            LimitFailure =
-                {failure,
-                    payproc_errors:construct(
-                        'PaymentFailure',
-                        {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
-                    )},
-            process_failure(get_activity(St), Events0, Action, LimitFailure, St)
+        throw:{no_route_found, Reason} ->
+            Failure = failure({no_route_found, {Reason, #payprocerr_GeneralFailure{}}}),
+            process_failure(get_activity(St), Events0, Action, Failure, St);
+        throw:{limit_overflow, LimitIDs} ->
+            ok = hg_limiter:rollback(construct_limit_change(LimitIDs, LimitChangeID, Cash, Timestamp)),
+            Failure = failure({authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}),
+            process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
 
-process_operation_limit(Route, VS, Payment, Revision, St, Opts) ->
-    Timestamp = get_payment_created_at(Payment),
-    Invoice = get_invoice(Opts),
-    Cash = Invoice#domain_Invoice.cost,
-    LimitChangeID = construct_limit_change_id(St),
-    PaymentsProvisionTerms = get_provider_terminal_terms(Route, VS, Revision),
-    TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS, Revision),
-    Limits = hg_limiter:check_limits(TurnoverLimits, Timestamp),
-    ok = hg_limiter:hold(Limits, LimitChangeID, Cash, Timestamp),
-    _ = hg_limiter:check_limits(TurnoverLimits, Timestamp),
-    ok.
+failure(Reason) ->
+    {failure,
+        payproc_errors:construct(
+            'PaymentFailure',
+            Reason
+        )
+    }.
 
 process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
     Timestamp = get_payment_created_at(Payment),
@@ -2583,6 +2575,9 @@ construct_payment_limit_change(St) ->
 
 construct_limit_change(LimitChangeID, Cash, St) ->
     Timestamp = get_payment_created_at(get_payment(St)),
+    construct_limit_change(get_limit_ids(St), LimitChangeID, Cash, Timestamp).
+
+construct_limit_change(IDs, LimitChangeID, Cash, Timestamp) ->
     [
         #proto_limiter_LimitChange{
             id = LimitID,
@@ -2590,7 +2585,7 @@ construct_limit_change(LimitChangeID, Cash, St) ->
             cash = Cash,
             operation_timestamp = Timestamp
         }
-        || LimitID <- get_limit_ids(St)
+        || LimitID <- IDs
     ].
 
 get_limit_ids(St) ->
