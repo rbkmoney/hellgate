@@ -2209,7 +2209,11 @@ terminal_cashflow_overrides_provider(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     _ = next_event(InvoiceID, InvoicingClient),
-    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(
+        InvoiceID,
+        make_payment_params(),
+        InvoicingClient
+    ),
     _ = next_event(InvoiceID, InvoicingClient),
     CF = await_payment_cash_flow(InvoiceID, PaymentID, InvoicingClient),
     _ = next_event(InvoiceID, InvoicingClient),
