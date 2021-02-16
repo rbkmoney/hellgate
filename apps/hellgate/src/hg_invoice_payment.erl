@@ -1787,8 +1787,10 @@ process_timeout(St) ->
 
 -spec process_timeout(activity(), action(), st()) -> machine_result().
 process_timeout({payment, risk_scoring}, Action, St) ->
-    %% There are three processing_accounter steps here (scoring, routing and cash flow building)
+    %% There are three processing_accounter steps here (scoring, routing)
     process_routing(Action, St);
+process_timeout({payment, cash_flow_building}, Action, St) ->
+    process_cash_flow_building(Action, St);
 process_timeout({payment, Step}, Action, St) when
     Step =:= processing_session orelse
         Step =:= finalizing_session
@@ -1875,7 +1877,8 @@ process_routing(Action, St) ->
     Events0 = [?risk_score_changed(RiskScore)],
     case choose_route(PaymentInstitution, RiskScore, VS3, Revision, St) of
         {ok, Route} ->
-            process_cash_flow_building(Route, VS3, Payment, Revision, Opts, Events0, Action);
+            Events1 = Events0 ++ [?route_changed(Route)],
+            {next, {Events1, hg_machine_action:set_timeout(0, Action)}};
         {error, {no_route_found, Reason}} ->
             Failure =
                 {failure,
@@ -1886,16 +1889,34 @@ process_routing(Action, St) ->
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
 
-process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
+-spec process_cash_flow_building(action(), st()) -> machine_result().
+process_cash_flow_building(Action, St) ->
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Route = get_route(St),
+    CreatedAt = get_payment_created_at(Payment),
     Timestamp = get_payment_created_at(Payment),
-    FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts),
+    VS0 = reconstruct_payment_flow(Payment, #{}),
+    #{payment_tool := PaymentTool} = VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
+    VS2 = collect_refund_varset(
+        MerchantTerms#domain_PaymentsServiceTerms.refunds,
+        PaymentTool,
+        VS1
+    ),
+    VS3 = collect_chargeback_varset(
+        MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
+        VS2
+    ),
+    FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS3, Revision, Opts),
     Invoice = get_invoice(Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
-    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
-    {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
+    Events = [?cash_flow_changed(FinalCashflow)],
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
 
