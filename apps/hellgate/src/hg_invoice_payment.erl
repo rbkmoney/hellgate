@@ -1787,7 +1787,7 @@ process_timeout(St) ->
 
 -spec process_timeout(activity(), action(), st()) -> machine_result().
 process_timeout({payment, risk_scoring}, Action, St) ->
-    %% There are three processing_accounter steps here (scoring, routing)
+    %% There are two processing_accounter steps here (scoring, routing)
     process_routing(Action, St);
 process_timeout({payment, cash_flow_building}, Action, St) ->
     process_cash_flow_building(Action, St);

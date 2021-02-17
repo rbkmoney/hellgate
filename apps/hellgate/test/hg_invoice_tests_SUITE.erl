@@ -1298,7 +1298,7 @@ payment_w_mobile_commerce(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    _ = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
@@ -1317,7 +1317,7 @@ payment_suspend_timeout_failure(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    _ = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
@@ -1547,7 +1547,7 @@ payment_risk_score_check(C) ->
     ] = next_event(InvoiceID1, Client),
     % low risk score...
     % ...covered with high risk coverage terminal
-    await_payment_cash_flow(low, ?route(?prv(1), ?trm(1)), InvoiceID1, PaymentID1, Client),
+    _ = await_payment_cash_flow(low, ?route(?prv(1), ?trm(1)), InvoiceID1, PaymentID1, Client),
     [
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
@@ -1561,7 +1561,7 @@ payment_risk_score_check(C) ->
     ] = next_event(InvoiceID2, Client),
     % high risk score...
     % ...covered with the same terminal
-    await_payment_cash_flow(high, ?route(?prv(1), ?trm(1)), InvoiceID2, PaymentID2, Client),
+    _ = await_payment_cash_flow(high, ?route(?prv(1), ?trm(1)), InvoiceID2, PaymentID2, Client),
     [
         ?payment_ev(PaymentID2, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
@@ -4677,7 +4677,7 @@ repair_skip_inspector_succeeded(C) ->
 
     timeout = next_event(InvoiceID, 2000, Client),
     ok = repair_invoice_with_scenario(InvoiceID, skip_inspector, Client),
-    await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID, PaymentID, Client),
+    _ = await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID, PaymentID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
@@ -4748,7 +4748,7 @@ repair_complex_succeeded_first(C) ->
     timeout = next_event(InvoiceID, 2000, Client),
     ok = repair_invoice_with_scenario(InvoiceID, complex, Client),
 
-    await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID, PaymentID, Client),
+    _ = await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID, PaymentID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
@@ -5482,7 +5482,7 @@ make_payment_and_get_revision(InvoiceID, Client) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    _ = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client, 0),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
@@ -5552,13 +5552,8 @@ payment_risk_score_check(Cat, C) ->
     [
         ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID1, Client),
-    % [
-    %     % default low risk score...
-    %     ?payment_ev(PaymentID1, ?risk_score_changed(low)),
-    %     ?payment_ev(PaymentID1, ?route_changed(?route(?prv(2), ?trm(7)))),
-    %     ?payment_ev(PaymentID1, ?cash_flow_changed(_))
-    % ] = next_event(InvoiceID1, Client),
-    await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID1, PaymentID1, Client),
+    % default low risk score...
+    _ = await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID1, PaymentID1, Client),
     [
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
