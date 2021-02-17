@@ -1132,13 +1132,12 @@ merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
             check_non_idle_payments(St1)
     end.
 
+-spec check_non_idle_payments(st()) -> st().
 check_non_idle_payments(#st{payments = Payments} = St) ->
     check_non_idle_payments_(Payments, St).
 
 check_non_idle_payments_([], St) ->
     St#st{activity = invoice};
-check_non_idle_payments_([{_PaymentID, undefined} | Rest], St) ->
-    check_non_idle_payments_(Rest, St);
 check_non_idle_payments_([{PaymentID, PaymentSession} | Rest], St) ->
     case hg_invoice_payment:get_activity(PaymentSession) of
         A when A =/= idle ->
