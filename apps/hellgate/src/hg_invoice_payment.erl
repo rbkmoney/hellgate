@@ -1789,6 +1789,8 @@ process_timeout(St) ->
 process_timeout({payment, risk_scoring}, Action, St) ->
     %% There are three processing_accounter steps here (scoring, routing and cash flow building)
     process_routing(Action, St);
+process_timeout({payment, cash_flow_building}, Action, St) ->
+    process_cash_flow_building(Action, St);
 process_timeout({payment, Step}, Action, St) when
     Step =:= processing_session orelse
         Step =:= finalizing_session
@@ -1896,6 +1898,25 @@ process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) 
     ),
     Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
     {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
+
+-spec process_cash_flow_building(action(), st()) -> machine_result().
+process_cash_flow_building(Action, St) ->
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
+    Route = get_route(St),
+    Timestamp = get_payment_created_at(Payment),
+    VS0 = reconstruct_payment_flow(Payment, #{}),
+    VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+
+    FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS1, Revision, Opts),
+    _Clock = hg_accounting:hold(
+        construct_payment_plan_id(Invoice, Payment),
+        {1, FinalCashflow}
+    ),
+    Events = [?cash_flow_changed(FinalCashflow)],
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
 
