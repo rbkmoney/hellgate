@@ -57,7 +57,8 @@ init([]) ->
                 party_client:child_spec(party_client, PartyClient),
                 hg_machine:get_child_spec(MachineHandlers),
                 pm_machine:get_child_spec(PMMachineHandlers),
-                get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts)
+                get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts),
+                hg_pantry:child_spec()
             ]
         }}.
 

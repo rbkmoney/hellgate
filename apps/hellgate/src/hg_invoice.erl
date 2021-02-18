@@ -107,7 +107,7 @@ get_payment_tags(PaymentSession) ->
 -spec get_payment_opts(st()) -> hg_invoice_payment:opts().
 get_payment_opts(St = #st{invoice = Invoice}) ->
     #{
-        party => hg_party:get_party(get_party_id(St)),
+        party => hg_pantry:get( {party, get_party_id(St)} ),
         invoice => Invoice,
         timestamp => hg_datetime:format_now()
     }.
@@ -146,7 +146,7 @@ handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
     ShopID = InvoiceParams#payproc_InvoiceParams.shop_id,
     _ = assert_party_accessible(PartyID),
-    Party = hg_party:get_party(PartyID),
+    Party= hg_pantry:get( {party, PartyID} ),
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, TimestampNow),
@@ -217,7 +217,7 @@ handle_function_('ComputeTerms', {UserInfo, InvoiceID, PartyRevision0}, _Opts) -
     PartyID = get_party_id(St),
     Timestamp = get_created_at(St),
     PartyRevision1 = hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
-    Party = hg_party:get_party(PartyID),
+    Party= hg_pantry:get( {party, PartyID} ),
     Shop = hg_party:get_shop(ShopID, Party),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Cash = get_cost(St),
@@ -273,8 +273,7 @@ handle_function_('RepairWithScenario', {UserInfo, InvoiceID, Scenario}, _Opts) -
     repair(InvoiceID, {scenario, Scenario}).
 
 assert_invoice_operable(St) ->
-    % FIXME do not lose party here
-    Party = hg_party:get_party(get_party_id(St)),
+    Party= hg_pantry:get( {party, get_party_id(St)}),
     Shop = hg_party:get_shop(get_shop_id(St), Party),
     assert_party_shop_operable(Shop, Party).
 
@@ -1270,7 +1269,7 @@ make_invoice_params(Params) ->
         details = TplDetails,
         context = TplContext
     } = hg_invoice_template:get(TplID),
-    Party = hg_party:get_party(PartyID),
+    Party= hg_pantry:get( {party, PartyID} ),
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_accessible(PartyID),
     _ = assert_party_shop_operable(Shop, Party),
