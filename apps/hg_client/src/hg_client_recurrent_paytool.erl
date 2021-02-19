@@ -107,33 +107,33 @@ map_result_error({error, Error}) ->
 
 -type event() :: dmsl_payment_processing_thrift:'RecurrentPaymentToolEvent'().
 
--record(st, {
+-record(state, {
     pollers :: #{recurrent_paytool_id() => hg_client_event_poller:st(event())},
     client :: hg_client_api:t()
 }).
 
--type st() :: #st{}.
+-type state() :: #state{}.
 
 -type callref() :: {pid(), Tag :: reference()}.
 
--spec init(hg_client_api:t()) -> {ok, st()}.
+-spec init(hg_client_api:t()) -> {ok, state()}.
 init(ApiClient) ->
-    {ok, #st{pollers = #{}, client = ApiClient}}.
+    {ok, #state{pollers = #{}, client = ApiClient}}.
 
--spec handle_call(term(), callref(), st()) -> {reply, term(), st()} | {noreply, st()}.
-handle_call({call, 'GetLastEventID' = Function, [] = Args}, _From, St = #st{client = Client}) ->
+-spec handle_call(term(), callref(), state()) -> {reply, term(), state()} | {noreply, state()}.
+handle_call({call, 'GetLastEventID' = Function, [] = Args}, _From, St = #state{client = Client}) ->
     {Result, ClientNext} = hg_client_api:call(recurrent_paytool_eventsink, Function, Args, Client),
-    {reply, Result, St#st{client = ClientNext}};
-handle_call({call, 'GetEvents' = Function, [_Range] = Args}, _From, St = #st{client = Client}) ->
+    {reply, Result, St#state{client = ClientNext}};
+handle_call({call, 'GetEvents' = Function, [_Range] = Args}, _From, St = #state{client = Client}) ->
     {Result, ClientNext} = hg_client_api:call(recurrent_paytool_eventsink, Function, Args, Client),
-    {reply, Result, St#st{client = ClientNext}};
-handle_call({call, Function, Args}, _From, St = #st{client = Client}) ->
+    {reply, Result, St#state{client = ClientNext}};
+handle_call({call, Function, Args}, _From, St = #state{client = Client}) ->
     {Result, ClientNext} = hg_client_api:call(?SERVICE, Function, Args, Client),
-    {reply, Result, St#st{client = ClientNext}};
-handle_call({pull_event, RecurrentPaytoolID, Timeout}, _From, St = #st{client = Client}) ->
+    {reply, Result, St#state{client = ClientNext}};
+handle_call({pull_event, RecurrentPaytoolID, Timeout}, _From, St = #state{client = Client}) ->
     Poller = get_poller(RecurrentPaytoolID, St),
     {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(1, Timeout, Client, Poller),
-    StNext = set_poller(RecurrentPaytoolID, PollerNext, St#st{client = ClientNext}),
+    StNext = set_poller(RecurrentPaytoolID, PollerNext, St#state{client = ClientNext}),
     case Result of
         [] ->
             {reply, timeout, StNext};
@@ -146,31 +146,31 @@ handle_call(Call, _From, State) ->
     _ = logger:warning("unexpected call received: ~tp", [Call]),
     {noreply, State}.
 
--spec handle_cast(_, st()) -> {noreply, st()}.
+-spec handle_cast(_, state()) -> {noreply, state()}.
 handle_cast(Cast, State) ->
     _ = logger:warning("unexpected cast received: ~tp", [Cast]),
     {noreply, State}.
 
--spec handle_info(_, st()) -> {noreply, st()}.
+-spec handle_info(_, state()) -> {noreply, state()}.
 handle_info(Info, State) ->
     _ = logger:warning("unexpected info received: ~tp", [Info]),
     {noreply, State}.
 
--spec terminate(Reason, st()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
+-spec terminate(Reason, state()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
 terminate(_Reason, _State) ->
     ok.
 
--spec code_change(Vsn | {down, Vsn}, st(), term()) -> {error, noimpl} when Vsn :: term().
+-spec code_change(Vsn | {down, Vsn}, state(), term()) -> {error, noimpl} when Vsn :: term().
 code_change(_OldVsn, _State, _Extra) ->
     {error, noimpl}.
 
 %%
 
-get_poller(ID, #st{pollers = Pollers}) ->
+get_poller(ID, #state{pollers = Pollers}) ->
     maps:get(ID, Pollers, construct_poller(ID)).
 
-set_poller(ID, Poller, St = #st{pollers = Pollers}) ->
-    St#st{pollers = maps:put(ID, Poller, Pollers)}.
+set_poller(ID, Poller, St = #state{pollers = Pollers}) ->
+    St#state{pollers = maps:put(ID, Poller, Pollers)}.
 
 construct_poller(ID) ->
     hg_client_event_poller:new({?SERVICE, 'GetEvents', [ID]}, fun get_event_id/1).

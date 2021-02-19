@@ -41,6 +41,7 @@
 -export([init/2]).
 -export([process_signal/2]).
 -export([process_call/2]).
+-export([process_repair/2]).
 
 %% Event provider callbacks
 
@@ -66,10 +67,10 @@
 -type invoice_change() :: dmsl_payment_processing_thrift:'InvoiceChange'().
 
 -type activity() ::
-    invoice |
-    {payment, payment_id()} |
-    {adjustment_new, adjustment_id()} |
-    {adjustment_pending, adjustment_id()}.
+    invoice
+    | {payment, payment_id()}
+    | {adjustment_new, adjustment_id()}
+    | {adjustment_pending, adjustment_id()}.
 
 -type adjustment_id() :: dmsl_domain_thrift:'InvoiceAdjustmentID'().
 
@@ -420,7 +421,7 @@ map_start_error({error, exists}) ->
 map_start_error({error, Reason}) ->
     error(Reason).
 
-map_repair_error({ok, _}) ->
+map_repair_error({ok, _Result}) ->
     ok;
 map_repair_error({error, notfound}) ->
     throw(#payproc_InvoiceNotFound{});
@@ -477,6 +478,38 @@ init({InvoiceTplID, PartyRevision, EncodedInvoiceParams}, #{id := ID}) ->
 
 %%
 
+-spec process_repair(hg_machine:args(), hg_machine:machine()) -> hg_machine:result() | no_return().
+process_repair(Args, #{history := History}) ->
+    St = collapse_history(unmarshal_history(History)),
+    handle_result(handle_repair(Args, St)).
+
+handle_repair({changes, Changes, RepairAction, Params}, St) ->
+    Result =
+        case Changes of
+            [_ | _] ->
+                #{changes => Changes};
+            [] ->
+                #{}
+        end,
+    Action = construct_repair_action(RepairAction),
+    Result#{
+        state => St,
+        action => Action,
+        % Validating that these changes are at least applicable
+        validate => should_validate_transitions(Params)
+    };
+handle_repair({scenario, _}, #st{activity = Activity}) when Activity =:= invoice orelse Activity =:= undefined ->
+    throw({exception, invoice_has_no_active_payment});
+handle_repair({scenario, Scenario}, St = #st{activity = {payment, PaymentID}}) ->
+    PaymentSession = get_payment_session(PaymentID, St),
+    Activity = hg_invoice_payment:get_activity(PaymentSession),
+    case {Scenario, Activity} of
+        {_, idle} ->
+            throw({exception, cant_fail_payment_in_idle_state});
+        {Scenario, Activity} ->
+            try_to_get_repair_state(Scenario, St)
+    end.
+
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(Signal, #{history := History}) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)))).
@@ -491,35 +524,7 @@ handle_signal(timeout, St = #st{activity = {adjustment_new, ID}}) ->
     #{changes => Change, state => St};
 handle_signal(timeout, St = #st{activity = invoice}) ->
     % invoice is expired
-    handle_expiration(St);
-handle_signal({repair, {changes, Changes, RepairAction, Params}}, St0) ->
-    Result =
-        case Changes of
-            [_ | _] ->
-                #{changes => Changes};
-            [] ->
-                #{}
-        end,
-    Action = construct_repair_action(RepairAction),
-    Result#{
-        state => St0,
-        action => Action,
-        % Validating that these changes are at least applicable
-        validate => should_validate_transitions(Params)
-    };
-handle_signal({repair, {scenario, _}}, #st{activity = Activity}) when
-    Activity =:= invoice orelse Activity =:= undefined
-->
-    throw({exception, invoice_has_no_active_payment});
-handle_signal({repair, {scenario, Scenario}}, St = #st{activity = {payment, PaymentID}}) ->
-    PaymentSession = get_payment_session(PaymentID, St),
-    Activity = hg_invoice_payment:get_activity(PaymentSession),
-    case {Scenario, Activity} of
-        {_, idle} ->
-            throw({exception, cant_fail_payment_in_idle_state});
-        {Scenario, Activity} ->
-            try_to_get_repair_state(Scenario, St)
-    end.
+    handle_expiration(St).
 
 construct_repair_action(CA) when CA /= undefined ->
     lists:foldl(
@@ -1045,7 +1050,8 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
         details = V#payproc_InvoiceParams.details,
         context = V#payproc_InvoiceParams.context,
         template_id = InvoiceTplID,
-        external_id = V#payproc_InvoiceParams.external_id
+        external_id = V#payproc_InvoiceParams.external_id,
+        client_info = V#payproc_InvoiceParams.client_info
     }.
 
 create_payment_id(#st{payments = Payments}) ->
@@ -1057,7 +1063,7 @@ get_payment_status(#domain_InvoicePayment{status = Status}) ->
 try_to_get_repair_state({complex, #payproc_InvoiceRepairComplex{scenarios = Scenarios}}, St) ->
     repair_complex(Scenarios, St);
 try_to_get_repair_state(Scenario, St) ->
-    process_repair(Scenario, St).
+    repair_scenario(Scenario, St).
 
 repair_complex([], St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
@@ -1065,13 +1071,13 @@ repair_complex([], St = #st{activity = {payment, PaymentID}}) ->
     throw({exception, {activity_not_compatible_with_complex_scenario, Activity}});
 repair_complex([Scenario | Rest], St) ->
     try
-        process_repair(Scenario, St)
+        repair_scenario(Scenario, St)
     catch
         throw:{exception, {activity_not_compatible_with_scenario, _, _}} ->
             repair_complex(Rest, St)
     end.
 
-process_repair(Scenario, St = #st{activity = {payment, PaymentID}}) ->
+repair_scenario(Scenario, St = #st{activity = {payment, PaymentID}}) ->
     PaymentSession = get_payment_session(PaymentID, St),
     Activity = hg_invoice_payment:get_activity(PaymentSession),
     RepairSession = hg_invoice_repair:get_repair_state(Activity, Scenario, PaymentSession),
@@ -1652,9 +1658,10 @@ create_dummy_refund_with_id(ID) ->
             party_revision = 42,
             status = ?refund_pending(),
             reason = <<"No reason">>,
-            cash = 1000,
-            cart = unefined
-        }
+            cash = ?cash(1000, <<"RUB">>),
+            cart = undefined
+        },
+        sessions = []
     }.
 
 -spec construct_refund_id_test() -> _.

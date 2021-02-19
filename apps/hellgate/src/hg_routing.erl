@@ -25,9 +25,9 @@
 -include("domain.hrl").
 
 -type terms() ::
-    dmsl_domain_thrift:'PaymentsProvisionTerms'() |
-    dmsl_domain_thrift:'RecurrentPaytoolsProvisionTerms'() |
-    undefined.
+    dmsl_domain_thrift:'PaymentsProvisionTerms'()
+    | dmsl_domain_thrift:'RecurrentPaytoolsProvisionTerms'()
+    | undefined.
 
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
@@ -105,7 +105,7 @@
     payment_tool => dmsl_domain_thrift:'PaymentTool'(),
     party_id => dmsl_domain_thrift:'PartyID'(),
     shop_id => dmsl_domain_thrift:'ShopID'(),
-    risk_score := dmsl_domain_thrift:'RiskScore'(),
+    risk_score => dmsl_domain_thrift:'RiskScore'(),
     flow => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
     payout_method => dmsl_domain_thrift:'PayoutMethodRef'(),
     wallet_id => dmsl_domain_thrift:'WalletID'(),
@@ -149,8 +149,8 @@ gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
 -spec choose_route([fail_rated_route()], reject_context(), risk_score() | undefined) ->
-    {ok, route(), route_choice_meta()} |
-    {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
+    {ok, route(), route_choice_meta()}
+    | {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
 choose_route(FailRatedRoutes, RejectContext, RiskScore) ->
     case check_risk_score(RiskScore) of
         ok ->
@@ -198,7 +198,7 @@ select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext
     varset(),
     hg_domain:revision(),
     reject_context()
-) -> {[route()], reject_context()}.
+) -> {[non_fail_rated_route()], reject_context()}.
 select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
     {Accepted, Rejected} = lists:foldl(
         fun(Provider, {AcceptedTerminals, RejectedRoutes}) ->
@@ -211,8 +211,8 @@ select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
 -spec do_choose_route([fail_rated_route()], reject_context()) ->
-    {ok, route(), route_choice_meta()} |
-    {error, {no_route_found, {unknown, reject_context()}}}.
+    {ok, route(), route_choice_meta()}
+    | {error, {no_route_found, {unknown, reject_context()}}}.
 do_choose_route([] = _Routes, RejectContext) ->
     {error, {no_route_found, {unknown, RejectContext}}};
 do_choose_route(Routes, _RejectContext) ->
@@ -853,9 +853,7 @@ unmarshal(_, Other) ->
 
 -spec test() -> _.
 
--type testcase() :: {_, fun()}.
-
--spec record_comparsion_test() -> [testcase()].
+-spec record_comparsion_test() -> _.
 record_comparsion_test() ->
     Bigger =
         {#route_scores{
@@ -879,7 +877,7 @@ record_comparsion_test() ->
             {99, 99}},
     Bigger = select_better_route(Bigger, Smaller).
 
--spec balance_routes_test() -> [testcase()].
+-spec balance_routes_test() -> list().
 balance_routes_test() ->
     WithWeight = [
         {1, {test, test, {test, 1}}, test},
@@ -915,7 +913,7 @@ balance_routes_test() ->
         ?assertEqual(Result3, lists:reverse(calc_random_condition(0.0, 4.0, WithWeight, [])))
     ].
 
--spec balance_routes_without_weight_test() -> [testcase()].
+-spec balance_routes_without_weight_test() -> list().
 balance_routes_without_weight_test() ->
     Routes = [
         {1, {test, test, {test, undefined}}, test},

@@ -451,7 +451,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
-    [application:stop(App) || App <- cfg(apps, C)],
+    _ = [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
 
 %% tests
@@ -612,7 +612,7 @@ init_per_testcase(C) ->
     ok = hg_context:save(hg_context:create()),
     [{client, Client}, {client_tpl, ClientTpl} | C].
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, C) ->
     ok = hg_context:cleanup(),
     _ =
@@ -630,7 +630,7 @@ invoice_creation_idempotency(C) ->
     PartyID = cfg(party_id, C),
     InvoiceID = hg_utils:unique_id(),
     ExternalID = <<"123">>,
-    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100000, <<"RUB">>)),
     InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
         id = InvoiceID,
         external_id = ExternalID
@@ -651,7 +651,7 @@ invalid_invoice_shop(C) ->
     Client = cfg(client, C),
     ShopID = genlib:unique(),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     {exception, #payproc_ShopNotFound{}} = hg_client_invoicing:create(InvoiceParams, Client).
 
 -spec invalid_invoice_amount(config()) -> test_return().
@@ -659,14 +659,14 @@ invalid_invoice_amount(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, -10000),
+    InvoiceParams0 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(-10000)),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount">>]
     }} = hg_client_invoicing:create(InvoiceParams0, Client),
-    InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 5),
+    InvoiceParams1 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(5)),
     {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}} =
         hg_client_invoicing:create(InvoiceParams1, Client),
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 42000000000),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(42000000000)),
     {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}} =
         hg_client_invoicing:create(InvoiceParams2, Client).
 
@@ -675,7 +675,7 @@ invalid_invoice_currency(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100, <<"KEK">>}),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100, <<"KEK">>)),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid currency">>]
     }} = hg_client_invoicing:create(InvoiceParams, Client).
@@ -686,7 +686,7 @@ invalid_party_status(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100000)),
     TplID = create_invoice_tpl(C),
     InvoiceParamsWithTpl = make_invoice_params_tpl(TplID),
 
@@ -714,7 +714,7 @@ invalid_shop_status(C) ->
     PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, {100000, <<"RUB">>}),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100000)),
     TplID = create_invoice_tpl(C),
     InvoiceParamsWithTpl = make_invoice_params_tpl(TplID),
 
@@ -896,7 +896,7 @@ invoice_cancellation(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     ?invalid_invoice_status(_) = hg_client_invoicing:fulfill(InvoiceID, <<"perfect">>, Client),
     ok = hg_client_invoicing:rescind(InvoiceID, <<"whynot">>, Client).
@@ -986,7 +986,7 @@ payment_limit_success(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
 
@@ -1008,7 +1008,7 @@ payment_limit_overflow(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID2 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID2, <<"rubberduck">>, make_due_date(10), 10000),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID2, <<"rubberduck">>, make_due_date(10), make_cash(10000)),
     InvoiceID2 = create_invoice(InvoiceParams2, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
     PaymentParams = make_payment_params(),
@@ -1032,7 +1032,7 @@ refund_limit_success(C) ->
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
 
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
@@ -1075,7 +1075,7 @@ payment_partial_capture_limit_success(C) ->
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
 
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(100), InitialCost),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(100), make_cash(InitialCost)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
 
@@ -1111,7 +1111,7 @@ payment_success_ruleset(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     %%
@@ -1404,11 +1404,7 @@ payment_w_crypto_currency_success(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?risk_score_changed(low)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
-    ] = next_event(InvoiceID, Client),
+    CF = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
     ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
     ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
@@ -1428,11 +1424,7 @@ payment_bank_card_category_condition(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?risk_score_changed(low)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
-    ] = next_event(InvoiceID, Client),
+    CF = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     ?cash(200, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
 
 -spec payment_w_mobile_commerce(config()) -> _ | no_return().
@@ -1445,11 +1437,7 @@ payment_w_mobile_commerce(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID, Client),
+    _ = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
@@ -1468,11 +1456,7 @@ payment_suspend_timeout_failure(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID, Client),
+    _ = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
@@ -1700,13 +1684,9 @@ payment_risk_score_check(C) ->
     [
         ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID1, Client),
-    [
-        ?payment_ev(PaymentID1, ?risk_score_changed(low)),
-        % low risk score...
-        % ...covered with high risk coverage terminal
-        ?payment_ev(PaymentID1, ?route_changed(?route(?prv(1), ?trm(1)))),
-        ?payment_ev(PaymentID1, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID1, Client),
+    % low risk score...
+    % ...covered with high risk coverage terminal
+    _ = await_payment_cash_flow(low, ?route(?prv(1), ?trm(1)), InvoiceID1, PaymentID1, Client),
     [
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
@@ -1718,13 +1698,9 @@ payment_risk_score_check(C) ->
     [
         ?payment_ev(PaymentID2, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID2, Client),
-    [
-        ?payment_ev(PaymentID2, ?risk_score_changed(high)),
-        % high risk score...
-        % ...covered with the same terminal
-        ?payment_ev(PaymentID2, ?route_changed(?route(?prv(1), ?trm(1)))),
-        ?payment_ev(PaymentID2, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID2, Client),
+    % high risk score...
+    % ...covered with the same terminal
+    _ = await_payment_cash_flow(high, ?route(?prv(1), ?trm(1)), InvoiceID2, PaymentID2, Client),
     [
         ?payment_ev(PaymentID2, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID2, Client),
@@ -1773,7 +1749,7 @@ party_revision_check(C) ->
     party_revision_increment(ShopID, PartyClient),
 
     % add some cash to make smooth refund after
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 200000),
+    InvoiceParams2 = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(200000)),
     InvoiceID2 = create_invoice(InvoiceParams2, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
     PaymentID2 = process_payment(InvoiceID2, make_payment_params(), Client),
@@ -1812,11 +1788,7 @@ payment_adjustment_success(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?risk_score_changed(low)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF1))
-    ] = next_event(InvoiceID, Client),
+    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
@@ -2323,7 +2295,7 @@ invalid_payment_w_deprived_party(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
     PaymentParams = make_payment_params(),
@@ -2337,7 +2309,7 @@ external_account_posting(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, InvoicingClient),
     ?payment_state(
@@ -2346,11 +2318,7 @@ external_account_posting(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, InvoicingClient),
-    [
-        ?payment_ev(PaymentID, ?risk_score_changed(low)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
-    ] = next_event(InvoiceID, InvoicingClient),
+    CF = await_payment_cash_flow(InvoiceID, PaymentID, InvoicingClient),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, InvoicingClient),
@@ -2377,12 +2345,16 @@ terminal_cashflow_overrides_provider(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), 42000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
     _ = next_event(InvoiceID, InvoicingClient),
-    _ = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), InvoicingClient),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(
+        InvoiceID,
+        make_payment_params(),
+        InvoicingClient
+    ),
     _ = next_event(InvoiceID, InvoicingClient),
-    [_, _, ?payment_ev(PaymentID, ?cash_flow_changed(CF))] = next_event(InvoiceID, InvoicingClient),
+    CF = await_payment_cash_flow(InvoiceID, PaymentID, InvoicingClient),
     _ = next_event(InvoiceID, InvoicingClient),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
@@ -3705,14 +3677,8 @@ payment_refund_idempotency(C) ->
     end,
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund0, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
-    ] = next_event(InvoiceID, Client),
+    _ = refund_session_finished(InvoiceID, PaymentID, Client),
+    _ = await_refund_succeeded(InvoiceID, PaymentID, Client),
     % check refund completed
     Refund1 = Refund0#domain_InvoicePaymentRefund{status = ?refund_succeeded()},
     Refund1 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
@@ -3760,14 +3726,8 @@ payment_refund_success(C) ->
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
-    ] = next_event(InvoiceID, Client),
+    _ = refund_session_finished(InvoiceID, PaymentID, Client),
+    _ = await_refund_succeeded(InvoiceID, PaymentID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     % no more refunds for you
@@ -3871,14 +3831,8 @@ deadline_doesnt_affect_payment_refund(C) ->
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
-    ] = next_event(InvoiceID, Client),
+    _ = refund_session_finished(InvoiceID, PaymentID, Client),
+    _ = await_refund_succeeded(InvoiceID, PaymentID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client).
 
@@ -3936,10 +3890,7 @@ payment_manual_refund(C) ->
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?trx_bound(TrxInfo)))),
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
-    ] = next_event(InvoiceID, Client),
+    _ = await_refund_succeeded(InvoiceID, PaymentID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     ?invalid_payment_status(?refunded()) =
@@ -4008,14 +3959,8 @@ payment_partial_refunds_success(C) ->
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams4, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID4, Refund4, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID4, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?trx_bound(_)))),
-        ?payment_ev(PaymentID, ?refund_ev(_, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(_, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
-    ] = next_event(InvoiceID, Client),
+    _ = refund_session_finished(InvoiceID, PaymentID, Client),
+    _ = await_refund_succeeded(InvoiceID, PaymentID, Client),
     % check payment status = refunded and all refunds
     #payproc_InvoicePayment{
         payment = #domain_InvoicePayment{status = ?refunded()},
@@ -4471,11 +4416,7 @@ rounding_cashflow_volume(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(CF))
-    ] = next_event(InvoiceID, Client),
+    CF = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     ?cash(0, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
@@ -4848,13 +4789,7 @@ repair_skip_inspector_succeeded(C) ->
 
     timeout = next_event(InvoiceID, 2000, Client),
     ok = repair_invoice_with_scenario(InvoiceID, skip_inspector, Client),
-
-    [
-        % we send low risk score in create repair...
-        ?payment_ev(PaymentID, ?risk_score_changed(low)),
-        ?payment_ev(PaymentID, ?route_changed(?route(?prv(2), ?trm(7)))),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID, Client),
+    _ = await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID, PaymentID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
@@ -4925,12 +4860,7 @@ repair_complex_succeeded_first(C) ->
     timeout = next_event(InvoiceID, 2000, Client),
     ok = repair_invoice_with_scenario(InvoiceID, complex, Client),
 
-    [
-        % we send low risk score in create repair...
-        ?payment_ev(PaymentID, ?risk_score_changed(low)),
-        ?payment_ev(PaymentID, ?route_changed(?route(?prv(2), ?trm(7)))),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID, Client),
+    _ = await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID, PaymentID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
@@ -5085,7 +5015,6 @@ construct_proxy(ID, Url, Options) ->
     }}.
 
 %%
-
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).
 
@@ -5106,6 +5035,9 @@ make_invoice_context() ->
 
 make_invoice_context(Ctx) ->
     hg_ct_helper:make_invoice_context(Ctx).
+
+make_cash(Amount) ->
+    make_cash(Amount, <<"RUB">>).
 
 make_cash(Amount, Currency) ->
     hg_ct_helper:make_cash(Amount, Currency).
@@ -5365,7 +5297,7 @@ start_invoice(Product, Due, Amount, C) ->
 start_invoice(ShopID, Product, Due, Amount, C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, Amount),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, make_cash(Amount)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     InvoiceID.
@@ -5377,9 +5309,9 @@ start_payment(InvoiceID, PaymentParams, Client) ->
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
+        ?payment_ev(PaymentID, ?route_changed(_))
     ] = next_event(InvoiceID, Client),
+    [?payment_ev(PaymentID, ?cash_flow_changed(_))] = next_event(InvoiceID, Client),
     PaymentID.
 
 process_payment(InvoiceID, PaymentParams, Client) ->
@@ -5399,7 +5331,19 @@ await_payment_started(InvoiceID, PaymentID, Client) ->
 await_payment_cash_flow(InvoiceID, PaymentID, Client) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(CashFlow))
+    ] = next_event(InvoiceID, Client),
+    CashFlow.
+
+await_payment_cash_flow(RS, Route, InvoiceID, PaymentID, Client) ->
+    [
+        ?payment_ev(PaymentID, ?risk_score_changed(RS)),
+        ?payment_ev(PaymentID, ?route_changed(Route))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?cash_flow_changed(CashFlow))
     ] = next_event(InvoiceID, Client),
     CashFlow.
@@ -5665,7 +5609,7 @@ party_revision_check_init_params(C) ->
     {PartyID, PartyClient, Client, ShopID}.
 
 invoice_create_and_get_revision(PartyID, Client, ShopID) ->
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, make_due_date(10), 5000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"somePlace">>, make_due_date(10), make_cash(5000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()) = ?invoice_w_revision(InvoiceRev))] =
         next_event(InvoiceID, Client),
@@ -5679,11 +5623,7 @@ make_payment_and_get_revision(InvoiceID, Client) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID, Client),
+    _ = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client, 0),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
@@ -5726,14 +5666,8 @@ make_payment_refund_and_get_revision(PaymentID, InvoiceID, Client) ->
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?trx_bound(_)))),
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_succeeded()))))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))),
-        ?payment_ev(PaymentID, ?payment_status_changed(?refunded()))
-    ] = next_event(InvoiceID, Client),
+    _ = refund_session_finished(InvoiceID, PaymentID, Client),
+    _ = await_refund_succeeded(InvoiceID, PaymentID, Client),
     #domain_InvoicePaymentRefund{status = ?refund_succeeded()} =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     RefundRev.
@@ -5753,12 +5687,8 @@ payment_risk_score_check(Cat, C) ->
     [
         ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID1, Client),
-    [
-        % default low risk score...
-        ?payment_ev(PaymentID1, ?risk_score_changed(low)),
-        ?payment_ev(PaymentID1, ?route_changed(?route(?prv(2), ?trm(7)))),
-        ?payment_ev(PaymentID1, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID1, Client),
+    % default low risk score...
+    _ = await_payment_cash_flow(low, ?route(?prv(2), ?trm(7)), InvoiceID1, PaymentID1, Client),
     [
         ?payment_ev(PaymentID1, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID1, Client),
@@ -7065,11 +6995,11 @@ construct_domain_fixture() ->
                             {value, [
                                 #domain_TurnoverLimit{
                                     id = <<"1">>,
-                                    upper_boundary = ?cash(100000, <<"RUB">>)
+                                    upper_boundary = 100000
                                 },
                                 #domain_TurnoverLimit{
                                     id = <<"2">>,
-                                    upper_boundary = ?cash(100000, <<"RUB">>)
+                                    upper_boundary = 100000
                                 }
                             ]}
                     }

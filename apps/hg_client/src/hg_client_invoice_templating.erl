@@ -90,27 +90,27 @@ map_result_error({error, Error}) ->
 
 -type event() :: dmsl_payment_processing_thrift:'Event'().
 
--record(st, {
+-record(state, {
     user_info :: user_info(),
     pollers :: #{id() => hg_client_event_poller:st(event())},
     client :: hg_client_api:t()
 }).
 
--type st() :: #st{}.
+-type state() :: #state{}.
 -type callref() :: {pid(), Tag :: reference()}.
 
--spec init({user_info(), hg_client_api:t()}) -> {ok, st()}.
+-spec init({user_info(), hg_client_api:t()}) -> {ok, state()}.
 init({UserInfo, ApiClient}) ->
-    {ok, #st{user_info = UserInfo, pollers = #{}, client = ApiClient}}.
+    {ok, #state{user_info = UserInfo, pollers = #{}, client = ApiClient}}.
 
--spec handle_call(term(), callref(), st()) -> {reply, term(), st()} | {noreply, st()}.
-handle_call({call, Function, Args}, _From, St = #st{user_info = UserInfo, client = Client}) ->
+-spec handle_call(term(), callref(), state()) -> {reply, term(), state()} | {noreply, state()}.
+handle_call({call, Function, Args}, _From, St = #state{user_info = UserInfo, client = Client}) ->
     {Result, ClientNext} = hg_client_api:call(invoice_templating, Function, [UserInfo | Args], Client),
-    {reply, Result, St#st{client = ClientNext}};
-handle_call({pull_event, InvoiceID, Timeout}, _From, St = #st{client = Client}) ->
+    {reply, Result, St#state{client = ClientNext}};
+handle_call({pull_event, InvoiceID, Timeout}, _From, St = #state{client = Client}) ->
     Poller = get_poller(InvoiceID, St),
     {Result, ClientNext, PollerNext} = hg_client_event_poller:poll(1, Timeout, Client, Poller),
-    StNext = set_poller(InvoiceID, PollerNext, St#st{client = ClientNext}),
+    StNext = set_poller(InvoiceID, PollerNext, St#state{client = ClientNext}),
     case Result of
         [] ->
             {reply, timeout, StNext};
@@ -123,31 +123,31 @@ handle_call(Call, _From, State) ->
     _ = logger:warning("unexpected call received: ~tp", [Call]),
     {noreply, State}.
 
--spec handle_cast(_, st()) -> {noreply, st()}.
+-spec handle_cast(_, state()) -> {noreply, state()}.
 handle_cast(Cast, State) ->
     _ = logger:warning("unexpected cast received: ~tp", [Cast]),
     {noreply, State}.
 
--spec handle_info(_, st()) -> {noreply, st()}.
+-spec handle_info(_, state()) -> {noreply, state()}.
 handle_info(Info, State) ->
     _ = logger:warning("unexpected info received: ~tp", [Info]),
     {noreply, State}.
 
--spec terminate(Reason, st()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
+-spec terminate(Reason, state()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
 terminate(_Reason, _State) ->
     ok.
 
--spec code_change(Vsn | {down, Vsn}, st(), term()) -> {error, noimpl} when Vsn :: term().
+-spec code_change(Vsn | {down, Vsn}, state(), term()) -> {error, noimpl} when Vsn :: term().
 code_change(_OldVsn, _State, _Extra) ->
     {error, noimpl}.
 
 %%
 
-get_poller(ID, #st{user_info = UserInfo, pollers = Pollers}) ->
+get_poller(ID, #state{user_info = UserInfo, pollers = Pollers}) ->
     maps:get(ID, Pollers, construct_poller(UserInfo, ID)).
 
-set_poller(ID, Poller, St = #st{pollers = Pollers}) ->
-    St#st{pollers = maps:put(ID, Poller, Pollers)}.
+set_poller(ID, Poller, St = #state{pollers = Pollers}) ->
+    St#state{pollers = maps:put(ID, Poller, Pollers)}.
 
 construct_poller(UserInfo, ID) ->
     hg_client_event_poller:new(

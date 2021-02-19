@@ -36,7 +36,7 @@ all() ->
         {group, history}
     ].
 
--spec groups() -> [{group_name(), [test_case_name()]}].
+-spec groups() -> [{group_name(), list(), [test_case_name()]}].
 groups() ->
     [
         {initial, [], [events_observed]},
@@ -72,7 +72,7 @@ init_per_testcase(_Name, C) ->
 create_api(RootUrl, PartyID) ->
     hg_ct_helper:create_client(RootUrl, PartyID).
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok.
 

@@ -47,7 +47,7 @@ check_limits([T | TurnoverLimits], Timestamp, Acc) ->
     } = Limit,
     LimiterAmount = Cash#domain_Cash.amount,
     UpperBoundary = T#domain_TurnoverLimit.upper_boundary,
-    case LimiterAmount < UpperBoundary#domain_Cash.amount of
+    case LimiterAmount < UpperBoundary of
         true ->
             check_limits(TurnoverLimits, Timestamp, [Limit | Acc]);
         false ->

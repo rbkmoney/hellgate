@@ -24,6 +24,7 @@
 -export([init/2]).
 -export([process_signal/2]).
 -export([process_call/2]).
+-export([process_repair/2]).
 
 %% Event provider callbacks
 
@@ -161,7 +162,7 @@ call(ID, Function, Args) ->
 
 -spec map_error(notfound | any()) -> no_return().
 map_error(notfound) ->
-    throw(#payproc_InvoiceTemplateNotFound{});
+    throw(#payproc_CustomerNotFound{});
 map_error(Reason) ->
     error(Reason).
 
@@ -202,6 +203,10 @@ init(EncodedParams, #{id := CustomerID}) ->
         ],
         auxst => #{}
     }).
+
+-spec process_repair(hg_machine:args(), hg_machine:machine()) -> no_return().
+process_repair(_, _) ->
+    erlang:error({not_implemented, repair}).
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(Signal, #{history := History, aux_state := AuxSt}) ->

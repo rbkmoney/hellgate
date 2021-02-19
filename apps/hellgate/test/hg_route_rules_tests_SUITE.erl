@@ -121,11 +121,12 @@ init_per_testcase(_, C) ->
         },
         Ctx0
     ),
-    Ctx2 = hg_context:set_party_client_context(#{woody_context => woody_context:new()}, Ctx1),
+    PartyClientContext = party_client_context:create(#{}),
+    Ctx2 = hg_context:set_party_client_context(PartyClientContext, Ctx1),
     ok = hg_context:save(Ctx2),
     C.
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok = hg_context:cleanup(),
     ok.

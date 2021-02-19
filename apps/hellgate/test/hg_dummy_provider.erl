@@ -65,7 +65,7 @@
 get_service_spec() ->
     {"/test/proxy/provider/dummy", {dmsl_proxy_provider_thrift, 'ProviderProxy'}}.
 
--spec get_http_cowboy_spec() -> #{}.
+-spec get_http_cowboy_spec() -> map().
 get_http_cowboy_spec() ->
     Dispatch = cowboy_router:compile([{'_', [{"/", ?MODULE, []}]}]),
     #{
@@ -587,8 +587,9 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = 
     mobile_commerce.
 
 -spec make_payment_tool(PaymenToolCode) -> PaymenTool when
-    PaymenToolCode :: atom() | {temporary_unavailability, failure_scenario()},
-    PaymenTool :: {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+    PaymenToolCode ::
+        atom() | {scenario, failure_scenario()} | {preauth_3ds, integer()} | {preauth_3ds_sleep, integer()},
+    PaymenTool :: {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}.
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
 make_payment_tool(no_preauth_mc) ->

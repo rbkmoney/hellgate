@@ -5,6 +5,7 @@
 
 -define(ordset(Es), ordsets:from_list(Es)).
 
+-define(match(Term), erlang:binary_to_term(erlang:term_to_binary(Term))).
 -define(glob(), #domain_GlobalsRef{}).
 -define(cur(ID), #domain_CurrencyRef{symbolic_code = ID}).
 -define(pmt(C, T), #domain_PaymentMethodRef{id = {C, T}}).
