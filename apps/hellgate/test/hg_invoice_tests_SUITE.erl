@@ -1260,11 +1260,6 @@ payment_w_crypto_currency_success(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    % [
-    %     ?payment_ev(PaymentID, ?risk_score_changed(low)),
-    %     ?payment_ev(PaymentID, ?route_changed(_)),
-    %     ?payment_ev(PaymentID, ?cash_flow_changed(CF))
-    % ] = next_event(InvoiceID, Client),
     CF = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
     ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
