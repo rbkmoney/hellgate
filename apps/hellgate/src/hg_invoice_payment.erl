@@ -1918,6 +1918,25 @@ process_cash_flow_building(Action, St) ->
     Events = [?cash_flow_changed(FinalCashflow)],
     {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
+-spec process_cash_flow_building(action(), st()) -> machine_result().
+process_cash_flow_building(Action, St) ->
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
+    Route = get_route(St),
+    Timestamp = get_payment_created_at(Payment),
+    VS0 = reconstruct_payment_flow(Payment, #{}),
+    VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+
+    FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS1, Revision, Opts),
+    _Clock = hg_accounting:hold(
+        construct_payment_plan_id(Invoice, Payment),
+        {1, FinalCashflow}
+    ),
+    Events = [?cash_flow_changed(FinalCashflow)],
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+
 %%
 
 -spec process_chargeback(chargeback_activity_type(), chargeback_id(), action(), st()) -> machine_result().
