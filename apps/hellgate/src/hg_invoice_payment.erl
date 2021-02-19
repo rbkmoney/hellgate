@@ -1787,7 +1787,7 @@ process_timeout(St) ->
 
 -spec process_timeout(activity(), action(), st()) -> machine_result().
 process_timeout({payment, risk_scoring}, Action, St) ->
-    %% There are three processing_accounter steps here (scoring, routing and cash flow building)
+    %% There are two processing_accounter steps here (scoring, routing)
     process_routing(Action, St);
 process_timeout({payment, cash_flow_building}, Action, St) ->
     process_cash_flow_building(Action, St);
@@ -1877,7 +1877,8 @@ process_routing(Action, St) ->
     Events0 = [?risk_score_changed(RiskScore)],
     case choose_route(PaymentInstitution, RiskScore, VS3, Revision, St) of
         {ok, Route} ->
-            process_cash_flow_building(Route, VS3, Payment, Revision, Opts, Events0, Action);
+            Events1 = Events0 ++ [?route_changed(Route)],
+            {next, {Events1, hg_machine_action:set_timeout(0, Action)}};
         {error, {no_route_found, Reason}} ->
             Failure =
                 {failure,
@@ -1887,17 +1888,6 @@ process_routing(Action, St) ->
                     )},
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
-
-process_cash_flow_building(Route, VS, Payment, Revision, Opts, Events0, Action) ->
-    Timestamp = get_payment_created_at(Payment),
-    FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts),
-    Invoice = get_invoice(Opts),
-    _Clock = hg_accounting:hold(
-        construct_payment_plan_id(Invoice, Payment),
-        {1, FinalCashflow}
-    ),
-    Events1 = Events0 ++ [?route_changed(Route), ?cash_flow_changed(FinalCashflow)],
-    {next, {Events1, hg_machine_action:set_timeout(0, Action)}}.
 
 -spec process_cash_flow_building(action(), st()) -> machine_result().
 process_cash_flow_building(Action, St) ->
