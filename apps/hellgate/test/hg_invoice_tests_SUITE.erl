@@ -445,7 +445,7 @@ init_per_suite(C) ->
     ],
 
     ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
-    start_limiter(hg_dummy_limiter, NewC),
+    _ = start_limiter(hg_dummy_limiter, NewC),
     NewC.
 
 -spec end_per_suite(config()) -> _.
