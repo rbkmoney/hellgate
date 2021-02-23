@@ -61,6 +61,7 @@
 -export([payment_risk_score_check_fail/1]).
 -export([payment_risk_score_check_timeout/1]).
 -export([invalid_payment_adjustment/1]).
+-export([payment_refunded_adjustment_success/1]).
 -export([payment_adjustment_success/1]).
 -export([partial_captured_payment_adjustment/1]).
 -export([payment_adjustment_captured_from_failed/1]).
@@ -279,6 +280,7 @@ groups() ->
 
         {adjustments, [], [
             invalid_payment_adjustment,
+            payment_refunded_adjustment_success,
             payment_adjustment_success,
             partial_captured_payment_adjustment,
             payment_adjustment_captured_from_failed,
@@ -1634,6 +1636,21 @@ invalid_payment_adjustment(C) ->
     ?invalid_payment_status(?failed(_)) =
         hg_client_invoicing:create_payment_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
 
+-spec payment_refunded_adjustment_success(config()) -> test_return().
+payment_refunded_adjustment_success(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    Refund = #domain_InvoicePaymentRefund{id = RefundID} =
+      hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(1000, <<"RUB">>), Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    ok = update_payment_terms_cashflow(?prv(1), get_payment_adjustment_provider_cashflow(actual)),
+    ?adjustment(_AdjustmentID, ?adjustment_pending()) =
+      _Adjustment = hg_client_invoicing:create_payment_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
+
 -spec payment_adjustment_success(config()) -> test_return().
 payment_adjustment_success(C) ->
     Client = cfg(client, C),
@@ -2143,6 +2160,8 @@ get_payment_adjustment_provider_cashflow(actual) ->
             ?system_to_external_fixed
         )
     ].
+
+
 
 -spec invalid_payment_w_deprived_party(config()) -> test_return().
 invalid_payment_w_deprived_party(C) ->
@@ -5115,8 +5134,11 @@ make_adjustment_params(Reason) ->
 
 make_adjustment_params(Reason, Revision) ->
     #payproc_InvoicePaymentAdjustmentParams{
-        legacy_domain_revision = Revision,
-        reason = Reason
+        reason = Reason,
+        scenario =
+            {cash_flow, #domain_InvoicePaymentAdjustmentCashFlow{
+                domain_revision = Revision
+            }}
     }.
 
 make_status_adjustment_params(Status) ->

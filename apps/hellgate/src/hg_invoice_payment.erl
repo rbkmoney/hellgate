@@ -1419,13 +1419,7 @@ get_refund_cashflow_plan(RefundSt) ->
 -spec create_adjustment(hg_datetime:timestamp(), adjustment_params(), st(), opts()) -> {adjustment(), result()}.
 create_adjustment(Timestamp, Params, St, Opts) ->
     _ = assert_no_adjustment_pending(St),
-    case Params#payproc_InvoicePaymentAdjustmentParams.legacy_domain_revision of
-        undefined ->
-            create_adjustment_with_scenario(Timestamp, Params, St, Opts);
-        % FIXME: remove this check when new control center will be deployed
-        DomainRevision ->
-            create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts)
-    end.
+    create_adjustment_with_scenario(Timestamp, Params, St, Opts).
 
 -spec create_adjustment_with_scenario(hg_datetime:timestamp(), adjustment_params(), st(), opts()) ->
     {adjustment(), result()}.
@@ -1449,7 +1443,7 @@ create_adjustment_with_scenario(Timestamp, Params, St, Opts) ->
 create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts) ->
     Payment = get_payment(St),
     Route = get_route(St),
-    _ = assert_payment_status(captured, Payment),
+    _ = assert_payment_status([captured, refunded, charged_back], Payment),
     NewRevision = maybe_get_domain_revision(DomainRevision),
     PartyRevision = get_opts_party_revision(Opts),
     OldCashFlow = get_final_cashflow(St),
@@ -1645,6 +1639,10 @@ assert_activity(_Activity, St) ->
     #domain_InvoicePayment{status = Status} = get_payment(St),
     throw(#payproc_InvalidPaymentStatus{status = Status}).
 
+assert_payment_status([Status | _], #domain_InvoicePayment{status = {Status, _}}) ->
+    ok;
+assert_payment_status([_ | Rest], InvoicePayment) ->
+    assert_payment_status(Rest, InvoicePayment);
 assert_payment_status(Status, #domain_InvoicePayment{status = {Status, _}}) ->
     ok;
 assert_payment_status(_, #domain_InvoicePayment{status = Status}) ->
@@ -1899,7 +1897,6 @@ process_cash_flow_building(Action, St) ->
     Timestamp = get_payment_created_at(Payment),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-
     FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
