@@ -1014,8 +1014,7 @@ payment_limit_overflow(C) ->
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
     PaymentID2 = await_payment_started(InvoiceID2, PaymentID2, Client),
-    Failure = await_payment_cash_flow_failed(InvoiceID2, PaymentID2, Client),
-
+    Failure = await_payment_rollback(InvoiceID2, PaymentID2, Client),
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
@@ -5348,10 +5347,14 @@ await_payment_cash_flow(RS, Route, InvoiceID, PaymentID, Client) ->
     ] = next_event(InvoiceID, Client),
     CashFlow.
 
-await_payment_cash_flow_failed(InvoiceID, PaymentID, Client) ->
+await_payment_rollback(InvoiceID, PaymentID, Client) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
+        ?payment_ev(PaymentID, ?route_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
     ] = next_event(InvoiceID, Client),
     Failure.
 

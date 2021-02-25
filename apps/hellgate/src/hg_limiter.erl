@@ -26,18 +26,20 @@
 get_turnover_limits(TurnoverLimitSelector, VS, Revision) ->
     reduce_limits(TurnoverLimitSelector, VS, Revision).
 
--spec check_limits([turnover_limit()], timestamp()) -> [hg_limiter_client:limit()].
+-spec check_limits([turnover_limit()], timestamp()) ->
+    {ok, [hg_limiter_client:limit()]}
+    | {error, {limit_overflow, [binary()]}}.
 check_limits(TurnoverLimits, Timestamp) ->
     try
         check_limits(TurnoverLimits, Timestamp, [])
     catch
         throw:limit_overflow ->
             IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-            throw({limit_overflow, IDs})
+            {error, {limit_overflow, IDs}}
     end.
 
 check_limits([], _, Limits) ->
-    Limits;
+    {ok, Limits};
 check_limits([T | TurnoverLimits], Timestamp, Acc) ->
     #domain_TurnoverLimit{id = LimitID} = T,
     Limit = hg_limiter_client:get(LimitID, Timestamp),

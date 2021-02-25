@@ -783,19 +783,19 @@ choose_route(PaymentInstitution, RiskScore, VS, Revision, St) ->
                 {ok, Route, ChoiceMeta} ->
                     _ = log_route_choice_meta(ChoiceMeta),
                     _ = log_misconfigurations(RejectContext),
-                    Route;
+                    {ok, Route};
                 {error, {no_route_found, {RejectReason, RejectContext1}}} ->
                     _ = log_reject_context(RejectReason, RejectContext1),
-                    throw({no_route_found, RejectReason})
+                    {error, {no_route_found, RejectReason}}
             end
     end.
 
 check_risk_score(Route, RiskScore) ->
     case hg_routing:check_risk_score(RiskScore) of
         ok ->
-            Route;
+            {ok, Route};
         {error, risk_score_is_too_high = Reason} ->
-            throw({no_route_found, Reason})
+            {error, {no_route_found, Reason}}
     end.
 
 gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
@@ -1873,31 +1873,15 @@ process_routing(Action, St) ->
         MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
         VS2
     ),
-    Timestamp = get_payment_created_at(Payment),
-    Cash = Payment#domain_InvoicePayment.cost,
-    LimitChangeID = construct_limit_change_id(St),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     RiskScore = repair_inspect(Payment, PaymentInstitution, Opts, St),
     Events0 = [?risk_score_changed(RiskScore)],
-    try
-        Route = choose_route(PaymentInstitution, RiskScore, VS3, Revision, St),
-        PaymentsProvisionTerms = get_provider_terminal_terms(Route, VS1, Revision),
-        TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
-        TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS1, Revision),
-        IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-        ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
-        _ = hg_limiter:check_limits(TurnoverLimits, Timestamp),
-        Events1 = Events0 ++ [?route_changed(Route)],
-        {next, {Events1, hg_machine_action:set_timeout(0, Action)}}
-    catch
-        throw:{no_route_found, Reason} ->
+    case choose_route(PaymentInstitution, RiskScore, VS3, Revision, St) of
+        {ok, Route} ->
+            Events1 = Events0 ++ [?route_changed(Route)],
+            {next, {Events1, hg_machine_action:set_timeout(0, Action)}};
+        {error, {no_route_found, Reason}} ->
             Failure = failure({no_route_found, {Reason, #payprocerr_GeneralFailure{}}}),
-            process_failure(get_activity(St), Events0, Action, Failure, St);
-        throw:{limit_overflow, LimitIDs} ->
-            ok = hg_limiter:rollback(construct_limit_change(LimitIDs, LimitChangeID, Cash, Timestamp)),
-            Failure = failure(
-                {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
-            ),
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
 
@@ -1915,9 +1899,16 @@ process_cash_flow_building(Action, St) ->
     Payment = get_payment(St),
     Invoice = get_invoice(Opts),
     Route = get_route(St),
+    Cash = Payment#domain_InvoicePayment.cost,
     Timestamp = get_payment_created_at(Payment),
+    LimitChangeID = construct_limit_change_id(St),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+    PaymentsProvisionTerms = get_provider_terminal_terms(Route, VS1, Revision),
+    TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS1, Revision),
+    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
+    ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
 
     FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
@@ -1925,7 +1916,17 @@ process_cash_flow_building(Action, St) ->
         {1, FinalCashflow}
     ),
     Events = [?cash_flow_changed(FinalCashflow)],
-    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+
+    case hg_limiter:check_limits(TurnoverLimits, Timestamp) of
+        {ok, _} ->
+            {next, {Events, hg_machine_action:set_timeout(0, Action)}};
+        {error, {limit_overflow, _}} ->
+            Failure = failure(
+                {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
+            ),
+            RollbackStarted = [?payment_rollback_started(Failure)],
+            {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}
+    end.
 
 %%
 
