@@ -1642,14 +1642,20 @@ payment_refunded_adjustment_success(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    Refund = #domain_InvoicePaymentRefund{id = RefundID} =
-      hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(1000, <<"RUB">>), Client),
+    Refund =
+        #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(1000, <<"RUB">>), Client),
     PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
     ok = update_payment_terms_cashflow(?prv(1), get_payment_adjustment_provider_cashflow(actual)),
     ?adjustment(_AdjustmentID, ?adjustment_pending()) =
-      _Adjustment = hg_client_invoicing:create_payment_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
+        _Adjustment = hg_client_invoicing:create_payment_adjustment(
+            InvoiceID,
+            PaymentID,
+            make_adjustment_params(),
+            Client
+        ).
 
 -spec payment_adjustment_success(config()) -> test_return().
 payment_adjustment_success(C) ->
@@ -2160,8 +2166,6 @@ get_payment_adjustment_provider_cashflow(actual) ->
             ?system_to_external_fixed
         )
     ].
-
-
 
 -spec invalid_payment_w_deprived_party(config()) -> test_return().
 invalid_payment_w_deprived_party(C) ->

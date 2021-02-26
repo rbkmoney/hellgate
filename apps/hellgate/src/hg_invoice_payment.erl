@@ -1897,6 +1897,7 @@ process_cash_flow_building(Action, St) ->
     Timestamp = get_payment_created_at(Payment),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+
     FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
