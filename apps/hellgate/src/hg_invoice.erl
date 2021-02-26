@@ -1126,7 +1126,21 @@ merge_change(?payment_ev(PaymentID, Change), St, Opts) ->
             % TODO Shouldn't we have here some kind of stack instead?
             St1#st{activity = {payment, PaymentID}};
         idle ->
-            St1#st{activity = invoice}
+            check_non_idle_payments(St1)
+    end.
+
+-spec check_non_idle_payments(st()) -> st().
+check_non_idle_payments(#st{payments = Payments} = St) ->
+    check_non_idle_payments_(Payments, St).
+
+check_non_idle_payments_([], St) ->
+    St#st{activity = invoice};
+check_non_idle_payments_([{PaymentID, PaymentSession} | Rest], St) ->
+    case hg_invoice_payment:get_activity(PaymentSession) of
+        A when A =/= idle ->
+            St#st{activity = {payment, PaymentID}};
+        idle ->
+            check_non_idle_payments_(Rest, St)
     end.
 
 get_party_id(#st{invoice = #domain_Invoice{owner_id = PartyID}}) ->
