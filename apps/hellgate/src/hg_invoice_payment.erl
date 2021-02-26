@@ -1916,7 +1916,6 @@ process_cash_flow_building(Action, St) ->
         {1, FinalCashflow}
     ),
     Events = [?cash_flow_changed(FinalCashflow)],
-
     case hg_limiter:check_limits(TurnoverLimits, Timestamp) of
         {ok, _} ->
             {next, {Events, hg_machine_action:set_timeout(0, Action)}};

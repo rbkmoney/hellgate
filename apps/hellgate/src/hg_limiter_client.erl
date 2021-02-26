@@ -34,16 +34,7 @@ get(LimitID, Timestamp) ->
                 error({invalid_request, Errors})
         end
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason when
-            Class =:= resource_unavailable orelse
-                Class =:= result_unknown
-        ->
-            String = "Unable to get limit by id ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
-            error(Reason);
-        error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            String = "Unable to get limit by id ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
+        error:{woody_error, {_Source, _Class, _Details}} = Reason ->
             error(Reason)
     end.
 
@@ -61,22 +52,12 @@ hold(LimitChange) ->
                 error({invalid_request, Errors})
         end
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason when
-            Class =:= resource_unavailable orelse
-                Class =:= result_unknown
-        ->
-            String = "Unable to hold limit change ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
-            error(Reason);
-        error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            String = "Unable to hold limit change ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
+        error:{woody_error, {_Source, _Class, _Details}} = Reason ->
             error(Reason)
     end.
 
 -spec commit(limit_change()) -> ok.
 commit(LimitChange) ->
-    LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
     try
         case hg_woody_wrapper:call(limiter, 'Commit', {LimitChange}, Opts) of
@@ -90,16 +71,7 @@ commit(LimitChange) ->
                 error({invalid_request, Errors})
         end
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason when
-            Class =:= resource_unavailable orelse
-                Class =:= result_unknown
-        ->
-            String = "Unable to commit limit change ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
-            error(Reason);
-        error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            String = "Unable to commit limit change ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
+        error:{woody_error, {_Source, _Class, _Details}} = Reason ->
             error(Reason)
     end.
 
@@ -121,16 +93,7 @@ partial_commit(LimitChange) ->
                 error({invalid_request, Errors})
         end
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason when
-            Class =:= resource_unavailable orelse
-                Class =:= result_unknown
-        ->
-            String = "Unable partial commit limit change ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
-            error(Reason);
-        error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            String = "Unable partial commit limit change ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
+        error:{woody_error, {_Source, _Class, _Details}} = Reason ->
             error(Reason)
     end.
 
@@ -150,15 +113,6 @@ rollback(LimitChange) ->
                 error({invalid_request, Errors})
         end
     catch
-        error:{woody_error, {_Source, Class, _Details}} = Reason when
-            Class =:= resource_unavailable orelse
-                Class =:= result_unknown
-        ->
-            String = "Unable to rollback limit change ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
-            error(Reason);
-        error:{woody_error, {_Source, result_unexpected, _Details}} = Reason ->
-            String = "Unable to rollback limit change ~p from proto limiter, ~p:~p",
-            _ = logger:error(String, [LimitID, error, Reason]),
+        error:{woody_error, {_Source, _Class, _Details}} = Reason ->
             error(Reason)
     end.
