@@ -1419,14 +1419,7 @@ get_refund_cashflow_plan(RefundSt) ->
 -spec create_adjustment(hg_datetime:timestamp(), adjustment_params(), st(), opts()) -> {adjustment(), result()}.
 create_adjustment(Timestamp, Params, St, Opts) ->
     _ = assert_no_adjustment_pending(St),
-    create_adjustment_with_scenario(Timestamp, Params, St, Opts).
-
--spec create_adjustment_with_scenario(hg_datetime:timestamp(), adjustment_params(), st(), opts()) ->
-    {adjustment(), result()}.
-create_adjustment_with_scenario(Timestamp, Params, St, Opts) ->
     case Params#payproc_InvoicePaymentAdjustmentParams.scenario of
-        undefined ->
-            create_cash_flow_adjustment(Timestamp, Params, undefined, St, Opts);
         {cash_flow, #domain_InvoicePaymentAdjustmentCashFlow{domain_revision = DomainRevision}} ->
             create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts);
         {status_change, Change} ->

@@ -1642,20 +1642,35 @@ payment_refunded_adjustment_success(C) ->
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    Refund =
-        #domain_InvoicePaymentRefund{id = RefundID} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, make_refund_params(1000, <<"RUB">>), Client),
-    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
-    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
-    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    CashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
+    _RefundID = process_refund(InvoiceID, PaymentID, make_refund_params(1000, <<"RUB">>), Client),
     ok = update_payment_terms_cashflow(?prv(1), get_payment_adjustment_provider_cashflow(actual)),
-    ?adjustment(_AdjustmentID, ?adjustment_pending()) =
-        _Adjustment = hg_client_invoicing:create_payment_adjustment(
-            InvoiceID,
-            PaymentID,
-            make_adjustment_params(),
-            Client
-        ).
+    _AdjustmentID = process_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    NewCashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
+    ?assertEqual(
+        [
+            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 450},
+            % ?share(1, 1, operation_amount)
+            {{provider, settlement}, {merchant, settlement}, 10000},
+            % ?share(18, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 180}
+        ],
+        CashFlow
+    ),
+    ?assertEqual(
+        [
+            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 450},
+            % ?share(1, 1, operation_amount)
+            {{provider, settlement}, {merchant, settlement}, 10000},
+            % ?system_to_provider_share_actual  ?share(16, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 160},
+            % ?system_to_external_fixed  ?fixed(20, <<"RUB">>)
+            {{system, settlement}, {external, outcome}, 20}
+        ],
+        NewCashFlow
+    ).
 
 -spec payment_adjustment_success(config()) -> test_return().
 payment_adjustment_success(C) ->
@@ -5188,6 +5203,49 @@ create_repair_scenario(complex) ->
             create_repair_scenario(fail_session)
         ]
     }}.
+
+payment_cashflow_entries(InvoiceID, PaymentID, Client) ->
+    #payproc_InvoicePayment{
+        cash_flow = CashFlow
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    [
+        {Source, Dest, Volume}
+        || #domain_FinalCashFlowPosting{
+               source = #domain_FinalCashFlowAccount{account_type = Source},
+               destination = #domain_FinalCashFlowAccount{account_type = Dest},
+               volume = #domain_Cash{amount = Volume}
+           } <- CashFlow
+    ].
+
+process_refund(InvoiceID, PaymentID, Params, Client) ->
+    Refund =
+        #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, Params, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    RefundID.
+
+process_adjustment(InvoiceID, PaymentID, Params, Client) ->
+    ?adjustment(AdjustmentID, ?adjustment_pending()) =
+        Adjustment =
+        hg_client_invoicing:create_payment_adjustment(
+            InvoiceID,
+            PaymentID,
+            Params,
+            Client
+        ),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
+    ] = next_event(InvoiceID, Client),
+    ok = hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+    ] = next_event(InvoiceID, Client),
+    AdjustmentID.
 
 repair_invoice_with_scenario(InvoiceID, Scenario, Client) ->
     hg_client_invoicing:repair_scenario(InvoiceID, create_repair_scenario(Scenario), Client).
