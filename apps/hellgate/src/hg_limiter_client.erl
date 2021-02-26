@@ -77,7 +77,6 @@ commit(LimitChange) ->
 
 -spec partial_commit(limit_change()) -> ok.
 partial_commit(LimitChange) ->
-    LimitID = LimitChange#proto_limiter_LimitChange.id,
     Opts = hg_woody_wrapper:get_service_options(limiter),
     try
         case hg_woody_wrapper:call(limiter, 'PartialCommit', {LimitChange}, Opts) of
