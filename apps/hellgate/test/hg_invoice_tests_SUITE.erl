@@ -62,6 +62,7 @@
 -export([payment_risk_score_check_timeout/1]).
 -export([invalid_payment_adjustment/1]).
 -export([payment_refunded_adjustment_success/1]).
+-export([payment_chargeback_adjustment_success/1]).
 -export([payment_adjustment_success/1]).
 -export([partial_captured_payment_adjustment/1]).
 -export([payment_adjustment_captured_from_failed/1]).
@@ -281,6 +282,7 @@ groups() ->
         {adjustments, [], [
             invalid_payment_adjustment,
             payment_refunded_adjustment_success,
+            payment_chargeback_adjustment_success,
             payment_adjustment_success,
             partial_captured_payment_adjustment,
             payment_adjustment_captured_from_failed,
@@ -1668,6 +1670,43 @@ payment_refunded_adjustment_success(C) ->
             {{system, settlement}, {provider, settlement}, 160},
             % ?system_to_external_fixed  ?fixed(20, <<"RUB">>)
             {{system, settlement}, {external, outcome}, 20}
+        ],
+        NewCashFlow
+    ).
+
+-spec payment_chargeback_adjustment_success(config()) -> test_return().
+payment_chargeback_adjustment_success(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 66000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    CashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
+    Params = make_chargeback_params(?cash(0, <<"RUB">>)),
+    _ChargebackID = process_chargeback(InvoiceID, PaymentID, Params, Client),
+    ok = update_payment_terms_cashflow(?prv(2), get_payment_adjustment_provider_cashflow(initial)),
+    _AdjustmentID = process_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    NewCashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
+    ?assertEqual(
+        [
+            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 2970},
+            % ?share(1, 1, operation_amount)
+            {{provider, settlement}, {merchant, settlement}, 66000},
+            % ?share(16, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 1056}
+        ],
+        CashFlow
+    ),
+    ?assertEqual(
+        [
+            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 2970},
+            % ?share(1, 1, operation_amount)
+            {{provider, settlement}, {merchant, settlement}, 66000},
+            % ?system_to_provider_share_initial  ?share(21, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 1386}
         ],
         NewCashFlow
     ).
@@ -5204,49 +5243,6 @@ create_repair_scenario(complex) ->
         ]
     }}.
 
-payment_cashflow_entries(InvoiceID, PaymentID, Client) ->
-    #payproc_InvoicePayment{
-        cash_flow = CashFlow
-    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
-    [
-        {Source, Dest, Volume}
-        || #domain_FinalCashFlowPosting{
-               source = #domain_FinalCashFlowAccount{account_type = Source},
-               destination = #domain_FinalCashFlowAccount{account_type = Dest},
-               volume = #domain_Cash{amount = Volume}
-           } <- CashFlow
-    ].
-
-process_refund(InvoiceID, PaymentID, Params, Client) ->
-    Refund =
-        #domain_InvoicePaymentRefund{id = RefundID} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, Params, Client),
-    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
-    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
-    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
-    RefundID.
-
-process_adjustment(InvoiceID, PaymentID, Params, Client) ->
-    ?adjustment(AdjustmentID, ?adjustment_pending()) =
-        Adjustment =
-        hg_client_invoicing:create_payment_adjustment(
-            InvoiceID,
-            PaymentID,
-            Params,
-            Client
-        ),
-    [
-        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
-    ] = next_event(InvoiceID, Client),
-    ok = hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
-    [
-        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
-    ] = next_event(InvoiceID, Client),
-    AdjustmentID.
-
 repair_invoice_with_scenario(InvoiceID, Scenario, Client) ->
     hg_client_invoicing:repair_scenario(InvoiceID, create_repair_scenario(Scenario), Client).
 
@@ -5280,6 +5276,73 @@ process_payment(InvoiceID, PaymentParams, Client, Restarts) ->
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client, Restarts).
+
+process_refund(InvoiceID, PaymentID, Params, Client) ->
+    Refund =
+        #domain_InvoicePaymentRefund{id = RefundID} =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, Params, Client),
+    PaymentID = refund_payment(InvoiceID, PaymentID, RefundID, Refund, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
+    RefundID.
+
+process_adjustment(InvoiceID, PaymentID, Params, Client) ->
+    ?adjustment(AdjustmentID, ?adjustment_pending()) =
+        Adjustment =
+        hg_client_invoicing:create_payment_adjustment(
+            InvoiceID,
+            PaymentID,
+            Params,
+            Client
+        ),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
+    ] = next_event(InvoiceID, Client),
+    ok = hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
+    ] = next_event(InvoiceID, Client),
+    AdjustmentID.
+
+process_chargeback(InvoiceID, PaymentID, Params, Client) ->
+    Chargeback =
+        #domain_InvoicePaymentChargeback{id = ChargebackID} =
+        hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, Params, Client),
+    [
+        ?payment_ev(PaymentID, ?chargeback_ev(ChargebackID, ?chargeback_created(Chargeback)))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?chargeback_ev(ChargebackID, ?chargeback_cash_flow_changed(_)))
+    ] = next_event(InvoiceID, Client),
+    AcceptParams = make_chargeback_accept_params(),
+    ok = hg_client_invoicing:accept_chargeback(InvoiceID, PaymentID, ChargebackID, AcceptParams, Client),
+    [
+        ?payment_ev(
+            PaymentID,
+            ?chargeback_ev(ChargebackID, ?chargeback_target_status_changed(?chargeback_status_accepted()))
+        )
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?chargeback_ev(ChargebackID, ?chargeback_status_changed(?chargeback_status_accepted()))),
+        ?payment_ev(PaymentID, ?payment_status_changed(?charged_back()))
+    ] = next_event(InvoiceID, Client),
+    ChargebackID.
+
+payment_cashflow_entries(InvoiceID, PaymentID, Client) ->
+    #payproc_InvoicePayment{
+        cash_flow = CashFlow
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    [
+        {Source, Dest, Volume}
+        || #domain_FinalCashFlowPosting{
+               source = #domain_FinalCashFlowAccount{account_type = Source},
+               destination = #domain_FinalCashFlowAccount{account_type = Dest},
+               volume = #domain_Cash{amount = Volume}
+           } <- CashFlow
+    ].
 
 await_payment_started(InvoiceID, PaymentID, Client) ->
     [
@@ -6496,7 +6559,24 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Drovider">>,
                 description = <<"I'm out of ideas of what to write here">>,
-                terminal = {value, [?prvtrm(6), ?prvtrm(7)]},
+                terminal =
+                    {decisions, [
+                        #domain_TerminalDecision{
+                            if_ =
+                                {condition,
+                                    {cost_in,
+                                        ?cashrng(
+                                            {inclusive, ?cash(66000, <<"RUB">>)},
+                                            {inclusive, ?cash(66000, <<"RUB">>)}
+                                        )}},
+                            then_ = {value, [?prvtrm(66)]}
+                        },
+                        #domain_TerminalDecision{
+                            if_ = {constant, true},
+                            then_ =
+                                {value, [?prvtrm(6), ?prvtrm(7)]}
+                        }
+                    ]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -6609,6 +6689,13 @@ construct_domain_fixture() ->
                         }
                     }
                 }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(66),
+            data = #domain_Terminal{
+                name = <<"None">>,
+                description = <<"None">>
             }
         }},
         {terminal, #domain_TerminalObject{
