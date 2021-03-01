@@ -219,7 +219,7 @@ groups() ->
     [
         {all_non_destructive_tests, [parallel], [
             {group, base_payments},
-            {group, operation_limits},
+            % {group, operation_limits},
 
             payment_w_customer_success,
             payment_customer_risk_score_check,

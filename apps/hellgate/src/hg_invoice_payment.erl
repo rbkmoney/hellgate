@@ -1901,16 +1901,13 @@ process_cash_flow_building(Action, St) ->
     Route = get_route(St),
     Cash = Payment#domain_InvoicePayment.cost,
     Timestamp = get_payment_created_at(Payment),
-    LimitChangeID = construct_limit_change_id(St),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    PaymentsProvisionTerms = get_provider_terminal_terms(Route, VS1, Revision),
-    TurnoverLimitSelector = PaymentsProvisionTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS1, Revision),
-    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS1),
+    ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
+    {ok, TurnoverLimits} = hold_payment_limits(ProviderTerms, Cash, Timestamp, VS1, Revision, St),
 
-    FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS1, Revision, Opts),
+    FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
@@ -2527,6 +2524,14 @@ try_request_interaction(undefined) ->
     [];
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
+
+hold_payment_limits(ProviderTerms, Cash, Timestamp, VS, Revision, St) ->
+    LimitChangeID = construct_limit_change_id(St),
+    TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS, Revision),
+    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
+    ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
+    {ok, TurnoverLimits}.
 
 commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
