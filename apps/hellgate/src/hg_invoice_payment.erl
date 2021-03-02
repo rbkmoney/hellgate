@@ -23,6 +23,7 @@
 -include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
+-include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
 %% API
 
@@ -1872,14 +1873,16 @@ process_routing(Action, St) ->
             Events1 = Events0 ++ [?route_changed(Route)],
             {next, {Events1, hg_machine_action:set_timeout(0, Action)}};
         {error, {no_route_found, Reason}} ->
-            Failure =
-                {failure,
-                    payproc_errors:construct(
-                        'PaymentFailure',
-                        {no_route_found, {Reason, #payprocerr_GeneralFailure{}}}
-                    )},
+            Failure = failure({no_route_found, {Reason, #payprocerr_GeneralFailure{}}}),
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
+
+failure(Reason) ->
+    {failure,
+        payproc_errors:construct(
+            'PaymentFailure',
+            Reason
+        )}.
 
 -spec process_cash_flow_building(action(), st()) -> machine_result().
 process_cash_flow_building(Action, St) ->
@@ -1888,17 +1891,30 @@ process_cash_flow_building(Action, St) ->
     Payment = get_payment(St),
     Invoice = get_invoice(Opts),
     Route = get_route(St),
+    Cash = Payment#domain_InvoicePayment.cost,
     Timestamp = get_payment_created_at(Payment),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS1),
+    ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
+    {ok, TurnoverLimits} = hold_payment_limits(ProviderTerms, Cash, Timestamp, VS1, Revision, St),
 
-    FinalCashflow = calculate_cashflow(Route, Payment, Timestamp, VS1, Revision, Opts),
+    FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
     Events = [?cash_flow_changed(FinalCashflow)],
-    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+    case hg_limiter:check_limits(TurnoverLimits, Timestamp) of
+        {ok, _} ->
+            {next, {Events, hg_machine_action:set_timeout(0, Action)}};
+        {error, {limit_overflow, _}} ->
+            Failure = failure(
+                {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
+            ),
+            RollbackStarted = [?payment_rollback_started(Failure)],
+            {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}
+    end.
 
 %%
 
@@ -1934,8 +1950,10 @@ maybe_set_charged_back_status(_ChargebackStatus, _ChargebackBody, _St) ->
 process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
     Shop = get_shop(Opts),
-    #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
     RefundSt = try_get_refund_state(ID, St),
+    hold_refund_limits(RefundSt, St),
+
+    #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
     Clock = prepare_refund_cashflow(RefundSt, St),
     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
     case get_available_amount(SettlementID, Clock) of
@@ -2133,6 +2151,7 @@ process_result({payment, processing_accounter}, Action, St) ->
     {done, {[?payment_status_changed(Target)], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
+    _ = rollback_payment_limits(St),
     _Clocks = rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
@@ -2140,8 +2159,10 @@ process_result({payment, finalizing_accounter}, Action, St) ->
     _Clocks =
         case Target of
             ?captured() ->
+                commit_payment_limits(St),
                 commit_payment_cashflow(St);
             ?cancelled() ->
+                rollback_payment_limits(St),
                 rollback_payment_cashflow(St)
         end,
     check_recurrent_token(St),
@@ -2150,6 +2171,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Failure = RefundSt#refund_st.failure,
+    _ = rollback_refund_limits(RefundSt, St),
     _Clocks = rollback_refund_cashflow(RefundSt, St),
     Events = [
         ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
@@ -2157,6 +2179,7 @@ process_result({refund_failure, ID}, Action, St) ->
     {done, {Events, Action}};
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
+    _ = commit_refund_limits(RefundSt, St),
     _Clocks = commit_refund_cashflow(RefundSt, St),
     Events2 = [
         ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
@@ -2493,6 +2516,98 @@ try_request_interaction(undefined) ->
     [];
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
+
+hold_payment_limits(ProviderTerms, Cash, Timestamp, VS, Revision, St) ->
+    LimitChangeID = construct_limit_change_id(St),
+    TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS, Revision),
+    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
+    ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
+    {ok, TurnoverLimits}.
+
+commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
+    #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
+    #domain_InvoicePayment{cost = #domain_Cash{amount = PaymentAmount}} = get_payment(St),
+    case CapturedCash of
+        #domain_Cash{amount = Amount} when Amount < PaymentAmount ->
+            partial_commit_payment_limits(CapturedCash, St);
+        _ ->
+            LimitChanges = construct_payment_limit_change(St),
+            hg_limiter:commit(LimitChanges)
+    end.
+
+partial_commit_payment_limits(CapturedCash, St) ->
+    LimitChangeID = construct_limit_change_id(St),
+    LimitChanges = construct_limit_change(LimitChangeID, CapturedCash, St),
+    hg_limiter:partial_commit(LimitChanges).
+
+rollback_payment_limits(St) ->
+    LimitChanges = construct_payment_limit_change(St),
+    ok = hg_limiter:rollback(LimitChanges).
+
+hold_refund_limits(RefundSt, St) ->
+    hg_limiter:hold(construct_refund_limit_change(RefundSt, St)).
+
+commit_refund_limits(RefundSt, St) ->
+    hg_limiter:commit(construct_refund_limit_change(RefundSt, St)).
+
+rollback_refund_limits(RefundSt, St) ->
+    hg_limiter:rollback(construct_refund_limit_change(RefundSt, St)).
+
+construct_limit_change_id(St) ->
+    Opts = get_opts(St),
+    Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
+    ComplexID = hg_utils:construct_complex_id([
+        get_invoice_id(Invoice),
+        get_payment_id(Payment)
+    ]),
+    genlib_string:join($., [<<"limiter">>, ComplexID]).
+
+construct_refund_limit_change_id(RefundSt, St) ->
+    ComplexID = construct_refund_plan_id(RefundSt, St),
+    genlib_string:join($., [<<"limiter">>, ComplexID]).
+
+construct_refund_limit_change(RefundSt, St) ->
+    Refund = get_refund(RefundSt),
+    RefundCash0 = Refund#domain_InvoicePaymentRefund.cash,
+    RefundCashAmount = RefundCash0#domain_Cash.amount,
+    RefundCash1 = RefundCash0#domain_Cash{amount = -RefundCashAmount},
+    LimitChangeID = construct_refund_limit_change_id(RefundSt, St),
+    construct_limit_change(LimitChangeID, RefundCash1, St).
+
+construct_payment_limit_change(St) ->
+    LimitChangeID = construct_limit_change_id(St),
+    Invoice = get_invoice(get_opts(St)),
+    Cash = Invoice#domain_Invoice.cost,
+    construct_limit_change(LimitChangeID, Cash, St).
+
+construct_limit_change(LimitChangeID, Cash, St) ->
+    Timestamp = get_payment_created_at(get_payment(St)),
+    construct_limit_change(get_limit_ids(St), LimitChangeID, Cash, Timestamp).
+
+construct_limit_change(IDs, LimitChangeID, Cash, Timestamp) ->
+    [
+        #proto_limiter_LimitChange{
+            id = LimitID,
+            change_id = LimitChangeID,
+            cash = Cash,
+            operation_timestamp = Timestamp
+        }
+        || LimitID <- IDs
+    ].
+
+get_limit_ids(St) ->
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Route = get_route(St),
+    VS0 = reconstruct_payment_flow(Payment, #{}),
+    Varset = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+    ProviderTerms = get_provider_terminal_terms(Route, Varset, Revision),
+    TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, Varset, Revision),
+    [T#domain_TurnoverLimit.id || T <- TurnoverLimits].
 
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).

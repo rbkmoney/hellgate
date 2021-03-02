@@ -2,6 +2,7 @@
 
 -export([start_link/1]).
 -export([put/2]).
+-export([update/2]).
 -export([get/1]).
 
 -export([
@@ -21,6 +22,10 @@ start_link(Args) ->
 put(Key, Value) ->
     gen_server:call(?MODULE, {put, Key, Value}, 5000).
 
+-spec update(term(), function()) -> ok | error.
+update(Key, UpdateFun) ->
+    gen_server:call(?MODULE, {update, Key, UpdateFun}, 5000).
+
 -spec get(term()) -> term().
 get(Key) ->
     gen_server:call(?MODULE, {get, Key}, 5000).
@@ -32,6 +37,14 @@ init(_) ->
 -spec handle_call(term(), pid(), map()) -> {reply, atom(), map()}.
 handle_call({put, Key, Value}, _From, State) ->
     {reply, ok, State#{Key => Value}};
+handle_call({update, Key, Fun}, _From, State) ->
+    Value = maps:get(Key, State, undefined),
+    case Fun(Value) of
+        error ->
+            {reply, error, State};
+        Value2 ->
+            {reply, ok, State#{Key => Value2}}
+    end;
 handle_call({get, Key}, _From, State) ->
     Value = maps:get(Key, State, undefined),
     {reply, Value, State}.
