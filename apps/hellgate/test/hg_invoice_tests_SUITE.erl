@@ -573,6 +573,7 @@ end_per_group(_Group, _C) ->
 init_per_testcase(Name, C) when
     Name == payment_adjustment_success;
     Name == payment_adjustment_refunded_success;
+    Name == payment_adjustment_chargeback_success;
     Name == payment_adjustment_captured_partial;
     Name == payment_adjustment_captured_from_failed;
     Name == payment_adjustment_failed_from_captured
@@ -1846,22 +1847,24 @@ payment_adjustment_success(C) ->
 -spec payment_adjustment_refunded_success(config()) -> test_return().
 payment_adjustment_refunded_success(C) ->
     Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 10000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     CashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
     _RefundID = process_refund(InvoiceID, PaymentID, make_refund_params(1000, <<"RUB">>), Client),
-    ok = update_payment_terms_cashflow(?prv(1), get_payment_adjustment_provider_cashflow(actual)),
+    ok = update_payment_terms_cashflow(?prv(100), get_payment_adjustment_provider_cashflow(actual)),
     _AdjustmentID = process_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
     NewCashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
     ?assertEqual(
         [
-            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            % ?merchant_to_system_share_3 ?share(45, 1000, operation_amount)
             {{merchant, settlement}, {system, settlement}, 450},
             % ?share(1, 1, operation_amount)
             {{provider, settlement}, {merchant, settlement}, 10000},
-            % ?share(18, 1000, operation_amount)
-            {{system, settlement}, {provider, settlement}, 180}
+            % ?system_to_provider_share_initial ?share(21, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 210}
         ],
         CashFlow
     ),
@@ -1883,35 +1886,41 @@ payment_adjustment_refunded_success(C) ->
 payment_adjustment_chargeback_success(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 66000, C),
+    % Контракт на основе шаблона ?tmpl(1)
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    Shop = hg_client_party:get_shop(ShopID, PartyClient),
+    % Корректируем контракт на основе шаблона ?tmpl(3) в котором разрешены возвраты
+    ok = hg_ct_helper:adjust_contract(Shop#domain_Shop.contract_id, ?tmpl(3), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 10000, C),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     CashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
-    Params = make_chargeback_params(?cash(0, <<"RUB">>)),
+    Params = make_chargeback_params(?cash(10000, <<"RUB">>)),
     _ChargebackID = process_chargeback(InvoiceID, PaymentID, Params, Client),
-    ok = update_payment_terms_cashflow(?prv(2), get_payment_adjustment_provider_cashflow(initial)),
+    ok = update_payment_terms_cashflow(?prv(100), get_payment_adjustment_provider_cashflow(actual)),
     _AdjustmentID = process_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
     NewCashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
     ?assertEqual(
         [
-            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
-            {{merchant, settlement}, {system, settlement}, 2970},
+            % ?merchant_to_system_share_3 ?share(40, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 400},
             % ?share(1, 1, operation_amount)
-            {{provider, settlement}, {merchant, settlement}, 66000},
-            % ?share(16, 1000, operation_amount)
-            {{system, settlement}, {provider, settlement}, 1056}
+            {{provider, settlement}, {merchant, settlement}, 10000},
+            % ?system_to_provider_share_initial  ?share(21, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 210}
         ],
         CashFlow
     ),
     ?assertEqual(
         [
-            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
-            {{merchant, settlement}, {system, settlement}, 2970},
+            % ?merchant_to_system_share_3 ?share(40, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 400},
             % ?share(1, 1, operation_amount)
-            {{provider, settlement}, {merchant, settlement}, 66000},
-            % ?system_to_provider_share_initial  ?share(21, 1000, operation_amount)
-            {{system, settlement}, {provider, settlement}, 1386}
+            {{provider, settlement}, {merchant, settlement}, 10000},
+            % ?system_to_provider_share_actual  ?share(16, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 160},
+            % ?system_to_external_fixed  ?fixed(20, <<"RUB">>)
+            {{system, settlement}, {external, outcome}, 20}
         ],
         NewCashFlow
     ).
@@ -2218,152 +2227,6 @@ get_cashflow_account(Type, CF) ->
            T == Type
     ],
     hg_ct_helper:get_balance(ID).
-
-get_payment_adjustment_fixture(Revision) ->
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    [
-        {term_set_hierarchy, #domain_TermSetHierarchyObject{
-            ref = ?trms(3),
-            data = #domain_TermSetHierarchy{
-                term_sets = [
-                    #domain_TimedTermSet{
-                        action_time = #'TimestampInterval'{},
-                        terms = #domain_TermSet{
-                            payments = #domain_PaymentsServiceTerms{
-                                fees =
-                                    {value, [
-                                        ?cfpost(
-                                            {merchant, settlement},
-                                            {system, settlement},
-                                            ?merchant_to_system_share_3
-                                        )
-                                    ]}
-                            }
-                        }
-                    }
-                ]
-            }
-        }},
-
-        {payment_institution, #domain_PaymentInstitutionObject{
-            ref = ?pinst(1),
-            data = PaymentInstitution#domain_PaymentInstitution{
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(100)
-                        ])}
-            }
-        }},
-        {provider, #domain_ProviderObject{
-            ref = ?prv(100),
-            data = #domain_Provider{
-                name = <<"Adjustable">>,
-                description = <<>>,
-                abs_account = <<>>,
-                terminal = {value, [?prvtrm(100)]},
-                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
-                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_ProvisionTermSet{
-                    payments = #domain_PaymentsProvisionTerms{
-                        currencies =
-                            {value,
-                                ?ordset([
-                                    ?cur(<<"RUB">>)
-                                ])},
-                        categories =
-                            {value,
-                                ?ordset([
-                                    ?cat(1)
-                                ])},
-                        cash_limit =
-                            {value,
-                                ?cashrng(
-                                    {inclusive, ?cash(1000, <<"RUB">>)},
-                                    {exclusive, ?cash(100000000, <<"RUB">>)}
-                                )},
-                        payment_methods =
-                            {value,
-                                ?ordset([
-                                    ?pmt(bank_card_deprecated, visa)
-                                ])},
-                        cash_flow = {value, get_payment_adjustment_provider_cashflow(initial)},
-                        holds = #domain_PaymentHoldsProvisionTerms{
-                            lifetime =
-                                {decisions, [
-                                    #domain_HoldLifetimeDecision{
-                                        if_ =
-                                            {condition,
-                                                {payment_tool,
-                                                    {bank_card, #domain_BankCardCondition{
-                                                        definition = {payment_system_is, visa}
-                                                    }}}},
-                                        then_ = {value, ?hold_lifetime(10)}
-                                    }
-                                ]}
-                        },
-                        refunds = #domain_PaymentRefundsProvisionTerms{
-                            cash_flow =
-                                {value, [
-                                    ?cfpost(
-                                        {merchant, settlement},
-                                        {provider, settlement},
-                                        ?share(1, 1, operation_amount)
-                                    )
-                                ]},
-                            partial_refunds = #domain_PartialRefundsProvisionTerms{
-                                cash_limit =
-                                    {value,
-                                        ?cashrng(
-                                            {inclusive, ?cash(10, <<"RUB">>)},
-                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
-                                        )}
-                            }
-                        }
-                    }
-                }
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(100),
-            data = #domain_Terminal{
-                name = <<"Adjustable Terminal">>,
-                description = <<>>
-            }
-        }}
-    ].
-
-get_payment_adjustment_provider_cashflow(initial) ->
-    [
-        ?cfpost(
-            {provider, settlement},
-            {merchant, settlement},
-            ?share(1, 1, operation_amount)
-        ),
-        ?cfpost(
-            {system, settlement},
-            {provider, settlement},
-            ?system_to_provider_share_initial
-        )
-    ];
-get_payment_adjustment_provider_cashflow(actual) ->
-    [
-        ?cfpost(
-            {provider, settlement},
-            {merchant, settlement},
-            ?share(1, 1, operation_amount)
-        ),
-        ?cfpost(
-            {system, settlement},
-            {provider, settlement},
-            ?system_to_provider_share_actual
-        ),
-        ?cfpost(
-            {system, settlement},
-            {external, outcome},
-            ?system_to_external_fixed
-        )
-    ].
 
 -spec invalid_payment_w_deprived_party(config()) -> test_return().
 invalid_payment_w_deprived_party(C) ->
@@ -4502,105 +4365,6 @@ rounding_cashflow_volume(C) ->
     ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {external, outcome}, CF),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
-get_cashflow_rounding_fixture(Revision) ->
-    PaymentInstituition = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    [
-        {payment_institution, #domain_PaymentInstitutionObject{
-            ref = ?pinst(1),
-            data = PaymentInstituition#domain_PaymentInstitution{
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(100)
-                        ])}
-            }
-        }},
-        {provider, #domain_ProviderObject{
-            ref = ?prv(100),
-            data = #domain_Provider{
-                name = <<"Rounding">>,
-                description = <<>>,
-                abs_account = <<>>,
-                terminal = {value, [?prvtrm(100)]},
-                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
-                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
-                terms = #domain_ProvisionTermSet{
-                    payments = #domain_PaymentsProvisionTerms{
-                        currencies =
-                            {value,
-                                ?ordset([
-                                    ?cur(<<"RUB">>)
-                                ])},
-                        categories =
-                            {value,
-                                ?ordset([
-                                    ?cat(1)
-                                ])},
-                        cash_limit =
-                            {value,
-                                ?cashrng(
-                                    {inclusive, ?cash(1000, <<"RUB">>)},
-                                    {exclusive, ?cash(100000000, <<"RUB">>)}
-                                )},
-                        payment_methods =
-                            {value,
-                                ?ordset([
-                                    ?pmt(bank_card_deprecated, visa)
-                                ])},
-                        cash_flow =
-                            {value, [
-                                ?cfpost(
-                                    {provider, settlement},
-                                    {merchant, settlement},
-                                    ?share_with_rounding_method(1, 200000, operation_amount, round_half_towards_zero)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {provider, settlement},
-                                    ?share_with_rounding_method(1, 200000, operation_amount, round_half_away_from_zero)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {system, subagent},
-                                    ?share_with_rounding_method(1, 200000, operation_amount, round_half_away_from_zero)
-                                ),
-                                ?cfpost(
-                                    {system, settlement},
-                                    {external, outcome},
-                                    ?share(1, 200000, operation_amount)
-                                )
-                            ]},
-                        refunds = #domain_PaymentRefundsProvisionTerms{
-                            cash_flow =
-                                {value, [
-                                    ?cfpost(
-                                        {merchant, settlement},
-                                        {provider, settlement},
-                                        ?share(1, 1, operation_amount)
-                                    )
-                                ]},
-                            partial_refunds = #domain_PartialRefundsProvisionTerms{
-                                cash_limit =
-                                    {value,
-                                        ?cashrng(
-                                            {inclusive, ?cash(10, <<"RUB">>)},
-                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
-                                        )}
-                            }
-                        }
-                    }
-                }
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(100),
-            data = #domain_Terminal{
-                name = <<"Rounding Terminal">>,
-                description = <<>>
-            }
-        }}
-    ].
-
 get_cashflow_volume(Source, Destination, CF) ->
     [Volume] = [
         V
@@ -6723,24 +6487,7 @@ construct_domain_fixture() ->
             data = #domain_Provider{
                 name = <<"Drovider">>,
                 description = <<"I'm out of ideas of what to write here">>,
-                terminal =
-                    {decisions, [
-                        #domain_TerminalDecision{
-                            if_ =
-                                {condition,
-                                    {cost_in,
-                                        ?cashrng(
-                                            {inclusive, ?cash(66000, <<"RUB">>)},
-                                            {inclusive, ?cash(66000, <<"RUB">>)}
-                                        )}},
-                            then_ = {value, [?prvtrm(66)]}
-                        },
-                        #domain_TerminalDecision{
-                            if_ = {constant, true},
-                            then_ =
-                                {value, [?prvtrm(6), ?prvtrm(7)]}
-                        }
-                    ]},
+                terminal = {value, [?prvtrm(6), ?prvtrm(7)]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -6853,13 +6600,6 @@ construct_domain_fixture() ->
                         }
                     }
                 }
-            }
-        }},
-        {terminal, #domain_TerminalObject{
-            ref = ?trm(66),
-            data = #domain_Terminal{
-                name = <<"None">>,
-                description = <<"None">>
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -7246,6 +6986,276 @@ construct_term_set_for_refund_eligibility_time(Seconds) ->
                         terms = TermSet
                     }
                 ]
+            }
+        }}
+    ].
+
+get_payment_adjustment_fixture(Revision) ->
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+    [
+        {term_set_hierarchy, #domain_TermSetHierarchyObject{
+            ref = ?trms(3),
+            data = #domain_TermSetHierarchy{
+                term_sets = [
+                    #domain_TimedTermSet{
+                        action_time = #'TimestampInterval'{},
+                        terms = #domain_TermSet{
+                            payments = #domain_PaymentsServiceTerms{
+                                fees =
+                                    {value, [
+                                        ?cfpost(
+                                            {merchant, settlement},
+                                            {system, settlement},
+                                            ?merchant_to_system_share_3
+                                        )
+                                    ]},
+                                chargebacks = #domain_PaymentChargebackServiceTerms{
+                                    allow = {constant, true},
+                                    fees =
+                                        {value, [
+                                            ?cfpost(
+                                                {merchant, settlement},
+                                                {system, settlement},
+                                                ?share(1, 1, surplus)
+                                            )
+                                        ]}
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        }},
+
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = PaymentInstitution#domain_PaymentInstitution{
+                providers =
+                    {value,
+                        ?ordset([
+                            ?prv(100)
+                        ])}
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(100),
+            data = #domain_Provider{
+                name = <<"Adjustable">>,
+                description = <<>>,
+                abs_account = <<>>,
+                terminal = {value, [?prvtrm(100)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies =
+                            {value,
+                                ?ordset([
+                                    ?cur(<<"RUB">>)
+                                ])},
+                        categories =
+                            {value,
+                                ?ordset([
+                                    ?cat(1)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(100000000, <<"RUB">>)}
+                                )},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])},
+                        cash_flow = {value, get_payment_adjustment_provider_cashflow(initial)},
+                        holds = #domain_PaymentHoldsProvisionTerms{
+                            lifetime =
+                                {decisions, [
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition = {payment_system_is, visa}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(10)}
+                                    }
+                                ]}
+                        },
+                        refunds = #domain_PaymentRefundsProvisionTerms{
+                            cash_flow =
+                                {value, [
+                                    ?cfpost(
+                                        {merchant, settlement},
+                                        {provider, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    )
+                                ]},
+                            partial_refunds = #domain_PartialRefundsProvisionTerms{
+                                cash_limit =
+                                    {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(10, <<"RUB">>)},
+                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                        )}
+                            }
+                        },
+                        chargebacks = #domain_PaymentChargebackProvisionTerms{
+                            cash_flow =
+                                {value, [
+                                    ?cfpost(
+                                        {merchant, settlement},
+                                        {provider, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    )
+                                ]}
+                        }
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(100),
+            data = #domain_Terminal{
+                name = <<"Adjustable Terminal">>,
+                description = <<>>
+            }
+        }}
+    ].
+
+%
+
+get_payment_adjustment_provider_cashflow(initial) ->
+    [
+        ?cfpost(
+            {provider, settlement},
+            {merchant, settlement},
+            ?share(1, 1, operation_amount)
+        ),
+        ?cfpost(
+            {system, settlement},
+            {provider, settlement},
+            ?system_to_provider_share_initial
+        )
+    ];
+get_payment_adjustment_provider_cashflow(actual) ->
+    [
+        ?cfpost(
+            {provider, settlement},
+            {merchant, settlement},
+            ?share(1, 1, operation_amount)
+        ),
+        ?cfpost(
+            {system, settlement},
+            {provider, settlement},
+            ?system_to_provider_share_actual
+        ),
+        ?cfpost(
+            {system, settlement},
+            {external, outcome},
+            ?system_to_external_fixed
+        )
+    ].
+
+%
+
+get_cashflow_rounding_fixture(Revision) ->
+    PaymentInstituition = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+    [
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = PaymentInstituition#domain_PaymentInstitution{
+                providers =
+                    {value,
+                        ?ordset([
+                            ?prv(100)
+                        ])}
+            }
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(100),
+            data = #domain_Provider{
+                name = <<"Rounding">>,
+                description = <<>>,
+                abs_account = <<>>,
+                terminal = {value, [?prvtrm(100)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                terms = #domain_ProvisionTermSet{
+                    payments = #domain_PaymentsProvisionTerms{
+                        currencies =
+                            {value,
+                                ?ordset([
+                                    ?cur(<<"RUB">>)
+                                ])},
+                        categories =
+                            {value,
+                                ?ordset([
+                                    ?cat(1)
+                                ])},
+                        cash_limit =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(1000, <<"RUB">>)},
+                                    {exclusive, ?cash(100000000, <<"RUB">>)}
+                                )},
+                        payment_methods =
+                            {value,
+                                ?ordset([
+                                    ?pmt(bank_card_deprecated, visa)
+                                ])},
+                        cash_flow =
+                            {value, [
+                                ?cfpost(
+                                    {provider, settlement},
+                                    {merchant, settlement},
+                                    ?share_with_rounding_method(1, 200000, operation_amount, round_half_towards_zero)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {provider, settlement},
+                                    ?share_with_rounding_method(1, 200000, operation_amount, round_half_away_from_zero)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {system, subagent},
+                                    ?share_with_rounding_method(1, 200000, operation_amount, round_half_away_from_zero)
+                                ),
+                                ?cfpost(
+                                    {system, settlement},
+                                    {external, outcome},
+                                    ?share(1, 200000, operation_amount)
+                                )
+                            ]},
+                        refunds = #domain_PaymentRefundsProvisionTerms{
+                            cash_flow =
+                                {value, [
+                                    ?cfpost(
+                                        {merchant, settlement},
+                                        {provider, settlement},
+                                        ?share(1, 1, operation_amount)
+                                    )
+                                ]},
+                            partial_refunds = #domain_PartialRefundsProvisionTerms{
+                                cash_limit =
+                                    {value,
+                                        ?cashrng(
+                                            {inclusive, ?cash(10, <<"RUB">>)},
+                                            {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                        )}
+                            }
+                        }
+                    }
+                }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(100),
+            data = #domain_Terminal{
+                name = <<"Rounding Terminal">>,
+                description = <<>>
             }
         }}
     ].
