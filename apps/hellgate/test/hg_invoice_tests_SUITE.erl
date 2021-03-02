@@ -69,10 +69,10 @@
 -export([payment_risk_score_check_fail/1]).
 -export([payment_risk_score_check_timeout/1]).
 -export([invalid_payment_adjustment/1]).
--export([payment_refunded_adjustment_success/1]).
--export([payment_chargeback_adjustment_success/1]).
 -export([payment_adjustment_success/1]).
--export([partial_captured_payment_adjustment/1]).
+-export([payment_adjustment_refunded_success/1]).
+-export([payment_adjustment_chargeback_success/1]).
+-export([payment_adjustment_captured_partial/1]).
 -export([payment_adjustment_captured_from_failed/1]).
 -export([payment_adjustment_failed_from_captured/1]).
 -export([status_adjustment_of_partial_refunded_payment/1]).
@@ -291,10 +291,10 @@ groups() ->
 
         {adjustments, [], [
             invalid_payment_adjustment,
-            payment_refunded_adjustment_success,
-            payment_chargeback_adjustment_success,
             payment_adjustment_success,
-            partial_captured_payment_adjustment,
+            payment_adjustment_refunded_success,
+            payment_adjustment_chargeback_success,
+            payment_adjustment_captured_partial,
             payment_adjustment_captured_from_failed,
             payment_adjustment_failed_from_captured,
             status_adjustment_of_partial_refunded_payment
@@ -572,7 +572,8 @@ end_per_group(_Group, _C) ->
 -spec init_per_testcase(test_case_name(), config()) -> config().
 init_per_testcase(Name, C) when
     Name == payment_adjustment_success;
-    Name == partial_captured_payment_adjustment;
+    Name == payment_adjustment_refunded_success;
+    Name == payment_adjustment_captured_partial;
     Name == payment_adjustment_captured_from_failed;
     Name == payment_adjustment_failed_from_captured
 ->
@@ -1781,79 +1782,6 @@ invalid_payment_adjustment(C) ->
     ?invalid_payment_status(?failed(_)) =
         hg_client_invoicing:create_payment_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client).
 
--spec payment_refunded_adjustment_success(config()) -> test_return().
-payment_refunded_adjustment_success(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    CashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
-    _RefundID = process_refund(InvoiceID, PaymentID, make_refund_params(1000, <<"RUB">>), Client),
-    ok = update_payment_terms_cashflow(?prv(1), get_payment_adjustment_provider_cashflow(actual)),
-    _AdjustmentID = process_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
-    NewCashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
-    ?assertEqual(
-        [
-            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
-            {{merchant, settlement}, {system, settlement}, 450},
-            % ?share(1, 1, operation_amount)
-            {{provider, settlement}, {merchant, settlement}, 10000},
-            % ?share(18, 1000, operation_amount)
-            {{system, settlement}, {provider, settlement}, 180}
-        ],
-        CashFlow
-    ),
-    ?assertEqual(
-        [
-            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
-            {{merchant, settlement}, {system, settlement}, 450},
-            % ?share(1, 1, operation_amount)
-            {{provider, settlement}, {merchant, settlement}, 10000},
-            % ?system_to_provider_share_actual  ?share(16, 1000, operation_amount)
-            {{system, settlement}, {provider, settlement}, 160},
-            % ?system_to_external_fixed  ?fixed(20, <<"RUB">>)
-            {{system, settlement}, {external, outcome}, 20}
-        ],
-        NewCashFlow
-    ).
-
--spec payment_chargeback_adjustment_success(config()) -> test_return().
-payment_chargeback_adjustment_success(C) ->
-    Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
-    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 66000, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    CashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
-    Params = make_chargeback_params(?cash(0, <<"RUB">>)),
-    _ChargebackID = process_chargeback(InvoiceID, PaymentID, Params, Client),
-    ok = update_payment_terms_cashflow(?prv(2), get_payment_adjustment_provider_cashflow(initial)),
-    _AdjustmentID = process_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
-    NewCashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
-    ?assertEqual(
-        [
-            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
-            {{merchant, settlement}, {system, settlement}, 2970},
-            % ?share(1, 1, operation_amount)
-            {{provider, settlement}, {merchant, settlement}, 66000},
-            % ?share(16, 1000, operation_amount)
-            {{system, settlement}, {provider, settlement}, 1056}
-        ],
-        CashFlow
-    ),
-    ?assertEqual(
-        [
-            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
-            {{merchant, settlement}, {system, settlement}, 2970},
-            % ?share(1, 1, operation_amount)
-            {{provider, settlement}, {merchant, settlement}, 66000},
-            % ?system_to_provider_share_initial  ?share(21, 1000, operation_amount)
-            {{system, settlement}, {provider, settlement}, 1386}
-        ],
-        NewCashFlow
-    ).
-
 -spec payment_adjustment_success(config()) -> test_return().
 payment_adjustment_success(C) ->
     Client = cfg(client, C),
@@ -1915,8 +1843,81 @@ payment_adjustment_success(C) ->
     SysDiff = MrcDiff + PrvDiff - 20,
     SysDiff = maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1).
 
--spec partial_captured_payment_adjustment(config()) -> test_return().
-partial_captured_payment_adjustment(C) ->
+-spec payment_adjustment_refunded_success(config()) -> test_return().
+payment_adjustment_refunded_success(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    CashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
+    _RefundID = process_refund(InvoiceID, PaymentID, make_refund_params(1000, <<"RUB">>), Client),
+    ok = update_payment_terms_cashflow(?prv(1), get_payment_adjustment_provider_cashflow(actual)),
+    _AdjustmentID = process_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    NewCashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
+    ?assertEqual(
+        [
+            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 450},
+            % ?share(1, 1, operation_amount)
+            {{provider, settlement}, {merchant, settlement}, 10000},
+            % ?share(18, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 180}
+        ],
+        CashFlow
+    ),
+    ?assertEqual(
+        [
+            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 450},
+            % ?share(1, 1, operation_amount)
+            {{provider, settlement}, {merchant, settlement}, 10000},
+            % ?system_to_provider_share_actual  ?share(16, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 160},
+            % ?system_to_external_fixed  ?fixed(20, <<"RUB">>)
+            {{system, settlement}, {external, outcome}, 20}
+        ],
+        NewCashFlow
+    ).
+
+-spec payment_adjustment_chargeback_success(config()) -> test_return().
+payment_adjustment_chargeback_success(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 66000, C),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
+    CashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
+    Params = make_chargeback_params(?cash(0, <<"RUB">>)),
+    _ChargebackID = process_chargeback(InvoiceID, PaymentID, Params, Client),
+    ok = update_payment_terms_cashflow(?prv(2), get_payment_adjustment_provider_cashflow(initial)),
+    _AdjustmentID = process_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
+    NewCashFlow = payment_cashflow_entries(InvoiceID, PaymentID, Client),
+    ?assertEqual(
+        [
+            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 2970},
+            % ?share(1, 1, operation_amount)
+            {{provider, settlement}, {merchant, settlement}, 66000},
+            % ?share(16, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 1056}
+        ],
+        CashFlow
+    ),
+    ?assertEqual(
+        [
+            % ?merchant_to_system_share_1 ?share(45, 1000, operation_amount)
+            {{merchant, settlement}, {system, settlement}, 2970},
+            % ?share(1, 1, operation_amount)
+            {{provider, settlement}, {merchant, settlement}, 66000},
+            % ?system_to_provider_share_initial  ?share(21, 1000, operation_amount)
+            {{system, settlement}, {provider, settlement}, 1386}
+        ],
+        NewCashFlow
+    ).
+
+-spec payment_adjustment_captured_partial(config()) -> test_return().
+payment_adjustment_captured_partial(C) ->
     InitialCost = 1000 * 100,
     PartialCost = 700 * 100,
     Client = cfg(client, C),
