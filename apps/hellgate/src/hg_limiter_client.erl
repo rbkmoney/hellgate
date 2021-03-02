@@ -34,21 +34,17 @@ get(LimitID, Timestamp) ->
     end.
 
 -spec hold(limit_change()) -> ok.
-hold(_) ->
-    ok.
-% TODO: Uncomment&Deploy second deployment
-% Uncomment&Deploy this code, delete skip LimitChangeNotFound
-% hold(LimitChange) ->
-%     LimitID = LimitChange#proto_limiter_LimitChange.id,
-%     Opts = hg_woody_wrapper:get_service_options(limiter),
-%     case hg_woody_wrapper:call(limiter, 'Hold', {LimitChange}, Opts) of
-%         {ok, ok} ->
-%             ok;
-%         {exception, #proto_limiter_LimitNotFound{}} ->
-%             error({not_found, LimitID});
-%         {exception, #'InvalidRequest'{errors = Errors}} ->
-%             error({invalid_request, Errors})
-%     end.
+hold(LimitChange) ->
+    LimitID = LimitChange#proto_limiter_LimitChange.id,
+    Opts = hg_woody_wrapper:get_service_options(limiter),
+    case hg_woody_wrapper:call(limiter, 'Hold', {LimitChange}, Opts) of
+        {ok, ok} ->
+            ok;
+        {exception, #proto_limiter_LimitNotFound{}} ->
+            error({not_found, LimitID});
+        {exception, #'InvalidRequest'{errors = Errors}} ->
+            error({invalid_request, Errors})
+    end.
 
 -spec commit(limit_change()) -> ok.
 commit(LimitChange) ->
@@ -59,9 +55,7 @@ commit(LimitChange) ->
         {exception, #proto_limiter_LimitNotFound{}} ->
             error({not_found, LimitChange#proto_limiter_LimitChange.id});
         {exception, #proto_limiter_LimitChangeNotFound{}} ->
-            ok;
-        % TODO: Uncomment&Deploy
-        % error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
+            error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
         {exception, #'InvalidRequest'{errors = Errors}} ->
             error({invalid_request, Errors})
     end.
@@ -75,9 +69,7 @@ partial_commit(LimitChange) ->
         {exception, #proto_limiter_LimitNotFound{}} ->
             error({not_found, LimitChange#proto_limiter_LimitChange.id});
         {exception, #proto_limiter_LimitChangeNotFound{}} ->
-            ok;
-        % TODO: Uncomment&Deploy
-        % error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
+            error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
         {exception, #proto_limiter_ForbiddenOperationAmount{amount = Amount, allowed_range = CashRange}} ->
             error({forbidden_operation_amount, {Amount, CashRange}});
         {exception, #'InvalidRequest'{errors = Errors}} ->
@@ -94,9 +86,7 @@ rollback(LimitChange) ->
         {exception, #proto_limiter_LimitNotFound{}} ->
             error({not_found, LimitID});
         {exception, #proto_limiter_LimitChangeNotFound{}} ->
-            ok;
-        % TODO: Uncomment&Deploy
-        % error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
+            error({not_found, {limit_change, LimitChange#proto_limiter_LimitChange.change_id}});
         {exception, #'InvalidRequest'{errors = Errors}} ->
             error({invalid_request, Errors})
     end.
