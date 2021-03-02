@@ -5111,11 +5111,7 @@ make_adjustment_params() ->
     make_adjustment_params(<<>>).
 
 make_adjustment_params(Reason) ->
-    make_adjustment_params(Reason, undefined).
-
-make_adjustment_params(Reason, Revision) ->
     #payproc_InvoicePaymentAdjustmentParams{
-        legacy_domain_revision = Revision,
         reason = Reason
     }.
 
