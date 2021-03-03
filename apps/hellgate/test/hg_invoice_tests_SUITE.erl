@@ -485,6 +485,8 @@ end_per_suite(C) ->
 -define(payment_w_context(Context), #domain_InvoicePayment{context = Context}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 -define(trx_info(ID, Extra), #domain_TransactionInfo{id = ID, extra = Extra}).
+-define(refund_id(RefundID), #domain_InvoicePaymentRefund{id = RefundID}).
+-define(refund_id(RefundID, ExternalID), #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID}).
 
 -define(invalid_invoice_status(Status),
     {exception, #payproc_InvalidInvoiceStatus{status = Status}}
@@ -3508,10 +3510,10 @@ payment_refund_idempotency(C) ->
     },
     % try starting the same refund twice
     Refund0 =
-        #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID} =
+        ?refund_id(RefundID, ExternalID) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
     Refund0 =
-        #domain_InvoicePaymentRefund{id = RefundID, external_id = ExternalID} =
+        ?refund_id(RefundID, ExternalID) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
     RefundParams2 = RefundParams0#payproc_InvoicePaymentRefundParams{id = <<"2">>},
     % can't start a different refund
@@ -3523,7 +3525,7 @@ payment_refund_idempotency(C) ->
             % the first refund has already finished
             ok
     end,
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Refund0, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = await_refund_payment_complete(InvoiceID, PaymentID, Client),
 
@@ -3552,10 +3554,9 @@ payment_refund_success(C) ->
                 'RefundFailure',
                 {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
             )},
-    Refund0 =
-        #domain_InvoicePaymentRefund{id = RefundID0} =
+    ?refund_id(RefundID0) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID0, Refund0, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID0, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(Failure)))
     ] = next_event(InvoiceID, Client),
@@ -3593,10 +3594,9 @@ payment_refund_failure(C) ->
                 'RefundFailure',
                 {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
             )},
-    Refund0 =
-        #domain_InvoicePaymentRefund{id = RefundID0} =
+    ?refund_id(RefundID0) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID0, Refund0, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID0, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
     ] = next_event(InvoiceID, Client),
@@ -3607,12 +3607,9 @@ payment_refund_failure(C) ->
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     _PaymentID2 = execute_payment(InvoiceID2, make_payment_params(), Client),
     % create a refund finally
-    Refund =
-        #domain_InvoicePaymentRefund{id = RefundID} =
+    ?refund_id(RefundID) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    Refund =
-        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Refund, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(ID, ?session_ev(?refunded(), ?session_finished(?session_failed(Failure))))),
@@ -3647,10 +3644,9 @@ deadline_doesnt_affect_payment_refund(C) ->
                 'RefundFailure',
                 {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
             )},
-    Refund0 =
-        #domain_InvoicePaymentRefund{id = RefundID0} =
+    ?refund_id(RefundID0) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID0, Refund0, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID0, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_rollback_started(NoFunds)))
     ] = next_event(InvoiceID, Client),
@@ -3686,7 +3682,7 @@ payment_manual_refund(C) ->
                 {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
             )},
     Refund0 =
-        #domain_InvoicePaymentRefund{id = RefundID0} =
+        ?refund_id(RefundID0) =
         hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID0, ?refund_created(Refund0, _, TrxInfo)))
@@ -3706,7 +3702,7 @@ payment_manual_refund(C) ->
     ok = hg_domain:upsert(Fixture),
     % create refund
     Refund =
-        #domain_InvoicePaymentRefund{id = RefundID} =
+        ?refund_id(RefundID) =
         hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
     Refund =
         hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
@@ -3875,12 +3871,10 @@ cant_start_simultaneous_partial_refunds(C) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentID = execute_payment(InvoiceID, make_payment_params(), Client),
     RefundParams = make_refund_params(10000, <<"RUB">>),
-    Refund1 =
-        #domain_InvoicePaymentRefund{id = RefundID1} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
+    ?refund_id(RefundID1) = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
     ?operation_not_permitted() =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID1, Refund1, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID1, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID1, Client),
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
     _RefundID2 = execute_payment_refund(InvoiceID, PaymentID, RefundParams, Client),
@@ -3922,10 +3916,8 @@ retry_temporary_unavailability_refund(C) ->
     PaymentParams = make_scenario_payment_params([good, good, temp, temp]),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     RefundParams1 = make_refund_params(1000, <<"RUB">>),
-    Refund1 =
-        #domain_InvoicePaymentRefund{id = RefundID1} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID1, Refund1, Client),
+    ?refund_id(RefundID1) = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID1, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID1, Client),
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client, 2),
     % check payment status still captured and all refunds
@@ -3965,7 +3957,7 @@ payment_refund_id_types(C) ->
     % 0
     ManualRefundParams = RefundParams#payproc_InvoicePaymentRefundParams{transaction_info = TrxInfo},
     Refund0 =
-        #domain_InvoicePaymentRefund{id = RefundID0} =
+        ?refund_id(RefundID0) =
         hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, ManualRefundParams, Client),
     Refund0 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID0, Client),
     PaymentID = await_partial_manual_refund_succeeded(Refund0, TrxInfo, InvoiceID, PaymentID, RefundID0, Client),
@@ -3974,7 +3966,7 @@ payment_refund_id_types(C) ->
     % 2
     CustomIdManualParams = ManualRefundParams#payproc_InvoicePaymentRefundParams{id = <<"2">>},
     Refund2 =
-        #domain_InvoicePaymentRefund{id = RefundID2} =
+        ?refund_id(RefundID2) =
         hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, CustomIdManualParams, Client),
     Refund2 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID2, Client),
     PaymentID = await_partial_manual_refund_succeeded(Refund2, TrxInfo, InvoiceID, PaymentID, RefundID2, Client),
@@ -5159,7 +5151,8 @@ await_payment_process_failure(InvoiceID, PaymentID, Client, Restarts, Target) ->
     ] = next_event(InvoiceID, Client),
     {failed, PaymentID, Failure}.
 
-await_refund_created(InvoiceID, PaymentID, RefundID, Refund, Client) ->
+await_refund_created(InvoiceID, PaymentID, RefundID, Client) ->
+    Refund = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _)))
     ] = next_event(InvoiceID, Client),
@@ -5328,19 +5321,15 @@ execute_payment_adjustment(InvoiceID, PaymentID, Params, Client) ->
 execute_payment_refund(InvoiceID, PaymentID, #payproc_InvoicePaymentRefundParams{cash = undefined} = Params, Client) ->
     execute_payment_refund_complete(InvoiceID, PaymentID, Params, Client);
 execute_payment_refund(InvoiceID, PaymentID, Params, Client) ->
-    Refund =
-        #domain_InvoicePaymentRefund{id = RefundID} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, Params, Client),
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Refund, Client),
+    ?refund_id(RefundID) = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, Params, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = await_refund_payment_process_finish(InvoiceID, PaymentID, Client),
     RefundID.
 
 execute_payment_refund_complete(InvoiceID, PaymentID, Params, Client) ->
-    Refund =
-        #domain_InvoicePaymentRefund{id = RefundID} =
-        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, Params, Client),
-    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Refund, Client),
+    ?refund_id(RefundID) = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, Params, Client),
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
     PaymentID = await_refund_payment_complete(InvoiceID, PaymentID, Client),
     RefundID.
