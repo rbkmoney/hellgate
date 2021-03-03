@@ -3701,13 +3701,9 @@ payment_manual_refund(C) ->
     Fixture = payment_manual_refund_fixture(OriginalRevision),
     ok = hg_domain:upsert(Fixture),
     % create refund
-    Refund =
-        ?refund_id(RefundID) =
-        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
-    Refund =
-        hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    ?refund_id(RefundID) = hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _, TrxInfo)))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(_Refund, _, TrxInfo)))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started()))),
@@ -3956,20 +3952,14 @@ payment_refund_id_types(C) ->
     },
     % 0
     ManualRefundParams = RefundParams#payproc_InvoicePaymentRefundParams{transaction_info = TrxInfo},
-    Refund0 =
-        ?refund_id(RefundID0) =
-        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, ManualRefundParams, Client),
-    Refund0 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID0, Client),
-    PaymentID = await_partial_manual_refund_succeeded(Refund0, TrxInfo, InvoiceID, PaymentID, RefundID0, Client),
+    ?refund_id(RefundID0) = hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, ManualRefundParams, Client),
+    PaymentID = await_partial_manual_refund_succeeded(InvoiceID, PaymentID, RefundID0, TrxInfo, Client),
     % 1
     RefundID1 = execute_payment_refund(InvoiceID, PaymentID, RefundParams, Client),
     % 2
     CustomIdManualParams = ManualRefundParams#payproc_InvoicePaymentRefundParams{id = <<"2">>},
-    Refund2 =
-        ?refund_id(RefundID2) =
-        hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, CustomIdManualParams, Client),
-    Refund2 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID2, Client),
-    PaymentID = await_partial_manual_refund_succeeded(Refund2, TrxInfo, InvoiceID, PaymentID, RefundID2, Client),
+    ?refund_id(RefundID2) = hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, CustomIdManualParams, Client),
+    PaymentID = await_partial_manual_refund_succeeded(InvoiceID, PaymentID, RefundID2, TrxInfo, Client),
     % 3
     CustomIdParams = RefundParams#payproc_InvoicePaymentRefundParams{id = <<"m3">>},
     {exception, #'InvalidRequest'{}} =
@@ -5152,15 +5142,14 @@ await_payment_process_failure(InvoiceID, PaymentID, Client, Restarts, Target) ->
     {failed, PaymentID, Failure}.
 
 await_refund_created(InvoiceID, PaymentID, RefundID, Client) ->
-    Refund = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _)))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(_Refund, _)))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 
-await_partial_manual_refund_succeeded(Refund, TrxInfo, InvoiceID, PaymentID, RefundID, Client) ->
+await_partial_manual_refund_succeeded(InvoiceID, PaymentID, RefundID, TrxInfo, Client) ->
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(Refund, _, TrxInfo)))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(_Refund, _, TrxInfo)))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?refund_ev(RefundID, ?session_ev(?refunded(), ?session_started()))),
