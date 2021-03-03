@@ -3958,7 +3958,12 @@ payment_refund_id_types(C) ->
     RefundID1 = execute_payment_refund(InvoiceID, PaymentID, RefundParams, Client),
     % 2
     CustomIdManualParams = ManualRefundParams#payproc_InvoicePaymentRefundParams{id = <<"2">>},
-    ?refund_id(RefundID2) = hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, CustomIdManualParams, Client),
+    ?refund_id(RefundID2) = hg_client_invoicing:refund_payment_manual(
+        InvoiceID,
+        PaymentID,
+        CustomIdManualParams,
+        Client
+    ),
     PaymentID = await_partial_manual_refund_succeeded(InvoiceID, PaymentID, RefundID2, TrxInfo, Client),
     % 3
     CustomIdParams = RefundParams#payproc_InvoicePaymentRefundParams{id = <<"m3">>},
