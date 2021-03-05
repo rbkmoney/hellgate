@@ -16,13 +16,13 @@ You can adjust this parameter by exporting the environment variable `REGISTRY`.
 To build the service image without access to the internal RBK.money registry:
 
 ```shell
-REGISTRY=ghcr.io make submodules wc_release build_image
+make submodules && REGISTRY=ghcr.io make wc_release build_image
 ```
 
 To compile:
 
 ```shell
-REGISTRY=ghcr.io make submodules wc_compile
+make submodules && REGISTRY=ghcr.io make wc_compile
 ```
 
 To run the service tests (you need either to have access to the internal RBK.money registry or to modify `docker-compose.sh`):
