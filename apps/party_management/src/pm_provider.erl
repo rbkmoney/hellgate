@@ -202,7 +202,8 @@ merge_payment_terms(
         holds = PHolds,
         refunds = PRefunds,
         chargebacks = PChargebacks,
-        risk_coverage = PRiskCoverage
+        risk_coverage = PRiskCoverage,
+        turnover_limits = PTurnoverLimits
     },
     #domain_PaymentsProvisionTerms{
         currencies = TCurrencies,
@@ -213,7 +214,8 @@ merge_payment_terms(
         holds = THolds,
         refunds = TRefunds,
         chargebacks = TChargebacks,
-        risk_coverage = TRiskCoverage
+        risk_coverage = TRiskCoverage,
+        turnover_limits = TTurnoverLimits
     }
 ) ->
     #domain_PaymentsProvisionTerms{
@@ -225,7 +227,8 @@ merge_payment_terms(
         holds = pm_utils:select_defined(THolds, PHolds),
         refunds = pm_utils:select_defined(TRefunds, PRefunds),
         chargebacks = pm_utils:select_defined(TChargebacks, PChargebacks),
-        risk_coverage = pm_utils:select_defined(TRiskCoverage, PRiskCoverage)
+        risk_coverage = pm_utils:select_defined(TRiskCoverage, PRiskCoverage),
+        turnover_limits = pm_utils:select_defined(TTurnoverLimits, PTurnoverLimits)
     };
 merge_payment_terms(ProviderTerms, TerminalTerms) ->
     pm_utils:select_defined(TerminalTerms, ProviderTerms).
