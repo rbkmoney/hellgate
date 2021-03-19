@@ -36,14 +36,13 @@
 
 -define(SYNC_INTERVAL, 5).
 % 1 day
--define(SYNC_OUTDATED_INTERVAL, 86400).
+-define(SYNC_OUTDATED_INTERVAL, 60*60*24).
+-define(MAX_BINDING_DURATION, 60*60*3).
 -define(REC_PAYTOOL_EVENTS_LIMIT, 10).
--define(MAX_BINDING_DURATION, #'TimeSpan'{hours = 3}).
 
 -record(st, {
     customer :: undefined | customer(),
     active_binding :: undefined | binding_id(),
-    binding_starts :: map(),
     created_at :: undefined | hg_datetime:timestamp()
 }).
 
@@ -77,12 +76,6 @@ handle_function_('Create', {CustomerParams}, _Opts) ->
     _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party, DomainRevison),
     ok = start(CustomerID, CustomerParams),
     get_customer(get_state(CustomerID));
-%% TODO Удалить после перехода на новый протокол
-handle_function_('Get', {CustomerID, undefined}, _Opts) ->
-    ok = set_meta(CustomerID),
-    St = get_state(CustomerID),
-    ok = assert_customer_accessible(St),
-    get_customer(St);
 handle_function_('Get', {CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}}, _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID, AfterID, Limit),
@@ -216,13 +209,11 @@ handle_signal(timeout, St0, AuxSt0) ->
     {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
     St1 = merge_changes(Changes, St0),
     Action =
-        case detect_binding_status(St1) of
+        case detect_pending_waiting(St1, AuxSt1) of
             all_ready ->
                 hg_machine_action:new();
-            waiting ->
-                set_event_poll_timer(actual);
-            waiting_outdated ->
-                set_event_poll_timer(outdated)
+            {waiting, WaitingTime} ->
+                hg_machine_action:set_timeout(detect_poll_timeout(WaitingTime))
         end,
     #{
         changes => Changes ++ get_ready_changes(St1),
@@ -230,17 +221,34 @@ handle_signal(timeout, St0, AuxSt0) ->
         auxst => AuxSt1
     }.
 
-detect_binding_status(St) ->
-    case get_pending_binding_set(St) of
-        [] ->
+detect_pending_waiting(State, AuxState) ->
+    DefaultEventTime = hg_datetime:parse(State#st.created_at, second),
+    Pending = get_pending_binding_set(State),
+    PendingInfo = lists:foldl(
+        fun(BindingID, {LastEventTime, Count}) ->
+            EventTime = case aux_get_event_time(BindingID, AuxState) of
+                undefined -> DefaultEventTime;
+                Value -> Value
+            end,
+            {erlang:max(LastEventTime, EventTime), Count + 1}
+        end,
+        {0, 0},
+        Pending
+    ),
+    case PendingInfo of
+        {_LastEventTime, 0} ->
             all_ready;
-        Pending ->
-            case get_outdated_binding_set(St) of
-                Outdated when Outdated =:= Pending ->
-                    waiting_outdated;
-                _Outdated ->
-                    waiting
-            end
+        {LastEventTime, _Count} ->
+            Now = erlang:system_time(second),
+            {waiting, Now - LastEventTime}
+    end.
+
+detect_poll_timeout(WaitingTime) ->
+    if
+        WaitingTime < ?MAX_BINDING_DURATION ->
+            erlang:min(?SYNC_INTERVAL, erlang:max(1, WaitingTime));
+        true ->
+            ?SYNC_OUTDATED_INTERVAL - rand:uniform(?SYNC_OUTDATED_INTERVAL div 10)
     end.
 
 get_ready_changes(#st{customer = #payproc_Customer{status = ?customer_unready()}} = St) ->
@@ -374,12 +382,12 @@ sync_pending_bindings([], _St, AuxSt) ->
 
 sync_binding_state(Binding, St, AuxSt) ->
     RecurrentPaytoolID = get_binding_recurrent_paytool_id(Binding),
-    LastEventID0 = get_binding_last_event_id(Binding, AuxSt),
+    LastEventID0 = aux_get_event_id(Binding, AuxSt),
     case get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID0) of
-        {ok, {RecurrentPaytoolChanges, LastEventID1}} ->
+        {ok, {RecurrentPaytoolChanges, LastEventID1, LastEventTime}} ->
             BindingChanges = produce_binding_changes(RecurrentPaytoolChanges, Binding),
             WrappedChanges = wrap_binding_changes(get_binding_id(Binding), BindingChanges),
-            UpdatedAuxState = update_aux_state(LastEventID1, Binding, AuxSt),
+            UpdatedAuxState = aux_update_binding(LastEventID1, LastEventTime, Binding, AuxSt),
             {WrappedChanges, UpdatedAuxState};
         % lazily create paytool
         {error, paytool_not_found} ->
@@ -388,13 +396,23 @@ sync_binding_state(Binding, St, AuxSt) ->
             {[], AuxSt}
     end.
 
-update_aux_state(undefined, _Binding, AuxSt) ->
+aux_update_binding(undefined, _LastEventTime, _Binding, AuxSt) ->
     AuxSt;
-update_aux_state(LastEventID, #payproc_CustomerBinding{id = BindingID}, AuxSt) ->
-    maps:put(BindingID, LastEventID, AuxSt).
+aux_update_binding(LastEventID, LastEventTime, #payproc_CustomerBinding{id = BindingID}, AuxSt) ->
+    EventTime = hg_datetime:parse(LastEventTime, second),
+    maps:put(BindingID, {LastEventID, EventTime}, AuxSt).
 
-get_binding_last_event_id(#payproc_CustomerBinding{id = BindingID}, AuxSt) ->
-    maps:get(BindingID, AuxSt, undefined).
+aux_get_event_id(#payproc_CustomerBinding{id = BindingID}, AuxSt) ->
+    case maps:get(BindingID, AuxSt, undefined) of
+        undefined -> undefined;
+        {EventID, _EventTime} -> EventID
+    end.
+
+aux_get_event_time(BindingID, AuxSt) ->
+    case maps:get(BindingID, AuxSt, undefined) of
+        undefined -> undefined;
+        {_EventID, EventTime} -> EventTime
+    end.
 
 produce_binding_changes([RecurrentPaytoolChange | Rest], Binding) ->
     Changes = produce_binding_changes_(RecurrentPaytoolChange, Binding),
@@ -449,11 +467,14 @@ create_recurrent_paytool(Params) ->
 get_recurrent_paytool_events(RecurrentPaytoolID, EventRange) ->
     issue_recurrent_paytools_call('GetEvents', {RecurrentPaytoolID, EventRange}).
 
-get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
-    EventRange = construct_event_range(LastEventID),
+get_recurrent_paytool_changes(RecurrentPaytoolID, AfterEventID) ->
+    EventRange = construct_event_range(AfterEventID),
     case get_recurrent_paytool_events(RecurrentPaytoolID, EventRange) of
+        {ok, []} ->
+            {ok, {[], undefined, undefined}};
         {ok, Events} ->
-            {ok, {gather_recurrent_paytool_changes(Events), get_last_event_id(Events)}};
+            #payproc_RecurrentPaymentToolEvent{id = LastEventID, created_at = LastEventTime} = lists:last(Events),
+            {ok, {gather_recurrent_paytool_changes(Events), LastEventID, LastEventTime}};
         {exception, #payproc_RecurrentPaymentToolNotFound{}} ->
             {error, paytool_not_found}
     end.
@@ -462,12 +483,6 @@ construct_event_range(undefined) ->
     #payproc_EventRange{limit = ?REC_PAYTOOL_EVENTS_LIMIT};
 construct_event_range(LastEventID) ->
     #payproc_EventRange{'after' = LastEventID, limit = ?REC_PAYTOOL_EVENTS_LIMIT}.
-
-get_last_event_id([_ | _] = Events) ->
-    #payproc_RecurrentPaymentToolEvent{id = LastEventID} = lists:last(Events),
-    LastEventID;
-get_last_event_id([]) ->
-    undefined.
 
 gather_recurrent_paytool_changes(Events) ->
     lists:flatmap(
@@ -479,14 +494,6 @@ gather_recurrent_paytool_changes(Events) ->
 
 issue_recurrent_paytools_call(Function, Args) ->
     hg_woody_wrapper:call(recurrent_paytool, Function, Args).
-
-set_event_poll_timer(Type) ->
-    hg_machine_action:set_timeout(get_event_pol_timeout(Type)).
-
-get_event_pol_timeout(actual) ->
-    ?SYNC_INTERVAL;
-get_event_pol_timeout(outdated) ->
-    ?SYNC_OUTDATED_INTERVAL - rand:uniform(?SYNC_OUTDATED_INTERVAL div 10).
 
 %%
 
@@ -501,7 +508,7 @@ get_customer_created_event(CustomerID, Params = #payproc_CustomerParams{}) ->
 %%
 
 collapse_history(History) ->
-    lists:foldl(fun merge_event/2, #st{binding_starts = #{}}, History).
+    lists:foldl(fun merge_event/2, #st{}, History).
 
 merge_event({_ID, _, Changes}, St) ->
     merge_changes(Changes, St).
@@ -524,18 +531,11 @@ merge_change(?customer_binding_changed(BindingID, Payload), St) ->
     Binding1 = merge_binding_change(Payload, Binding),
     BindingStatus = get_binding_status(Binding1),
     St1 = set_customer(set_binding(Binding1, Customer), St),
-    St2 = update_active_binding(BindingID, BindingStatus, St1),
-    update_bindigs_start(BindingID, Payload, St2).
+    update_active_binding(BindingID, BindingStatus, St1).
 
 update_active_binding(BindingID, ?customer_binding_succeeded(), St) ->
     set_active_binding_id(BindingID, St);
 update_active_binding(_BindingID, _BindingStatus, St) ->
-    St.
-
-update_bindigs_start(BindingID, ?customer_binding_started(_Binding, Timestamp), St) ->
-    #st{binding_starts = Starts} = St,
-    St#st{binding_starts = Starts#{BindingID => Timestamp}};
-update_bindigs_start(_BindingID, _OtherChange, St) ->
     St.
 
 wrap_binding_changes(BindingID, Changes) ->
@@ -605,42 +605,11 @@ get_pending_binding_set(St) ->
         || Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_pending()
     ].
 
-get_outdated_binding_set(St) ->
-    Bindings = get_bindings(get_customer(St)),
-    [
-        get_binding_id(Binding)
-        || Binding <- Bindings, is_binding_outdated(Binding, St) =:= true
-    ].
-
-is_binding_outdated(#payproc_CustomerBinding{id = BindingId, status = ?customer_binding_pending()}, St) ->
-    BindingStart = get_binding_start_timestamp(BindingId, St),
-    Now = hg_datetime:format_now(),
-    Deadline = hg_datetime:add_time_span(?MAX_BINDING_DURATION, BindingStart),
-    case hg_datetime:compare(Now, Deadline) of
-        later ->
-            true;
-        _Other ->
-            false
-    end;
-is_binding_outdated(_Bindinf, _St) ->
-    false.
-
 get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->
     BindingID.
 
 get_binding_status(#payproc_CustomerBinding{status = Status}) ->
     Status.
-
-get_binding_start_timestamp(BindingId, #st{binding_starts = Starts} = St) ->
-    BindingStart = maps:get(BindingId, Starts),
-    % Old bindings has `undefined` start timestamp.
-    % Using customer create timestamp instead.
-    case BindingStart of
-        undefined ->
-            St#st.created_at;
-        _ ->
-            BindingStart
-    end.
 
 assert_binding_status(StatusName, #payproc_CustomerBinding{status = {StatusName, _}}) ->
     ok;
@@ -730,16 +699,21 @@ marshal_customer_params(Params) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
     hg_proto_utils:serialize(Type, Params).
 
+marshal_term(V) ->
+    {bin, term_to_binary(V)}.
+
 %% AuxState
 
 marshal(auxst, AuxState) ->
     maps:fold(
         fun(K, V, Acc) ->
-            maps:put(marshal(binding_id, K), marshal(event_id, V), Acc)
+            maps:put(marshal(binding_id, K), marshal(event_info, V), Acc)
         end,
         #{},
         AuxState
     );
+marshal(event_info, EventInfo) ->
+    marshal_term(EventInfo);
 marshal(binding_id, BindingID) ->
     marshal(str, BindingID);
 marshal(event_id, EventID) ->
@@ -772,6 +746,9 @@ unmarshal_customer_params(Bin) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'CustomerParams'}},
     hg_proto_utils:deserialize(Type, Bin).
 
+unmarshal_term({bin, B}) ->
+    binary_to_term(B).
+
 unmarshal({list, T}, Vs) when is_list(Vs) ->
     [unmarshal(T, V) || V <- Vs];
 %% Aux State
@@ -779,11 +756,16 @@ unmarshal({list, T}, Vs) when is_list(Vs) ->
 unmarshal(auxst, AuxState) ->
     maps:fold(
         fun(K, V, Acc) ->
-            maps:put(unmarshal(binding_id, K), unmarshal(event_id, V), Acc)
+            maps:put(unmarshal(binding_id, K), unmarshal(event_info, V), Acc)
         end,
         #{},
         AuxState
     );
+unmarshal(event_info, EventInfo) when is_integer(EventInfo) ->
+    % в старой версии сохранялся только EventID
+    {unmarshal(event_id, EventInfo), undefined};
+unmarshal(event_info, EventInfo) ->
+    unmarshal_term(EventInfo);
 unmarshal(binding_id, BindingID) ->
     unmarshal(str, BindingID);
 unmarshal(event_id, EventID) ->
@@ -971,11 +953,27 @@ unmarshal(_, Other) ->
 
 -spec test() -> _.
 
+-spec auxstate_marshaling_test_() -> _.
+auxstate_marshaling_test_() ->
+    Cases = [
+        {
+            #{<<"one">> => 2},
+            #{<<"one">> => marshal_term({2, undefined})}
+        },
+        {
+            #{<<"one">> => marshal_term({2, 4})},
+            #{<<"one">> => marshal_term({2, 4})}
+        }
+    ],
+    [?_assertEqual(Expected, marshal(auxst, unmarshal(auxst, Source))) || {Source, Expected} <- Cases].
+
+-if(0).
 -spec event_pol_timer_test() -> _.
 
 event_pol_timer_test() ->
     ?assertEqual(get_event_pol_timeout(actual), ?SYNC_INTERVAL),
     ?assert(get_event_pol_timeout(outdated) =< ?SYNC_OUTDATED_INTERVAL),
     ?assert(get_event_pol_timeout(outdated) >= ?SYNC_OUTDATED_INTERVAL * 0.9).
+-endif.
 
 -endif.
