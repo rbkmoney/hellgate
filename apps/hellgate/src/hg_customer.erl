@@ -257,10 +257,10 @@ detect_pending_waiting(State) ->
     end.
 
 detect_poll_timeout(WaitingTime) ->
-    if
-        WaitingTime < ?MAX_BINDING_DURATION ->
-            erlang:min(?SYNC_INTERVAL, erlang:max(1, WaitingTime));
+    case WaitingTime < ?MAX_BINDING_DURATION of
         true ->
+            erlang:min(?SYNC_INTERVAL, erlang:max(1, WaitingTime));
+        _ ->
             ?SYNC_OUTDATED_INTERVAL - rand:uniform(?SYNC_OUTDATED_INTERVAL div 10)
     end.
 
@@ -949,14 +949,5 @@ unmarshal(_, Other) ->
 auxstate_marshaling_test_() ->
     Cases = [{#{<<"one">> => 2}, #{<<"one">> => 2}}],
     [?_assertEqual(Expected, marshal(auxst, unmarshal(auxst, Source))) || {Source, Expected} <- Cases].
-
--if(0).
--spec event_pol_timer_test() -> _.
-
-event_pol_timer_test() ->
-    ?assertEqual(get_event_pol_timeout(actual), ?SYNC_INTERVAL),
-    ?assert(get_event_pol_timeout(outdated) =< ?SYNC_OUTDATED_INTERVAL),
-    ?assert(get_event_pol_timeout(outdated) >= ?SYNC_OUTDATED_INTERVAL * 0.9).
--endif.
 
 -endif.
