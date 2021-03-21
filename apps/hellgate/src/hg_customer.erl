@@ -1007,7 +1007,7 @@ app_config_test_() ->
             end,
             [
                 ?_assertEqual(16, app_binding_sync_interval()),
-                ?_assertEqual(32*60, app_binding_outdated_sync_interval()),
+                ?_assertEqual(32 * 60, app_binding_outdated_sync_interval()),
                 ?_assertEqual(64, app_binding_outdate_timeout())
             ]},
         {setup,
