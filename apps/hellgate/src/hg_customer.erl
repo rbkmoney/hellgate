@@ -5,7 +5,7 @@
 -module(hg_customer).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
--include_lib("hellgate/include/recurrent_payment_tools.hrl").
+
 -include("customer_events.hrl").
 
 -define(NS, <<"customer">>).
@@ -15,12 +15,6 @@
 -behaviour(hg_woody_wrapper).
 
 -export([handle_function/3]).
-
-%% Event provider callbacks
-
--behaviour(hg_event_provider).
-
--export([publish_event/2]).
 
 %% Machine callbacks
 
@@ -32,19 +26,25 @@
 -export([process_call/2]).
 -export([process_repair/2]).
 
+%% Event provider callbacks
+
+-behaviour(hg_event_provider).
+
+-export([publish_event/2]).
+
 %% Types
 
 -define(SYNC_INTERVAL, 5).
 % 1 day
 -define(SYNC_OUTDATED_INTERVAL, 60 * 60 * 24).
--define(MAX_BINDING_DURATION, 60 * 60 * 3).
 -define(REC_PAYTOOL_EVENTS_LIMIT, 10).
+-define(MAX_BINDING_DURATION, 60 * 60 * 3).
 
 -record(st, {
     customer :: undefined | customer(),
-    created_at :: undefined | hg_datetime:timestamp(),
     active_binding :: undefined | binding_id(),
-    binding_activity :: #{binding_id() => integer()}
+    binding_activity :: #{binding_id() => integer()},
+    created_at :: undefined | hg_datetime:timestamp()
 }).
 
 -type customer() :: dmsl_payment_processing_thrift:'Customer'().
@@ -52,7 +52,6 @@
 -type customer_params() :: dmsl_payment_processing_thrift:'CustomerParams'().
 -type customer_change() :: dmsl_payment_processing_thrift:'CustomerChange'().
 -type binding_id() :: dmsl_payment_processing_thrift:'CustomerBindingID'().
--type call() :: hg_machine:thrift_call().
 
 %%
 %% Woody handler
@@ -68,7 +67,7 @@ handle_function(Func, Args, Opts) ->
 handle_function_('Create', {CustomerParams}, _Opts) ->
     DomainRevison = hg_domain:head(),
     CustomerID = hg_utils:unique_id(),
-    ok = meta_set_customer(CustomerID),
+    ok = set_meta(CustomerID),
     PartyID = CustomerParams#payproc_CustomerParams.party_id,
     ShopID = CustomerParams#payproc_CustomerParams.shop_id,
     ok = assert_party_accessible(PartyID),
@@ -78,13 +77,19 @@ handle_function_('Create', {CustomerParams}, _Opts) ->
     _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party, DomainRevison),
     ok = start(CustomerID, CustomerParams),
     get_customer(get_state(CustomerID));
+%% TODO Удалить после перехода на новый протокол
+handle_function_('Get', {CustomerID, undefined}, _Opts) ->
+    ok = set_meta(CustomerID),
+    St = get_state(CustomerID),
+    ok = assert_customer_accessible(St),
+    get_customer(St);
 handle_function_('Get', {CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}}, _Opts) ->
-    ok = meta_set_customer(CustomerID),
+    ok = set_meta(CustomerID),
     St = get_state(CustomerID, AfterID, Limit),
     ok = assert_customer_accessible(St),
     get_customer(St);
 handle_function_('GetActiveBinding', {CustomerID}, _Opts) ->
-    ok = meta_set_customer(CustomerID),
+    ok = set_meta(CustomerID),
     St = get_state(CustomerID),
     ok = assert_customer_accessible(St),
     case try_get_active_binding(St) of
@@ -94,17 +99,20 @@ handle_function_('GetActiveBinding', {CustomerID}, _Opts) ->
             throw(?invalid_customer_status(get_customer_status(get_customer(St))))
     end;
 handle_function_('GetEvents', {CustomerID, Range}, _Opts) ->
-    ok = meta_set_customer(CustomerID),
+    ok = set_meta(CustomerID),
     ok = assert_customer_accessible(get_initial_state(CustomerID)),
     get_public_history(CustomerID, Range);
-handle_function_(Fun, Args, _Opts) when Fun =:= 'Delete' orelse Fun =:= 'StartBinding' ->
+handle_function_(Fun, Args, _Opts) when
+    Fun =:= 'Delete' orelse
+        Fun =:= 'StartBinding'
+->
     CustomerID = element(1, Args),
-    ok = meta_set_customer(CustomerID),
+    ok = set_meta(CustomerID),
     call(CustomerID, Fun, Args).
 
 %%
 
-meta_set_customer(ID) ->
+set_meta(ID) ->
     scoper:add_meta(#{customer_id => ID}).
 
 get_history(Ref) ->
@@ -126,21 +134,6 @@ get_initial_state(Ref) ->
 
 get_public_history(CustomerID, #payproc_EventRange{'after' = AfterID, limit = Limit}) ->
     [publish_customer_event(CustomerID, Ev) || Ev <- get_history(CustomerID, AfterID, Limit)].
-
-get_party_id(#st{customer = #payproc_Customer{owner_id = PartyID}}) ->
-    PartyID.
-
-get_shop_id(#st{customer = #payproc_Customer{shop_id = ShopID}}) ->
-    ShopID.
-
-get_customer(#st{customer = Customer}) ->
-    Customer.
-
-set_customer(Customer, St = #st{}) ->
-    St#st{customer = Customer}.
-
-set_create_customer_timestamp(CreatedAt, St = #st{}) ->
-    St#st{created_at = CreatedAt}.
 
 publish_customer_event(CustomerID, {ID, Dt, Payload}) ->
     #payproc_Event{
@@ -205,7 +198,9 @@ namespace() ->
 init(EncodedParams, #{id := CustomerID}) ->
     CustomerParams = unmarshal_customer_params(EncodedParams),
     handle_result(#{
-        changes => [get_customer_created_event(CustomerID, CustomerParams)],
+        changes => [
+            get_customer_created_event(CustomerID, CustomerParams)
+        ],
         auxst => #{}
     }).
 
@@ -215,53 +210,43 @@ process_repair(_, _) ->
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(Signal, #{history := History, aux_state := AuxSt}) ->
-    State = collapse_history(unmarshal_history(History)),
-    AuxState = unmarshal(auxst, AuxSt),
-    handle_result(handle_signal(Signal, State, AuxState)).
+    handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), unmarshal(auxst, AuxSt))).
 
-handle_signal(timeout, St, AuxSt) ->
-    {Changes, SyncedState, NewAuxState} = sync_pending_bindings(St, AuxSt),
-    NewState = merge_changes(Changes, SyncedState),
+handle_signal(timeout, St0, AuxSt0) ->
+    {Changes, St1, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
+    St2 = merge_changes(Changes, St1),
     Action =
-        case detect_pending_waiting(NewState) of
+        case detect_pending_waiting(St2) of
             all_ready ->
                 hg_machine_action:new();
             {waiting, WaitingTime} ->
-                hg_machine_action:set_timeout(detect_poll_timeout(WaitingTime))
+                hg_machine_action:set_timeout(get_event_pol_timeout(WaitingTime))
         end,
     #{
-        changes => Changes ++ get_ready_changes(NewState),
+        changes => Changes ++ get_ready_changes(St2),
         action => Action,
-        auxst => NewAuxState
+        auxst => AuxSt1
     }.
 
 detect_pending_waiting(State) ->
     Pending = get_pending_binding_set(State),
-    PendingInfo = lists:foldl(
+    PendingActivityTime = lists:foldl(
         fun
             (BindingID, undefined) ->
-                state_get_binding_time(BindingID, State);
+                get_binding_activity_time(BindingID, State);
             (BindingID, LastEventTime) ->
-                EventTime = state_get_binding_time(BindingID, State),
+                EventTime = get_binding_activity_time(BindingID, State),
                 erlang:max(LastEventTime, EventTime)
         end,
         undefined,
         Pending
     ),
-    case PendingInfo of
+    case PendingActivityTime of
         undefined ->
             all_ready;
         LastEventTime ->
             Now = erlang:system_time(second),
             {waiting, Now - LastEventTime}
-    end.
-
-detect_poll_timeout(WaitingTime) ->
-    case WaitingTime < ?MAX_BINDING_DURATION of
-        true ->
-            erlang:min(?SYNC_INTERVAL, erlang:max(1, WaitingTime));
-        _ ->
-            ?SYNC_OUTDATED_INTERVAL - rand:uniform(?SYNC_OUTDATED_INTERVAL div 10)
     end.
 
 get_ready_changes(#st{customer = #payproc_Customer{status = ?customer_unready()}} = St) ->
@@ -282,11 +267,13 @@ is_binding_succeeded(#payproc_CustomerBinding{status = ?customer_binding_succeed
 is_binding_succeeded(_) ->
     false.
 
+-type call() :: hg_machine:thrift_call().
+
 -spec process_call(call(), hg_machine:machine()) -> {hg_machine:response(), hg_machine:result()}.
 process_call(Call, #{history := History}) ->
-    State = collapse_history(unmarshal_history(History)),
+    St = collapse_history(unmarshal_history(History)),
     try
-        handle_result(handle_call(Call, State))
+        handle_result(handle_call(Call, St))
     catch
         throw:Exception ->
             {{exception, Exception}, #{}}
@@ -303,9 +290,7 @@ handle_call({{'CustomerManagement', 'StartBinding'}, {_CustomerID, BindingParams
     start_binding(BindingParams, St).
 
 handle_result(Params) ->
-    ResultAction = handle_result_action(Params, #{}),
-    ResultChanges = handle_result_changes(Params, ResultAction),
-    Result = handle_aux_state(Params, ResultChanges),
+    Result = handle_aux_state(Params, handle_result_changes(Params, handle_result_action(Params, #{}))),
     case maps:find(response, Params) of
         {ok, ok} ->
             {ok, Result};
@@ -330,33 +315,9 @@ handle_result_action(#{action := Action}, Acc) ->
 handle_result_action(#{}, Acc) ->
     Acc.
 
-%% State
-
-state_update_binding(undefined, _BindingID, State) ->
-    State;
-state_update_binding(LastEventTime, BindingID, State = #st{binding_activity = Bindings}) ->
-    EventTime = hg_datetime:parse(LastEventTime, second),
-    State#st{binding_activity = Bindings#{BindingID => EventTime}}.
-
-state_get_binding_time(BindingID, State = #st{binding_activity = Bindings}) ->
-    case maps:get(BindingID, Bindings, undefined) of
-        undefined ->
-            hg_datetime:parse(State#st.created_at, second);
-        EventTime ->
-            EventTime
-    end.
-
-%% AuxState
-
-aux_update_binding(undefined, _BindingID, AuxSt) ->
-    AuxSt;
-aux_update_binding(LastEventID, BindingID, AuxSt) ->
-    maps:put(BindingID, LastEventID, AuxSt).
-
-aux_get_event_id(BindingID, AuxSt) ->
-    maps:get(BindingID, AuxSt, undefined).
-
 %%
+
+-include_lib("hellgate/include/recurrent_payment_tools.hrl").
 
 start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
@@ -417,23 +378,31 @@ sync_pending_bindings([BindingID | Rest], St0, AuxSt0) ->
 sync_pending_bindings([], St, AuxSt) ->
     {[], St, AuxSt}.
 
-sync_binding_state(Binding, State, AuxState) ->
+sync_binding_state(Binding, St, AuxSt) ->
     BindingID = get_binding_id(Binding),
     RecurrentPaytoolID = get_binding_recurrent_paytool_id(Binding),
-    LastEventID0 = aux_get_event_id(BindingID, AuxState),
+    LastEventID0 = get_binding_last_event_id(BindingID, AuxSt),
     case get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID0) of
         {ok, {RecurrentPaytoolChanges, LastEventID1, LastEventTime}} ->
-            UpdatedAuxState = aux_update_binding(LastEventID1, BindingID, AuxState),
-            UpdatedState = state_update_binding(LastEventTime, BindingID, State),
             BindingChanges = produce_binding_changes(RecurrentPaytoolChanges, Binding),
-            WrappedChanges = [?customer_binding_changed(BindingID, C) || C <- BindingChanges],
+            WrappedChanges = wrap_binding_changes(BindingID, BindingChanges),
+            UpdatedAuxState = update_aux_state(LastEventID1, BindingID, AuxSt),
+            UpdatedState = update_binding_activity(BindingID, LastEventTime, St),
             {WrappedChanges, UpdatedState, UpdatedAuxState};
         % lazily create paytool
         {error, paytool_not_found} ->
-            PaytoolParams = create_paytool_params(Binding, State),
+            PaytoolParams = create_paytool_params(Binding, St),
             {ok, _} = create_recurrent_paytool(PaytoolParams),
-            {[], State, AuxState}
+            {[], St, AuxSt}
     end.
+
+update_aux_state(undefined, _BindingID, AuxSt) ->
+    AuxSt;
+update_aux_state(LastEventID, BindingID, AuxSt) ->
+    maps:put(BindingID, LastEventID, AuxSt).
+
+get_binding_last_event_id(BindingID, AuxSt) ->
+    maps:get(BindingID, AuxSt, undefined).
 
 produce_binding_changes([RecurrentPaytoolChange | Rest], Binding) ->
     Changes = produce_binding_changes_(RecurrentPaytoolChange, Binding),
@@ -516,6 +485,14 @@ gather_recurrent_paytool_changes(Events) ->
 issue_recurrent_paytools_call(Function, Args) ->
     hg_woody_wrapper:call(recurrent_paytool, Function, Args).
 
+get_event_pol_timeout(WaitingTime) ->
+    case WaitingTime < ?MAX_BINDING_DURATION of
+        true ->
+            erlang:min(?SYNC_INTERVAL, erlang:max(1, WaitingTime));
+        _ ->
+            ?SYNC_OUTDATED_INTERVAL - rand:uniform(?SYNC_OUTDATED_INTERVAL div 10)
+    end.
+
 %%
 
 get_customer_created_event(CustomerID, Params = #payproc_CustomerParams{}) ->
@@ -553,17 +530,24 @@ merge_change(?customer_binding_changed(BindingID, Payload), St) ->
     BindingStatus = get_binding_status(Binding1),
     St1 = set_customer(set_binding(Binding1, Customer), St),
     St2 = update_active_binding(BindingID, BindingStatus, St1),
-    update_bindigs_start(BindingID, Payload, St2).
+    update_binding_activity(BindingID, Payload, St2).
 
 update_active_binding(BindingID, ?customer_binding_succeeded(), St) ->
     set_active_binding_id(BindingID, St);
 update_active_binding(_BindingID, _BindingStatus, St) ->
     St.
 
-update_bindigs_start(BindingID, ?customer_binding_started(_Binding, Timestamp), St) ->
-    state_update_binding(Timestamp, BindingID, St);
-update_bindigs_start(_BindingID, _OtherChange, St) ->
+update_binding_activity(BindingID, LastEventTime, St) when is_binary(LastEventTime) ->
+    EventTime = hg_datetime:parse(LastEventTime, second),
+    #st{binding_activity = Bindings} = St,
+    St#st{binding_activity = Bindings#{BindingID => EventTime}};
+update_binding_activity(BindingID, ?customer_binding_started(_Binding, Timestamp), St) ->
+    update_binding_activity(BindingID, Timestamp, St);
+update_binding_activity(_BindingID, _OtherChange, St) ->
     St.
+
+wrap_binding_changes(BindingID, Changes) ->
+    [?customer_binding_changed(BindingID, C) || C <- Changes].
 
 merge_binding_changes(Changes, Binding) ->
     lists:foldl(fun merge_binding_change/2, Binding, Changes).
@@ -574,6 +558,15 @@ merge_binding_change(?customer_binding_status_changed(BindingStatus), Binding) -
     Binding#payproc_CustomerBinding{status = BindingStatus};
 merge_binding_change(?customer_binding_interaction_requested(_), Binding) ->
     Binding.
+
+get_party_id(#st{customer = #payproc_Customer{owner_id = PartyID}}) ->
+    PartyID.
+
+get_shop_id(#st{customer = #payproc_Customer{shop_id = ShopID}}) ->
+    ShopID.
+
+get_customer(#st{customer = Customer}) ->
+    Customer.
 
 create_customer(?customer_created(CustomerID, OwnerID, ShopID, Metadata, ContactInfo, CreatedAt)) ->
     #payproc_Customer{
@@ -587,8 +580,17 @@ create_customer(?customer_created(CustomerID, OwnerID, ShopID, Metadata, Contact
         metadata = Metadata
     }.
 
+set_customer(Customer, St = #st{}) ->
+    St#st{customer = Customer}.
+
+set_create_customer_timestamp(CreatedAt, St = #st{}) ->
+    St#st{created_at = CreatedAt}.
+
 get_customer_status(#payproc_Customer{status = Status}) ->
     Status.
+
+get_bindings(#payproc_Customer{bindings = Bindings}) ->
+    Bindings.
 
 try_get_binding(BindingID, Customer) ->
     case lists:keyfind(BindingID, #payproc_CustomerBinding.id, get_bindings(Customer)) of
@@ -604,9 +606,6 @@ set_binding(Binding, Customer = #payproc_Customer{bindings = Bindings}) ->
         bindings = lists:keystore(BindingID, #payproc_CustomerBinding.id, Bindings, Binding)
     }.
 
-get_bindings(#payproc_Customer{bindings = Bindings}) ->
-    Bindings.
-
 get_pending_binding_set(St) ->
     Bindings = get_bindings(get_customer(St)),
     [
@@ -619,6 +618,16 @@ get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->
 
 get_binding_status(#payproc_CustomerBinding{status = Status}) ->
     Status.
+
+get_binding_activity_time(BindingID, #st{binding_activity = Bindings} = St) ->
+    case maps:get(BindingID, Bindings, undefined) of
+        undefined ->
+            % Old bindings has `undefined` start timestamp.
+            % Using customer create timestamp instead.
+            hg_datetime:parse(St#st.created_at, second);
+        EventTime ->
+            EventTime
+    end.
 
 assert_binding_status(StatusName, #payproc_CustomerBinding{status = {StatusName, _}}) ->
     ok;
@@ -693,8 +702,11 @@ assert_shop_operable(Shop) ->
 
 -spec marshal_event_payload([customer_change()]) -> hg_machine:event_payload().
 marshal_event_payload(Changes) ->
+    wrap_event_payload({customer_changes, Changes}).
+
+wrap_event_payload(Payload) ->
     Type = {struct, union, {dmsl_payment_processing_thrift, 'EventPayload'}},
-    Bin = hg_proto_utils:serialize(Type, {customer_changes, Changes}),
+    Bin = hg_proto_utils:serialize(Type, Payload),
     #{
         format_version => 1,
         data => {bin, Bin}
@@ -749,7 +761,7 @@ unmarshal_customer_params(Bin) ->
 
 unmarshal({list, T}, Vs) when is_list(Vs) ->
     [unmarshal(T, V) || V <- Vs];
-% Aux State
+%% Aux State
 
 unmarshal(auxst, AuxState) ->
     maps:fold(
@@ -764,6 +776,7 @@ unmarshal(binding_id, BindingID) ->
 unmarshal(event_id, EventID) ->
     unmarshal(int, EventID);
 %% Changes
+
 unmarshal(change, [Version, V]) ->
     unmarshal({change, Version}, V);
 unmarshal({change, 2}, #{
@@ -945,9 +958,12 @@ unmarshal(_, Other) ->
 
 -spec test() -> _.
 
--spec auxstate_marshaling_test_() -> _.
-auxstate_marshaling_test_() ->
-    Cases = [{#{<<"one">> => 2}, #{<<"one">> => 2}}],
-    [?_assertEqual(Expected, marshal(auxst, unmarshal(auxst, Source))) || {Source, Expected} <- Cases].
+-spec event_pol_timer_test() -> _.
+
+event_pol_timer_test() ->
+    ?assertEqual(get_event_pol_timeout(1), 1),
+    ?assertEqual(get_event_pol_timeout(?SYNC_INTERVAL + 1), ?SYNC_INTERVAL),
+    ?assert(get_event_pol_timeout(?MAX_BINDING_DURATION) =< ?SYNC_OUTDATED_INTERVAL),
+    ?assert(get_event_pol_timeout(?MAX_BINDING_DURATION) >= ?SYNC_OUTDATED_INTERVAL * 0.9).
 
 -endif.
