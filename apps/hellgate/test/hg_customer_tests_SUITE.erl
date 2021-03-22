@@ -250,8 +250,9 @@ start_binding_w_failure(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
+    RecPaymentToolID = hg_utils:unique_id(),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(forbidden)),
+        hg_ct_helper:make_customer_binding_params(RecPaymentToolID, hg_dummy_provider:make_payment_tool(forbidden)),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -260,7 +261,13 @@ start_binding_w_failure(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(CustomerBinding, _))
+        ?customer_binding_changed(
+            _,
+            ?customer_binding_started(
+                #payproc_CustomerBinding{rec_payment_tool_id = RecPaymentToolID},
+                _
+            )
+        )
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(_, ?customer_binding_status_changed(?customer_binding_failed(_)))
@@ -273,8 +280,12 @@ start_binding_w_suspend(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
+    RecPaymentToolID = hg_utils:unique_id(),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool({preauth_3ds_sleep, 180})),
+        hg_ct_helper:make_customer_binding_params(
+            RecPaymentToolID,
+            hg_dummy_provider:make_payment_tool({preauth_3ds_sleep, 180})
+        ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -283,7 +294,10 @@ start_binding_w_suspend(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(_, ?customer_binding_started(_, _))
+        ?customer_binding_changed(
+            _,
+            ?customer_binding_started(#payproc_CustomerBinding{rec_payment_tool_id = RecPaymentToolID}, _)
+        )
     ] = next_event(CustomerID, Client),
     [
         ?customer_binding_changed(ID, ?customer_binding_interaction_requested(UserInteraction))
@@ -303,8 +317,12 @@ start_binding_w_suspend_timeout(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
+    RecPaymentToolID = hg_utils:unique_id(),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth_timeout)),
+        hg_ct_helper:make_customer_binding_params(
+            RecPaymentToolID,
+            hg_dummy_provider:make_payment_tool(no_preauth_timeout)
+        ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -313,7 +331,10 @@ start_binding_w_suspend_timeout(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(ID, ?customer_binding_started(_, _))
+        ?customer_binding_changed(
+            ID,
+            ?customer_binding_started(#payproc_CustomerBinding{rec_payment_tool_id = RecPaymentToolID}, _)
+        )
     ] = next_event(CustomerID, Client),
     SuccessChanges = [
         ?customer_binding_changed(ID, ?customer_binding_status_changed(?customer_binding_succeeded())),
@@ -328,8 +349,12 @@ start_binding_w_suspend_timeout_default(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
+    RecPaymentToolID = hg_utils:unique_id(),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth_suspend_default)),
+        hg_ct_helper:make_customer_binding_params(
+            RecPaymentToolID,
+            hg_dummy_provider:make_payment_tool(no_preauth_suspend_default)
+        ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -338,7 +363,10 @@ start_binding_w_suspend_timeout_default(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(ID, ?customer_binding_started(_, _))
+        ?customer_binding_changed(
+            ID,
+            ?customer_binding_started(#payproc_CustomerBinding{rec_payment_tool_id = RecPaymentToolID}, _)
+        )
     ] = next_event(CustomerID, Client),
     OperationFailure = {operation_timeout, #domain_OperationTimeout{}},
     DefaultFailure = [
@@ -353,8 +381,12 @@ start_binding_w_suspend_failure(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
+    RecPaymentToolID = hg_utils:unique_id(),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth_timeout_failure)),
+        hg_ct_helper:make_customer_binding_params(
+            RecPaymentToolID,
+            hg_dummy_provider:make_payment_tool(no_preauth_timeout_failure)
+        ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -363,7 +395,10 @@ start_binding_w_suspend_failure(C) ->
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
     [
-        ?customer_binding_changed(ID, ?customer_binding_started(_, _))
+        ?customer_binding_changed(
+            ID,
+            ?customer_binding_started(#payproc_CustomerBinding{rec_payment_tool_id = RecPaymentToolID}, _)
+        )
     ] = next_event(CustomerID, Client),
     OperationFailure =
         {failure, #domain_Failure{
@@ -381,8 +416,9 @@ start_binding(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
+    RecPaymentToolID = hg_utils:unique_id(),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
+        hg_ct_helper:make_customer_binding_params(RecPaymentToolID, hg_dummy_provider:make_payment_tool(no_preauth)),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -405,8 +441,12 @@ start_binding_w_tds(C) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
+    RecPaymentToolID = hg_utils:unique_id(),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool({preauth_3ds, 30})),
+        hg_ct_helper:make_customer_binding_params(
+            RecPaymentToolID,
+            hg_dummy_provider:make_payment_tool({preauth_3ds, 30})
+        ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
     #payproc_Customer{id = CustomerID, bindings = Bindings} = Customer1,
@@ -433,8 +473,9 @@ start_two_bindings(C) ->
     ShopID = cfg(shop_id, C),
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
+    RecPaymentToolID = hg_utils:unique_id(),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
+        hg_ct_helper:make_customer_binding_params(RecPaymentToolID, hg_dummy_provider:make_payment_tool(no_preauth)),
     CustomerBinding1 =
         #payproc_CustomerBinding{id = CustomerBindingID1} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
@@ -459,10 +500,12 @@ start_two_bindings_w_tds(C) ->
     ShopID = cfg(shop_id, C),
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({preauth_3ds, 30}),
-    CustomerBindingParams = #payproc_CustomerBindingParams{
-        payment_resource = make_disposable_payment_resource(PaymentTool, Session)
-    },
+    RecPaymentToolID = hg_utils:unique_id(),
+    PaymentTool = hg_dummy_provider:make_payment_tool({preauth_3ds, 30}),
+    CustomerBindingParams = hg_ct_helper:make_customer_binding_params(
+        RecPaymentToolID,
+        PaymentTool
+    ),
     CustomerBinding1 =
         #payproc_CustomerBinding{id = CustomerBindingID1} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
@@ -625,13 +668,6 @@ next_event(CustomerID, Client) ->
     end.
 
 %%
-
-make_disposable_payment_resource(PaymentTool, Session) ->
-    #domain_DisposablePaymentResource{
-        payment_tool = PaymentTool,
-        payment_session_id = Session,
-        client_info = #domain_ClientInfo{}
-    }.
 
 post_request({URL, Form}) ->
     Method = post,

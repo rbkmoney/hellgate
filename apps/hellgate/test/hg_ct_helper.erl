@@ -53,6 +53,7 @@
 -export([make_disposable_payment_resource/1]).
 -export([make_customer_params/3]).
 -export([make_customer_binding_params/1]).
+-export([make_customer_binding_params/2]).
 
 -export([make_meta_ns/0]).
 -export([make_meta_data/0]).
@@ -729,6 +730,16 @@ make_customer_params(PartyID, ShopID, EMail) ->
     dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(PaymentToolSession) ->
     #payproc_CustomerBindingParams{
+        payment_resource = make_disposable_payment_resource(PaymentToolSession)
+    }.
+
+-spec make_customer_binding_params(
+    dmsl_domain_thrift:'RecurrentPaymentToolID'(),
+    {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}
+) -> dmsl_payment_processing_thrift:'CustomerBindingParams'().
+make_customer_binding_params(RecPayToolId, PaymentToolSession) ->
+    #payproc_CustomerBindingParams{
+        rec_payment_tool_id = RecPayToolId,
         payment_resource = make_disposable_payment_resource(PaymentToolSession)
     }.
 

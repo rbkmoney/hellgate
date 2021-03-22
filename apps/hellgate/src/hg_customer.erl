@@ -315,8 +315,11 @@ handle_result_action(#{}, Acc) ->
 
 start_binding(BindingParams, St) ->
     BindingID = create_binding_id(St),
-    PaymentResource = BindingParams#payproc_CustomerBindingParams.payment_resource,
-    PaytoolID = hg_utils:unique_id(),
+    #payproc_CustomerBindingParams{
+        payment_resource = PaymentResource,
+        rec_payment_tool_id = MaybePaytoolID
+    } = BindingParams,
+    PaytoolID = hg_utils:uid(MaybePaytoolID),
     DomainRevision = hg_domain:head(),
     PartyID = get_party_id(St),
     PartyRevision = hg_party:get_party_revision(PartyID),
