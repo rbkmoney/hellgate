@@ -245,7 +245,7 @@ detect_pending_waiting(State) ->
         undefined ->
             all_ready;
         LastEventTime ->
-            Now = erlang:system_time(second),
+            Now = os:system_time(second),
             {waiting, Now - LastEventTime}
     end.
 
