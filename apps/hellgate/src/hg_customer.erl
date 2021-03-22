@@ -488,7 +488,7 @@ issue_recurrent_paytools_call(Function, Args) ->
 get_event_pol_timeout(WaitingTime) ->
     case WaitingTime < app_binding_outdate_timeout() of
         true ->
-            Retry = app_binding_sync_interval(),
+            Retry = app_binding_max_sync_interval(),
             erlang:min(Retry, erlang:max(1, WaitingTime));
         _ ->
             Retry = app_binding_outdated_sync_interval(),
@@ -696,9 +696,9 @@ assert_shop_operable(Shop) ->
 
 %% Config
 
-app_binding_sync_interval() ->
+app_binding_max_sync_interval() ->
     Config = genlib_app:env(hellgate, binding, #{}),
-    app_parse_timespan(genlib_map:get(sync_interval, Config, ?SYNC_INTERVAL)).
+    app_parse_timespan(genlib_map:get(max_sync_interval, Config, ?SYNC_INTERVAL)).
 
 app_binding_outdated_sync_interval() ->
     Config = genlib_app:env(hellgate, binding, #{}),
@@ -1000,26 +1000,26 @@ app_config_test_() ->
         {setup,
             fun() ->
                 application:set_env(hellgate, binding, #{
-                    sync_interval => <<"16s">>,
+                    max_sync_interval => <<"16s">>,
                     outdated_sync_interval => <<"32m">>,
                     outdate_timeout => <<"64s">>
                 })
             end,
             [
-                ?_assertEqual(16, app_binding_sync_interval()),
+                ?_assertEqual(16, app_binding_max_sync_interval()),
                 ?_assertEqual(32 * 60, app_binding_outdated_sync_interval()),
                 ?_assertEqual(64, app_binding_outdate_timeout())
             ]},
         {setup,
             fun() ->
                 application:set_env(hellgate, binding, #{
-                    sync_interval => 32,
+                    max_sync_interval => 32,
                     outdated_sync_interval => 64,
                     outdate_timeout => 128
                 })
             end,
             [
-                ?_assertEqual(32, app_binding_sync_interval()),
+                ?_assertEqual(32, app_binding_max_sync_interval()),
                 ?_assertEqual(64, app_binding_outdated_sync_interval()),
                 ?_assertEqual(128, app_binding_outdate_timeout())
             ]},
@@ -1028,7 +1028,7 @@ app_config_test_() ->
                 application:unset_env(hellgate, binding)
             end,
             [
-                ?_assertEqual(?SYNC_INTERVAL, app_binding_sync_interval()),
+                ?_assertEqual(?SYNC_INTERVAL, app_binding_max_sync_interval()),
                 ?_assertEqual(?SYNC_OUTDATED_INTERVAL, app_binding_outdated_sync_interval()),
                 ?_assertEqual(?MAX_BINDING_DURATION, app_binding_outdate_timeout())
             ]}
