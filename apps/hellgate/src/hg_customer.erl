@@ -314,11 +314,12 @@ handle_result_action(#{}, Acc) ->
 -include_lib("hellgate/include/recurrent_payment_tools.hrl").
 
 start_binding(BindingParams, St) ->
-    BindingID = create_binding_id(St),
     #payproc_CustomerBindingParams{
+        customer_binding_id = MaybeBindingID,
         payment_resource = PaymentResource,
         rec_payment_tool_id = MaybePaytoolID
     } = BindingParams,
+    BindingID = hg_utils:uid(MaybeBindingID),
     PaytoolID = hg_utils:uid(MaybePaytoolID),
     DomainRevision = hg_domain:head(),
     PartyID = get_party_id(St),
@@ -360,9 +361,6 @@ construct_binding(BindingID, RecPaymentToolID, PaymentResource, PartyRevision, D
         party_revision = PartyRevision,
         domain_revision = DomainRevision
     }.
-
-create_binding_id(St) ->
-    integer_to_binary(length(get_bindings(get_customer(St))) + 1).
 
 sync_pending_bindings(St, AuxSt) ->
     sync_pending_bindings(get_pending_binding_set(St), St, AuxSt).
