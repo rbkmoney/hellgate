@@ -493,20 +493,27 @@ start_two_bindings(C) ->
     ShopID = cfg(shop_id, C),
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
-    CustomerBindingID = hg_utils:unique_id(),
+    CustomerBindingID1 = hg_utils:unique_id(),
+    CustomerBindingID2 = hg_utils:unique_id(),
     RecPaymentToolID = hg_utils:unique_id(),
-    CustomerBindingParams =
+    CustomerBindingParams1 =
         hg_ct_helper:make_customer_binding_params(
-            CustomerBindingID,
+            CustomerBindingID1,
+            RecPaymentToolID,
+            hg_dummy_provider:make_payment_tool(no_preauth)
+        ),
+    CustomerBindingParams2 =
+        hg_ct_helper:make_customer_binding_params(
+            CustomerBindingID2,
             RecPaymentToolID,
             hg_dummy_provider:make_payment_tool(no_preauth)
         ),
     CustomerBinding1 =
         #payproc_CustomerBinding{id = CustomerBindingID1} =
-        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+        hg_client_customer:start_binding(CustomerID, CustomerBindingParams1, Client),
     CustomerBinding2 =
         #payproc_CustomerBinding{id = CustomerBindingID2} =
-        hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
+        hg_client_customer:start_binding(CustomerID, CustomerBindingParams2, Client),
     [
         ?customer_created(_, _, _, _, _, _)
     ] = next_event(CustomerID, Client),
@@ -525,14 +532,18 @@ start_two_bindings_w_tds(C) ->
     ShopID = cfg(shop_id, C),
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
+    CustomerBindingID1 = hg_utils:unique_id(),
+    CustomerBindingID2 = hg_utils:unique_id(),
     RecPaymentToolID1 = hg_utils:unique_id(),
     RecPaymentToolID2 = hg_utils:unique_id(),
     PaymentTool = hg_dummy_provider:make_payment_tool({preauth_3ds, 30}),
     CustomerBindingParams1 = hg_ct_helper:make_customer_binding_params(
+        CustomerBindingID1,
         RecPaymentToolID1,
         PaymentTool
     ),
     CustomerBindingParams2 = hg_ct_helper:make_customer_binding_params(
+        CustomerBindingID2,
         RecPaymentToolID2,
         PaymentTool
     ),
