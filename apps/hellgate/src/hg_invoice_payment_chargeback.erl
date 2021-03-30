@@ -285,12 +285,8 @@ do_create(Opts, CreateParams = ?chargeback_params(Levy, Body, _Reason)) ->
     Payment = get_opts_payment(Opts),
     ShopID = get_invoice_shop_id(Invoice),
     Shop = pm_party:get_shop(ShopID, Party),
-    ContractID = get_shop_contract_id(Shop),
-    Contract = pm_party:get_contract(ContractID, Party),
-    TermSet = pm_party:get_terms(Contract, CreatedAt, Revision),
-    ServiceTerms = get_merchant_chargeback_terms(TermSet),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
-    _ = validate_contract_active(Contract),
+    ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     _ = validate_currency(Body, Payment),
     _ = validate_currency(Levy, Payment),
     _ = validate_body_amount(Body, get_opts_payment_state(Opts)),
@@ -424,17 +420,14 @@ build_chargeback_cash_flow(State, Opts) ->
     Party = get_opts_party(Opts),
     ShopID = get_invoice_shop_id(Invoice),
     Shop = pm_party:get_shop(ShopID, Party),
-    ContractID = get_shop_contract_id(Shop),
-    Contract = pm_party:get_contract(ContractID, Party),
-    TermSet = pm_party:get_terms(Contract, CreatedAt, Revision),
-    ServiceTerms = get_merchant_chargeback_terms(TermSet),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
+    ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     PaymentsTerms = hg_routing:get_payments_terms(Route, Revision),
     ProviderTerms = get_provider_chargeback_terms(PaymentsTerms, Payment),
     ServiceCashFlow = collect_chargeback_service_cash_flow(ServiceTerms, VS, Revision),
     ProviderCashFlow = collect_chargeback_provider_cash_flow(ProviderTerms, VS, Revision),
     ProviderFees = collect_chargeback_provider_fees(ProviderTerms, VS, Revision),
-    PaymentInstitutionRef = get_payment_institution_ref(Contract),
+    PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
     PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
     AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
@@ -492,10 +485,29 @@ reduce_predicate(Name, Selector, VS, Revision) ->
             error({misconfiguration, {'Could not reduce predicate to a value', {Name, Ambiguous}}})
     end.
 
-get_merchant_chargeback_terms(#domain_TermSet{payments = PaymentsTerms}) ->
-    get_merchant_chargeback_terms(PaymentsTerms);
-get_merchant_chargeback_terms(#domain_PaymentsServiceTerms{chargebacks = Terms}) ->
-    Terms.
+get_merchant_chargeback_terms(#domain_Party{id = PartyId}, Shop, VS, Revision, Timestamp) ->
+    {Client, Context} = get_party_client(),
+    {ok, PartyRevision} = party_client_thrift:get_revision(PartyId, Client, Context),
+    {ok, #domain_TermSet{payments = PaymentsTerms}} = party_client_thrift:compute_contract_terms(
+        PartyId,
+        Shop#domain_Shop.contract_id,
+        Timestamp,
+        {revision, PartyRevision},
+        Revision,
+        hg_varset:prepare_varset(VS),
+        Client,
+        Context
+    ),
+    PaymentsTerms#domain_PaymentsServiceTerms.chargebacks.
+
+get_contract(#domain_Party{id = PartyId}, #domain_Shop{contract_id = ContractID}) ->
+    {Client, Context} = get_party_client(),
+    {ok, Contract} = party_client_thrift:get_contract(PartyId, ContractID, Client, Context),
+    Contract.
+
+get_party_client() ->
+    Ctx = hg_context:load(),
+    {hg_context:get_party_client(Ctx), hg_context:get_party_client_context(Ctx)}.
 
 get_provider_chargeback_terms(#domain_PaymentsProvisionTerms{chargebacks = Terms}, _Payment) ->
     Terms.
@@ -563,11 +575,6 @@ validate_service_terms(#domain_PaymentChargebackServiceTerms{}) ->
     ok;
 validate_service_terms(undefined) ->
     throw(#payproc_OperationNotPermitted{}).
-
-validate_contract_active(#domain_Contract{status = {active, _}}) ->
-    ok;
-validate_contract_active(#domain_Contract{status = Status}) ->
-    throw(#payproc_InvalidContractStatus{status = Status}).
 
 validate_body_amount(undefined, _PaymentState) ->
     ok;
@@ -739,11 +746,6 @@ get_route_provider(#domain_PaymentRoute{provider = ProviderRef}, Revision) ->
 
 get_payment_institution_ref(Contract) ->
     Contract#domain_Contract.payment_institution.
-
-%%
-
-get_shop_contract_id(#domain_Shop{contract_id = ContractID}) ->
-    ContractID.
 
 %%
 
