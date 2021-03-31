@@ -1298,9 +1298,8 @@ validate_invoice_cost(Cost, Party, Shop, #domain_TermSet{payments = PaymentTerms
     _ = hg_invoice_utils:assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision),
     ok.
 
-get_merchant_terms(#domain_Party{id = PartyId}, Revision, Shop, Timestamp) ->
+get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp) ->
     {Client, Context} = get_party_client(),
-    {ok, PartyRevision} = party_client_thrift:get_revision(PartyId, Client, Context),
     {ok, TermSet} = party_client_thrift:compute_contract_terms(
         PartyId,
         Shop#domain_Shop.contract_id,

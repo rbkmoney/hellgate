@@ -286,13 +286,13 @@ get_payment_institution_ref(Shop, Party) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     Contract#domain_Contract.payment_institution.
 
-get_merchant_recurrent_paytools_terms(Shop, #domain_Party{id = PartyId}, Timestamp, Revision) ->
+get_merchant_recurrent_paytools_terms(#domain_Shop{contract_id = ContractID}, Party, Timestamp, Revision) ->
     {Client, Context} = get_party_client(),
-    {ok, PartyRevision} = party_client_thrift:get_revision(PartyId, Client, Context),
-
+    #domain_Party{id = PartyId, revision = PartyRevision} = Party,
+    ok = assert_contract_active(hg_party:get_contract(ContractID, Party)),
     {ok, #domain_TermSet{recurrent_paytools = Terms}} = party_client_thrift:compute_contract_terms(
         PartyId,
-        Shop#domain_Shop.contract_id,
+        ContractID,
         Timestamp,
         {revision, PartyRevision},
         Revision,
@@ -301,6 +301,12 @@ get_merchant_recurrent_paytools_terms(Shop, #domain_Party{id = PartyId}, Timesta
         Context
     ),
     Terms.
+
+assert_contract_active(#domain_Contract{status = {active, _}}) ->
+    ok;
+assert_contract_active(#domain_Contract{status = Status}) ->
+    % FIXME no such exception on the service interface
+    throw(#payproc_InvalidContractStatus{status = Status}).
 
 get_party_client() ->
     Ctx = hg_context:load(),

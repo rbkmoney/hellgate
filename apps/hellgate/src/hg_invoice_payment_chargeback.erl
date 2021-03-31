@@ -284,12 +284,13 @@ do_create(Opts, CreateParams = ?chargeback_params(Levy, Body, _Reason)) ->
     Party = get_opts_party(Opts),
     Payment = get_opts_payment(Opts),
     ShopID = get_invoice_shop_id(Invoice),
-    Shop = pm_party:get_shop(ShopID, Party),
+    Shop = hg_party:get_shop(ShopID, Party),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
     ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     _ = validate_currency(Body, Payment),
     _ = validate_currency(Levy, Payment),
     _ = validate_body_amount(Body, get_opts_payment_state(Opts)),
+    _ = validate_contract_active(get_contract(Party, Shop)),
     _ = validate_service_terms(ServiceTerms),
     _ = validate_chargeback_is_allowed(ServiceTerms, VS, Revision),
     _ = validate_eligibility_time(ServiceTerms, VS, Revision),
@@ -419,7 +420,7 @@ build_chargeback_cash_flow(State, Opts) ->
     Route = get_opts_route(Opts),
     Party = get_opts_party(Opts),
     ShopID = get_invoice_shop_id(Invoice),
-    Shop = pm_party:get_shop(ShopID, Party),
+    Shop = hg_party:get_shop(ShopID, Party),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
     ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     PaymentsTerms = hg_routing:get_payments_terms(Route, Revision),
@@ -485,9 +486,8 @@ reduce_predicate(Name, Selector, VS, Revision) ->
             error({misconfiguration, {'Could not reduce predicate to a value', {Name, Ambiguous}}})
     end.
 
-get_merchant_chargeback_terms(#domain_Party{id = PartyId}, Shop, VS, Revision, Timestamp) ->
+get_merchant_chargeback_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Shop, VS, Revision, Timestamp) ->
     {Client, Context} = get_party_client(),
-    {ok, PartyRevision} = party_client_thrift:get_revision(PartyId, Client, Context),
     {ok, #domain_TermSet{payments = PaymentsTerms}} = party_client_thrift:compute_contract_terms(
         PartyId,
         Shop#domain_Shop.contract_id,
@@ -500,10 +500,8 @@ get_merchant_chargeback_terms(#domain_Party{id = PartyId}, Shop, VS, Revision, T
     ),
     PaymentsTerms#domain_PaymentsServiceTerms.chargebacks.
 
-get_contract(#domain_Party{id = PartyId}, #domain_Shop{contract_id = ContractID}) ->
-    {Client, Context} = get_party_client(),
-    {ok, Contract} = party_client_thrift:get_contract(PartyId, ContractID, Client, Context),
-    Contract.
+get_contract(Party, #domain_Shop{contract_id = ContractID}) ->
+    hg_party:get_contract(ContractID, Party).
 
 get_party_client() ->
     Ctx = hg_context:load(),
@@ -575,6 +573,11 @@ validate_service_terms(#domain_PaymentChargebackServiceTerms{}) ->
     ok;
 validate_service_terms(undefined) ->
     throw(#payproc_OperationNotPermitted{}).
+
+validate_contract_active(#domain_Contract{status = {active, _}}) ->
+    ok;
+validate_contract_active(#domain_Contract{status = Status}) ->
+    throw(#payproc_InvalidContractStatus{status = Status}).
 
 validate_body_amount(undefined, _PaymentState) ->
     ok;
