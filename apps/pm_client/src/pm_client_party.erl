@@ -25,7 +25,7 @@
 -export([get_contract/2]).
 -export([compute_contract_terms/6]).
 -export([get_shop/2]).
--export([compute_shop_terms/4]).
+-export([compute_shop_terms/5]).
 -export([compute_payment_institution_terms/3]).
 -export([compute_payout_cash_flow/2]).
 
@@ -50,7 +50,7 @@
 -export([compute_provider/4]).
 -export([compute_provider_terminal_terms/5]).
 -export([compute_globals/4]).
--export([compute_payment_routing_ruleset/4]).
+-export([compute_routing_ruleset/4]).
 
 %% GenServer
 
@@ -88,7 +88,7 @@
 -type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
 -type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 -type globals_ref() :: dmsl_domain_thrift:'GlobalsRef'().
--type payment_routring_ruleset_ref() :: dmsl_domain_thrift:'PaymentRoutingRulesetRef'().
+-type routing_ruleset_ref() :: dmsl_domain_thrift:'RoutingRulesetRef'().
 
 -spec start(party_id(), pm_client_api:t()) -> pid().
 start(PartyID, ApiClient) ->
@@ -205,10 +205,10 @@ suspend_shop(ID, Client) ->
 activate_shop(ID, Client) ->
     map_result_error(gen_server:call(Client, {call, 'ActivateShop', [ID]})).
 
--spec compute_shop_terms(shop_id(), timestamp(), party_revision_param(), pid()) ->
+-spec compute_shop_terms(shop_id(), timestamp(), party_revision_param(), varset(), pid()) ->
     dmsl_domain_thrift:'TermSet'() | woody_error:business_error().
-compute_shop_terms(ID, Timestamp, PartyRevision, Client) ->
-    map_result_error(gen_server:call(Client, {call, 'ComputeShopTerms', [ID, Timestamp, PartyRevision]})).
+compute_shop_terms(ID, Timestamp, PartyRevision, VS, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputeShopTerms', [ID, Timestamp, PartyRevision, VS]})).
 
 -spec get_claim(claim_id(), pid()) -> claim() | woody_error:business_error().
 get_claim(ID, Client) ->
@@ -272,13 +272,13 @@ compute_provider_terminal_terms(ProviderRef, TerminalRef, Revision, Varset, Clie
 compute_globals(GlobalsRef, Revision, Varset, Client) ->
     map_result_error(gen_server:call(Client, {call_without_party, 'ComputeGlobals', [GlobalsRef, Revision, Varset]})).
 
--spec compute_payment_routing_ruleset(payment_routring_ruleset_ref(), domain_revision(), varset(), pid()) ->
-    dmsl_domain_thrift:'PaymentRoutingRuleset'() | woody_error:business_error().
-compute_payment_routing_ruleset(PaymentRoutingRuleSetRef, Revision, Varset, Client) ->
+-spec compute_routing_ruleset(routing_ruleset_ref(), domain_revision(), varset(), pid()) ->
+    dmsl_domain_thrift:'RoutingRuleset'() | woody_error:business_error().
+compute_routing_ruleset(RoutingRuleSetRef, Revision, Varset, Client) ->
     map_result_error(
         gen_server:call(
             Client,
-            {call_without_party, 'ComputePaymentRoutingRuleset', [PaymentRoutingRuleSetRef, Revision, Varset]}
+            {call_without_party, 'ComputeRoutingRuleset', [RoutingRuleSetRef, Revision, Varset]}
         )
     ).
 
@@ -303,19 +303,19 @@ map_result_error({error, Error}) ->
 
 -type event() :: dmsl_payment_processing_thrift:'Event'().
 
--record(st, {
+-record(state, {
     user_info :: user_info(),
     party_id :: party_id(),
     poller :: pm_client_event_poller:st(event()),
     client :: pm_client_api:t()
 }).
 
--type st() :: #st{}.
+-type state() :: #state{}.
 -type callref() :: {pid(), Tag :: reference()}.
 
--spec init({user_info(), party_id(), pm_client_api:t()}) -> {ok, st()}.
+-spec init({user_info(), party_id(), pm_client_api:t()}) -> {ok, state()}.
 init({UserInfo, PartyID, ApiClient}) ->
-    {ok, #st{
+    {ok, #state{
         user_info = UserInfo,
         party_id = PartyID,
         client = ApiClient,
@@ -325,18 +325,18 @@ init({UserInfo, PartyID, ApiClient}) ->
         )
     }}.
 
--spec handle_call(term(), callref(), st()) -> {reply, term(), st()} | {noreply, st()}.
-handle_call({call, Function, Args0}, _From, St = #st{client = Client}) ->
-    Args = [St#st.user_info, St#st.party_id | Args0],
+-spec handle_call(term(), callref(), state()) -> {reply, term(), state()} | {noreply, state()}.
+handle_call({call, Function, Args0}, _From, St = #state{client = Client}) ->
+    Args = [St#state.user_info, St#state.party_id | Args0],
     {Result, ClientNext} = pm_client_api:call(party_management, Function, Args, Client),
-    {reply, Result, St#st{client = ClientNext}};
-handle_call({call_without_party, Function, Args0}, _From, St = #st{client = Client}) ->
-    Args = [St#st.user_info | Args0],
+    {reply, Result, St#state{client = ClientNext}};
+handle_call({call_without_party, Function, Args0}, _From, St = #state{client = Client}) ->
+    Args = [St#state.user_info | Args0],
     {Result, ClientNext} = pm_client_api:call(party_management, Function, Args, Client),
-    {reply, Result, St#st{client = ClientNext}};
-handle_call({pull_event, Timeout}, _From, St = #st{poller = Poller, client = Client}) ->
+    {reply, Result, St#state{client = ClientNext}};
+handle_call({pull_event, Timeout}, _From, St = #state{poller = Poller, client = Client}) ->
     {Result, ClientNext, PollerNext} = pm_client_event_poller:poll(1, Timeout, Client, Poller),
-    StNext = St#st{poller = PollerNext, client = ClientNext},
+    StNext = St#state{poller = PollerNext, client = ClientNext},
     case Result of
         [] ->
             {reply, timeout, StNext};
@@ -349,20 +349,20 @@ handle_call(Call, _From, State) ->
     _ = logger:warning("unexpected call received: ~tp", [Call]),
     {noreply, State}.
 
--spec handle_cast(_, st()) -> {noreply, st()}.
+-spec handle_cast(_, state()) -> {noreply, state()}.
 handle_cast(Cast, State) ->
     _ = logger:warning("unexpected cast received: ~tp", [Cast]),
     {noreply, State}.
 
--spec handle_info(_, st()) -> {noreply, st()}.
+-spec handle_info(_, state()) -> {noreply, state()}.
 handle_info(Info, State) ->
     _ = logger:warning("unexpected info received: ~tp", [Info]),
     {noreply, State}.
 
--spec terminate(Reason, st()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
+-spec terminate(Reason, state()) -> ok when Reason :: normal | shutdown | {shutdown, term()} | term().
 terminate(_Reason, _State) ->
     ok.
 
--spec code_change(Vsn | {down, Vsn}, st(), term()) -> {error, noimpl} when Vsn :: term().
+-spec code_change(Vsn | {down, Vsn}, state(), term()) -> {error, noimpl} when Vsn :: term().
 code_change(_OldVsn, _State, _Extra) ->
     {error, noimpl}.

@@ -30,7 +30,6 @@
 -export([not_permitted_recurrent_test/1]).
 -export([not_exists_invoice_test/1]).
 -export([not_exists_payment_test/1]).
--export([recurrent_risk_score_always_high/1]).
 
 %% Internal types
 
@@ -72,7 +71,7 @@ init([]) ->
 
 %% Common tests callbacks
 
--spec all() -> [test_case_name()].
+-spec all() -> [{group, test_case_name()}].
 all() ->
     [
         {group, basic_operations},
@@ -90,8 +89,7 @@ groups() ->
             customer_paytools_as_first_test,
             cancelled_first_payment_test,
             not_exists_invoice_test,
-            not_exists_payment_test,
-            recurrent_risk_score_always_high
+            not_exists_payment_test
         ]},
         {domain_affecting_operations, [], [
             not_permitted_recurrent_test
@@ -283,18 +281,6 @@ not_exists_payment_test(C) ->
     ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent payment not found">>},
     {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
 
--spec recurrent_risk_score_always_high(config()) -> test_result().
-recurrent_risk_score_always_high(C) ->
-    Client = cfg(client, C),
-    InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(),
-    {ok, PaymentID} = start_payment(InvoiceID, PaymentParams, Client),
-    Pattern = [
-        ?evp(?payment_ev(PaymentID, ?risk_score_changed(_)))
-    ],
-    {ok, [?payment_ev(PaymentID, ?risk_score_changed(Score))]} = await_events(InvoiceID, Pattern, Client),
-    high = Score.
-
 %% Internal functions
 
 cfg(Key, C) ->
@@ -400,7 +386,8 @@ start_invoice(Product, Due, Amount, C) ->
 start_invoice(ShopID, Product, Due, Amount, C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, Product, Due, Amount),
+    Cash = hg_ct_helper:make_cash(Amount, <<"RUB">>),
+    InvoiceParams = hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cash),
     InvoiceID = create_invoice(InvoiceParams, Client),
     _Events = await_events(InvoiceID, [?evp(?invoice_created(?invoice_w_status(?invoice_unpaid())))], Client),
     InvoiceID.
@@ -412,9 +399,6 @@ start_payment(InvoiceID, PaymentParams, Client) ->
         {exception, Exception} ->
             {error, Exception}
     end.
-
-make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
-    hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cost).
 
 create_invoice(InvoiceParams, Client) ->
     ?invoice_state(?invoice(InvoiceID)) = hg_client_invoicing:create(InvoiceParams, Client),

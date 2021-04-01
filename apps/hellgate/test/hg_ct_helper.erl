@@ -79,7 +79,7 @@
 
 -type app_name() :: atom().
 
--spec start_app(app_name()) -> [app_name()].
+-spec start_app(app_name()) -> {[app_name()], map()}.
 start_app(scoper = AppName) ->
     {start_app(AppName, [
             {storage, scoper_storage_logger}
@@ -186,6 +186,10 @@ start_app(hellgate = AppName) ->
                         pool => recurrent_paytool_eventsink,
                         max_connections => 300
                     }
+                },
+                limiter => #{
+                    url => <<"http://127.0.0.1:30001/test/proxy/limiter/dummy">>,
+                    transport_opts => #{}
                 }
             }},
             {proxy_opts, #{
@@ -268,7 +272,7 @@ start_app(snowflake = AppName) ->
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
 
--spec start_app(app_name(), list()) -> [app_name()].
+-spec start_app(app_name(), term()) -> [app_name()].
 start_app(cowboy = AppName, Env) ->
     #{
         listener_ref := Ref,
@@ -276,12 +280,12 @@ start_app(cowboy = AppName, Env) ->
         transport_opts := TransOpt,
         proto_opts := ProtoOpt
     } = Env,
-    cowboy:start_clear(Ref, [{num_acceptors, Count} | TransOpt], ProtoOpt),
+    _ = cowboy:start_clear(Ref, [{num_acceptors, Count} | TransOpt], ProtoOpt),
     [AppName];
 start_app(AppName, Env) ->
     genlib_app:start_application_with(AppName, Env).
 
--spec start_apps([app_name() | {app_name(), list()}]) -> [app_name()].
+-spec start_apps([app_name() | {app_name(), term()}]) -> {[app_name()], map()}.
 start_apps(Apps) ->
     lists:foldl(
         fun
@@ -335,7 +339,6 @@ make_user_identity(UserID) ->
 -type contract_id() :: dmsl_domain_thrift:'ContractID'().
 -type contract_tpl() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
--type cost() :: integer() | {integer(), binary()}.
 -type category() :: dmsl_domain_thrift:'CategoryRef'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
@@ -346,7 +349,7 @@ make_user_identity(UserID) ->
 -type lifetime_interval() :: dmsl_domain_thrift:'LifetimeInterval'().
 -type invoice_details() :: dmsl_domain_thrift:'InvoiceDetails'().
 -type invoice_tpl_details() :: dmsl_domain_thrift:'InvoiceTemplateDetails'().
--type invoice_tpl_cost() :: dmsl_domain_thrift:'InvoiceTemplateCost'().
+-type invoice_tpl_cost() :: dmsl_domain_thrift:'InvoiceTemplateProductPrice'().
 -type currency() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
 -type invoice_tpl_create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
 -type invoice_tpl_update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
@@ -502,7 +505,7 @@ make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
         payment_institution = PaymentInstitutionRef
     }.
 
--spec make_battle_ready_contractor() -> dmsl_payment_processing_thrift:'Contractor'().
+-spec make_battle_ready_contractor() -> dmsl_domain_thrift:'Contractor'().
 make_battle_ready_contractor() ->
     BankAccount = #domain_RussianBankAccount{
         account = <<"4276300010908312893">>,
@@ -540,20 +543,18 @@ make_battle_ready_payout_tool_params() ->
 make_userinfo(PartyID) ->
     #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}}.
 
--spec make_invoice_params(party_id(), shop_id(), binary(), cost()) -> invoice_params().
+-spec make_invoice_params(party_id(), shop_id(), binary(), cash()) -> invoice_params().
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     make_invoice_params(PartyID, ShopID, Product, make_due_date(), Cost).
 
--spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cost()) -> invoice_params().
-make_invoice_params(PartyID, ShopID, Product, Due, Amount) when is_integer(Amount) ->
-    make_invoice_params(PartyID, ShopID, Product, Due, {Amount, <<"RUB">>});
-make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}) ->
+-spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cash()) -> invoice_params().
+make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
     #payproc_InvoiceParams{
         party_id = PartyID,
         shop_id = ShopID,
         details = make_invoice_details(Product),
         due = hg_datetime:format_ts(Due),
-        cost = make_cash(Amount, Currency),
+        cost = Cost,
         context = make_invoice_context()
     }.
 
@@ -561,11 +562,11 @@ make_invoice_params(PartyID, ShopID, Product, Due, {Amount, Currency}) ->
 make_invoice_params_tpl(TplID) ->
     make_invoice_params_tpl(TplID, undefined).
 
--spec make_invoice_params_tpl(invoice_tpl_id(), cost()) -> invoice_params_tpl().
+-spec make_invoice_params_tpl(invoice_tpl_id(), undefined | cash()) -> invoice_params_tpl().
 make_invoice_params_tpl(TplID, Cost) ->
     make_invoice_params_tpl(TplID, Cost, undefined).
 
--spec make_invoice_params_tpl(invoice_tpl_id(), cost(), context()) -> invoice_params_tpl().
+-spec make_invoice_params_tpl(invoice_tpl_id(), undefined | cash(), undefined | context()) -> invoice_params_tpl().
 make_invoice_params_tpl(TplID, Cost, Context) ->
     #payproc_InvoiceWithTemplateParams{
         template_id = TplID,
@@ -596,7 +597,7 @@ make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, Cont
         context = Context
     }.
 
--spec make_invoice_tpl_details(binary(), cost()) -> invoice_tpl_details().
+-spec make_invoice_tpl_details(binary(), invoice_tpl_cost()) -> invoice_tpl_details().
 make_invoice_tpl_details(Product, Price) ->
     {product, #domain_InvoiceTemplateProduct{
         product = Product,
@@ -654,7 +655,7 @@ make_invoice_tpl_cost(range, {LowerType, LowerAm, LowerCur}, {UpperType, UpperAm
 make_invoice_tpl_cost(unlim, _, _) ->
     {unlim, #domain_InvoiceTemplateCostUnlimited{}}.
 
--spec make_cash(non_neg_integer(), currency()) -> cash().
+-spec make_cash(integer(), currency()) -> cash().
 make_cash(Amount, Currency) ->
     #domain_Cash{
         amount = Amount,
@@ -679,15 +680,15 @@ make_invoice_context(Data) ->
 make_shop_details(Name) ->
     make_shop_details(Name, undefined).
 
--spec make_shop_details(binary(), binary()) -> dmsl_domain_thrift:'ShopDetails'().
+-spec make_shop_details(binary(), undefined | binary()) -> dmsl_domain_thrift:'ShopDetails'().
 make_shop_details(Name, Description) ->
     #domain_ShopDetails{
         name = Name,
         description = Description
     }.
 
--spec make_disposable_payment_resource({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'SessionID'()}) ->
-    hg_domain_thrift:'DisposablePaymentResource'().
+-spec make_disposable_payment_resource({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}) ->
+    dmsl_domain_thrift:'DisposablePaymentResource'().
 make_disposable_payment_resource({PaymentTool, SessionID}) ->
     #domain_DisposablePaymentResource{
         payment_tool = PaymentTool,
@@ -724,7 +725,7 @@ make_customer_params(PartyID, ShopID, EMail) ->
         metadata = ?null()
     }.
 
--spec make_customer_binding_params({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'SessionID'()}) ->
+-spec make_customer_binding_params({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}) ->
     dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(PaymentToolSession) ->
     #payproc_CustomerBindingParams{

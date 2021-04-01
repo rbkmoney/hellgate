@@ -1,10 +1,12 @@
 -module(hg_payment_institution).
 
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %%
 
--export([get_system_account/4]).
+-export([compute_payment_institution/3]).
+-export([get_system_account/3]).
 -export([get_realm/1]).
 -export([is_live/1]).
 -export([choose_provider_account/2]).
@@ -16,6 +18,7 @@
 -type varset() :: pm_selector:varset().
 -type revision() :: hg_domain:revision().
 -type payment_inst() :: dmsl_domain_thrift:'PaymentInstitution'().
+-type payment_inst_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 -type realm() :: dmsl_domain_thrift:'PaymentInstitutionRealm'().
 -type accounts() :: dmsl_domain_thrift:'ProviderAccountSet'().
 -type account() :: dmsl_domain_thrift:'ProviderAccount'().
@@ -23,10 +26,17 @@
 
 %%
 
--spec get_system_account(currency(), varset(), revision(), payment_inst()) ->
-    dmsl_domain_thrift:'SystemAccount'() | no_return().
-get_system_account(Currency, VS, Revision, #domain_PaymentInstitution{system_account_set = S}) ->
-    SystemAccountSetRef = pm_selector:reduce_to_value(S, VS, Revision),
+-spec compute_payment_institution(payment_inst_ref(), varset(), revision()) -> payment_inst().
+compute_payment_institution(PaymentInstitutionRef, VS, Revision) ->
+    {Client, Context} = get_party_client(),
+    VS0 = hg_varset:prepare_varset(VS),
+    {ok, PaymentInstitution} =
+        party_client_thrift:compute_payment_institution(PaymentInstitutionRef, Revision, VS0, Client, Context),
+    PaymentInstitution.
+
+-spec get_system_account(currency(), revision(), payment_inst()) -> dmsl_domain_thrift:'SystemAccount'() | no_return().
+get_system_account(Currency, Revision, #domain_PaymentInstitution{system_account_set = S}) ->
+    {value, SystemAccountSetRef} = S,
     SystemAccountSet = hg_domain:get(Revision, {system_account_set, SystemAccountSetRef}),
     case maps:find(Currency, SystemAccountSet#domain_SystemAccountSet.accounts) of
         {ok, Account} ->

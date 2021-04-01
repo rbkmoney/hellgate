@@ -9,8 +9,8 @@
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 
--spec is_inside(cash(), cash_range()) -> within | {exceeds, lower | upper}.
-is_inside(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper}) ->
+-spec is_inside(cash(), cash_range()) -> within | {exceeds, lower | upper} | {error, incompatible}.
+is_inside(Cash, #domain_CashRange{lower = Lower, upper = Upper}) ->
     case
         {
             compare_cash(fun erlang:'>'/2, Cash, Lower),
@@ -24,7 +24,7 @@ is_inside(Cash, CashRange = #domain_CashRange{lower = Lower, upper = Upper}) ->
         {true, false} ->
             {exceeds, upper};
         _ ->
-            error({misconfiguration, {'Invalid cash range specified', CashRange, Cash}})
+            {error, incompatible}
     end.
 
 compare_cash(_, V, {inclusive, V}) ->

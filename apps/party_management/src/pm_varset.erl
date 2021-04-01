@@ -58,7 +58,7 @@ decode_varset(Varset, VS) ->
 
 -spec decode_varset(encoded_varset()) -> varset().
 decode_varset(Varset) ->
-    #{
+    genlib_map:compact(#{
         category => Varset#payproc_Varset.category,
         currency => Varset#payproc_Varset.currency,
         cost => Varset#payproc_Varset.amount,
@@ -72,7 +72,7 @@ decode_varset(Varset) ->
         identification_level => Varset#payproc_Varset.identification_level,
         shop_id => Varset#payproc_Varset.shop_id,
         party_id => Varset#payproc_Varset.party_id
-    }.
+    }).
 
 prepare_payment_tool_var(_PaymentMethodRef, PaymentTool) when PaymentTool /= undefined ->
     PaymentTool;
@@ -101,7 +101,7 @@ encode_decode_test() ->
                 provider = qiwi,
                 id = <<"digital_wallet_id">>
             }},
-        payout_method => #domain_PayoutMethodRef{id = 1},
+        payout_method => #domain_PayoutMethodRef{id = any},
         wallet_id => <<"wallet_id">>,
         p2p_tool => #domain_P2PTool{
             sender =

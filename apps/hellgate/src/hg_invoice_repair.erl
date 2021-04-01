@@ -18,14 +18,14 @@
 %% user types
 
 -type action_type() ::
-    fail_pre_processing |
-    skip_inspector |
-    fail_session.
+    fail_pre_processing
+    | skip_inspector
+    | fail_session.
 
 -type scenario_result() ::
-    hg_invoice_payment:machine_result() |
-    proxy_result() |
-    risk_score().
+    hg_invoice_payment:machine_result()
+    | proxy_result()
+    | risk_score().
 
 %% exported types
 

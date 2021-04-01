@@ -65,6 +65,7 @@ get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts) ->
     {ok, Ip} = inet:parse_address(genlib_app:env(?MODULE, ip, "::")),
     HealthRoutes = construct_health_routes(genlib_app:env(?MODULE, health_check, #{})),
     EventHandlerOpts = genlib_app:env(?MODULE, scoper_event_handler_options, #{}),
+    PrometeusRoute = get_prometheus_route(),
     woody_server:child_spec(
         ?MODULE,
         #{
@@ -86,7 +87,7 @@ get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts) ->
                     construct_service_handler(proxy_host_provider, hg_proxy_host_provider, Opts),
                     construct_service_handler(payment_processing_eventsink, hg_event_sink_handler, Opts)
                 ],
-            additional_routes => HealthRoutes,
+            additional_routes => [PrometeusRoute | HealthRoutes],
             shutdown_timeout => genlib_app:env(?MODULE, shutdown_timeout, 0)
         }
     ).
@@ -107,6 +108,10 @@ construct_service_handler_pm(Name, Module, Opts) ->
     FullOpts = maps:merge(#{handler => Module}, Opts),
     {Path, Service} = pm_proto:get_service_spec(Name),
     {Path, {Service, {pm_woody_wrapper, FullOpts}}}.
+
+-spec get_prometheus_route() -> {iodata(), module(), _Opts :: any()}.
+get_prometheus_route() ->
+    {"/metrics/[:registry]", prometheus_cowboy2_handler, []}.
 
 %% Application callbacks
 

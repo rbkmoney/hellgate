@@ -43,7 +43,7 @@
 -type template() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type terms() :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime() :: dmsl_domain_thrift:'Lifetime'() | undefined.
--type payment_routing_ruleset() :: dmsl_domain_thrift:'PaymentRoutingRulesetRef'().
+-type payment_routing_ruleset() :: dmsl_domain_thrift:'RoutingRulesetRef'().
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
@@ -145,7 +145,7 @@ construct_inspector(Ref, Name, ProxyRef) ->
 construct_inspector(Ref, Name, ProxyRef, Additional) ->
     construct_inspector(Ref, Name, ProxyRef, Additional, undefined).
 
--spec construct_inspector(inspector(), name(), proxy(), Additional :: map(), risk_score()) ->
+-spec construct_inspector(inspector(), name(), proxy(), Additional :: map(), undefined | risk_score()) ->
     {inspector, dmsl_domain_thrift:'InspectorObject'()}.
 construct_inspector(Ref, Name, ProxyRef, Additional, FallBackScore) ->
     {inspector, #domain_InspectorObject{
@@ -218,12 +218,12 @@ construct_system_account_set(Ref, Name, ?cur(CurrencyCode)) ->
     }}.
 
 -spec construct_external_account_set(external_account_set()) ->
-    {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
+    {external_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 construct_external_account_set(Ref) ->
     construct_external_account_set(Ref, <<"Primaries">>, ?cur(<<"RUB">>)).
 
 -spec construct_external_account_set(external_account_set(), name(), currency()) ->
-    {system_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
+    {external_account_set, dmsl_domain_thrift:'ExternalAccountSetObject'()}.
 construct_external_account_set(Ref, Name, ?cur(CurrencyCode)) ->
     ok = hg_context:save(hg_context:create()),
     AccountID1 = hg_accounting:create_account(CurrencyCode),
@@ -266,27 +266,26 @@ construct_business_schedule(Ref) ->
 construct_dummy_additional_info() ->
     #domain_AdditionalTransactionInfo{rrn = <<"rrn">>, approval_code = <<"code">>}.
 
--spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) ->
-    dmsl_domain_thrift:'PaymentRoutingRulesetObject'().
+-spec construct_payment_routing_ruleset(payment_routing_ruleset(), name(), _) -> dmsl_domain_thrift:'DomainObject'().
 construct_payment_routing_ruleset(Ref, Name, Decisions) ->
-    {payment_routing_rules, #domain_PaymentRoutingRulesObject{
+    {routing_rules, #domain_RoutingRulesObject{
         ref = Ref,
-        data = #domain_PaymentRoutingRuleset{
+        data = #domain_RoutingRuleset{
             name = Name,
             decisions = Decisions
         }
     }}.
 
--spec construct_routing_delegate(_RuleSetRef, _Predicate) -> dmsl_domain_thrift:'PaymentRoutingDelegate'().
+-spec construct_routing_delegate(_RuleSetRef, _Predicate) -> dmsl_domain_thrift:'RoutingDelegate'().
 construct_routing_delegate(Ref, Predicate) ->
-    #domain_PaymentRoutingDelegate{
+    #domain_RoutingDelegate{
         allowed = Predicate,
         ruleset = Ref
     }.
 
--spec construct_routing_candidate(_, _) -> dmsl_domain_thrift:'PaymentRoutingCandidate'().
+-spec construct_routing_candidate(_, _) -> dmsl_domain_thrift:'RoutingCandidate'().
 construct_routing_candidate(TerminalRef, Predicate) ->
-    #domain_PaymentRoutingCandidate{
+    #domain_RoutingCandidate{
         allowed = Predicate,
         terminal = TerminalRef
     }.

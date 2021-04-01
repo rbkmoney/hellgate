@@ -115,7 +115,7 @@ init_per_suite(C) ->
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
     ok = hg_domain:cleanup(),
-    [application:stop(App) || App <- cfg(apps, C)],
+    _ = [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
@@ -129,7 +129,7 @@ init_per_testcase(C) ->
     ok = hg_context:save(hg_context:create()),
     [{client, Client}, {client_tpl, ClientTpl} | C].
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok = hg_context:cleanup().
 
@@ -154,7 +154,7 @@ invoice_adjustment_capture(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
@@ -183,7 +183,7 @@ invoice_adjustment_cancel(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
@@ -213,7 +213,7 @@ invoice_adjustment_invalid_invoice_status(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
@@ -234,7 +234,7 @@ invoice_adjustment_existing_invoice_status(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
@@ -255,7 +255,7 @@ invoice_adjustment_invalid_adjustment_status(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
@@ -286,7 +286,7 @@ invoice_adjustment_payment_pending(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     PaymentID = start_payment(InvoiceID, make_tds_payment_params(), Client),
@@ -311,7 +311,7 @@ invoice_adjustment_pending_blocks_payment(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_Invoice)] = next_event(InvoiceID, Client),
     PaymentParams = make_payment_params({hold, capture}),
@@ -341,7 +341,7 @@ invoice_adjustment_pending_no_invoice_expiration(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(5), 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(5), make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     Paid = {paid, #domain_InvoicePaid{}},
@@ -362,7 +362,7 @@ invoice_adjustment_invoice_expiration_after_capture(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     PartyID = cfg(party_id, C),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 10000),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(10000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(_)] = next_event(InvoiceID, Client),
     Context = #'Content'{
@@ -769,6 +769,9 @@ construct_proxy(ID, Url, Options) ->
         }
     }}.
 
+make_cash(Amount) ->
+    hg_ct_helper:make_cash(Amount, <<"RUB">>).
+
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Cost).
 
@@ -868,7 +871,9 @@ start_payment(InvoiceID, PaymentParams, Client) ->
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?route_changed(_)),
+        ?payment_ev(PaymentID, ?route_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     PaymentID.
@@ -963,6 +968,8 @@ await_payment_process_interaction(InvoiceID, PaymentID, Client) ->
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?interaction_requested(UserInteraction)))
     ] = Events1,
     UserInteraction.
+
+-dialyzer({no_match, await_sessions_restarts/5}).
 
 await_sessions_restarts(PaymentID, _Target, _InvoiceID, _Client, 0) ->
     PaymentID;

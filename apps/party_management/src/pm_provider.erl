@@ -88,7 +88,8 @@ reduce_payment_terms(PaymentTerms, VS, DomainRevision) ->
         chargebacks = pm_maybe:apply(
             fun(X) -> reduce_payment_chargeback_terms(X, VS, DomainRevision) end,
             PaymentTerms#domain_PaymentsProvisionTerms.chargebacks
-        )
+        ),
+        risk_coverage = reduce_if_defined(PaymentTerms#domain_PaymentsProvisionTerms.risk_coverage, VS, DomainRevision)
     }.
 
 reduce_payment_hold_terms(PaymentHoldTerms, VS, DomainRevision) ->
@@ -200,7 +201,9 @@ merge_payment_terms(
         cash_flow = PCashflow,
         holds = PHolds,
         refunds = PRefunds,
-        chargebacks = PChargebacks
+        chargebacks = PChargebacks,
+        risk_coverage = PRiskCoverage,
+        turnover_limits = PTurnoverLimits
     },
     #domain_PaymentsProvisionTerms{
         currencies = TCurrencies,
@@ -210,7 +213,9 @@ merge_payment_terms(
         cash_flow = TCashflow,
         holds = THolds,
         refunds = TRefunds,
-        chargebacks = TChargebacks
+        chargebacks = TChargebacks,
+        risk_coverage = TRiskCoverage,
+        turnover_limits = TTurnoverLimits
     }
 ) ->
     #domain_PaymentsProvisionTerms{
@@ -221,7 +226,9 @@ merge_payment_terms(
         cash_flow = pm_utils:select_defined(TCashflow, PCashflow),
         holds = pm_utils:select_defined(THolds, PHolds),
         refunds = pm_utils:select_defined(TRefunds, PRefunds),
-        chargebacks = pm_utils:select_defined(TChargebacks, PChargebacks)
+        chargebacks = pm_utils:select_defined(TChargebacks, PChargebacks),
+        risk_coverage = pm_utils:select_defined(TRiskCoverage, PRiskCoverage),
+        turnover_limits = pm_utils:select_defined(TTurnoverLimits, PTurnoverLimits)
     };
 merge_payment_terms(ProviderTerms, TerminalTerms) ->
     pm_utils:select_defined(TerminalTerms, ProviderTerms).

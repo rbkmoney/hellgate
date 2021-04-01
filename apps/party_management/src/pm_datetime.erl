@@ -17,10 +17,10 @@
 
 %% not exported from calendar module
 -type rfc3339_time_unit() ::
-    microsecond |
-    millisecond |
-    nanosecond |
-    second.
+    microsecond
+    | millisecond
+    | nanosecond
+    | second.
 
 -export_type([timestamp/0]).
 

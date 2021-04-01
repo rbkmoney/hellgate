@@ -24,6 +24,7 @@
 -export([init/2]).
 -export([process_signal/2]).
 -export([process_call/2]).
+-export([process_repair/2]).
 
 %% Event provider callbacks
 
@@ -35,14 +36,14 @@
 
 -define(SYNC_INTERVAL, 5).
 % 1 day
--define(SYNC_OUTDATED_INTERVAL, 86400).
+-define(SYNC_OUTDATED_INTERVAL, 60 * 60 * 24).
 -define(REC_PAYTOOL_EVENTS_LIMIT, 10).
--define(MAX_BINDING_DURATION, #'TimeSpan'{hours = 3}).
+-define(MAX_BINDING_DURATION, 60 * 60 * 3).
 
 -record(st, {
     customer :: undefined | customer(),
     active_binding :: undefined | binding_id(),
-    binding_starts :: map(),
+    binding_activity :: #{binding_id() => integer()},
     created_at :: undefined | hg_datetime:timestamp()
 }).
 
@@ -161,7 +162,7 @@ call(ID, Function, Args) ->
 
 -spec map_error(notfound | any()) -> no_return().
 map_error(notfound) ->
-    throw(#payproc_InvoiceTemplateNotFound{});
+    throw(#payproc_CustomerNotFound{});
 map_error(Reason) ->
     error(Reason).
 
@@ -203,39 +204,49 @@ init(EncodedParams, #{id := CustomerID}) ->
         auxst => #{}
     }).
 
+-spec process_repair(hg_machine:args(), hg_machine:machine()) -> no_return().
+process_repair(_, _) ->
+    erlang:error({not_implemented, repair}).
+
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(Signal, #{history := History, aux_state := AuxSt}) ->
     handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)), unmarshal(auxst, AuxSt))).
 
 handle_signal(timeout, St0, AuxSt0) ->
-    {Changes, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
-    St1 = merge_changes(Changes, St0),
+    {Changes, St1, AuxSt1} = sync_pending_bindings(St0, AuxSt0),
+    St2 = merge_changes(Changes, St1),
     Action =
-        case detect_binding_status(St1) of
+        case detect_pending_waiting(St2) of
             all_ready ->
                 hg_machine_action:new();
-            waiting ->
-                set_event_poll_timer(actual);
-            waiting_outdated ->
-                set_event_poll_timer(outdated)
+            {waiting, WaitingTime} ->
+                hg_machine_action:set_timeout(get_event_pol_timeout(WaitingTime))
         end,
     #{
-        changes => Changes ++ get_ready_changes(St1),
+        changes => Changes ++ get_ready_changes(St2),
         action => Action,
         auxst => AuxSt1
     }.
 
-detect_binding_status(St) ->
-    case get_pending_binding_set(St) of
-        [] ->
+detect_pending_waiting(State) ->
+    Pending = get_pending_binding_set(State),
+    PendingActivityTime = lists:foldl(
+        fun
+            (BindingID, undefined) ->
+                get_binding_activity_time(BindingID, State);
+            (BindingID, LastEventTime) ->
+                EventTime = get_binding_activity_time(BindingID, State),
+                erlang:max(LastEventTime, EventTime)
+        end,
+        undefined,
+        Pending
+    ),
+    case PendingActivityTime of
+        undefined ->
             all_ready;
-        Pending ->
-            case get_outdated_binding_set(St) of
-                Outdated when Outdated =:= Pending ->
-                    waiting_outdated;
-                _Outdated ->
-                    waiting
-            end
+        LastEventTime ->
+            Now = os:system_time(second),
+            {waiting, Now - LastEventTime}
     end.
 
 get_ready_changes(#st{customer = #payproc_Customer{status = ?customer_unready()}} = St) ->
@@ -359,36 +370,38 @@ create_binding_id(St) ->
 sync_pending_bindings(St, AuxSt) ->
     sync_pending_bindings(get_pending_binding_set(St), St, AuxSt).
 
-sync_pending_bindings([BindingID | Rest], St, AuxSt0) ->
-    Binding = try_get_binding(BindingID, get_customer(St)),
-    {Changes1, AuxSt1} = sync_binding_state(Binding, St, AuxSt0),
-    {Changes2, AuxSt2} = sync_pending_bindings(Rest, St, AuxSt1),
-    {Changes1 ++ Changes2, AuxSt2};
-sync_pending_bindings([], _St, AuxSt) ->
-    {[], AuxSt}.
+sync_pending_bindings([BindingID | Rest], St0, AuxSt0) ->
+    Binding = try_get_binding(BindingID, get_customer(St0)),
+    {Changes1, St1, AuxSt1} = sync_binding_state(Binding, St0, AuxSt0),
+    {Changes2, St2, AuxSt2} = sync_pending_bindings(Rest, St1, AuxSt1),
+    {Changes1 ++ Changes2, St2, AuxSt2};
+sync_pending_bindings([], St, AuxSt) ->
+    {[], St, AuxSt}.
 
 sync_binding_state(Binding, St, AuxSt) ->
+    BindingID = get_binding_id(Binding),
     RecurrentPaytoolID = get_binding_recurrent_paytool_id(Binding),
-    LastEventID0 = get_binding_last_event_id(Binding, AuxSt),
+    LastEventID0 = get_binding_last_event_id(BindingID, AuxSt),
     case get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID0) of
-        {ok, {RecurrentPaytoolChanges, LastEventID1}} ->
+        {ok, {RecurrentPaytoolChanges, LastEventID1, LastEventTime}} ->
             BindingChanges = produce_binding_changes(RecurrentPaytoolChanges, Binding),
-            WrappedChanges = wrap_binding_changes(get_binding_id(Binding), BindingChanges),
-            UpdatedAuxState = update_aux_state(LastEventID1, Binding, AuxSt),
-            {WrappedChanges, UpdatedAuxState};
+            WrappedChanges = wrap_binding_changes(BindingID, BindingChanges),
+            UpdatedAuxState = update_aux_state(LastEventID1, BindingID, AuxSt),
+            UpdatedState = update_binding_activity(BindingID, LastEventTime, St),
+            {WrappedChanges, UpdatedState, UpdatedAuxState};
         % lazily create paytool
         {error, paytool_not_found} ->
             PaytoolParams = create_paytool_params(Binding, St),
             {ok, _} = create_recurrent_paytool(PaytoolParams),
-            {[], AuxSt}
+            {[], St, AuxSt}
     end.
 
-update_aux_state(undefined, _Binding, AuxSt) ->
+update_aux_state(undefined, _BindingID, AuxSt) ->
     AuxSt;
-update_aux_state(LastEventID, #payproc_CustomerBinding{id = BindingID}, AuxSt) ->
+update_aux_state(LastEventID, BindingID, AuxSt) ->
     maps:put(BindingID, LastEventID, AuxSt).
 
-get_binding_last_event_id(#payproc_CustomerBinding{id = BindingID}, AuxSt) ->
+get_binding_last_event_id(BindingID, AuxSt) ->
     maps:get(BindingID, AuxSt, undefined).
 
 produce_binding_changes([RecurrentPaytoolChange | Rest], Binding) ->
@@ -444,11 +457,14 @@ create_recurrent_paytool(Params) ->
 get_recurrent_paytool_events(RecurrentPaytoolID, EventRange) ->
     issue_recurrent_paytools_call('GetEvents', {RecurrentPaytoolID, EventRange}).
 
-get_recurrent_paytool_changes(RecurrentPaytoolID, LastEventID) ->
-    EventRange = construct_event_range(LastEventID),
+get_recurrent_paytool_changes(RecurrentPaytoolID, AfterEventID) ->
+    EventRange = construct_event_range(AfterEventID),
     case get_recurrent_paytool_events(RecurrentPaytoolID, EventRange) of
+        {ok, []} ->
+            {ok, {[], undefined, undefined}};
         {ok, Events} ->
-            {ok, {gather_recurrent_paytool_changes(Events), get_last_event_id(Events)}};
+            #payproc_RecurrentPaymentToolEvent{id = LastEventID, created_at = LastEventTime} = lists:last(Events),
+            {ok, {gather_recurrent_paytool_changes(Events), LastEventID, LastEventTime}};
         {exception, #payproc_RecurrentPaymentToolNotFound{}} ->
             {error, paytool_not_found}
     end.
@@ -457,12 +473,6 @@ construct_event_range(undefined) ->
     #payproc_EventRange{limit = ?REC_PAYTOOL_EVENTS_LIMIT};
 construct_event_range(LastEventID) ->
     #payproc_EventRange{'after' = LastEventID, limit = ?REC_PAYTOOL_EVENTS_LIMIT}.
-
-get_last_event_id([_ | _] = Events) ->
-    #payproc_RecurrentPaymentToolEvent{id = LastEventID} = lists:last(Events),
-    LastEventID;
-get_last_event_id([]) ->
-    undefined.
 
 gather_recurrent_paytool_changes(Events) ->
     lists:flatmap(
@@ -475,13 +485,15 @@ gather_recurrent_paytool_changes(Events) ->
 issue_recurrent_paytools_call(Function, Args) ->
     hg_woody_wrapper:call(recurrent_paytool, Function, Args).
 
-set_event_poll_timer(Type) ->
-    hg_machine_action:set_timeout(get_event_pol_timeout(Type)).
-
-get_event_pol_timeout(actual) ->
-    ?SYNC_INTERVAL;
-get_event_pol_timeout(outdated) ->
-    ?SYNC_OUTDATED_INTERVAL - rand:uniform(?SYNC_OUTDATED_INTERVAL div 10).
+get_event_pol_timeout(WaitingTime) ->
+    case WaitingTime < app_binding_outdate_timeout() of
+        true ->
+            Retry = app_binding_max_sync_interval(),
+            erlang:min(Retry, erlang:max(1, WaitingTime));
+        _ ->
+            Retry = app_binding_outdated_sync_interval(),
+            Retry - rand:uniform(Retry div 10)
+    end.
 
 %%
 
@@ -496,7 +508,7 @@ get_customer_created_event(CustomerID, Params = #payproc_CustomerParams{}) ->
 %%
 
 collapse_history(History) ->
-    lists:foldl(fun merge_event/2, #st{binding_starts = #{}}, History).
+    lists:foldl(fun merge_event/2, #st{binding_activity = #{}}, History).
 
 merge_event({_ID, _, Changes}, St) ->
     merge_changes(Changes, St).
@@ -520,17 +532,20 @@ merge_change(?customer_binding_changed(BindingID, Payload), St) ->
     BindingStatus = get_binding_status(Binding1),
     St1 = set_customer(set_binding(Binding1, Customer), St),
     St2 = update_active_binding(BindingID, BindingStatus, St1),
-    update_bindigs_start(BindingID, Payload, St2).
+    update_binding_activity(BindingID, Payload, St2).
 
 update_active_binding(BindingID, ?customer_binding_succeeded(), St) ->
     set_active_binding_id(BindingID, St);
 update_active_binding(_BindingID, _BindingStatus, St) ->
     St.
 
-update_bindigs_start(BindingID, ?customer_binding_started(_Binding, Timestamp), St) ->
-    #st{binding_starts = Starts} = St,
-    St#st{binding_starts = Starts#{BindingID => Timestamp}};
-update_bindigs_start(_BindingID, _OtherChange, St) ->
+update_binding_activity(BindingID, LastEventTime, St) when is_binary(LastEventTime) ->
+    EventTime = hg_datetime:parse(LastEventTime, second),
+    #st{binding_activity = Bindings} = St,
+    St#st{binding_activity = Bindings#{BindingID => EventTime}};
+update_binding_activity(BindingID, ?customer_binding_started(_Binding, Timestamp), St) ->
+    update_binding_activity(BindingID, Timestamp, St);
+update_binding_activity(_BindingID, _OtherChange, St) ->
     St.
 
 wrap_binding_changes(BindingID, Changes) ->
@@ -600,41 +615,20 @@ get_pending_binding_set(St) ->
         || Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_pending()
     ].
 
-get_outdated_binding_set(St) ->
-    Bindings = get_bindings(get_customer(St)),
-    [
-        get_binding_id(Binding)
-        || Binding <- Bindings, is_binding_outdated(Binding, St) =:= true
-    ].
-
-is_binding_outdated(#payproc_CustomerBinding{id = BindingId, status = ?customer_binding_pending()}, St) ->
-    BindingStart = get_binding_start_timestamp(BindingId, St),
-    Now = hg_datetime:format_now(),
-    Deadline = hg_datetime:add_time_span(?MAX_BINDING_DURATION, BindingStart),
-    case hg_datetime:compare(Now, Deadline) of
-        later ->
-            true;
-        _Other ->
-            false
-    end;
-is_binding_outdated(_Bindinf, _St) ->
-    false.
-
 get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->
     BindingID.
 
 get_binding_status(#payproc_CustomerBinding{status = Status}) ->
     Status.
 
-get_binding_start_timestamp(BindingId, #st{binding_starts = Starts} = St) ->
-    BindingStart = maps:get(BindingId, Starts),
-    % Old bindings has `undefined` start timestamp.
-    % Using customer create timestamp instead.
-    case BindingStart of
+get_binding_activity_time(BindingID, #st{binding_activity = Bindings} = St) ->
+    case maps:get(BindingID, Bindings, undefined) of
         undefined ->
-            St#st.created_at;
-        _ ->
-            BindingStart
+            % Old bindings has `undefined` start timestamp.
+            % Using customer create timestamp instead.
+            hg_datetime:parse(St#st.created_at, second);
+        EventTime ->
+            EventTime
     end.
 
 assert_binding_status(StatusName, #payproc_CustomerBinding{status = {StatusName, _}}) ->
@@ -699,6 +693,25 @@ assert_party_operable(Party) ->
 assert_shop_operable(Shop) ->
     Shop = hg_invoice_utils:assert_shop_operable(Shop),
     ok.
+
+%% Config
+
+app_binding_max_sync_interval() ->
+    Config = genlib_app:env(hellgate, binding, #{}),
+    app_parse_timespan(genlib_map:get(max_sync_interval, Config, ?SYNC_INTERVAL)).
+
+app_binding_outdated_sync_interval() ->
+    Config = genlib_app:env(hellgate, binding, #{}),
+    app_parse_timespan(genlib_map:get(outdated_sync_interval, Config, ?SYNC_OUTDATED_INTERVAL)).
+
+app_binding_outdate_timeout() ->
+    Config = genlib_app:env(hellgate, binding, #{}),
+    app_parse_timespan(genlib_map:get(outdate_timeout, Config, ?MAX_BINDING_DURATION)).
+
+app_parse_timespan(Value) when is_integer(Value) ->
+    Value;
+app_parse_timespan(Value) ->
+    genlib_format:parse_timespan(Value) div 1000.
 
 %%
 %% Marshalling
@@ -966,11 +979,59 @@ unmarshal(_, Other) ->
 
 -spec test() -> _.
 
--spec event_pol_timer_test() -> _.
+-spec event_pol_timer_test_() -> _.
 
-event_pol_timer_test() ->
-    ?assertEqual(get_event_pol_timeout(actual), ?SYNC_INTERVAL),
-    ?assert(get_event_pol_timeout(outdated) =< ?SYNC_OUTDATED_INTERVAL),
-    ?assert(get_event_pol_timeout(outdated) >= ?SYNC_OUTDATED_INTERVAL * 0.9).
+event_pol_timer_test_() ->
+    {setup,
+        fun() ->
+            application:unset_env(hellgate, binding)
+        end,
+        [
+            ?_assertEqual(get_event_pol_timeout(1), 1),
+            ?_assertEqual(get_event_pol_timeout(?SYNC_INTERVAL + 1), ?SYNC_INTERVAL),
+            ?_assert(get_event_pol_timeout(?MAX_BINDING_DURATION) =< ?SYNC_OUTDATED_INTERVAL),
+            ?_assert(get_event_pol_timeout(?MAX_BINDING_DURATION) >= ?SYNC_OUTDATED_INTERVAL * 0.9)
+        ]}.
+
+-spec app_config_test_() -> _.
+
+app_config_test_() ->
+    [
+        {setup,
+            fun() ->
+                application:set_env(hellgate, binding, #{
+                    max_sync_interval => <<"16s">>,
+                    outdated_sync_interval => <<"32m">>,
+                    outdate_timeout => <<"64s">>
+                })
+            end,
+            [
+                ?_assertEqual(16, app_binding_max_sync_interval()),
+                ?_assertEqual(32 * 60, app_binding_outdated_sync_interval()),
+                ?_assertEqual(64, app_binding_outdate_timeout())
+            ]},
+        {setup,
+            fun() ->
+                application:set_env(hellgate, binding, #{
+                    max_sync_interval => 32,
+                    outdated_sync_interval => 64,
+                    outdate_timeout => 128
+                })
+            end,
+            [
+                ?_assertEqual(32, app_binding_max_sync_interval()),
+                ?_assertEqual(64, app_binding_outdated_sync_interval()),
+                ?_assertEqual(128, app_binding_outdate_timeout())
+            ]},
+        {setup,
+            fun() ->
+                application:unset_env(hellgate, binding)
+            end,
+            [
+                ?_assertEqual(?SYNC_INTERVAL, app_binding_max_sync_interval()),
+                ?_assertEqual(?SYNC_OUTDATED_INTERVAL, app_binding_outdated_sync_interval()),
+                ?_assertEqual(?MAX_BINDING_DURATION, app_binding_outdate_timeout())
+            ]}
+    ].
 
 -endif.

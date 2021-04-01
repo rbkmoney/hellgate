@@ -11,14 +11,14 @@
 -type value() :: term().
 
 -type msgpack_value() ::
-    undefined |
-    boolean() |
-    list() |
-    map() |
-    binary() |
-    {bin, binary()} |
-    integer() |
-    float().
+    undefined
+    | boolean()
+    | list()
+    | map()
+    | binary()
+    | {bin, binary()}
+    | integer()
+    | float().
 
 -spec marshal(msgpack_value()) -> mg_proto_msgpack_thrift:'Value'().
 marshal(undefined) ->

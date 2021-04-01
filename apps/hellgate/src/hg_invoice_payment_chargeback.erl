@@ -139,10 +139,10 @@
     hg_machine_action:t().
 
 -type activity() ::
-    preparing_initial_cash_flow |
-    updating_chargeback |
-    updating_cash_flow |
-    finalising_accounter.
+    preparing_initial_cash_flow
+    | updating_chargeback
+    | updating_cash_flow
+    | finalising_accounter.
 
 -spec get(state()) -> chargeback().
 get(#chargeback_st{chargeback = Chargeback}) ->
@@ -284,16 +284,13 @@ do_create(Opts, CreateParams = ?chargeback_params(Levy, Body, _Reason)) ->
     Party = get_opts_party(Opts),
     Payment = get_opts_payment(Opts),
     ShopID = get_invoice_shop_id(Invoice),
-    Shop = pm_party:get_shop(ShopID, Party),
-    ContractID = get_shop_contract_id(Shop),
-    Contract = pm_party:get_contract(ContractID, Party),
-    TermSet = pm_party:get_terms(Contract, CreatedAt, Revision),
-    ServiceTerms = get_merchant_chargeback_terms(TermSet),
+    Shop = hg_party:get_shop(ShopID, Party),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
-    _ = validate_contract_active(Contract),
+    ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     _ = validate_currency(Body, Payment),
     _ = validate_currency(Levy, Payment),
     _ = validate_body_amount(Body, get_opts_payment_state(Opts)),
+    _ = validate_contract_active(get_contract(Party, Shop)),
     _ = validate_service_terms(ServiceTerms),
     _ = validate_chargeback_is_allowed(ServiceTerms, VS, Revision),
     _ = validate_eligibility_time(ServiceTerms, VS, Revision),
@@ -423,20 +420,18 @@ build_chargeback_cash_flow(State, Opts) ->
     Route = get_opts_route(Opts),
     Party = get_opts_party(Opts),
     ShopID = get_invoice_shop_id(Invoice),
-    Shop = pm_party:get_shop(ShopID, Party),
-    ContractID = get_shop_contract_id(Shop),
-    Contract = pm_party:get_contract(ContractID, Party),
-    TermSet = pm_party:get_terms(Contract, CreatedAt, Revision),
-    ServiceTerms = get_merchant_chargeback_terms(TermSet),
+    Shop = hg_party:get_shop(ShopID, Party),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
+    ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     PaymentsTerms = hg_routing:get_payments_terms(Route, Revision),
     ProviderTerms = get_provider_chargeback_terms(PaymentsTerms, Payment),
     ServiceCashFlow = collect_chargeback_service_cash_flow(ServiceTerms, VS, Revision),
     ProviderCashFlow = collect_chargeback_provider_cash_flow(ProviderTerms, VS, Revision),
     ProviderFees = collect_chargeback_provider_fees(ProviderTerms, VS, Revision),
-    PmntInstitution = get_payment_institution(Contract, Revision),
+    PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
+    PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PmntInstitution, Provider, VS, Revision),
+    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
     ServiceContext = build_service_cash_flow_context(State),
     ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
     ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap),
@@ -467,8 +462,13 @@ collect_chargeback_provider_cash_flow(ProviderTerms, VS, Revision) ->
 
 collect_chargeback_provider_fees(ProviderTerms, VS, Revision) ->
     #domain_PaymentChargebackProvisionTerms{fees = ProviderFeesSelector} = ProviderTerms,
-    Fees = reduce_selector(provider_chargeback_fees, ProviderFeesSelector, VS, Revision),
-    Fees#domain_Fees.fees.
+    case ProviderFeesSelector of
+        undefined ->
+            #{};
+        ProviderFeesSelector ->
+            Fees = reduce_selector(provider_chargeback_fees, ProviderFeesSelector, VS, Revision),
+            Fees#domain_Fees.fees
+    end.
 
 reduce_selector(Name, Selector, VS, Revision) ->
     case pm_selector:reduce(Selector, VS, Revision) of
@@ -486,10 +486,26 @@ reduce_predicate(Name, Selector, VS, Revision) ->
             error({misconfiguration, {'Could not reduce predicate to a value', {Name, Ambiguous}}})
     end.
 
-get_merchant_chargeback_terms(#domain_TermSet{payments = PaymentsTerms}) ->
-    get_merchant_chargeback_terms(PaymentsTerms);
-get_merchant_chargeback_terms(#domain_PaymentsServiceTerms{chargebacks = Terms}) ->
-    Terms.
+get_merchant_chargeback_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Shop, VS, Revision, Timestamp) ->
+    {Client, Context} = get_party_client(),
+    {ok, #domain_TermSet{payments = PaymentsTerms}} = party_client_thrift:compute_contract_terms(
+        PartyId,
+        Shop#domain_Shop.contract_id,
+        Timestamp,
+        {revision, PartyRevision},
+        Revision,
+        hg_varset:prepare_varset(VS),
+        Client,
+        Context
+    ),
+    PaymentsTerms#domain_PaymentsServiceTerms.chargebacks.
+
+get_contract(Party, #domain_Shop{contract_id = ContractID}) ->
+    hg_party:get_contract(ContractID, Party).
+
+get_party_client() ->
+    Ctx = hg_context:load(),
+    {hg_context:get_party_client(Ctx), hg_context:get_party_client_context(Ctx)}.
 
 get_provider_chargeback_terms(#domain_PaymentsProvisionTerms{chargebacks = Terms}, _Payment) ->
     Terms.
@@ -731,14 +747,8 @@ get_route_provider(#domain_PaymentRoute{provider = ProviderRef}, Revision) ->
 
 %%
 
-get_payment_institution(Contract, Revision) ->
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
-
-%%
-
-get_shop_contract_id(#domain_Shop{contract_id = ContractID}) ->
-    ContractID.
+get_payment_institution_ref(Contract) ->
+    Contract#domain_Contract.payment_institution.
 
 %%
 

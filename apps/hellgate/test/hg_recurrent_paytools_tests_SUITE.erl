@@ -142,7 +142,7 @@ init_per_testcase(Name, C) ->
         | C
     ].
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -429,9 +429,11 @@ start_proxies(Proxies) ->
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
 
+-spec start_service_handler(module(), list(), map()) -> binary().
 start_service_handler(Module, C, HandlerOpts) ->
     start_service_handler(Module, Module, C, HandlerOpts).
 
+-spec start_service_handler(atom(), module(), list(), map()) -> binary().
 start_service_handler(Name, Module, C, HandlerOpts) ->
     IP = "127.0.0.1",
     Port = get_random_port(),
@@ -440,6 +442,7 @@ start_service_handler(Name, Module, C, HandlerOpts) ->
     {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
 
+-spec get_random_port() -> inet:port_number().
 get_random_port() ->
     rand:uniform(32768) + 32767.
 

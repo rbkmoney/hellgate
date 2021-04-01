@@ -30,6 +30,7 @@
 -export([init/2]).
 -export([process_signal/2]).
 -export([process_call/2]).
+-export([process_repair/2]).
 
 %% Types
 -record(st, {
@@ -238,10 +239,13 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     Revision = Params#payproc_RecurrentPaymentToolParams.domain_revision,
     CreatedAt = hg_datetime:format_now(),
     {Party, Shop} = get_party_shop(Params),
-    PaymentInstitution = get_payment_institution(Shop, Party, Revision),
     RecPaymentTool = create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision),
-    VS0 = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
-    {RiskScore, VS1} = validate_risk_score(inspect(RecPaymentTool, VS0), VS0),
+    VS = collect_varset(Party, Shop, #{payment_tool => PaymentTool}),
+    RiskScore = validate_risk_score(inspect(RecPaymentTool, VS)),
+    VS1 = VS#{risk_score => RiskScore},
+    PaymentInstitutionRef = get_payment_institution_ref(Shop, Party),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
+
     Predestination = recurrent_paytool,
     {Routes, RejectContext} =
         case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision) of
@@ -252,10 +256,10 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         end,
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
     Route = validate_route(
-        hg_routing:choose_route(FailRatedRoutes, RejectContext, VS1),
+        hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore),
         RecPaymentTool
     ),
-    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS1, Revision),
+    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision),
     {ok, {Changes, Action}} = start_session(),
     StartChanges = [
         ?recurrent_payment_tool_has_created(RecPaymentTool2),
@@ -278,15 +282,24 @@ get_party_shop(Params) ->
     Shop = hg_party:get_shop(ShopID, Party),
     {Party, Shop}.
 
-get_payment_institution(Shop, Party, Revision) ->
+get_payment_institution_ref(Shop, Party) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    hg_domain:get(Revision, {payment_institution, PaymentInstitutionRef}).
+    Contract#domain_Contract.payment_institution.
 
-get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, Revision) ->
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    ok = assert_contract_active(Contract),
-    #domain_TermSet{recurrent_paytools = Terms} = pm_party:get_terms(Contract, CreatedAt, Revision),
+get_merchant_recurrent_paytools_terms(#domain_Shop{contract_id = ContractID}, Party, Timestamp, Revision) ->
+    {Client, Context} = get_party_client(),
+    #domain_Party{id = PartyId, revision = PartyRevision} = Party,
+    ok = assert_contract_active(hg_party:get_contract(ContractID, Party)),
+    {ok, #domain_TermSet{recurrent_paytools = Terms}} = party_client_thrift:compute_contract_terms(
+        PartyId,
+        ContractID,
+        Timestamp,
+        {revision, PartyRevision},
+        Revision,
+        #payproc_Varset{},
+        Client,
+        Context
+    ),
     Terms.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
@@ -294,6 +307,10 @@ assert_contract_active(#domain_Contract{status = {active, _}}) ->
 assert_contract_active(#domain_Contract{status = Status}) ->
     % FIXME no such exception on the service interface
     throw(#payproc_InvalidContractStatus{status = Status}).
+
+get_party_client() ->
+    Ctx = hg_context:load(),
+    {hg_context:get_party_client(Ctx), hg_context:get_party_client_context(Ctx)}.
 
 collect_varset(
     #domain_Party{id = PartyID},
@@ -331,8 +348,8 @@ inspect(_RecPaymentTool, _VS) ->
     % FIXME please senpai
     high.
 
-validate_risk_score(RiskScore, VS) when RiskScore == low; RiskScore == high ->
-    {RiskScore, VS#{risk_score => RiskScore}}.
+validate_risk_score(RiskScore) when RiskScore == low; RiskScore == high ->
+    RiskScore.
 
 validate_route({ok, Route, ChoiceMeta}, _RecPaymentTool) ->
     _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),
@@ -361,6 +378,10 @@ start_session() ->
     Events = [?session_ev(?session_started())],
     Action = hg_machine_action:instant(),
     {ok, {Events, Action}}.
+
+-spec process_repair(hg_machine:signal(), hg_machine:machine()) -> no_return().
+process_repair(_, _) ->
+    erlang:error({not_implemented, repair}).
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(Signal, #{history := History}) ->

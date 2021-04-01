@@ -272,7 +272,7 @@ groups() ->
 init_per_suite(C) ->
     {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, party_management, hellgate]),
     ok = pm_domain:insert(construct_domain_fixture()),
-    [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
+    [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps}] ++ C.
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -299,7 +299,7 @@ end_per_group(_Group, C) ->
 init_per_testcase(_Name, C) ->
     C.
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -1079,14 +1079,21 @@ shop_terms_retrieval(C) ->
     PartyID = cfg(party_id, C),
     ShopID = ?REAL_SHOP_ID,
     Timestamp = pm_datetime:format_now(),
-    TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, Client),
+    VS = #payproc_Varset{
+        shop_id = ShopID,
+        party_id = PartyID,
+        category = ?cat(2),
+        currency = ?cur(<<"RUB">>),
+        identification_level = full
+    },
+    TermSet1 = pm_client_party:compute_shop_terms(ShopID, Timestamp, {timestamp, Timestamp}, VS, Client),
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
         }
     } = TermSet1,
     ok = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
-    TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, Client),
+    TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, VS, Client),
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
             payment_methods = {value, ?REAL_PARTY_PAYMENT_METHODS}
@@ -1720,53 +1727,53 @@ compute_payment_routing_ruleset_ok(C) ->
     Varset = #payproc_Varset{
         party_id = <<"67890">>
     },
-    #domain_PaymentRoutingRuleset{
+    #domain_RoutingRuleset{
         name = <<"Rule#1">>,
         decisions =
             {candidates, [
-                #domain_PaymentRoutingCandidate{
+                #domain_RoutingCandidate{
                     terminal = ?trm(2),
                     allowed = {constant, true}
                 },
-                #domain_PaymentRoutingCandidate{
+                #domain_RoutingCandidate{
                     terminal = ?trm(3),
                     allowed = {constant, true}
                 },
-                #domain_PaymentRoutingCandidate{
+                #domain_RoutingCandidate{
                     terminal = ?trm(1),
                     allowed = {constant, true}
                 }
             ]}
-    } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
+    } = pm_client_party:compute_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_unreducable(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     Varset = #payproc_Varset{},
-    #domain_PaymentRoutingRuleset{
+    #domain_RoutingRuleset{
         name = <<"Rule#1">>,
         decisions =
             {delegates, [
-                #domain_PaymentRoutingDelegate{
+                #domain_RoutingDelegate{
                     allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
                     ruleset = ?ruleset(2)
                 },
-                #domain_PaymentRoutingDelegate{
+                #domain_RoutingDelegate{
                     allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
                     ruleset = ?ruleset(3)
                 },
-                #domain_PaymentRoutingDelegate{
+                #domain_RoutingDelegate{
                     allowed = {constant, true},
                     ruleset = ?ruleset(4)
                 }
             ]}
-    } = pm_client_party:compute_payment_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
+    } = pm_client_party:compute_routing_ruleset(?ruleset(1), DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_not_found(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     {exception, #payproc_RuleSetNotFound{}} =
-        (catch pm_client_party:compute_payment_routing_ruleset(?ruleset(5), DomainRevision, #payproc_Varset{}, Client)).
+        (catch pm_client_party:compute_routing_ruleset(?ruleset(5), DomainRevision, #payproc_Varset{}, Client)).
 
 %%
 
@@ -2341,44 +2348,44 @@ construct_domain_fixture() ->
     },
     Decision1 =
         {delegates, [
-            #domain_PaymentRoutingDelegate{
+            #domain_RoutingDelegate{
                 allowed = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
                 ruleset = ?ruleset(2)
             },
-            #domain_PaymentRoutingDelegate{
+            #domain_RoutingDelegate{
                 allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
                 ruleset = ?ruleset(3)
             },
-            #domain_PaymentRoutingDelegate{
+            #domain_RoutingDelegate{
                 allowed = {constant, true},
                 ruleset = ?ruleset(4)
             }
         ]},
     Decision2 =
         {candidates, [
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {constant, true},
                 terminal = ?trm(1)
             }
         ]},
     Decision3 =
         {candidates, [
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {condition, {party, #domain_PartyCondition{id = <<"67890">>}}},
                 terminal = ?trm(2)
             },
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {constant, true},
                 terminal = ?trm(3)
             },
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {constant, true},
                 terminal = ?trm(1)
             }
         ]},
     Decision4 =
         {candidates, [
-            #domain_PaymentRoutingCandidate{
+            #domain_RoutingCandidate{
                 allowed = {constant, true},
                 terminal = ?trm(3)
             }
@@ -2409,10 +2416,10 @@ construct_domain_fixture() ->
 
         pm_ct_fixture:construct_business_schedule(?bussched(1)),
 
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(1), <<"Rule#1">>, Decision1),
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(2), <<"Rule#2">>, Decision2),
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Rule#3">>, Decision3),
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(4), <<"Rule#4">>, Decision4),
+        pm_ct_fixture:construct_payment_routing_ruleset(?ruleset(1), <<"Rule#1">>, Decision1),
+        pm_ct_fixture:construct_payment_routing_ruleset(?ruleset(2), <<"Rule#2">>, Decision2),
+        pm_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Rule#3">>, Decision3),
+        pm_ct_fixture:construct_payment_routing_ruleset(?ruleset(4), <<"Rule#4">>, Decision4),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
@@ -2533,7 +2540,7 @@ construct_domain_fixture() ->
                 terminal = {value, [?prvtrm(1)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
-                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                accounts = pm_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([?cur(<<"RUB">>)])},

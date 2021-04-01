@@ -7,6 +7,10 @@
 -include("party_events.hrl").
 
 -export([from_claim_mgmt/1]).
+-export([assert_cash_regisrter_modifications_applicable/2]).
+
+-type party() :: pm_party:party().
+-type changeset() :: dmsl_claim_management_thrift:'ClaimChangeset'().
 
 -spec from_claim_mgmt(dmsl_claim_management_thrift:'Claim'()) -> dmsl_payment_processing_thrift:'Claim'() | undefined.
 from_claim_mgmt(#claim_management_Claim{
@@ -28,6 +32,18 @@ from_claim_mgmt(#claim_management_Claim{
                 created_at = CreatedAt,
                 updated_at = UpdatedAt
             }
+    end.
+
+-spec assert_cash_regisrter_modifications_applicable(changeset(), party()) -> ok | no_return().
+assert_cash_regisrter_modifications_applicable(Changeset, Party) ->
+    CashRegisterShopIDs = get_cash_register_modifications_shop_ids(Changeset),
+    ShopIDs = get_all_valid_shop_ids(Changeset, Party),
+    case sets:is_subset(CashRegisterShopIDs, ShopIDs) of
+        true ->
+            ok;
+        false ->
+            ShopID = hd(sets:to_list(sets:subtract(CashRegisterShopIDs, ShopIDs))),
+            throw(#payproc_InvalidChangeset{reason = ?invalid_shop(ShopID, {not_exists, ShopID})})
     end.
 
 %%% Internal functions
@@ -138,3 +154,51 @@ from_cm_shop_modification(?cm_shop_account_creation_params(CurrencyRef)) ->
     ?shop_account_creation_params(CurrencyRef);
 from_cm_shop_modification(?cm_payout_schedule_modification(BusinessScheduleRef)) ->
     ?payout_schedule_modification(BusinessScheduleRef).
+
+get_all_valid_shop_ids(Changeset, Party) ->
+    ShopModificationsShopIDs = get_shop_modifications_shop_ids(Changeset),
+    PartyShopIDs = get_party_shop_ids(Party),
+    sets:union(ShopModificationsShopIDs, PartyShopIDs).
+
+get_party_shop_ids(Party) ->
+    sets:from_list(maps:keys(pm_party:get_shops(Party))).
+
+get_cash_register_modifications_shop_ids(Changeset) ->
+    sets:from_list(
+        lists:filtermap(
+            fun
+                (
+                    #claim_management_ModificationUnit{
+                        modification = {party_modification, ?cm_cash_register_modification_unit_modification(ShopID, _)}
+                    }
+                ) ->
+                    {true, ShopID};
+                (_) ->
+                    false
+            end,
+            Changeset
+        )
+    ).
+
+get_shop_modifications_shop_ids(Changeset) ->
+    sets:from_list(
+        lists:filtermap(
+            fun
+                (
+                    #claim_management_ModificationUnit{
+                        modification = {party_modification, ?cm_cash_register_modification_unit_modification(_, _)}
+                    }
+                ) ->
+                    false;
+                (
+                    #claim_management_ModificationUnit{
+                        modification = {party_modification, ?cm_shop_modification(ShopID, _)}
+                    }
+                ) ->
+                    {true, ShopID};
+                (_) ->
+                    false
+            end,
+            Changeset
+        )
+    ).

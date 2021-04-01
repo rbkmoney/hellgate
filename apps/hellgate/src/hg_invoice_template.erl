@@ -19,6 +19,7 @@
 -export([init/2]).
 -export([process_signal/2]).
 -export([process_call/2]).
+-export([process_repair/2]).
 
 %% Event provider callbacks
 
@@ -95,14 +96,26 @@ handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _
     ShopID = Tpl#domain_InvoiceTemplate.shop_id,
     PartyID = Tpl#domain_InvoiceTemplate.owner_id,
     PartyRevision1 = hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
-    ShopTerms = hg_invoice_utils:compute_shop_terms(UserInfo, PartyID, ShopID, Timestamp, PartyRevision1),
-    case Tpl#domain_InvoiceTemplate.details of
-        {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
-            Revision = hg_domain:head(),
-            pm_party:reduce_terms(ShopTerms, #{cost => Cash}, Revision);
-        _ ->
-            ShopTerms
-    end.
+    Party = hg_party:get_party(PartyID),
+    Shop = hg_party:get_shop(ShopID, Party),
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    Cost =
+        case Tpl#domain_InvoiceTemplate.details of
+            {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
+                Cash;
+            _ ->
+                undefined
+        end,
+    VS0 = #{
+        party_id => PartyID,
+        shop_id => ShopID,
+        category => Shop#domain_Shop.category,
+        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
+        identification_level => hg_invoice_utils:get_identification_level(Contract, Party),
+        cost => Cost
+    },
+    VS = hg_varset:prepare_varset(genlib_map:compact(VS0)),
+    hg_invoice_utils:compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision1, VS).
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
@@ -232,6 +245,10 @@ create_invoice_template(ID, P) ->
         details = P#payproc_InvoiceTemplateCreateParams.details,
         context = P#payproc_InvoiceTemplateCreateParams.context
     }.
+
+-spec process_repair(hg_machine:args(), hg_machine:machine()) -> no_return().
+process_repair(_Args, _Machine) ->
+    erlang:error({not_implemented, repair}).
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(timeout, _Machine) ->

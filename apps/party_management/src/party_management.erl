@@ -35,10 +35,11 @@ stop() ->
 
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
+    Options = application:get_env(?MODULE, cache_options, #{}),
     {ok,
         {
             #{strategy => one_for_all, intensity => 6, period => 30},
-            []
+            [pm_party_cache:cache_child_spec(party_cache, Options)]
         }}.
 
 %% Application callbacks
