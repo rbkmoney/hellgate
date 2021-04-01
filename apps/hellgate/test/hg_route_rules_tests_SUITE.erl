@@ -140,7 +140,7 @@ no_route_found_for_payment(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(999, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -163,7 +163,7 @@ gather_route_success(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -190,7 +190,7 @@ rejected_by_table_prohibitions(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"67890">>,
         flow => instant
     },
@@ -212,7 +212,7 @@ rejected_by_table_prohibitions(_C) ->
 empty_candidate_ok(_C) ->
     BankCard = #domain_BankCard{
         token = <<"bank card token">>,
-        payment_system = visa,
+        payment_system_deprecated = visa,
         bin = <<"411111">>,
         last_digits = <<"11">>
     },
@@ -255,7 +255,7 @@ prefer_better_risk_score(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -291,7 +291,7 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant,
         risk_score => RiskScore
@@ -374,8 +374,8 @@ routing_with_risk_score_fixture(Revision) ->
                         payment_methods =
                             {value,
                                 ?ordset([
-                                    ?pmt(payment_terminal, euroset),
-                                    ?pmt(digital_wallet, qiwi)
+                                    ?pmt(payment_terminal_deprecated, euroset),
+                                    ?pmt(digital_wallet_deprecated, qiwi)
                                 ])},
                         cash_limit =
                             {value,
@@ -440,8 +440,8 @@ routing_with_risk_score_fixture(Revision) ->
                         payment_methods =
                             {value,
                                 ?ordset([
-                                    ?pmt(payment_terminal, euroset),
-                                    ?pmt(digital_wallet, qiwi)
+                                    ?pmt(payment_terminal_deprecated, euroset),
+                                    ?pmt(digital_wallet_deprecated, qiwi)
                                 ])},
                         cash_limit =
                             {value,
@@ -506,8 +506,8 @@ routing_with_risk_score_fixture(Revision) ->
                         payment_methods =
                             {value,
                                 ?ordset([
-                                    ?pmt(payment_terminal, euroset),
-                                    ?pmt(digital_wallet, qiwi)
+                                    ?pmt(payment_terminal_deprecated, euroset),
+                                    ?pmt(digital_wallet_deprecated, qiwi)
                                 ])},
                         cash_limit =
                             {value,
@@ -537,7 +537,7 @@ routing_with_risk_score_fixture(Revision) ->
 construct_domain_fixture() ->
     Prohibitions =
         {delegates, [
-            delegate(condition(payment_terminal, euroset), ?ruleset(4))
+            delegate(condition(payment_terminal_deprecated, euroset), ?ruleset(4))
         ]},
     Decision1 =
         {delegates, [
@@ -576,8 +576,8 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, jcb)),
-        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
+        hg_ct_fixture:construct_payment_method(?pmt(digital_wallet_deprecated, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))),
 
@@ -882,11 +882,11 @@ construct_domain_fixture() ->
                         payment_methods =
                             {value,
                                 ?ordset([
-                                    ?pmt(payment_terminal, euroset),
+                                    ?pmt(payment_terminal_deprecated, euroset),
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
-                                    ?pmt(digital_wallet, qiwi)
+                                    ?pmt(digital_wallet_deprecated, qiwi)
                                 ])},
                         cash_limit =
                             {value,
@@ -941,11 +941,11 @@ condition(cost_in, {Min, Max, Cur}) ->
             )}};
 condition(party, ID) ->
     {condition, {party, #domain_PartyCondition{id = ID}}};
-condition(payment_terminal, Provider) ->
+condition(payment_terminal_deprecated, Provider) ->
     {condition,
         {payment_tool,
             {payment_terminal, #domain_PaymentTerminalCondition{
-                definition = {provider_is, Provider}
+                definition = {provider_is_deprecated, Provider}
             }}}}.
 
 delegate(Allowed, RuleSetRef) ->

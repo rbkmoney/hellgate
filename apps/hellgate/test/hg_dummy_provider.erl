@@ -577,13 +577,13 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_f
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_", BinScenario/binary>>}}) ->
     Scenario = decode_failure_scenario(BinScenario),
     {temporary_unavailability, Scenario};
-get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
+get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type_deprecated = euroset}}) ->
     terminal;
-get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
+get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider_deprecated = qiwi}}) ->
     digital_wallet;
 get_payment_tool_scenario({'crypto_currency', bitcoin}) ->
     crypto_currency;
-get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = mts}}) ->
+get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_deprecated = mts}}) ->
     mobile_commerce.
 
 -spec make_payment_tool(PaymenToolCode) -> PaymenTool when
@@ -604,10 +604,10 @@ make_payment_tool(empty_cvv) ->
     {
         {bank_card, #domain_BankCard{
             token = <<"empty_cvv">>,
-            payment_system = visa,
+            payment_system_deprecated = visa,
             bin = <<"424242">>,
             last_digits = <<"4242">>,
-            token_provider = undefined,
+            token_provider_deprecated = undefined,
             is_cvv_empty = true
         }},
         <<"SESSION42">>
@@ -632,14 +632,14 @@ make_payment_tool({scenario, Scenario}) ->
 make_payment_tool(terminal) ->
     {
         {payment_terminal, #domain_PaymentTerminal{
-            terminal_type = euroset
+            terminal_type_deprecated = euroset
         }},
         <<>>
     };
 make_payment_tool(digital_wallet) ->
     {
         {digital_wallet, #domain_DigitalWallet{
-            provider = qiwi,
+            provider_deprecated = qiwi,
             id = <<"+79876543210">>,
             token = <<"some_token">>
         }},
@@ -655,7 +655,7 @@ make_payment_tool(crypto_currency) ->
 make_payment_tool(mobile_commerce_failure) ->
     {
         {mobile_commerce, #domain_MobileCommerce{
-            operator = mts,
+            operator_deprecated = mts,
             phone = #domain_MobilePhone{
                 cc = <<"777">>,
                 ctn = <<"0000000000">>
@@ -666,7 +666,7 @@ make_payment_tool(mobile_commerce_failure) ->
 make_payment_tool(mobile_commerce) ->
     {
         {mobile_commerce, #domain_MobileCommerce{
-            operator = mts,
+            operator_deprecated = mts,
             phone = #domain_MobilePhone{
                 cc = <<"7">>,
                 ctn = <<"9876543210">>
@@ -696,10 +696,10 @@ construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider
     {
         {bank_card, #domain_BankCard{
             token = Token,
-            payment_system = PaymentSystem,
+            payment_system_deprecated = PaymentSystem,
             bin = Bin,
             last_digits = Pan,
-            token_provider = TokenProvider,
+            token_provider_deprecated = TokenProvider,
             tokenization_method = TokenizationMethod
         }},
         Session

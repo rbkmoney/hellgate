@@ -4227,10 +4227,10 @@ terms_retrieval(C) ->
                     ?pmt(bank_card_deprecated, mastercard),
                     ?pmt(bank_card_deprecated, visa),
                     ?pmt(crypto_currency, bitcoin),
-                    ?pmt(digital_wallet, qiwi),
+                    ?pmt(digital_wallet_deprecated, qiwi),
                     ?pmt(empty_cvv_bank_card_deprecated, visa),
-                    ?pmt(mobile, mts),
-                    ?pmt(payment_terminal, euroset),
+                    ?pmt(mobile_deprecated, mts),
+                    ?pmt(payment_terminal_deprecated, euroset),
                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
                 ]}
         }
@@ -5476,12 +5476,12 @@ construct_domain_fixture() ->
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
-                                    ?pmt(payment_terminal, euroset),
-                                    ?pmt(digital_wallet, qiwi),
+                                    ?pmt(payment_terminal_deprecated, euroset),
+                                    ?pmt(digital_wallet_deprecated, qiwi),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
                                     ?pmt(crypto_currency, bitcoin),
-                                    ?pmt(mobile, mts)
+                                    ?pmt(mobile_deprecated, mts)
                                 ])}
                     }
                 ]},
@@ -5618,7 +5618,7 @@ construct_domain_fixture() ->
             payment_methods =
                 {value,
                     ?ordset([
-                        ?pmt(digital_wallet, qiwi),
+                        ?pmt(digital_wallet_deprecated, qiwi),
                         ?pmt(bank_card_deprecated, visa),
                         ?pmt(bank_card_deprecated, mastercard)
                     ])},
@@ -5762,11 +5762,11 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, jcb)),
-        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
+        hg_ct_fixture:construct_payment_method(?pmt(digital_wallet_deprecated, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(crypto_currency, bitcoin)),
-        hg_ct_fixture:construct_payment_method(?pmt(mobile, mts)),
+        hg_ct_fixture:construct_payment_method(?pmt(mobile_deprecated, mts)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))),
 
         hg_ct_fixture:construct_proxy(?prx(1), <<"Dummy proxy">>),
@@ -6084,7 +6084,7 @@ construct_domain_fixture() ->
                         payment_methods =
                             {value,
                                 ?ordset([
-                                    ?pmt(digital_wallet, qiwi),
+                                    ?pmt(digital_wallet_deprecated, qiwi),
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
@@ -6105,7 +6105,7 @@ construct_domain_fixture() ->
                                         {condition,
                                             {payment_tool,
                                                 {digital_wallet, #domain_DigitalWalletCondition{
-                                                    definition = {provider_is, qiwi}
+                                                    definition = {provider_is_deprecated, qiwi}
                                                 }}}},
                                     then_ =
                                         {value, [
@@ -6191,8 +6191,8 @@ construct_domain_fixture() ->
                                                 {bank_card, #domain_BankCardCondition{
                                                     definition =
                                                         {payment_system, #domain_PaymentSystemCondition{
-                                                            payment_system_is = visa,
-                                                            token_provider_is = applepay,
+                                                            payment_system_is_deprecated = visa,
+                                                            token_provider_is_deprecated = applepay,
                                                             tokenization_method_is = dpan
                                                         }}
                                                 }}}},
@@ -6528,8 +6528,8 @@ construct_domain_fixture() ->
                         payment_methods =
                             {value,
                                 ?ordset([
-                                    ?pmt(payment_terminal, euroset),
-                                    ?pmt(digital_wallet, qiwi)
+                                    ?pmt(payment_terminal_deprecated, euroset),
+                                    ?pmt(digital_wallet_deprecated, qiwi)
                                 ])},
                         cash_limit =
                             {value,
@@ -6574,7 +6574,7 @@ construct_domain_fixture() ->
                                 {condition,
                                     {payment_tool,
                                         {mobile_commerce, #domain_MobileCommerceCondition{
-                                            definition = {operator_is, mts}
+                                            definition = {operator_is_deprecated, mts}
                                         }}}},
                             then_ = {value, [?prvtrm(11)]}
                         }
@@ -6602,7 +6602,7 @@ construct_domain_fixture() ->
                         payment_methods =
                             {value,
                                 ?ordset([
-                                    ?pmt(mobile, mts)
+                                    ?pmt(mobile_deprecated, mts)
                                 ])},
                         cash_limit =
                             {value,
@@ -6668,7 +6668,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
-                                    ?pmt(mobile, mts)
+                                    ?pmt(mobile_deprecated, mts)
                                 ])},
                         cash_limit =
                             {value,
