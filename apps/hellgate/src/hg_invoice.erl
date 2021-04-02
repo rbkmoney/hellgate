@@ -1298,10 +1298,19 @@ validate_invoice_cost(Cost, Party, Shop, #domain_TermSet{payments = PaymentTerms
     _ = hg_invoice_utils:assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision),
     ok.
 
-get_merchant_terms(Party, Revision, Shop, Timestamp) ->
-    Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    _ = hg_invoice_utils:assert_contract_active(Contract),
-    pm_party:get_terms(Contract, Timestamp, Revision).
+get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp) ->
+    {Client, Context} = get_party_client(),
+    {ok, TermSet} = party_client_thrift:compute_contract_terms(
+        PartyId,
+        Shop#domain_Shop.contract_id,
+        Timestamp,
+        {revision, PartyRevision},
+        Revision,
+        #payproc_Varset{},
+        Client,
+        Context
+    ),
+    TermSet.
 
 make_invoice_cart(_, {cart, Cart}, _Shop) ->
     Cart;
@@ -1369,6 +1378,10 @@ make_invoice_context(Context, _) ->
     Context.
 
 %%
+
+get_party_client() ->
+    Ctx = hg_context:load(),
+    {hg_context:get_party_client(Ctx), hg_context:get_party_client_context(Ctx)}.
 
 log_changes(Changes, St) ->
     lists:foreach(fun(C) -> log_change(C, St) end, Changes).
