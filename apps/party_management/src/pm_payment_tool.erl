@@ -200,7 +200,11 @@ test_payment_terminal_condition_def(
 test_digital_wallet_condition(#domain_DigitalWalletCondition{definition = Def}, V, Rev) ->
     Def =:= undefined orelse test_digital_wallet_condition_def(Def, V, Rev).
 
-test_digital_wallet_condition_def({provider_is_deprecated, V1}, #domain_DigitalWallet{provider_deprecated = V2}, _Rev) ->
+test_digital_wallet_condition_def(
+    {provider_is_deprecated, V1},
+    #domain_DigitalWallet{provider_deprecated = V2},
+    _Rev
+) ->
     V1 =:= V2.
 
 test_crypto_currency_condition(#domain_CryptoCurrencyCondition{definition = Def}, V, Rev) ->
