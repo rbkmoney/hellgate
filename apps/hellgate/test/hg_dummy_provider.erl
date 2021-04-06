@@ -307,7 +307,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         digital_wallet ->
             %% simple workflow
             sleep(1, <<"sleeping">>);
-        crypto_currency ->
+        crypto_currency_deprecated ->
             %% simple workflow
             sleep(1, <<"sleeping">>);
         mobile_commerce ->
@@ -581,8 +581,8 @@ get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_
     terminal;
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider_deprecated = qiwi}}) ->
     digital_wallet;
-get_payment_tool_scenario({'crypto_currency', bitcoin}) ->
-    crypto_currency;
+get_payment_tool_scenario({'crypto_currency_deprecated', bitcoin}) ->
+    crypto_currency_deprecated;
 get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_deprecated = mts}}) ->
     mobile_commerce.
 
@@ -647,9 +647,9 @@ make_payment_tool(digital_wallet) ->
     };
 make_payment_tool(tokenized_bank_card) ->
     make_simple_payment_tool(<<"no_preauth">>, visa, applepay, dpan);
-make_payment_tool(crypto_currency) ->
+make_payment_tool(crypto_currency_deprecated) ->
     {
-        {crypto_currency, bitcoin},
+        {crypto_currency_deprecated, bitcoin},
         <<"">>
     };
 make_payment_tool(mobile_commerce_failure) ->

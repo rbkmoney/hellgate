@@ -66,9 +66,9 @@ get_possible_methods({digital_wallet, #domain_DigitalWallet{provider_deprecated 
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {digital_wallet_deprecated, Provider}}
     ]);
-get_possible_methods({crypto_currency, CC}) ->
+get_possible_methods({crypto_currency_deprecated, CC}) ->
     ordsets:from_list([
-        #domain_PaymentMethodRef{id = {crypto_currency, CC}}
+        #domain_PaymentMethodRef{id = {crypto_currency_deprecated, CC}}
     ]);
 get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator_deprecated = Operator}}) ->
     ordsets:from_list([
@@ -149,8 +149,8 @@ create_from_method(#domain_PaymentMethodRef{id = {digital_wallet_deprecated, Pro
         provider_deprecated = Provider,
         id = <<"">>
     }};
-create_from_method(#domain_PaymentMethodRef{id = {crypto_currency, CC}}) ->
-    {crypto_currency, CC}.
+create_from_method(#domain_PaymentMethodRef{id = {crypto_currency_deprecated, CC}}) ->
+    {crypto_currency_deprecated, CC}.
 
 %%
 
@@ -161,7 +161,7 @@ test_condition({payment_terminal, C}, {payment_terminal, V = #domain_PaymentTerm
     test_payment_terminal_condition(C, V, Rev);
 test_condition({digital_wallet, C}, {digital_wallet, V = #domain_DigitalWallet{}}, Rev) ->
     test_digital_wallet_condition(C, V, Rev);
-test_condition({crypto_currency, C}, {crypto_currency, V}, Rev) ->
+test_condition({crypto_currency, C}, {crypto_currency_deprecated, V}, Rev) ->
     test_crypto_currency_condition(C, V, Rev);
 test_condition({mobile_commerce, C}, {mobile_commerce, V}, Rev) ->
     test_mobile_commerce_condition(C, V, Rev);
@@ -270,7 +270,7 @@ test_digital_wallet_condition_def(
 test_crypto_currency_condition(#domain_CryptoCurrencyCondition{definition = Def}, V, Rev) ->
     Def =:= undefined orelse test_crypto_currency_condition_def(Def, V, Rev).
 
-test_crypto_currency_condition_def({crypto_currency_is, C1}, C2, _Rev) ->
+test_crypto_currency_condition_def({crypto_currency_is_deprecated, C1}, C2, _Rev) ->
     C1 =:= C2.
 
 test_mobile_commerce_condition(#domain_MobileCommerceCondition{definition = Def}, V, Rev) ->
@@ -332,7 +332,7 @@ unmarshal(digital_wallet = T, #{
         id = unmarshal(str, ID)
     };
 unmarshal(crypto_currency = T, CC) ->
-    {crypto_currency, unmarshal({T, currency}, CC)};
+    {crypto_currency_deprecated, unmarshal({T, currency}, CC)};
 unmarshal(mobile_commerce = T, #{
     <<"operator">> := Operator,
     <<"phone">> := #{cc := CC, ctn := Ctn}

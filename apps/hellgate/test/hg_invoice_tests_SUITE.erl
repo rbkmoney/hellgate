@@ -4226,7 +4226,7 @@ terms_retrieval(C) ->
                     ?pmt(bank_card_deprecated, jcb),
                     ?pmt(bank_card_deprecated, mastercard),
                     ?pmt(bank_card_deprecated, visa),
-                    ?pmt(crypto_currency, bitcoin),
+                    ?pmt(crypto_currency_deprecated, bitcoin),
                     ?pmt(digital_wallet_deprecated, qiwi),
                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                     ?pmt(mobile_deprecated, mts),
@@ -4752,7 +4752,7 @@ make_terminal_payment_params() ->
     make_payment_params(PaymentTool, Session, instant).
 
 make_crypto_currency_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency_deprecated),
     make_payment_params(PaymentTool, Session, instant).
 
 make_mobile_commerce_params(success) ->
@@ -5480,7 +5480,7 @@ construct_domain_fixture() ->
                                     ?pmt(digital_wallet_deprecated, qiwi),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
-                                    ?pmt(crypto_currency, bitcoin),
+                                    ?pmt(crypto_currency_deprecated, bitcoin),
                                     ?pmt(mobile_deprecated, mts)
                                 ])}
                     }
@@ -5492,7 +5492,7 @@ construct_domain_fixture() ->
                             {condition,
                                 {payment_tool,
                                     {crypto_currency, #domain_CryptoCurrencyCondition{
-                                        definition = {crypto_currency_is, bitcoin}
+                                        definition = {crypto_currency_is_deprecated, bitcoin}
                                     }}}},
                         then_ =
                             {value,
@@ -5765,7 +5765,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet_deprecated, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(crypto_currency, bitcoin)),
+        hg_ct_fixture:construct_payment_method(?pmt(crypto_currency_deprecated, bitcoin)),
         hg_ct_fixture:construct_payment_method(?pmt(mobile_deprecated, mts)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))),
 
@@ -6089,7 +6089,7 @@ construct_domain_fixture() ->
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
-                                    ?pmt(crypto_currency, bitcoin),
+                                    ?pmt(crypto_currency_deprecated, bitcoin),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
                                 ])},
                         cash_limit =
@@ -6215,7 +6215,7 @@ construct_domain_fixture() ->
                                         {condition,
                                             {payment_tool,
                                                 {crypto_currency, #domain_CryptoCurrencyCondition{
-                                                    definition = {crypto_currency_is, bitcoin}
+                                                    definition = {crypto_currency_is_deprecated, bitcoin}
                                                 }}}},
                                     then_ =
                                         {value, [
