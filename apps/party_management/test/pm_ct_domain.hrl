@@ -75,8 +75,8 @@
 -define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, dpan)).
 
 -define(tkz_bank_card(PaymentSystem, TokenProvider, TokenizationMethod), #domain_TokenizedBankCard{
-    payment_system = PaymentSystem,
-    token_provider = TokenProvider,
+    payment_system_deprecated = PaymentSystem,
+    token_provider_deprecated = TokenProvider,
     tokenization_method = TokenizationMethod
 }).
 

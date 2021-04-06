@@ -445,7 +445,7 @@ terms_retrieval(C) ->
                 {value, [
                     ?pmt(bank_card_deprecated, mastercard),
                     ?pmt(bank_card_deprecated, visa),
-                    ?pmt(payment_terminal, euroset)
+                    ?pmt(payment_terminal_deprecated, euroset)
                 ]}
         }
     } = TermSet2,
@@ -526,8 +526,8 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
-        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
+        hg_ct_fixture:construct_payment_method(?pmt(digital_wallet_deprecated, qiwi)),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
@@ -587,7 +587,7 @@ construct_term_set_for_cost(LowerBound, UpperBound) ->
                                     [
                                         ?pmt(bank_card_deprecated, mastercard),
                                         ?pmt(bank_card_deprecated, visa),
-                                        ?pmt(payment_terminal, euroset)
+                                        ?pmt(payment_terminal_deprecated, euroset)
                                     ]
                                 )}
                     },

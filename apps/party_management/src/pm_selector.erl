@@ -185,14 +185,14 @@ p2p_provider_test() ->
         ]},
     BankCard1 = #domain_BankCard{
         token = <<"TOKEN1">>,
-        payment_system = mastercard,
+        payment_system_deprecated = mastercard,
         bin = <<"888888">>,
         last_digits = <<"888">>,
         issuer_country = rus
     },
     BankCard2 = #domain_BankCard{
         token = <<"TOKEN2">>,
-        payment_system = mastercard,
+        payment_system_deprecated = mastercard,
         bin = <<"777777">>,
         last_digits = <<"777">>,
         issuer_country = rus
@@ -210,7 +210,7 @@ p2p_allow_test() ->
     FunGenCard = fun(PS, Country) ->
         #domain_BankCard{
             token = <<"TOKEN1">>,
-            payment_system = PS,
+            payment_system_deprecated = PS,
             bin = <<"888888">>,
             last_digits = <<"888">>,
             issuer_country = Country
