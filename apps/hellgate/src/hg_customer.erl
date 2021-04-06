@@ -66,6 +66,7 @@ handle_function(Func, Args, Opts) ->
 
 handle_function_('Create', {CustomerParams}, _Opts) ->
     DomainRevison = hg_domain:head(),
+    %% FIXME: temporary fallback generation till CustomerID is made required in damsel
     CustomerID = hg_utils:uid(CustomerParams#payproc_CustomerParams.customer_id),
     ok = set_meta(CustomerID),
     PartyID = CustomerParams#payproc_CustomerParams.party_id,
