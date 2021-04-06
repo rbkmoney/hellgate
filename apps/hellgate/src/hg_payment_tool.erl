@@ -6,7 +6,6 @@
 
 %%
 
--export([create_from_method/1]).
 -export([test_condition/3]).
 -export([has_any_payment_method/2]).
 -export([get_possible_methods/1]).
@@ -90,67 +89,6 @@ create_bank_card_payment_method_ref(#domain_BankCard{
                 tokenization_method = TokenizationMethod
             }}
     }.
-
--spec create_from_method(method()) -> t().
-%% TODO empty strings - ugly hack for dialyzar
-create_from_method(#domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}}) ->
-    {bank_card, #domain_BankCard{
-        payment_system_deprecated = PaymentSystem,
-        token = <<"">>,
-        bin = <<"">>,
-        last_digits = <<"">>,
-        is_cvv_empty = true
-    }};
-create_from_method(#domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}}) ->
-    {bank_card, #domain_BankCard{
-        payment_system_deprecated = PaymentSystem,
-        token = <<"">>,
-        bin = <<"">>,
-        last_digits = <<"">>
-    }};
-create_from_method(#domain_PaymentMethodRef{
-    id =
-        {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
-            payment_system_deprecated = PaymentSystem,
-            token_provider_deprecated = TokenProvider,
-            tokenization_method = TokenizationMethod
-        }}
-}) ->
-    {bank_card, #domain_BankCard{
-        payment_system_deprecated = PaymentSystem,
-        token = <<"">>,
-        bin = <<"">>,
-        last_digits = <<"">>,
-        token_provider_deprecated = TokenProvider,
-        tokenization_method = TokenizationMethod
-    }};
-create_from_method(#domain_PaymentMethodRef{
-    id =
-        {bank_card, #domain_BankCardPaymentMethod{
-            is_cvv_empty = IsCVVEmpty,
-            payment_system_deprecated = PaymentSystem,
-            token_provider_deprecated = TokenProvider,
-            tokenization_method = TokenizationMethod
-        }}
-}) ->
-    {bank_card, #domain_BankCard{
-        payment_system_deprecated = PaymentSystem,
-        token = <<"">>,
-        bin = <<"">>,
-        last_digits = <<"">>,
-        token_provider_deprecated = TokenProvider,
-        is_cvv_empty = IsCVVEmpty,
-        tokenization_method = TokenizationMethod
-    }};
-create_from_method(#domain_PaymentMethodRef{id = {payment_terminal_deprecated, TerminalType}}) ->
-    {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = TerminalType}};
-create_from_method(#domain_PaymentMethodRef{id = {digital_wallet_deprecated, Provider}}) ->
-    {digital_wallet, #domain_DigitalWallet{
-        provider_deprecated = Provider,
-        id = <<"">>
-    }};
-create_from_method(#domain_PaymentMethodRef{id = {crypto_currency_deprecated, CC}}) ->
-    {crypto_currency_deprecated, CC}.
 
 %%
 
