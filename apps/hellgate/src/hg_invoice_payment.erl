@@ -772,7 +772,7 @@ choose_route(PaymentInstitution, RiskScore, VS, Revision, St) ->
         undefined ->
             Payment = get_payment(St),
             Predestination = choose_routing_predestination(Payment),
-            {Routes, RejectContext} = gather_routes(
+            {Routes, RejectContext} = hg_routing_rule:gather_routes(
                 Predestination,
                 PaymentInstitution,
                 VS#{risk_score => RiskScore},
@@ -796,17 +796,6 @@ check_risk_score(Route, RiskScore) ->
             {ok, Route};
         {error, risk_score_is_too_high = Reason} ->
             {error, {no_route_found, Reason}}
-    end.
-
-gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
-    case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS, Revision) of
-        {[], RejectContext} ->
-            RejectReason = unknown,
-            _ = log_reject_context(warning, RejectReason, RejectContext),
-            logger:log(info, "Fallback to legacy method of routes gathering"),
-            hg_routing:gather_routes(Predestination, PaymentInstitution, VS, Revision);
-        Routes ->
-            Routes
     end.
 
 -spec choose_routing_predestination(payment()) -> hg_routing:route_predestination().

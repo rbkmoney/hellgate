@@ -5,7 +5,7 @@
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
--export([gather_routes/4]).
+% -export([gather_routes/4]).
 -export([gather_fail_rates/1]).
 -export([choose_route/3]).
 -export([check_risk_score/1]).
@@ -29,7 +29,7 @@
     | dmsl_domain_thrift:'RecurrentPaytoolsProvisionTerms'()
     | undefined.
 
--type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
+% -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
 -type route_predestination() :: payment | recurrent_paytool | recurrent_payment.
 
@@ -49,7 +49,7 @@
 -type terminal() :: dmsl_domain_thrift:'Terminal'().
 -type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 
--type provider_terminal_ref() :: dmsl_domain_thrift:'ProviderTerminalRef'().
+% -type provider_terminal_ref() :: dmsl_domain_thrift:'ProviderTerminalRef'().
 
 -type fd_service_stats() :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
 
@@ -129,20 +129,20 @@
 -export_type([reject_context/0]).
 -export_type([varset/0]).
 
--spec gather_routes(
-    route_predestination(),
-    payment_institution(),
-    varset(),
-    hg_domain:revision()
-) -> {[non_fail_rated_route()], reject_context()}.
-gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
-    RejectContext0 = #{
-        varset => VS,
-        rejected_providers => [],
-        rejected_routes => []
-    },
-    {Providers, RejectContext1} = select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext0),
-    select_routes(Predestination, Providers, VS, Revision, RejectContext1).
+% -spec gather_routes(
+%     route_predestination(),
+%     payment_institution(),
+%     varset(),
+%     hg_domain:revision()
+% ) -> {[non_fail_rated_route()], reject_context()}.
+% gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
+%     RejectContext0 = #{
+%         varset => VS,
+%         rejected_providers => [],
+%         rejected_routes => []
+%     },
+%     {Providers, RejectContext1} = select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext0),
+%     select_routes(Predestination, Providers, VS, Revision, RejectContext1).
 
 -spec gather_fail_rates([non_fail_rated_route()]) -> [fail_rated_route()].
 gather_fail_rates(Routes) ->
@@ -165,50 +165,50 @@ check_risk_score(fatal) ->
 check_risk_score(_RiskScore) ->
     ok.
 
--spec select_providers(
-    route_predestination(),
-    payment_institution(),
-    varset(),
-    hg_domain:revision(),
-    reject_context()
-) -> {[provider_with_ref()], reject_context()}.
-select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
-    ProviderRefs0 = get_selector_value(providers, PaymentInstitution#domain_PaymentInstitution.providers),
-    ProviderRefs1 = ordsets:to_list(ProviderRefs0),
-    {Providers, RejectReasons} = lists:foldl(
-        fun(ProviderRef, {Prvs, Reasons}) ->
-            try
-                P = acceptable_provider(Predestination, ProviderRef, VS, Revision),
-                {[P | Prvs], Reasons}
-            catch
-                ?rejected(Reason) ->
-                    {Prvs, [{ProviderRef, Reason} | Reasons]};
-                error:{misconfiguration, Reason} ->
-                    {Prvs, [{ProviderRef, {'Misconfiguration', Reason}} | Reasons]}
-            end
-        end,
-        {[], []},
-        ProviderRefs1
-    ),
-    {Providers, RejectContext#{rejected_providers => RejectReasons}}.
+% -spec select_providers(
+%     route_predestination(),
+%     payment_institution(),
+%     varset(),
+%     hg_domain:revision(),
+%     reject_context()
+% ) -> {[provider_with_ref()], reject_context()}.
+% select_providers(Predestination, PaymentInstitution, VS, Revision, RejectContext) ->
+%     ProviderRefs0 = get_selector_value(providers, PaymentInstitution#domain_PaymentInstitution.providers),
+%     ProviderRefs1 = ordsets:to_list(ProviderRefs0),
+%     {Providers, RejectReasons} = lists:foldl(
+%         fun(ProviderRef, {Prvs, Reasons}) ->
+%             try
+%                 P = acceptable_provider(Predestination, ProviderRef, VS, Revision),
+%                 {[P | Prvs], Reasons}
+%             catch
+%                 ?rejected(Reason) ->
+%                     {Prvs, [{ProviderRef, Reason} | Reasons]};
+%                 error:{misconfiguration, Reason} ->
+%                     {Prvs, [{ProviderRef, {'Misconfiguration', Reason}} | Reasons]}
+%             end
+%         end,
+%         {[], []},
+%         ProviderRefs1
+%     ),
+%     {Providers, RejectContext#{rejected_providers => RejectReasons}}.
 
--spec select_routes(
-    route_predestination(),
-    [provider_with_ref()],
-    varset(),
-    hg_domain:revision(),
-    reject_context()
-) -> {[non_fail_rated_route()], reject_context()}.
-select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
-    {Accepted, Rejected} = lists:foldl(
-        fun(Provider, {AcceptedTerminals, RejectedRoutes}) ->
-            {Accepts, Rejects} = collect_routes_for_provider(Predestination, Provider, VS, Revision),
-            {Accepts ++ AcceptedTerminals, Rejects ++ RejectedRoutes}
-        end,
-        {[], []},
-        Providers
-    ),
-    {Accepted, RejectContext#{rejected_routes => Rejected}}.
+% -spec select_routes(
+%     route_predestination(),
+%     [provider_with_ref()],
+%     varset(),
+%     hg_domain:revision(),
+%     reject_context()
+% ) -> {[non_fail_rated_route()], reject_context()}.
+% select_routes(Predestination, Providers, VS, Revision, RejectContext) ->
+%     {Accepted, Rejected} = lists:foldl(
+%         fun(Provider, {AcceptedTerminals, RejectedRoutes}) ->
+%             {Accepts, Rejects} = collect_routes_for_provider(Predestination, Provider, VS, Revision),
+%             {Accepts ++ AcceptedTerminals, Rejects ++ RejectedRoutes}
+%         end,
+%         {[], []},
+%         Providers
+%     ),
+%     {Accepted, RejectContext#{rejected_routes => Rejected}}.
 
 -spec do_choose_route([fail_rated_route()], reject_context()) ->
     {ok, route(), route_choice_meta()}
@@ -489,52 +489,52 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
     #domain_Provider{terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
     Terms#domain_ProvisionTermSet.recurrent_paytools.
 
--spec acceptable_provider(
-    route_predestination(),
-    provider_ref(),
-    varset(),
-    hg_domain:revision()
-) -> provider_with_ref() | no_return().
-acceptable_provider(Predestination, ProviderRef, VS, Revision) ->
-    {Client, Context} = get_party_client(),
-    {ok, Provider = #domain_Provider{terms = Terms}} = party_client_thrift:compute_provider(
-        ProviderRef,
-        Revision,
-        hg_varset:prepare_varset(VS),
-        Client,
-        Context
-    ),
-    _ = check_terms_acceptability(Predestination, Terms, VS),
-    {ProviderRef, Provider}.
+% -spec acceptable_provider(
+%     route_predestination(),
+%     provider_ref(),
+%     varset(),
+%     hg_domain:revision()
+% ) -> provider_with_ref() | no_return().
+% acceptable_provider(Predestination, ProviderRef, VS, Revision) ->
+%     {Client, Context} = get_party_client(),
+%     {ok, Provider = #domain_Provider{terms = Terms}} = party_client_thrift:compute_provider(
+%         ProviderRef,
+%         Revision,
+%         hg_varset:prepare_varset(VS),
+%         Client,
+%         Context
+%     ),
+%     _ = check_terms_acceptability(Predestination, Terms, VS),
+%     {ProviderRef, Provider}.
 
 %%
 
--spec collect_routes_for_provider(
-    route_predestination(),
-    provider_with_ref(),
-    varset(),
-    hg_domain:revision()
-) -> {[non_fail_rated_route()], [rejected_route()]}.
-collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revision) ->
-    TerminalSelector = Provider#domain_Provider.terminal,
-    ProviderTerminalRefs = get_selector_value(terminal, TerminalSelector),
-    lists:foldl(
-        fun(ProviderTerminalRef, {Accepted, Rejected}) ->
-            TerminalRef = get_terminal_ref(ProviderTerminalRef),
-            Priority = get_terminal_priority(ProviderTerminalRef),
-            try
-                {TerminalRef, Terminal} = acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
-                {[{{ProviderRef, Provider}, {TerminalRef, Terminal, Priority}} | Accepted], Rejected}
-            catch
-                ?rejected(Reason) ->
-                    {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]};
-                error:{misconfiguration, Reason} ->
-                    {Accepted, [{ProviderRef, TerminalRef, {'Misconfiguration', Reason}} | Rejected]}
-            end
-        end,
-        {[], []},
-        ordsets:to_list(ProviderTerminalRefs)
-    ).
+% -spec collect_routes_for_provider(
+%     route_predestination(),
+%     provider_with_ref(),
+%     varset(),
+%     hg_domain:revision()
+% ) -> {[non_fail_rated_route()], [rejected_route()]}.
+% collect_routes_for_provider(Predestination, {ProviderRef, Provider}, VS, Revision) ->
+%     TerminalSelector = Provider#domain_Provider.terminal,
+%     ProviderTerminalRefs = get_selector_value(terminal, TerminalSelector),
+%     lists:foldl(
+%         fun(ProviderTerminalRef, {Accepted, Rejected}) ->
+%             TerminalRef = get_terminal_ref(ProviderTerminalRef),
+%             Priority = get_terminal_priority(ProviderTerminalRef),
+%             try
+%                 {TerminalRef, Terminal} = acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
+%                 {[{{ProviderRef, Provider}, {TerminalRef, Terminal, Priority}} | Accepted], Rejected}
+%             catch
+%                 ?rejected(Reason) ->
+%                     {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]};
+%                 error:{misconfiguration, Reason} ->
+%                     {Accepted, [{ProviderRef, TerminalRef, {'Misconfiguration', Reason}} | Rejected]}
+%             end
+%         end,
+%         {[], []},
+%         ordsets:to_list(ProviderTerminalRefs)
+%     ).
 
 -spec acceptable_terminal(
     route_predestination(),
@@ -556,16 +556,16 @@ acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
     _ = check_terms_acceptability(Predestination, Terms, VS),
     {TerminalRef, hg_domain:get(Revision, {terminal, TerminalRef})}.
 
--spec get_terminal_ref(provider_terminal_ref()) -> terminal_ref().
-get_terminal_ref(#domain_ProviderTerminalRef{id = ID}) ->
-    #domain_TerminalRef{id = ID}.
+% -spec get_terminal_ref(provider_terminal_ref()) -> terminal_ref().
+% get_terminal_ref(#domain_ProviderTerminalRef{id = ID}) ->
+%     #domain_TerminalRef{id = ID}.
 
--spec get_terminal_priority(provider_terminal_ref()) -> terminal_priority().
-get_terminal_priority(#domain_ProviderTerminalRef{
-    priority = Priority,
-    weight = Weight
-}) when is_integer(Priority) ->
-    {Priority, Weight}.
+% -spec get_terminal_priority(provider_terminal_ref()) -> terminal_priority().
+% get_terminal_priority(#domain_ProviderTerminalRef{
+%     priority = Priority,
+%     weight = Weight
+% }) when is_integer(Priority) ->
+%     {Priority, Weight}.
 
 %%
 

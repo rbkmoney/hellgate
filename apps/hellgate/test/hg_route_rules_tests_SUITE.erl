@@ -299,7 +299,9 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {SelectedProviders, _} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {SelectedProviders, _} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+    ct:print("SelectedProviders: ~p~n", [SelectedProviders]),
+    ct:print("PrvIDList: ~p~n", [PrvIDList]),
     %% Ensure list of selected provider ID match to given
     PrvIDList = [P || {{?prv(P), _}, _} <- SelectedProviders],
     ok.
@@ -312,27 +314,51 @@ routing_with_risk_score_fixture(Revision) ->
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
             data = PaymentInstitution#domain_PaymentInstitution{
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(200),
-                            ?prv(201),
-                            ?prv(202)
-                        ])}
+                payment_routing_rules = #domain_RoutingRules{
+                    policies = ?ruleset(101),
+                    prohibitions = ?ruleset(10)
+                }
+                % providers =
+                %     {value,
+                %         ?ordset([
+                %             ?prv(200),
+                %             ?prv(201),
+                %             ?prv(202)
+                %         ])}
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(101),
+            data = #domain_RoutingRuleset{
+                name = <<"">>,
+                decisions = {candidates, [
+                    candidate({constant, true}, ?trm(111)),
+                    candidate({constant, true}, ?trm(222))
+                ]}
             }
         }},
         {terminal, #domain_TerminalObject{
             ref = ?trm(111),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>
+                description = <<"Euroset">>,
+                provider_ref = ?prv(200)
             }
         }},
         {terminal, #domain_TerminalObject{
             ref = ?trm(222),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                description = <<"Euroset">>
+                description = <<"Euroset">>,
+                provider_ref = ?prv(201)
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(333),
+            data = #domain_Terminal{
+                name = <<"Payment Terminal Terminal">>,
+                description = <<"Euroset">>,
+                provider_ref = ?prv(202)
             }
         }},
         {provider, #domain_ProviderObject{
@@ -539,6 +565,7 @@ construct_domain_fixture() ->
         {delegates, [
             delegate(condition(payment_terminal, euroset), ?ruleset(4))
         ]},
+    NoProhibitions = {candidates, []},
     Decision1 =
         {delegates, [
             delegate(condition(party, <<"12345">>), ?ruleset(2)),
@@ -600,6 +627,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(7), <<"Empty Delegates">>, {delegates, []}),
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(8), <<"Empty Candidates">>, {candidates, []}),
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(9), <<"Rule#9">>, Decision9),
+        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(10), <<"No Prohobition">>, NoProhibitions),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
