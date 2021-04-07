@@ -729,11 +729,10 @@ construct_domain_fixture(TermSet) ->
                 name = <<"Test Inc.">>,
                 system_account_set = {value, ?sas(1)},
                 default_contract_template = {value, ?tmpl(1)},
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(1)
-                        ])},
+                payment_routing_rules = #domain_RoutingRules{
+                    policies = ?ruleset(2),
+                    prohibitions = ?ruleset(1)
+                },
                 inspector =
                     {decisions, [
                         #domain_InspectorDecision{
@@ -745,7 +744,23 @@ construct_domain_fixture(TermSet) ->
                 realm = test
             }
         }},
-
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(1),
+            data = #domain_RoutingRuleset{
+                name = <<"Prohibitions: all is allow">>,
+                decisions = {candidates, []}
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(2),
+            data = #domain_RoutingRuleset{
+                name = <<"Prohibitions: all is allow">>,
+                decisions =
+                    {candidates, [
+                        ?candidate({constant, true}, ?trm(1))
+                    ]}
+            }
+        }},
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
@@ -772,7 +787,6 @@ construct_domain_fixture(TermSet) ->
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
-                terminal = {value, [?prvtrm(1)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
@@ -824,7 +838,8 @@ construct_domain_fixture(TermSet) ->
             ref = ?trm(1),
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>
+                description = <<"Brominal 1">>,
+                provider_ref = ?prv(1)
             }
         }}
     ].

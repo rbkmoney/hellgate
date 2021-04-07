@@ -5815,36 +5815,41 @@ construct_domain_fixture() ->
             ?ruleset(1),
             <<"SubMain">>,
             {candidates, [
-                #domain_RoutingCandidate{
-                    allowed = {constant, true},
-                    terminal = #domain_TerminalRef{id = 1}
-                }
+                ?candidate({constant, true}, ?trm(1)),
+                ?candidate({constant, true}, ?trm(10)),
+                ?candidate({constant, true}, ?trm(11))
             ]}
         ),
         hg_ct_fixture:construct_payment_routing_ruleset(
             ?ruleset(2),
             <<"Main">>,
             {delegates, [
-                #domain_RoutingDelegate{
-                    description = <<"Important merch">>,
-                    allowed = {condition, {party, #domain_PartyCondition{id = <<"bIg merch">>}}},
-                    ruleset = #domain_RoutingRulesetRef{id = 1}
-                },
-                #domain_RoutingDelegate{
-                    description = <<"Provider with turnover limit">>,
-                    allowed = {condition, {party, #domain_PartyCondition{id = <<"bIg merch limit">>}}},
-                    ruleset = #domain_RoutingRulesetRef{id = 4}
-                }
+                ?delegate(
+                    <<"Important merch">>,
+                    {condition, {party, #domain_PartyCondition{id = <<"bIg merch">>}}},
+                    ?ruleset(1)
+                ),
+                ?delegate(
+                    <<"Provider with turnover limit">>,
+                    {condition, {party, #domain_PartyCondition{id = <<"bIg merch limit">>}}},
+                    ?ruleset(4)
+                ),
+                ?delegate(<<"Common">>, {constant, true}, ?ruleset(1))
             ]}
         ),
         hg_ct_fixture:construct_payment_routing_ruleset(
             ?ruleset(4),
             <<"SubMain">>,
             {candidates, [
-                #domain_RoutingCandidate{
-                    allowed = {constant, true},
-                    terminal = #domain_TerminalRef{id = 12}
-                }
+                ?candidate({constant, true}, ?trm(12))
+            ]}
+        ),
+        hg_ct_fixture:construct_payment_routing_ruleset(
+            ?ruleset(5),
+            <<"SubMain">>,
+            {candidates, [
+                ?candidate({constant, true}, ?trm(1)),
+                ?candidate({constant, true}, ?trm(7))
             ]}
         ),
         hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Prohibitions">>, {candidates, []}),
@@ -5927,6 +5932,10 @@ construct_domain_fixture() ->
                 name = <<"Chetky Payments Inc.">>,
                 system_account_set = {value, ?sas(2)},
                 default_contract_template = {value, ?tmpl(2)},
+                payment_routing_rules = #domain_RoutingRules{
+                    policies = ?ruleset(5),
+                    prohibitions = ?ruleset(3)
+                },
                 providers =
                     {value,
                         ?ordset([
@@ -6473,6 +6482,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Terminal 7">>,
                 description = <<"Terminal 7">>,
+                provider_ref = #domain_ProviderRef{id = 2},
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         cash_flow =
@@ -6558,6 +6568,7 @@ construct_domain_fixture() ->
             ref = ?trm(10),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
+                provider_ref = #domain_ProviderRef{id = 3},
                 description = <<"Euroset">>
             }
         }},
@@ -6632,6 +6643,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Parking Payment Terminal">>,
                 description = <<"Mts">>,
+                provider_ref = #domain_ProviderRef{id = 4},
                 options = #{
                     <<"goodPhone">> => <<"7891">>,
                     <<"prefix">> => <<"1234567890">>
@@ -6845,11 +6857,20 @@ get_payment_adjustment_fixture(Revision) ->
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
             data = PaymentInstitution#domain_PaymentInstitution{
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(100)
-                        ])}
+                payment_routing_rules = #domain_RoutingRules{
+                    policies = ?ruleset(101),
+                    prohibitions = ?ruleset(3)
+                }
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(101),
+            data = #domain_RoutingRuleset{
+                name = <<"">>,
+                decisions =
+                    {candidates, [
+                        ?candidate({constant, true}, ?trm(100))
+                    ]}
             }
         }},
         {provider, #domain_ProviderObject{
@@ -6935,7 +6956,8 @@ get_payment_adjustment_fixture(Revision) ->
             ref = ?trm(100),
             data = #domain_Terminal{
                 name = <<"Adjustable Terminal">>,
-                description = <<>>
+                description = <<>>,
+                provider_ref = ?prv(100)
             }
         }}
     ].
@@ -6982,11 +7004,27 @@ get_cashflow_rounding_fixture(Revision) ->
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
             data = PaymentInstituition#domain_PaymentInstitution{
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(100)
-                        ])}
+                payment_routing_rules = #domain_RoutingRules{
+                    policies = ?ruleset(2),
+                    prohibitions = ?ruleset(1)
+                }
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(1),
+            data = #domain_RoutingRuleset{
+                name = <<"">>,
+                decisions = {candidates, []}
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(2),
+            data = #domain_RoutingRuleset{
+                name = <<"">>,
+                decisions =
+                    {candidates, [
+                        ?candidate({constant, true}, ?trm(100))
+                    ]}
             }
         }},
         {provider, #domain_ProviderObject{
@@ -6995,7 +7033,7 @@ get_cashflow_rounding_fixture(Revision) ->
                 name = <<"Rounding">>,
                 description = <<>>,
                 abs_account = <<>>,
-                terminal = {value, [?prvtrm(100)]},
+                % terminal = {value, [?prvtrm(100)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_ProvisionTermSet{
@@ -7070,6 +7108,7 @@ get_cashflow_rounding_fixture(Revision) ->
             ref = ?trm(100),
             data = #domain_Terminal{
                 name = <<"Rounding Terminal">>,
+                provider_ref = ?prv(100),
                 description = <<>>
             }
         }}
@@ -7346,11 +7385,28 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
             data = PaymentInstitution#domain_PaymentInstitution{
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(101)
-                        ])}
+                payment_routing_rules = #domain_RoutingRules{
+                    policies = ?ruleset(2),
+                    prohibitions = ?ruleset(3)
+                }
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(2),
+            data = #domain_RoutingRuleset{
+                name = <<"">>,
+                decisions =
+                    {candidates, [
+                        ?candidate({constant, true}, ?trm(1))
+                    ]}
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(1),
+            data = #domain_Terminal{
+                name = <<"Brominal 1">>,
+                description = <<"Brominal 1">>,
+                provider_ref = #domain_ProviderRef{id = 101}
             }
         }},
         {provider, #domain_ProviderObject{
@@ -7358,11 +7414,6 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
-                terminal =
-                    {value,
-                        ?ordset([
-                            ?prvtrm(1)
-                        ])},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{

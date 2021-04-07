@@ -298,12 +298,10 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     },
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-
     {SelectedProviders, _} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
-    ct:print("SelectedProviders: ~p~n", [SelectedProviders]),
-    ct:print("PrvIDList: ~p~n", [PrvIDList]),
+
     %% Ensure list of selected provider ID match to given
-    PrvIDList = [P || {{?prv(P), _}, _} <- SelectedProviders],
+    PrvIDList = lists:sort([P || {{?prv(P), _}, _} <- SelectedProviders]),
     ok.
 
 %%% Domain config fixtures
@@ -318,23 +316,18 @@ routing_with_risk_score_fixture(Revision) ->
                     policies = ?ruleset(101),
                     prohibitions = ?ruleset(10)
                 }
-                % providers =
-                %     {value,
-                %         ?ordset([
-                %             ?prv(200),
-                %             ?prv(201),
-                %             ?prv(202)
-                %         ])}
             }
         }},
         {routing_rules, #domain_RoutingRulesObject{
             ref = ?ruleset(101),
             data = #domain_RoutingRuleset{
                 name = <<"">>,
-                decisions = {candidates, [
-                    candidate({constant, true}, ?trm(111)),
-                    candidate({constant, true}, ?trm(222))
-                ]}
+                decisions =
+                    {candidates, [
+                        ?candidate({constant, true}, ?trm(111)),
+                        ?candidate({constant, true}, ?trm(222)),
+                        ?candidate({constant, true}, ?trm(333))
+                    ]}
             }
         }},
         {terminal, #domain_TerminalObject{
@@ -366,17 +359,6 @@ routing_with_risk_score_fixture(Revision) ->
             data = #domain_Provider{
                 name = <<"Biba">>,
                 description = <<"Payment terminal provider">>,
-                terminal =
-                    {decisions, [
-                        #domain_TerminalDecision{
-                            if_ = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
-                            then_ = {value, [#domain_ProviderTerminalRef{id = 111}]}
-                        },
-                        #domain_TerminalDecision{
-                            if_ = {condition, {party, #domain_PartyCondition{id = <<"54321">>}}},
-                            then_ = {value, [#domain_ProviderTerminalRef{id = 111}]}
-                        }
-                    ]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -432,17 +414,6 @@ routing_with_risk_score_fixture(Revision) ->
             data = #domain_Provider{
                 name = <<"Boba">>,
                 description = <<"Payment terminal provider">>,
-                terminal =
-                    {decisions, [
-                        #domain_TerminalDecision{
-                            if_ = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
-                            then_ = {value, [#domain_ProviderTerminalRef{id = 111}]}
-                        },
-                        #domain_TerminalDecision{
-                            if_ = {condition, {party, #domain_PartyCondition{id = <<"54321">>}}},
-                            then_ = {value, [#domain_ProviderTerminalRef{id = 111, priority = 1005}]}
-                        }
-                    ]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -498,17 +469,6 @@ routing_with_risk_score_fixture(Revision) ->
             data = #domain_Provider{
                 name = <<"Buba">>,
                 description = <<"Payment terminal provider">>,
-                terminal =
-                    {decisions, [
-                        #domain_TerminalDecision{
-                            if_ = {condition, {party, #domain_PartyCondition{id = <<"12345">>}}},
-                            then_ = {value, [#domain_ProviderTerminalRef{id = 222}]}
-                        },
-                        #domain_TerminalDecision{
-                            if_ = {condition, {party, #domain_PartyCondition{id = <<"54321">>}}},
-                            then_ = {value, [#domain_ProviderTerminalRef{id = 111}]}
-                        }
-                    ]},
                 proxy = #domain_Proxy{
                     ref = ?prx(1),
                     additional = #{
@@ -563,34 +523,34 @@ routing_with_risk_score_fixture(Revision) ->
 construct_domain_fixture() ->
     Prohibitions =
         {delegates, [
-            delegate(condition(payment_terminal, euroset), ?ruleset(4))
+            ?delegate(condition(payment_terminal, euroset), ?ruleset(4))
         ]},
     NoProhibitions = {candidates, []},
     Decision1 =
         {delegates, [
-            delegate(condition(party, <<"12345">>), ?ruleset(2)),
-            delegate(condition(party, <<"67890">>), ?ruleset(4)),
-            delegate(predicate(true), ?ruleset(3))
+            ?delegate(condition(party, <<"12345">>), ?ruleset(2)),
+            ?delegate(condition(party, <<"67890">>), ?ruleset(4)),
+            ?delegate(predicate(true), ?ruleset(3))
         ]},
     Decision2 =
         {delegates, [
-            delegate(condition(cost_in, {0, 500000, <<"RUB">>}), ?ruleset(9))
+            ?delegate(condition(cost_in, {0, 500000, <<"RUB">>}), ?ruleset(9))
         ]},
     Decision3 =
         {candidates, [
-            candidate({constant, true}, ?trm(10)),
-            candidate({constant, true}, ?trm(11))
+            ?candidate({constant, true}, ?trm(10)),
+            ?candidate({constant, true}, ?trm(11))
         ]},
     Decision4 =
         {candidates, [
-            candidate({constant, true}, ?trm(1)),
-            candidate({constant, true}, ?trm(11))
+            ?candidate({constant, true}, ?trm(1)),
+            ?candidate({constant, true}, ?trm(11))
         ]},
     Decision9 =
         {candidates, [
-            candidate({constant, true}, ?trm(1)),
-            candidate({constant, true}, ?trm(6)),
-            candidate({constant, true}, ?trm(10))
+            ?candidate({constant, true}, ?trm(1)),
+            ?candidate({constant, true}, ?trm(6)),
+            ?candidate({constant, true}, ?trm(10))
         ]},
     [
         hg_ct_fixture:construct_currency(?cur(<<"RUB">>)),
@@ -975,23 +935,3 @@ condition(payment_terminal, Provider) ->
             {payment_terminal, #domain_PaymentTerminalCondition{
                 definition = {provider_is, Provider}
             }}}}.
-
-delegate(Allowed, RuleSetRef) ->
-    delegate(undefined, Allowed, RuleSetRef).
-
-delegate(Descr, Allowed, RuleSetRef) ->
-    #domain_RoutingDelegate{
-        description = Descr,
-        allowed = Allowed,
-        ruleset = RuleSetRef
-    }.
-
-candidate(Allowed, Terminal) ->
-    candidate(undefined, Allowed, Terminal).
-
-candidate(Descr, Allowed, Terminal) ->
-    #domain_RoutingCandidate{
-        description = Descr,
-        allowed = Allowed,
-        terminal = Terminal
-    }.

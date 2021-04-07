@@ -248,12 +248,6 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
 
     Predestination = recurrent_paytool,
     {Routes, RejectContext} = hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision),
-        % case hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision) of
-        %     {[], _} ->
-        %         hg_routing:gather_routes(Predestination, PaymentInstitution, VS1, Revision);
-        %     AcceptedRoutes ->
-        %         AcceptedRoutes
-        % end,
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
     Route = validate_route(
         hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore),

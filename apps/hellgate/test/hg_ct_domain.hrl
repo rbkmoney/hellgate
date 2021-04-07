@@ -89,4 +89,26 @@
     ]
 }).
 
+-define(candidate(Allowed, TerminalRef), #domain_RoutingCandidate{
+    allowed = Allowed,
+    terminal = TerminalRef
+}).
+
+-define(candidate(Descr, Allowed, TerminalRef), #domain_RoutingCandidate{
+    description = Descr,
+    allowed = Allowed,
+    terminal = TerminalRef
+}).
+
+-define(delegate(Allowed, RuleSetRef), #domain_RoutingDelegate{
+    allowed = Allowed,
+    ruleset = RuleSetRef
+}).
+
+-define(delegate(Descr, Allowed, RuleSetRef), #domain_RoutingDelegate{
+    description = Descr,
+    allowed = Allowed,
+    ruleset = RuleSetRef
+}).
+
 -endif.
