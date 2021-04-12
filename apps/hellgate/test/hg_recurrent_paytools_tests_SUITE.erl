@@ -220,7 +220,7 @@ invalid_payment_method(C) ->
     PaymentTool =
         {bank_card, #domain_BankCard{
             token = <<"TOKEN">>,
-            payment_system = mastercard,
+            payment_system_deprecated = mastercard,
             bin = <<"666666">>,
             last_digits = <<"666">>
         }},
