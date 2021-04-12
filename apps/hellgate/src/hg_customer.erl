@@ -325,6 +325,7 @@ start_binding(BindingParams, St) ->
         payment_resource = PaymentResource,
         rec_payment_tool_id = MaybePaytoolID
     } = BindingParams,
+    %% FIXME(ED-95): temporary fallback generation till TemplateID is made required in damsel
     BindingID = hg_utils:uid(MaybeBindingID),
     PaytoolID = hg_utils:uid(MaybePaytoolID),
     DomainRevision = hg_domain:head(),
