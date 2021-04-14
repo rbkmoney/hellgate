@@ -25,21 +25,30 @@ gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined} =
         [PayInst]
     ),
     {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
-gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
+gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules = RoutingRules}, VS, Revision) ->
     RejectedContext = #{
         varset => VS,
         rejected_providers => [],
         rejected_routes => []
     },
-    PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing_rules,
-    Candidates = get_candidates(PaymentRouting#domain_RoutingRules.policies, VS, Revision),
-    RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
-    RuleSetDeny = get_rule_set(PaymentRouting#domain_RoutingRules.prohibitions, Revision),
-    Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
-    {Accepted, RejectedRoutes} = filter_routes(RatedRoutes, Prohibitions),
-    {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}.
+    #domain_RoutingRules{
+        policies = Policies,
+        prohibitions = Prohibitions
+    } = RoutingRules,
+    try
+        Candidates = get_candidates(Policies, VS, Revision),
+        {Accepted, RejectedRoutes} = filter_routes(
+            collect_routes(Predestination, Candidates, VS, Revision),
+            get_table_prohibitions(Prohibitions, VS, Revision)
+        ),
+        {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}
+    catch
+        error:{misconfiguration, Reason} ->
+            {[], RejectedContext#{error => Reason}}
+    end.
 
-get_table_prohibitions(RuleSetDeny, _, _) ->
+get_table_prohibitions(Prohibitions, VS, Revision) ->
+    RuleSetDeny = compute_rule_set(Prohibitions, VS, Revision),
     lists:foldr(
         fun(#domain_RoutingCandidate{terminal = K, description = V}, AccIn) ->
             AccIn#{K => V}
@@ -48,9 +57,9 @@ get_table_prohibitions(RuleSetDeny, _, _) ->
         get_decisions_candidates(RuleSetDeny)
     ).
 
-get_candidates(RoutingRuleRef, VS, Revision) ->
+get_candidates(RoutingRule, VS, Revision) ->
     get_decisions_candidates(
-        compute_rule_set(RoutingRuleRef, VS, Revision)
+        compute_rule_set(RoutingRule, VS, Revision)
     ).
 
 get_decisions_candidates(#domain_RoutingRuleset{decisions = Decisions}) ->
@@ -112,21 +121,12 @@ filter_routes({Routes, Rejected}, Prohibitions) ->
     ).
 
 compute_rule_set(RuleSetRef, VS, Revision) ->
-    {Client, Context} = get_party_client(),
+    Ctx = hg_context:load(),
     {ok, RuleSet} = party_client_thrift:compute_routing_ruleset(
         RuleSetRef,
         Revision,
         hg_varset:prepare_varset(VS),
-        Client,
-        Context
+        hg_context:get_party_client(Ctx),
+        hg_context:get_party_client_context(Ctx)
     ),
     RuleSet.
-
-get_rule_set(RuleSetRef, Revision) ->
-    hg_domain:get(Revision, {routing_rules, RuleSetRef}).
-
-get_party_client() ->
-    HgContext = hg_context:load(),
-    Client = hg_context:get_party_client(HgContext),
-    Context = hg_context:get_party_client_context(HgContext),
-    {Client, Context}.
