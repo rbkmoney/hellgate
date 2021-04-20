@@ -98,7 +98,7 @@ encode_decode_test() ->
         },
         payment_tool =>
             {digital_wallet, #domain_DigitalWallet{
-                provider = qiwi,
+                provider_deprecated = qiwi,
                 id = <<"digital_wallet_id">>
             }},
         payout_method => #domain_PayoutMethodRef{id = any},
@@ -106,12 +106,12 @@ encode_decode_test() ->
         p2p_tool => #domain_P2PTool{
             sender =
                 {digital_wallet, #domain_DigitalWallet{
-                    provider = qiwi,
+                    provider_deprecated = qiwi,
                     id = <<"digital_wallet_id">>
                 }},
             receiver =
                 {digital_wallet, #domain_DigitalWallet{
-                    provider = qiwi,
+                    provider_deprecated = qiwi,
                     id = <<"digital_wallet_id">>
                 }}
         },

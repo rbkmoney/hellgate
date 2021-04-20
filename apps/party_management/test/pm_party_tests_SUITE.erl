@@ -917,7 +917,7 @@ compute_payment_institution_terms(C) ->
     #domain_TermSet{} =
         T3 = pm_client_party:compute_payment_institution_terms(
             ?pinst(2),
-            #payproc_Varset{payment_method = ?pmt(payment_terminal, euroset)},
+            #payproc_Varset{payment_method = ?pmt(payment_terminal_deprecated, euroset)},
             Client
         ),
     #domain_TermSet{} =
@@ -960,7 +960,7 @@ contract_p2p_terms(C) ->
     Timstamp1 = pm_datetime:format_now(),
     BankCard = #domain_BankCard{
         token = <<"1OleNyeXogAKZBNTgxBGQE">>,
-        payment_system = visa,
+        payment_system_deprecated = visa,
         bin = <<"415039">>,
         last_digits = <<"0900">>,
         issuer_country = rus
@@ -1824,7 +1824,7 @@ compute_terms_w_criteria(C) ->
                                 {bank_card, #domain_BankCardCondition{
                                     definition =
                                         {payment_system, #domain_PaymentSystemCondition{
-                                            payment_system_is = visa
+                                            payment_system_is_deprecated = visa
                                         }}
                                 }}}},
                         {is_not,
@@ -2217,14 +2217,14 @@ construct_domain_fixture() ->
                                             {bank_card, #domain_BankCardCondition{
                                                 definition =
                                                     {payment_system, #domain_PaymentSystemCondition{
-                                                        payment_system_is = visa
+                                                        payment_system_is_deprecated = visa
                                                     }}
                                             }},
                                         receiver_is =
                                             {bank_card, #domain_BankCardCondition{
                                                 definition =
                                                     {payment_system, #domain_PaymentSystemCondition{
-                                                        payment_system_is = visa
+                                                        payment_system_is_deprecated = visa
                                                     }}
                                             }}
                                     }}},
@@ -2402,7 +2402,7 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, maestro)),
-        pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+        pm_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
         pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
 
         pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
