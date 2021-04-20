@@ -5,8 +5,6 @@
 -export([gather_routes/4]).
 
 %%
--define(const(Bool), {constant, Bool}).
-
 -type route_predestination() :: hg_routing:route_predestination().
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type non_fail_rated_route() :: hg_routing:non_fail_rated_route().
