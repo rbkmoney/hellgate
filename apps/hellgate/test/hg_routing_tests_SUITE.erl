@@ -51,11 +51,11 @@ init([]) ->
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        % fatal_risk_score_for_route_found,
-        % no_route_found_for_payment,
-        % handle_uncomputable_provider_terms,
-        % {group, routing_with_fail_rate},
-        % {group, terminal_priority},
+        fatal_risk_score_for_route_found,
+        no_route_found_for_payment,
+        handle_uncomputable_provider_terms,
+        {group, routing_with_fail_rate},
+        {group, terminal_priority}
         % {group, routing_with_risk_coverage_set}
     ].
 

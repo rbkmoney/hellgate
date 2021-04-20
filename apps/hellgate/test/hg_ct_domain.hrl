@@ -100,6 +100,13 @@
     terminal = TerminalRef
 }).
 
+-define(candidate(Descr, Allowed, TerminalRef, Priority), #domain_RoutingCandidate{
+    description = Descr,
+    allowed = Allowed,
+    terminal = TerminalRef,
+    priority = Priority
+}).
+
 -define(delegate(Allowed, RuleSetRef), #domain_RoutingDelegate{
     allowed = Allowed,
     ruleset = RuleSetRef
@@ -109,6 +116,68 @@
     description = Descr,
     allowed = Allowed,
     ruleset = RuleSetRef
+}).
+
+-define(terminal_obj(Ref, PRef), #domain_TerminalObject{
+    ref = Ref,
+    data = #domain_Terminal{
+        name = <<"Payment Terminal">>,
+        description = <<"Best terminal">>,
+        provider_ref = PRef
+    }
+}).
+
+-define(provider(ProvisionTermSet), #domain_Provider{
+    name = <<"Biba">>,
+    description = <<"Payment terminal provider">>,
+    proxy = #domain_Proxy{
+        ref = ?prx(1),
+        additional = #{
+            <<"override">> => <<"biba">>
+        }
+    },
+    abs_account = <<"0987654321">>,
+    accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+    terms = ProvisionTermSet
+}).
+
+-define(payment_terms, #domain_PaymentsProvisionTerms{
+    currencies =
+        {value,
+            ?ordset([
+                ?cur(<<"RUB">>)
+            ])},
+    categories =
+        {value,
+            ?ordset([
+                ?cat(1)
+            ])},
+    payment_methods =
+        {value,
+            ?ordset([
+                ?pmt(payment_terminal, euroset),
+                ?pmt(digital_wallet, qiwi)
+            ])},
+    cash_limit =
+        {value,
+            ?cashrng(
+                {inclusive, ?cash(1000, <<"RUB">>)},
+                {exclusive, ?cash(10000000, <<"RUB">>)}
+            )},
+    cash_flow =
+        {value, [
+            ?cfpost(
+                {provider, settlement},
+                {merchant, settlement},
+                ?share(1, 1, operation_amount)
+            ),
+            ?cfpost(
+                {system, settlement},
+                {provider, settlement},
+                ?share(21, 1000, operation_amount)
+            )
+        ]},
+    risk_coverage = undefined
 }).
 
 -endif.

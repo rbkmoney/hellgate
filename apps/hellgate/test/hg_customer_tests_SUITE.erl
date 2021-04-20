@@ -747,14 +747,14 @@ construct_domain_fixture(TermSet) ->
         {routing_rules, #domain_RoutingRulesObject{
             ref = ?ruleset(1),
             data = #domain_RoutingRuleset{
-                name = <<"Prohibitions: all is allow">>,
+                name = <<"No prohibition: all terminals are allowed">>,
                 decisions = {candidates, []}
             }
         }},
         {routing_rules, #domain_RoutingRulesObject{
             ref = ?ruleset(2),
             data = #domain_RoutingRuleset{
-                name = <<"Prohibitions: all is allow">>,
+                name = <<"Prohibition: terminal is denied">>,
                 decisions =
                     {candidates, [
                         ?candidate({constant, true}, ?trm(1))
