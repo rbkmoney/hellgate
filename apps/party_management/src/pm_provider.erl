@@ -13,18 +13,18 @@
 -type domain_revision() :: pm_domain:revision().
 
 -spec reduce_provider(provider(), varset(), domain_revision()) -> provider().
-reduce_provider(Provider, VS, DomainRevision) ->
+reduce_provider(Provider, VS, Rev) ->
     Provider#domain_Provider{
-        terminal = pm_selector:reduce(Provider#domain_Provider.terminal, VS, DomainRevision),
-        terms = reduce_provision_term_set(Provider#domain_Provider.terms, VS, DomainRevision)
+        terminal = reduce_if_defined(Provider#domain_Provider.terminal, VS, Rev),
+        terms = reduce_provision_term_set(Provider#domain_Provider.terms, VS, Rev)
     }.
 
 -spec reduce_provider_terminal_terms(provider(), terminal(), varset(), domain_revision()) -> provision_terms().
-reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision) ->
+reduce_provider_terminal_terms(Provider, Terminal, VS, Rev) ->
     ProviderTerms = Provider#domain_Provider.terms,
     TerminalTerms = Terminal#domain_Terminal.terms,
     MergedTerms = merge_provision_term_sets(ProviderTerms, TerminalTerms),
-    reduce_provision_term_set(MergedTerms, VS, DomainRevision).
+    reduce_provision_term_set(MergedTerms, VS, Rev).
 
 reduce_p2p_terms(undefined = Terms, _VS, _Rev) ->
     Terms;
