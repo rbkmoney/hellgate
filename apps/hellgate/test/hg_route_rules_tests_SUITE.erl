@@ -332,7 +332,7 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     {SelectedProviders, _} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
 
     %% Ensure list of selected provider ID match to given
-    PrvIDList = lists:sort([P || {{?prv(P), _}, _} <- SelectedProviders]),
+    PrvIDList = lists:reverse([P || {{?prv(P), _}, _} <- SelectedProviders]),
     ok.
 
 -spec prefer_alive(config()) -> test_return().

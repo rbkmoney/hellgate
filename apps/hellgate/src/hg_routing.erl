@@ -470,8 +470,6 @@ acceptable_provision_payment_terms(
 ) ->
     _ = acceptable_payment_terms(PaymentTerms, VS),
     true.
-% acceptable_provision_payment_terms(undefined, _VS) ->
-%     throw(?rejected({'ProvisionTermSet', undefined})).
 
 acceptable_provision_recurrent_terms(
     #domain_ProvisionTermSet{
@@ -481,8 +479,6 @@ acceptable_provision_recurrent_terms(
 ) ->
     _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS),
     true.
-% acceptable_provision_recurrent_terms(undefined, _VS) ->
-%     throw(?rejected({'ProvisionTermSet', undefined})).
 
 acceptable_payment_terms(
     #domain_PaymentsProvisionTerms{
