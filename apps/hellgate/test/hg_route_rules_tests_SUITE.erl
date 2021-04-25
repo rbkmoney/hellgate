@@ -978,8 +978,6 @@ construct_domain_fixture() ->
         }}
     ].
 
-
-
 condition(party, ID) ->
     {condition, {party, #domain_PartyCondition{id = ID}}}.
 
