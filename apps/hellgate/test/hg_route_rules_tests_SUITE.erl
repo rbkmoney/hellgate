@@ -311,11 +311,11 @@ ruleset_misconfig(_C) ->
 
 -spec routes_selected_for_low_risk_score(config()) -> test_return().
 routes_selected_for_low_risk_score(C) ->
-    routes_selected_with_risk_score(C, low, [1, 2, 3]).
+    routes_selected_with_risk_score(C, low, [21, 22, 23]).
 
 -spec routes_selected_for_high_risk_score(config()) -> test_return().
 routes_selected_for_high_risk_score(C) ->
-    routes_selected_with_risk_score(C, high, [2, 3]).
+    routes_selected_with_risk_score(C, high, [22, 23]).
 
 routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     VS = #{
@@ -351,7 +351,7 @@ prefer_alive(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {
-        [{{?prv(3), _}, _}, {{?prv(2), _}, _}, {{?prv(1), _}, _}] = Routes,
+        [{{?prv(23), _}, _}, {{?prv(22), _}, _}, {{?prv(21), _}, _}] = Routes,
         RejectContext
     } = hg_routing_rule:gather_routes(
         payment,
@@ -378,12 +378,12 @@ prefer_alive(_C) ->
     Result1 = hg_routing:choose_route(FailRatedRoutes1, RejectContext, RiskScore),
     Result2 = hg_routing:choose_route(FailRatedRoutes2, RejectContext, RiskScore),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(1), terminal = ?trm(1)}, Meta0} = Result0,
-    {ok, #domain_PaymentRoute{provider = ?prv(2), terminal = ?trm(2)}, Meta1} = Result1,
-    {ok, #domain_PaymentRoute{provider = ?prv(3), terminal = ?trm(3)}, Meta2} = Result2,
+    {ok, #domain_PaymentRoute{provider = ?prv(21), terminal = ?trm(21)}, Meta0} = Result0,
+    {ok, #domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, Meta1} = Result1,
+    {ok, #domain_PaymentRoute{provider = ?prv(23), terminal = ?trm(23)}, Meta2} = Result2,
 
-    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 3}} = Meta0,
-    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 3}} = Meta1,
+    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 23}} = Meta0,
+    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 23}} = Meta1,
     false = maps:is_key(reject_reason, Meta2),
 
     ok.
@@ -404,7 +404,7 @@ prefer_normal_conversion(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {
-        [{{?prv(3), _}, _}, {{?prv(2), _}, _}, {{?prv(1), _}, _}] = Routes,
+        [{{?prv(23), _}, _}, {{?prv(22), _}, _}, {{?prv(21), _}, _}] = Routes,
         RC
     } = hg_routing_rule:gather_routes(
         payment,
@@ -430,12 +430,12 @@ prefer_normal_conversion(_C) ->
     Result1 = hg_routing:choose_route(FailRatedRoutes1, RC, RiskScore),
     Result2 = hg_routing:choose_route(FailRatedRoutes2, RC, RiskScore),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(1), terminal = ?trm(1)}, Meta0} = Result0,
-    {ok, #domain_PaymentRoute{provider = ?prv(2), terminal = ?trm(2)}, Meta1} = Result1,
-    {ok, #domain_PaymentRoute{provider = ?prv(3), terminal = ?trm(3)}, Meta2} = Result2,
+    {ok, #domain_PaymentRoute{provider = ?prv(21), terminal = ?trm(21)}, Meta0} = Result0,
+    {ok, #domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, Meta1} = Result1,
+    {ok, #domain_PaymentRoute{provider = ?prv(23), terminal = ?trm(23)}, Meta2} = Result2,
 
-    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 3}} = Meta0,
-    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 3}} = Meta1,
+    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 23}} = Meta0,
+    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 23}} = Meta1,
     false = maps:is_key(reject_reason, Meta2),
 
     ok.
@@ -457,9 +457,9 @@ prefer_higher_availability(_C) ->
 
     {
         [
-            {{?prv(3), _}, _},
-            {{?prv(2), _}, _},
-            {{?prv(1), _}, _}
+            {{?prv(23), _}, _},
+            {{?prv(22), _}, _},
+            {{?prv(21), _}, _}
         ] = Routes,
         RC
     } = hg_routing_rule:gather_routes(
@@ -476,9 +476,9 @@ prefer_higher_availability(_C) ->
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, RiskScore),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(1), terminal = ?trm(1)}, #{
+    {ok, #domain_PaymentRoute{provider = ?prv(21), terminal = ?trm(21)}, #{
         reject_reason := availability,
-        preferable_route := #{provider_ref := 3}
+        preferable_route := #{provider_ref := 23}
     }} = Result,
 
     ok.
@@ -499,9 +499,9 @@ prefer_higher_conversion(_C) ->
 
     {
         [
-            {{?prv(3), _}, _},
-            {{?prv(2), _}, _},
-            {{?prv(1), _}, _}
+            {{?prv(23), _}, _},
+            {{?prv(22), _}, _},
+            {{?prv(21), _}, _}
         ] = Routes,
         RC
     } = hg_routing_rule:gather_routes(
@@ -517,9 +517,9 @@ prefer_higher_conversion(_C) ->
     FailRatedRoutes = lists:zip3(Providers, TerminalData, ProviderStatuses),
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, undefined),
-    {ok, #domain_PaymentRoute{provider = ?prv(2), terminal = ?trm(2)}, #{
+    {ok, #domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, #{
         reject_reason := conversion,
-        preferable_route := #{provider_ref := 3}
+        preferable_route := #{provider_ref := 23}
     }} = Result,
     ok.
 
@@ -540,9 +540,9 @@ prefer_weight_over_availability(_C) ->
 
     {
         [
-            {{?prv(3), _}, _},
-            {{?prv(2), _}, _},
-            {{?prv(1), _}, _}
+            {{?prv(23), _}, _},
+            {{?prv(22), _}, _},
+            {{?prv(21), _}, _}
         ] = Routes,
         RC
     } = hg_routing_rule:gather_routes(
@@ -559,7 +559,7 @@ prefer_weight_over_availability(_C) ->
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, RiskScore),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(2), terminal = ?trm(2)}, _Meta} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, _Meta} = Result,
 
     ok.
 
@@ -578,9 +578,9 @@ prefer_weight_over_conversion(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     {
         [
-            {{?prv(3), _}, _},
-            {{?prv(2), _}, _},
-            {{?prv(1), _}, _}
+            {{?prv(23), _}, _},
+            {{?prv(22), _}, _},
+            {{?prv(21), _}, _}
         ] = Routes,
         RC
     } = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
@@ -592,7 +592,7 @@ prefer_weight_over_conversion(_C) ->
 
     Result = hg_routing:choose_route(FailRatedRoutes, RC, RiskScore),
 
-    {ok, #domain_PaymentRoute{provider = ?prv(2), terminal = ?trm(2)}, _Meta} = Result,
+    {ok, #domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, _Meta} = Result,
 
     ok.
 
@@ -612,9 +612,9 @@ gathers_fail_rated_routes(_C) ->
     {Routes0, _RejectContext0} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     Result = hg_routing:gather_fail_rates(Routes0),
     [
-        {{?prv(3), _}, _, {{alive, 0.0}, {normal, 0.0}}},
-        {{?prv(2), _}, _, {{alive, 0.1}, {normal, 0.1}}},
-        {{?prv(1), _}, _, {{dead, 0.9}, {lacking, 0.9}}}
+        {{?prv(23), _}, _, {{alive, 0.0}, {normal, 0.0}}},
+        {{?prv(22), _}, _, {{alive, 0.1}, {normal, 0.1}}},
+        {{?prv(21), _}, _, {{dead, 0.9}, {lacking, 0.9}}}
     ] = Result,
     ok.
 
@@ -624,14 +624,14 @@ gathers_fail_rated_routes(_C) ->
 terminal_priority_for_shop(C) ->
     {ok,
         #domain_PaymentRoute{
-            provider = ?prv(4),
-            terminal = ?trm(4)
+            provider = ?prv(41),
+            terminal = ?trm(41)
         },
         _Meta0} = terminal_priority_for_shop(?dummy_party_id, ?dummy_shop_id, C),
     {ok,
         #domain_PaymentRoute{
-            provider = ?prv(5),
-            terminal = ?trm(5)
+            provider = ?prv(42),
+            terminal = ?trm(42)
         },
         _Meta1} = terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C).
 
@@ -774,9 +774,9 @@ routing_with_risk_score_fixture(Revision, AddRiskScore) ->
                 name = <<"">>,
                 decisions =
                     {candidates, [
-                        ?candidate({constant, true}, ?trm(1)),
-                        ?candidate({constant, true}, ?trm(2)),
-                        ?candidate({constant, true}, ?trm(3))
+                        ?candidate({constant, true}, ?trm(21)),
+                        ?candidate({constant, true}, ?trm(22)),
+                        ?candidate({constant, true}, ?trm(23))
                     ]}
             }
         }},
@@ -786,9 +786,9 @@ routing_with_risk_score_fixture(Revision, AddRiskScore) ->
                 name = <<"">>,
                 decisions =
                     {candidates, [
-                        ?candidate({constant, true}, ?trm(1)),
-                        ?candidate(<<"high priority">>, {constant, true}, ?trm(2), 1005),
-                        ?candidate({constant, true}, ?trm(3))
+                        ?candidate({constant, true}, ?trm(21)),
+                        ?candidate(<<"high priority">>, {constant, true}, ?trm(22), 1005),
+                        ?candidate({constant, true}, ?trm(23))
                     ]}
             }
         }},
@@ -799,11 +799,11 @@ routing_with_risk_score_fixture(Revision, AddRiskScore) ->
                 decisions = {candidates, []}
             }
         }},
-        {terminal, ?terminal_obj(?trm(1), ?prv(1))},
-        {terminal, ?terminal_obj(?trm(2), ?prv(2))},
-        {terminal, ?terminal_obj(?trm(3), ?prv(3))},
+        {terminal, ?terminal_obj(?trm(21), ?prv(21))},
+        {terminal, ?terminal_obj(?trm(22), ?prv(22))},
+        {terminal, ?terminal_obj(?trm(23), ?prv(23))},
         {provider, #domain_ProviderObject{
-            ref = ?prv(1),
+            ref = ?prv(21),
             data = ?provider(#domain_ProvisionTermSet{
                 payments = ?payment_terms#domain_PaymentsProvisionTerms{
                     risk_coverage = maybe_set_risk_coverage(AddRiskScore, low)
@@ -811,7 +811,7 @@ routing_with_risk_score_fixture(Revision, AddRiskScore) ->
             })
         }},
         {provider, #domain_ProviderObject{
-            ref = ?prv(2),
+            ref = ?prv(22),
             data = ?provider(#domain_ProvisionTermSet{
                 payments = ?payment_terms#domain_PaymentsProvisionTerms{
                     risk_coverage = maybe_set_risk_coverage(AddRiskScore, high)
@@ -819,7 +819,80 @@ routing_with_risk_score_fixture(Revision, AddRiskScore) ->
             })
         }},
         {provider, #domain_ProviderObject{
-            ref = ?prv(3),
+            ref = ?prv(23),
+            data = ?provider(#domain_ProvisionTermSet{
+                payments = ?payment_terms
+            })
+        }}
+    ].
+
+terminal_priority_fixture(Revision) ->
+    PartyID = ?dummy_party_id,
+    ShopID = ?dummy_shop_id,
+    AnotherShopID = ?dummy_another_shop_id,
+    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
+    [
+        {payment_institution, #domain_PaymentInstitutionObject{
+            ref = ?pinst(1),
+            data = PaymentInstitution#domain_PaymentInstitution{
+                payment_routing_rules = #domain_RoutingRules{
+                    policies = ?ruleset(2),
+                    prohibitions = ?ruleset(1)
+                }
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(2),
+            data = #domain_RoutingRuleset{
+                name = <<"">>,
+                decisions =
+                    {delegates, [
+                        ?delegate(condition(party_shop, PartyID, ShopID), ?ruleset(3)),
+                        ?delegate(condition(party_shop, PartyID, AnotherShopID), ?ruleset(4))
+                    ]}
+            }
+        }},
+
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(3),
+            data = #domain_RoutingRuleset{
+                name = <<"">>,
+                decisions =
+                    {candidates, [
+                        ?candidate(<<"high priority">>, {constant, true}, ?trm(41), 10),
+                        ?candidate(<<"low priority">>, {constant, true}, ?trm(42), 5)
+                    ]}
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(4),
+            data = #domain_RoutingRuleset{
+                name = <<"">>,
+                decisions =
+                    {candidates, [
+                        ?candidate(<<"low priority">>, {constant, true}, ?trm(41), 5),
+                        ?candidate(<<"high priority">>, {constant, true}, ?trm(42), 10)
+                    ]}
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(1),
+            data = #domain_RoutingRuleset{
+                name = <<"No prohibition: all candidate is allowed">>,
+                decisions = {candidates, []}
+            }
+        }},
+
+        {terminal, ?terminal_obj(?trm(41), ?prv(41))},
+        {terminal, ?terminal_obj(?trm(42), ?prv(42))},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(41),
+            data = ?provider(#domain_ProvisionTermSet{
+                payments = ?payment_terms
+            })
+        }},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(42),
             data = ?provider(#domain_ProvisionTermSet{
                 payments = ?payment_terms
             })
@@ -905,78 +978,7 @@ construct_domain_fixture() ->
         }}
     ].
 
-terminal_priority_fixture(Revision) ->
-    PartyID = ?dummy_party_id,
-    ShopID = ?dummy_shop_id,
-    AnotherShopID = ?dummy_another_shop_id,
-    PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    [
-        {payment_institution, #domain_PaymentInstitutionObject{
-            ref = ?pinst(1),
-            data = PaymentInstitution#domain_PaymentInstitution{
-                payment_routing_rules = #domain_RoutingRules{
-                    policies = ?ruleset(2),
-                    prohibitions = ?ruleset(1)
-                }
-            }
-        }},
-        {routing_rules, #domain_RoutingRulesObject{
-            ref = ?ruleset(2),
-            data = #domain_RoutingRuleset{
-                name = <<"">>,
-                decisions =
-                    {delegates, [
-                        ?delegate(condition(party_shop, PartyID, ShopID), ?ruleset(3)),
-                        ?delegate(condition(party_shop, PartyID, AnotherShopID), ?ruleset(4))
-                    ]}
-            }
-        }},
 
-        {routing_rules, #domain_RoutingRulesObject{
-            ref = ?ruleset(3),
-            data = #domain_RoutingRuleset{
-                name = <<"">>,
-                decisions =
-                    {candidates, [
-                        ?candidate(<<"high priority">>, {constant, true}, ?trm(4), 10),
-                        ?candidate(<<"low priority">>, {constant, true}, ?trm(5), 5)
-                    ]}
-            }
-        }},
-        {routing_rules, #domain_RoutingRulesObject{
-            ref = ?ruleset(4),
-            data = #domain_RoutingRuleset{
-                name = <<"">>,
-                decisions =
-                    {candidates, [
-                        ?candidate(<<"low priority">>, {constant, true}, ?trm(4), 5),
-                        ?candidate(<<"high priority">>, {constant, true}, ?trm(5), 10)
-                    ]}
-            }
-        }},
-        {routing_rules, #domain_RoutingRulesObject{
-            ref = ?ruleset(1),
-            data = #domain_RoutingRuleset{
-                name = <<"No prohibition: all candidate is allowed">>,
-                decisions = {candidates, []}
-            }
-        }},
-
-        {terminal, ?terminal_obj(?trm(4), ?prv(4))},
-        {terminal, ?terminal_obj(?trm(5), ?prv(5))},
-        {provider, #domain_ProviderObject{
-            ref = ?prv(4),
-            data = ?provider(#domain_ProvisionTermSet{
-                payments = ?payment_terms
-            })
-        }},
-        {provider, #domain_ProviderObject{
-            ref = ?prv(5),
-            data = ?provider(#domain_ProvisionTermSet{
-                payments = ?payment_terms
-            })
-        }}
-    ].
 
 condition(party, ID) ->
     {condition, {party, #domain_PartyCondition{id = ID}}}.

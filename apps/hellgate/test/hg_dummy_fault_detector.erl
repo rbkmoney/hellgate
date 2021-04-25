@@ -29,7 +29,7 @@ handle_function(
 ) ->
     {ok, [
         #fault_detector_ServiceStatistics{
-            service_id = <<"hellgate_service.provider_conversion.1">>,
+            service_id = <<"hellgate_service.provider_conversion.21">>,
             failure_rate = 0.9,
             operations_count = 10,
             error_operations_count = 9,
@@ -37,7 +37,7 @@ handle_function(
             success_operations_count = 1
         },
         #fault_detector_ServiceStatistics{
-            service_id = <<"hellgate_service.provider_conversion.2">>,
+            service_id = <<"hellgate_service.provider_conversion.22">>,
             failure_rate = 0.1,
             operations_count = 10,
             error_operations_count = 1,
@@ -45,7 +45,7 @@ handle_function(
             success_operations_count = 9
         },
         #fault_detector_ServiceStatistics{
-            service_id = <<"hellgate_service.adapter_availability.1">>,
+            service_id = <<"hellgate_service.adapter_availability.21">>,
             failure_rate = 0.9,
             operations_count = 10,
             error_operations_count = 9,
@@ -53,7 +53,7 @@ handle_function(
             success_operations_count = 1
         },
         #fault_detector_ServiceStatistics{
-            service_id = <<"hellgate_service.adapter_availability.2">>,
+            service_id = <<"hellgate_service.adapter_availability.22">>,
             failure_rate = 0.1,
             operations_count = 10,
             error_operations_count = 1,
