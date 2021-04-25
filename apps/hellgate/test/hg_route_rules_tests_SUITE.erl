@@ -178,7 +178,7 @@ no_route_found_for_payment(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(999, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -214,7 +214,7 @@ gather_route_success(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant,
         risk_score => low
@@ -272,7 +272,7 @@ rejected_by_table_prohibitions(_C) ->
 empty_candidate_ok(_C) ->
     BankCard = #domain_BankCard{
         token = <<"bank card token">>,
-        payment_system = visa,
+        payment_system_deprecated = visa,
         bin = <<"411111">>,
         last_digits = <<"11">>
     },
@@ -394,7 +394,7 @@ prefer_normal_conversion(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -602,7 +602,7 @@ gathers_fail_rated_routes(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -911,8 +911,8 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, jcb)),
-        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
-        hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, qiwi)),
+        hg_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
+        hg_ct_fixture:construct_payment_method(?pmt(digital_wallet_deprecated, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))),
 
@@ -988,3 +988,4 @@ maybe_set_risk_coverage(false, _) ->
     undefined;
 maybe_set_risk_coverage(true, V) ->
     {value, V}.
+
