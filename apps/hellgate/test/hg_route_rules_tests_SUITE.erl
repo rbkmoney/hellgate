@@ -240,7 +240,7 @@ gather_route_success(_C) ->
 rejected_by_table_prohibitions(_C) ->
     BankCard = #domain_BankCard{
         token = <<"bank card token">>,
-        payment_system = visa,
+        payment_system_deprecated = visa,
         bin = <<"411111">>,
         last_digits = <<"11">>
     },
@@ -322,7 +322,7 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant,
         risk_score => RiskScore
@@ -341,7 +341,7 @@ prefer_alive(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -446,7 +446,7 @@ prefer_higher_availability(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -489,7 +489,7 @@ prefer_higher_conversion(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"12345">>,
         flow => instant
     },
@@ -529,7 +529,7 @@ prefer_weight_over_availability(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"54321">>,
         flow => instant
     },
@@ -569,7 +569,7 @@ prefer_weight_over_conversion(_C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => <<"54321">>,
         flow => instant
     },
@@ -640,7 +640,7 @@ terminal_priority_for_shop(PartyID, ShopID, _C) ->
         category => ?cat(1),
         currency => ?cur(<<"RUB">>),
         cost => ?cash(1000, <<"RUB">>),
-        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type = euroset}},
+        payment_tool => {payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = euroset}},
         party_id => PartyID,
         shop_id => ShopID,
         flow => instant
