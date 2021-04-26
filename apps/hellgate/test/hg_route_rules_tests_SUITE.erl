@@ -988,4 +988,3 @@ maybe_set_risk_coverage(false, _) ->
     undefined;
 maybe_set_risk_coverage(true, V) ->
     {value, V}.
-
