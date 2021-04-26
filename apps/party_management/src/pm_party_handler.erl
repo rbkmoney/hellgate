@@ -152,9 +152,9 @@ handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
 %% Globals
 
 handle_function_('ComputeGlobals', Args, _Opts) ->
-    {UserInfo, GlobalsRef, DomainRevision, Varset} = Args,
+    {UserInfo, DomainRevision, Varset} = Args,
     ok = assume_user_identity(UserInfo),
-    Globals = get_globals(GlobalsRef, DomainRevision),
+    Globals = get_globals(#domain_GlobalsRef{}, DomainRevision),
     VS = prepare_varset(Varset),
     pm_globals:reduce_globals(Globals, VS, DomainRevision);
 %% RuleSets

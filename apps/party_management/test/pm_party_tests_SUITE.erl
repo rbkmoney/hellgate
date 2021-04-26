@@ -1719,7 +1719,7 @@ compute_globals_ok(C) ->
     Varset = #payproc_Varset{},
     #domain_Globals{
         external_account_set = {value, ?eas(1)}
-    } = pm_client_party:compute_globals(#domain_GlobalsRef{}, DomainRevision, Varset, Client).
+    } = pm_client_party:compute_globals(DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_ok(C) ->
     Client = cfg(client, C),
