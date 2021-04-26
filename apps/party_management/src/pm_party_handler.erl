@@ -149,7 +149,6 @@ handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
     Terminal = get_terminal(TerminalRef, DomainRevision),
     VS = prepare_varset(Varset),
     pm_provider:reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision);
-
 %% Globals
 
 handle_function_('ComputeGlobals', Args, _Opts) ->

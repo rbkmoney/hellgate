@@ -32,7 +32,6 @@ reduce_provider_terminal_terms(Provider, Terminal, VS, Rev) ->
             ReducedTerms
     end.
 
-
 reduce_p2p_terms(undefined = Terms, _VS, _Rev) ->
     Terms;
 reduce_p2p_terms(#domain_P2PProvisionTerms{} = Terms, VS, Rev) ->
