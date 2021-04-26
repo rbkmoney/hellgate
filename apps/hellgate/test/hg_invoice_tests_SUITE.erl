@@ -7033,7 +7033,6 @@ get_cashflow_rounding_fixture(Revision) ->
                 name = <<"Rounding">>,
                 description = <<>>,
                 abs_account = <<>>,
-                % terminal = {value, [?prvtrm(100)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_ProvisionTermSet{
