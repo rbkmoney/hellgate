@@ -24,7 +24,14 @@ reduce_provider_terminal_terms(Provider, Terminal, VS, Rev) ->
     ProviderTerms = Provider#domain_Provider.terms,
     TerminalTerms = Terminal#domain_Terminal.terms,
     MergedTerms = merge_provision_term_sets(ProviderTerms, TerminalTerms),
-    reduce_provision_term_set(MergedTerms, VS, Rev).
+    ReducedTerms = reduce_provision_term_set(MergedTerms, VS, Rev),
+    case ReducedTerms of
+        undefined ->
+            error({misconfiguration, {'Can\'t reduce terms', {provider, Provider}, {terminal, Terminal}}});
+        _ ->
+            ReducedTerms
+    end.
+
 
 reduce_p2p_terms(undefined = Terms, _VS, _Rev) ->
     Terms;

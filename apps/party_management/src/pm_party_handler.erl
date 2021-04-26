@@ -148,13 +148,8 @@ handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
     Provider = get_provider(ProviderRef, DomainRevision),
     Terminal = get_terminal(TerminalRef, DomainRevision),
     VS = prepare_varset(Varset),
-    ReducedTerms = pm_provider:reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision),
-    case ReducedTerms of
-        undefined ->
-            error({misconfiguration, {'Can\'t reduce terms', {provider, Provider}, {terminal, Terminal}}});
-        _ ->
-            ReducedTerms
-    end;
+    pm_provider:reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision);
+
 %% Globals
 
 handle_function_('ComputeGlobals', Args, _Opts) ->
