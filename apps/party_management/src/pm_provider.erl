@@ -27,7 +27,7 @@ reduce_provider_terminal_terms(Provider, Terminal, VS, Rev) ->
     ReducedTerms = reduce_provision_term_set(MergedTerms, VS, Rev),
     case ReducedTerms of
         undefined ->
-            throw({misconfiguration, {'Can\'t reduce terms', {provider, Provider}, {terminal, Terminal}}});
+            error({misconfiguration, {'Can\'t reduce terms', {provider, Provider}, {terminal, Terminal}}});
         _ ->
             ReducedTerms
     end.
