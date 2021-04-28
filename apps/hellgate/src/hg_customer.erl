@@ -65,8 +65,9 @@ handle_function(Func, Args, Opts) ->
     ).
 
 handle_function_('Create', {CustomerParams}, _Opts) ->
-    DomainRevison = hg_domain:head(),
-    CustomerID = hg_utils:unique_id(),
+    DomainRevision = hg_domain:head(),
+    %% FIXME(ED-95): temporary fallback generation till CustomerID is made required in damsel
+    CustomerID = hg_utils:uid(CustomerParams#payproc_CustomerParams.customer_id),
     ok = set_meta(CustomerID),
     PartyID = CustomerParams#payproc_CustomerParams.party_id,
     ShopID = CustomerParams#payproc_CustomerParams.shop_id,
@@ -74,7 +75,7 @@ handle_function_('Create', {CustomerParams}, _Opts) ->
     Party = hg_party:get_party(PartyID),
     Shop = ensure_shop_exists(hg_party:get_shop(ShopID, Party)),
     ok = assert_party_shop_operable(Shop, Party),
-    _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party, DomainRevison),
+    _ = hg_recurrent_paytool:assert_operation_permitted(Shop, Party, DomainRevision),
     ok = start(CustomerID, CustomerParams),
     get_customer(get_state(CustomerID));
 %% TODO Удалить после перехода на новый протокол
@@ -320,9 +321,14 @@ handle_result_action(#{}, Acc) ->
 -include_lib("hellgate/include/recurrent_payment_tools.hrl").
 
 start_binding(BindingParams, St) ->
-    BindingID = create_binding_id(St),
-    PaymentResource = BindingParams#payproc_CustomerBindingParams.payment_resource,
-    PaytoolID = hg_utils:unique_id(),
+    #payproc_CustomerBindingParams{
+        customer_binding_id = MaybeBindingID,
+        payment_resource = PaymentResource,
+        rec_payment_tool_id = MaybePaytoolID
+    } = BindingParams,
+    %% FIXME(ED-95): temporary fallback generation till TemplateID is made required in damsel
+    BindingID = hg_utils:uid(MaybeBindingID),
+    PaytoolID = hg_utils:uid(MaybePaytoolID),
     DomainRevision = hg_domain:head(),
     PartyID = get_party_id(St),
     PartyRevision = hg_party:get_party_revision(PartyID),
@@ -363,9 +369,6 @@ construct_binding(BindingID, RecPaymentToolID, PaymentResource, PartyRevision, D
         party_revision = PartyRevision,
         domain_revision = DomainRevision
     }.
-
-create_binding_id(St) ->
-    integer_to_binary(length(get_bindings(get_customer(St))) + 1).
 
 sync_pending_bindings(St, AuxSt) ->
     sync_pending_bindings(get_pending_binding_set(St), St, AuxSt).
