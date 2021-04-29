@@ -20,9 +20,7 @@
 -include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
--include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 
--include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
 %% API
