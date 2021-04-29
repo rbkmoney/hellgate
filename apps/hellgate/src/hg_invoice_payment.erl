@@ -2672,6 +2672,7 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         payer = Payer,
+        payer_session_info = PayerSessionInfo,
         cost = Cost,
         make_recurrent = MakeRecurrent,
         processing_deadline = Deadline
@@ -2684,6 +2685,7 @@ construct_proxy_payment(
         created_at = CreatedAt,
         trx = Trx,
         payment_resource = construct_payment_resource(Payer),
+        payer_session_info = PayerSessionInfo,
         cost = construct_proxy_cash(Cost),
         contact_info = ContactInfo,
         make_recurrent = MakeRecurrent,
