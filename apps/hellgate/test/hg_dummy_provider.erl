@@ -330,13 +330,13 @@ process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
-            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo), mk_trx_extra(PaymentInfo))
     end;
 process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo, _) ->
     Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
     case get_transaction_state(Key) of
         processed ->
-            finish(success(PaymentInfo), get_payment_id(PaymentInfo));
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo), mk_trx_extra(PaymentInfo));
         {pending, Count} when Count > 2 ->
             Failure = payproc_errors:construct(
                 'PaymentFailure',
@@ -360,14 +360,14 @@ process_payment(
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
-            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo), mk_trx_extra(PaymentInfo))
     end;
 process_payment(?cancelled(), _, PaymentInfo, _) ->
     case get_payment_info_scenario(PaymentInfo) of
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
-            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo), mk_trx_extra(PaymentInfo))
     end.
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
@@ -413,6 +413,33 @@ handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) 
         intent = ?sleep(1, undefined),
         next_state = <<"sleeping">>
     }).
+
+%% NOTE
+%% You can stuff TransactionInfo.extra with anything you want.
+%% This may prove to be useful when you need to verify in your testcase that specific pieces of
+%% information really reached proxies, for example.
+mk_trx_extra(#prxprv_PaymentInfo{
+    payment = Payment
+}) ->
+    lists:foldl(fun maps:merge/2, #{}, [
+        prefix_extra(<<"payment">>, mk_trx_extra(Payment))
+    ]);
+mk_trx_extra(#prxprv_InvoicePayment{
+    payer_session_info = PayerSessionInfo
+}) ->
+    lists:foldl(fun maps:merge/2, #{}, [
+        prefix_extra(<<"payer_session_info">>, mk_trx_extra(PayerSessionInfo))
+    ]);
+mk_trx_extra(R = #domain_PayerSessionInfo{}) ->
+    record_to_map(R, record_info(fields, domain_PayerSessionInfo));
+mk_trx_extra(undefined) ->
+    #{}.
+
+prefix_extra(Prefix, Extra) ->
+    genlib_map:truemap(fun (K, V) -> {hg_utils:join(Prefix, $., K), V} end, Extra).
+
+record_to_map(Record, Fields) ->
+    maps:from_list(hg_proto_utils:record_to_proplist(Record, Fields)).
 
 -spec do_failure_scenario_step(failure_scenario(), term()) -> failure_scenario_step().
 do_failure_scenario_step(Scenario, Key) ->
@@ -463,10 +490,13 @@ process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
     end.
 
 finish(Status, TrxID) ->
+    finish(Status, TrxID, #{}).
+
+finish(Status, TrxID, Extra) ->
     AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
     #prxprv_PaymentProxyResult{
         intent = ?finish(Status),
-        trx = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo}
+        trx = #domain_TransactionInfo{id = TrxID, extra = Extra, additional_info = AdditionalInfo}
     }.
 
 finish(Status) ->

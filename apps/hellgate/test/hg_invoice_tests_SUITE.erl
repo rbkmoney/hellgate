@@ -971,15 +971,36 @@ payment_success(C) ->
         type = <<"application/x-erlang-binary">>,
         data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
     },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
+    PayerSessionInfo = #domain_PayerSessionInfo{
+        redirect_url = RedirectURL = <<"https://redirectly.io/merchant">>
+    },
+    PaymentParams = (make_payment_params())#payproc_InvoicePaymentParams{
+        payer_session_info = PayerSessionInfo,
+        context = Context
+    },
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(Payment)]
+        [PaymentSt = ?payment_state(Payment)]
     ) = hg_client_invoicing:get(InvoiceID, Client),
     ?payment_w_status(PaymentID, ?captured()) = Payment,
-    ?payment_w_context(Context) = Payment.
+    ?payment_last_trx(Trx) = PaymentSt,
+    ?assertMatch(
+        #domain_InvoicePayment{
+            payer_session_info = PayerSessionInfo,
+            context = Context
+        },
+        Payment
+    ),
+    ?assertMatch(
+        #domain_TransactionInfo{
+            extra = #{
+                <<"payment.payer_session_info.redirect_url">> := RedirectURL
+            }
+        },
+        Trx
+    ).
 
 -spec payment_limit_success(config()) -> test_return().
 payment_limit_success(C) ->
