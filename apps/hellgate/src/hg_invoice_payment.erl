@@ -2090,7 +2090,6 @@ finish_session_processing({payment, Step} = Activity, {Events, Action}, St) when
         Step =:= finalizing_session
 ->
     Target = get_target(St),
-    Activity = get_activity(St),
     St1 = collapse_changes(Events, St),
     case get_session(Target, St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
