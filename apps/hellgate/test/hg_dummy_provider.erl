@@ -436,7 +436,7 @@ mk_trx_extra(undefined) ->
     #{}.
 
 prefix_extra(Prefix, Extra) ->
-    genlib_map:truemap(fun (K, V) -> {hg_utils:join(Prefix, $., K), V} end, Extra).
+    genlib_map:truemap(fun(K, V) -> {hg_utils:join(Prefix, $., K), V} end, Extra).
 
 record_to_map(Record, Fields) ->
     maps:from_list(hg_proto_utils:record_to_proplist(Record, Fields)).
