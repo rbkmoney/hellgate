@@ -482,7 +482,6 @@ end_per_suite(C) ->
 -define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
 -define(payment_w_status(Status), #domain_InvoicePayment{status = Status}).
 -define(payment_w_status(ID, Status), #domain_InvoicePayment{id = ID, status = Status}).
--define(payment_w_context(Context), #domain_InvoicePayment{context = Context}).
 -define(trx_info(ID), #domain_TransactionInfo{id = ID}).
 -define(trx_info(ID, Extra), #domain_TransactionInfo{id = ID, extra = Extra}).
 -define(refund_id(RefundID), #domain_InvoicePaymentRefund{id = RefundID}).
@@ -1106,30 +1105,19 @@ payment_success_ruleset(C) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
-    %%
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams = set_payment_context(Context, make_payment_params()),
-    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(Payment)]
     ) = hg_client_invoicing:get(InvoiceID, Client),
-    ?payment_w_status(PaymentID, ?captured()) = Payment,
-    ?payment_w_context(Context) = Payment.
+    ?payment_w_status(PaymentID, ?captured()) = Payment.
 
 -spec processing_deadline_reached_test(config()) -> test_return().
 processing_deadline_reached_test(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    Context = #'Content'{
-        type = <<"application/x-erlang-binary">>,
-        data = erlang:term_to_binary({you, 643, "not", [<<"welcome">>, here]})
-    },
-    PaymentParams0 = set_payment_context(Context, make_payment_params()),
+    PaymentParams0 = make_payment_params(),
     Deadline = hg_datetime:format_now(),
     PaymentParams = PaymentParams0#payproc_InvoicePaymentParams{processing_deadline = Deadline},
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
@@ -4824,9 +4812,6 @@ make_payment_params(PaymentTool, Session, FlowType) ->
             }},
         flow = Flow
     }.
-
-set_payment_context(Context, Params = #payproc_InvoicePaymentParams{}) ->
-    Params#payproc_InvoicePaymentParams{context = Context}.
 
 make_chargeback_cancel_params() ->
     #payproc_InvoicePaymentChargebackCancelParams{}.
