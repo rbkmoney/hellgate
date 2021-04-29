@@ -98,6 +98,7 @@
 -export([compute_provider_not_found/1]).
 -export([compute_provider_terminal_terms_ok/1]).
 -export([compute_provider_terminal_terms_not_found/1]).
+-export([compute_provider_terminal_terms_undefined_terms/1]).
 -export([compute_globals_ok/1]).
 -export([compute_payment_routing_ruleset_ok/1]).
 -export([compute_payment_routing_ruleset_unreducable/1]).
@@ -254,6 +255,7 @@ groups() ->
             compute_provider_not_found,
             compute_provider_terminal_terms_ok,
             compute_provider_terminal_terms_not_found,
+            compute_provider_terminal_terms_undefined_terms,
             compute_globals_ok,
             compute_payment_routing_ruleset_ok,
             compute_payment_routing_ruleset_unreducable,
@@ -525,6 +527,7 @@ end_per_testcase(_Name, _C) ->
 -spec compute_provider_not_found(config()) -> _ | no_return().
 -spec compute_provider_terminal_terms_ok(config()) -> _ | no_return().
 -spec compute_provider_terminal_terms_not_found(config()) -> _ | no_return().
+-spec compute_provider_terminal_terms_undefined_terms(config()) -> _ | no_return().
 -spec compute_globals_ok(config()) -> _ | no_return().
 -spec compute_payment_routing_ruleset_ok(config()) -> _ | no_return().
 -spec compute_payment_routing_ruleset_unreducable(config()) -> _ | no_return().
@@ -1713,6 +1716,25 @@ compute_provider_terminal_terms_not_found(C) ->
             Client
         )).
 
+compute_provider_terminal_terms_undefined_terms(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    ?assertMatch(
+        {{woody_error, {external, result_unexpected, _}}, _},
+        try
+            pm_client_party:compute_provider_terminal_terms(
+                ?prv(2),
+                ?trm(4),
+                DomainRevision,
+                #payproc_Varset{},
+                Client
+            )
+        catch
+            error:Error ->
+                Error
+        end
+    ).
+
 compute_globals_ok(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
@@ -2627,6 +2649,18 @@ construct_domain_fixture() ->
             }
         }},
 
+        {provider, #domain_ProviderObject{
+            ref = ?prv(2),
+            data = #domain_Provider{
+                name = <<"Provider 2">>,
+                description = <<"Provider without terms">>,
+                terminal = {value, [?prvtrm(4)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                abs_account = <<"1234567890">>,
+                accounts = pm_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)])
+            }
+        }},
+
         {terminal, #domain_TerminalObject{
             ref = ?trm(1),
             data = #domain_Terminal{
@@ -2673,6 +2707,13 @@ construct_domain_fixture() ->
                                 ])}
                     }
                 }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(4),
+            data = #domain_Terminal{
+                name = <<"Terminal 4">>,
+                description = <<"Terminal without terms">>
             }
         }}
     ].
