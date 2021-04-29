@@ -393,34 +393,41 @@ init(PaymentID, PaymentParams, Opts) ->
 
 -spec init_(payment_id(), _, opts()) -> {st(), result()}.
 init_(PaymentID, Params, Opts = #{timestamp := CreatedAt}) ->
+    #payproc_InvoicePaymentParams{
+        payer = PayerParams,
+        flow = FlowParams,
+        payer_session_info = PayerSessionInfo,
+        make_recurrent = MakeRecurrent,
+        context = Context,
+        external_id = ExternalID,
+        processing_deadline = Deadline
+    } = Params,
     Revision = hg_domain:head(),
     Party = get_party(Opts),
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Cost = get_invoice_cost(Invoice),
-    {ok, Payer, VS0} = construct_payer(get_payer_params(Params), Shop),
-    Flow = get_flow_params(Params),
-    MakeRecurrent = get_make_recurrent_params(Params),
-    ExternalID = get_external_id(Params),
+    {ok, Payer, VS0} = construct_payer(PayerParams, Shop),
     VS1 = collect_validation_varset(Party, Shop, VS0),
-    Context = get_context_params(Params),
-    Deadline = get_processing_deadline(Params),
-    Payment = construct_payment(
+    Payment1 = construct_payment(
         PaymentID,
         CreatedAt,
         Cost,
         Payer,
-        Flow,
+        FlowParams,
         Party,
         Shop,
         VS1,
         Revision,
-        MakeRecurrent,
-        Context,
-        ExternalID,
-        Deadline
+        genlib:define(MakeRecurrent, false)
     ),
-    Events = [?payment_started(Payment)],
+    Payment2 = Payment1#domain_InvoicePayment{
+        payer_session_info = PayerSessionInfo,
+        context = Context,
+        external_id = ExternalID,
+        processing_deadline = Deadline
+    },
+    Events = [?payment_started(Payment2)],
     {collapse_changes(Events, undefined), {Events, hg_machine_action:instant()}}.
 
 get_merchant_payments_terms(Opts, Revision, Timestamp, VS) ->
@@ -466,26 +473,6 @@ assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;
 assert_contract_active(#domain_Contract{status = Status}) ->
     throw(#payproc_InvalidContractStatus{status = Status}).
-
-get_payer_params(#payproc_InvoicePaymentParams{payer = PayerParams}) ->
-    PayerParams.
-
-get_flow_params(#payproc_InvoicePaymentParams{flow = FlowParams}) ->
-    FlowParams.
-
-get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = undefined}) ->
-    false;
-get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = MakeRecurrent}) ->
-    MakeRecurrent.
-
-get_context_params(#payproc_InvoicePaymentParams{context = Context}) ->
-    Context.
-
-get_external_id(#payproc_InvoicePaymentParams{external_id = ExternalID}) ->
-    ExternalID.
-
-get_processing_deadline(#payproc_InvoicePaymentParams{processing_deadline = Deadline}) ->
-    Deadline.
 
 construct_payer(
     {payment_resource, #payproc_PaymentResourcePayerParams{
@@ -560,10 +547,7 @@ construct_payment(
     Shop,
     VS0,
     Revision,
-    MakeRecurrent,
-    Context,
-    ExternalID,
-    Deadline
+    MakeRecurrent
 ) ->
     PaymentTool = get_payer_payment_tool(Payer),
     VS1 = VS0#{
@@ -599,10 +583,7 @@ construct_payment(
         cost = Cost,
         payer = Payer,
         flow = Flow,
-        make_recurrent = MakeRecurrent,
-        context = Context,
-        external_id = ExternalID,
-        processing_deadline = Deadline
+        make_recurrent = MakeRecurrent
     }.
 
 construct_payment_flow({instant, _}, _CreatedAt, _Terms, _PaymentTool) ->
