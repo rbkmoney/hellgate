@@ -62,18 +62,18 @@ all() ->
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
 groups() ->
     [
-        {base_routing_rule, [], [
+        {base_routing_rule, [parallel], [
             gather_route_success,
             no_route_found_for_payment,
             rejected_by_table_prohibitions,
             empty_candidate_ok,
             ruleset_misconfig
         ]},
-        {routing_with_risk_coverage_set, [], [
+        {routing_with_risk_coverage_set, [parallel], [
             routes_selected_for_low_risk_score,
             routes_selected_for_high_risk_score
         ]},
-        {routing_with_fail_rate, [], [
+        {routing_with_fail_rate, [parallel], [
             prefer_alive,
             prefer_normal_conversion,
             prefer_higher_availability,
