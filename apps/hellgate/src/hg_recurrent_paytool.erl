@@ -126,17 +126,15 @@ validate_paytool_params(RecurrentPaymentToolParams) ->
     MerchantTerms = assert_operation_permitted(Shop, Party, DomainRevison),
     _PaymentTool = validate_payment_tool(
         get_payment_tool(RecurrentPaymentToolParams#payproc_RecurrentPaymentToolParams.payment_resource),
-        MerchantTerms#domain_RecurrentPaytoolsServiceTerms.payment_methods,
-        collect_varset(Party, Shop, #{}),
-        DomainRevison
+        MerchantTerms#domain_RecurrentPaytoolsServiceTerms.payment_methods
     ),
     ok.
 
 -spec ensure_params_domain_revision_defined(rec_payment_tool_params()) -> rec_payment_tool_params().
 ensure_params_domain_revision_defined(Params) ->
-    DomainRevision0 = Params#payproc_RecurrentPaymentToolParams.domain_revision,
+    DomainRevision = Params#payproc_RecurrentPaymentToolParams.domain_revision,
     Params#payproc_RecurrentPaymentToolParams{
-        domain_revision = ensure_domain_revision_defined(DomainRevision0)
+        domain_revision = ensure_domain_revision_defined(DomainRevision)
     }.
 
 get_paytool_id(#payproc_RecurrentPaymentToolParams{id = ID}) ->
@@ -253,7 +251,7 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore),
         RecPaymentTool
     ),
-    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision),
+    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, Revision),
     {ok, {Changes, Action}} = start_session(),
     StartChanges = [
         ?recurrent_payment_tool_has_created(RecPaymentTool2),
@@ -281,7 +279,7 @@ get_payment_institution_ref(Shop, Party) ->
     Contract#domain_Contract.payment_institution.
 
 get_merchant_recurrent_paytools_terms(#domain_Shop{contract_id = ContractID}, Party, Timestamp, Revision) ->
-    {Client, Context} = get_party_client(),
+    Ctx = hg_context:load(),
     #domain_Party{id = PartyId, revision = PartyRevision} = Party,
     ok = assert_contract_active(hg_party:get_contract(ContractID, Party)),
     {ok, #domain_TermSet{recurrent_paytools = Terms}} = party_client_thrift:compute_contract_terms(
@@ -291,8 +289,8 @@ get_merchant_recurrent_paytools_terms(#domain_Shop{contract_id = ContractID}, Pa
         {revision, PartyRevision},
         Revision,
         #payproc_Varset{},
-        Client,
-        Context
+        hg_context:get_party_client(Ctx),
+        hg_context:get_party_client_context(Ctx)
     ),
     Terms.
 
@@ -301,10 +299,6 @@ assert_contract_active(#domain_Contract{status = {active, _}}) ->
 assert_contract_active(#domain_Contract{status = Status}) ->
     % FIXME no such exception on the service interface
     throw(#payproc_InvalidContractStatus{status = Status}).
-
-get_party_client() ->
-    Ctx = hg_context:load(),
-    {hg_context:get_party_client(Ctx), hg_context:get_party_client_context(Ctx)}.
 
 collect_varset(
     #domain_Party{id = PartyID},
@@ -321,22 +315,6 @@ collect_varset(
         category => Category,
         currency => Currency
     }.
-
--spec collect_rec_payment_tool_varset(rec_payment_tool()) -> pm_selector:varset().
-collect_rec_payment_tool_varset(RecPaymentTool) ->
-    #payproc_RecurrentPaymentTool{
-        party_id = PartyID,
-        party_revision = PreservedPartyRevision,
-        shop_id = ShopID,
-        payment_resource = PaymentResource
-    } = RecPaymentTool,
-    PartyRevision = ensure_party_revision_defined(PartyID, PreservedPartyRevision),
-    #domain_DisposablePaymentResource{
-        payment_tool = PaymentTool
-    } = PaymentResource,
-    Party = hg_party:checkout(PartyID, {revision, PartyRevision}),
-    Shop = hg_party:get_shop(ShopID, Party),
-    collect_varset(Party, Shop, #{payment_tool => PaymentTool}).
 
 inspect(_RecPaymentTool, _VS) ->
     % FIXME please senpai
@@ -491,27 +469,25 @@ get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
 
 construct_proxy_payment_tool(St) ->
-    RecPaymentTool = get_rec_payment_tool(St),
     #payproc_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
         domain_revision = DomainRevison
-    } = RecPaymentTool,
-    VS = collect_rec_payment_tool_varset(RecPaymentTool),
+    } = get_rec_payment_tool(St),
     #prxprv_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
-        minimal_payment_cost = construct_proxy_cash(get_route(St), VS, DomainRevison)
+        minimal_payment_cost = construct_proxy_cash(get_route(St), DomainRevison)
     }.
 
-construct_proxy_cash(Route, VS, DomainRevison) ->
+construct_proxy_cash(Route, DomainRevison) ->
     ProviderTerms = hg_routing:get_rec_paytools_terms(Route, DomainRevison),
     #domain_Cash{
         amount = Amount,
         currency = CurrencyRef
-    } = get_minimal_payment_cost(ProviderTerms, VS, DomainRevison),
+    } = get_minimal_payment_cost(ProviderTerms),
     #prxprv_Cash{
         amount = Amount,
         currency = hg_domain:get(DomainRevison, {currency, CurrencyRef})
@@ -739,15 +715,12 @@ handle_result_action(#{}, Acc) ->
 ensure_party_accessible(#payproc_RecurrentPaymentToolParams{party_id = PartyID, party_revision = Revision0}) ->
     _ = hg_invoice_utils:assert_party_accessible(PartyID),
     Revision = ensure_party_revision_defined(PartyID, Revision0),
-    Party = hg_party:checkout(PartyID, {revision, Revision}),
-    Party.
+    hg_party:checkout(PartyID, {revision, Revision}).
 
 ensure_shop_exists(#payproc_RecurrentPaymentToolParams{shop_id = ShopID}, Party) ->
-    Shop = hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)),
-    Shop.
+    hg_invoice_utils:assert_shop_exists(hg_party:get_shop(ShopID, Party)).
 
-validate_payment_tool(PaymentTool, PaymentMethodSelector, VS, DomainRevison) ->
-    PMs = reduce_selector(payment_methods, PaymentMethodSelector, VS, DomainRevison),
+validate_payment_tool(PaymentTool, {value, PMs}) ->
     _ =
         hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
             throw(#payproc_InvalidPaymentMethod{}),
@@ -777,8 +750,7 @@ assert_rec_payment_tool_status_(_StatusName, Status) ->
 -spec assert_operation_permitted(shop(), party(), domain_revision()) -> merchant_terms().
 assert_operation_permitted(Shop, Party, DomainRevison) ->
     CreatedAt = hg_datetime:format_now(),
-    Terms = get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, DomainRevison),
-    case Terms of
+    case get_merchant_recurrent_paytools_terms(Shop, Party, CreatedAt, DomainRevison) of
         undefined ->
             throw(#payproc_OperationNotPermitted{});
         Terms ->
@@ -805,31 +777,21 @@ create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision) ->
         route = undefined
     }.
 
-set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision) ->
+set_minimal_payment_cost(RecPaymentTool, Route, Revision) ->
     ProviderTerms = hg_routing:get_rec_paytools_terms(Route, Revision),
     RecPaymentTool#payproc_RecurrentPaymentTool{
-        minimal_payment_cost = get_minimal_payment_cost(ProviderTerms, VS, Revision)
+        minimal_payment_cost = get_minimal_payment_cost(ProviderTerms)
     }.
 
-get_minimal_payment_cost(ProviderTerms, VS, Revision) ->
-    {Cash, _VS} = validate_cost(
-        ProviderTerms#domain_RecurrentPaytoolsProvisionTerms.cash_value,
-        VS,
-        Revision
-    ),
-    Cash.
+get_minimal_payment_cost(ProviderTerms) ->
+    validate_cost(
+        ProviderTerms#domain_RecurrentPaytoolsProvisionTerms.cash_value
+    ).
 
-validate_cost(CashValueSelector, VS, Revision) ->
-    Cash = reduce_selector(cash_value, CashValueSelector, VS, Revision),
-    {Cash, VS#{cash_value => Cash}}.
-
-reduce_selector(Name, Selector, VS, Revision) ->
-    case pm_selector:reduce(Selector, VS, Revision) of
-        {value, V} ->
-            V;
-        Ambiguous ->
-            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
-    end.
+validate_cost({value, Cash}) ->
+    Cash;
+validate_cost(_) ->
+    throw(#payproc_OperationNotPermitted{}).
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.

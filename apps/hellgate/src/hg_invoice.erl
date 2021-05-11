@@ -1290,8 +1290,7 @@ make_invoice_params(Params) ->
     {Party, Shop, InvoiceParams}.
 
 validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Party, Shop, MerchantTerms, DomainRevision) ->
-    _ = validate_invoice_cost(Cost, Party, Shop, MerchantTerms, DomainRevision),
-    ok.
+    validate_invoice_cost(Cost, Party, Shop, MerchantTerms, DomainRevision).
 
 validate_invoice_cost(Cost, Party, Shop, #domain_TermSet{payments = PaymentTerms}, DomainRevision) ->
     _ = hg_invoice_utils:validate_cost(Cost, Shop),
