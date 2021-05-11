@@ -94,6 +94,7 @@ init_per_suite(C) ->
         woody,
         scoper,
         dmt_client,
+        party_management,
         party_client,
         hellgate,
         {cowboy, CowboySpec}

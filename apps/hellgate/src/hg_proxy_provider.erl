@@ -15,7 +15,6 @@
 -export([handle_proxy_intent/2]).
 -export([wrap_session_events/2]).
 
--include("domain.hrl").
 -include("payment_events.hrl").
 
 %%

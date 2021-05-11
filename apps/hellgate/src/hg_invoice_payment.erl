@@ -20,9 +20,7 @@
 -include_lib("damsel/include/dmsl_proxy_provider_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
--include_lib("damsel/include/dmsl_msgpack_thrift.hrl").
 
--include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
 %% API
@@ -395,34 +393,41 @@ init(PaymentID, PaymentParams, Opts) ->
 
 -spec init_(payment_id(), _, opts()) -> {st(), result()}.
 init_(PaymentID, Params, Opts = #{timestamp := CreatedAt}) ->
+    #payproc_InvoicePaymentParams{
+        payer = PayerParams,
+        flow = FlowParams,
+        payer_session_info = PayerSessionInfo,
+        make_recurrent = MakeRecurrent,
+        context = Context,
+        external_id = ExternalID,
+        processing_deadline = Deadline
+    } = Params,
     Revision = hg_domain:head(),
     Party = get_party(Opts),
     Shop = get_shop(Opts),
     Invoice = get_invoice(Opts),
     Cost = get_invoice_cost(Invoice),
-    {ok, Payer, VS0} = construct_payer(get_payer_params(Params), Shop),
-    Flow = get_flow_params(Params),
-    MakeRecurrent = get_make_recurrent_params(Params),
-    ExternalID = get_external_id(Params),
+    {ok, Payer, VS0} = construct_payer(PayerParams, Shop),
     VS1 = collect_validation_varset(Party, Shop, VS0),
-    Context = get_context_params(Params),
-    Deadline = get_processing_deadline(Params),
-    Payment = construct_payment(
+    Payment1 = construct_payment(
         PaymentID,
         CreatedAt,
         Cost,
         Payer,
-        Flow,
+        FlowParams,
         Party,
         Shop,
         VS1,
         Revision,
-        MakeRecurrent,
-        Context,
-        ExternalID,
-        Deadline
+        genlib:define(MakeRecurrent, false)
     ),
-    Events = [?payment_started(Payment)],
+    Payment2 = Payment1#domain_InvoicePayment{
+        payer_session_info = PayerSessionInfo,
+        context = Context,
+        external_id = ExternalID,
+        processing_deadline = Deadline
+    },
+    Events = [?payment_started(Payment2)],
     {collapse_changes(Events, undefined), {Events, hg_machine_action:instant()}}.
 
 get_merchant_payments_terms(Opts, Revision, Timestamp, VS) ->
@@ -468,26 +473,6 @@ assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;
 assert_contract_active(#domain_Contract{status = Status}) ->
     throw(#payproc_InvalidContractStatus{status = Status}).
-
-get_payer_params(#payproc_InvoicePaymentParams{payer = PayerParams}) ->
-    PayerParams.
-
-get_flow_params(#payproc_InvoicePaymentParams{flow = FlowParams}) ->
-    FlowParams.
-
-get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = undefined}) ->
-    false;
-get_make_recurrent_params(#payproc_InvoicePaymentParams{make_recurrent = MakeRecurrent}) ->
-    MakeRecurrent.
-
-get_context_params(#payproc_InvoicePaymentParams{context = Context}) ->
-    Context.
-
-get_external_id(#payproc_InvoicePaymentParams{external_id = ExternalID}) ->
-    ExternalID.
-
-get_processing_deadline(#payproc_InvoicePaymentParams{processing_deadline = Deadline}) ->
-    Deadline.
 
 construct_payer(
     {payment_resource, #payproc_PaymentResourcePayerParams{
@@ -562,10 +547,7 @@ construct_payment(
     Shop,
     VS0,
     Revision,
-    MakeRecurrent,
-    Context,
-    ExternalID,
-    Deadline
+    MakeRecurrent
 ) ->
     PaymentTool = get_payer_payment_tool(Payer),
     VS1 = VS0#{
@@ -601,10 +583,7 @@ construct_payment(
         cost = Cost,
         payer = Payer,
         flow = Flow,
-        make_recurrent = MakeRecurrent,
-        context = Context,
-        external_id = ExternalID,
-        processing_deadline = Deadline
+        make_recurrent = MakeRecurrent
     }.
 
 construct_payment_flow({instant, _}, _CreatedAt, _Terms, _PaymentTool) ->
@@ -2015,7 +1994,7 @@ process_session(undefined, Action, St0) ->
         ok ->
             Events = start_session(Target),
             St1 = collapse_changes(Events, St0),
-            Result = {start_session(get_target(St0)), hg_machine_action:set_timeout(0, Action)},
+            Result = {Events, hg_machine_action:set_timeout(0, Action)},
             finish_session_processing(Result, St1);
         Failure ->
             process_failure(get_activity(St0), [], Action, Failure, St0)
@@ -2101,7 +2080,6 @@ finish_session_processing({payment, Step} = Activity, {Events, Action}, St) when
         Step =:= finalizing_session
 ->
     Target = get_target(St),
-    Activity = get_activity(St),
     St1 = collapse_changes(Events, St),
     case get_session(Target, St1) of
         #{status := finished, result := ?session_succeeded(), target := Target} ->
@@ -2684,6 +2662,7 @@ construct_proxy_payment(
         id = ID,
         created_at = CreatedAt,
         payer = Payer,
+        payer_session_info = PayerSessionInfo,
         cost = Cost,
         make_recurrent = MakeRecurrent,
         processing_deadline = Deadline
@@ -2696,6 +2675,7 @@ construct_proxy_payment(
         created_at = CreatedAt,
         trx = Trx,
         payment_resource = construct_payment_resource(Payer),
+        payer_session_info = PayerSessionInfo,
         cost = construct_proxy_cash(Cost),
         contact_info = ContactInfo,
         make_recurrent = MakeRecurrent,

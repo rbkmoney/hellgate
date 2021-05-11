@@ -152,9 +152,9 @@ handle_function_('ComputeProviderTerminalTerms', Args, _Opts) ->
 %% Globals
 
 handle_function_('ComputeGlobals', Args, _Opts) ->
-    {UserInfo, GlobalsRef, DomainRevision, Varset} = Args,
+    {UserInfo, DomainRevision, Varset} = Args,
     ok = assume_user_identity(UserInfo),
-    Globals = get_globals(GlobalsRef, DomainRevision),
+    Globals = get_globals(DomainRevision),
     VS = prepare_varset(Varset),
     pm_globals:reduce_globals(Globals, VS, DomainRevision);
 %% RuleSets
@@ -323,11 +323,12 @@ get_terminal(TerminalRef, DomainRevision) ->
             throw(#payproc_TerminalNotFound{})
     end.
 
-get_globals(GlobalsRef, DomainRevision) ->
+get_globals(DomainRevision) ->
+    Globals = {globals, #domain_GlobalsRef{}},
     try
-        pm_domain:get(DomainRevision, {globals, GlobalsRef})
+        pm_domain:get(DomainRevision, Globals)
     catch
-        error:{object_not_found, {DomainRevision, {globals, GlobalsRef}}} ->
+        error:{object_not_found, {DomainRevision, Globals}} ->
             throw(#payproc_GlobalsNotFound{})
     end.
 
