@@ -14,7 +14,7 @@
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
 -export([assert_contract_active/1]).
--export([assert_cost_payable/5]).
+-export([assert_cost_payable/2]).
 -export([compute_shop_terms/5]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
@@ -32,7 +32,6 @@
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
 -type term_set() :: dmsl_domain_thrift:'TermSet'().
 -type payment_service_terms() :: dmsl_domain_thrift:'PaymentsServiceTerms'().
--type domain_revision() :: dmsl_domain_thrift:'DataRevision'().
 -type timestamp() :: dmsl_base_thrift:'Timestamp'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 -type identification_level() :: dmsl_domain_thrift:'ContractorIdentificationLevel'().
@@ -104,11 +103,9 @@ assert_contract_active(Contract = #domain_Contract{status = Status}) ->
             throw(#payproc_InvalidContractStatus{status = Status})
     end.
 
--spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) -> cash().
-assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
-    VS = collect_validation_varset(Cost, Party, Shop),
-    ReducedTerms = pm_selector:reduce(PaymentTerms#domain_PaymentsServiceTerms.cash_limit, VS, DomainRevision),
-    case any_limit_matches(Cost, ReducedTerms) of
+-spec assert_cost_payable(cash(), payment_service_terms()) -> cash().
+assert_cost_payable(Cost, #domain_PaymentsServiceTerms{cash_limit = CashLimit}) ->
+    case any_limit_matches(Cost, CashLimit) of
         true ->
             Cost;
         false ->
@@ -131,21 +128,6 @@ check_possible_limits(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest]) -
         false ->
             check_possible_limits(Cash, Rest)
     end.
-
-collect_validation_varset(Cost, Party, Shop) ->
-    #domain_Party{id = PartyID} = Party,
-    #domain_Shop{
-        id = ShopID,
-        category = Category,
-        account = #domain_ShopAccount{currency = Currency}
-    } = Shop,
-    #{
-        cost => Cost,
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Category,
-        currency => Currency
-    }.
 
 -spec compute_shop_terms(party_id(), shop_id(), timestamp(), party_revision_param(), varset()) -> term_set().
 compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision, Varset) ->
