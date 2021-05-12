@@ -500,12 +500,12 @@ construct_proxy_payment_tool(St) ->
         minimal_payment_cost = construct_proxy_cash(get_route(St), VS, DomainRevison)
     }.
 
-construct_proxy_cash(Route, VS, DomainRevison) ->
-    ProviderTerms = hg_routing:get_rec_paytools_terms(Route, DomainRevison),
+construct_proxy_cash(#domain_PaymentRoute{provider = ProviderRef}, VS, DomainRevison) ->
+    ProviderTerms = get_rec_paytools_terms(ProviderRef, VS, DomainRevison),
     #domain_Cash{
         amount = Amount,
         currency = CurrencyRef
-    } = get_minimal_payment_cost(ProviderTerms, VS, DomainRevison),
+    } = get_minimal_payment_cost(ProviderTerms),
     #prxprv_Cash{
         amount = Amount,
         currency = hg_domain:get(DomainRevison, {currency, CurrencyRef})
@@ -794,21 +794,29 @@ create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision) ->
         route = undefined
     }.
 
-set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision) ->
-    ProviderTerms = hg_routing:get_rec_paytools_terms(Route, Revision),
+set_minimal_payment_cost(RecPaymentTool, #domain_PaymentRoute{provider = ProviderRef}, VS, Revision) ->
+    ProviderTerms = get_rec_paytools_terms(ProviderRef, VS, Revision),
     RecPaymentTool#payproc_RecurrentPaymentTool{
-        minimal_payment_cost = get_minimal_payment_cost(ProviderTerms, VS, Revision)
+        minimal_payment_cost = get_minimal_payment_cost(ProviderTerms)
     }.
 
-get_minimal_payment_cost(#domain_RecurrentPaytoolsProvisionTerms{cash_value = Cash}, VS, Revision) ->
-    reduce_selector(cash_value, Cash, VS, Revision).
+get_rec_paytools_terms(ProviderRef, VS, Revision) ->
+    Ctx = hg_context:load(),
+    {ok, #domain_Provider{terms = Terms}} = party_client_thrift:compute_provider(
+        ProviderRef,
+        Revision,
+        hg_varset:prepare_varset(VS),
+        hg_context:get_party_client(Ctx),
+        hg_context:get_party_client_context(Ctx)
+    ),
+    Terms#domain_ProvisionTermSet.recurrent_paytools.
 
-reduce_selector(Name, Selector, VS, Revision) ->
-    case pm_selector:reduce(Selector, VS, Revision) of
+get_minimal_payment_cost(#domain_RecurrentPaytoolsProvisionTerms{cash_value = Cash}) ->
+    case Cash of
         {value, V} ->
             V;
         Ambiguous ->
-            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+            error({misconfiguration, {'Could not reduce selector to a value', Ambiguous}})
     end.
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
