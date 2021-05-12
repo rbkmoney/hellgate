@@ -251,7 +251,7 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore),
         RecPaymentTool
     ),
-    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, Revision),
+    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision),
     {ok, {Changes, Action}} = start_session(),
     StartChanges = [
         ?recurrent_payment_tool_has_created(RecPaymentTool2),
@@ -315,6 +315,23 @@ collect_varset(
         category => Category,
         currency => Currency
     }.
+
+-spec collect_rec_payment_tool_varset(rec_payment_tool()) -> pm_selector:varset().
+collect_rec_payment_tool_varset(RecPaymentTool) ->
+    #payproc_RecurrentPaymentTool{
+        party_id = PartyID,
+        party_revision = PreservedPartyRevision,
+        shop_id = ShopID,
+        payment_resource = PaymentResource
+    } = RecPaymentTool,
+    PartyRevision = ensure_party_revision_defined(PartyID, PreservedPartyRevision),
+    #domain_DisposablePaymentResource{
+        payment_tool = PaymentTool
+    } = PaymentResource,
+    Party = hg_party:checkout(PartyID, {revision, PartyRevision}),
+    Shop = hg_party:get_shop(ShopID, Party),
+    collect_varset(Party, Shop, #{payment_tool => PaymentTool}).
+
 
 inspect(_RecPaymentTool, _VS) ->
     % FIXME please senpai
@@ -469,25 +486,26 @@ get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
 
 construct_proxy_payment_tool(St) ->
-    #payproc_RecurrentPaymentTool{
+    RecPaymentTool = #payproc_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
         domain_revision = DomainRevison
     } = get_rec_payment_tool(St),
+    VS = collect_rec_payment_tool_varset(RecPaymentTool),
     #prxprv_RecurrentPaymentTool{
         id = ID,
         created_at = CreatedAt,
         payment_resource = PaymentResource,
-        minimal_payment_cost = construct_proxy_cash(get_route(St), DomainRevison)
+        minimal_payment_cost = construct_proxy_cash(get_route(St), VS, DomainRevison)
     }.
 
-construct_proxy_cash(Route, DomainRevison) ->
+construct_proxy_cash(Route, VS, DomainRevison) ->
     ProviderTerms = hg_routing:get_rec_paytools_terms(Route, DomainRevison),
     #domain_Cash{
         amount = Amount,
         currency = CurrencyRef
-    } = get_minimal_payment_cost(ProviderTerms),
+    } = get_minimal_payment_cost(ProviderTerms, VS, DomainRevison),
     #prxprv_Cash{
         amount = Amount,
         currency = hg_domain:get(DomainRevison, {currency, CurrencyRef})
@@ -763,7 +781,6 @@ get_rec_payment_tool_status(RecPaymentTool) ->
 %%
 
 create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision) ->
-    PaymentResource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
     #payproc_RecurrentPaymentTool{
         id = RecPaymentToolID,
         shop_id = Params#payproc_RecurrentPaymentToolParams.shop_id,
@@ -772,26 +789,27 @@ create_rec_payment_tool(RecPaymentToolID, CreatedAt, Party, Params, Revision) ->
         domain_revision = Revision,
         status = ?recurrent_payment_tool_created(),
         created_at = CreatedAt,
-        payment_resource = PaymentResource,
+        payment_resource = Params#payproc_RecurrentPaymentToolParams.payment_resource,
         rec_token = undefined,
         route = undefined
     }.
 
-set_minimal_payment_cost(RecPaymentTool, Route, Revision) ->
+set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision) ->
     ProviderTerms = hg_routing:get_rec_paytools_terms(Route, Revision),
     RecPaymentTool#payproc_RecurrentPaymentTool{
-        minimal_payment_cost = get_minimal_payment_cost(ProviderTerms)
+        minimal_payment_cost = get_minimal_payment_cost(ProviderTerms, VS, Revision)
     }.
 
-get_minimal_payment_cost(ProviderTerms) ->
-    validate_cost(
-        ProviderTerms#domain_RecurrentPaytoolsProvisionTerms.cash_value
-    ).
+get_minimal_payment_cost(#domain_RecurrentPaytoolsProvisionTerms{cash_value = Cash}, VS, Revision) ->
+    reduce_selector(cash_value, Cash, VS, Revision).
 
-validate_cost({value, Cash}) ->
-    Cash;
-validate_cost(_) ->
-    throw(#payproc_OperationNotPermitted{}).
+reduce_selector(Name, Selector, VS, Revision) ->
+    case pm_selector:reduce(Selector, VS, Revision) of
+        {value, V} ->
+            V;
+        Ambiguous ->
+            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
+    end.
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.
