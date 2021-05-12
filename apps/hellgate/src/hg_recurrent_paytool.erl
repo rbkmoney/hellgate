@@ -332,7 +332,6 @@ collect_rec_payment_tool_varset(RecPaymentTool) ->
     Shop = hg_party:get_shop(ShopID, Party),
     collect_varset(Party, Shop, #{payment_tool => PaymentTool}).
 
-
 inspect(_RecPaymentTool, _VS) ->
     % FIXME please senpai
     high.
@@ -486,12 +485,13 @@ get_rec_payment_tool(#st{rec_payment_tool = RecPaymentTool}) ->
     RecPaymentTool.
 
 construct_proxy_payment_tool(St) ->
-    RecPaymentTool = #payproc_RecurrentPaymentTool{
-        id = ID,
-        created_at = CreatedAt,
-        payment_resource = PaymentResource,
-        domain_revision = DomainRevison
-    } = get_rec_payment_tool(St),
+    RecPaymentTool =
+        #payproc_RecurrentPaymentTool{
+            id = ID,
+            created_at = CreatedAt,
+            payment_resource = PaymentResource,
+            domain_revision = DomainRevison
+        } = get_rec_payment_tool(St),
     VS = collect_rec_payment_tool_varset(RecPaymentTool),
     #prxprv_RecurrentPaymentTool{
         id = ID,
