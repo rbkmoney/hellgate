@@ -1,6 +1,7 @@
 -module(pm_provider).
 
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %% API
 -export([reduce_provider/3]).
@@ -27,7 +28,7 @@ reduce_provider_terminal_terms(Provider, Terminal, VS, Rev) ->
     ReducedTerms = reduce_provision_term_set(MergedTerms, VS, Rev),
     case ReducedTerms of
         undefined ->
-            error({misconfiguration, {'Can\'t reduce terms', {provider, Provider}, {terminal, Terminal}}});
+            throw(#payproc_ProvisionTermSetUndefined{});
         _ ->
             ReducedTerms
     end.

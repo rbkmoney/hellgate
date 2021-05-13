@@ -1719,21 +1719,13 @@ compute_provider_terminal_terms_not_found(C) ->
 compute_provider_terminal_terms_undefined_terms(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
-    ?assertMatch(
-        {{woody_error, {external, result_unexpected, _}}, _},
-        try
-            pm_client_party:compute_provider_terminal_terms(
-                ?prv(2),
-                ?trm(4),
-                DomainRevision,
-                #payproc_Varset{},
-                Client
-            )
-        catch
-            error:Error ->
-                Error
-        end
-    ).
+    ?assertMatch({exception, #payproc_ProvisionTermSetUndefined{}}, pm_client_party:compute_provider_terminal_terms(
+        ?prv(2),
+        ?trm(4),
+        DomainRevision,
+        #payproc_Varset{},
+        Client
+    )).
 
 compute_globals_ok(C) ->
     Client = cfg(client, C),
