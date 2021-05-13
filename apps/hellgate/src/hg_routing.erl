@@ -558,7 +558,7 @@ acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
         case Result of
             {ok, Terms} ->
                 Terms;
-            {exception, #payproc_ProvisionTermSetUndefined{}} ->
+            {error, #payproc_ProvisionTermSetUndefined{}} ->
                 undefined
         end,
     _ = check_terms_acceptability(Predestination, ProvisionTermSet, VS),
