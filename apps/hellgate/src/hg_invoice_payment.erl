@@ -1874,7 +1874,7 @@ process_cash_flow_building(Action, St) ->
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS1),
     ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
-    {ok, TurnoverLimits} = hold_payment_limits(ProviderTerms, Cash, Timestamp, VS1, Revision, St),
+    {ok, TurnoverLimits} = hold_payment_limits(ProviderTerms, Cash, Timestamp, St),
 
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
@@ -2493,10 +2493,10 @@ try_request_interaction(undefined) ->
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
 
-hold_payment_limits(ProviderTerms, Cash, Timestamp, VS, Revision, St) ->
+hold_payment_limits(ProviderTerms, Cash, Timestamp, St) ->
     LimitChangeID = construct_limit_change_id(St),
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS, Revision),
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector),
     IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
     ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
     {ok, TurnoverLimits}.
@@ -2582,7 +2582,7 @@ get_limit_ids(St) ->
     Varset = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     ProviderTerms = get_provider_terminal_terms(Route, Varset, Revision),
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, Varset, Revision),
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector),
     [T#domain_TurnoverLimit.id || T <- TurnoverLimits].
 
 commit_payment_cashflow(St) ->
