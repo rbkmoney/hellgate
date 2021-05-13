@@ -742,7 +742,9 @@ validate_payment_tool(PaymentTool, {value, PMs}) ->
     _ =
         hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
             throw(#payproc_InvalidPaymentMethod{}),
-    PaymentTool.
+    PaymentTool;
+validate_payment_tool(_PaymentTool, Ambiguous) ->
+    error({misconfiguration, {'Could not reduce selector to a value', Ambiguous}}).
 
 assert_party_shop_operable(Shop, Party) ->
     ok = assert_party_operable(Party),
