@@ -554,12 +554,13 @@ acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
         Client,
         Context
     ),
-    ProvisionTermSet = case Result of
-        {ok, Terms} ->
-            Terms;
-        {exception, #payproc_ProvisionTermSetUndefined{}} ->
-            undefined
-    end,
+    ProvisionTermSet =
+        case Result of
+            {ok, Terms} ->
+                Terms;
+            {exception, #payproc_ProvisionTermSetUndefined{}} ->
+                undefined
+        end,
     _ = check_terms_acceptability(Predestination, ProvisionTermSet, VS),
     {TerminalRef, hg_domain:get(Revision, {terminal, TerminalRef})}.
 
