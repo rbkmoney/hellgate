@@ -40,7 +40,7 @@
 -type shop() :: dmsl_domain_thrift:'Shop'().
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type provider() :: dmsl_domain_thrift:'Provider'().
--type varset() :: pm_selector:varset().
+-type varset() :: hg_varset:varset().
 -type revision() :: hg_domain:revision().
 
 -export_type([batch/0]).

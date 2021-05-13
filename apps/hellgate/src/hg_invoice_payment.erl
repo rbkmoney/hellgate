@@ -1548,7 +1548,7 @@ get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
     route(),
     payment(),
     hg_datetime:timestamp(),
-    pm_selector:varset(),
+    hg_varset:varset(),
     hg_domain:revision(),
     opts()
 ) -> cash_flow().
@@ -1562,7 +1562,7 @@ calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
     payment(),
     dmsl_domain_thrift:'PaymentsServiceTerms'() | undefined,
     dmsl_domain_thrift:'PaymentsProvisionTerms'() | undefined,
-    pm_selector:varset(),
+    hg_varset:varset(),
     hg_domain:revision(),
     opts()
 ) -> cash_flow().

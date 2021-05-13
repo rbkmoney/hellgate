@@ -13,7 +13,6 @@
 -export([assert_party_operable/1]).
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
--export([assert_contract_active/1]).
 -export([assert_cost_payable/2]).
 -export([compute_shop_terms/5]).
 -export([get_cart_amount/1]).
@@ -93,15 +92,6 @@ assert_shop_exists(#domain_Shop{} = V) ->
     V;
 assert_shop_exists(undefined) ->
     throw(#payproc_ShopNotFound{}).
-
--spec assert_contract_active(contract() | undefined) -> contract().
-assert_contract_active(Contract = #domain_Contract{status = Status}) ->
-    case pm_contract:is_active(Contract) of
-        true ->
-            Contract;
-        false ->
-            throw(#payproc_InvalidContractStatus{status = Status})
-    end.
 
 -spec assert_cost_payable(cash(), payment_service_terms()) -> cash().
 assert_cost_payable(Cost, #domain_PaymentsServiceTerms{cash_limit = CashLimit}) ->

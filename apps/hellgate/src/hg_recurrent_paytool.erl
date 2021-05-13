@@ -316,7 +316,7 @@ collect_varset(
         currency => Currency
     }.
 
--spec collect_rec_payment_tool_varset(rec_payment_tool()) -> pm_selector:varset().
+-spec collect_rec_payment_tool_varset(rec_payment_tool()) -> hg_varset:varset().
 collect_rec_payment_tool_varset(RecPaymentTool) ->
     #payproc_RecurrentPaymentTool{
         party_id = PartyID,
