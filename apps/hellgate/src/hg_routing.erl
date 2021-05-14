@@ -3,6 +3,7 @@
 -module(hg_routing).
 
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
 -export([gather_fail_rates/1]).
@@ -434,7 +435,7 @@ get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
 ) -> unweighted_terminal() | no_return().
 acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
     {Client, Context} = get_party_client(),
-    {ok, Terms} = party_client_thrift:compute_provider_terminal_terms(
+    Result = party_client_thrift:compute_provider_terminal_terms(
         ProviderRef,
         TerminalRef,
         Revision,
@@ -442,7 +443,14 @@ acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
         Client,
         Context
     ),
-    _ = check_terms_acceptability(Predestination, Terms, VS),
+    ProvisionTermSet =
+        case Result of
+            {ok, Terms} ->
+                Terms;
+            {error, #payproc_ProvisionTermSetUndefined{}} ->
+                undefined
+        end,
+    _ = check_terms_acceptability(Predestination, ProvisionTermSet, VS),
     {TerminalRef, hg_domain:get(Revision, {terminal, TerminalRef})}.
 
 %%
