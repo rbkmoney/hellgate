@@ -18,11 +18,12 @@
 -export([rollback/1]).
 -export([rollback/4]).
 
--define(const(Bool), {constant, Bool}).
-
 -spec get_turnover_limits(turnover_selector()) -> [turnover_limit()].
-get_turnover_limits(TurnoverLimitSelector) ->
-    reduce_limits(TurnoverLimitSelector).
+get_turnover_limits(undefined) ->
+    logger:info("Operation limits haven't been set on provider terms."),
+    [];
+get_turnover_limits({value, Limits}) ->
+    Limits.
 
 -spec check_limits([turnover_limit()], timestamp()) ->
     {ok, [hg_limiter_client:limit()]}
@@ -93,9 +94,3 @@ gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp) ->
         }
         || Limit <- Limits
     ].
-
-reduce_limits(undefined) ->
-    logger:info("Operation limits haven't been set on provider terms."),
-    [];
-reduce_limits({value, Limits}) ->
-    Limits.
