@@ -331,9 +331,10 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     {SelectedProviders, _} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+    Routes = lists:sort(SelectedProviders),
 
     %% Ensure list of selected provider ID match to given
-    PrvIDList = lists:reverse([P || {{?prv(P), _}, _} <- SelectedProviders]),
+    PrvIDList = [P || {{?prv(P), _}, _} <- Routes],
     ok.
 
 -spec prefer_alive(config()) -> test_return().
@@ -351,17 +352,16 @@ prefer_alive(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {
-        [{{?prv(23), _}, _}, {{?prv(22), _}, _}, {{?prv(21), _}, _}] = Routes,
-        RejectContext
-    } = hg_routing_rule:gather_routes(
+    {RoutesUnordered, RejectContext} = hg_routing_rule:gather_routes(
         payment,
         PaymentInstitution,
         VS,
         Revision
     ),
+    Routes = lists:sort(RoutesUnordered),
+    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
 
-    {ProviderRefs, TerminalData} = lists:unzip(lists:reverse(Routes)),
+    {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
     Alive = {alive, 0.0},
     Dead = {dead, 1.0},
@@ -404,17 +404,15 @@ prefer_normal_conversion(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {
-        [{{?prv(23), _}, _}, {{?prv(22), _}, _}, {{?prv(21), _}, _}] = Routes,
-        RC
-    } = hg_routing_rule:gather_routes(
+    {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
         payment,
         PaymentInstitution,
         VS,
         Revision
     ),
-
-    {Providers, TerminalData} = lists:unzip(lists:reverse(Routes)),
+    Routes = lists:sort(RoutesUnordered),
+    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
+    {Providers, TerminalData} = lists:unzip(Routes),
 
     Alive = {alive, 0.0},
     Normal = {normal, 0.0},
@@ -456,21 +454,16 @@ prefer_higher_availability(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {
-        [
-            {{?prv(23), _}, _},
-            {{?prv(22), _}, _},
-            {{?prv(21), _}, _}
-        ] = Routes,
-        RC
-    } = hg_routing_rule:gather_routes(
+    {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
         payment,
         PaymentInstitution,
         VS,
         Revision
     ),
+    Routes = lists:sort(RoutesUnordered),
+    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
 
-    {ProviderRefs, TerminalData} = lists:unzip(lists:reverse(Routes)),
+    {ProviderRefs, TerminalData} = lists:unzip(Routes),
 
     ProviderStatuses = [{{alive, 0.5}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.6}, {normal, 0.5}}],
     FailRatedRoutes = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
@@ -497,22 +490,16 @@ prefer_higher_conversion(_C) ->
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-
-    {
-        [
-            {{?prv(23), _}, _},
-            {{?prv(22), _}, _},
-            {{?prv(21), _}, _}
-        ] = Routes,
-        RC
-    } = hg_routing_rule:gather_routes(
+    {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
         payment,
         PaymentInstitution,
         VS,
         Revision
     ),
+    Routes = lists:sort(RoutesUnordered),
+    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
 
-    {Providers, TerminalData} = lists:unzip(lists:reverse(Routes)),
+    {Providers, TerminalData} = lists:unzip(Routes),
 
     ProviderStatuses = [{{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.5}}],
     FailRatedRoutes = lists:zip3(Providers, TerminalData, ProviderStatuses),
@@ -539,20 +526,14 @@ prefer_weight_over_availability(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {
-        [
-            {{?prv(23), _}, _},
-            {{?prv(22), _}, _},
-            {{?prv(21), _}, _}
-        ] = Routes,
-        RC
-    } = hg_routing_rule:gather_routes(
+    {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
         payment,
         PaymentInstitution,
         VS,
         Revision
     ),
-
+    Routes = lists:sort(RoutesUnordered),
+    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
     {Providers, TerminalData} = lists:unzip(Routes),
 
     ProviderStatuses = [{{alive, 0.3}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
@@ -577,14 +558,14 @@ prefer_weight_over_conversion(_C) ->
     RiskScore = low,
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    {
-        [
-            {{?prv(23), _}, _},
-            {{?prv(22), _}, _},
-            {{?prv(21), _}, _}
-        ] = Routes,
-        RC
-    } = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
+        payment,
+        PaymentInstitution,
+        VS,
+        Revision
+    ),
+    Routes = lists:sort(RoutesUnordered),
+    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
 
     {Providers, TerminalData} = lists:unzip(Routes),
 
@@ -612,12 +593,14 @@ gathers_fail_rated_routes(_C) ->
 
     {Routes0, _RejectContext0} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     Result = hg_routing:gather_fail_rates(Routes0),
-    [
-        {{?prv(23), _}, _, {{alive, 0.0}, {normal, 0.0}}},
-        {{?prv(22), _}, _, {{alive, 0.1}, {normal, 0.1}}},
-        {{?prv(21), _}, _, {{dead, 0.9}, {lacking, 0.9}}}
-    ] = Result,
-    ok.
+    ?assertMatch(
+        [
+            {{?prv(21), _}, _, {{dead, 0.9}, {lacking, 0.9}}},
+            {{?prv(22), _}, _, {{alive, 0.1}, {normal, 0.1}}},
+            {{?prv(23), _}, _, {{alive, 0.0}, {normal, 0.0}}}
+        ],
+        lists:sort(Result)
+    ).
 
 %%% Terminal priority tests
 
