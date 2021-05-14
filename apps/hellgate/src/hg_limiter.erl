@@ -6,7 +6,7 @@
 -type timestamp() :: binary().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 
--type turnover_selector() :: dmsl_domain_thrift:'TurnoverLimitSelector'().
+-type turnover_selector() :: dmsl_domain_thrift:'TurnoverLimitSelector'() | undefined.
 -type turnover_limit() :: dmsl_domain_thrift:'TurnoverLimit'().
 
 -export([get_turnover_limits/1]).
@@ -23,7 +23,9 @@ get_turnover_limits(undefined) ->
     logger:info("Operation limits haven't been set on provider terms."),
     [];
 get_turnover_limits({value, Limits}) ->
-    Limits.
+    Limits;
+get_turnover_limits(Ambiguous) ->
+    error({misconfiguration, {'Could not reduce selector to a value', Ambiguous}}).
 
 -spec check_limits([turnover_limit()], timestamp()) ->
     {ok, [hg_limiter_client:limit()]}
