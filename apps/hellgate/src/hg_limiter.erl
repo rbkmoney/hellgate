@@ -97,17 +97,5 @@ gen_limit_changes(Limits, LimitChangeID, Cash, Timestamp) ->
 reduce_limits(undefined) ->
     logger:info("Operation limits haven't been set on provider terms."),
     [];
-reduce_limits({decisions, Decisions}) ->
-    reduce_limits_decisions(Decisions);
 reduce_limits({value, Limits}) ->
     Limits.
-
-reduce_limits_decisions([]) ->
-    [];
-reduce_limits_decisions([D | Decisions]) ->
-    case D#domain_TurnoverLimitDecision.if_ of
-        ?const(false) ->
-            reduce_limits_decisions(Decisions);
-        ?const(true) ->
-            reduce_limits(D#domain_TurnoverLimitDecision.then_)
-    end.
