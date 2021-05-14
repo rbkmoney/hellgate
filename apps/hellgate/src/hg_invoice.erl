@@ -158,7 +158,7 @@ handle_function(Func, Args, Opts) ->
 -spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
 handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     DomainRevision = hg_domain:head(),
-    InvoiceID = hg_utils:uid(InvoiceParams#payproc_InvoiceParams.id),
+    InvoiceID = InvoiceParams#payproc_InvoiceParams.id,
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     PartyID = InvoiceParams#payproc_InvoiceParams.party_id,
@@ -173,7 +173,7 @@ handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     DomainRevision = hg_domain:head(),
-    InvoiceID = hg_utils:uid(Params#payproc_InvoiceWithTemplateParams.id),
+    InvoiceID = Params#payproc_InvoiceWithTemplateParams.id,
     ok = assume_user_identity(UserInfo),
     _ = set_invoicing_meta(InvoiceID),
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
