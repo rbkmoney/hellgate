@@ -60,8 +60,7 @@ handle_function(Func, Args, Opts) ->
 
 -spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
 handle_function_('Create', {UserInfo, Params}, _Opts) ->
-    %% FIXME(ED-95): temporary fallback generation till TemplateID is made required in damsel
-    TplID = hg_utils:uid(Params#payproc_InvoiceTemplateCreateParams.template_id),
+    TplID = Params#payproc_InvoiceTemplateCreateParams.template_id,
     ok = assume_user_identity(UserInfo),
     _ = set_meta(TplID),
     Party = get_party(Params#payproc_InvoiceTemplateCreateParams.party_id),
