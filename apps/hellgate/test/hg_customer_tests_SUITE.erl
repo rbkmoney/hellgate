@@ -76,6 +76,7 @@ init_per_suite(C) ->
     ]),
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
+    CustomerID = hg_utils:unique_id(),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
@@ -85,6 +86,7 @@ init_per_suite(C) ->
         {apps, Apps},
         {root_url, RootUrl},
         {party_client, PartyClient},
+        {customer_id, CustomerID},
         {party_id, PartyID},
         {shop_id, ShopID},
         {test_sup, SupPid}
@@ -171,25 +173,28 @@ invalid_user(C) ->
 
 invalid_party(C) ->
     RootUrl = cfg(root_url, C),
+    CustomerID = hg_utils:unique_id(),
     PartyID = hg_utils:unique_id(),
     ShopID = hg_utils:unique_id(),
     Client = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID, cfg(trace_id, C))),
-    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     {exception, #payproc_PartyNotFound{}} = hg_client_customer:create(Params, Client).
 
 invalid_shop(C) ->
     Client = cfg(client, C),
+    CustomerID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = hg_utils:unique_id(),
-    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     {exception, #payproc_ShopNotFound{}} = hg_client_customer:create(Params, Client).
 
 invalid_party_status(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyClient = cfg(party_client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     ok = hg_client_party:block(<<>>, PartyClient),
     {exception, ?invalid_party_status({blocking, _})} = hg_client_customer:create(Params, Client),
     ok = hg_client_party:unblock(<<>>, PartyClient),
@@ -200,9 +205,10 @@ invalid_party_status(C) ->
 invalid_shop_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    Params = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     ok = hg_client_party:block_shop(ShopID, <<>>, PartyClient),
     {exception, ?invalid_shop_status({blocking, _})} = hg_client_customer:create(Params, Client),
     ok = hg_client_party:unblock_shop(ShopID, <<>>, PartyClient),
@@ -225,19 +231,22 @@ invalid_shop_status(C) ->
 -spec start_two_bindings_w_tds(config()) -> test_case_result().
 
 create_customer(C) ->
+
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     Customer = hg_client_customer:get(CustomerID, Client).
 
 delete_customer(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     ok = hg_client_customer:delete(CustomerID, Client),
@@ -245,9 +254,10 @@ delete_customer(C) ->
 
 start_binding_w_failure(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     CustomerBindingID = hg_utils:unique_id(),
@@ -280,9 +290,10 @@ start_binding_w_failure(C) ->
 
 start_binding_w_suspend(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     CustomerBindingID = hg_utils:unique_id(),
@@ -319,9 +330,10 @@ start_binding_w_suspend(C) ->
 
 start_binding_w_suspend_timeout(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     CustomerBindingID = hg_utils:unique_id(),
@@ -353,9 +365,10 @@ start_binding_w_suspend_timeout(C) ->
 
 start_binding_w_suspend_timeout_default(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     CustomerBindingID = hg_utils:unique_id(),
@@ -387,9 +400,10 @@ start_binding_w_suspend_timeout_default(C) ->
 
 start_binding_w_suspend_failure(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     CustomerBindingID = hg_utils:unique_id(),
@@ -424,9 +438,10 @@ start_binding_w_suspend_failure(C) ->
 
 start_binding(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     CustomerBindingID = hg_utils:unique_id(),
@@ -454,9 +469,10 @@ start_binding(C) ->
 
 start_binding_w_tds(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     Customer = hg_client_customer:create(CustomerParams, Client),
     #payproc_Customer{id = CustomerID} = Customer,
     CustomerBindingID = hg_utils:unique_id(),
@@ -489,9 +505,10 @@ start_binding_w_tds(C) ->
 
 start_two_bindings(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     CustomerBindingID1 = hg_utils:unique_id(),
     CustomerBindingID2 = hg_utils:unique_id(),
@@ -528,9 +545,10 @@ start_two_bindings(C) ->
 
 start_two_bindings_w_tds(C) ->
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     CustomerBindingID1 = hg_utils:unique_id(),
     CustomerBindingID2 = hg_utils:unique_id(),
@@ -586,17 +604,19 @@ start_two_bindings_w_tds(C) ->
 create_customer_not_permitted(C) ->
     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     {exception, #payproc_OperationNotPermitted{}} = hg_client_customer:create(CustomerParams, Client).
 
 start_binding_not_permitted(C) ->
     ok = hg_domain:upsert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     Client = cfg(client, C),
+    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     CustomerBindingParams =

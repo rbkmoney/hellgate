@@ -51,7 +51,7 @@
 -export([make_invoice_details/2]).
 
 -export([make_disposable_payment_resource/1]).
--export([make_customer_params/3]).
+-export([make_customer_params/4]).
 -export([make_customer_binding_params/1]).
 -export([make_customer_binding_params/2]).
 -export([make_customer_binding_params/3]).
@@ -333,6 +333,7 @@ make_user_identity(UserID) ->
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/party_events.hrl").
 
+-type customer_id() :: dmsl_domain_thrift:'CustomerID'().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type account_id() :: dmsl_domain_thrift:'AccountID'().
@@ -718,9 +719,10 @@ make_meta_data(NS) ->
 get_hellgate_url() ->
     "http://" ++ ?HELLGATE_HOST ++ ":" ++ integer_to_list(?HELLGATE_PORT).
 
--spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
-make_customer_params(PartyID, ShopID, EMail) ->
+-spec make_customer_params(customer_id(), party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
+make_customer_params(CustomerID, PartyID, ShopID, EMail) ->
     #payproc_CustomerParams{
+        customer_id = CustomerID,
         party_id = PartyID,
         shop_id = ShopID,
         contact_info = ?contact_info(EMail),
