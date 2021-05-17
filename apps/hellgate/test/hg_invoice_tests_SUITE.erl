@@ -696,7 +696,7 @@ invalid_party_status(C) ->
     PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100000)),
     TplID = create_invoice_tpl(C),
-    InvoiceParamsWithTpl = make_invoice_params_tpl(TplID),
+    InvoiceParamsWithTpl = hg_ct_helper:make_invoice_params_tpl(TplID),
 
     ok = hg_client_party:suspend(PartyClient),
     {exception, #payproc_InvalidPartyStatus{
@@ -724,7 +724,7 @@ invalid_shop_status(C) ->
     PartyID = cfg(party_id, C),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_cash(100000)),
     TplID = create_invoice_tpl(C),
-    InvoiceParamsWithTpl = make_invoice_params_tpl(TplID),
+    InvoiceParamsWithTpl = hg_ct_helper:make_invoice_params_tpl(TplID),
 
     ok = hg_client_party:suspend_shop(ShopID, PartyClient),
     {exception, #payproc_InvalidShopStatus{
@@ -751,40 +751,40 @@ invalid_invoice_template_cost(C) ->
 
     Cost1 = make_tpl_cost(unlim, sale, "30%"),
     TplID = create_invoice_tpl(C, Cost1, Context),
-    Params1 = make_invoice_params_tpl(TplID),
+    Params1 = hg_ct_helper:make_invoice_params_tpl(TplID),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_NO_COST]
     }} = hg_client_invoicing:create_with_tpl(Params1, Client),
 
     Cost2 = make_tpl_cost(fixed, 100, <<"RUB">>),
     _ = update_invoice_tpl(TplID, Cost2, C),
-    Params2 = make_invoice_params_tpl(TplID, make_cash(50, <<"RUB">>)),
+    Params2 = hg_ct_helper:make_invoice_params_tpl(TplID, make_cash(50, <<"RUB">>)),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_BAD_COST]
     }} = hg_client_invoicing:create_with_tpl(Params2, Client),
-    Params3 = make_invoice_params_tpl(TplID, make_cash(100, <<"KEK">>)),
+    Params3 = hg_ct_helper:make_invoice_params_tpl(TplID, make_cash(100, <<"KEK">>)),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_BAD_COST]
     }} = hg_client_invoicing:create_with_tpl(Params3, Client),
 
     Cost3 = make_tpl_cost(range, {inclusive, 100, <<"RUB">>}, {inclusive, 10000, <<"RUB">>}),
     _ = update_invoice_tpl(TplID, Cost3, C),
-    Params4 = make_invoice_params_tpl(TplID, make_cash(50, <<"RUB">>)),
+    Params4 = hg_ct_helper:make_invoice_params_tpl(TplID, make_cash(50, <<"RUB">>)),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_BAD_AMOUNT]
     }} = hg_client_invoicing:create_with_tpl(Params4, Client),
-    Params5 = make_invoice_params_tpl(TplID, make_cash(50000, <<"RUB">>)),
+    Params5 = hg_ct_helper:make_invoice_params_tpl(TplID, make_cash(50000, <<"RUB">>)),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_BAD_AMOUNT]
     }} = hg_client_invoicing:create_with_tpl(Params5, Client),
-    Params6 = make_invoice_params_tpl(TplID, make_cash(500, <<"KEK">>)),
+    Params6 = hg_ct_helper:make_invoice_params_tpl(TplID, make_cash(500, <<"KEK">>)),
     {exception, #'InvalidRequest'{
         errors = [?INVOICE_TPL_BAD_CURRENCY]
     }} = hg_client_invoicing:create_with_tpl(Params6, Client),
 
     Cost4 = make_tpl_cost(fixed, 42000000000, <<"RUB">>),
     _ = update_invoice_tpl(TplID, Cost4, C),
-    Params7 = make_invoice_params_tpl(TplID, make_cash(42000000000, <<"RUB">>)),
+    Params7 = hg_ct_helper:make_invoice_params_tpl(TplID, make_cash(42000000000, <<"RUB">>)),
     {exception, #payproc_InvoiceTermsViolated{reason = {invoice_unpayable, _}}} =
         hg_client_invoicing:create_with_tpl(Params7, Client).
 
@@ -793,12 +793,12 @@ invalid_invoice_template_id(C) ->
     Client = cfg(client, C),
 
     TplID1 = <<"Watsthat">>,
-    Params1 = make_invoice_params_tpl(TplID1),
+    Params1 = hg_ct_helper:make_invoice_params_tpl(TplID1),
     {exception, #payproc_InvoiceTemplateNotFound{}} = hg_client_invoicing:create_with_tpl(Params1, Client),
 
     TplID2 = create_invoice_tpl(C),
     _ = delete_invoice_tpl(TplID2, C),
-    Params2 = make_invoice_params_tpl(TplID2),
+    Params2 = hg_ct_helper:make_invoice_params_tpl(TplID2),
     {exception, #payproc_InvoiceTemplateRemoved{}} = hg_client_invoicing:create_with_tpl(Params2, Client).
 
 -spec invoive_w_template_idempotency(config()) -> _ | no_return().
@@ -817,7 +817,7 @@ invoive_w_template_idempotency(C) ->
     InvoiceID = hg_utils:unique_id(),
     ExternalID = hg_utils:unique_id(),
 
-    Params = make_invoice_params_tpl(InvoiceID, TplID, InvoiceCost1, InvoiceContext1),
+    Params = hg_ct_helper:make_invoice_params_tpl(InvoiceID, TplID, InvoiceCost1, InvoiceContext1),
     Params1 = Params#payproc_InvoiceWithTemplateParams{
         external_id = ExternalID
     },
@@ -831,7 +831,7 @@ invoive_w_template_idempotency(C) ->
         external_id = ExternalID
     }) = hg_client_invoicing:create_with_tpl(Params1, Client),
 
-    OtherParams = make_invoice_params_tpl(InvoiceID, TplID, undefined, undefined),
+    OtherParams = hg_ct_helper:make_invoice_params_tpl(InvoiceID, TplID, undefined, undefined),
     Params2 = OtherParams#payproc_InvoiceWithTemplateParams{
         external_id = hg_utils:unique_id()
     },
@@ -859,7 +859,7 @@ invoice_w_template(C) ->
     InvoiceCost1 = FixedCost,
     InvoiceContext1 = make_invoice_context(<<"invoice specific context">>),
 
-    Params1 = make_invoice_params_tpl(TplID, InvoiceCost1, InvoiceContext1),
+    Params1 = hg_ct_helper:make_invoice_params_tpl(TplID, InvoiceCost1, InvoiceContext1),
     ?invoice_state(#domain_Invoice{
         owner_id = TplPartyID,
         shop_id = TplShopID,
@@ -868,7 +868,7 @@ invoice_w_template(C) ->
         context = InvoiceContext1
     }) = hg_client_invoicing:create_with_tpl(Params1, Client),
 
-    Params2 = make_invoice_params_tpl(TplID),
+    Params2 = hg_ct_helper:make_invoice_params_tpl(TplID),
     ?invoice_state(#domain_Invoice{
         owner_id = TplPartyID,
         shop_id = TplShopID,
@@ -4698,15 +4698,6 @@ make_invoice_params(PartyID, ShopID, Product, Cost) ->
 
 make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cost).
-
-make_invoice_params_tpl(TplID) ->
-    hg_ct_helper:make_invoice_params_tpl(TplID).
-
-make_invoice_params_tpl(TplID, Cost) ->
-    hg_ct_helper:make_invoice_params_tpl(TplID, Cost).
-
-make_invoice_params_tpl(TplID, Cost, Context) ->
-    hg_ct_helper:make_invoice_params_tpl(TplID, Cost, Context).
 
 make_invoice_context() ->
     hg_ct_helper:make_invoice_context().
