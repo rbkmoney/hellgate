@@ -422,7 +422,6 @@ init_per_suite(C) ->
     ]),
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
-    CustomerID = hg_utils:unique_id(),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -435,7 +434,6 @@ init_per_suite(C) ->
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
     NewC = [
-        {customer_id, CustomerID},
         {party_id, PartyID},
         {party_client, PartyClient},
         {shop_id, ShopID},
@@ -1481,11 +1479,10 @@ payment_w_wallet_success(C) ->
 -spec payment_w_customer_success(config()) -> test_return().
 payment_w_customer_success(C) ->
     Client = cfg(client, C),
-    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(60), 42000, C),
-    CustomerID = make_customer_w_rec_tool(CustomerID, PartyID, ShopID, cfg(customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     ?invoice_state(
@@ -1496,24 +1493,22 @@ payment_w_customer_success(C) ->
 -spec payment_w_another_shop_customer(config()) -> test_return().
 payment_w_another_shop_customer(C) ->
     Client = cfg(client, C),
-    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     PartyClient = cfg(party_client, C),
     AnotherShopID = hg_ct_helper:create_battle_ready_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(60), 42000, C),
-    CustomerID = make_customer_w_rec_tool(CustomerID, PartyID, ShopID, cfg(customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
 
 -spec payment_w_another_party_customer(config()) -> test_return().
 payment_w_another_party_customer(C) ->
     Client = cfg(client, C),
-    CustomerID = cfg(customer_id, C),
     AnotherPartyID = cfg(another_party_id, C),
     ShopID = cfg(shop_id, C),
     AnotherShopID = cfg(another_shop_id, C),
-    CustomerID = make_customer_w_rec_tool(CustomerID, AnotherPartyID, AnotherShopID, cfg(another_customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(AnotherPartyID, AnotherShopID, cfg(another_customer_client, C)),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(60), 42000, C),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
@@ -1521,12 +1516,11 @@ payment_w_another_party_customer(C) ->
 -spec payment_w_deleted_customer(config()) -> test_return().
 payment_w_deleted_customer(C) ->
     Client = cfg(client, C),
-    CustomerID = cfg(customer_id, C),
     CustomerClient = cfg(customer_client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(60), 42000, C),
-    CustomerID = make_customer_w_rec_tool(CustomerID, PartyID, ShopID, CustomerClient),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, CustomerClient),
     ok = hg_client_customer:delete(CustomerID, CustomerClient),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
@@ -5250,8 +5244,8 @@ get_post_request({payment_terminal_reciept, #'PaymentTerminalReceipt'{short_paym
     URL = hg_dummy_provider:get_callback_url(),
     {URL, #{<<"tag">> => SPID}}.
 
-make_customer_w_rec_tool(CustomerID, PartyID, ShopID, Client) ->
-    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, <<"InvoicingTests">>),
+make_customer_w_rec_tool(PartyID, ShopID, Client) ->
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, <<"InvoicingTests">>),
     #payproc_Customer{id = CustomerID} =
         hg_client_customer:create(CustomerParams, Client),
     #payproc_CustomerBinding{id = BindingID} =
@@ -5418,12 +5412,11 @@ payment_risk_score_check(Cat, C) ->
 -spec payment_customer_risk_score_check(config()) -> test_return().
 payment_customer_risk_score_check(C) ->
     Client = cfg(client, C),
-    CustomerID = cfg(customer_id, C),
     PartyID = cfg(party_id, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     InvoiceID1 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 100000001, C),
-    CustomerID = make_customer_w_rec_tool(CustomerID, PartyID, ShopID, cfg(customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
     ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
     [

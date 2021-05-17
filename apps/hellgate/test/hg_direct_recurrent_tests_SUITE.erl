@@ -112,7 +112,6 @@ init_per_suite(C) ->
     ]),
     ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
-    CustomerID = hg_utils:unique_id(),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -125,7 +124,6 @@ init_per_suite(C) ->
         {root_url, RootUrl},
         {party_client, PartyClient},
         {customer_client, CustomerClient},
-        {customer_id, CustomerID},
         {party_id, PartyID},
         {shop_id, Shop1ID},
         {another_shop_id, Shop2ID},
@@ -232,7 +230,7 @@ customer_paytools_as_first_test(C) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    CustomerID = make_customer_w_rec_tool(cfg(customer_id, C), cfg(party_id, C), ShopID, cfg(customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(cfg(party_id, C), ShopID, cfg(customer_client, C)),
     PaymentParams = make_customer_payment_params(CustomerID),
     ExpectedError = #'InvalidRequest'{errors = [<<"Invalid payer">>]},
     {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
@@ -430,8 +428,8 @@ await_payment_cancel(InvoiceID, PaymentID, Reason, Client) ->
     {ok, _Events} = await_events(InvoiceID, Pattern, Client),
     PaymentID.
 
-make_customer_w_rec_tool(CustomerID, PartyID, ShopID, Client) ->
-    CustomerParams = hg_ct_helper:make_customer_params(CustomerID, PartyID, ShopID, <<"InvoicingTests">>),
+make_customer_w_rec_tool(PartyID, ShopID, Client) ->
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, <<"InvoicingTests">>),
     #payproc_Customer{id = CustomerID} =
         hg_client_customer:create(CustomerParams, Client),
     #payproc_CustomerBinding{id = BindingID} =
