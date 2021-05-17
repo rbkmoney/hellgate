@@ -1251,6 +1251,7 @@ assume_user_identity(UserInfo) ->
 
 make_invoice_params(Params) ->
     #payproc_InvoiceWithTemplateParams{
+        id = InvoiceID,
         template_id = TplID,
         cost = Cost,
         context = Context,
@@ -1279,6 +1280,7 @@ make_invoice_params(Params) ->
     InvoiceDue = make_invoice_due_date(Lifetime),
     InvoiceContext = make_invoice_context(Context, TplContext),
     InvoiceParams = #payproc_InvoiceParams{
+        id = InvoiceID,
         party_id = PartyID,
         shop_id = ShopID,
         details = InvoiceDetails,
