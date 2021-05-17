@@ -558,7 +558,7 @@ make_invoice_params(PartyID, ShopID, Product, Cost) ->
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cash()) -> invoice_params().
 make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
-    InvoiceID = genlib:unique(),
+    InvoiceID = hg_utils:unique_id(),
     make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost).
 
 -spec make_invoice_params(invoice_id(), party_id(), shop_id(), binary(), timestamp(), cash()) -> invoice_params().
@@ -583,7 +583,7 @@ make_invoice_params_tpl(TplID, Cost) ->
 
 -spec make_invoice_params_tpl(invoice_tpl_id(), undefined | cash(), undefined | context()) -> invoice_params_tpl().
 make_invoice_params_tpl(TplID, Cost, Context) ->
-    InvoiceID = genlib:unique(),
+    InvoiceID = hg_utils:unique_id(),
     make_invoice_params_tpl(InvoiceID, TplID, Cost, Context).
 
 -spec make_invoice_params_tpl(invoice_id(), invoice_tpl_id(), undefined | cash(), undefined | context()) ->
@@ -610,7 +610,7 @@ make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
     context()
 ) -> invoice_tpl_create_params().
 make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, Context) ->
-    InvoiceTemplateID = genlib:unique(),
+    InvoiceTemplateID = hg_utils:unique_id(),
     make_invoice_tpl_create_params(InvoiceTemplateID, PartyID, ShopID, Lifetime, Product, Details, Context).
 
 -spec make_invoice_tpl_create_params(
@@ -754,7 +754,7 @@ get_hellgate_url() ->
 
 -spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
 make_customer_params(PartyID, ShopID, EMail) ->
-    CustomerID = genlib:unique(),
+    CustomerID = hg_utils:unique_id(),
     make_customer_params(CustomerID, PartyID, ShopID, EMail).
 
 -spec make_customer_params(customer_id(), party_id(), shop_id(), binary()) ->
@@ -771,7 +771,7 @@ make_customer_params(CustomerID, PartyID, ShopID, EMail) ->
 -spec make_customer_binding_params({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}) ->
     dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(PaymentToolSession) ->
-    RecPaymentToolID = genlib:unique(),
+    RecPaymentToolID = hg_utils:unique_id(),
     make_customer_binding_params(RecPaymentToolID, PaymentToolSession).
 
 -spec make_customer_binding_params(
@@ -779,7 +779,7 @@ make_customer_binding_params(PaymentToolSession) ->
     {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}
 ) -> dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(RecPayToolId, PaymentToolSession) ->
-    CustomerBindingID = genlib:unique(),
+    CustomerBindingID = hg_utils:unique_id(),
     make_customer_binding_params(CustomerBindingID, RecPayToolId, PaymentToolSession).
 
 -spec make_customer_binding_params(
