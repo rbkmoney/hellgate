@@ -582,7 +582,14 @@ make_invoice_params_tpl(TplID, Cost) ->
 
 -spec make_invoice_params_tpl(invoice_tpl_id(), undefined | cash(), undefined | context()) -> invoice_params_tpl().
 make_invoice_params_tpl(TplID, Cost, Context) ->
+    InvoiceID = genlib:unique(),
+    make_invoice_params_tpl(InvoiceID, TplID, Cost, Context).
+
+-spec make_invoice_params_tpl(invoice_id(), invoice_tpl_id(), undefined | cash(), undefined | context()) ->
+    invoice_params_tpl().
+make_invoice_params_tpl(InvoiceID, TplID, Cost, Context) ->
     #payproc_InvoiceWithTemplateParams{
+        id = InvoiceID,
         template_id = TplID,
         cost = Cost,
         context = Context
@@ -763,9 +770,8 @@ make_customer_params(CustomerID, PartyID, ShopID, EMail) ->
 -spec make_customer_binding_params({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}) ->
     dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(PaymentToolSession) ->
-    #payproc_CustomerBindingParams{
-        payment_resource = make_disposable_payment_resource(PaymentToolSession)
-    }.
+    RecPaymentToolID = genlib:unique(),
+    make_customer_binding_params(RecPaymentToolID, PaymentToolSession).
 
 -spec make_customer_binding_params(
     dmsl_domain_thrift:'RecurrentPaymentToolID'(),
