@@ -31,6 +31,7 @@
 -export([make_invoice_params_tpl/1]).
 -export([make_invoice_params_tpl/2]).
 -export([make_invoice_params_tpl/3]).
+-export([make_invoice_params_tpl/4]).
 
 -export([make_invoice_tpl_create_params/5]).
 -export([make_invoice_tpl_create_params/6]).
