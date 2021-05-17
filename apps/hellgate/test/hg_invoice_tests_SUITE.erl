@@ -817,9 +817,8 @@ invoive_w_template_idempotency(C) ->
     InvoiceID = hg_utils:unique_id(),
     ExternalID = hg_utils:unique_id(),
 
-    Params = make_invoice_params_tpl(TplID, InvoiceCost1, InvoiceContext1),
+    Params = make_invoice_params_tpl(InvoiceID, TplID, InvoiceCost1, InvoiceContext1),
     Params1 = Params#payproc_InvoiceWithTemplateParams{
-        id = InvoiceID,
         external_id = ExternalID
     },
     ?invoice_state(#domain_Invoice{
@@ -832,9 +831,8 @@ invoive_w_template_idempotency(C) ->
         external_id = ExternalID
     }) = hg_client_invoicing:create_with_tpl(Params1, Client),
 
-    OtherParams = make_invoice_params_tpl(TplID),
+    OtherParams = make_invoice_params_tpl(InvoiceID, TplID, undefined, undefined),
     Params2 = OtherParams#payproc_InvoiceWithTemplateParams{
-        id = InvoiceID,
         external_id = hg_utils:unique_id()
     },
     ?invoice_state(#domain_Invoice{
