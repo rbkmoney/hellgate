@@ -1054,14 +1054,14 @@ refund_limit_success(C) ->
 
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceParams1 = InvoiceParams#payproc_InvoiceParams{
-        id = genlib:unique()
+        id = hg_utils:unique_id()
     },
     InvoiceID = create_invoice(InvoiceParams1, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     PaymentID = execute_payment(InvoiceID, make_payment_params(), Client),
 
     InvoiceParams2 = InvoiceParams#payproc_InvoiceParams{
-        id = genlib:unique()
+        id = hg_utils:unique_id()
     },
 
     InvoiceID2 = create_invoice(InvoiceParams2, Client),
