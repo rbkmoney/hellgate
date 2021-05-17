@@ -34,6 +34,7 @@
 
 -export([make_invoice_tpl_create_params/5]).
 -export([make_invoice_tpl_create_params/6]).
+-export([make_invoice_tpl_create_params/7]).
 -export([make_invoice_tpl_details/2]).
 
 -export([make_invoice_tpl_update_params/1]).
@@ -337,6 +338,7 @@ make_user_identity(UserID) ->
 
 -type customer_id() :: dmsl_domain_thrift:'CustomerID'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
+-type invoice_template_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type account_id() :: dmsl_domain_thrift:'AccountID'().
@@ -600,7 +602,21 @@ make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
     context()
 ) -> invoice_tpl_create_params().
 make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, Context) ->
+    InvoiceTemplateID = genlib:unique(),
+    make_invoice_tpl_create_params(InvoiceTemplateID, PartyID, ShopID, Lifetime, Product, Details, Context).
+
+-spec make_invoice_tpl_create_params(
+    invoice_template_id(),
+    party_id(),
+    shop_id(),
+    lifetime_interval(),
+    binary(),
+    invoice_tpl_details(),
+    context()
+) -> invoice_tpl_create_params().
+make_invoice_tpl_create_params(InvoiceTemplateID, PartyID, ShopID, Lifetime, Product, Details, Context) ->
     #payproc_InvoiceTemplateCreateParams{
+        template_id = InvoiceTemplateID,
         party_id = PartyID,
         shop_id = ShopID,
         invoice_lifetime = Lifetime,
@@ -756,10 +772,8 @@ make_customer_binding_params(PaymentToolSession) ->
     {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}
 ) -> dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(RecPayToolId, PaymentToolSession) ->
-    #payproc_CustomerBindingParams{
-        rec_payment_tool_id = RecPayToolId,
-        payment_resource = make_disposable_payment_resource(PaymentToolSession)
-    }.
+    CustomerBindingID = genlib:unique(),
+    make_customer_binding_params(CustomerBindingID, RecPayToolId, PaymentToolSession).
 
 -spec make_customer_binding_params(
     dmsl_domain_thrift:'CustomerBindingID'(),
