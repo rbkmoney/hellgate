@@ -26,6 +26,7 @@
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
+-export([make_invoice_params/6]).
 
 -export([make_invoice_params_tpl/1]).
 -export([make_invoice_params_tpl/2]).
@@ -52,6 +53,7 @@
 
 -export([make_disposable_payment_resource/1]).
 -export([make_customer_params/3]).
+-export([make_customer_params/4]).
 -export([make_customer_binding_params/1]).
 -export([make_customer_binding_params/2]).
 -export([make_customer_binding_params/3]).
@@ -333,6 +335,8 @@ make_user_identity(UserID) ->
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/party_events.hrl").
 
+-type customer_id() :: dmsl_domain_thrift:'CustomerID'().
+-type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type account_id() :: dmsl_domain_thrift:'AccountID'().
@@ -551,7 +555,13 @@ make_invoice_params(PartyID, ShopID, Product, Cost) ->
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cash()) -> invoice_params().
 make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
+    InvoiceID = genlib:unique(),
+    make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost).
+
+-spec make_invoice_params(invoice_id(), party_id(), shop_id(), binary(), timestamp(), cash()) -> invoice_params().
+make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost) ->
     #payproc_InvoiceParams{
+        id = InvoiceID,
         party_id = PartyID,
         shop_id = ShopID,
         details = make_invoice_details(Product),
@@ -720,7 +730,14 @@ get_hellgate_url() ->
 
 -spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
 make_customer_params(PartyID, ShopID, EMail) ->
+    CustomerID = genlib:unique(),
+    make_customer_params(CustomerID, PartyID, ShopID, EMail).
+
+-spec make_customer_params(customer_id(), party_id(), shop_id(), binary()) ->
+    dmsl_payment_processing_thrift:'CustomerParams'().
+make_customer_params(CustomerID, PartyID, ShopID, EMail) ->
     #payproc_CustomerParams{
+        customer_id = CustomerID,
         party_id = PartyID,
         shop_id = ShopID,
         contact_info = ?contact_info(EMail),
