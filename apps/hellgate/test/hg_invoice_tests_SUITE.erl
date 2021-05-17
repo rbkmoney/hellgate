@@ -1052,13 +1052,19 @@ refund_limit_success(C) ->
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
 
-    InvoiceID = hg_utils:unique_id(),
-    InvoiceParams = make_invoice_params(InvoiceID, PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
-    InvoiceID = create_invoice(InvoiceParams, Client),
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
+    InvoiceParams1 = InvoiceParams#payproc_InvoiceParams{
+        id = genlib:unique()
+    },
+    InvoiceID = create_invoice(InvoiceParams1, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     PaymentID = execute_payment(InvoiceID, make_payment_params(), Client),
 
-    InvoiceID2 = create_invoice(InvoiceParams, Client),
+    InvoiceParams2 = InvoiceParams#payproc_InvoiceParams{
+        id = genlib:unique()
+    },
+
+    InvoiceID2 = create_invoice(InvoiceParams2, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
     _PaymentID2 = execute_payment(InvoiceID2, make_payment_params(), Client),
 
