@@ -341,18 +341,18 @@ groups() ->
         {refunds, [], [
             invalid_refund_party_status,
             invalid_refund_shop_status,
-            {refunds_, [], [
+            {parallel, [parallel], [
                 retry_temporary_unavailability_refund,
                 payment_refund_idempotency,
                 payment_refund_success,
                 payment_refund_failure,
-                deadline_doesnt_affect_payment_refund,
                 payment_partial_refunds_success,
                 invalid_amount_payment_partial_refund,
                 invalid_amount_partial_capture_and_refund,
                 invalid_currency_payment_partial_refund,
                 cant_start_simultaneous_partial_refunds
             ]},
+            deadline_doesnt_affect_payment_refund,
             ineligible_payment_partial_refund,
             payment_manual_refund,
             payment_refund_id_types
