@@ -107,17 +107,10 @@ assert_cost_payable(Cost, #domain_PaymentsServiceTerms{cash_limit = CashLimit}) 
 any_limit_matches(Cash, {value, CashRange}) ->
     hg_cash_range:is_inside(Cash, CashRange) =:= within;
 any_limit_matches(Cash, {decisions, Decisions}) ->
-    check_possible_limits(Cash, Decisions).
-
-check_possible_limits(_Cash, []) ->
-    false;
-check_possible_limits(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest]) ->
-    case any_limit_matches(Cash, Value) of
-        true ->
-            true;
-        false ->
-            check_possible_limits(Cash, Rest)
-    end.
+    lists:any(fun (#domain_CashLimitDecision{then_ = Value}) ->
+        any_limit_matches(Cash, Value)
+    end,
+    Decisions).
 
 -spec compute_shop_terms(party_id(), shop_id(), timestamp(), party_revision_param(), varset()) -> term_set().
 compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision, Varset) ->
@@ -188,6 +181,6 @@ get_identification_level(#domain_Contract{contractor_id = undefined, contractor 
         _ ->
             none
     end;
-get_identification_level(#domain_Contract{contractor_id = ContractorID}, #domain_Party{contractors = Contractors}) ->
-    Contractor = maps:get(ContractorID, Contractors, undefined),
+get_identification_level(#domain_Contract{contractor_id = ID}, #domain_Party{contractors = Contractors}) ->
+    Contractor = maps:get(ID, Contractors),
     Contractor#domain_PartyContractor.status.
