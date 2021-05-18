@@ -107,10 +107,12 @@ assert_cost_payable(Cost, #domain_PaymentsServiceTerms{cash_limit = CashLimit}) 
 any_limit_matches(Cash, {value, CashRange}) ->
     hg_cash_range:is_inside(Cash, CashRange) =:= within;
 any_limit_matches(Cash, {decisions, Decisions}) ->
-    lists:any(fun (#domain_CashLimitDecision{then_ = Value}) ->
-        any_limit_matches(Cash, Value)
-    end,
-    Decisions).
+    lists:any(
+        fun(#domain_CashLimitDecision{then_ = Value}) ->
+            any_limit_matches(Cash, Value)
+        end,
+        Decisions
+    ).
 
 -spec compute_shop_terms(party_id(), shop_id(), timestamp(), party_revision_param(), varset()) -> term_set().
 compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision, Varset) ->
