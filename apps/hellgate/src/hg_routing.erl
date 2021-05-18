@@ -420,7 +420,6 @@ get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
     Terms = merge_terms(Terms0, Terms1),
     Terms#domain_ProvisionTermSet.payments.
 
-
 -spec acceptable_terminal(
     route_predestination(),
     provider_ref(),
