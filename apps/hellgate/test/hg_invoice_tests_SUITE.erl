@@ -341,7 +341,7 @@ groups() ->
         {refunds, [], [
             invalid_refund_party_status,
             invalid_refund_shop_status,
-            {refunds_, [parallel], [
+            {refunds_, [], [
                 retry_temporary_unavailability_refund,
                 payment_refund_idempotency,
                 payment_refund_success,
