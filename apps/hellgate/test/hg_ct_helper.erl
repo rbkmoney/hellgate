@@ -26,13 +26,16 @@
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
+-export([make_invoice_params/6]).
 
 -export([make_invoice_params_tpl/1]).
 -export([make_invoice_params_tpl/2]).
 -export([make_invoice_params_tpl/3]).
+-export([make_invoice_params_tpl/4]).
 
 -export([make_invoice_tpl_create_params/5]).
 -export([make_invoice_tpl_create_params/6]).
+-export([make_invoice_tpl_create_params/7]).
 -export([make_invoice_tpl_details/2]).
 
 -export([make_invoice_tpl_update_params/1]).
@@ -52,6 +55,7 @@
 
 -export([make_disposable_payment_resource/1]).
 -export([make_customer_params/3]).
+-export([make_customer_params/4]).
 -export([make_customer_binding_params/1]).
 -export([make_customer_binding_params/2]).
 -export([make_customer_binding_params/3]).
@@ -333,6 +337,9 @@ make_user_identity(UserID) ->
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/party_events.hrl").
 
+-type customer_id() :: dmsl_domain_thrift:'CustomerID'().
+-type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
+-type invoice_template_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
 -type account_id() :: dmsl_domain_thrift:'AccountID'().
@@ -551,7 +558,13 @@ make_invoice_params(PartyID, ShopID, Product, Cost) ->
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), timestamp(), cash()) -> invoice_params().
 make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
+    InvoiceID = hg_utils:unique_id(),
+    make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost).
+
+-spec make_invoice_params(invoice_id(), party_id(), shop_id(), binary(), timestamp(), cash()) -> invoice_params().
+make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost) ->
     #payproc_InvoiceParams{
+        id = InvoiceID,
         party_id = PartyID,
         shop_id = ShopID,
         details = make_invoice_details(Product),
@@ -570,7 +583,14 @@ make_invoice_params_tpl(TplID, Cost) ->
 
 -spec make_invoice_params_tpl(invoice_tpl_id(), undefined | cash(), undefined | context()) -> invoice_params_tpl().
 make_invoice_params_tpl(TplID, Cost, Context) ->
+    InvoiceID = hg_utils:unique_id(),
+    make_invoice_params_tpl(InvoiceID, TplID, Cost, Context).
+
+-spec make_invoice_params_tpl(invoice_id(), invoice_tpl_id(), undefined | cash(), undefined | context()) ->
+    invoice_params_tpl().
+make_invoice_params_tpl(InvoiceID, TplID, Cost, Context) ->
     #payproc_InvoiceWithTemplateParams{
+        id = InvoiceID,
         template_id = TplID,
         cost = Cost,
         context = Context
@@ -590,7 +610,21 @@ make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
     context()
 ) -> invoice_tpl_create_params().
 make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details, Context) ->
+    InvoiceTemplateID = hg_utils:unique_id(),
+    make_invoice_tpl_create_params(InvoiceTemplateID, PartyID, ShopID, Lifetime, Product, Details, Context).
+
+-spec make_invoice_tpl_create_params(
+    invoice_template_id(),
+    party_id(),
+    shop_id(),
+    lifetime_interval(),
+    binary(),
+    invoice_tpl_details(),
+    context()
+) -> invoice_tpl_create_params().
+make_invoice_tpl_create_params(InvoiceTemplateID, PartyID, ShopID, Lifetime, Product, Details, Context) ->
     #payproc_InvoiceTemplateCreateParams{
+        template_id = InvoiceTemplateID,
         party_id = PartyID,
         shop_id = ShopID,
         invoice_lifetime = Lifetime,
@@ -720,7 +754,14 @@ get_hellgate_url() ->
 
 -spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
 make_customer_params(PartyID, ShopID, EMail) ->
+    CustomerID = hg_utils:unique_id(),
+    make_customer_params(CustomerID, PartyID, ShopID, EMail).
+
+-spec make_customer_params(customer_id(), party_id(), shop_id(), binary()) ->
+    dmsl_payment_processing_thrift:'CustomerParams'().
+make_customer_params(CustomerID, PartyID, ShopID, EMail) ->
     #payproc_CustomerParams{
+        customer_id = CustomerID,
         party_id = PartyID,
         shop_id = ShopID,
         contact_info = ?contact_info(EMail),
@@ -730,19 +771,16 @@ make_customer_params(PartyID, ShopID, EMail) ->
 -spec make_customer_binding_params({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}) ->
     dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(PaymentToolSession) ->
-    #payproc_CustomerBindingParams{
-        payment_resource = make_disposable_payment_resource(PaymentToolSession)
-    }.
+    RecPaymentToolID = hg_utils:unique_id(),
+    make_customer_binding_params(RecPaymentToolID, PaymentToolSession).
 
 -spec make_customer_binding_params(
     dmsl_domain_thrift:'RecurrentPaymentToolID'(),
     {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}
 ) -> dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(RecPayToolId, PaymentToolSession) ->
-    #payproc_CustomerBindingParams{
-        rec_payment_tool_id = RecPayToolId,
-        payment_resource = make_disposable_payment_resource(PaymentToolSession)
-    }.
+    CustomerBindingID = hg_utils:unique_id(),
+    make_customer_binding_params(CustomerBindingID, RecPayToolId, PaymentToolSession).
 
 -spec make_customer_binding_params(
     dmsl_domain_thrift:'CustomerBindingID'(),
