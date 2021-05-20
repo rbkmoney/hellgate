@@ -167,7 +167,7 @@ handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     Party = hg_party:get_party(PartyID),
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
-    MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now()),
+    MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now(), InvoiceParams),
     ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms),
     ok = ensure_started(InvoiceID, {undefined, Party#domain_Party.revision, InvoiceParams}),
     get_invoice_state(get_state(InvoiceID));
@@ -178,7 +178,7 @@ handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     _ = set_invoicing_meta(InvoiceID),
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
     {Party, Shop, InvoiceParams} = make_invoice_params(Params),
-    MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now()),
+    MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now(), InvoiceParams),
     ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms),
     ok = ensure_started(InvoiceID, {TplID, Party#domain_Party.revision, InvoiceParams}),
     get_invoice_state(get_state(InvoiceID));
@@ -1297,7 +1297,8 @@ validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     _ = hg_invoice_utils:assert_cost_payable(Cost, PaymentTerms),
     ok.
 
-get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp) ->
+get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp, Params) ->
+    VS = collect_varset(Params#payproc_InvoiceParams.cost, PartyId, Shop),
     {Client, Context} = get_party_client(),
     {ok, TermSet} = party_client_thrift:compute_contract_terms(
         PartyId,
@@ -1305,11 +1306,25 @@ get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revisi
         Timestamp,
         {revision, PartyRevision},
         Revision,
-        #payproc_Varset{},
+        hg_varset:prepare_varset(VS),
         Client,
         Context
     ),
     TermSet.
+
+collect_varset(Cost, PartyID, Shop) ->
+    #domain_Shop{
+        id = ShopID,
+        category = Category,
+        account = #domain_ShopAccount{currency = Currency}
+    } = Shop,
+    #{
+        cost => Cost,
+        party_id => PartyID,
+        shop_id => ShopID,
+        category => Category,
+        currency => Currency
+    }.
 
 make_invoice_cart(_, {cart, Cart}, _Shop) ->
     Cart;

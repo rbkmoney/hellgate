@@ -5632,6 +5632,15 @@ construct_domain_fixture() ->
                 {decisions, [
                     % проверяем, что условие никогда не отрабатывает
                     #domain_CashLimitDecision{
+                        if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
+                        then_ =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(200, <<"USD">>)},
+                                    {exclusive, ?cash(313370, <<"USD">>)}
+                                )}
+                    },
+                    #domain_CashLimitDecision{
                         if_ =
                             {condition,
                                 {payment_tool,
@@ -5652,15 +5661,6 @@ construct_domain_fixture() ->
                                 ?cashrng(
                                     {inclusive, ?cash(10, <<"RUB">>)},
                                     {exclusive, ?cash(4200000, <<"RUB">>)}
-                                )}
-                    },
-                    #domain_CashLimitDecision{
-                        if_ = {condition, {currency_is, ?cur(<<"USD">>)}},
-                        then_ =
-                            {value,
-                                ?cashrng(
-                                    {inclusive, ?cash(200, <<"USD">>)},
-                                    {exclusive, ?cash(313370, <<"USD">>)}
                                 )}
                     }
                 ]},
