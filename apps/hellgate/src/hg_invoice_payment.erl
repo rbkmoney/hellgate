@@ -679,14 +679,15 @@ validate_recurrent_terms(RecurrentTerms, PaymentTool) ->
     %     hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
     %         throw_invalid_request(<<"Invalid payment method">>),
     %% TODO delete logging after successfull migration tokenization method in domain_config
-    _ = case hg_payment_tool:has_any_payment_method(PaymentTool, PMs) of
-        false ->
-            logger:info("PaymentTool: ~p", [PaymentTool]),
-            logger:info("RecurrentPaymentMethods: ~p", [PMs]),
-            throw_invalid_request(<<"Invalid payment method">>);
-        true ->
-            ok
-    end,
+    _ =
+        case hg_payment_tool:has_any_payment_method(PaymentTool, PMs) of
+            false ->
+                logger:info("PaymentTool: ~p", [PaymentTool]),
+                logger:info("RecurrentPaymentMethods: ~p", [PMs]),
+                throw_invalid_request(<<"Invalid payment method">>);
+            true ->
+                ok
+        end,
     ok.
 
 -spec validate_recurrent_parent(shop(), st()) -> ok | no_return().
@@ -733,15 +734,16 @@ validate_recurrent_payer(_OtherPayer, true) ->
 
 validate_payment_tool(PaymentTool, PaymentMethodSelector) ->
     PMs = get_selector_value(payment_methods, PaymentMethodSelector),
-    _ = case hg_payment_tool:has_any_payment_method(PaymentTool, PMs) of
-        false ->
-            %% TODO delete logging after successfull migration tokenization method in domain_config
-            logger:info("PaymentTool: ~p", [PaymentTool]),
-            logger:info("PaymentMethods: ~p", [PMs]),
-            throw_invalid_request(<<"Invalid payment method">>);
-        true ->
-            ok
-    end,
+    _ =
+        case hg_payment_tool:has_any_payment_method(PaymentTool, PMs) of
+            false ->
+                %% TODO delete logging after successfull migration tokenization method in domain_config
+                logger:info("PaymentTool: ~p", [PaymentTool]),
+                logger:info("PaymentMethods: ~p", [PMs]),
+                throw_invalid_request(<<"Invalid payment method">>);
+            true ->
+                ok
+        end,
     ok.
 
 validate_cash(Cash, CashLimitSelector) ->
