@@ -679,6 +679,7 @@ validate_recurrent_terms(RecurrentTerms, PaymentTool) ->
     %     hg_payment_tool:has_any_payment_method(PaymentTool, PMs) orelse
     %         throw_invalid_request(<<"Invalid payment method">>),
     %% TODO delete logging after successfull migration tokenization method in domain_config
+    %% https://rbkmoney.atlassian.net/browse/ED-87
     _ =
         case hg_payment_tool:has_any_payment_method(PaymentTool, PMs) of
             false ->
@@ -738,6 +739,7 @@ validate_payment_tool(PaymentTool, PaymentMethodSelector) ->
         case hg_payment_tool:has_any_payment_method(PaymentTool, PMs) of
             false ->
                 %% TODO delete logging after successfull migration tokenization method in domain_config
+                %% https://rbkmoney.atlassian.net/browse/ED-87
                 logger:info("PaymentTool: ~p", [PaymentTool]),
                 logger:info("PaymentMethods: ~p", [PMs]),
                 throw_invalid_request(<<"Invalid payment method">>);
