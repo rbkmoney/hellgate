@@ -1231,12 +1231,7 @@ assert_remaining_payment_amount(?cash(Amount, _), St) when Amount < 0 ->
 assert_previous_refunds_finished(St) ->
     PendingRefunds = lists:filter(
         fun(#payproc_InvoicePaymentRefund{refund = R}) ->
-            case R#domain_InvoicePaymentRefund.status of
-                ?refund_pending() ->
-                    true;
-                _ ->
-                    false
-            end
+            R#domain_InvoicePaymentRefund.status =:= ?refund_pending()
         end,
         get_refunds(St)
     ),
@@ -1363,9 +1358,8 @@ validate_partial_refund(
     throw(#payproc_OperationNotPermitted{}).
 
 validate_common_refund_terms(Terms, Refund, Payment) ->
-    PaymentTool = get_payment_tool(Payment),
     ok = validate_payment_tool(
-        PaymentTool,
+        get_payment_tool(Payment),
         Terms#domain_PaymentRefundsServiceTerms.payment_methods
     ),
     ok = validate_refund_time(
@@ -1557,7 +1551,7 @@ get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
     route(),
     payment(),
     hg_datetime:timestamp(),
-    pm_selector:varset(),
+    hg_varset:varset(),
     hg_domain:revision(),
     opts()
 ) -> cash_flow().
@@ -1571,7 +1565,7 @@ calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
     payment(),
     dmsl_domain_thrift:'PaymentsServiceTerms'() | undefined,
     dmsl_domain_thrift:'PaymentsProvisionTerms'() | undefined,
-    pm_selector:varset(),
+    hg_varset:varset(),
     hg_domain:revision(),
     opts()
 ) -> cash_flow().
@@ -1883,7 +1877,7 @@ process_cash_flow_building(Action, St) ->
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS1),
     ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
-    {ok, TurnoverLimits} = hold_payment_limits(ProviderTerms, Cash, Timestamp, VS1, Revision, St),
+    {ok, TurnoverLimits} = hold_payment_limits(ProviderTerms, Cash, Timestamp, St),
 
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
@@ -1922,7 +1916,7 @@ process_chargeback(Type, ID, Action0, St) ->
 maybe_set_charged_back_status(?chargeback_status_accepted(), ChargebackBody, St) ->
     InterimPaymentAmount = get_remaining_payment_balance(St),
     case hg_cash:sub(InterimPaymentAmount, ChargebackBody) of
-        ?cash(Amount, _) when Amount =:= 0 ->
+        ?cash(0, _) ->
             [?payment_status_changed(?charged_back())];
         ?cash(Amount, _) when Amount > 0 ->
             []
@@ -1945,13 +1939,12 @@ process_refund_cashflow(ID, Action, St) ->
     case get_available_amount(SettlementID, Clock) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
-            Events0 = [?session_ev(?refunded(), ?session_started())],
-            Events1 = get_manual_refund_events(RefundSt),
+            Events = [?session_ev(?refunded(), ?session_started()) | get_manual_refund_events(RefundSt)],
             {next, {
-                [?refund_ev(ID, C) || C <- Events0 ++ Events1],
+                [?refund_ev(ID, C) || C <- Events],
                 hg_machine_action:set_timeout(0, Action)
             }};
-        Available when Available < 0 ->
+        _ ->
             Failure =
                 {failure,
                     payproc_errors:construct(
@@ -2003,8 +1996,7 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
 
 -spec process_session(action(), st()) -> machine_result().
 process_session(Action, St) ->
-    Session = get_activity_session(St),
-    process_session(Session, Action, St).
+    process_session(get_activity_session(St), Action, St).
 
 process_session(undefined, Action, St0) ->
     Target = get_target(St0),
@@ -2166,19 +2158,16 @@ process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     _ = commit_refund_limits(RefundSt, St),
     _Clocks = commit_refund_cashflow(RefundSt, St),
-    Events2 = [
-        ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
-    ],
-    Events3 =
+    Events =
         case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
-            ?cash(Amount, _) when Amount =:= 0 ->
+            ?cash(0, _) ->
                 [
                     ?payment_status_changed(?refunded())
                 ];
             ?cash(Amount, _) when Amount > 0 ->
                 []
         end,
-    {done, {Events2 ++ Events3, Action}}.
+    {done, {[?refund_ev(ID, ?refund_status_changed(?refund_succeeded())) | Events], Action}}.
 
 process_failure(Activity, Events, Action, Failure, St) ->
     process_failure(Activity, Events, Action, Failure, St, undefined).
@@ -2502,10 +2491,10 @@ try_request_interaction(undefined) ->
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
 
-hold_payment_limits(ProviderTerms, Cash, Timestamp, VS, Revision, St) ->
+hold_payment_limits(ProviderTerms, Cash, Timestamp, St) ->
     LimitChangeID = construct_limit_change_id(St),
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, VS, Revision),
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector),
     IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
     ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
     {ok, TurnoverLimits}.
@@ -2515,16 +2504,13 @@ commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     #domain_InvoicePayment{cost = #domain_Cash{amount = PaymentAmount}} = get_payment(St),
     case CapturedCash of
         #domain_Cash{amount = Amount} when Amount < PaymentAmount ->
-            partial_commit_payment_limits(CapturedCash, St);
+            LimitChangeID = construct_limit_change_id(St),
+            LimitChanges = construct_limit_change(LimitChangeID, CapturedCash, St),
+            hg_limiter:partial_commit(LimitChanges);
         _ ->
             LimitChanges = construct_payment_limit_change(St),
             hg_limiter:commit(LimitChanges)
     end.
-
-partial_commit_payment_limits(CapturedCash, St) ->
-    LimitChangeID = construct_limit_change_id(St),
-    LimitChanges = construct_limit_change(LimitChangeID, CapturedCash, St),
-    hg_limiter:partial_commit(LimitChanges).
 
 rollback_payment_limits(St) ->
     LimitChanges = construct_payment_limit_change(St),
@@ -2591,7 +2577,7 @@ get_limit_ids(St) ->
     Varset = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     ProviderTerms = get_provider_terminal_terms(Route, Varset, Revision),
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector, Varset, Revision),
+    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector),
     [T#domain_TurnoverLimit.id || T <- TurnoverLimits].
 
 commit_payment_cashflow(St) ->
@@ -3227,13 +3213,12 @@ apply_adjustment_effect(cashflow, Adjustment, St) ->
     set_cashflow(get_adjustment_cashflow(Adjustment), St).
 
 validate_transition(Allowed, Change, St, Opts) ->
-    Valid = is_transition_valid(Allowed, St),
-    case Opts of
-        #{} when Valid ->
+    case {Opts, is_transition_valid(Allowed, St)} of
+        {#{}, true} ->
             ok;
-        #{validation := strict} when not Valid ->
+        {#{validation := strict}, false} ->
             erlang:error({invalid_transition, Change, St, Allowed});
-        #{} when not Valid ->
+        {#{}, false} ->
             logger:warning(
                 "Invalid transition for change ~p in state ~p, allowed ~p",
                 [Change, St, Allowed]
@@ -3338,8 +3323,7 @@ get_refund_cashflow(#refund_st{cash_flow = CashFlow}) ->
     CashFlow.
 
 define_refund_cash(undefined, St) ->
-    PaymentBallance = get_remaining_payment_balance(St),
-    PaymentBallance;
+    get_remaining_payment_balance(St);
 define_refund_cash(?cash(_, SymCode) = Cash, #st{payment = #domain_InvoicePayment{cost = ?cash(_, SymCode)}}) ->
     Cash;
 define_refund_cash(?cash(_, SymCode), _St) ->

@@ -11,7 +11,6 @@
 -export([check_risk_score/1]).
 
 -export([get_payments_terms/2]).
--export([get_rec_paytools_terms/2]).
 
 -export([acceptable_terminal/5]).
 
@@ -420,11 +419,6 @@ get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
     #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
     Terms = merge_terms(Terms0, Terms1),
     Terms#domain_ProvisionTermSet.payments.
-
--spec get_rec_paytools_terms(route(), hg_domain:revision()) -> terms().
-get_rec_paytools_terms(?route(ProviderRef, _), Revision) ->
-    #domain_Provider{terms = Terms} = hg_domain:get(Revision, {provider, ProviderRef}),
-    Terms#domain_ProvisionTermSet.recurrent_paytools.
 
 -spec acceptable_terminal(
     route_predestination(),

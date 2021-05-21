@@ -66,8 +66,7 @@ handle_function(Func, Args, Opts) ->
 
 handle_function_('Create', {CustomerParams}, _Opts) ->
     DomainRevision = hg_domain:head(),
-    %% FIXME(ED-95): temporary fallback generation till CustomerID is made required in damsel
-    CustomerID = hg_utils:uid(CustomerParams#payproc_CustomerParams.customer_id),
+    CustomerID = CustomerParams#payproc_CustomerParams.customer_id,
     ok = set_meta(CustomerID),
     PartyID = CustomerParams#payproc_CustomerParams.party_id,
     ShopID = CustomerParams#payproc_CustomerParams.shop_id,
@@ -322,13 +321,10 @@ handle_result_action(#{}, Acc) ->
 
 start_binding(BindingParams, St) ->
     #payproc_CustomerBindingParams{
-        customer_binding_id = MaybeBindingID,
+        customer_binding_id = BindingID,
         payment_resource = PaymentResource,
-        rec_payment_tool_id = MaybePaytoolID
+        rec_payment_tool_id = PaytoolID
     } = BindingParams,
-    %% FIXME(ED-95): temporary fallback generation till TemplateID is made required in damsel
-    BindingID = hg_utils:uid(MaybeBindingID),
-    PaytoolID = hg_utils:uid(MaybePaytoolID),
     DomainRevision = hg_domain:head(),
     PartyID = get_party_id(St),
     PartyRevision = hg_party:get_party_revision(PartyID),
