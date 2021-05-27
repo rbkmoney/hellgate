@@ -71,6 +71,7 @@ clean:
 	$(REBAR) clean
 
 distclean:
+	$(REBAR) clean -a
 	rm -rf _build
 
 # CALL_W_CONTAINER
