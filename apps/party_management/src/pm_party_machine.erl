@@ -37,6 +37,11 @@
 -export([get_last_revision/1]).
 -export([get_status/1]).
 
+%% Thrift codec interface
+
+-export([struct_info/1]).
+-export([record_name/1]).
+
 %%
 
 -define(NS, <<"party">>).
@@ -49,9 +54,27 @@
     timestamp :: undefined | timestamp(),
     claims = #{} :: #{claim_id() => claim()},
     meta = #{} :: meta(),
-    migration_data = #{} :: #{any() => any()},
+    % TODO
+    % This is a part of persisted state of almost every party machine out there.
+    % Good news is this field was never really used which means it is just `#{}`
+    % all the time. We probably may reuse it in the future for anything map-like.
+    % Please keep intact for the time being.
+    '__reserved' = #{} :: #{},
     last_event = 0 :: event_id()
 }).
+
+% TODO
+% Move `#st` as a proper declaration to damsel.
+-define(PARTY_STATE_STRUCT_INFO,
+    {struct, struct, [
+        {1, optional, {struct, struct, {dmsl_domain_thrift, 'Party'}}, 'party', undefined},
+        {2, optional, string, 'timestamp', undefined},
+        {3, optional, {map, i64, {struct, struct, {dmsl_payment_processing_thrift, 'Claim'}}}, 'claims', #{}},
+        {4, optional, {map, string, {struct, union, {dmsl_msgpack_thrift, 'Value'}}}, meta, #{}},
+        {5, optional, {map, string, string}, '__reserved', #{}},
+        {6, optional, i64, last_event, 0}
+    ]}
+).
 
 -type st() :: #st{}.
 
@@ -1156,18 +1179,24 @@ try_attach_snapshot(Changes, AuxSt, _) ->
 
 -define(TOP_VERSION, 6).
 
+% NOTE
+% These pertain to the format of state snapshots in events.
+% Event payloads themselves are always thrift-serialized in such events.
+-define(FORMAT_VERSION_THRIFT, 2).
+-define(FORMAT_VERSION_ERLBIN, 1).
+
 wrap_event_payload(Changes) ->
-    marshal_event_payload(Changes, undefined).
+    marshal_event_payload(?FORMAT_VERSION_THRIFT, Changes, undefined).
 
 wrap_event_payload_w_snapshot(Changes, St) ->
-    StateSnapshot = encode_state(?CT_ERLANG_BINARY, St),
-    marshal_event_payload(Changes, StateSnapshot).
+    {FormatVsn, StateSnapshot} = encode_state(St),
+    marshal_event_payload(FormatVsn, Changes, StateSnapshot).
 
-marshal_event_payload(?party_ev(Changes), StateSnapshot) ->
+marshal_event_payload(FormatVsn, ?party_ev(Changes), StateSnapshot) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
     Bin = pm_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
     #{
-        format_version => 1,
+        format_version => FormatVsn,
         data => {bin, Bin}
     }.
 
@@ -1180,10 +1209,14 @@ unwrap_event({ID, Dt, Event}) ->
 unwrap_event_payload(#{format_version := Format, data := Changes}) ->
     unwrap_event_payload(Format, Changes).
 
-unwrap_event_payload(1, {bin, ThriftEncodedBin}) ->
+unwrap_event_payload(FormatVsn, {bin, ThriftEncodedBin}) when
+    FormatVsn == ?FORMAT_VERSION_THRIFT;
+    FormatVsn == ?FORMAT_VERSION_ERLBIN
+->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
     #payproc_PartyEventData{changes = Changes} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
     ?party_ev(Changes);
+%% TODO legacy support, will be removed after migration
 unwrap_event_payload(undefined, [
     #{
         <<"vsn">> := Version,
@@ -1192,7 +1225,6 @@ unwrap_event_payload(undefined, [
     EncodedEvent
 ]) ->
     transmute([Version, decode_event(ContentType, EncodedEvent)]);
-%% TODO legacy support, will be removed after migration
 unwrap_event_payload(undefined, Event) when is_list(Event) ->
     transmute(pm_party_marshalling:unmarshal(Event));
 unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
@@ -1204,13 +1236,13 @@ unwrap_state(
         _Dt,
         #{
             data := {bin, ThriftEncodedBin},
-            format_version := 1
+            format_version := FormatVsn
         }
     }
-) ->
+) when is_integer(FormatVsn) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
     #payproc_PartyEventData{state_snapshot = StateSnapshot} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
-    decode_state(?CT_ERLANG_BINARY, StateSnapshot);
+    decode_state_format(FormatVsn, StateSnapshot);
 unwrap_state(
     {
         _ID,
@@ -1225,19 +1257,36 @@ unwrap_state(
     }
 ) ->
     decode_state(ContentType, EncodedSt);
-unwrap_state(_) ->
+unwrap_state({_ID, _Dt, #{}}) ->
     undefined.
 
-encode_state(?CT_ERLANG_BINARY, St) ->
-    {bin, term_to_binary(St)}.
+-define(STATE_THRIFT_TYPE, {struct, struct, {?MODULE, 'State'}}).
 
-decode_state(?CT_ERLANG_BINARY, undefined) ->
-    undefined;
+encode_state(St) ->
+    {?FORMAT_VERSION_THRIFT, {bin, pm_proto_utils:serialize(?STATE_THRIFT_TYPE, St)}}.
+
+decode_state_format(?FORMAT_VERSION_THRIFT, {bin, EncodedSt}) ->
+    % NOTE
+    % Should look exactly like legacy `#st`, given definitions of `struct_info/1`
+    % and `record_name/1`.
+    pm_proto_utils:deserialize(?STATE_THRIFT_TYPE, EncodedSt);
+decode_state_format(?FORMAT_VERSION_ERLBIN, Encoded) ->
+    decode_state(?CT_ERLANG_BINARY, Encoded);
+decode_state_format(_, undefined) ->
+    undefined.
+
 decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
-    binary_to_term(EncodedSt).
+    validate_state(binary_to_term(EncodedSt));
+decode_state(_, undefined) ->
+    undefined.
 
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
+
+validate_state(#st{'__reserved' = R = #{}}) when map_size(R) == 0 ->
+    % NOTE
+    % Just to be sure this field was never used.
+    ok.
 
 -spec wrap_aux_state(party_aux_st()) -> pm_msgpack_marshalling:msgpack_value().
 wrap_aux_state(AuxSt) ->
@@ -1816,3 +1865,32 @@ transmute_payout_schedule_ref(3, 4, ?legacy_payout_schedule_ref(ID)) ->
     #domain_BusinessScheduleRef{id = ID};
 transmute_payout_schedule_ref(3, 4, undefined) ->
     undefined.
+
+%%
+
+-spec struct_info('State') -> dmsl_base_thrift:struct_info().
+struct_info('State') ->
+    ?PARTY_STATE_STRUCT_INFO.
+
+-spec record_name('State') -> atom().
+record_name('State') ->
+    st.
+
+%%
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-spec test() -> _.
+
+-spec encode_decode_success_test_() -> _.
+encode_decode_success_test_() ->
+    ?_assertEqual(
+        #st{},
+        begin
+            {FormatVsn, Encoded} = encode_state(#st{}),
+            decode_state_format(FormatVsn, Encoded)
+        end
+    ).
+
+-endif.
