@@ -389,12 +389,13 @@ handle_activate(Target, AuxSt, St) ->
         St
     ).
 
-publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
-    #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
+publish_party_event(Source, {ID, Dt, {Changes, _}}) ->
+    #payproc_Event{id = ID, source = Source, created_at = Dt, payload = ?party_ev(Changes)}.
 
 -spec publish_event(party_id(), pm_machine:event_payload()) -> pm_event_provider:public_event().
 publish_event(PartyID, Ev) ->
-    {{party_id, PartyID}, unwrap_event_payload(Ev)}.
+    {Changes, _} = unwrap_event_payload(Ev),
+    {{party_id, PartyID}, ?party_ev(Changes)}.
 
 %%
 -spec start(party_id(), Args :: term()) -> ok | no_return().
@@ -418,12 +419,11 @@ get_state(PartyID) ->
 
 get_state(PartyID, []) ->
     %% No snapshots, so we need entire history
-    Events = lists:map(fun unwrap_event/1, get_history(PartyID, undefined, undefined, forward)),
+    Events = unwrap_events(get_history(PartyID, undefined, undefined, forward)),
     merge_events(Events, #st{});
 get_state(PartyID, [FirstID | _]) ->
     History = get_history(PartyID, FirstID - 1, undefined, forward),
-    Events = lists:map(fun unwrap_event/1, History),
-    [FirstEvent | _] = History,
+    Events = [FirstEvent | _] = unwrap_events(History),
     St = unwrap_state(FirstEvent),
     merge_events(Events, St).
 
@@ -452,7 +452,7 @@ parse_history(ReversedHistoryPart) ->
 
 parse_history([WrappedEvent | Others], EventsAcc) ->
     Event = unwrap_event(WrappedEvent),
-    case unwrap_state(WrappedEvent) of
+    case unwrap_state(Event) of
         undefined ->
             parse_history(Others, [Event | EventsAcc]);
         #st{} = St ->
@@ -909,7 +909,7 @@ checkout_history_by_revision([], Revision, St) ->
 merge_events(Events, St) ->
     lists:foldl(fun merge_event/2, St, Events).
 
-merge_event({ID, _Dt, ?party_ev(PartyChanges)}, #st{last_event = LastEventID} = St) when
+merge_event({ID, _Dt, {PartyChanges, _}}, #st{last_event = LastEventID} = St) when
     is_list(PartyChanges) andalso ID =:= LastEventID + 1
 ->
     merge_party_changes(PartyChanges, St#st{last_event = ID}).
@@ -1206,58 +1206,35 @@ unwrap_events(History) ->
 unwrap_event({ID, Dt, Event}) ->
     {ID, Dt, unwrap_event_payload(Event)}.
 
-unwrap_event_payload(#{format_version := Format, data := Changes}) ->
-    unwrap_event_payload(Format, Changes).
+unwrap_event_payload(#{format_version := Format, data := Data}) ->
+    unwrap_event_payload(Format, Data).
 
-unwrap_event_payload(FormatVsn, {bin, ThriftEncodedBin}) when
-    FormatVsn == ?FORMAT_VERSION_THRIFT;
-    FormatVsn == ?FORMAT_VERSION_ERLBIN
-->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-    #payproc_PartyEventData{changes = Changes} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
-    ?party_ev(Changes);
-%% TODO legacy support, will be removed after migration
-unwrap_event_payload(undefined, [
-    #{
-        <<"vsn">> := Version,
-        <<"ct">> := ContentType
-    },
-    EncodedEvent
-]) ->
-    transmute([Version, decode_event(ContentType, EncodedEvent)]);
-unwrap_event_payload(undefined, Event) when is_list(Event) ->
-    transmute(pm_party_marshalling:unmarshal(Event));
-unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
-    transmute([1, binary_to_term(Bin)]).
-
-unwrap_state(
-    {
-        _ID,
-        _Dt,
-        #{
-            data := {bin, ThriftEncodedBin},
-            format_version := FormatVsn
-        }
-    }
+unwrap_event_payload(
+    FormatVsn,
+    {bin, ThriftEncodedBin}
 ) when is_integer(FormatVsn) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-    #payproc_PartyEventData{state_snapshot = StateSnapshot} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
-    decode_state_format(FormatVsn, StateSnapshot);
-unwrap_state(
-    {
-        _ID,
-        _Dt,
-        #{
-            data := [
-                #{<<"ct">> := ContentType, <<"state_snapshot">> := EncodedSt},
-                _EncodedEvent
-            ],
-            format_version := undefined
-        }
-    }
+    ?party_event_data(Changes, Snapshot) = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
+    {Changes, pm_maybe:apply(fun(S) -> {FormatVsn, S} end, Snapshot)};
+%% TODO legacy support, will be removed after migration
+unwrap_event_payload(
+    undefined,
+    [Header = #{<<"vsn">> := Version, <<"ct">> := ContentType}, EncodedEvent]
 ) ->
-    decode_state(ContentType, EncodedSt);
-unwrap_state({_ID, _Dt, #{}}) ->
+    Snapshot =
+        case maps:get(<<"state_snapshot">>, Header, undefined) of
+            undefined -> undefined;
+            EncodedSt -> {ctype_to_format_version(ContentType), EncodedSt}
+        end,
+    {transmute([Version, decode_event(ContentType, EncodedEvent)]), Snapshot};
+unwrap_event_payload(undefined, Event) when is_list(Event) ->
+    {transmute(pm_party_marshalling:unmarshal(Event)), undefined};
+unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
+    {transmute([1, binary_to_term(Bin)]), undefined}.
+
+unwrap_state({_ID, _Dt, {_Changes, {FormatVsn, EncodedSt}}}) ->
+    decode_state_format(FormatVsn, EncodedSt);
+unwrap_state({_ID, _Dt, {_Changes, undefined}}) ->
     undefined.
 
 -define(STATE_THRIFT_TYPE, {struct, struct, {?MODULE, 'State'}}).
@@ -1270,15 +1247,8 @@ decode_state_format(?FORMAT_VERSION_THRIFT, {bin, EncodedSt}) ->
     % Should look exactly like legacy `#st`, given definitions of `struct_info/1`
     % and `record_name/1`.
     pm_proto_utils:deserialize(?STATE_THRIFT_TYPE, EncodedSt);
-decode_state_format(?FORMAT_VERSION_ERLBIN, Encoded) ->
-    decode_state(?CT_ERLANG_BINARY, Encoded);
-decode_state_format(_, undefined) ->
-    undefined.
-
-decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
-    validate_state(binary_to_term(EncodedSt));
-decode_state(_, undefined) ->
-    undefined.
+decode_state_format(?FORMAT_VERSION_ERLBIN, {bin, EncodedSt}) ->
+    validate_state(binary_to_term(EncodedSt)).
 
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
@@ -1287,6 +1257,9 @@ validate_state(#st{'__reserved' = R = #{}}) when map_size(R) == 0 ->
     % NOTE
     % Just to be sure this field was never used.
     ok.
+
+ctype_to_format_version(?CT_ERLANG_BINARY) ->
+    ?FORMAT_VERSION_ERLBIN.
 
 -spec wrap_aux_state(party_aux_st()) -> pm_msgpack_marshalling:msgpack_value().
 wrap_aux_state(AuxSt) ->
@@ -1309,7 +1282,8 @@ decode_aux_state(?CT_ERLANG_BINARY, {bin, AuxSt}) ->
     binary_to_term(AuxSt).
 
 transmute([Version, Event]) ->
-    transmute_event(Version, ?TOP_VERSION, Event).
+    ?party_ev(Changes) = transmute_event(Version, ?TOP_VERSION, Event),
+    Changes.
 
 transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1 ->
     NewChanges = [transmute_change(V1, V1 + 1, C) || C <- Changes],
