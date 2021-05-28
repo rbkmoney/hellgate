@@ -1177,7 +1177,12 @@ try_attach_snapshot(Changes, AuxSt, _) ->
 
 %% TODO add transmutations for new international legal entities and bank accounts
 
--define(TOP_VERSION, 6).
+-define(TOP_VERSION, 7).
+
+% NOTE
+% Version of any legacy encoded party state from the point of view of transmutation
+% facilities.
+-define(PARTY_STATE_ERLBIN_VERSION, 6).
 
 % NOTE
 % These pertain to the format of state snapshots in events.
@@ -1248,7 +1253,7 @@ decode_state_format(?FORMAT_VERSION_THRIFT, {bin, EncodedSt}) ->
     % and `record_name/1`.
     pm_proto_utils:deserialize(?STATE_THRIFT_TYPE, EncodedSt);
 decode_state_format(?FORMAT_VERSION_ERLBIN, {bin, EncodedSt}) ->
-    validate_state(binary_to_term(EncodedSt)).
+    transmute_state(validate_state(binary_to_term(EncodedSt))).
 
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
@@ -1291,6 +1296,9 @@ transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1 ->
 transmute_event(V, V, Event) ->
     Event.
 
+transmute_state(St = #st{}) ->
+    transmute_state(?PARTY_STATE_ERLBIN_VERSION, ?TOP_VERSION, St).
+
 -spec transmute_change(pos_integer(), pos_integer(), term()) -> dmsl_payment_processing_thrift:'PartyChange'().
 transmute_change(
     1,
@@ -1311,7 +1319,7 @@ transmute_change(
             UpdatedAt
         )
     )
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_created(#payproc_Claim{
         id = ID,
@@ -1325,18 +1333,56 @@ transmute_change(
     V1,
     V2,
     ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
 transmute_change(
     V1,
     V2,
     ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     NewEffects = [transmute_claim_effect(V1, V2, E) || E <- Effects],
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
-transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     C.
+
+-spec transmute_state(pos_integer(), pos_integer(), _LegacyState) -> st().
+transmute_state(V1, V2, St = #st{}) ->
+    St#st{
+        party = transmute_party(V1, V2, St#st.party),
+        claims = maps:map(fun(_, C) -> transmute_claim(V1, V2, C) end, St#st.claims)
+    }.
+
+transmute_claim(V1, V2, Claim = #payproc_Claim{changeset = Changeset}) ->
+    transmute_claim_status(V1, V2, Claim#payproc_Claim{
+        changeset = [transmute_party_modification(V1, V2, M) || M <- Changeset]
+    }).
+
+transmute_claim_status(V1, V2, Claim = #payproc_Claim{status = ?accepted(Effects = [_ | _])}) ->
+    Claim#payproc_Claim{
+        status = ?accepted([transmute_claim_effect(V1, V2, E) || E <- Effects])
+    };
+transmute_claim_status(_V1, _V2, Claim) ->
+    Claim.
+
+transmute_party(
+    V1,
+    V2,
+    Party = #domain_Party{
+        contractors = Contractors,
+        contracts = Contracts
+    }
+) ->
+    Party#domain_Party{
+        contractors = maps:map(fun(_, C) -> transmute_party_contractor(V1, V2, C) end, Contractors),
+        contracts = maps:map(fun(_, C) -> transmute_contract(V1, V2, C) end, Contracts)
+    }.
+
+transmute_party_contractor(V1, V2, PartyContractor = #domain_PartyContractor{contractor = Contractor}) ->
+    PartyContractor#domain_PartyContractor{contractor = transmute_contractor(V1, V2, Contractor)}.
+
+transmute_contract(V1, V2, Contract = #domain_Contract{contractor = Contractor}) ->
+    Contract#domain_Contract{contractor = transmute_contractor(V1, V2, Contractor)}.
 
 transmute_party_modification(
     1,
@@ -1396,6 +1442,35 @@ transmute_party_modification(
         }}
     );
 transmute_party_modification(
+    6 = V1,
+    7 = V2,
+    ?legacy_contract_modification(
+        ID,
+        {creation,
+            ContractParams = #payproc_ContractParams{
+                contractor = Contractor
+            }}
+    )
+) ->
+    ?contract_modification(
+        ID,
+        {creation, ContractParams#payproc_ContractParams{
+            contractor = transmute_contractor(V1, V2, Contractor)
+        }}
+    );
+transmute_party_modification(
+    6 = V1,
+    7 = V2,
+    ?contractor_modification(
+        ID,
+        {creation, Contractor}
+    )
+) ->
+    ?contractor_modification(
+        ID,
+        {creation, transmute_contractor(V1, V2, Contractor)}
+    );
+transmute_party_modification(
     V1,
     V2,
     ?legacy_contract_modification(
@@ -1434,7 +1509,7 @@ transmute_party_modification(
             schedule = transmute_payout_schedule_ref(3, 4, PayoutScheduleRef)
         }}
     );
-transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     C.
 
 transmute_claim_effect(
@@ -1594,6 +1669,32 @@ transmute_claim_effect(
         }}
     );
 transmute_claim_effect(
+    6 = V1,
+    7 = V2,
+    ?contract_effect(
+        ID,
+        {created, Contract = #domain_Contract{contractor = Contractor}}
+    )
+) ->
+    ?contract_effect(
+        ID,
+        {created, Contract#domain_Contract{
+            contractor = transmute_contractor(V1, V2, Contractor)
+        }}
+    );
+transmute_claim_effect(
+    6 = V1,
+    7 = V2,
+    ?contractor_effect(
+        ID,
+        {created, PartyContractor}
+    )
+) ->
+    ?contractor_effect(
+        ID,
+        {created, transmute_party_contractor(V1, V2, PartyContractor)}
+    );
+transmute_claim_effect(
     V1,
     V2,
     ?legacy_contract_effect(
@@ -1696,7 +1797,7 @@ transmute_claim_effect(
             schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
         }}
     );
-transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     C.
 
 transmute_contractor(
@@ -1741,13 +1842,36 @@ transmute_contractor(
             )}}
 ) ->
     {legal_entity,
+        {international_legal_entity,
+            ?legacy_international_legal_entity_v2(
+                LegalName,
+                TradingName,
+                RegisteredAddress,
+                ActualAddress,
+                undefined
+            )}};
+transmute_contractor(
+    6,
+    7,
+    {legal_entity,
+        {international_legal_entity,
+            ?legacy_international_legal_entity_v2(
+                LegalName,
+                TradingName,
+                RegisteredAddress,
+                ActualAddress,
+                RegisteredNumber
+            )}}
+) ->
+    {legal_entity,
         {international_legal_entity, #domain_InternationalLegalEntity{
             legal_name = LegalName,
             trading_name = TradingName,
             registered_address = RegisteredAddress,
-            actual_address = ActualAddress
+            actual_address = ActualAddress,
+            registered_number = RegisteredNumber
         }}};
-transmute_contractor(V1, _, Contractor) when V1 =:= 1; V1 =:= 2 ->
+transmute_contractor(V1, _, Contractor) when V1 =:= 1; V1 =:= 2; V1 =:= 6 ->
     Contractor.
 
 transmute_payout_tool(

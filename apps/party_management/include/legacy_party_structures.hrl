@@ -67,6 +67,16 @@
     {domain_InternationalLegalEntity, LegalName, TradingName, RegisteredAddress, ActualAddress}
 ).
 
+-define(legacy_international_legal_entity_v2(
+    LegalName,
+    TradingName,
+    RegisteredAddress,
+    ActualAddress,
+    RegisteredNumber
+),
+    {domain_InternationalLegalEntity, LegalName, TradingName, RegisteredAddress, ActualAddress, RegisteredNumber}
+).
+
 -define(legacy_bank_account(Account, BankName, BankPostAccount, BankBik),
     {domain_BankAccount, Account, BankName, BankPostAccount, BankBik}
 ).
