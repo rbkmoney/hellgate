@@ -1253,10 +1253,10 @@ decode_state_format(?FORMAT_VERSION_ERLBIN, {bin, EncodedSt}) ->
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
 
-validate_state(#st{'__reserved' = R = #{}}) when map_size(R) == 0 ->
+validate_state(St = #st{'__reserved' = R = #{}}) when map_size(R) == 0 ->
     % NOTE
     % Just to be sure this field was never used.
-    ok.
+    St.
 
 ctype_to_format_version(?CT_ERLANG_BINARY) ->
     ?FORMAT_VERSION_ERLBIN.
