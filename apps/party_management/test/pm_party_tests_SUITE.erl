@@ -107,6 +107,8 @@
 -export([compute_pred_w_irreducible_criterion/1]).
 -export([compute_terms_w_criteria/1]).
 
+-export([consistent_eventsink_history/1]).
+
 %% tests descriptions
 
 -type config() :: pm_ct_helper:config().
@@ -132,7 +134,9 @@ all() ->
 
         {group, claim_management},
         {group, compute},
-        {group, terms}
+        {group, terms},
+
+        consistent_eventsink_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -535,6 +539,8 @@ end_per_testcase(_Name, _C) ->
 
 -spec compute_pred_w_irreducible_criterion(config()) -> _ | no_return().
 -spec compute_terms_w_criteria(config()) -> _ | no_return().
+
+-spec consistent_eventsink_history(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -1939,6 +1945,11 @@ compute_terms_w_criteria(C) ->
             )
         end
     ).
+
+consistent_eventsink_history(C) ->
+    Client = pm_client_eventsink:start_link(pm_client_api:new(cfg(root_url, C))),
+    Events = pm_client_eventsink:pull_events(5000, 1000, Client),
+    ok = pm_eventsink_history:assert_total_order(Events).
 
 %%
 
