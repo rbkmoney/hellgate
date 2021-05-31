@@ -212,4 +212,23 @@
     {domain_LegalAgreement, SignedAt, LegalAgreementID}
 ).
 
+-define(legacy_st(Party, Timestamp, Claims, Meta, MigrationData, LastEvent),
+    {st,
+        % undefined | party()
+        Party,
+        % undefined | timestamp()
+        Timestamp,
+        % #{claim_id() => claim()}
+        Claims,
+        % meta()
+        Meta,
+        % NOTE
+        % This is a part of persisted state of almost every party machine out there.
+        % Good news is this field was never really used which means it is just `#{}`
+        % all the time.
+        MigrationData,
+        % event_id()
+        LastEvent}
+).
+
 -endif.
