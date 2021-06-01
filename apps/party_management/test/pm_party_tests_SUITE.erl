@@ -31,6 +31,7 @@
 -export([complex_claim_acceptance/1]).
 
 -export([party_revisioning/1]).
+-export([party_get_initial_revision/1]).
 -export([party_get_revision/1]).
 -export([party_blocking/1]).
 -export([party_unblocking/1]).
@@ -154,6 +155,7 @@ groups() ->
         ]},
         {party_revisioning, [sequence], [
             party_creation,
+            party_get_initial_revision,
             party_revisioning,
             party_get_revision
         ]},
@@ -462,6 +464,7 @@ end_per_testcase(_Name, _C) ->
 -spec shop_update_before_confirm(config()) -> _ | no_return().
 -spec shop_update_with_bad_params(config()) -> _ | no_return().
 
+-spec party_get_initial_revision(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
 -spec party_get_revision(config()) -> _ | no_return().
 
@@ -569,6 +572,12 @@ party_retrieval(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     #domain_Party{id = PartyID} = pm_client_party:get(Client).
+
+party_get_initial_revision(C) ->
+    % NOTE
+    % This triggers `pm_party_machine:get_last_revision_old_way/1` codepath.
+    Client = cfg(client, C),
+    0 = pm_client_party:get_revision(Client).
 
 party_revisioning(C) ->
     Client = cfg(client, C),
