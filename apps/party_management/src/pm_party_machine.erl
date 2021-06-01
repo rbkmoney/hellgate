@@ -104,7 +104,7 @@ process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = pm_datetime:format_now(),
     Changes = [?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)],
     #{
-        events => [wrap_event_payload(?party_ev(Changes))],
+        events => [wrap_event_payload(Changes)],
         auxst => wrap_aux_state(#{
             snapshot_index => [],
             party_revision_index => #{}
@@ -1131,12 +1131,12 @@ try_attach_snapshot(Changes, AuxSt0, #pm_State{last_event = LastEventID} = St) w
 ->
     AuxSt1 = append_snapshot_index(LastEventID + 1, AuxSt0),
     {
-        [wrap_event_payload_w_snapshot(?party_ev(Changes), St)],
+        [wrap_event_payload_w_snapshot(Changes, St)],
         wrap_aux_state(AuxSt1)
     };
 try_attach_snapshot(Changes, AuxSt, _) ->
     {
-        [wrap_event_payload(?party_ev(Changes))],
+        [wrap_event_payload(Changes)],
         wrap_aux_state(AuxSt)
     }.
 
@@ -1162,7 +1162,7 @@ wrap_event_payload_w_snapshot(Changes, St) ->
     {FormatVsn, StateSnapshot} = encode_state(St),
     marshal_event_payload(FormatVsn, Changes, StateSnapshot).
 
-marshal_event_payload(FormatVsn, ?party_ev(Changes), StateSnapshot) ->
+marshal_event_payload(FormatVsn, Changes, StateSnapshot) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
     Bin = pm_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
     #{
