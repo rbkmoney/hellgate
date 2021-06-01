@@ -103,11 +103,13 @@
     {refund_new, refund_id()}
     | {refund_session, refund_id()}
     | {refund_failure, refund_id()}
-    | {refund_accounter, refund_id()}.
+    | {refund_accounter, refund_id()}
+    | {refund_limit_check, refund_id()}.
 
 -type adjustment_activity() ::
     {adjustment_new, adjustment_id()}
-    | {adjustment_pending, adjustment_id()}.
+    | {adjustment_pending, adjustment_id()}
+    | {adjustment_limit_check, adjustment_id()}.
 
 -type chargeback_activity() :: {chargeback, chargeback_id(), chargeback_activity_type()}.
 
@@ -125,7 +127,8 @@
     | updating_accounter
     | flow_waiting
     | finalizing_session
-    | finalizing_accounter.
+    | finalizing_accounter
+    | limit_check.
 
 -record(st, {
     activity :: activity(),
@@ -1762,6 +1765,8 @@ process_timeout(St) ->
 process_timeout({payment, risk_scoring}, Action, St) ->
     %% There are two processing_accounter steps here (scoring, routing)
     process_routing(Action, St);
+process_timeout({payment, limit_check}, Action, St) ->
+    process_limit_check(Action, St);
 process_timeout({payment, cash_flow_building}, Action, St) ->
     process_cash_flow_building(Action, St);
 process_timeout({payment, Step}, Action, St) when
@@ -1826,6 +1831,13 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
 
 %%
 
+failure(Reason) ->
+    {failure,
+        payproc_errors:construct(
+            'PaymentFailure',
+            Reason
+        )}.
+
 -spec process_routing(action(), st()) -> machine_result().
 process_routing(Action, St) ->
     Opts = get_opts(St),
@@ -1857,12 +1869,29 @@ process_routing(Action, St) ->
             process_failure(get_activity(St), Events0, Action, Failure, St)
     end.
 
-failure(Reason) ->
-    {failure,
-        payproc_errors:construct(
-            'PaymentFailure',
-            Reason
-        )}.
+-spec process_limit_check(action(), st()) -> machine_result().
+process_limit_check(Action, #st{payment = Payment, route = Route, opts = Opts} = St) ->
+    #domain_InvoicePayment{cost = Cash, created_at = Ts, domain_revision = Rev, flow = Flow} = Payment,
+
+    VS = reconstruct_payment_flow(Flow, Ts, collect_validation_varset(St, Opts)),
+    Terms = get_provider_terminal_terms(Route, VS, Rev),
+    LimitSelector = Terms#domain_PaymentsProvisionTerms.turnover_limits,
+    Limits = hg_limiter:get_turnover_limits(LimitSelector),
+    IDs = [T#domain_TurnoverLimit.id || T <- Limits],
+    LimitChangeID = construct_limit_change_id(St),
+    ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Ts)),
+
+    Events =
+        case hg_limiter:check_limits(Limits, Ts) of
+            {ok, _} ->
+                [?payment_limit_checked(IDs, ok)];
+            {error, {limit_overflow, _}} ->
+                Failure = failure(
+                    {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
+                ),
+                [?payment_limit_checked(IDs, overflow), ?payment_rollback_started(Failure)]
+        end,
+    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
 -spec process_cash_flow_building(action(), st()) -> machine_result().
 process_cash_flow_building(Action, St) ->
@@ -1871,30 +1900,17 @@ process_cash_flow_building(Action, St) ->
     Payment = get_payment(St),
     Invoice = get_invoice(Opts),
     Route = get_route(St),
-    Cash = Payment#domain_InvoicePayment.cost,
     Timestamp = get_payment_created_at(Payment),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS1),
     ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
-    {ok, TurnoverLimits} = hold_payment_limits(ProviderTerms, Cash, Timestamp, St),
-
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
-    Events = [?cash_flow_changed(FinalCashflow)],
-    case hg_limiter:check_limits(TurnoverLimits, Timestamp) of
-        {ok, _} ->
-            {next, {Events, hg_machine_action:set_timeout(0, Action)}};
-        {error, {limit_overflow, _}} ->
-            Failure = failure(
-                {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
-            ),
-            RollbackStarted = [?payment_rollback_started(Failure)],
-            {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}
-    end.
+    {next, {[?cash_flow_changed(FinalCashflow)], hg_machine_action:set_timeout(0, Action)}}.
 
 %%
 
@@ -2065,16 +2081,17 @@ finalize_payment(Action, St) ->
 
 -spec process_callback_timeout(action(), session(), events(), st()) -> machine_result().
 process_callback_timeout(Action, Session, Events, St) ->
-    case get_session_timeout_behaviour(Session) of
-        {callback, Payload} ->
-            {ok, CallbackResult} = process_payment_session_callback(Payload, St),
-            {_Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
-            finish_session_processing(Result, St);
-        {operation_failure, OperationFailure} ->
-            SessionEvents = [?session_finished(?session_failed(OperationFailure))],
-            Result = {Events ++ wrap_session_events(SessionEvents, Session), Action},
-            finish_session_processing(Result, St)
-    end.
+    Result =
+        case get_session_timeout_behaviour(Session) of
+            {callback, Payload} ->
+                {ok, CallbackResult} = process_payment_session_callback(Payload, St),
+                {_Response, Res} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
+                Res;
+            {operation_failure, OperationFailure} ->
+                SessionEvents = [?session_finished(?session_failed(OperationFailure))],
+                {Events ++ wrap_session_events(SessionEvents, Session), Action}
+        end,
+    finish_session_processing(Result, St).
 
 -spec handle_callback(callback(), action(), st()) -> {callback_response(), machine_result()}.
 handle_callback(Payload, Action, St) ->
@@ -2192,7 +2209,15 @@ process_failure({payment, Step} = Activity, Events, Action, Failure, St, _Refund
             OperationStatus = choose_fd_operation_status_for_failure(Failure),
             _ = maybe_notify_fault_detector(Activity, TargetType, start, St),
             _ = maybe_notify_fault_detector(Activity, TargetType, OperationStatus, St),
-            process_fatal_payment_failure(Target, Events, Action, Failure, St)
+            case Target of
+                ?cancelled() ->
+                    error({invalid_cancel_failure, Failure});
+                ?captured() ->
+                    error({invalid_capture_failure, Failure});
+                ?processed() ->
+                    RollbackStarted = [?payment_rollback_started(Failure)],
+                    {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}
+            end
     end;
 process_failure({refund_new, ID}, [], Action, Failure, _St, _RefundSt) ->
     {next, {[?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
@@ -2300,29 +2325,15 @@ notify_fault_detector(Status, St) ->
     ServiceConfig = hg_fault_detector_client:build_config(SlidingWindow, OpTimeLimit, PreAggrSize),
     ServiceID = hg_fault_detector_client:build_service_id(ServiceType, ProviderID),
     OperationID = hg_fault_detector_client:build_operation_id(ServiceType, [InvoiceID, PaymentID]),
-    fd_register(Status, ServiceID, OperationID, ServiceConfig).
 
-fd_register(start, ServiceID, OperationID, ServiceConfig) ->
-    _ = fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig);
-fd_register(Status, ServiceID, OperationID, ServiceConfig) ->
-    _ = hg_fault_detector_client:register_operation(Status, ServiceID, OperationID, ServiceConfig).
-
-fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig) ->
-    case hg_fault_detector_client:register_operation(start, ServiceID, OperationID, ServiceConfig) of
-        {error, not_found} ->
+    Res = hg_fault_detector_client:register_operation(Status, ServiceID, OperationID, ServiceConfig),
+    case {Status, Res} of
+        {start, {error, not_found}} ->
             _ = hg_fault_detector_client:init_service(ServiceID, ServiceConfig),
             _ = hg_fault_detector_client:register_operation(start, ServiceID, OperationID, ServiceConfig);
-        Result ->
-            Result
+        {_, Res} ->
+            Res
     end.
-
-process_fatal_payment_failure(?cancelled(), _Events, _Action, Failure, _St) ->
-    error({invalid_cancel_failure, Failure});
-process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
-    error({invalid_capture_failure, Failure});
-process_fatal_payment_failure(?processed(), Events, Action, Failure, _St) ->
-    RollbackStarted = [?payment_rollback_started(Failure)],
-    {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),
@@ -2490,14 +2501,6 @@ try_request_interaction(undefined) ->
     [];
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
-
-hold_payment_limits(ProviderTerms, Cash, Timestamp, St) ->
-    LimitChangeID = construct_limit_change_id(St),
-    TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector),
-    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
-    {ok, TurnoverLimits}.
 
 commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
@@ -2899,12 +2902,12 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
     };
 merge_change(Change = ?route_changed(Route), St, Opts) ->
     _ = validate_transition({payment, routing}, Change, St, Opts),
-    St#st{
-        route = Route,
-        activity = {payment, cash_flow_building}
-    };
+    St#st{route = Route, activity = {payment, limit_check}};
+merge_change(Change = ?payment_limit_checked(), St, Opts) ->
+    ok = validate_transition({payment, limit_check}, Change, St, Opts),
+    St#st{activity = {payment, cash_flow_building}};
 merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
-    _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
+    _ = validate_transition({payment, flow_waiting}, Change, St, Opts),
     St#st{
         capture_params = Params,
         activity = {payment, processing_capture}
@@ -2912,11 +2915,8 @@ merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
 merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St0, Opts) ->
     _ = validate_transition(
         [
-            {payment, S}
-            || S <- [
-                   cash_flow_building,
-                   processing_capture
-               ]
+            {payment, cash_flow_building},
+            {payment, processing_capture}
         ],
         Change,
         St0,
@@ -2941,7 +2941,7 @@ merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
 merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
-    _ = validate_transition([{payment, processing_session}], Change, St, Opts),
+    _ = validate_transition([{payment, processing_session}, {payment, cash_flow_building}], Change, St, Opts),
     St#st{
         failure = Failure,
         activity = {payment, processing_failure},
@@ -3574,6 +3574,11 @@ get_log_params(?route_changed(Route), _) ->
         event_type => invoice_payment_route_changed
     },
     make_log_params(Params);
+get_log_params(?payment_limit_checked(), _) ->
+    Params = #{
+        event_type => invoice_payment_limit_checked
+    },
+    make_log_params(Params);
 get_log_params(?cash_flow_changed(Cashflow), _) ->
     Params = #{
         cashflow => Cashflow,
@@ -3692,6 +3697,8 @@ get_message(invoice_payment_started) ->
     "Invoice payment is started";
 get_message(invoice_payment_risk_score_changed) ->
     "Invoice payment risk score changed";
+get_message(invoice_payment_limit_checked) ->
+    "Invoice payment limit checked";
 get_message(invoice_payment_route_changed) ->
     "Invoice payment route changed";
 get_message(invoice_payment_cash_flow_changed) ->
@@ -3741,6 +3748,13 @@ unmarshal(change, [
     }
 ]) ->
     [?route_changed(hg_routing:unmarshal(Route))];
+unmarshal(change, [
+    2,
+    #{
+        <<"change">> := <<"limit_checked">>
+    }
+]) ->
+    [?payment_limit_checked()];
 unmarshal(change, [
     2,
     #{

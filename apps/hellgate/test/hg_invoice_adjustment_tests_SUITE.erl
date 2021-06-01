@@ -885,6 +885,9 @@ start_payment(InvoiceID, PaymentParams, Client) ->
         ?payment_ev(PaymentID, ?route_changed(_))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_limit_checked())
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     PaymentID.
