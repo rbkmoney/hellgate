@@ -29,6 +29,10 @@
     {invoice_payment_route_changed, #payproc_InvoicePaymentRouteChanged{route = Route}}
 ).
 
+-define(payment_limit_checked(),
+    {invoice_payment_limit_checked, #payproc_InvoicePaymentLimitChecked{}}
+).
+
 -define(cash_flow_changed(CashFlow),
     {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}}
 ).
