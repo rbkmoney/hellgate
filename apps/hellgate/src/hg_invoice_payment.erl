@@ -2082,16 +2082,17 @@ finalize_payment(Action, St) ->
 
 -spec process_callback_timeout(action(), session(), events(), st()) -> machine_result().
 process_callback_timeout(Action, Session, Events, St) ->
-    case get_session_timeout_behaviour(Session) of
-        {callback, Payload} ->
-            {ok, CallbackResult} = process_payment_session_callback(Payload, St),
-            {_Response, Result} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
-            finish_session_processing(Result, St);
-        {operation_failure, OperationFailure} ->
-            SessionEvents = [?session_finished(?session_failed(OperationFailure))],
-            Result = {Events ++ wrap_session_events(SessionEvents, Session), Action},
-            finish_session_processing(Result, St)
-    end.
+    Result =
+        case get_session_timeout_behaviour(Session) of
+            {callback, Payload} ->
+                {ok, CallbackResult} = process_payment_session_callback(Payload, St),
+                {_Response, Res} = handle_callback_result(CallbackResult, Action, get_activity_session(St)),
+                Res;
+            {operation_failure, OperationFailure} ->
+                SessionEvents = [?session_finished(?session_failed(OperationFailure))],
+                {Events ++ wrap_session_events(SessionEvents, Session), Action}
+        end,
+    finish_session_processing(Result, St).
 
 -spec handle_callback(callback(), action(), st()) -> {callback_response(), machine_result()}.
 handle_callback(Payload, Action, St) ->
@@ -2209,7 +2210,15 @@ process_failure({payment, Step} = Activity, Events, Action, Failure, St, _Refund
             OperationStatus = choose_fd_operation_status_for_failure(Failure),
             _ = maybe_notify_fault_detector(Activity, TargetType, start, St),
             _ = maybe_notify_fault_detector(Activity, TargetType, OperationStatus, St),
-            process_fatal_payment_failure(Target, Events, Action, Failure, St)
+            case Target of
+                ?cancelled() ->
+                    error({invalid_cancel_failure, Failure});
+                ?captured() ->
+                    error({invalid_capture_failure, Failure});
+                ?processed() ->
+                    RollbackStarted = [?payment_rollback_started(Failure)],
+                    {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}
+            end
     end;
 process_failure({refund_new, ID}, [], Action, Failure, _St, _RefundSt) ->
     {next, {[?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
@@ -2317,29 +2326,15 @@ notify_fault_detector(Status, St) ->
     ServiceConfig = hg_fault_detector_client:build_config(SlidingWindow, OpTimeLimit, PreAggrSize),
     ServiceID = hg_fault_detector_client:build_service_id(ServiceType, ProviderID),
     OperationID = hg_fault_detector_client:build_operation_id(ServiceType, [InvoiceID, PaymentID]),
-    fd_register(Status, ServiceID, OperationID, ServiceConfig).
 
-fd_register(start, ServiceID, OperationID, ServiceConfig) ->
-    _ = fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig);
-fd_register(Status, ServiceID, OperationID, ServiceConfig) ->
-    _ = hg_fault_detector_client:register_operation(Status, ServiceID, OperationID, ServiceConfig).
-
-fd_maybe_init_service_and_start(ServiceID, OperationID, ServiceConfig) ->
-    case hg_fault_detector_client:register_operation(start, ServiceID, OperationID, ServiceConfig) of
-        {error, not_found} ->
+    Res = hg_fault_detector_client:register_operation(Status, ServiceID, OperationID, ServiceConfig),
+    case {Status, Res} of
+        {start, {error, not_found}} ->
             _ = hg_fault_detector_client:init_service(ServiceID, ServiceConfig),
             _ = hg_fault_detector_client:register_operation(start, ServiceID, OperationID, ServiceConfig);
-        Result ->
-            Result
+        {_, Res} ->
+            Res
     end.
-
-process_fatal_payment_failure(?cancelled(), _Events, _Action, Failure, _St) ->
-    error({invalid_cancel_failure, Failure});
-process_fatal_payment_failure(?captured(), _Events, _Action, Failure, _St) ->
-    error({invalid_capture_failure, Failure});
-process_fatal_payment_failure(?processed(), Events, Action, Failure, _St) ->
-    RollbackStarted = [?payment_rollback_started(Failure)],
-    {next, {Events ++ RollbackStarted, hg_machine_action:set_timeout(0, Action)}}.
 
 retry_session(Action, Target, Timeout) ->
     NewEvents = start_session(Target),
