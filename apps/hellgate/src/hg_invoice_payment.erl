@@ -1874,23 +1874,22 @@ process_limit_check(Action, #st{payment = Payment, route = Route, opts = Opts} =
     #domain_InvoicePayment{cost = Cash, created_at = Ts, domain_revision = Rev, flow = Flow} = Payment,
 
     VS = reconstruct_payment_flow(Flow, Ts, collect_validation_varset(St, Opts)),
-    {ok, Limits} = hold_payment_limits(
-        get_provider_terminal_terms(Route, VS, Rev),
-        Cash,
-        Ts,
-        St
-    ),
+    Terms = get_provider_terminal_terms(Route, VS, Rev),
+    LimitSelector = Terms#domain_PaymentsProvisionTerms.turnover_limits,
+    Limits = hg_limiter:get_turnover_limits(LimitSelector),
+    IDs = [T#domain_TurnoverLimit.id || T <- Limits],
+    LimitChangeID = construct_limit_change_id(St),
+    ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Ts)),
 
-    NextEvent = ?payment_limit_checked(),
     Events =
         case hg_limiter:check_limits(Limits, Ts) of
             {ok, _} ->
-                [NextEvent];
+                [?payment_limit_checked(IDs, ok)];
             {error, {limit_overflow, _}} ->
                 Failure = failure(
                     {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
                 ),
-                [NextEvent, ?payment_rollback_started(Failure)]
+                [?payment_limit_checked(IDs, overflow), ?payment_rollback_started(Failure)]
         end,
     {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
@@ -2502,14 +2501,6 @@ try_request_interaction(undefined) ->
     [];
 try_request_interaction(UserInteraction) ->
     [?interaction_requested(UserInteraction)].
-
-hold_payment_limits(ProviderTerms, Cash, Timestamp, St) ->
-    LimitChangeID = construct_limit_change_id(St),
-    TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector),
-    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    ok = hg_limiter:hold(construct_limit_change(IDs, LimitChangeID, Cash, Timestamp)),
-    {ok, TurnoverLimits}.
 
 commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,

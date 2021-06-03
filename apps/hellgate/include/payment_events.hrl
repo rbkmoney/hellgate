@@ -33,6 +33,10 @@
     {invoice_payment_limit_checked, #payproc_InvoicePaymentLimitChecked{}}
 ).
 
+-define(payment_limit_checked(IDs, Status),
+    {invoice_payment_limit_checked, #payproc_InvoicePaymentLimitChecked{limit_ids = IDs, status = Status}}
+).
+
 -define(cash_flow_changed(CashFlow),
     {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}}
 ).
