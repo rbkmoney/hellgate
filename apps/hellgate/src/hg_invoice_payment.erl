@@ -3588,6 +3588,11 @@ get_log_params(?route_changed(Route), _) ->
         event_type => invoice_payment_route_changed
     },
     make_log_params(Params);
+get_log_params(?payment_limit_checked(), _) ->
+    Params = #{
+        event_type => invoice_payment_limit_checked
+    },
+    make_log_params(Params);
 get_log_params(?cash_flow_changed(Cashflow), _) ->
     Params = #{
         cashflow => Cashflow,
