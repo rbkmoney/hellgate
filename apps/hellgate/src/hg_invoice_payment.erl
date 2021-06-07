@@ -128,7 +128,8 @@
     | flow_waiting
     | finalizing_session
     | finalizing_accounter
-    | limit_check.
+    | limit_check
+    | limit_failure.
 
 -record(st, {
     activity :: activity(),
@@ -1777,7 +1778,8 @@ process_timeout({payment, Step}, Action, St) when
 process_timeout({payment, Step}, Action, St) when
     Step =:= processing_failure orelse
         Step =:= processing_accounter orelse
-        Step =:= finalizing_accounter
+        Step =:= finalizing_accounter orelse
+        Step =:= limit_failure
 ->
     process_result(Action, St);
 process_timeout({payment, updating_accounter}, Action, St) ->
@@ -2148,6 +2150,9 @@ process_result({payment, processing_failure}, Action, St = #st{failure = Failure
     _ = rollback_payment_limits(St),
     _Clocks = rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
+process_result({payment, limit_failure}, Action, St = #st{failure = Failure}) ->
+    _ = rollback_payment_limits(St),
+    {done, {[?payment_status_changed(?failed(Failure))], hg_machine_action:set_timeout(0, Action)}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
     _Clocks =
@@ -2903,9 +2908,17 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
 merge_change(Change = ?route_changed(Route), St, Opts) ->
     _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{route = Route, activity = {payment, limit_check}};
-merge_change(Change = ?payment_limit_checked(), St, Opts) ->
+merge_change(Change = ?payment_limit_checked(_, Status), St, Opts) ->
     ok = validate_transition({payment, limit_check}, Change, St, Opts),
-    St#st{activity = {payment, cash_flow_building}};
+    case Status of
+        ok ->
+            St#st{activity = {payment, cash_flow_building}};
+        _ ->
+            St#st{
+                activity = {payment, limit_failure},
+                timings = accrue_status_timing(failed, Opts, St)
+            }
+    end;
 merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
     _ = validate_transition({payment, flow_waiting}, Change, St, Opts),
     St#st{
@@ -2941,7 +2954,7 @@ merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};
 merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
-    _ = validate_transition([{payment, processing_session}, {payment, cash_flow_building}], Change, St, Opts),
+    _ = validate_transition([{payment, processing_session}, {payment, limit_failure}], Change, St, Opts),
     St#st{
         failure = Failure,
         activity = {payment, processing_failure},
@@ -2954,7 +2967,8 @@ merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment
             || S <- [
                    risk_scoring,
                    routing,
-                   processing_failure
+                   processing_failure,
+                   limit_failure
                ]
         ],
         Change,
