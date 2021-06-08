@@ -152,7 +152,8 @@
     capture_params :: undefined | capture_params(),
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
-    latest_change_at :: undefined | hg_datetime:timestamp()
+    latest_change_at :: undefined | hg_datetime:timestamp(),
+    limit_ids :: undefined | limit_ids()
 }).
 
 -record(refund_st, {
@@ -210,6 +211,7 @@
 -type shop() :: dmsl_domain_thrift:'Shop'().
 -type payment_tool() :: dmsl_domain_thrift:'PaymentTool'().
 -type recurrent_paytool_service_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
+-type limit_ids() :: [dmsl_domain_thrift:'TurnoverLimitID'()].
 
 -type session_status() :: active | suspended | finished.
 
@@ -938,16 +940,6 @@ collect_cashflow(
     ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
     MerchantCashflow ++ ProviderCashflow.
 
-construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
-    hg_cashflow:finalize(
-        Cashflow,
-        collect_cash_flow_context(Payment),
-        hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision)
-    ).
-
-construct_final_cashflow(Cashflow, Context, AccountMap) ->
-    hg_cashflow:finalize(Cashflow, Context, AccountMap).
-
 collect_cash_flow_context(
     #domain_InvoicePayment{cost = Cost}
 ) ->
@@ -962,11 +954,7 @@ collect_cash_flow_context(
     }.
 
 get_available_amount(AccountID, Clock) ->
-    #{
-        min_available_amount := AvailableAmount
-    } =
-        hg_accounting:get_balance(AccountID, Clock),
-    AvailableAmount.
+    maps:get(min_available_amount, hg_accounting:get_balance(AccountID, Clock)).
 
 construct_payment_plan_id(St) ->
     construct_payment_plan_id(get_invoice(get_opts(St)), get_payment(St)).
@@ -1220,7 +1208,7 @@ make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
     AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
-    construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
+    hg_cashflow:finalize(Cashflow, collect_cash_flow_context(Refund), AccountMap).
 
 assert_refund_cash(Cash, St) ->
     PaymentAmount = get_remaining_payment_amount(Cash, St),
@@ -1534,17 +1522,16 @@ get_cash_flow_for_status({failed, _}, _St) ->
     [].
 
 -spec get_cash_flow_for_target_status(payment_status(), st(), opts()) -> cash_flow().
-get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
-    Payment0 = get_payment(St0),
-    Route = get_route(St0),
+get_cash_flow_for_target_status({captured, Captured}, St, Opts) ->
+    Payment0 = get_payment(St),
+    Route = get_route(St),
     Cost = get_captured_cost(Captured, Payment0),
     Payment = Payment0#domain_InvoicePayment{
         cost = Cost
     },
     Timestamp = get_payment_created_at(Payment),
-    St = St0#st{payment = Payment},
+    VS = collect_validation_varset(St#st{payment = Payment}, Opts),
     Revision = Payment#domain_InvoicePayment.domain_revision,
-    VS = collect_validation_varset(St, Opts),
     calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts);
 get_cash_flow_for_target_status({cancelled, _}, _St, _Opts) ->
     [];
@@ -1578,8 +1565,11 @@ calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, O
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    Cashflow = collect_cashflow(MerchantTerms, ProviderTerms),
-    construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision).
+    hg_cashflow:finalize(
+        collect_cashflow(MerchantTerms, ProviderTerms),
+        collect_cash_flow_context(Payment),
+        hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision)
+    ).
 
 -spec construct_adjustment(
     Timestamp :: hg_datetime:timestamp(),
@@ -1949,7 +1939,7 @@ process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
     Shop = get_shop(Opts),
     RefundSt = try_get_refund_state(ID, St),
-    hold_refund_limits(RefundSt, St),
+    ok = hg_limiter:hold(construct_refund_limit_change(RefundSt, St)),
 
     #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
     Clock = prepare_refund_cashflow(RefundSt, St),
@@ -2178,7 +2168,7 @@ process_result({refund_failure, ID}, Action, St) ->
     {done, {Events, Action}};
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    _ = commit_refund_limits(RefundSt, St),
+    ok = commit_refund_limits(RefundSt, St),
     _Clocks = commit_refund_cashflow(RefundSt, St),
     Events =
         case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
@@ -2516,16 +2506,11 @@ commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
             LimitChanges = construct_limit_change(LimitChangeID, CapturedCash, St),
             hg_limiter:partial_commit(LimitChanges);
         _ ->
-            LimitChanges = construct_payment_limit_change(St),
-            hg_limiter:commit(LimitChanges)
+            hg_limiter:commit(construct_payment_limit_change(St))
     end.
 
 rollback_payment_limits(St) ->
-    LimitChanges = construct_payment_limit_change(St),
-    ok = hg_limiter:rollback(LimitChanges).
-
-hold_refund_limits(RefundSt, St) ->
-    hg_limiter:hold(construct_refund_limit_change(RefundSt, St)).
+    ok = hg_limiter:rollback(construct_payment_limit_change(St)).
 
 commit_refund_limits(RefundSt, St) ->
     hg_limiter:commit(construct_refund_limit_change(RefundSt, St)).
@@ -2576,17 +2561,8 @@ construct_limit_change(IDs, LimitChangeID, Cash, Timestamp) ->
         || LimitID <- IDs
     ].
 
-get_limit_ids(St) ->
-    Opts = get_opts(St),
-    Revision = get_payment_revision(St),
-    Payment = get_payment(St),
-    Route = get_route(St),
-    VS0 = reconstruct_payment_flow(Payment, #{}),
-    Varset = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    ProviderTerms = get_provider_terminal_terms(Route, Varset, Revision),
-    TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
-    TurnoverLimits = hg_limiter:get_turnover_limits(TurnoverLimitSelector),
-    [T#domain_TurnoverLimit.id || T <- TurnoverLimits].
+get_limit_ids(#st{limit_ids = IDs}) ->
+    IDs.
 
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
@@ -2908,17 +2884,19 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
 merge_change(Change = ?route_changed(Route), St, Opts) ->
     _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{route = Route, activity = {payment, limit_check}};
-merge_change(Change = ?payment_limit_checked(_, Status), St, Opts) ->
+merge_change(Change = ?payment_limit_checked(IDs, Status), St, Opts) ->
     ok = validate_transition({payment, limit_check}, Change, St, Opts),
-    case Status of
-        ok ->
-            St#st{activity = {payment, cash_flow_building}};
-        _ ->
-            St#st{
-                activity = {payment, limit_failure},
-                timings = accrue_status_timing(failed, Opts, St)
-            }
-    end;
+    StNew =
+        case Status of
+            ok ->
+                St#st{activity = {payment, cash_flow_building}};
+            _ ->
+                St#st{
+                    activity = {payment, limit_failure},
+                    timings = accrue_status_timing(failed, Opts, St)
+                }
+        end,
+    StNew#st{limit_ids = IDs};
 merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
     _ = validate_transition({payment, flow_waiting}, Change, St, Opts),
     St#st{
