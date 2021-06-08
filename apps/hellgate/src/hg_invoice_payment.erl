@@ -940,16 +940,6 @@ collect_cashflow(
     ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
     MerchantCashflow ++ ProviderCashflow.
 
-construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
-    hg_cashflow:finalize(
-        Cashflow,
-        collect_cash_flow_context(Payment),
-        hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision)
-    ).
-
-construct_final_cashflow(Cashflow, Context, AccountMap) ->
-    hg_cashflow:finalize(Cashflow, Context, AccountMap).
-
 collect_cash_flow_context(
     #domain_InvoicePayment{cost = Cost}
 ) ->
@@ -964,11 +954,7 @@ collect_cash_flow_context(
     }.
 
 get_available_amount(AccountID, Clock) ->
-    #{
-        min_available_amount := AvailableAmount
-    } =
-        hg_accounting:get_balance(AccountID, Clock),
-    AvailableAmount.
+    maps:get(min_available_amount, hg_accounting:get_balance(AccountID, Clock)).
 
 construct_payment_plan_id(St) ->
     construct_payment_plan_id(get_invoice(get_opts(St)), get_payment(St)).
@@ -1222,7 +1208,7 @@ make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
     AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
-    construct_final_cashflow(Cashflow, collect_cash_flow_context(Refund), AccountMap).
+    hg_cashflow:finalize(Cashflow, collect_cash_flow_context(Refund), AccountMap).
 
 assert_refund_cash(Cash, St) ->
     PaymentAmount = get_remaining_payment_amount(Cash, St),
@@ -1536,17 +1522,16 @@ get_cash_flow_for_status({failed, _}, _St) ->
     [].
 
 -spec get_cash_flow_for_target_status(payment_status(), st(), opts()) -> cash_flow().
-get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
-    Payment0 = get_payment(St0),
-    Route = get_route(St0),
+get_cash_flow_for_target_status({captured, Captured}, St, Opts) ->
+    Payment0 = get_payment(St),
+    Route = get_route(St),
     Cost = get_captured_cost(Captured, Payment0),
     Payment = Payment0#domain_InvoicePayment{
         cost = Cost
     },
     Timestamp = get_payment_created_at(Payment),
-    St = St0#st{payment = Payment},
+    VS = collect_validation_varset(St#st{payment = Payment}, Opts),
     Revision = Payment#domain_InvoicePayment.domain_revision,
-    VS = collect_validation_varset(St, Opts),
     calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts);
 get_cash_flow_for_target_status({cancelled, _}, _St, _Opts) ->
     [];
@@ -1580,8 +1565,11 @@ calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, O
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    Cashflow = collect_cashflow(MerchantTerms, ProviderTerms),
-    construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision).
+    hg_cashflow:finalize(
+        collect_cashflow(MerchantTerms, ProviderTerms),
+        collect_cash_flow_context(Payment),
+        hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision)
+    ).
 
 -spec construct_adjustment(
     Timestamp :: hg_datetime:timestamp(),
