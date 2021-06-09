@@ -211,7 +211,7 @@
 -type shop() :: dmsl_domain_thrift:'Shop'().
 -type payment_tool() :: dmsl_domain_thrift:'PaymentTool'().
 -type recurrent_paytool_service_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
--type limit_ids() :: [dmsl_domain_thrift:'TurnoverLimitID'()].
+-type limit_ids() :: [dmsl_payment_processing_thrift:'LimitResult'()].
 
 -type session_status() :: active | suspended | finished.
 
@@ -1875,13 +1875,17 @@ process_limit_check(Action, #st{payment = Payment, route = Route, opts = Opts} =
 
     Events =
         case hg_limiter:check_limits(Limits, Ts) of
-            {ok, _} ->
-                [?payment_limit_checked(IDs, ok)];
-            {error, {limit_overflow, _}} ->
+            {_, []} ->
+                [?payment_limit_checked([?payment_limit_result(IDs, ok)])];
+            {Matched, [_ | _] = Missed} ->
                 Failure = failure(
                     {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
                 ),
-                [?payment_limit_checked(IDs, overflow), ?payment_rollback_started(Failure)]
+                Res = [
+                    ?payment_limit_result([X#domain_TurnoverLimit.id || X <- Matched], ok),
+                    ?payment_limit_result([X#domain_TurnoverLimit.id || X <- Missed], overflow)
+                ],
+                [?payment_limit_checked(Res), ?payment_rollback_started(Failure)]
         end,
     {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
@@ -2561,8 +2565,8 @@ construct_limit_change(IDs, LimitChangeID, Cash, Timestamp) ->
         || LimitID <- IDs
     ].
 
-get_limit_ids(#st{limit_ids = IDs}) ->
-    IDs.
+get_limit_ids(#st{limit_ids = Xs}) ->
+    lists:flatten([IDs || ?payment_limit_result(IDs, _) <- Xs]).
 
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
@@ -2884,8 +2888,15 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
 merge_change(Change = ?route_changed(Route), St, Opts) ->
     _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{route = Route, activity = {payment, limit_check}};
-merge_change(Change = ?payment_limit_checked(IDs, Status), St, Opts) ->
+merge_change(Change = ?payment_limit_checked(Res), St, Opts) ->
     ok = validate_transition({payment, limit_check}, Change, St, Opts),
+    Fun = fun
+        (?payment_limit_result(_, ok), Acc) ->
+            Acc;
+        (?payment_limit_result(_, Sts), _Acc) ->
+            Sts
+    end,
+    Status = lists:foldl(Fun, ok, Res),
     StNew =
         case Status of
             ok ->
@@ -2896,7 +2907,7 @@ merge_change(Change = ?payment_limit_checked(IDs, Status), St, Opts) ->
                     timings = accrue_status_timing(failed, Opts, St)
                 }
         end,
-    StNew#st{limit_ids = IDs};
+    StNew#st{limit_ids = Res};
 merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
     _ = validate_transition({payment, flow_waiting}, Change, St, Opts),
     St#st{
