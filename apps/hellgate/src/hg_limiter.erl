@@ -27,36 +27,16 @@ get_turnover_limits({value, Limits}) ->
 get_turnover_limits(Ambiguous) ->
     error({misconfiguration, {'Could not reduce selector to a value', Ambiguous}}).
 
--spec check_limits([turnover_limit()], timestamp()) ->
-    {ok, [hg_limiter_client:limit()]}
-    | {error, {limit_overflow, [binary()]}}.
+-spec check_limits([turnover_limit()], timestamp()) -> {[turnover_limit()], [turnover_limit()]}.
 check_limits(TurnoverLimits, Timestamp) ->
-    try
-        check_limits(TurnoverLimits, Timestamp, [])
-    catch
-        throw:limit_overflow ->
-            IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-            {error, {limit_overflow, IDs}}
-    end.
-
-check_limits([], _, Limits) ->
-    {ok, Limits};
-check_limits([T | TurnoverLimits], Timestamp, Acc) ->
-    #domain_TurnoverLimit{id = LimitID} = T,
-    Limit = hg_limiter_client:get(LimitID, Timestamp),
-    #proto_limiter_Limit{
-        id = LimitID,
-        cash = Cash
-    } = Limit,
-    LimiterAmount = Cash#domain_Cash.amount,
-    UpperBoundary = T#domain_TurnoverLimit.upper_boundary,
-    case LimiterAmount < UpperBoundary of
-        true ->
-            check_limits(TurnoverLimits, Timestamp, [Limit | Acc]);
-        false ->
-            logger:info("Limit with id ~p overflowed", [LimitID]),
-            throw(limit_overflow)
-    end.
+    Fun = fun(#domain_TurnoverLimit{id = LimitID, upper_boundary = UpperBoundary}) ->
+        #proto_limiter_Limit{
+            id = LimitID,
+            cash = Cash
+        } = hg_limiter_client:get(LimitID, Timestamp),
+        Cash#domain_Cash.amount < UpperBoundary
+    end,
+    lists:partition(Fun, TurnoverLimits).
 
 -spec hold([hg_limiter_client:limit()], hg_limiter_client:change_id(), cash(), timestamp()) -> ok.
 hold(Limits, LimitChangeID, Cash, Timestamp) ->

@@ -5037,7 +5037,7 @@ await_payment_rollback(InvoiceID, PaymentID, Client) ->
         ?payment_ev(PaymentID, ?route_changed(_))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?payment_limit_checked(_, overflow)),
+        ?payment_ev(PaymentID, ?payment_limit_checked(_)),
         ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
     ] = next_event(InvoiceID, Client),
     Failure.
