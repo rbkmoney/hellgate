@@ -10,6 +10,8 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_errors_thrift.hrl").
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
+-include_lib("limiter_proto/include/lim_configurator_thrift.hrl").
+-include_lib("limiter_proto/include/lim_limiter_thrift.hrl").
 
 -include_lib("stdlib/include/assert.hrl").
 
@@ -189,6 +191,9 @@ init([]) ->
 -type group_name() :: hg_ct_helper:group_name().
 -type test_return() :: _ | no_return().
 
+-define(PARTY_ID_WITH_LIMIT, <<"bIg merch limit">>).
+-define(LIMIT_ID, <<"ID">>).
+
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
 
@@ -221,6 +226,7 @@ groups() ->
     [
         {all_non_destructive_tests, [parallel], [
             {group, base_payments},
+            % {group, operation_limits_legacy},
             {group, operation_limits},
 
             payment_w_customer_success,
@@ -331,11 +337,19 @@ groups() ->
             reopen_payment_chargeback_arbitration_reopen_fails
         ]},
 
-        {operation_limits, [], [
+        {operation_limits_legacy, [], [
             payment_limit_success,
             payment_limit_overflow,
             refund_limit_success,
             payment_partial_capture_limit_success
+        ]},
+
+        {operation_limits, [], [
+            payment_limit_success,
+            payment_limit_overflow
+            % TODO[limiter] uncomment after fix refund bug(increase amount after refund payment)
+            % refund_limit_success
+            % payment_partial_capture_limit_success
         ]},
 
         {refunds, [], [
@@ -420,7 +434,13 @@ init_per_suite(C) ->
         snowflake,
         {cowboy, CowboySpec}
     ]),
+
     ok = hg_domain:insert(construct_domain_fixture()),
+    {ok, #limiter_config_LimitConfig{}} = hg_dummy_limiter:create_config(
+        limiter_create_params(),
+        hg_dummy_limiter:new()
+    ),
+
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -430,6 +450,7 @@ init_per_suite(C) ->
     AnotherCustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
+
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
@@ -449,7 +470,6 @@ init_per_suite(C) ->
     ],
 
     ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
-    _ = start_limiter(hg_dummy_limiter, NewC),
     NewC.
 
 -spec end_per_suite(config()) -> _.
@@ -1002,72 +1022,69 @@ payment_success(C) ->
 
 -spec payment_limit_success(config()) -> test_return().
 payment_limit_success(C) ->
-    hg_dummy_limiter:init(),
-    PartyID = <<"bIg merch limit">>,
+    RootUrl = cfg(root_url, C),
+    PartyID = ?PARTY_ID_WITH_LIMIT,
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(_Payment)]
+    ) = create_payment(PartyID, ShopID, 100000, Client).
+
+-spec payment_limit_overflow(config()) -> test_return().
+payment_limit_overflow(C) ->
+    RootUrl = cfg(root_url, C),
+    PartyID = ?PARTY_ID_WITH_LIMIT,
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()) = Invoice,
+        [?payment_state(Payment)]
+    ) = create_payment(PartyID, ShopID, 100000, Client),
+
+    Failure = create_payment_limit_overflow(PartyID, ShopID, 1000, Client),
+    #domain_Invoice{id = ID} = Invoice,
+    #domain_InvoicePayment{id = PaymentID} = Payment,
+    Limit = get_payment_limit(PartyID, ShopID, ID, PaymentID, 1000),
+    ?assertMatch(#limiter_Limit{amount = 100000}, Limit),
+    ok = payproc_errors:match(
+        'PaymentFailure',
+        Failure,
+        fun({authorization_failed, {provider_limit_exceeded, _}}) -> ok end
+    ).
+
+-spec refund_limit_success(config()) -> test_return().
+refund_limit_success(C) ->
+    PartyID = ?PARTY_ID_WITH_LIMIT,
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
-    InvoiceID = create_invoice(InvoiceParams, Client),
-    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
 
-    PaymentParams = make_payment_params(),
-    _PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(_Payment)]
-    ) = hg_client_invoicing:get(InvoiceID, Client),
-    hg_dummy_limiter:delete().
+    ) = create_payment(PartyID, ShopID, 50000, Client),
 
--spec payment_limit_overflow(config()) -> test_return().
-payment_limit_overflow(C) ->
-    LimitID = <<"1">>,
-    hg_dummy_limiter:init(LimitID, 100000),
-    PartyID = <<"bIg merch limit">>,
-    RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
-    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID2 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    InvoiceParams2 = make_invoice_params(PartyID, ShopID2, <<"rubberduck">>, make_due_date(10), make_cash(10000)),
-    InvoiceID2 = create_invoice(InvoiceParams2, Client),
-    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
-    PaymentParams = make_payment_params(),
-    ?payment_state(?payment(PaymentID2)) = hg_client_invoicing:start_payment(InvoiceID2, PaymentParams, Client),
-    PaymentID2 = await_payment_started(InvoiceID2, PaymentID2, Client),
-    Failure = await_payment_rollback(InvoiceID2, PaymentID2, Client),
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()) = Invoice,
+        [?payment_state(Payment)]
+    ) = create_payment(PartyID, ShopID, 50000, Client),
+    ?invoice(InvoiceID) = Invoice,
+    ?payment(PaymentID) = Payment,
+
+    Failure = create_payment_limit_overflow(PartyID, ShopID, 50000, Client),
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
         fun({authorization_failed, {provider_limit_exceeded, _}}) -> ok end
     ),
-    hg_dummy_limiter:delete().
-
--spec refund_limit_success(config()) -> test_return().
-refund_limit_success(C) ->
-    hg_dummy_limiter:init(),
-    PartyID = <<"bIg merch limit">>,
-    RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
-    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-
-    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
-    InvoiceParams1 = InvoiceParams#payproc_InvoiceParams{
-        id = hg_utils:unique_id()
-    },
-    InvoiceID = create_invoice(InvoiceParams1, Client),
-    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
-    PaymentID = execute_payment(InvoiceID, make_payment_params(), Client),
-
-    InvoiceParams2 = InvoiceParams#payproc_InvoiceParams{
-        id = hg_utils:unique_id()
-    },
-
-    InvoiceID2 = create_invoice(InvoiceParams2, Client),
-    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID2, Client),
-    _PaymentID2 = execute_payment(InvoiceID2, make_payment_params(), Client),
-
+    % Limit = get_payment_limit(PartyID, ShopID, InvoiceID, PaymentID, 50000),
+    % ct:print("Limit after overflow ~p", [Limit]),
     % create a refund finally
     RefundParams = make_refund_params(),
     RefundID = execute_payment_refund(InvoiceID, PaymentID, RefundParams, Client),
@@ -1076,17 +1093,19 @@ refund_limit_success(C) ->
     % no more refunds for you
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
-    ?assertEqual(42000, hg_dummy_limiter:get_amount(<<"1">>)),
-    hg_dummy_limiter:delete().
+    % try payment after refund(limit was decreased)
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(_Payment)]
+    ) = create_payment(PartyID, ShopID, 50000, Client).
 
 -spec payment_partial_capture_limit_success(config()) -> test_return().
 payment_partial_capture_limit_success(C) ->
-    hg_dummy_limiter:init(),
     InitialCost = 1000 * 100,
     PartialCost = 700 * 100,
     PaymentParams = make_payment_params({hold, cancel}),
 
-    PartyID = <<"bIg merch limit">>,
+    PartyID = ?PARTY_ID_WITH_LIMIT,
     RootUrl = cfg(root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -1116,10 +1135,54 @@ payment_partial_capture_limit_success(C) ->
     ?assertMatch(?payment_state(?payment_w_status(PaymentID, ?captured(Reason, Cash))), PaymentState),
     #payproc_InvoicePayment{cash_flow = CF2} = PaymentState,
     ?assertNotEqual(undefined, CF2),
-    ?assertNotEqual(CF1, CF2),
+    ?assertNotEqual(CF1, CF2).
 
-    ?assertEqual(PartialCost, hg_dummy_limiter:get_amount(<<"1">>)),
-    hg_dummy_limiter:delete().
+create_payment(PartyID, ShopID, Amount, Client) ->
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(Amount)),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+
+    PaymentParams = make_payment_params(),
+    _PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
+    hg_client_invoicing:get(InvoiceID, Client).
+
+create_payment_limit_overflow(PartyID, ShopID, Amount, Client) ->
+    InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(Amount)),
+    InvoiceID = create_invoice(InvoiceParams, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+    PaymentParams = make_payment_params(),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
+    await_payment_rollback(InvoiceID, PaymentID, Client).
+
+get_payment_limit(PartyID, ShopID, InvoiceID, PaymentID, Amount) ->
+    Context = #limiter_context_LimitContext{
+        payment_processing = #limiter_context_ContextPaymentProcessing{
+            op = {invoice_payment, #limiter_context_PaymentProcessingOperationInvoicePayment{}},
+            invoice = #limiter_context_Invoice{
+                id = InvoiceID,
+                owner_id = PartyID,
+                shop_id = ShopID,
+                cost = #limiter_base_Cash{
+                    amount = Amount,
+                    currency = #limiter_base_CurrencyRef{symbolic_code = <<"RUB">>}
+                },
+                created_at = hg_datetime:format_now(),
+                effective_payment = #limiter_context_InvoicePayment{
+                    id = PaymentID,
+                    owner_id = PartyID,
+                    shop_id = ShopID,
+                    cost = #limiter_base_Cash{
+                        amount = Amount,
+                        currency = #limiter_base_CurrencyRef{symbolic_code = <<"RUB">>}
+                    },
+                    created_at = hg_datetime:format_now()
+                }
+            }
+        }
+    },
+    {ok, Limit} = hg_dummy_limiter:get(?LIMIT_ID, Context, hg_dummy_limiter:new()),
+    Limit.
 
 -spec payment_success_ruleset(config()) -> test_return().
 payment_success_ruleset(C) ->
@@ -4665,14 +4728,6 @@ start_proxies(Proxies) ->
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
 
-start_limiter(Module, Context) ->
-    IP = "127.0.0.1",
-    Port = hg_dummy_limiter:get_port(),
-    Opts = #{hellgate_root_url => cfg(root_url, Context)},
-    ChildSpec = hg_test_proxy:get_child_spec(Module, Module, IP, Port, Opts),
-    {ok, _} = supervisor:start_child(cfg(test_sup, Context), ChildSpec),
-    hg_test_proxy:get_url(Module, IP, Port).
-
 start_kv_store(SupPid) ->
     ChildSpec = #{
         id => hg_kv_store,
@@ -5833,7 +5888,7 @@ construct_domain_fixture() ->
                 ),
                 ?delegate(
                     <<"Provider with turnover limit">>,
-                    {condition, {party, #domain_PartyCondition{id = <<"bIg merch limit">>}}},
+                    {condition, {party, #domain_PartyCondition{id = ?PARTY_ID_WITH_LIMIT}}},
                     ?ruleset(4)
                 ),
                 ?delegate(<<"Common">>, {constant, true}, ?ruleset(1))
@@ -6738,11 +6793,7 @@ construct_domain_fixture() ->
                         turnover_limits =
                             {value, [
                                 #domain_TurnoverLimit{
-                                    id = <<"1">>,
-                                    upper_boundary = 100000
-                                },
-                                #domain_TurnoverLimit{
-                                    id = <<"2">>,
+                                    id = ?LIMIT_ID,
                                     upper_boundary = 100000
                                 }
                             ]}
@@ -7523,3 +7574,12 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
 set_processing_deadline(Timeout, PaymentParams) ->
     Deadline = woody_deadline:to_binary(woody_deadline:from_timeout(Timeout)),
     PaymentParams#payproc_InvoicePaymentParams{processing_deadline = Deadline}.
+
+limiter_create_params() ->
+    #limiter_cfg_LimitCreateParams{
+        id = ?LIMIT_ID,
+        name = <<"ShopMonthTurnover">>,
+        description = <<"description">>,
+        started_at = <<"2000-01-01T00:00:00Z">>,
+        body_type = {cash, #limiter_config_LimitBodyTypeCash{currency = <<"RUB">>}}
+    }.

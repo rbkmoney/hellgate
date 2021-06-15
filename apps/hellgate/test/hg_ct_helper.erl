@@ -194,7 +194,7 @@ start_app(hellgate = AppName) ->
                     }
                 },
                 limiter => #{
-                    url => <<"http://127.0.0.1:30001/test/proxy/limiter/dummy">>,
+                    url => <<"http://limiter:8022/v1/limiter">>,
                     transport_opts => #{}
                 }
             }},
