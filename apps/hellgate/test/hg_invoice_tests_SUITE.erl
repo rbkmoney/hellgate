@@ -43,6 +43,7 @@
 -export([payment_success/1]).
 
 -export([payment_limit_success/1]).
+-export([payment_limit_other_shop_success/1]).
 -export([payment_limit_overflow/1]).
 -export([refund_limit_success/1]).
 -export([payment_partial_capture_limit_success/1]).
@@ -193,6 +194,7 @@ init([]) ->
 
 -define(PARTY_ID_WITH_LIMIT, <<"bIg merch limit">>).
 -define(LIMIT_ID, <<"ID">>).
+-define(LIMIT_UPPER_BOUNDARY, 100000).
 
 cfg(Key, C) ->
     hg_ct_helper:cfg(Key, C).
@@ -337,19 +339,13 @@ groups() ->
             reopen_payment_chargeback_arbitration_reopen_fails
         ]},
 
-        {operation_limits_legacy, [], [
-            payment_limit_success,
-            payment_limit_overflow,
-            refund_limit_success,
-            payment_partial_capture_limit_success
-        ]},
-
         {operation_limits, [], [
             payment_limit_success,
-            payment_limit_overflow
+            payment_limit_other_shop_success,
+            payment_limit_overflow,
+            payment_partial_capture_limit_success
             % TODO[limiter] uncomment after fix refund bug(increase amount after refund payment)
             % refund_limit_success
-            % payment_partial_capture_limit_success
         ]},
 
         {refunds, [], [
@@ -1033,6 +1029,27 @@ payment_limit_success(C) ->
         [?payment_state(_Payment)]
     ) = create_payment(PartyID, ShopID, 100000, Client).
 
+-spec payment_limit_other_shop_success(config()) -> test_return().
+payment_limit_other_shop_success(C) ->
+    RootUrl = cfg(root_url, C),
+    PartyID = ?PARTY_ID_WITH_LIMIT,
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    ShopID1 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID2 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
+    PaymentAmount = ?LIMIT_UPPER_BOUNDARY,
+
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(_Payment1)]
+    ) = create_payment(PartyID, ShopID1, PaymentAmount, Client),
+
+    ?invoice_state(
+        ?invoice_w_status(?invoice_paid()),
+        [?payment_state(_Payment2)]
+    ) = create_payment(PartyID, ShopID2, PaymentAmount, Client).
+
+
 -spec payment_limit_overflow(config()) -> test_return().
 payment_limit_overflow(C) ->
     RootUrl = cfg(root_url, C),
@@ -1044,13 +1061,13 @@ payment_limit_overflow(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()) = Invoice,
         [?payment_state(Payment)]
-    ) = create_payment(PartyID, ShopID, 100000, Client),
+    ) = create_payment(PartyID, ShopID, ?LIMIT_UPPER_BOUNDARY, Client),
 
     Failure = create_payment_limit_overflow(PartyID, ShopID, 1000, Client),
     #domain_Invoice{id = ID} = Invoice,
     #domain_InvoicePayment{id = PaymentID} = Payment,
     Limit = get_payment_limit(PartyID, ShopID, ID, PaymentID, 1000),
-    ?assertMatch(#limiter_Limit{amount = 100000}, Limit),
+    ?assertMatch(#limiter_Limit{amount = ?LIMIT_UPPER_BOUNDARY}, Limit),
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
@@ -6794,7 +6811,7 @@ construct_domain_fixture() ->
                             {value, [
                                 #domain_TurnoverLimit{
                                     id = ?LIMIT_ID,
-                                    upper_boundary = 100000
+                                    upper_boundary = ?LIMIT_UPPER_BOUNDARY
                                 }
                             ]}
                     }
