@@ -430,7 +430,7 @@ get_term_set(TermsRef, Timestamp, Revision) ->
             TermSet;
         #domain_TermSetHierarchyRef{} ->
             ParentTermSet = get_term_set(ParentRef, Timestamp, Revision),
-            merge_term_sets([ParentTermSet, TermSet])
+            merge_term_sets(TermSet, ParentTermSet)
     end.
 
 get_active_term_set(TimedTermSets, Timestamp) ->
@@ -485,7 +485,8 @@ merge_payments_terms(
         fees = Fee0,
         holds = Hl0,
         refunds = Rf0,
-        chargebacks = CB0
+        chargebacks = CB0,
+        allocations = Alloc0
     },
     #domain_PaymentsServiceTerms{
         currencies = Curr1,
@@ -495,7 +496,8 @@ merge_payments_terms(
         fees = Fee1,
         holds = Hl1,
         refunds = Rf1,
-        chargebacks = CB1
+        chargebacks = CB1,
+        allocations = Alloc1
     }
 ) ->
     #domain_PaymentsServiceTerms{
@@ -506,7 +508,8 @@ merge_payments_terms(
         fees = pm_utils:select_defined(Fee1, Fee0),
         holds = merge_holds_terms(Hl0, Hl1),
         refunds = merge_refunds_terms(Rf0, Rf1),
-        chargebacks = merge_chargeback_terms(CB0, CB1)
+        chargebacks = merge_chargeback_terms(CB0, CB1),
+        allocations = merge_allocation_terms(Alloc0, Alloc1)
     };
 merge_payments_terms(Terms0, Terms1) ->
     pm_utils:select_defined(Terms1, Terms0).
@@ -594,6 +597,20 @@ merge_chargeback_terms(
         eligibility_time = hg_utils:select_defined(ElTime1, ElTime0)
     };
 merge_chargeback_terms(Terms0, Terms1) ->
+    hg_utils:select_defined(Terms1, Terms0).
+
+merge_allocation_terms(
+    #domain_PaymentAllocationServiceTerms{
+        allowed = Allow0
+    },
+    #domain_PaymentAllocationServiceTerms{
+        allowed = Allow1
+    }
+) ->
+    #domain_PaymentAllocationServiceTerms{
+        allowed = hg_utils:select_defined(Allow1, Allow0)
+    };
+merge_allocation_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
 
 merge_payouts_terms(
