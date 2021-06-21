@@ -283,6 +283,10 @@ reduce_payments_terms(#domain_PaymentsServiceTerms{} = Terms, VS, Rev) ->
         chargebacks = pm_maybe:apply(
             fun(X) -> reduce_chargeback_terms(X, VS, Rev) end,
             Terms#domain_PaymentsServiceTerms.chargebacks
+        ),
+        allocations = pm_maybe:apply(
+            fun(X) -> reduce_allocation_terms(X, VS, Rev) end,
+            Terms#domain_PaymentsServiceTerms.allocations
         )
     }.
 
@@ -322,6 +326,20 @@ reduce_chargeback_terms(#domain_PaymentChargebackServiceTerms{} = Terms, VS, Rev
         ),
         fees = reduce_if_defined(Terms#domain_PaymentChargebackServiceTerms.fees, VS, Rev),
         eligibility_time = reduce_if_defined(Terms#domain_PaymentChargebackServiceTerms.eligibility_time, VS, Rev)
+    }.
+
+reduce_allocation_terms(
+    #domain_PaymentAllocationServiceTerms{
+        allow = Allow
+    },
+    VS,
+    Rev
+) ->
+    #domain_PaymentAllocationServiceTerms{
+        allow = pm_maybe:apply(
+            fun(X) -> pm_selector:reduce_predicate(X, VS, Rev) end,
+            Allow
+        )
     }.
 
 reduce_payout_terms(#domain_PayoutsServiceTerms{} = Terms, VS, Rev) ->
