@@ -601,14 +601,14 @@ merge_chargeback_terms(Terms0, Terms1) ->
 
 merge_allocation_terms(
     #domain_PaymentAllocationServiceTerms{
-        allowed = Allow0
+        allow = Allow0
     },
     #domain_PaymentAllocationServiceTerms{
-        allowed = Allow1
+        allow = Allow1
     }
 ) ->
     #domain_PaymentAllocationServiceTerms{
-        allowed = hg_utils:select_defined(Allow1, Allow0)
+        allow = hg_utils:select_defined(Allow1, Allow0)
     };
 merge_allocation_terms(Terms0, Terms1) ->
     hg_utils:select_defined(Terms1, Terms0).
