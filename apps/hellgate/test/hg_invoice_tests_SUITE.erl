@@ -1049,7 +1049,6 @@ payment_limit_other_shop_success(C) ->
         [?payment_state(_Payment2)]
     ) = create_payment(PartyID, ShopID2, PaymentAmount, Client).
 
-
 -spec payment_limit_overflow(config()) -> test_return().
 payment_limit_overflow(C) ->
     RootUrl = cfg(root_url, C),
