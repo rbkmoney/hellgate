@@ -104,7 +104,7 @@ process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = pm_datetime:format_now(),
     Changes = [?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)],
     #{
-        events => [wrap_event_payload(?party_ev(Changes))],
+        events => [wrap_event_payload(Changes)],
         auxst => wrap_aux_state(#{
             snapshot_index => [],
             party_revision_index => #{}
@@ -461,8 +461,7 @@ get_last_revision(PartyID) ->
 
 -spec get_last_revision_old_way(party_id()) -> party_revision() | no_return().
 get_last_revision_old_way(PartyID) ->
-    {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
-    get_revision_of_part(PartyID, History, Last, Step).
+    get_revision_of_part(PartyID, undefined, ?STEP).
 
 -spec get_status(party_id()) -> party_status() | no_return().
 get_status(PartyID) ->
@@ -545,13 +544,13 @@ get_aux_state(PartyID) ->
             AuxState#{last_event_id => EventID}
     end.
 
-get_revision_of_part(PartyID, History, Last, Step) ->
+get_revision_of_part(PartyID, Last, Step) ->
+    {History, LastNext, StepNext} = get_history_part(PartyID, Last, Step),
     case find_revision_in_history(History) of
         revision_not_found when Last == 0 ->
             0;
         revision_not_found ->
-            {History1, Last1, Step1} = get_history_part(PartyID, Last, Step * 2),
-            get_revision_of_part(PartyID, History1, Last1, Step1);
+            get_revision_of_part(PartyID, LastNext, StepNext);
         Revision ->
             Revision
     end.
@@ -567,7 +566,7 @@ get_history_part(PartyID, Last, Step) ->
 
 find_revision_in_history([]) ->
     revision_not_found;
-find_revision_in_history([{_, _, ?party_ev(PartyChanges)} | Rest]) when is_list(PartyChanges) ->
+find_revision_in_history([{_, _, {PartyChanges, _}} | Rest]) when is_list(PartyChanges) ->
     case find_revision_in_changes(PartyChanges) of
         revision_not_found ->
             find_revision_in_history(Rest);
@@ -1132,12 +1131,12 @@ try_attach_snapshot(Changes, AuxSt0, #pm_State{last_event = LastEventID} = St) w
 ->
     AuxSt1 = append_snapshot_index(LastEventID + 1, AuxSt0),
     {
-        [wrap_event_payload_w_snapshot(?party_ev(Changes), St)],
+        [wrap_event_payload_w_snapshot(Changes, St)],
         wrap_aux_state(AuxSt1)
     };
 try_attach_snapshot(Changes, AuxSt, _) ->
     {
-        [wrap_event_payload(?party_ev(Changes))],
+        [wrap_event_payload(Changes)],
         wrap_aux_state(AuxSt)
     }.
 
@@ -1163,7 +1162,7 @@ wrap_event_payload_w_snapshot(Changes, St) ->
     {FormatVsn, StateSnapshot} = encode_state(St),
     marshal_event_payload(FormatVsn, Changes, StateSnapshot).
 
-marshal_event_payload(FormatVsn, ?party_ev(Changes), StateSnapshot) ->
+marshal_event_payload(FormatVsn, Changes, StateSnapshot) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
     Bin = pm_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
     #{
