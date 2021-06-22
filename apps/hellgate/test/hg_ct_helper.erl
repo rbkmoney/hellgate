@@ -159,7 +159,7 @@ start_app(hellgate = AppName) ->
                     }
                 },
                 party_management => #{
-                    url => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+                    url => <<"http://party-management:8022/v1/processing/partymgmt">>,
                     transport_opts => #{
                         pool => party_management,
                         max_connections => 300
@@ -234,18 +234,20 @@ start_app(party_management = AppName) ->
                 accounter => <<"http://shumway:8022/shumpune">>,
                 automaton => <<"http://machinegun:8022/v1/automaton">>,
                 party_management => #{
-                    url => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+                    url => <<"http://party-management:8022/v1/processing/partymgmt">>,
                     transport_opts => #{
                         pool => party_management,
                         max_connections => 300
                     }
                 }
             }}
-        ]), #{}};
+        ]), #{
+            pm_root_url => get_pm_url()
+        }};
 start_app(party_client = AppName) ->
     {start_app(AppName, [
             {services, #{
-                party_management => "http://hellgate:8022/v1/processing/partymgmt"
+                party_management => "http://party-management:8022/v1/processing/partymgmt"
             }},
             {woody, #{
                 % disabled | safe | aggressive
@@ -744,6 +746,10 @@ make_meta_data(NS) ->
 -spec get_hellgate_url() -> string().
 get_hellgate_url() ->
     "http://" ++ ?HELLGATE_HOST ++ ":" ++ integer_to_list(?HELLGATE_PORT).
+
+-spec get_pm_url() -> string().
+get_pm_url() ->
+    "http://party-management:8022".
 
 -spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
 make_customer_params(PartyID, ShopID, EMail) ->
