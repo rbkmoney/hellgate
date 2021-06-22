@@ -23,6 +23,8 @@
 
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
+-include_lib("hellgate/include/domain.hrl").
+
 %% API
 
 %% St accessors
@@ -132,6 +134,9 @@
     payment :: undefined | payment(),
     risk_score :: undefined | risk_score(),
     route :: undefined | route(),
+    deprecated_cash_flow :: undefined | deprecated_cash_flow(),
+    deprecated_partial_cash_flow :: undefined | deprecated_cash_flow(),
+    deprecated_final_cash_flow :: undefined | deprecated_cash_flow(),
     cash_flow :: undefined | cash_flow(),
     partial_cash_flow :: undefined | cash_flow(),
     final_cash_flow :: undefined | cash_flow(),
@@ -153,6 +158,7 @@
 
 -record(refund_st, {
     refund :: undefined | domain_refund(),
+    deprecated_cash_flow :: undefined | deprecated_cash_flow(),
     cash_flow :: undefined | cash_flow(),
     sessions = [] :: [session()],
     transaction_info :: undefined | trx_info(),
@@ -189,7 +195,8 @@
 -type target_type() :: 'processed' | 'captured' | 'cancelled' | 'refunded'.
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
--type cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
+-type deprecated_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
+-type cash_flow() :: dmsl_cash_flow_thrift:'CashFlow'().
 -type trx_info() :: dmsl_domain_thrift:'TransactionInfo'().
 -type session_result() :: dmsl_payment_processing_thrift:'SessionResult'().
 -type proxy_state() :: dmsl_proxy_provider_thrift:'ProxyState'().
@@ -295,6 +302,7 @@ get_chargebacks(#st{chargebacks = CBs}) ->
 build_payment_chargeback(ChargebackState) ->
     #payproc_InvoicePaymentChargeback{
         chargeback = hg_invoice_payment_chargeback:get(ChargebackState),
+        deprecated_cash_flow = hg_invoice_payment_chargeback:get_deprecated_cash_flow(ChargebackState),
         cash_flow = hg_invoice_payment_chargeback:get_cash_flow(ChargebackState)
     }.
 
@@ -934,15 +942,22 @@ collect_cashflow(
     ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
     MerchantCashflow ++ ProviderCashflow.
 
-construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
-    hg_cashflow:finalize(
+construct_deprecated_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
+    hg_cashflow:finalize_deprecated(
+        Cashflow,
+        collect_cash_flow_context(Payment),
+        hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision)
+    ).
+
+construct_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
+    hg_cashflow:finalize_deprecated(
         Cashflow,
         collect_cash_flow_context(Payment),
         hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision)
     ).
 
 construct_final_cashflow(Cashflow, Context, AccountMap) ->
-    hg_cashflow:finalize(Cashflow, Context, AccountMap).
+    hg_cashflow:finalize_deprecated(Cashflow, Context, AccountMap).
 
 collect_cash_flow_context(
     #domain_InvoicePayment{cost = Cost}
@@ -991,10 +1006,10 @@ start_capture(Reason, Cost, Cart) ->
     [?payment_capture_started(Reason, Cost, Cart)] ++
         start_session(?captured(Reason, Cost, Cart)).
 
-start_partial_capture(Reason, Cost, Cart, Cashflow) ->
+start_partial_capture(Reason, Cost, Cart, DeprecatedCashflow, Cashflow) ->
     [
         ?payment_capture_started(Reason, Cost, Cart),
-        ?cash_flow_changed(Cashflow)
+        ?cash_flow_changed(DeprecatedCashflow, Cashflow)
     ].
 
 -spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
@@ -1029,8 +1044,9 @@ partial_capture(St0, Reason, Cost, Cart, Opts) ->
     Route = get_route(St),
     ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
     ok = validate_provider_holds_terms(ProviderTerms),
-    FinalCashflow = calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
-    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
+    {DeprecatedFinalCashflow, Cashflow} =
+        calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
+    Changes = start_partial_capture(Reason, Cost, Cart, DeprecatedFinalCashflow, Cashflow),
     {ok, {Changes, hg_machine_action:instant()}}.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
@@ -1164,7 +1180,7 @@ refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     Payment = get_payment(St),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
-    Changes = [?refund_created(Refund, FinalCashflow)],
+    Changes = [?refund_created(Refund, FinalCashflow, undefined)],
     Action = hg_machine_action:instant(),
     ID = Refund#domain_InvoicePaymentRefund.id,
     {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
@@ -1177,7 +1193,7 @@ manual_refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
-    Changes = [?refund_created(Refund, FinalCashflow, TransactionInfo)],
+    Changes = [?refund_created(Refund, FinalCashflow, undefined, TransactionInfo)],
     Action = hg_machine_action:instant(),
     ID = Refund#domain_InvoicePaymentRefund.id,
     {Refund, {[?refund_ev(ID, C) || C <- Changes], Action}}.
@@ -1423,7 +1439,7 @@ create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts) ->
     PartyRevision = get_opts_party_revision(Opts),
     OldCashFlow = get_final_cashflow(St),
     VS = collect_validation_varset(St, Opts),
-    NewCashFlow = calculate_cashflow(Route, Payment, Timestamp, VS, NewRevision, Opts),
+    {DeprecatedNewCashFlow, NewCashFlow} = calculate_cashflow(Route, Payment, Timestamp, VS, NewRevision, Opts),
     AdjState =
         {cash_flow, #domain_InvoicePaymentAdjustmentCashFlowState{
             scenario = #domain_InvoicePaymentAdjustmentCashFlow{domain_revision = DomainRevision}
@@ -1434,6 +1450,7 @@ create_cash_flow_adjustment(Timestamp, Params, DomainRevision, St, Opts) ->
         NewRevision,
         PartyRevision,
         OldCashFlow,
+        DeprecatedNewCashFlow,
         NewCashFlow,
         AdjState,
         St
@@ -1459,7 +1476,7 @@ create_status_adjustment(Timestamp, Params, Change, St, Opts) ->
     ok = assert_no_refunds(St),
     ok = assert_adjustment_payment_statuses(TargetStatus, Status),
     OldCashFlow = get_cash_flow_for_status(Status, St),
-    NewCashFlow = get_cash_flow_for_target_status(TargetStatus, St, Opts),
+    {DeprecatedNewCashFlow, NewCashFlow} = get_cash_flow_for_target_status(TargetStatus, St, Opts),
     AdjState =
         {status_change, #domain_InvoicePaymentAdjustmentStatusChangeState{
             scenario = Change
@@ -1470,6 +1487,7 @@ create_status_adjustment(Timestamp, Params, Change, St, Opts) ->
         DomainRevision,
         PartyRevision,
         OldCashFlow,
+        DeprecatedNewCashFlow,
         NewCashFlow,
         AdjState,
         St
@@ -1521,7 +1539,7 @@ is_adjustment_payment_status_final({failed, _}) ->
 is_adjustment_payment_status_final(_) ->
     false.
 
--spec get_cash_flow_for_status(payment_status(), st()) -> cash_flow().
+-spec get_cash_flow_for_status(payment_status(), st()) -> deprecated_cash_flow().
 get_cash_flow_for_status({captured, _}, St) ->
     get_final_cashflow(St);
 get_cash_flow_for_status({cancelled, _}, _St) ->
@@ -1529,7 +1547,7 @@ get_cash_flow_for_status({cancelled, _}, _St) ->
 get_cash_flow_for_status({failed, _}, _St) ->
     [].
 
--spec get_cash_flow_for_target_status(payment_status(), st(), opts()) -> cash_flow().
+-spec get_cash_flow_for_target_status(payment_status(), st(), opts()) -> deprecated_cash_flow().
 get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
     Payment0 = get_payment(St0),
     Route = get_route(St0),
@@ -1554,7 +1572,7 @@ get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
     hg_varset:varset(),
     hg_domain:revision(),
     opts()
-) -> cash_flow().
+) -> {deprecated_cash_flow(), cash_flow()}.
 calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
@@ -1568,26 +1586,40 @@ calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
     hg_varset:varset(),
     hg_domain:revision(),
     opts()
-) -> cash_flow().
+) -> {deprecated_cash_flow(), cash_flow()}.
 calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts) ->
     Shop = get_shop(Opts),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
     Cashflow = collect_cashflow(MerchantTerms, ProviderTerms),
-    construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision).
+    {
+        construct_deprecated_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision),
+        construct_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision)
+    }.
 
 -spec construct_adjustment(
     Timestamp :: hg_datetime:timestamp(),
     Params :: adjustment_params(),
     DomainRevision :: hg_domain:revision(),
     PartyRevision :: hg_party:party_revision(),
-    OldCashFlow :: cash_flow(),
+    OldCashFlow :: deprecated_cash_flow(),
+    DeprecatedNewCashFlow :: deprecated_cash_flow(),
     NewCashFlow :: cash_flow(),
     State :: adjustment_state(),
     St :: st()
 ) -> {adjustment(), result()}.
-construct_adjustment(Timestamp, Params, DomainRevision, PartyRevision, OldCashFlow, NewCashFlow, State, St) ->
+construct_adjustment(
+    Timestamp,
+    Params,
+    DomainRevision,
+    PartyRevision,
+    OldCashFlow,
+    DeprecatedNewCashFlow,
+    _NewCashFlow,
+    State,
+    St
+) ->
     ID = construct_adjustment_id(St),
     Adjustment = #domain_InvoicePaymentAdjustment{
         id = ID,
@@ -1596,8 +1628,8 @@ construct_adjustment(Timestamp, Params, DomainRevision, PartyRevision, OldCashFl
         domain_revision = DomainRevision,
         party_revision = PartyRevision,
         reason = Params#payproc_InvoicePaymentAdjustmentParams.reason,
-        old_cash_flow_inverse = hg_cashflow:revert(OldCashFlow),
-        new_cash_flow = NewCashFlow,
+        old_cash_flow_inverse = hg_cashflow:revert_deprecated(OldCashFlow),
+        new_cash_flow = DeprecatedNewCashFlow,
         state = State
     },
     Event = ?adjustment_ev(ID, ?adjustment_created(Adjustment)),
@@ -1879,12 +1911,12 @@ process_cash_flow_building(Action, St) ->
     ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
     {ok, TurnoverLimits} = hold_payment_limits(ProviderTerms, Cash, Timestamp, St),
 
-    FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
+    {DeprecatedFinalCashflow, CashFlow} = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
-        {1, FinalCashflow}
+        {1, DeprecatedFinalCashflow}
     ),
-    Events = [?cash_flow_changed(FinalCashflow)],
+    Events = [?cash_flow_changed(DeprecatedFinalCashflow, CashFlow)],
     case hg_limiter:check_limits(TurnoverLimits, Timestamp) of
         {ok, _} ->
             {next, {Events, hg_machine_action:set_timeout(0, Action)}};
@@ -1985,7 +2017,7 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
     _Clock = hg_accounting:plan(
         construct_payment_plan_id(Invoice, Payment2),
         [
-            {2, hg_cashflow:revert(get_cashflow(St))},
+            {2, hg_cashflow:revert_deprecated(get_deprecated_cashflow(St))},
             {3, FinalCashflow}
         ]
     ),
@@ -2588,12 +2620,12 @@ rollback_payment_cashflow(St) ->
 
 get_cashflow_plan(St = #st{partial_cash_flow = PartialCashFlow}) when PartialCashFlow =/= undefined ->
     [
-        {1, get_cashflow(St)},
-        {2, hg_cashflow:revert(get_cashflow(St))},
+        {1, get_deprecated_cashflow(St)},
+        {2, hg_cashflow:revert_deprecated(get_deprecated_cashflow(St))},
         {3, PartialCashFlow}
     ];
 get_cashflow_plan(St) ->
-    [{1, get_cashflow(St)}].
+    [{1, get_deprecated_cashflow(St)}].
 
 -spec set_repair_scenario(hg_invoice_repair:scenario(), st()) -> st().
 set_repair_scenario(Scenario, St) ->
@@ -2909,7 +2941,7 @@ merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
         capture_params = Params,
         activity = {payment, processing_capture}
     };
-merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St0, Opts) ->
+merge_change(Change = ?cash_flow_changed(DeprecatedCashFlow, CashFlow), #st{activity = Activity} = St0, Opts) ->
     _ = validate_transition(
         [
             {payment, S}
@@ -2922,16 +2954,21 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
         St0,
         Opts
     ),
-    St = St0#st{final_cash_flow = Cashflow},
+    St = St0#st{
+        deprecated_final_cash_flow = DeprecatedCashFlow,
+        final_cash_flow = CashFlow
+    },
     case Activity of
         {payment, cash_flow_building} ->
             St#st{
-                cash_flow = Cashflow,
+                deprecated_cash_flow = DeprecatedCashFlow,
+                cash_flow = CashFlow,
                 activity = {payment, processing_session}
             };
         {payment, processing_capture} ->
             St#st{
-                partial_cash_flow = Cashflow,
+                deprecated_partial_cash_flow = DeprecatedCashFlow,
+                partial_cash_flow = CashFlow,
                 activity = {payment, updating_accounter}
             };
         _ ->
@@ -3016,7 +3053,7 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
             ?chargeback_body_changed(_) ->
                 _ = validate_transition([idle, {chargeback, ID, updating_chargeback}], Change, St, Opts),
                 St#st{activity = {chargeback, ID, updating_chargeback}};
-            ?chargeback_cash_flow_changed(_) ->
+            ?chargeback_cash_flow_changed(_, _) ->
                 Valid = [{chargeback, ID, Activity} || Activity <- [preparing_initial_cash_flow, updating_cash_flow]],
                 _ = validate_transition(Valid, Change, St, Opts),
                 case St of
@@ -3045,7 +3082,7 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
 merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
     St1 =
         case Event of
-            ?refund_created(_, _, _) ->
+            ?refund_created(_, _, _, _) ->
                 _ = validate_transition(idle, Change, St, Opts),
                 St#st{activity = {refund_new, ID}};
             ?session_ev(?refunded(), ?session_started()) ->
@@ -3168,7 +3205,7 @@ save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
 merge_chargeback_change(Change, ChargebackState) ->
     hg_invoice_payment_chargeback:merge_change(Change, ChargebackState).
 
-merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefined) ->
+merge_refund_change(?refund_created(Refund, Cashflow, undefined, TransactionInfo), undefined) ->
     #refund_st{refund = Refund, cash_flow = Cashflow, transaction_info = TransactionInfo};
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
@@ -3242,9 +3279,13 @@ try_accrue_waiting_timing(Opts, #st{payment = Payment, timings = Timings}) ->
             hg_timings:accrue(waiting, processed, define_event_timestamp(Opts), Timings)
     end.
 
--spec get_cashflow(st()) -> cash_flow().
-get_cashflow(#st{cash_flow = FinalCashflow}) ->
+-spec get_deprecated_cashflow(st()) -> deprecated_cash_flow().
+get_deprecated_cashflow(#st{deprecated_cash_flow = FinalCashflow}) ->
     FinalCashflow.
+
+%%-spec get_cashflow(st()) -> cash_flow().
+%%get_cashflow(#st{cash_flow = FinalCashflow}) ->
+%%    FinalCashflow.
 
 set_cashflow(Cashflow, St = #st{}) ->
     St#st{
@@ -3252,8 +3293,8 @@ set_cashflow(Cashflow, St = #st{}) ->
         final_cash_flow = Cashflow
     }.
 
--spec get_final_cashflow(st()) -> cash_flow().
-get_final_cashflow(#st{final_cash_flow = Cashflow}) ->
+-spec get_final_cashflow(st()) -> deprecated_cash_flow().
+get_final_cashflow(#st{deprecated_final_cash_flow = Cashflow}) ->
     Cashflow.
 
 -spec get_trx(st()) -> trx_info().
@@ -3574,16 +3615,16 @@ get_log_params(?route_changed(Route), _) ->
         event_type => invoice_payment_route_changed
     },
     make_log_params(Params);
-get_log_params(?cash_flow_changed(Cashflow), _) ->
+get_log_params(?cash_flow_changed(DeprecatedCashFlow, _CashFlow), _) ->
     Params = #{
-        cashflow => Cashflow,
+        cashflow => DeprecatedCashFlow,
         event_type => invoice_payment_cash_flow_changed
     },
     make_log_params(Params);
-get_log_params(?payment_started(Payment, RiskScore, Route, Cashflow), _) ->
+get_log_params(?payment_started(Payment, RiskScore, Route, DeprecatedCashFlow, _CashFlow), _) ->
     Params = #{
         payment => Payment,
-        cashflow => Cashflow,
+        cashflow => DeprecatedCashFlow,
         risk_score => RiskScore,
         route => Route,
         event_type => invoice_payment_started
@@ -3748,7 +3789,7 @@ unmarshal(change, [
         <<"cash_flow">> := Cashflow
     }
 ]) ->
-    [?cash_flow_changed(hg_cashflow:unmarshal(Cashflow))];
+    [?cash_flow_changed(hg_cashflow:unmarshal(Cashflow), undefined)];
 unmarshal(change, [
     2,
     #{
@@ -3799,7 +3840,7 @@ unmarshal(change, [
         ?payment_started(unmarshal(payment, Payment)),
         ?risk_score_changed(unmarshal(risk_score, RiskScore)),
         ?route_changed(hg_routing:unmarshal(Route)),
-        ?cash_flow_changed(hg_cashflow:unmarshal(Cashflow))
+        ?cash_flow_changed(hg_cashflow:unmarshal(Cashflow), undefined)
     ];
 %% deprecated v1 changes
 unmarshal(change, [1, ?legacy_payment_started(Payment, RiskScore, Route, Cashflow)]) ->
@@ -3807,7 +3848,7 @@ unmarshal(change, [1, ?legacy_payment_started(Payment, RiskScore, Route, Cashflo
         ?payment_started(unmarshal(payment, Payment)),
         ?risk_score_changed(unmarshal(risk_score, RiskScore)),
         ?route_changed(hg_routing:unmarshal([1, Route])),
-        ?cash_flow_changed(hg_cashflow:unmarshal([1, Cashflow]))
+        ?cash_flow_changed(hg_cashflow:unmarshal([1, Cashflow]), undefined)
     ];
 unmarshal(change, [1, ?legacy_payment_status_changed(Status)]) ->
     [?payment_status_changed(unmarshal(status, Status))];
@@ -3976,7 +4017,7 @@ unmarshal(adjustment_change, [1, ?legacy_adjustment_status_changed(Status)]) ->
 %% Refund change
 
 unmarshal(refund_change, [2, [<<"created">>, Refund, Cashflow]]) ->
-    ?refund_created(unmarshal(refund, Refund), hg_cashflow:unmarshal(Cashflow));
+    ?refund_created(unmarshal(refund, Refund), hg_cashflow:unmarshal(Cashflow), undefined);
 unmarshal(refund_change, [2, [<<"status">>, Status]]) ->
     ?refund_status_changed(unmarshal(refund_status, Status));
 unmarshal(refund_change, [2, [<<"session">>, Payload]]) ->

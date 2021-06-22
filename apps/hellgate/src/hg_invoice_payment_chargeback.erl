@@ -26,6 +26,7 @@
     [
         get/1,
         get_body/1,
+        get_deprecated_cash_flow/1,
         get_cash_flow/1,
         get_status/1,
         get_target_status/1,
@@ -55,7 +56,8 @@
 -record(chargeback_st, {
     chargeback :: undefined | chargeback(),
     target_status :: undefined | status(),
-    cash_flow = [] :: cash_flow(),
+    deprecated_cash_flow = [] :: deprecated_cash_flow(),
+    cash_flow :: undefined | cash_flow(),
     cash_flow_plans = #{
         ?chargeback_stage_chargeback() => [],
         ?chargeback_stage_pre_arbitration() => [],
@@ -108,8 +110,11 @@
 -type cash() ::
     dmsl_domain_thrift:'Cash'().
 
--type cash_flow() ::
+-type deprecated_cash_flow() ::
     dmsl_domain_thrift:'FinalCashFlow'().
+
+-type cash_flow() ::
+    dmsl_cash_flow_thrift:'CashFlow'().
 
 -type batch() ::
     hg_accounting:batch().
@@ -163,6 +168,10 @@ get_status(#domain_InvoicePaymentChargeback{status = Status}) ->
 -spec get_target_status(state()) -> status() | undefined.
 get_target_status(#chargeback_st{target_status = TargetStatus}) ->
     TargetStatus.
+
+-spec get_deprecated_cash_flow(state()) -> deprecated_cash_flow().
+get_deprecated_cash_flow(#chargeback_st{deprecated_cash_flow = CashFlow}) ->
+    CashFlow.
 
 -spec get_cash_flow(state()) -> cash_flow().
 get_cash_flow(#chargeback_st{cash_flow = CashFlow}) ->
@@ -263,8 +272,8 @@ merge_change(?chargeback_target_status_changed(Status), State) ->
     set_target_status(Status, State);
 merge_change(?chargeback_status_changed(Status), State) ->
     set_target_status(undefined, set_status(Status, State));
-merge_change(?chargeback_cash_flow_changed(CashFlow), State) ->
-    set_cash_flow(CashFlow, State).
+merge_change(?chargeback_cash_flow_changed(DeprecatedCashFlow, CashFlow), State) ->
+    set_cash_flow(DeprecatedCashFlow, CashFlow, State).
 
 -spec process_timeout(activity(), state(), action(), opts()) -> result().
 process_timeout(preparing_initial_cash_flow, State, _Action, Opts) ->
@@ -339,10 +348,11 @@ do_reopen(State, PaymentState, ReopenParams = ?reopen_params(Levy, Body)) ->
 
 -spec update_cash_flow(state(), action(), opts()) -> result() | no_return().
 update_cash_flow(State, Action, Opts) ->
-    FinalCashFlow = build_chargeback_cash_flow(State, Opts),
+    FinalCashFlow = build_chargeback_deprecated_cash_flow(State, Opts),
+    CashFlow = build_chargeback_cash_flow(State, Opts),
     UpdatedPlan = build_updated_plan(FinalCashFlow, State),
     _ = prepare_cash_flow(State, UpdatedPlan, Opts),
-    {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}.
+    {[?chargeback_cash_flow_changed(FinalCashFlow, CashFlow)], Action}.
 
 -spec finalise(state(), action(), opts()) -> result() | no_return().
 finalise(#chargeback_st{target_status = Status = ?chargeback_status_pending()}, Action, _Opts) ->
@@ -407,6 +417,36 @@ build_reopen_result(State, ?reopen_params(ParamsLevy, ParamsBody) = Params) ->
     Changes = lists:append([StageChange, BodyChange, LevyChange, StatusChange]),
     {Changes, Action}.
 
+-spec build_chargeback_deprecated_cash_flow(state(), opts()) -> deprecated_cash_flow() | no_return().
+build_chargeback_deprecated_cash_flow(#chargeback_st{target_status = ?chargeback_status_cancelled()}, _Opts) ->
+    [];
+build_chargeback_deprecated_cash_flow(State, Opts) ->
+    CreatedAt = get_created_at(State),
+    Revision = get_revision(State),
+    Body = get_body(State),
+    Payment = get_opts_payment(Opts),
+    Invoice = get_opts_invoice(Opts),
+    Route = get_opts_route(Opts),
+    Party = get_opts_party(Opts),
+    ShopID = get_invoice_shop_id(Invoice),
+    Shop = hg_party:get_shop(ShopID, Party),
+    VS = collect_validation_varset(Party, Shop, Payment, Body),
+    ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
+    PaymentsTerms = hg_routing:get_payments_terms(Route, Revision),
+    ProviderTerms = get_provider_chargeback_terms(PaymentsTerms, Payment),
+    ServiceCashFlow = get_chargeback_service_cash_flow(ServiceTerms, Party, Shop),
+    ProviderCashFlow = get_chargeback_provider_cash_flow(ProviderTerms, Route),
+    ProviderFees = collect_chargeback_provider_fees(ProviderTerms),
+    PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
+    PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
+    Provider = get_route_provider(Route, Revision),
+    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
+    ServiceContext = build_service_cash_flow_context(State),
+    ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
+    ServiceFinalCF = hg_cashflow:finalize_deprecated(ServiceCashFlow, ServiceContext, AccountMap),
+    ProviderFinalCF = hg_cashflow:finalize_deprecated(ProviderCashFlow, ProviderContext, AccountMap),
+    ServiceFinalCF ++ ProviderFinalCF.
+
 -spec build_chargeback_cash_flow(state(), opts()) -> cash_flow() | no_return().
 build_chargeback_cash_flow(#chargeback_st{target_status = ?chargeback_status_cancelled()}, _Opts) ->
     [];
@@ -424,8 +464,8 @@ build_chargeback_cash_flow(State, Opts) ->
     ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     PaymentsTerms = hg_routing:get_payments_terms(Route, Revision),
     ProviderTerms = get_provider_chargeback_terms(PaymentsTerms, Payment),
-    ServiceCashFlow = get_chargeback_service_cash_flow(ServiceTerms),
-    ProviderCashFlow = get_chargeback_provider_cash_flow(ProviderTerms),
+    ServiceCashFlow = get_chargeback_service_cash_flow(ServiceTerms, Party, Shop),
+    ProviderCashFlow = get_chargeback_provider_cash_flow(ProviderTerms, Route),
     ProviderFees = collect_chargeback_provider_fees(ProviderTerms),
     PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
     PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
@@ -451,14 +491,14 @@ build_provider_cash_flow_context(State, Fees) ->
             maps:merge(ComputedFees, #{operation_amount => get_body(State)})
     end.
 
-get_chargeback_service_cash_flow(#domain_PaymentChargebackServiceTerms{fees = {value, V}}) ->
-    V;
-get_chargeback_service_cash_flow(_) ->
+get_chargeback_service_cash_flow(#domain_PaymentChargebackServiceTerms{fees = {value, V}}, Party, Shop) ->
+    {V, #{party => Party, shop => Shop}};
+get_chargeback_service_cash_flow(_, _Party, _Shop) ->
     throw(#payproc_OperationNotPermitted{}).
 
-get_chargeback_provider_cash_flow(#domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}}) ->
-    V;
-get_chargeback_provider_cash_flow(_) ->
+get_chargeback_provider_cash_flow(#domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}}, Route) ->
+    {V, #{route => Route}};
+get_chargeback_provider_cash_flow(_, _Route) ->
     throw(#payproc_OperationNotPermitted{}).
 
 collect_chargeback_provider_fees(#domain_PaymentChargebackProvisionTerms{fees = undefined}) ->
@@ -611,8 +651,8 @@ get_reverted_previous_stage(State) ->
         undefined ->
             [];
         _Stage ->
-            #chargeback_st{cash_flow = CashFlow} = State,
-            add_batch(hg_cashflow:revert(CashFlow), [])
+            #chargeback_st{deprecated_cash_flow = CashFlow} = State,
+            add_batch(hg_cashflow:revert_deprecated(CashFlow), [])
     end.
 
 -spec get_revision(state() | chargeback()) -> revision().
@@ -678,11 +718,15 @@ set(Chargeback, undefined) ->
 set(Chargeback, #chargeback_st{} = State) ->
     State#chargeback_st{chargeback = Chargeback}.
 
--spec set_cash_flow(cash_flow(), state()) -> state().
-set_cash_flow(CashFlow, #chargeback_st{cash_flow_plans = Plans} = State) ->
+-spec set_cash_flow(deprecated_cash_flow(), cash_flow(), state()) -> state().
+set_cash_flow(DeprecatedCashFlow, CashFlow, #chargeback_st{cash_flow_plans = Plans} = State) ->
     Stage = get_stage(State),
-    Plan = build_updated_plan(CashFlow, State),
-    State#chargeback_st{cash_flow_plans = Plans#{Stage := Plan}, cash_flow = CashFlow}.
+    Plan = build_updated_plan(DeprecatedCashFlow, State),
+    State#chargeback_st{
+        cash_flow_plans = Plans#{Stage := Plan},
+        deprecated_cash_flow = DeprecatedCashFlow,
+        cash_flow = CashFlow
+    }.
 
 -spec set_target_status(status() | undefined, state()) -> state().
 set_target_status(TargetStatus, #chargeback_st{} = State) ->
@@ -790,14 +834,19 @@ add_batch(FinalCashFlow, Batches) ->
     {ID, _CF} = lists:last(Batches),
     Batches ++ [{ID + 1, FinalCashFlow}].
 
-build_updated_plan(NewCashFlow, #chargeback_st{cash_flow_plans = Plans, cash_flow = OldCashFlow} = State) ->
+build_updated_plan(NewDeprecatedCashFlow, State) ->
+    #chargeback_st{
+        cash_flow_plans = Plans,
+        deprecated_cash_flow = OldDeprecatedCashFlow,
+        cash_flow = _OldCashFlow
+    } = State,
     Stage = get_stage(State),
     case Plans of
         #{Stage := []} ->
             Reverted = get_reverted_previous_stage(State),
-            add_batch(NewCashFlow, Reverted);
+            add_batch(NewDeprecatedCashFlow, Reverted);
         #{Stage := Plan} ->
-            RevertedPrevious = hg_cashflow:revert(OldCashFlow),
-            RevertedPlan = add_batch(RevertedPrevious, Plan),
-            add_batch(NewCashFlow, RevertedPlan)
+            RevertedDeprecatedPrevious = hg_cashflow:revert_deprecated(OldDeprecatedCashFlow),
+            RevertedPlan = add_batch(RevertedDeprecatedPrevious, Plan),
+            add_batch(NewDeprecatedCashFlow, RevertedPlan)
     end.

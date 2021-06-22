@@ -9,20 +9,33 @@
 -module(hg_cashflow).
 
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_cash_flow_thrift.hrl").
 
 -type account() :: dmsl_domain_thrift:'CashFlowAccount'().
 -type account_id() :: dmsl_domain_thrift:'AccountID'().
 -type account_map() :: #{account() => account_id()}.
 -type context() :: dmsl_domain_thrift:'CashFlowContext'().
 -type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
+-type cash_flow_v1() :: dmsl_cash_flow_thrift:'CashFlow'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_volume() :: dmsl_domain_thrift:'CashVolume'().
 -type final_cash_flow_account() :: dmsl_domain_thrift:'FinalCashFlowAccount'().
 
+-type shop() :: dmsl_domain_thrift:'Shop'().
+-type party() :: hg_party:party().
+-type route() :: dmsl_domain_thrift:'PaymentRoute'().
+-type posting_context() :: #{
+    shop => shop(),
+    party => party(),
+    route => route()
+}.
+
 %%
 
+-export([finalize_deprecated/3]).
 -export([finalize/3]).
+-export([revert_deprecated/1]).
 -export([revert/1]).
 
 -export([compute_volume/2]).
@@ -48,12 +61,23 @@
     details = Details
 }).
 
--spec finalize(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
+-define(transaction(Source, Destination, Volume, Details), #cash_flow_CashFlowTransaction{
+    source = Source,
+    destination = Destination,
+    volume = Volume,
+    details = Details
+}).
+
+-spec finalize_deprecated(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
+finalize_deprecated(CF, Context, AccountMap) ->
+    compute_postings_deprecated(CF, Context, AccountMap).
+
+-spec finalize(cash_flow(), context(), account_map()) -> cash_flow_v1() | no_return().
 finalize(CF, Context, AccountMap) ->
     compute_postings(CF, Context, AccountMap).
 
--spec compute_postings(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
-compute_postings(CF, Context, AccountMap) ->
+-spec compute_postings_deprecated(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
+compute_postings_deprecated(CF, Context, AccountMap) ->
     [
         ?final_posting(
             construct_final_account(Source, AccountMap),
@@ -61,8 +85,22 @@ compute_postings(CF, Context, AccountMap) ->
             compute_volume(Volume, Context),
             Details
         )
-        || ?posting(Source, Destination, Volume, Details) <- CF
+        || {?posting(Source, Destination, Volume, Details), _} <- CF
     ].
+
+-spec compute_postings(cash_flow(), context(), account_map()) -> cash_flow_v1() | no_return().
+compute_postings(CF, Context, AccountMap) ->
+    #cash_flow_CashFlow{
+        transactions = [
+            ?transaction(
+                construct_transaction_account(Source, AccountMap, PostingContext),
+                construct_transaction_account(Destination, AccountMap, PostingContext),
+                compute_volume(Volume, Context),
+                Details
+            )
+            || {?posting(Source, Destination, Volume, Details), PostingContext} <- CF
+        ]
+    }.
 
 -spec construct_final_account(account(), account_map()) -> final_cash_flow_account() | no_return().
 construct_final_account(AccountType, AccountMap) ->
@@ -70,6 +108,47 @@ construct_final_account(AccountType, AccountMap) ->
         account_type = AccountType,
         account_id = resolve_account(AccountType, AccountMap)
     }.
+
+-spec construct_transaction_account(account(), account_map(), posting_context()) ->
+    final_cash_flow_account() | no_return().
+construct_transaction_account(AccountType, AccountMap, PostingContext) ->
+    #cash_flow_CashFlowTransactionAccount{
+        transaction_account = convert_account_type(AccountType, PostingContext),
+        account_id = resolve_account(AccountType, AccountMap)
+    }.
+
+convert_account_type({merchant, MerchantFlowAccount}, #{party := Party, shop := Shop}) ->
+    #domain_Party{id = PartyID} = Party,
+    #domain_Shop{id = ShopID} = Shop,
+    AccountOwner = #cash_flow_MerchantTransactionAccountOwner{
+        party_id = PartyID,
+        shop_id = ShopID
+    },
+    {merchant, #cash_flow_MerchantTransactionAccount{
+        account_type = MerchantFlowAccount,
+        account_owner = AccountOwner
+    }};
+convert_account_type({provider, ProviderFlowAccount}, #{route := Route}) ->
+    #domain_PaymentRoute{
+        provider = ProviderRef,
+        terminal = TerminalRef
+    } = Route,
+    AccountOwner = #cash_flow_ProviderTransactionAccountOwner{
+        provider_ref = ProviderRef,
+        terminal_ref = TerminalRef
+    },
+    {merchant, #cash_flow_ProviderTransactionAccount{
+        account_type = ProviderFlowAccount,
+        account_owner = AccountOwner
+    }};
+convert_account_type({system, SystemFlowAccount}, _) ->
+    {system, #cash_flow_SystemTransactionAccount{
+        account_type = SystemFlowAccount
+    }};
+convert_account_type({external, ExternalFlowAccount}, _) ->
+    {system, #cash_flow_ExternalTransactionAccount{
+        account_type = ExternalFlowAccount
+    }}.
 
 -spec resolve_account(account(), account_map()) -> account_id() | no_return().
 resolve_account(AccountType, AccountMap) ->
@@ -82,12 +161,21 @@ resolve_account(AccountType, AccountMap) ->
 
 %%
 
--spec revert(final_cash_flow()) -> final_cash_flow().
-revert(CF) ->
+-spec revert_deprecated(final_cash_flow()) -> final_cash_flow().
+revert_deprecated(CF) ->
     [
         ?final_posting(Destination, Source, Volume, revert_details(Details))
         || ?final_posting(Source, Destination, Volume, Details) <- CF
     ].
+
+-spec revert(cash_flow_v1()) -> cash_flow_v1().
+revert(#cash_flow_CashFlow{transactions = Transactions}) ->
+    #cash_flow_CashFlow{
+        transactions = [
+            ?transaction(Destination, Source, Volume, revert_details(Details))
+            || ?transaction(Source, Destination, Volume, Details) <- Transactions
+        ]
+    }.
 
 revert_details(undefined) ->
     undefined;

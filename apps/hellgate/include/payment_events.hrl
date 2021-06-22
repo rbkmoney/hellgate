@@ -1,6 +1,8 @@
 -ifndef(__hellgate_payment_events__).
 -define(__hellgate_payment_events__, 42).
 
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+
 %% Payments
 
 -define(payment_started(Payment),
@@ -8,15 +10,17 @@
         payment = Payment,
         risk_score = undefined,
         route = undefined,
+        deprecated_cash_flow = undefined,
         cash_flow = undefined
     }}
 ).
 
--define(payment_started(Payment, RiskScore, Route, CashFlow),
+-define(payment_started(Payment, RiskScore, Route, DeprecatedCashFlow, CashFlow),
     {invoice_payment_started, #payproc_InvoicePaymentStarted{
         payment = Payment,
         risk_score = RiskScore,
         route = Route,
+        deprecated_cash_flow = DeprecatedCashFlow,
         cash_flow = CashFlow
     }}
 ).
@@ -29,8 +33,11 @@
     {invoice_payment_route_changed, #payproc_InvoicePaymentRouteChanged{route = Route}}
 ).
 
--define(cash_flow_changed(CashFlow),
-    {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}}
+-define(cash_flow_changed(DeprecatedCashFlow, CashFlow),
+    {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{
+        deprecated_cash_flow = DeprecatedCashFlow,
+        cash_flow = CashFlow
+    }}
 ).
 
 -define(payment_status_changed(Status),
@@ -252,13 +259,6 @@
     }}
 ).
 
--define(chargeback_created(Chargeback, OccurredAt),
-    {invoice_payment_chargeback_created, #payproc_InvoicePaymentChargebackCreated{
-        chargeback = Chargeback,
-        occurred_at = OccurredAt
-    }}
-).
-
 -define(chargeback_body_changed(Body),
     {invoice_payment_chargeback_body_changed, #payproc_InvoicePaymentChargebackBodyChanged{body = Body}}
 ).
@@ -281,8 +281,9 @@
     {invoice_payment_chargeback_stage_changed, #payproc_InvoicePaymentChargebackStageChanged{stage = Stage}}
 ).
 
--define(chargeback_cash_flow_changed(CashFlow),
+-define(chargeback_cash_flow_changed(DeprecatedCashFlow, CashFlow),
     {invoice_payment_chargeback_cash_flow_changed, #payproc_InvoicePaymentChargebackCashFlowChanged{
+        deprecated_cash_flow = DeprecatedCashFlow,
         cash_flow = CashFlow
     }}
 ).
@@ -324,13 +325,14 @@
     }}
 ).
 
--define(refund_created(Refund, CashFlow),
-    ?refund_created(Refund, CashFlow, undefined)
+-define(refund_created(Refund, DeprecatedCashFlow, CashFlow),
+    ?refund_created(Refund, DeprecatedCashFlow, CashFlow, undefined)
 ).
 
--define(refund_created(Refund, CashFlow, TrxInfo),
+-define(refund_created(Refund, DeprecatedCashFlow, CashFlow, TrxInfo),
     {invoice_payment_refund_created, #payproc_InvoicePaymentRefundCreated{
         refund = Refund,
+        deprecated_cash_flow = DeprecatedCashFlow,
         cash_flow = CashFlow,
         transaction_info = TrxInfo
     }}
