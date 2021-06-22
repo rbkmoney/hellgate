@@ -436,12 +436,15 @@ init_per_suite(C) ->
     ),
 
     RootUrl = maps:get(hellgate_root_url, Ret),
+    PMRootUrl = maps:get(pm_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
     AnotherPartyID = hg_utils:unique_id(),
-    AnotherPartyClient = hg_client_party:start(AnotherPartyID, hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
+    AnotherPartyClient = hg_client_party:start(AnotherPartyID, hg_ct_helper:create_client(PMRootUrl, AnotherPartyID)),
     AnotherCustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
+    _ = timer:sleep(5000),
+    _ = logger:error("ContractTemplateRef: ~p", [hg_domain:find(hg_domain:head(), ?tmpl(1))]),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
 
@@ -458,6 +461,7 @@ init_per_suite(C) ->
         {another_shop_id, AnotherShopID},
         {another_customer_client, AnotherCustomerClient},
         {root_url, RootUrl},
+        {pm_root_url, PMRootUrl},
         {apps, Apps},
         {test_sup, SupPid}
         | C
@@ -1017,8 +1021,9 @@ payment_success(C) ->
 -spec payment_limit_success(config()) -> test_return().
 payment_limit_success(C) ->
     RootUrl = cfg(root_url, C),
+    PMRootUrl = cfg(pm_root_url, C),
     PartyID = ?PARTY_ID_WITH_LIMIT,
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
 
@@ -1050,8 +1055,9 @@ payment_limit_other_shop_success(C) ->
 -spec payment_limit_overflow(config()) -> test_return().
 payment_limit_overflow(C) ->
     RootUrl = cfg(root_url, C),
+    PMRootUrl = cfg(pm_root_url, C),
     PartyID = ?PARTY_ID_WITH_LIMIT,
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
 
@@ -1075,7 +1081,8 @@ payment_limit_overflow(C) ->
 refund_limit_success(C) ->
     PartyID = ?PARTY_ID_WITH_LIMIT,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PMRootUrl = cfg(pm_root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
 
@@ -1121,7 +1128,8 @@ payment_partial_capture_limit_success(C) ->
 
     PartyID = ?PARTY_ID_WITH_LIMIT,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PMRootUrl = cfg(pm_root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
 
@@ -1202,7 +1210,8 @@ get_payment_limit(PartyID, ShopID, InvoiceID, PaymentID, Amount) ->
 payment_success_ruleset(C) ->
     PartyID = <<"bIg merch">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PMRootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
@@ -2263,7 +2272,8 @@ get_deprecated_cashflow_account_id(Type, CF, CFContext) ->
 invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PMRootUrl = cfg(root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
@@ -2277,7 +2287,8 @@ invalid_payment_w_deprived_party(C) ->
 external_account_posting(C) ->
     PartyID = <<"LGBT">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PMRootUrl = cfg(pm_root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
@@ -2315,7 +2326,8 @@ external_account_posting(C) ->
 terminal_cashflow_overrides_provider(C) ->
     PartyID = <<"LGBT">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PMRootUrl = cfg(pm_root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
@@ -5413,7 +5425,8 @@ wait_for_binding_success(_, _, _, _) ->
 party_revision_check_init_params(C) ->
     PartyID = <<"RevChecker">>,
     RootUrl = cfg(root_url, C),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PMRootUrl = cfg(pm_root_url, C),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {PartyID, PartyClient, Client, ShopID}.
