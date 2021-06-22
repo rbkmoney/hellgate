@@ -295,7 +295,7 @@ get_chargebacks(#st{chargebacks = CBs}) ->
 build_payment_chargeback(ChargebackState) ->
     #payproc_InvoicePaymentChargeback{
         chargeback = hg_invoice_payment_chargeback:get(ChargebackState),
-        cash_flow = hg_invoice_payment_chargeback:get_cash_flow(ChargebackState)
+        deprecated_cash_flow = hg_invoice_payment_chargeback:get_cash_flow(ChargebackState)
     }.
 
 -spec get_sessions(st()) -> [payment_session()].
@@ -315,7 +315,7 @@ get_refunds(#st{refunds = Rs, payment = Payment}) ->
             #payproc_InvoicePaymentRefund{
                 refund = enrich_refund_with_cash(R, Payment),
                 sessions = lists:map(fun convert_refund_sessions/1, S),
-                cash_flow = C
+                deprecated_cash_flow = C
             }
         end,
         maps:values(Rs)
