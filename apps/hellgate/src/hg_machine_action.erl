@@ -86,6 +86,7 @@ mark_removal(Action = #mg_stateproc_ComplexAction{}) ->
 %%
 
 try_format_dt(Datetime = {_, _}) ->
-    genlib_format:format_datetime_iso8601(Datetime);
+    Seconds = genlib_time:daytime_to_unixtime(Datetime),
+    genlib_rfc3339:format(Seconds, second);
 try_format_dt(Datetime) when is_binary(Datetime) ->
     Datetime.

@@ -31,6 +31,7 @@
 -export([complex_claim_acceptance/1]).
 
 -export([party_revisioning/1]).
+-export([party_get_initial_revision/1]).
 -export([party_get_revision/1]).
 -export([party_blocking/1]).
 -export([party_unblocking/1]).
@@ -98,6 +99,7 @@
 -export([compute_provider_not_found/1]).
 -export([compute_provider_terminal_terms_ok/1]).
 -export([compute_provider_terminal_terms_not_found/1]).
+-export([compute_provider_terminal_terms_undefined_terms/1]).
 -export([compute_globals_ok/1]).
 -export([compute_payment_routing_ruleset_ok/1]).
 -export([compute_payment_routing_ruleset_unreducable/1]).
@@ -105,6 +107,8 @@
 
 -export([compute_pred_w_irreducible_criterion/1]).
 -export([compute_terms_w_criteria/1]).
+
+-export([consistent_eventsink_history/1]).
 
 %% tests descriptions
 
@@ -131,7 +135,9 @@ all() ->
 
         {group, claim_management},
         {group, compute},
-        {group, terms}
+        {group, terms},
+
+        consistent_eventsink_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -149,6 +155,7 @@ groups() ->
         ]},
         {party_revisioning, [sequence], [
             party_creation,
+            party_get_initial_revision,
             party_revisioning,
             party_get_revision
         ]},
@@ -254,6 +261,7 @@ groups() ->
             compute_provider_not_found,
             compute_provider_terminal_terms_ok,
             compute_provider_terminal_terms_not_found,
+            compute_provider_terminal_terms_undefined_terms,
             compute_globals_ok,
             compute_payment_routing_ruleset_ok,
             compute_payment_routing_ruleset_unreducable,
@@ -272,7 +280,7 @@ groups() ->
 init_per_suite(C) ->
     {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, party_management, hellgate]),
     ok = pm_domain:insert(construct_domain_fixture()),
-    [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps} | C].
+    [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps}] ++ C.
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -299,7 +307,7 @@ end_per_group(_Group, C) ->
 init_per_testcase(_Name, C) ->
     C.
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -456,6 +464,7 @@ end_per_testcase(_Name, _C) ->
 -spec shop_update_before_confirm(config()) -> _ | no_return().
 -spec shop_update_with_bad_params(config()) -> _ | no_return().
 
+-spec party_get_initial_revision(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
 -spec party_get_revision(config()) -> _ | no_return().
 
@@ -525,6 +534,7 @@ end_per_testcase(_Name, _C) ->
 -spec compute_provider_not_found(config()) -> _ | no_return().
 -spec compute_provider_terminal_terms_ok(config()) -> _ | no_return().
 -spec compute_provider_terminal_terms_not_found(config()) -> _ | no_return().
+-spec compute_provider_terminal_terms_undefined_terms(config()) -> _ | no_return().
 -spec compute_globals_ok(config()) -> _ | no_return().
 -spec compute_payment_routing_ruleset_ok(config()) -> _ | no_return().
 -spec compute_payment_routing_ruleset_unreducable(config()) -> _ | no_return().
@@ -532,6 +542,8 @@ end_per_testcase(_Name, _C) ->
 
 -spec compute_pred_w_irreducible_criterion(config()) -> _ | no_return().
 -spec compute_terms_w_criteria(config()) -> _ | no_return().
+
+-spec consistent_eventsink_history(config()) -> _ | no_return().
 
 party_creation(C) ->
     Client = cfg(client, C),
@@ -560,6 +572,12 @@ party_retrieval(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     #domain_Party{id = PartyID} = pm_client_party:get(Client).
+
+party_get_initial_revision(C) ->
+    % NOTE
+    % This triggers `pm_party_machine:get_last_revision_old_way/1` codepath.
+    Client = cfg(client, C),
+    0 = pm_client_party:get_revision(Client).
 
 party_revisioning(C) ->
     Client = cfg(client, C),
@@ -590,12 +608,14 @@ party_get_revision(C) ->
     Party1 = pm_client_party:get(Client),
     R1 = Party1#domain_Party.revision,
     R1 = pm_client_party:get_revision(Client),
+    Party1 = #domain_Party{revision = R1} = pm_client_party:checkout({revision, R1}, Client),
     Changeset = create_change_set(0),
     Claim = assert_claim_pending(pm_client_party:create_claim(Changeset, Client), Client),
     R1 = pm_client_party:get_revision(Client),
     ok = accept_claim(Claim, Client),
     R2 = pm_client_party:get_revision(Client),
     R2 = R1 + 1,
+    Party2 = #domain_Party{revision = R2} = pm_client_party:checkout({revision, R2}, Client),
     % some more
     Max = 7,
     Claims = [
@@ -603,9 +623,11 @@ party_get_revision(C) ->
         || Num <- lists:seq(1, Max)
     ],
     R2 = pm_client_party:get_revision(Client),
+    Party2 = pm_client_party:checkout({revision, R2}, Client),
     _Oks = [accept_claim(Cl, Client) || Cl <- Claims],
     R3 = pm_client_party:get_revision(Client),
-    R3 = R2 + Max.
+    R3 = R2 + Max,
+    #domain_Party{revision = R3} = pm_client_party:checkout({revision, R3}, Client).
 
 create_change_set(ID) ->
     ContractParams = make_contract_params(),
@@ -917,7 +939,7 @@ compute_payment_institution_terms(C) ->
     #domain_TermSet{} =
         T3 = pm_client_party:compute_payment_institution_terms(
             ?pinst(2),
-            #payproc_Varset{payment_method = ?pmt(payment_terminal, euroset)},
+            #payproc_Varset{payment_method = ?pmt(payment_terminal_deprecated, euroset)},
             Client
         ),
     #domain_TermSet{} =
@@ -960,7 +982,7 @@ contract_p2p_terms(C) ->
     Timstamp1 = pm_datetime:format_now(),
     BankCard = #domain_BankCard{
         token = <<"1OleNyeXogAKZBNTgxBGQE">>,
-        payment_system = visa,
+        payment_system_deprecated = visa,
         bin = <<"415039">>,
         last_digits = <<"0900">>,
         issuer_country = rus
@@ -1713,13 +1735,27 @@ compute_provider_terminal_terms_not_found(C) ->
             Client
         )).
 
+compute_provider_terminal_terms_undefined_terms(C) ->
+    Client = cfg(client, C),
+    DomainRevision = pm_domain:head(),
+    ?assertMatch(
+        {exception, #payproc_ProvisionTermSetUndefined{}},
+        pm_client_party:compute_provider_terminal_terms(
+            ?prv(2),
+            ?trm(4),
+            DomainRevision,
+            #payproc_Varset{},
+            Client
+        )
+    ).
+
 compute_globals_ok(C) ->
     Client = cfg(client, C),
     DomainRevision = pm_domain:head(),
     Varset = #payproc_Varset{},
     #domain_Globals{
         external_account_set = {value, ?eas(1)}
-    } = pm_client_party:compute_globals(#domain_GlobalsRef{}, DomainRevision, Varset, Client).
+    } = pm_client_party:compute_globals(DomainRevision, Varset, Client).
 
 compute_payment_routing_ruleset_ok(C) ->
     Client = cfg(client, C),
@@ -1824,7 +1860,7 @@ compute_terms_w_criteria(C) ->
                                 {bank_card, #domain_BankCardCondition{
                                     definition =
                                         {payment_system, #domain_PaymentSystemCondition{
-                                            payment_system_is = visa
+                                            payment_system_is_deprecated = visa
                                         }}
                                 }}}},
                         {is_not,
@@ -1922,6 +1958,11 @@ compute_terms_w_criteria(C) ->
             )
         end
     ).
+
+consistent_eventsink_history(C) ->
+    Client = pm_client_eventsink:start_link(pm_client_api:new(cfg(root_url, C))),
+    Events = pm_client_eventsink:pull_events(5000, 1000, Client),
+    ok = pm_eventsink_history:assert_total_order(Events).
 
 %%
 
@@ -2217,14 +2258,14 @@ construct_domain_fixture() ->
                                             {bank_card, #domain_BankCardCondition{
                                                 definition =
                                                     {payment_system, #domain_PaymentSystemCondition{
-                                                        payment_system_is = visa
+                                                        payment_system_is_deprecated = visa
                                                     }}
                                             }},
                                         receiver_is =
                                             {bank_card, #domain_BankCardCondition{
                                                 definition =
                                                     {payment_system, #domain_PaymentSystemCondition{
-                                                        payment_system_is = visa
+                                                        payment_system_is_deprecated = visa
                                                     }}
                                             }}
                                     }}},
@@ -2402,7 +2443,7 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, maestro)),
-        pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+        pm_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
         pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
 
         pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),
@@ -2416,10 +2457,10 @@ construct_domain_fixture() ->
 
         pm_ct_fixture:construct_business_schedule(?bussched(1)),
 
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(1), <<"Rule#1">>, Decision1),
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(2), <<"Rule#2">>, Decision2),
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Rule#3">>, Decision3),
-        hg_ct_fixture:construct_payment_routing_ruleset(?ruleset(4), <<"Rule#4">>, Decision4),
+        pm_ct_fixture:construct_payment_routing_ruleset(?ruleset(1), <<"Rule#1">>, Decision1),
+        pm_ct_fixture:construct_payment_routing_ruleset(?ruleset(2), <<"Rule#2">>, Decision2),
+        pm_ct_fixture:construct_payment_routing_ruleset(?ruleset(3), <<"Rule#3">>, Decision3),
+        pm_ct_fixture:construct_payment_routing_ruleset(?ruleset(4), <<"Rule#4">>, Decision4),
 
         {payment_institution, #domain_PaymentInstitutionObject{
             ref = ?pinst(1),
@@ -2540,7 +2581,7 @@ construct_domain_fixture() ->
                 terminal = {value, [?prvtrm(1)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
-                accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+                accounts = pm_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
                 terms = #domain_ProvisionTermSet{
                     payments = #domain_PaymentsProvisionTerms{
                         currencies = {value, ?ordset([?cur(<<"RUB">>)])},
@@ -2627,6 +2668,18 @@ construct_domain_fixture() ->
             }
         }},
 
+        {provider, #domain_ProviderObject{
+            ref = ?prv(2),
+            data = #domain_Provider{
+                name = <<"Provider 2">>,
+                description = <<"Provider without terms">>,
+                terminal = {value, [?prvtrm(4)]},
+                proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
+                abs_account = <<"1234567890">>,
+                accounts = pm_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)])
+            }
+        }},
+
         {terminal, #domain_TerminalObject{
             ref = ?trm(1),
             data = #domain_Terminal{
@@ -2673,6 +2726,13 @@ construct_domain_fixture() ->
                                 ])}
                     }
                 }
+            }
+        }},
+        {terminal, #domain_TerminalObject{
+            ref = ?trm(4),
+            data = #domain_Terminal{
+                name = <<"Terminal 4">>,
+                description = <<"Terminal without terms">>
             }
         }}
     ].

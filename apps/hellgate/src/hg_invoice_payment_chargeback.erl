@@ -139,10 +139,10 @@
     hg_machine_action:t().
 
 -type activity() ::
-    preparing_initial_cash_flow |
-    updating_chargeback |
-    updating_cash_flow |
-    finalising_accounter.
+    preparing_initial_cash_flow
+    | updating_chargeback
+    | updating_cash_flow
+    | finalising_accounter.
 
 -spec get(state()) -> chargeback().
 get(#chargeback_st{chargeback = Chargeback}) ->
@@ -284,19 +284,15 @@ do_create(Opts, CreateParams = ?chargeback_params(Levy, Body, _Reason)) ->
     Party = get_opts_party(Opts),
     Payment = get_opts_payment(Opts),
     ShopID = get_invoice_shop_id(Invoice),
-    Shop = pm_party:get_shop(ShopID, Party),
-    ContractID = get_shop_contract_id(Shop),
-    Contract = pm_party:get_contract(ContractID, Party),
-    TermSet = pm_party:get_terms(Contract, CreatedAt, Revision),
-    ServiceTerms = get_merchant_chargeback_terms(TermSet),
+    Shop = hg_party:get_shop(ShopID, Party),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
-    _ = validate_contract_active(Contract),
+    ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     _ = validate_currency(Body, Payment),
     _ = validate_currency(Levy, Payment),
     _ = validate_body_amount(Body, get_opts_payment_state(Opts)),
+    _ = validate_contract_active(get_contract(Party, Shop)),
     _ = validate_service_terms(ServiceTerms),
-    _ = validate_chargeback_is_allowed(ServiceTerms, VS, Revision),
-    _ = validate_eligibility_time(ServiceTerms, VS, Revision),
+    _ = validate_eligibility_time(ServiceTerms),
     Chargeback = build_chargeback(Opts, CreateParams, Revision, CreatedAt),
     Action = hg_machine_action:instant(),
     Result = {[?chargeback_created(Chargeback)], Action},
@@ -423,18 +419,15 @@ build_chargeback_cash_flow(State, Opts) ->
     Route = get_opts_route(Opts),
     Party = get_opts_party(Opts),
     ShopID = get_invoice_shop_id(Invoice),
-    Shop = pm_party:get_shop(ShopID, Party),
-    ContractID = get_shop_contract_id(Shop),
-    Contract = pm_party:get_contract(ContractID, Party),
-    TermSet = pm_party:get_terms(Contract, CreatedAt, Revision),
-    ServiceTerms = get_merchant_chargeback_terms(TermSet),
+    Shop = hg_party:get_shop(ShopID, Party),
     VS = collect_validation_varset(Party, Shop, Payment, Body),
+    ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     PaymentsTerms = hg_routing:get_payments_terms(Route, Revision),
     ProviderTerms = get_provider_chargeback_terms(PaymentsTerms, Payment),
-    ServiceCashFlow = collect_chargeback_service_cash_flow(ServiceTerms, VS, Revision),
-    ProviderCashFlow = collect_chargeback_provider_cash_flow(ProviderTerms, VS, Revision),
-    ProviderFees = collect_chargeback_provider_fees(ProviderTerms, VS, Revision),
-    PaymentInstitutionRef = get_payment_institution_ref(Contract),
+    ServiceCashFlow = get_chargeback_service_cash_flow(ServiceTerms),
+    ProviderCashFlow = get_chargeback_provider_cash_flow(ProviderTerms),
+    ProviderFees = collect_chargeback_provider_fees(ProviderTerms),
+    PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
     PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
     AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
@@ -458,44 +451,41 @@ build_provider_cash_flow_context(State, Fees) ->
             maps:merge(ComputedFees, #{operation_amount => get_body(State)})
     end.
 
-collect_chargeback_service_cash_flow(ServiceTerms, VS, Revision) ->
-    #domain_PaymentChargebackServiceTerms{fees = ServiceCashflowSelector} = ServiceTerms,
-    reduce_selector(merchant_chargeback_fees, ServiceCashflowSelector, VS, Revision).
+get_chargeback_service_cash_flow(#domain_PaymentChargebackServiceTerms{fees = {value, V}}) ->
+    V;
+get_chargeback_service_cash_flow(_) ->
+    throw(#payproc_OperationNotPermitted{}).
 
-collect_chargeback_provider_cash_flow(ProviderTerms, VS, Revision) ->
-    #domain_PaymentChargebackProvisionTerms{cash_flow = ProviderCashflowSelector} = ProviderTerms,
-    reduce_selector(provider_chargeback_cash_flow, ProviderCashflowSelector, VS, Revision).
+get_chargeback_provider_cash_flow(#domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}}) ->
+    V;
+get_chargeback_provider_cash_flow(_) ->
+    throw(#payproc_OperationNotPermitted{}).
 
-collect_chargeback_provider_fees(ProviderTerms, VS, Revision) ->
-    #domain_PaymentChargebackProvisionTerms{fees = ProviderFeesSelector} = ProviderTerms,
-    case ProviderFeesSelector of
-        undefined ->
-            #{};
-        ProviderFeesSelector ->
-            Fees = reduce_selector(provider_chargeback_fees, ProviderFeesSelector, VS, Revision),
-            Fees#domain_Fees.fees
-    end.
+collect_chargeback_provider_fees(#domain_PaymentChargebackProvisionTerms{fees = undefined}) ->
+    #{};
+collect_chargeback_provider_fees(#domain_PaymentChargebackProvisionTerms{fees = {value, Fees}}) ->
+    Fees#domain_Fees.fees.
 
-reduce_selector(Name, Selector, VS, Revision) ->
-    case pm_selector:reduce(Selector, VS, Revision) of
-        {value, V} ->
-            V;
-        Ambiguous ->
-            error({misconfiguration, {'Could not reduce selector to a value', {Name, Ambiguous}}})
-    end.
+get_merchant_chargeback_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Shop, VS, Revision, Timestamp) ->
+    {Client, Context} = get_party_client(),
+    {ok, #domain_TermSet{payments = PaymentsTerms}} = party_client_thrift:compute_contract_terms(
+        PartyId,
+        Shop#domain_Shop.contract_id,
+        Timestamp,
+        {revision, PartyRevision},
+        Revision,
+        hg_varset:prepare_varset(VS),
+        Client,
+        Context
+    ),
+    PaymentsTerms#domain_PaymentsServiceTerms.chargebacks.
 
-reduce_predicate(Name, Selector, VS, Revision) ->
-    case pm_selector:reduce_predicate(Selector, VS, Revision) of
-        {constant, Boolean} ->
-            Boolean;
-        Ambiguous ->
-            error({misconfiguration, {'Could not reduce predicate to a value', {Name, Ambiguous}}})
-    end.
+get_contract(Party, #domain_Shop{contract_id = ContractID}) ->
+    hg_party:get_contract(ContractID, Party).
 
-get_merchant_chargeback_terms(#domain_TermSet{payments = PaymentsTerms}) ->
-    get_merchant_chargeback_terms(PaymentsTerms);
-get_merchant_chargeback_terms(#domain_PaymentsServiceTerms{chargebacks = Terms}) ->
-    Terms.
+get_party_client() ->
+    Ctx = hg_context:load(),
+    {hg_context:get_party_client(Ctx), hg_context:get_party_client_context(Ctx)}.
 
 get_provider_chargeback_terms(#domain_PaymentsProvisionTerms{chargebacks = Terms}, _Payment) ->
     Terms.
@@ -541,25 +531,17 @@ collect_validation_varset(Party, Shop, Payment, Body) ->
 
 %% Validations
 
-validate_chargeback_is_allowed(#domain_PaymentChargebackServiceTerms{allow = Allow}, VS, Revision) ->
-    case reduce_predicate(allow_chargeback, Allow, VS, Revision) of
-        true -> ok;
-        false -> throw(#payproc_OperationNotPermitted{})
-    end.
-
-validate_eligibility_time(#domain_PaymentChargebackServiceTerms{eligibility_time = undefined}, _V, _R) ->
+validate_eligibility_time(#domain_PaymentChargebackServiceTerms{eligibility_time = undefined}) ->
     ok;
-validate_eligibility_time(Terms, VS, Revision) ->
+validate_eligibility_time(#domain_PaymentChargebackServiceTerms{eligibility_time = {value, EligibilityTime}}) ->
     Now = hg_datetime:format_now(),
-    TimeSpanSelector = Terms#domain_PaymentChargebackServiceTerms.eligibility_time,
-    EligibilityTime = reduce_selector(eligibility_time, TimeSpanSelector, VS, Revision),
     EligibleUntil = hg_datetime:add_time_span(EligibilityTime, Now),
     case hg_datetime:compare(Now, EligibleUntil) of
         later -> throw(#payproc_OperationNotPermitted{});
         _NotLater -> ok
     end.
 
-validate_service_terms(#domain_PaymentChargebackServiceTerms{}) ->
+validate_service_terms(#domain_PaymentChargebackServiceTerms{allow = {constant, true}}) ->
     ok;
 validate_service_terms(undefined) ->
     throw(#payproc_OperationNotPermitted{}).
@@ -739,11 +721,6 @@ get_route_provider(#domain_PaymentRoute{provider = ProviderRef}, Revision) ->
 
 get_payment_institution_ref(Contract) ->
     Contract#domain_Contract.payment_institution.
-
-%%
-
-get_shop_contract_id(#domain_Shop{contract_id = ContractID}) ->
-    ContractID.
 
 %%
 

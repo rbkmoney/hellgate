@@ -1,6 +1,7 @@
 -module(pm_provider).
 
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %% API
 -export([reduce_provider/3]).
@@ -13,18 +14,24 @@
 -type domain_revision() :: pm_domain:revision().
 
 -spec reduce_provider(provider(), varset(), domain_revision()) -> provider().
-reduce_provider(Provider, VS, DomainRevision) ->
+reduce_provider(Provider, VS, Rev) ->
     Provider#domain_Provider{
-        terminal = pm_selector:reduce(Provider#domain_Provider.terminal, VS, DomainRevision),
-        terms = reduce_provision_term_set(Provider#domain_Provider.terms, VS, DomainRevision)
+        terminal = reduce_if_defined(Provider#domain_Provider.terminal, VS, Rev),
+        terms = reduce_provision_term_set(Provider#domain_Provider.terms, VS, Rev)
     }.
 
 -spec reduce_provider_terminal_terms(provider(), terminal(), varset(), domain_revision()) -> provision_terms().
-reduce_provider_terminal_terms(Provider, Terminal, VS, DomainRevision) ->
+reduce_provider_terminal_terms(Provider, Terminal, VS, Rev) ->
     ProviderTerms = Provider#domain_Provider.terms,
     TerminalTerms = Terminal#domain_Terminal.terms,
     MergedTerms = merge_provision_term_sets(ProviderTerms, TerminalTerms),
-    reduce_provision_term_set(MergedTerms, VS, DomainRevision).
+    ReducedTerms = reduce_provision_term_set(MergedTerms, VS, Rev),
+    case ReducedTerms of
+        undefined ->
+            throw(#payproc_ProvisionTermSetUndefined{});
+        _ ->
+            ReducedTerms
+    end.
 
 reduce_p2p_terms(undefined = Terms, _VS, _Rev) ->
     Terms;
@@ -202,7 +209,8 @@ merge_payment_terms(
         holds = PHolds,
         refunds = PRefunds,
         chargebacks = PChargebacks,
-        risk_coverage = PRiskCoverage
+        risk_coverage = PRiskCoverage,
+        turnover_limits = PTurnoverLimits
     },
     #domain_PaymentsProvisionTerms{
         currencies = TCurrencies,
@@ -213,7 +221,8 @@ merge_payment_terms(
         holds = THolds,
         refunds = TRefunds,
         chargebacks = TChargebacks,
-        risk_coverage = TRiskCoverage
+        risk_coverage = TRiskCoverage,
+        turnover_limits = TTurnoverLimits
     }
 ) ->
     #domain_PaymentsProvisionTerms{
@@ -225,7 +234,8 @@ merge_payment_terms(
         holds = pm_utils:select_defined(THolds, PHolds),
         refunds = pm_utils:select_defined(TRefunds, PRefunds),
         chargebacks = pm_utils:select_defined(TChargebacks, PChargebacks),
-        risk_coverage = pm_utils:select_defined(TRiskCoverage, PRiskCoverage)
+        risk_coverage = pm_utils:select_defined(TRiskCoverage, PRiskCoverage),
+        turnover_limits = pm_utils:select_defined(TTurnoverLimits, PTurnoverLimits)
     };
 merge_payment_terms(ProviderTerms, TerminalTerms) ->
     pm_utils:select_defined(TerminalTerms, ProviderTerms).

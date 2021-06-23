@@ -65,14 +65,16 @@ get_payment_info(
         id = InvoiceID,
         created_at = InvoiceCreatedAt,
         due = InvoiceDue,
-        details = InvoiceDetails
+        details = InvoiceDetails,
+        client_info = ClientInfo
     },
     #domain_InvoicePayment{
         id = PaymentID,
         created_at = CreatedAt,
         domain_revision = Revision,
         payer = Payer,
-        cost = Cost
+        cost = Cost,
+        make_recurrent = MakeRecurrent
     }
 ) ->
     Party = #proxy_inspector_Party{
@@ -92,13 +94,15 @@ get_payment_info(
         id = InvoiceID,
         created_at = InvoiceCreatedAt,
         due = InvoiceDue,
-        details = InvoiceDetails
+        details = InvoiceDetails,
+        client_info = ClientInfo
     },
     ProxyPayment = #proxy_inspector_InvoicePayment{
         id = PaymentID,
         created_at = CreatedAt,
         payer = Payer,
-        cost = Cost
+        cost = Cost,
+        make_recurrent = MakeRecurrent
     },
     #proxy_inspector_PaymentInfo{
         party = Party,

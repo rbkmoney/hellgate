@@ -38,8 +38,8 @@ call(ServiceName, Function, Args, {RootUrl, Context}) ->
     {Result, {RootUrl, Context}}.
 
 -spec do_call(woody:request(), woody_client:options(), woody_context:ctx(), genlib_retry:strategy()) ->
-    {ok, woody:result()} |
-    {exception, woody_error:business_error()}.
+    {ok, woody:result()}
+    | {exception, woody_error:business_error()}.
 do_call(Request, Opts, Context, RetryStrategy) ->
     try
         woody_client:call(Request, Opts, Context)

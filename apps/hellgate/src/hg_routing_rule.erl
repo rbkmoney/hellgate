@@ -5,8 +5,6 @@
 -export([gather_routes/4]).
 
 %%
--define(const(Bool), {constant, Bool}).
-
 -type route_predestination() :: hg_routing:route_predestination().
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type non_fail_rated_route() :: hg_routing:non_fail_rated_route().
@@ -15,90 +13,71 @@
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
-    pm_selector:varset(),
+    hg_routing:varset(),
     hg_domain:revision()
 ) -> {[non_fail_rated_route()], reject_context()}.
-gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, VS, _) ->
+gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined} = PayInst, VS, _) ->
+    logger:log(
+        warning,
+        "Payment routing rules is undefined, PaymentInstitution: ~p",
+        [PayInst]
+    ),
     {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
-gather_routes(Predestination, PaymentInstitution, VS, Revision) ->
+gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules = RoutingRules}, VS, Revision) ->
     RejectedContext = #{
         varset => VS,
         rejected_providers => [],
         rejected_routes => []
     },
-    PaymentRouting = PaymentInstitution#domain_PaymentInstitution.payment_routing_rules,
-    RuleSet = get_rule_set(PaymentRouting#domain_RoutingRules.policies, Revision),
-    RuleSetDeny = get_rule_set(PaymentRouting#domain_RoutingRules.prohibitions, Revision),
-    Candidates = reduce(RuleSet, VS, Revision),
-    RatedRoutes = collect_routes(Predestination, Candidates, VS, Revision),
-    Prohibitions = get_table_prohibitions(RuleSetDeny, VS, Revision),
-    {Accepted, RejectedRoutes} = filter_routes(RatedRoutes, Prohibitions),
-    {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}.
-
-get_table_prohibitions(RuleSetDeny, VS, Revision) ->
-    Candidates = reduce(RuleSetDeny, VS, Revision),
-    lists:foldl(
-        fun(C, AccIn) ->
-            AccIn#{get_terminal_ref(C) => get_description(C)}
-        end,
-        #{},
-        Candidates
-    ).
-
-reduce(RuleSet, VS, Revision) ->
-    #domain_RoutingRuleset{
-        decisions = Decisions
-    } = RuleSet,
-    reduce_decisions(Decisions, VS, Revision).
-
-reduce_decisions({_, []}, _, _) ->
-    [];
-reduce_decisions({delegates, Delegates}, VS, Rev) ->
-    reduce_delegates_decision(Delegates, VS, Rev);
-reduce_decisions({candidates, Candidates}, VS, Rev) ->
-    reduce_candidates_decision(Candidates, VS, Rev).
-
-reduce_delegates_decision([], _VS, _Rev) ->
-    [];
-reduce_delegates_decision([D | Delegates], VS, Rev) ->
-    Predicate = D#domain_RoutingDelegate.allowed,
-    RuleSetRef = D#domain_RoutingDelegate.ruleset,
-    case pm_selector:reduce_predicate(Predicate, VS, Rev) of
-        ?const(false) ->
-            reduce_delegates_decision(Delegates, VS, Rev);
-        ?const(true) ->
-            reduce(get_rule_set(RuleSetRef, Rev), VS, Rev);
-        _ ->
-            logger:warning(
-                "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~n Varset:~n~p",
-                [Predicate, VS]
-            ),
-            []
+    #domain_RoutingRules{
+        policies = Policies,
+        prohibitions = Prohibitions
+    } = RoutingRules,
+    try
+        Candidates = get_candidates(Policies, VS, Revision),
+        {Accepted, RejectedRoutes} = filter_routes(
+            collect_routes(Predestination, Candidates, VS, Revision),
+            get_table_prohibitions(Prohibitions, VS, Revision)
+        ),
+        {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}
+    catch
+        error:{misconfiguration, Reason} ->
+            {[], RejectedContext#{error => Reason}}
     end.
 
-reduce_candidates_decision(Candidates, VS, Rev) ->
-    lists:foldl(
-        fun(C, AccIn) ->
-            Predicate = C#domain_RoutingCandidate.allowed,
-            case pm_selector:reduce_predicate(Predicate, VS, Rev) of
-                ?const(false) ->
-                    AccIn;
-                ?const(true) ->
-                    [C | AccIn];
-                _ ->
-                    logger:warning(
-                        "Routing rule misconfiguration, can't reduce decision. Predicate: ~p~nVarset:~n~p",
-                        [Predicate, VS]
-                    ),
-                    AccIn
-            end
+get_table_prohibitions(Prohibitions, VS, Revision) ->
+    RuleSetDeny = compute_rule_set(Prohibitions, VS, Revision),
+    lists:foldr(
+        fun(#domain_RoutingCandidate{terminal = K, description = V}, AccIn) ->
+            AccIn#{K => V}
         end,
-        [],
-        Candidates
+        #{},
+        get_decisions_candidates(RuleSetDeny)
     ).
 
+get_candidates(RoutingRule, VS, Revision) ->
+    get_decisions_candidates(
+        compute_rule_set(RoutingRule, VS, Revision)
+    ).
+
+get_decisions_candidates(#domain_RoutingRuleset{decisions = Decisions}) ->
+    case Decisions of
+        {delegates, _Delegates} ->
+            error({misconfiguration, {'PaymentRoutingDecisions couldn\'t be reduced to candidates', Decisions}});
+        {candidates, Candidates} ->
+            ok = validate_decisions_candidates(Candidates),
+            Candidates
+    end.
+
+validate_decisions_candidates([]) ->
+    ok;
+validate_decisions_candidates([#domain_RoutingCandidate{allowed = {constant, true}} | Rest]) ->
+    validate_decisions_candidates(Rest);
+validate_decisions_candidates([Candidate | _]) ->
+    error({misconfiguration, {'PaymentRoutingCandidate couldn\'t be reduced', Candidate}}).
+
 collect_routes(Predestination, Candidates, VS, Revision) ->
-    lists:foldl(
+    lists:foldr(
         fun(Candidate, {Accepted, Rejected}) ->
             #domain_RoutingCandidate{
                 terminal = TerminalRef,
@@ -124,7 +103,7 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
     ).
 
 filter_routes({Routes, Rejected}, Prohibitions) ->
-    lists:foldl(
+    lists:foldr(
         fun(Route, {AccIn, RejectedIn}) ->
             {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
             case maps:find(TerminalRef, Prohibitions) of
@@ -139,11 +118,13 @@ filter_routes({Routes, Rejected}, Prohibitions) ->
         Routes
     ).
 
-get_rule_set(RuleSetRef, Revision) ->
-    hg_domain:get(Revision, {payment_routing_rules, RuleSetRef}).
-
-get_terminal_ref(Candidate) ->
-    Candidate#domain_RoutingCandidate.terminal.
-
-get_description(Candidate) ->
-    Candidate#domain_RoutingCandidate.description.
+compute_rule_set(RuleSetRef, VS, Revision) ->
+    Ctx = hg_context:load(),
+    {ok, RuleSet} = party_client_thrift:compute_routing_ruleset(
+        RuleSetRef,
+        Revision,
+        hg_varset:prepare_varset(VS),
+        hg_context:get_party_client(Ctx),
+        hg_context:get_party_client_context(Ctx)
+    ),
+    RuleSet.

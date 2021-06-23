@@ -14,22 +14,22 @@
 %%
 
 -type t() ::
-    dmsl_domain_thrift:'CurrencySelector'() |
-    dmsl_domain_thrift:'CategorySelector'() |
-    dmsl_domain_thrift:'CashLimitSelector'() |
-    dmsl_domain_thrift:'CashFlowSelector'() |
-    dmsl_domain_thrift:'PaymentMethodSelector'() |
-    dmsl_domain_thrift:'ProviderSelector'() |
-    dmsl_domain_thrift:'TerminalSelector'() |
-    dmsl_domain_thrift:'SystemAccountSetSelector'() |
-    dmsl_domain_thrift:'ExternalAccountSetSelector'() |
-    dmsl_domain_thrift:'HoldLifetimeSelector'() |
-    dmsl_domain_thrift:'CashValueSelector'() |
-    dmsl_domain_thrift:'CumulativeLimitSelector'() |
-    dmsl_domain_thrift:'TimeSpanSelector'() |
-    dmsl_domain_thrift:'P2PProviderSelector'() |
-    dmsl_domain_thrift:'FeeSelector'() |
-    dmsl_domain_thrift:'InspectorSelector'().
+    dmsl_domain_thrift:'CurrencySelector'()
+    | dmsl_domain_thrift:'CategorySelector'()
+    | dmsl_domain_thrift:'CashLimitSelector'()
+    | dmsl_domain_thrift:'CashFlowSelector'()
+    | dmsl_domain_thrift:'PaymentMethodSelector'()
+    | dmsl_domain_thrift:'ProviderSelector'()
+    | dmsl_domain_thrift:'TerminalSelector'()
+    | dmsl_domain_thrift:'SystemAccountSetSelector'()
+    | dmsl_domain_thrift:'ExternalAccountSetSelector'()
+    | dmsl_domain_thrift:'HoldLifetimeSelector'()
+    | dmsl_domain_thrift:'CashValueSelector'()
+    | dmsl_domain_thrift:'CumulativeLimitSelector'()
+    | dmsl_domain_thrift:'TimeSpanSelector'()
+    | dmsl_domain_thrift:'P2PProviderSelector'()
+    | dmsl_domain_thrift:'FeeSelector'()
+    | dmsl_domain_thrift:'InspectorSelector'().
 
 -type value() ::
     %% FIXME
@@ -99,9 +99,9 @@ reduce_decisions([], _, _) ->
     [].
 
 -spec reduce_predicate(predicate(), varset(), pm_domain:revision()) ->
-    predicate() |
+    predicate()
     % for a partially reduced criterion
-    {criterion, criterion()}.
+    | {criterion, criterion()}.
 reduce_predicate(?const(B), _, _) ->
     ?const(B);
 reduce_predicate({condition, C0}, VS, Rev) ->
@@ -169,30 +169,30 @@ p2p_provider_test() ->
         receiver_is = {bank_card, BankCardCondition}
     },
     P2PCondition2 = #domain_P2PToolCondition{
-        sender_is = {payment_tool, {bank_card, BankCardCondition}},
-        receiver_is = {payment_tool, {bank_card, BankCardCondition2}}
+        sender_is = {bank_card, BankCardCondition},
+        receiver_is = {bank_card, BankCardCondition2}
     },
     P2PProviderSelector =
         {decisions, [
             #domain_P2PProviderDecision{
                 if_ = {condition, {p2p_tool, P2PCondition1}},
-                then_ = {value, [#domain_ProviderRef{id = 1}]}
+                then_ = {value, [#domain_P2PProviderRef{id = 1}]}
             },
             #domain_P2PProviderDecision{
                 if_ = {condition, {p2p_tool, P2PCondition2}},
-                then_ = {value, [#domain_ProviderRef{id = 2}]}
+                then_ = {value, [#domain_P2PProviderRef{id = 2}]}
             }
         ]},
     BankCard1 = #domain_BankCard{
         token = <<"TOKEN1">>,
-        payment_system = mastercard,
+        payment_system_deprecated = mastercard,
         bin = <<"888888">>,
         last_digits = <<"888">>,
         issuer_country = rus
     },
     BankCard2 = #domain_BankCard{
         token = <<"TOKEN2">>,
-        payment_system = mastercard,
+        payment_system_deprecated = mastercard,
         bin = <<"777777">>,
         last_digits = <<"777">>,
         issuer_country = rus
@@ -203,14 +203,14 @@ p2p_provider_test() ->
             receiver = {bank_card, BankCard2}
         }
     },
-    ?assertEqual([{domain_ProviderRef, 1}], reduce_to_value(P2PProviderSelector, Vs, 1)).
+    ?assertEqual([{domain_P2PProviderRef, 1}], reduce_to_value(P2PProviderSelector, Vs, 1)).
 
 -spec p2p_allow_test() -> _.
 p2p_allow_test() ->
     FunGenCard = fun(PS, Country) ->
         #domain_BankCard{
             token = <<"TOKEN1">>,
-            payment_system = PS,
+            payment_system_deprecated = PS,
             bin = <<"888888">>,
             last_digits = <<"888">>,
             issuer_country = Country

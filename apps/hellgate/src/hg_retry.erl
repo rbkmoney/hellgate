@@ -8,12 +8,12 @@
 
 -type retries_num() :: pos_integer() | infinity.
 -type policy_spec() ::
-    {linear, retries_num() | {max_total_timeout, pos_integer()}, pos_integer()} |
-    {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer()} |
-    {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer(), timeout()} |
-    {intervals, [pos_integer(), ...]} |
-    {timecap, timeout(), policy_spec()} |
-    no_retry.
+    {linear, retries_num() | {max_total_timeout, pos_integer()}, pos_integer()}
+    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer()}
+    | {exponential, retries_num() | {max_total_timeout, pos_integer()}, number(), pos_integer(), timeout()}
+    | {intervals, [pos_integer(), ...]}
+    | {timecap, timeout(), policy_spec()}
+    | no_retry.
 
 -type strategy() :: genlib_retry:strategy().
 
