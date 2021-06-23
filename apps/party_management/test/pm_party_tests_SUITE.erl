@@ -31,6 +31,7 @@
 -export([complex_claim_acceptance/1]).
 
 -export([party_revisioning/1]).
+-export([party_get_initial_revision/1]).
 -export([party_get_revision/1]).
 -export([party_blocking/1]).
 -export([party_unblocking/1]).
@@ -107,6 +108,8 @@
 -export([compute_pred_w_irreducible_criterion/1]).
 -export([compute_terms_w_criteria/1]).
 
+-export([consistent_eventsink_history/1]).
+
 %% tests descriptions
 
 -type config() :: pm_ct_helper:config().
@@ -132,7 +135,9 @@ all() ->
 
         {group, claim_management},
         {group, compute},
-        {group, terms}
+        {group, terms},
+
+        consistent_eventsink_history
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -150,6 +155,7 @@ groups() ->
         ]},
         {party_revisioning, [sequence], [
             party_creation,
+            party_get_initial_revision,
             party_revisioning,
             party_get_revision
         ]},
@@ -458,6 +464,7 @@ end_per_testcase(_Name, _C) ->
 -spec shop_update_before_confirm(config()) -> _ | no_return().
 -spec shop_update_with_bad_params(config()) -> _ | no_return().
 
+-spec party_get_initial_revision(config()) -> _ | no_return().
 -spec party_revisioning(config()) -> _ | no_return().
 -spec party_get_revision(config()) -> _ | no_return().
 
@@ -536,6 +543,8 @@ end_per_testcase(_Name, _C) ->
 -spec compute_pred_w_irreducible_criterion(config()) -> _ | no_return().
 -spec compute_terms_w_criteria(config()) -> _ | no_return().
 
+-spec consistent_eventsink_history(config()) -> _ | no_return().
+
 party_creation(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
@@ -563,6 +572,12 @@ party_retrieval(C) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     #domain_Party{id = PartyID} = pm_client_party:get(Client).
+
+party_get_initial_revision(C) ->
+    % NOTE
+    % This triggers `pm_party_machine:get_last_revision_old_way/1` codepath.
+    Client = cfg(client, C),
+    0 = pm_client_party:get_revision(Client).
 
 party_revisioning(C) ->
     Client = cfg(client, C),
@@ -593,12 +608,14 @@ party_get_revision(C) ->
     Party1 = pm_client_party:get(Client),
     R1 = Party1#domain_Party.revision,
     R1 = pm_client_party:get_revision(Client),
+    Party1 = #domain_Party{revision = R1} = pm_client_party:checkout({revision, R1}, Client),
     Changeset = create_change_set(0),
     Claim = assert_claim_pending(pm_client_party:create_claim(Changeset, Client), Client),
     R1 = pm_client_party:get_revision(Client),
     ok = accept_claim(Claim, Client),
     R2 = pm_client_party:get_revision(Client),
     R2 = R1 + 1,
+    Party2 = #domain_Party{revision = R2} = pm_client_party:checkout({revision, R2}, Client),
     % some more
     Max = 7,
     Claims = [
@@ -606,9 +623,11 @@ party_get_revision(C) ->
         || Num <- lists:seq(1, Max)
     ],
     R2 = pm_client_party:get_revision(Client),
+    Party2 = pm_client_party:checkout({revision, R2}, Client),
     _Oks = [accept_claim(Cl, Client) || Cl <- Claims],
     R3 = pm_client_party:get_revision(Client),
-    R3 = R2 + Max.
+    R3 = R2 + Max,
+    #domain_Party{revision = R3} = pm_client_party:checkout({revision, R3}, Client).
 
 create_change_set(ID) ->
     ContractParams = make_contract_params(),
@@ -1939,6 +1958,11 @@ compute_terms_w_criteria(C) ->
             )
         end
     ).
+
+consistent_eventsink_history(C) ->
+    Client = pm_client_eventsink:start_link(pm_client_api:new(cfg(root_url, C))),
+    Events = pm_client_eventsink:pull_events(5000, 1000, Client),
+    ok = pm_eventsink_history:assert_total_order(Events).
 
 %%
 

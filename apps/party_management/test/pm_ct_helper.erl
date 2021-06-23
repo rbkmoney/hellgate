@@ -190,6 +190,13 @@ start_app(party_management = AppName) ->
                         pool => claim_committer,
                         max_connections => 300
                     }
+                },
+                payment_processing_eventsink => #{
+                    url => <<"http://hellgate:8022/v1/processing/eventsink">>,
+                    transport_opts => #{
+                        pool => payment_processing_eventsink,
+                        max_connections => 300
+                    }
                 }
             }}
         ]), #{}};
