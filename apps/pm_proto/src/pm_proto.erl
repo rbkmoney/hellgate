@@ -20,8 +20,6 @@ get_service(claim_committer) ->
     {dmsl_claim_management_thrift, 'ClaimCommitter'};
 get_service(party_management) ->
     {dmsl_payment_processing_thrift, 'PartyManagement'};
-get_service(payment_processing_eventsink) ->
-    {dmsl_payment_processing_thrift, 'EventSink'};
 get_service(accounter) ->
     {shumpune_shumpune_thrift, 'Accounter'};
 get_service(automaton) ->

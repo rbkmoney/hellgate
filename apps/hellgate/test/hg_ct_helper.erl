@@ -179,13 +179,6 @@ start_app(hellgate = AppName) ->
                         max_connections => 300
                     }
                 },
-                payment_processing_eventsink => #{
-                    url => <<"http://hellgate:8022/v1/processing/eventsink">>,
-                    transport_opts => #{
-                        pool => payment_processing_eventsink,
-                        max_connections => 300
-                    }
-                },
                 recurrent_paytool_eventsink => #{
                     url => <<"http://hellgate:8022/v1/processing/recpaytool/eventsink">>,
                     transport_opts => #{

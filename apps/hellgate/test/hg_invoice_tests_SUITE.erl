@@ -173,7 +173,6 @@
 -export([repair_complex_succeeded_second/1]).
 
 -export([consistent_account_balances/1]).
--export([consistent_history/1]).
 
 %%
 
@@ -219,8 +218,7 @@ all() ->
         rounding_cashflow_volume,
         terms_retrieval,
 
-        consistent_account_balances,
-        consistent_history
+        consistent_account_balances
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
@@ -4070,12 +4068,6 @@ payment_refund_id_types(C) ->
     ?assertEqual(<<"3">>, RefundID3).
 
 %%
-
--spec consistent_history(config()) -> test_return().
-consistent_history(C) ->
-    Client = hg_client_eventsink:start_link(hg_client_api:new(cfg(root_url, C))),
-    Events = hg_client_eventsink:pull_events(5000, 1000, Client),
-    ok = hg_eventsink_history:assert_total_order(Events).
 
 -spec payment_hold_cancellation(config()) -> _ | no_return().
 payment_hold_cancellation(C) ->
