@@ -1656,6 +1656,7 @@ payment_fail_after_silent_callback(C) ->
 payments_w_bank_card_issuer_conditions(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
+    _ = timer:sleep(5000),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(1), <<"RUB">>, ?tmpl(4), ?pinst(1), PartyClient),
     %kaz success
     FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
@@ -1696,6 +1697,7 @@ payments_w_bank_card_issuer_conditions(C) ->
 payments_w_bank_conditions(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
+    _ = timer:sleep(5000),
     ShopID = hg_ct_helper:create_battle_ready_shop(?cat(1), <<"RUB">>, ?tmpl(4), ?pinst(1), PartyClient),
     %bank 1 success
     FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
