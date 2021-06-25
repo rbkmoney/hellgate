@@ -46,12 +46,6 @@
 -export([process_call/2]).
 -export([process_repair/2]).
 
-%% Event provider callbacks
-
--behaviour(hg_event_provider).
-
--export([publish_event/2]).
-
 %% Internal
 
 -export([fail/1]).
@@ -450,7 +444,6 @@ map_history_error({error, notfound}) ->
 
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type party() :: dmsl_domain_thrift:'Party'().
--type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 
@@ -466,10 +459,6 @@ map_history_error({error, notfound}) ->
             scenario = #domain_InvoiceAdjustmentStatusChange{target_status = Status}
         }}
 }).
-
--spec publish_event(invoice_id(), hg_machine:event_payload()) -> hg_event_provider:public_event().
-publish_event(InvoiceID, Payload) ->
-    {{invoice_id, InvoiceID}, ?invoice_ev(unmarshal_event_payload(Payload))}.
 
 %%
 
