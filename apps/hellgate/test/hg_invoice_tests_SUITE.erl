@@ -1035,8 +1035,9 @@ payment_limit_success(C) ->
 -spec payment_limit_other_shop_success(config()) -> test_return().
 payment_limit_other_shop_success(C) ->
     RootUrl = cfg(root_url, C),
+    PMRootUrl = cfg(pm_root_url, C),
     PartyID = ?PARTY_ID_WITH_LIMIT,
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     ShopID1 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     ShopID2 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -1210,7 +1211,7 @@ get_payment_limit(PartyID, ShopID, InvoiceID, PaymentID, Amount) ->
 payment_success_ruleset(C) ->
     PartyID = <<"bIg merch">>,
     RootUrl = cfg(root_url, C),
-    PMRootUrl = cfg(root_url, C),
+    PMRootUrl = cfg(pm_root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
@@ -2274,7 +2275,7 @@ get_deprecated_cashflow_account_id(Type, CF, CFContext) ->
 invalid_payment_w_deprived_party(C) ->
     PartyID = <<"DEPRIVED ONE">>,
     RootUrl = cfg(root_url, C),
-    PMRootUrl = cfg(root_url, C),
+    PMRootUrl = cfg(pm_root_url, C),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
@@ -4382,7 +4383,7 @@ convert_transaction_account({external, Type}, _Context) ->
 
 -spec terms_retrieval(config()) -> _ | no_return().
 terms_retrieval(C) ->
-    Client = cfg(client, C),
+    Client = cfg(party_client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 1500, C),
     Timestamp = hg_datetime:format_now(),
     TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
