@@ -4315,7 +4315,7 @@ get_cashflow_volume(Source, Destination, CF) ->
 
 -spec terms_retrieval(config()) -> _ | no_return().
 terms_retrieval(C) ->
-    Client = cfg(party_client, C),
+    Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 1500, C),
     Timestamp = hg_datetime:format_now(),
     TermSet1 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
