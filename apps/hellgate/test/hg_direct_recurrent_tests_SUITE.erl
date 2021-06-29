@@ -106,7 +106,6 @@ init_per_suite(C) ->
         woody,
         scoper,
         dmt_client,
-        party_management,
         hellgate,
         {cowboy, CowboySpec}
     ]),

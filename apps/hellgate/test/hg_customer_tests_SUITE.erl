@@ -69,7 +69,6 @@ init_per_suite(C) ->
         scoper,
         dmt_client,
         party_client,
-        party_management,
         hellgate,
         snowflake,
         {cowboy, CowboySpec}

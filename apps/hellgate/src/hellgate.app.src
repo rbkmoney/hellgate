@@ -22,7 +22,6 @@
         woody_user_identity,
         payproc_errors,
         erl_health,
-        party_management,
         prometheus,
         prometheus_cowboy,
         limiter_proto

@@ -219,29 +219,7 @@ start_app(hellgate = AppName) ->
                 }
             }}
         ]), #{
-            hellgate_root_url => get_hellgate_url()
-        }};
-start_app(party_management = AppName) ->
-    {start_app(AppName, [
-            {scoper_event_handler_options, #{
-                event_handler_opts => #{
-                    formatter_opts => #{
-                        max_length => 1000
-                    }
-                }
-            }},
-            {services, #{
-                accounter => <<"http://shumway:8022/shumpune">>,
-                automaton => <<"http://machinegun:8022/v1/automaton">>,
-                party_management => #{
-                    url => <<"http://party-management:8022/v1/processing/partymgmt">>,
-                    transport_opts => #{
-                        pool => party_management,
-                        max_connections => 300
-                    }
-                }
-            }}
-        ]), #{
+            hellgate_root_url => get_hellgate_url(),
             pm_root_url => get_pm_url()
         }};
 start_app(party_client = AppName) ->
