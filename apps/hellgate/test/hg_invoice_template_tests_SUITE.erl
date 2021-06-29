@@ -33,6 +33,8 @@
 -export([delete_invoice_template/1]).
 -export([terms_retrieval/1]).
 
+-import(hg_ct_helper, [cfg/2]).
+
 %% tests descriptions
 
 -type config() :: hg_ct_helper:config().
@@ -42,9 +44,6 @@
 -define(MISSING_SHOP_ID, <<"42">>).
 
 -define(invoice_tpl(ID), #domain_InvoiceTemplate{id = ID}).
-
-cfg(Key, C) ->
-    hg_ct_helper:cfg(Key, C).
 
 -spec all() -> [test_case_name()].
 all() ->
@@ -83,8 +82,9 @@ init_per_suite(C) ->
     ),
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
+    PMRootUrl = maps:get(pm_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    Client = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    Client = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), Client),
     [
         {party_id, PartyID},
