@@ -438,7 +438,9 @@ terms_retrieval(C) ->
         }
     } = TermSet1,
     ok = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
+
     _ = timer:sleep(5000),
+
     TermSet2 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{
@@ -450,6 +452,9 @@ terms_retrieval(C) ->
                 ]}
         }
     } = TermSet2,
+
+    _ = timer:sleep(5000),
+
     Lifetime = make_lifetime(0, 0, 2),
     Cost = make_cost(unlim, sale, "1%"),
     ?invoice_tpl(TplID2) = create_invoice_tpl(C, <<"rubberduck">>, Lifetime, Cost),

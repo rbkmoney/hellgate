@@ -443,7 +443,6 @@ init_per_suite(C) ->
     AnotherPartyClient = hg_client_party:start(AnotherPartyID, hg_ct_helper:create_client(PMRootUrl, AnotherPartyID)),
     AnotherCustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
     _ = timer:sleep(5000),
-    _ = logger:error("ContractTemplateRef: ~p", [hg_domain:find(hg_domain:head(), ?tmpl(1))]),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
 
@@ -4404,7 +4403,7 @@ terms_retrieval(C) ->
     } = TermSet1,
     Revision = hg_domain:head(),
     ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
-    _ = timer:sleep(1000),
+    _ = timer:sleep(5000),
     Timestamp2 = hg_datetime:format_now(),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp2}, Client),
     #domain_TermSet{
