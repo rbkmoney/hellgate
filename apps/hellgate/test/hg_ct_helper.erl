@@ -375,6 +375,9 @@ create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef,
         contract_id = ContractID,
         payout_tool_id = PayoutToolID
     },
+
+    _ = timer:sleep(5000),
+
     ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(Currency)},
     Changeset = [
         {contract_modification, #payproc_ContractModificationUnit{
