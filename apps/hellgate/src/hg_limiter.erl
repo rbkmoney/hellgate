@@ -9,14 +9,21 @@
 -type payment() :: dmsl_domain_thrift:'InvoicePayment'().
 -type refund() :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
+-type attempt() :: non_neg_integer().
+-type limit_overflowing() :: #{
+    id := binary(),
+    amount := integer(),
+    upper_boundary := integer()
+}.
 
 -export([get_turnover_limits/1]).
 -export([check_limits/3]).
--export([hold_payment_limits/3]).
+-export([print_overflowing_limits/1]).
+-export([hold_payment_limits/4]).
 -export([hold_refund_limits/4]).
--export([commit_payment_limits/4]).
+-export([commit_payment_limits/5]).
 -export([commit_refund_limits/4]).
--export([rollback_payment_limits/3]).
+-export([rollback_payment_limits/4]).
 -export([rollback_refund_limits/4]).
 
 -spec get_turnover_limits(turnover_selector() | undefined) -> [turnover_limit()].
@@ -33,40 +40,63 @@ get_turnover_limits(Ambiguous) ->
     | {error, {limit_overflow, [binary()]}}.
 check_limits(TurnoverLimits, Invoice, Payment) ->
     Context = gen_limit_context(Invoice, Payment),
-    try
-        check_limits_(TurnoverLimits, Context, [])
-    catch
-        throw:limit_overflow ->
-            IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-            {error, {limit_overflow, IDs}}
+    Result = lists:foldl(
+        fun(TurnoverLimit, {AccIn, OverflowLimits}) ->
+            Clock = get_latest_clock(),
+            #domain_TurnoverLimit{
+                id = LimitID,
+                upper_boundary = UpperBoundary
+            } = TurnoverLimit,
+            case hg_limiter_client:get(LimitID, Clock, Context) of
+                {ok, Limit} ->
+                    check_limit_amount(Limit, UpperBoundary, AccIn, OverflowLimits);
+                {error, not_found} ->
+                    {[LimitID | AccIn], OverflowLimits}
+            end
+        end,
+        {[], []},
+        TurnoverLimits
+    ),
+
+    case Result of
+        {Limits, []} ->
+            {ok, Limits};
+        {_, OverflowingLimits} ->
+            {error, {limit_overflow, OverflowingLimits}}
     end.
 
-check_limits_([], _, Limits) ->
-    {ok, Limits};
-check_limits_([T | TurnoverLimits], Context, Acc) ->
-    #domain_TurnoverLimit{id = LimitID} = T,
-    Clock = get_latest_clock(),
-    Limit = hg_limiter_client:get(LimitID, Clock, Context),
+check_limit_amount(Limit, UpperBoundary, AccIn, OverflowLimits) ->
     #limiter_Limit{
+        id = LimitID,
         amount = LimiterAmount
     } = Limit,
-    UpperBoundary = T#domain_TurnoverLimit.upper_boundary,
     case LimiterAmount < UpperBoundary of
         true ->
-            check_limits_(TurnoverLimits, Context, [Limit | Acc]);
+            {[Limit | AccIn], OverflowLimits};
         false ->
-            logger:info("Limit with id ~p overflowed, amount ~p upper boundary ~p", [
-                LimitID,
-                LimiterAmount,
-                UpperBoundary
-            ]),
-            throw(limit_overflow)
+            LimitOverflowing = #{
+                id => LimitID,
+                amount => LimiterAmount,
+                upper_boundary => UpperBoundary
+            },
+            {AccIn, [LimitOverflowing | OverflowLimits]}
     end.
 
--spec hold_payment_limits([turnover_limit()], invoice(), payment()) -> ok.
-hold_payment_limits(TurnoverLimits, Invoice, Payment) ->
+-spec print_overflowing_limits([limit_overflowing()]) -> ok.
+print_overflowing_limits(OverflowingLimits) ->
+    PrintFun = fun(#{id := LimitID, amount := LimiterAmount, upper_boundary := UpperBoundary}) ->
+        logger:info("Limit with id ~p overflowed, amount ~p upper boundary ~p", [
+            LimitID,
+            LimiterAmount,
+            UpperBoundary
+        ])
+    end,
+    lists:foreach(PrintFun, OverflowingLimits).
+
+-spec hold_payment_limits([turnover_limit()], invoice(), payment(), attempt()) -> ok.
+hold_payment_limits(TurnoverLimits, Invoice, Payment, Attempt) ->
     IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    LimitChanges = gen_limit_payment_changes(IDs, Invoice, Payment),
+    LimitChanges = gen_limit_payment_changes(IDs, Invoice, Payment, Attempt),
     Context = gen_limit_context(Invoice, Payment),
     hold(LimitChanges, get_latest_clock(), Context).
 
@@ -77,10 +107,10 @@ hold_refund_limits(TurnoverLimits, Invoice, Payment, Refund) ->
     Context = gen_limit_refund_context(Invoice, Payment, Refund),
     hold(LimitChanges, get_latest_clock(), Context).
 
--spec commit_payment_limits([turnover_limit()], invoice(), payment(), cash() | undefined) -> ok.
-commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash) ->
+-spec commit_payment_limits([turnover_limit()], invoice(), payment(), cash() | undefined, attempt()) -> ok.
+commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash, Attempt) ->
     IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    LimitChanges = gen_limit_payment_changes(IDs, Invoice, Payment),
+    LimitChanges = gen_limit_payment_changes(IDs, Invoice, Payment, Attempt),
     Context = gen_limit_context(Invoice, Payment, CapturedCash),
     commit(LimitChanges, get_latest_clock(), Context).
 
@@ -91,13 +121,13 @@ commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund) ->
     Context = gen_limit_refund_context(Invoice, Payment, Refund),
     commit(LimitChanges, get_latest_clock(), Context).
 
--spec rollback_payment_limits([turnover_limit()], invoice(), payment()) -> ok.
-rollback_payment_limits(TurnoverLimits, Invoice, Payment) ->
+-spec rollback_payment_limits([turnover_limit()], invoice(), payment(), attempt()) -> ok.
+rollback_payment_limits(TurnoverLimits, Invoice, Payment, Attempt) ->
     #domain_InvoicePayment{cost = Cash} = Payment,
     CapturedCash = Cash#domain_Cash{
         amount = 0
     },
-    commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash).
+    commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash, Attempt).
 
 -spec rollback_refund_limits([turnover_limit()], invoice(), payment(), refund()) -> ok.
 rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund0) ->
@@ -154,11 +184,11 @@ gen_limit_refund_context(Invoice, Payment, Refund) ->
         }
     }.
 
-gen_limit_payment_changes(LimitIDs, Invoice, Payment) ->
+gen_limit_payment_changes(LimitIDs, Invoice, Payment, Attempt) ->
     [
         #limiter_LimitChange{
             id = ID,
-            change_id = construct_limit_change_id(ID, Invoice, Payment)
+            change_id = construct_limit_change_id(ID, Invoice, Payment, Attempt)
         }
         || ID <- LimitIDs
     ].
@@ -172,11 +202,12 @@ gen_limit_refund_changes(LimitIDs, Invoice, Payment, Refund) ->
         || ID <- LimitIDs
     ].
 
-construct_limit_change_id(LimitID, Invoice, Payment) ->
+construct_limit_change_id(LimitID, Invoice, Payment, Attempt) ->
     ComplexID = hg_utils:construct_complex_id([
         LimitID,
         get_invoice_id(Invoice),
-        get_payment_id(Payment)
+        get_payment_id(Payment),
+        Attempt
     ]),
     genlib_string:join($., [<<"limiter">>, ComplexID]).
 

@@ -527,6 +527,7 @@ handle_repair({scenario, Scenario}, St = #st{activity = {payment, PaymentID}}) -
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(Signal, #{history := History}) ->
+    #st{activity = _Activity} = collapse_history(unmarshal_history(History)),
     handle_result(handle_signal(Signal, collapse_history(unmarshal_history(History)))).
 
 handle_signal(timeout, St = #st{activity = {payment, PaymentID}}) ->
