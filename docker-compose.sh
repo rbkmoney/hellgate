@@ -15,10 +15,10 @@ services:
         condition: service_healthy
       shumway:
         condition: service_healthy
-    mem_limit: 256M
+    mem_limit: 512M
 
   dominant:
-    image: dr2.rbkmoney.com/rbkmoney/dominant:de2a937b3b92eb4fa6888be5aef3bde7d3c8b409
+    image: dr2.rbkmoney.com/rbkmoney/dominant:15ceafee13b874a728d28fc5567ad070fac1d0fa
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
@@ -38,7 +38,7 @@ services:
       - machinegun
 
   machinegun:
-    image: dr2.rbkmoney.com/rbkmoney/machinegun:4986e50e2abcedbf589aaf8cce89c2b420589f04
+    image: dr2.rbkmoney.com/rbkmoney/machinegun:c35e8a08500fbc2f0f0fa376a145a7324d18a062
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
@@ -49,8 +49,17 @@ services:
       timeout: 1s
       retries: 20
 
+  limiter:
+    image: dr2.rbkmoney.com/rbkmoney/limiter:c5572a9a22b3fea68213f32276b5272605aebec8
+    command: /opt/limiter/bin/limiter foreground
+    depends_on:
+      machinegun:
+        condition: service_healthy
+      shumway:
+        condition: service_healthy
+
   shumway:
-    image: dr2.rbkmoney.com/rbkmoney/shumway:ee51cec32bc7a409919a6c76033109cee5778b21
+    image: dr2.rbkmoney.com/rbkmoney/shumway:658c9aec229b5a70d745a49cb938bb1a132b5ca2
     hostname: shumway
     container_name: shumway
     ports:
@@ -67,13 +76,10 @@ services:
       - postgres
       - shumaich
     healthcheck:
-      # FIXME: dirty trick, hangs in "health: staring" otherwise
-      #        used to be fine
-      test: "exit 0"
-      # test: "curl http://localhost:8022/"
-      # interval: 5s
-      # timeout: 1s
-      # retries: 20
+      test: "curl http://localhost:8022/"
+      interval: 5s
+      timeout: 1s
+      retries: 20
 
   zookeeper:
     image: confluentinc/cp-zookeeper:5.0.1
@@ -131,9 +137,9 @@ services:
     image: dr2.rbkmoney.com/rbkmoney/shumaich:1e4ebe41a9aaae0c46b1c41edffb95f7d93c5f48
     hostname: shumaich
     container_name: shumaich
+    restart: on-failure
     ports:
       - "8033:8033"
-    restart: on-failure
     environment:
       SPRING_APPLICATION_JSON: '{
           "server.port": "8033",
@@ -151,6 +157,11 @@ services:
         target: /temp/rocksdb/shumaich
         volume:
           nocopy: true
+    healthcheck:
+      test: "curl http://localhost:8022/"
+      interval: 5s
+      timeout: 1s
+      retries: 20
 
   holmes:
     image: dr2.rbkmoney.com/rbkmoney/holmes:7d496d0886a1489044c57eee4ba4bfcf8f8b6a48

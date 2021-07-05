@@ -663,7 +663,7 @@ construct_domain_fixture() ->
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         pm_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, maestro)),
-        pm_ct_fixture:construct_payment_method(?pmt(payment_terminal, euroset)),
+        pm_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
         pm_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
 
         pm_ct_fixture:construct_payout_method(?pomt(russian_bank_account)),

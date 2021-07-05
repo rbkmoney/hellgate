@@ -71,4 +71,4 @@ reduce_payment_routing_candidates(Candidates, VS, Rev) ->
         )}.
 
 get_payment_routing_ruleset(RuleSetRef, DomainRevision) ->
-    pm_domain:get(DomainRevision, {payment_routing_rules, RuleSetRef}).
+    pm_domain:get(DomainRevision, {routing_rules, RuleSetRef}).

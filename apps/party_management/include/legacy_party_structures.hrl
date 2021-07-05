@@ -67,6 +67,16 @@
     {domain_InternationalLegalEntity, LegalName, TradingName, RegisteredAddress, ActualAddress}
 ).
 
+-define(legacy_international_legal_entity_v2(
+    LegalName,
+    TradingName,
+    RegisteredAddress,
+    ActualAddress,
+    RegisteredNumber
+),
+    {domain_InternationalLegalEntity, LegalName, TradingName, RegisteredAddress, ActualAddress, RegisteredNumber}
+).
+
 -define(legacy_bank_account(Account, BankName, BankPostAccount, BankBik),
     {domain_BankAccount, Account, BankName, BankPostAccount, BankBik}
 ).
@@ -200,6 +210,25 @@
     LegalAgreementID
 ),
     {domain_LegalAgreement, SignedAt, LegalAgreementID}
+).
+
+-define(legacy_st(Party, Timestamp, Claims, Meta, MigrationData, LastEvent),
+    {st,
+        % undefined | party()
+        Party,
+        % undefined | timestamp()
+        Timestamp,
+        % #{claim_id() => claim()}
+        Claims,
+        % meta()
+        Meta,
+        % NOTE
+        % This is a part of persisted state of almost every party machine out there.
+        % Good news is this field was never really used which means it is just `#{}`
+        % all the time.
+        MigrationData,
+        % event_id()
+        LastEvent}
 ).
 
 -endif.

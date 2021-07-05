@@ -47,7 +47,7 @@
 
 -type app_name() :: atom().
 
--spec start_app(app_name()) -> [app_name()].
+-spec start_app(app_name()) -> {[app_name()], map()}.
 start_app(scoper = AppName) ->
     {start_app(AppName, [
             {storage, scoper_storage_logger}
@@ -190,6 +190,13 @@ start_app(party_management = AppName) ->
                         pool => claim_committer,
                         max_connections => 300
                     }
+                },
+                payment_processing_eventsink => #{
+                    url => <<"http://hellgate:8022/v1/processing/eventsink">>,
+                    transport_opts => #{
+                        pool => payment_processing_eventsink,
+                        max_connections => 300
+                    }
                 }
             }}
         ]), #{}};
@@ -226,12 +233,12 @@ start_app(cowboy = AppName, Env) ->
         transport_opts := TransOpt,
         proto_opts := ProtoOpt
     } = Env,
-    cowboy:start_clear(Ref, [{num_acceptors, Count} | TransOpt], ProtoOpt),
+    {ok, _} = cowboy:start_clear(Ref, [{num_acceptors, Count} | TransOpt], ProtoOpt),
     [AppName];
 start_app(AppName, Env) ->
     genlib_app:start_application_with(AppName, Env).
 
--spec start_apps([app_name() | {app_name(), list()}]) -> [app_name()].
+-spec start_apps([app_name() | {app_name(), list()}]) -> {[app_name()], map()}.
 start_apps(Apps) ->
     lists:foldl(
         fun
@@ -306,13 +313,8 @@ make_party_params() ->
         }
     }.
 
--spec create_battle_ready_shop(
-    category(),
-    currency(),
-    contract_tpl(),
-    payment_institution(),
-    Client :: pid()
-) -> shop_id().
+-spec create_battle_ready_shop(category(), currency(), contract_tpl(), payment_institution(), Client :: pid()) ->
+    shop_id().
 create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client) ->
     ContractID = pm_utils:unique_id(),
     ContractParams = make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef),
@@ -451,7 +453,7 @@ make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
         payment_institution = PaymentInstitutionRef
     }.
 
--spec make_battle_ready_contractor() -> dmsl_payment_processing_thrift:'Contractor'().
+-spec make_battle_ready_contractor() -> dmsl_domain_thrift:'Contractor'().
 make_battle_ready_contractor() ->
     BankAccount = #domain_RussianBankAccount{
         account = <<"4276300010908312893">>,
@@ -489,7 +491,7 @@ make_battle_ready_payout_tool_params() ->
 make_shop_details(Name) ->
     make_shop_details(Name, undefined).
 
--spec make_shop_details(binary(), binary()) -> dmsl_domain_thrift:'ShopDetails'().
+-spec make_shop_details(binary(), undefined | binary()) -> dmsl_domain_thrift:'ShopDetails'().
 make_shop_details(Name, Description) ->
     #domain_ShopDetails{
         name = Name,

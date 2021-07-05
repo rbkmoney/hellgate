@@ -19,6 +19,7 @@
 -export([init/2]).
 -export([process_signal/2]).
 -export([process_call/2]).
+-export([process_repair/2]).
 
 %% Event provider callbacks
 
@@ -59,7 +60,7 @@ handle_function(Func, Args, Opts) ->
 
 -spec handle_function_(woody:func(), woody:args(), hg_woody_wrapper:handler_opts()) -> term() | no_return().
 handle_function_('Create', {UserInfo, Params}, _Opts) ->
-    TplID = hg_utils:unique_id(),
+    TplID = Params#payproc_InvoiceTemplateCreateParams.template_id,
     ok = assume_user_identity(UserInfo),
     _ = set_meta(TplID),
     Party = get_party(Params#payproc_InvoiceTemplateCreateParams.party_id),
@@ -244,6 +245,10 @@ create_invoice_template(ID, P) ->
         details = P#payproc_InvoiceTemplateCreateParams.details,
         context = P#payproc_InvoiceTemplateCreateParams.context
     }.
+
+-spec process_repair(hg_machine:args(), hg_machine:machine()) -> no_return().
+process_repair(_Args, _Machine) ->
+    erlang:error({not_implemented, repair}).
 
 -spec process_signal(hg_machine:signal(), hg_machine:machine()) -> hg_machine:result().
 process_signal(timeout, _Machine) ->
