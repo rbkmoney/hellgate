@@ -1769,7 +1769,6 @@ process_timeout({payment, Step}, Action, St) when
     Step =:= processing_session orelse
         Step =:= finalizing_session
 ->
-    _ = erlang:display({processing_session, St}),
     process_session(Action, St);
 process_timeout({payment, Step}, Action, St) when
     Step =:= processing_failure orelse
@@ -1881,17 +1880,14 @@ process_cash_flow_building(Action, St) ->
     TurnoverLimits = get_turnover_limits(ProviderTerms),
     ok = hg_limiter:hold_payment_limits(TurnoverLimits, Invoice, Payment),
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
-    _ = erlang:display({process_cash_flow_building, St}),
     Clock = hg_accounting_new:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow},
         Timestamp
     ),
-    _ = erlang:display({clock, Clock}),
     Events = [?cash_flow_changed(FinalCashflow), ?payment_clock_update(Clock)],
     case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
         {ok, _} ->
-            _ = erlang:display({limits_checked, Events}),
             {next, {Events, hg_machine_action:set_timeout(0, Action)}};
         {error, {limit_overflow, _}} ->
             Failure = failure(
@@ -2877,21 +2873,18 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
         activity = {payment, routing}
     };
 merge_change(Change = ?route_changed(Route), St, Opts) ->
-    erlang:display({merge_change, route_changed}),
     _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{
         route = Route,
         activity = {payment, cash_flow_building}
     };
 merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
-    erlang:display({merge_change, payment_capture_started}),
     _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
     St#st{
         capture_params = Params,
         activity = {payment, processing_capture}
     };
 merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St0, Opts) ->
-    erlang:display({merge_change, cash_flow_changed, Activity}),
     _ = validate_transition(
         [
             {payment, S}
@@ -2920,7 +2913,6 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
             St
     end;
 merge_change(Change = ?payment_clock_update(Clock), #st{activity = Activity} = St, Opts) ->
-    erlang:display({merge_change, payment_clock_update, Activity}),
     _ = validate_transition(
         [
             {payment, S}
