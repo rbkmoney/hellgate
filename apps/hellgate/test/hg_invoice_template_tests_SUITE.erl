@@ -6,6 +6,8 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/domain.hrl").
 
+-include_lib("hellgate/include/party_events.hrl"). %% TODO: remove later
+
 -export([all/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
@@ -33,7 +35,12 @@
 -export([delete_invoice_template/1]).
 -export([terms_retrieval/1]).
 
--import(hg_ct_helper, [cfg/2]).
+-import(hg_ct_helper, [
+    cfg/2,
+    make_invoice_tpl_create_params/5,
+    make_invoice_tpl_update_params/1,
+    make_lifetime/3
+]).
 
 %% tests descriptions
 
@@ -82,10 +89,11 @@ init_per_suite(C) ->
     ),
     ok = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
-    PMRootUrl = maps:get(pm_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    Client = hg_client_party:start(PartyID, hg_ct_helper:create_client(PMRootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), Client),
+
+    Client = {party_client:create_client(), party_client:create_context(user_info())},
+
+    ShopID = create_party_and_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), Client),
     [
         {party_id, PartyID},
         {party_client, Client},
@@ -94,6 +102,68 @@ init_per_suite(C) ->
         {apps, Apps}
         | C
     ].
+
+user_info() ->
+    #{user_info => #{id => <<"test">>, realm => <<"service">>}}.
+
+create_party_and_shop(PartyID, Category, Currency, TemplateRef, PaymentInstitutionRef, {Client, Context}) ->
+    %% ... party
+    ok = party_client_thrift:create(PartyID, make_party_params(), Client, Context),
+    {ok, #domain_Party{id = PartyID}} = party_client_thrift:get(PartyID, Client, Context),
+
+    %% ... and shop
+    ShopID = hg_utils:unique_id(),
+    ContractID = hg_utils:unique_id(),
+    PayoutToolID = hg_utils:unique_id(),
+
+    ShopParams = make_shop_params(Category, ContractID, PayoutToolID),
+    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(Currency)},
+
+    ContractParams = hg_ct_helper:make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef),
+    PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
+
+%    _ = timer:sleep(5000),
+
+    Changeset = [
+        {contract_modification, #payproc_ContractModificationUnit{
+            id = ContractID,
+            modification = {creation, ContractParams}
+        }},
+        {contract_modification, #payproc_ContractModificationUnit{
+            id = ContractID,
+            modification =
+                {payout_tool_modification, #payproc_PayoutToolModificationUnit{
+                    payout_tool_id = PayoutToolID,
+                    modification = {creation, PayoutToolParams}
+                }}
+        }},
+        ?shop_modification(ShopID, {creation, ShopParams}),
+        ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
+    ],
+
+    {ok, _Claim} = party_client_thrift:create_claim(PartyID, Changeset, Client, Context),
+    %#payproc_Claim{id = ClaimID, revision = ClaimRev} = Claim,
+    %ok = party_client_thrift:accept_claim(PartyID, ClaimID, ClaimRev, Client, Context),
+
+    {ok, #domain_Shop{id = ShopID}} = party_client_thrift:get_shop(PartyID, ShopID, Client, Context),
+    ShopID.
+
+make_shop_params(Category, ContractID, PayoutToolID) ->
+    #payproc_ShopParams{
+        category = Category,
+        location = {url, <<>>},
+        details = #domain_ShopDetails{name = <<"Battle Ready Shop">>},
+        contract_id = ContractID,
+        payout_tool_id = PayoutToolID
+    }.
+
+make_party_params() ->
+    #payproc_PartyParams{
+        contact_info = #domain_PartyContactInfo{
+            email = <<?MODULE_STRING>>
+        }
+    }.
+
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -131,36 +201,38 @@ create_invalid_shop(C) ->
 
 -spec create_invalid_party_status(config()) -> _.
 create_invalid_party_status(C) ->
-    PartyClient = cfg(party_client, C),
+    PartyID = cfg(party_id, C),
+    {PartyClient, Context} = cfg(party_client, C),
 
-    ok = hg_client_party:suspend(PartyClient),
+    ok = party_client_thrift:suspend(PartyID, PartyClient, Context),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = create_invoice_tpl(C),
-    ok = hg_client_party:activate(PartyClient),
+    ok = party_client_thrift:activate(PartyID, PartyClient, Context),
 
-    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = party_client_thrift:block(PartyID, <<"BLOOOOCK">>, PartyClient, Context),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = create_invoice_tpl(C),
-    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+    ok = party_client_thrift:unblock(PartyID, <<"UNBLOOOCK">>, PartyClient, Context).
 
 -spec create_invalid_shop_status(config()) -> _.
 create_invalid_shop_status(C) ->
-    PartyClient = cfg(party_client, C),
+    PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
+    {PartyClient, Context} = cfg(party_client, C),
 
-    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    ok = party_client_thrift:suspend_shop(PartyID, ShopID, PartyClient, Context),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = create_invoice_tpl(C),
-    ok = hg_client_party:activate_shop(ShopID, PartyClient),
+    ok = party_client_thrift:activate_shop(PartyID, ShopID, PartyClient, Context),
 
-    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = party_client_thrift:block_shop(PartyID, ShopID, <<"BLOOOOCK">>, PartyClient, Context),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = create_invoice_tpl(C),
-    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
+    ok = party_client_thrift:unblock_shop(PartyID, ShopID, <<"UNBLOOOCK">>, PartyClient, Context).
 
 -spec create_invalid_cost_fixed_amount(config()) -> _.
 create_invalid_cost_fixed_amount(C) ->
@@ -209,68 +281,71 @@ create_cost(Cost, C) ->
 
 -spec get_invoice_template_anyhow(config()) -> _.
 get_invoice_template_anyhow(C) ->
+    PartyID = cfg(party_id, C),
     Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
+    {PartyClient, Context} = cfg(party_client, C),
     InvoiceTpl = ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
-    ok = hg_client_party:suspend(PartyClient),
+    ok = party_client_thrift:suspend(PartyID, PartyClient, Context),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
-    ok = hg_client_party:activate(PartyClient),
+    ok = party_client_thrift:activate(PartyID, PartyClient, Context),
 
-    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = party_client_thrift:block(PartyID, <<"BLOOOOCK">>, PartyClient, Context),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
-    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient),
+    ok = party_client_thrift:unblock(PartyID, <<"UNBLOOOCK">>, PartyClient, Context),
 
-    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    ok = party_client_thrift:suspend_shop(PartyID, ShopID, PartyClient, Context),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
-    ok = hg_client_party:activate_shop(ShopID, PartyClient),
+    ok = party_client_thrift:activate_shop(PartyID, ShopID, PartyClient, Context),
 
-    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = party_client_thrift:block_shop(PartyID, ShopID, <<"BLOOOOCK">>, PartyClient, Context),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client),
-    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient),
+    ok = party_client_thrift:unblock_shop(PartyID, ShopID, <<"UNBLOOOCK">>, PartyClient, Context),
     InvoiceTpl = hg_client_invoice_templating:get(TplID, Client).
 
 -spec update_invalid_party_status(config()) -> _.
 update_invalid_party_status(C) ->
     Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
+    PartyID = cfg(party_id, C),
+    {PartyClient, Context} = cfg(party_client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
     Diff = make_invoice_tpl_update_params(
         #{details => hg_ct_helper:make_invoice_tpl_details(<<"teddy bear">>, make_cost(fixed, 42, <<"RUB">>))}
     ),
-    ok = hg_client_party:suspend(PartyClient),
+    ok = party_client_thrift:suspend(PartyID, PartyClient, Context),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
-    ok = hg_client_party:activate(PartyClient),
+    ok = party_client_thrift:activate(PartyID, PartyClient, Context),
 
-    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = party_client_thrift:block(PartyID, <<"BLOOOOCK">>, PartyClient, Context),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
-    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+    ok = party_client_thrift:unblock(PartyID, <<"UNBLOOOCK">>, PartyClient, Context).
 
 -spec update_invalid_shop_status(config()) -> _.
 update_invalid_shop_status(C) ->
     Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
     ShopID = cfg(shop_id, C),
+    PartyID = cfg(party_id, C),
+    {PartyClient, Context} = cfg(party_client, C),
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
     Diff = make_invoice_tpl_update_params(
         #{details => hg_ct_helper:make_invoice_tpl_details(<<"teddy bear">>, make_cost(fixed, 42, <<"RUB">>))}
     ),
-    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    ok = party_client_thrift:suspend_shop(PartyID, ShopID, PartyClient, Context),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
-    ok = hg_client_party:activate_shop(ShopID, PartyClient),
+    ok = party_client_thrift:activate_shop(PartyID, ShopID, PartyClient, Context),
 
-    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = party_client_thrift:block_shop(PartyID, ShopID, <<"BLOOOOCK">>, PartyClient, Context),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoice_templating:update(TplID, Diff, Client),
-    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
+    ok = party_client_thrift:unblock_shop(PartyID, ShopID, <<"UNBLOOOCK">>, PartyClient, Context).
 
 -spec update_invalid_cost_fixed_amount(config()) -> _.
 update_invalid_cost_fixed_amount(C) ->
@@ -382,39 +457,43 @@ update_with_cart(C) ->
 -spec delete_invalid_party_status(config()) -> _.
 delete_invalid_party_status(C) ->
     Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
+    PartyID = cfg(party_id, C),
+    {PartyClient, Context} = cfg(party_client, C),
+
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
-    ok = hg_client_party:suspend(PartyClient),
+    ok = party_client_thrift:suspend(PartyID, PartyClient, Context),
     {exception, #payproc_InvalidPartyStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoice_templating:delete(TplID, Client),
-    ok = hg_client_party:activate(PartyClient),
+    ok = party_client_thrift:activate(PartyID, PartyClient, Context),
 
-    ok = hg_client_party:block(<<"BLOOOOCK">>, PartyClient),
+    ok = party_client_thrift:block(PartyID, <<"BLOOOOCK">>, PartyClient, Context),
     {exception, #payproc_InvalidPartyStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoice_templating:delete(TplID, Client),
-    ok = hg_client_party:unblock(<<"UNBLOOOCK">>, PartyClient).
+    ok = party_client_thrift:unblock(PartyID, <<"UNBLOOOCK">>, PartyClient, Context).
 
 -spec delete_invalid_shop_status(config()) -> _.
 delete_invalid_shop_status(C) ->
     Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
+    PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
+    {PartyClient, Context} = cfg(party_client, C),
+
     ?invoice_tpl(TplID) = create_invoice_tpl(C),
 
-    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    ok = party_client_thrift:suspend_shop(PartyID, ShopID, PartyClient, Context),
     {exception, #payproc_InvalidShopStatus{
         status = {suspension, {suspended, _}}
     }} = hg_client_invoice_templating:delete(TplID, Client),
-    ok = hg_client_party:activate_shop(ShopID, PartyClient),
+    ok = party_client_thrift:activate_shop(PartyID, ShopID, PartyClient, Context),
 
-    ok = hg_client_party:block_shop(ShopID, <<"BLOOOOCK">>, PartyClient),
+    ok = party_client_thrift:block_shop(PartyID, ShopID, <<"BLOOOOCK">>, PartyClient, Context),
     {exception, #payproc_InvalidShopStatus{
         status = {blocking, {blocked, _}}
     }} = hg_client_invoice_templating:delete(TplID, Client),
-    ok = hg_client_party:unblock_shop(ShopID, <<"UNBLOOOCK">>, PartyClient).
+    ok = party_client_thrift:unblock_shop(PartyID, ShopID, <<"UNBLOOOCK">>, PartyClient, Context).
 
 -spec delete_invoice_template(config()) -> _.
 delete_invoice_template(C) ->
@@ -430,6 +509,9 @@ delete_invoice_template(C) ->
 terms_retrieval(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID1) = create_invoice_tpl(C),
+
+    _ = timer:sleep(5000),
+
     Timestamp = hg_datetime:format_now(),
     TermSet1 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{
@@ -505,17 +587,8 @@ create_invalid_cost(Cost, Error, Config) ->
 make_invoice_tpl_create_params(PartyID, ShopID) ->
     Lifetime = make_lifetime(0, 0, 2),
     Product = <<"rubberduck">>,
-    Details = hg_ct_helper:make_invoice_tpl_details(<<"rubberduck">>, make_cost(fixed, 5000, <<"RUB">>)),
+    Details = hg_ct_helper:make_invoice_tpl_details(Product, make_cost(fixed, 5000, <<"RUB">>)),
     make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details).
-
-make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details) ->
-    hg_ct_helper:make_invoice_tpl_create_params(PartyID, ShopID, Lifetime, Product, Details).
-
-make_invoice_tpl_update_params(Diff) ->
-    hg_ct_helper:make_invoice_tpl_update_params(Diff).
-
-make_lifetime(Y, M, D) ->
-    hg_ct_helper:make_lifetime(Y, M, D).
 
 make_cost(Type, P1, P2) ->
     hg_ct_helper:make_invoice_tpl_cost(Type, P1, P2).
