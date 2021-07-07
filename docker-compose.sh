@@ -43,6 +43,7 @@ services:
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
       - ./test/machinegun/cookie:/opt/machinegun/etc/cookie
+      - ./test/log/machinegun:/var/log/machinegun
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s

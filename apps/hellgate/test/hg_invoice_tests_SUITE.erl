@@ -5134,6 +5134,7 @@ await_payment_rollback(InvoiceID, PaymentID, Client) ->
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(_)),
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
     ] = next_event(InvoiceID, Client),
     Failure.
