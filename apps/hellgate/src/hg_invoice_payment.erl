@@ -2193,8 +2193,7 @@ process_result({payment, processing_failure}, Action, St = #st{failure = Failure
     _Clocks = rollback_payment_cashflow(St),
     case check_limit_overflow(Failure) of
         true ->
-            Payment = get_payment(St),
-            Events = [?payment_started(Payment)],
+            Events = [?payment_route_declined()],
             {next, {Events, NewAction}};
         false ->
             {done, {[?payment_status_changed(?failed(Failure))], NewAction}}
@@ -2931,11 +2930,10 @@ throw_invalid_recurrent_parent(Details) ->
 merge_change(Change, undefined, Opts) ->
     merge_change(Change, #st{activity = {payment, new}}, Opts);
 %% TODO[limiter] cascading: it is temporary ugly decesion, it should be rewrite in full limiter integration
-merge_change(Change = ?payment_started(Payment), #st{activity = {payment, processing_failure}} = St, Opts) ->
+merge_change(Change = ?payment_route_declined(), #st{} = St, Opts) ->
     _ = validate_transition({payment, processing_failure}, Change, St, Opts),
     St#st{
         target = ?processed(),
-        payment = Payment,
         activity = {payment, risk_scoring},
         timings = hg_timings:mark(started, define_event_timestamp(Opts))
     };
