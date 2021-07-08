@@ -13,8 +13,7 @@
 -export([assert_party_operable/1]).
 -export([assert_shop_exists/1]).
 -export([assert_shop_operable/1]).
--export([assert_contract_active/1]).
--export([assert_cost_payable/5]).
+-export([assert_cost_payable/2]).
 -export([compute_shop_terms/5]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
@@ -32,7 +31,6 @@
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
 -type term_set() :: dmsl_domain_thrift:'TermSet'().
 -type payment_service_terms() :: dmsl_domain_thrift:'PaymentsServiceTerms'().
--type domain_revision() :: dmsl_domain_thrift:'DataRevision'().
 -type timestamp() :: dmsl_base_thrift:'Timestamp'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 -type identification_level() :: dmsl_domain_thrift:'ContractorIdentificationLevel'().
@@ -95,20 +93,9 @@ assert_shop_exists(#domain_Shop{} = V) ->
 assert_shop_exists(undefined) ->
     throw(#payproc_ShopNotFound{}).
 
--spec assert_contract_active(contract() | undefined) -> contract().
-assert_contract_active(Contract = #domain_Contract{status = Status}) ->
-    case pm_contract:is_active(Contract) of
-        true ->
-            Contract;
-        false ->
-            throw(#payproc_InvalidContractStatus{status = Status})
-    end.
-
--spec assert_cost_payable(cash(), party(), shop(), payment_service_terms(), domain_revision()) -> cash().
-assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
-    VS = collect_validation_varset(Cost, Party, Shop),
-    ReducedTerms = pm_selector:reduce(PaymentTerms#domain_PaymentsServiceTerms.cash_limit, VS, DomainRevision),
-    case any_limit_matches(Cost, ReducedTerms) of
+-spec assert_cost_payable(cash(), payment_service_terms()) -> cash().
+assert_cost_payable(Cost, #domain_PaymentsServiceTerms{cash_limit = CashLimit}) ->
+    case any_limit_matches(Cost, CashLimit) of
         true ->
             Cost;
         false ->
@@ -120,32 +107,12 @@ assert_cost_payable(Cost, Party, Shop, PaymentTerms, DomainRevision) ->
 any_limit_matches(Cash, {value, CashRange}) ->
     hg_cash_range:is_inside(Cash, CashRange) =:= within;
 any_limit_matches(Cash, {decisions, Decisions}) ->
-    check_possible_limits(Cash, Decisions).
-
-check_possible_limits(_Cash, []) ->
-    false;
-check_possible_limits(Cash, [#domain_CashLimitDecision{then_ = Value} | Rest]) ->
-    case any_limit_matches(Cash, Value) of
-        true ->
-            true;
-        false ->
-            check_possible_limits(Cash, Rest)
-    end.
-
-collect_validation_varset(Cost, Party, Shop) ->
-    #domain_Party{id = PartyID} = Party,
-    #domain_Shop{
-        id = ShopID,
-        category = Category,
-        account = #domain_ShopAccount{currency = Currency}
-    } = Shop,
-    #{
-        cost => Cost,
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Category,
-        currency => Currency
-    }.
+    lists:any(
+        fun(#domain_CashLimitDecision{then_ = Value}) ->
+            any_limit_matches(Cash, Value)
+        end,
+        Decisions
+    ).
 
 -spec compute_shop_terms(party_id(), shop_id(), timestamp(), party_revision_param(), varset()) -> term_set().
 compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision, Varset) ->
@@ -216,6 +183,6 @@ get_identification_level(#domain_Contract{contractor_id = undefined, contractor 
         _ ->
             none
     end;
-get_identification_level(#domain_Contract{contractor_id = ContractorID}, #domain_Party{contractors = Contractors}) ->
-    Contractor = maps:get(ContractorID, Contractors, undefined),
+get_identification_level(#domain_Contract{contractor_id = ID}, #domain_Party{contractors = Contractors}) ->
+    Contractor = maps:get(ID, Contractors),
     Contractor#domain_PartyContractor.status.

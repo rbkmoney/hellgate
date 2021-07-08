@@ -65,7 +65,7 @@
 get_service_spec() ->
     {"/test/proxy/provider/dummy", {dmsl_proxy_provider_thrift, 'ProviderProxy'}}.
 
--spec get_http_cowboy_spec() -> #{}.
+-spec get_http_cowboy_spec() -> map().
 get_http_cowboy_spec() ->
     Dispatch = cowboy_router:compile([{'_', [{"/", ?MODULE, []}]}]),
     #{
@@ -307,7 +307,7 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         digital_wallet ->
             %% simple workflow
             sleep(1, <<"sleeping">>);
-        crypto_currency ->
+        crypto_currency_deprecated ->
             %% simple workflow
             sleep(1, <<"sleeping">>);
         mobile_commerce ->
@@ -330,13 +330,13 @@ process_payment(?processed(), <<"sleeping">>, PaymentInfo, _) ->
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
-            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo), mk_trx_extra(PaymentInfo))
     end;
 process_payment(?processed(), <<"sleeping_with_user_interaction">>, PaymentInfo, _) ->
     Key = {get_invoice_id(PaymentInfo), get_payment_id(PaymentInfo)},
     case get_transaction_state(Key) of
         processed ->
-            finish(success(PaymentInfo), get_payment_id(PaymentInfo));
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo), mk_trx_extra(PaymentInfo));
         {pending, Count} when Count > 2 ->
             Failure = payproc_errors:construct(
                 'PaymentFailure',
@@ -360,14 +360,14 @@ process_payment(
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
-            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo), mk_trx_extra(PaymentInfo))
     end;
 process_payment(?cancelled(), _, PaymentInfo, _) ->
     case get_payment_info_scenario(PaymentInfo) of
         {temporary_unavailability, Scenario} ->
             process_failure_scenario(PaymentInfo, Scenario, get_payment_id(PaymentInfo));
         _ ->
-            finish(success(PaymentInfo), get_payment_id(PaymentInfo))
+            finish(success(PaymentInfo), get_payment_id(PaymentInfo), mk_trx_extra(PaymentInfo))
     end.
 
 handle_payment_callback(?LAY_LOW_BUDDY, ?processed(), <<"suspended">>, _PaymentInfo, _Opts) ->
@@ -413,6 +413,33 @@ handle_payment_callback(Tag, ?processed(), <<"suspended">>, PaymentInfo, _Opts) 
         intent = ?sleep(1, undefined),
         next_state = <<"sleeping">>
     }).
+
+%% NOTE
+%% You can stuff TransactionInfo.extra with anything you want.
+%% This may prove to be useful when you need to verify in your testcase that specific pieces of
+%% information really reached proxies, for example.
+mk_trx_extra(#prxprv_PaymentInfo{
+    payment = Payment
+}) ->
+    lists:foldl(fun maps:merge/2, #{}, [
+        prefix_extra(<<"payment">>, mk_trx_extra(Payment))
+    ]);
+mk_trx_extra(#prxprv_InvoicePayment{
+    payer_session_info = PayerSessionInfo
+}) ->
+    lists:foldl(fun maps:merge/2, #{}, [
+        prefix_extra(<<"payer_session_info">>, mk_trx_extra(PayerSessionInfo))
+    ]);
+mk_trx_extra(R = #domain_PayerSessionInfo{}) ->
+    record_to_map(R, record_info(fields, domain_PayerSessionInfo));
+mk_trx_extra(undefined) ->
+    #{}.
+
+prefix_extra(Prefix, Extra) ->
+    genlib_map:truemap(fun(K, V) -> {hg_utils:join(Prefix, $., K), V} end, Extra).
+
+record_to_map(Record, Fields) ->
+    maps:from_list(hg_proto_utils:record_to_proplist(Record, Fields)).
 
 -spec do_failure_scenario_step(failure_scenario(), term()) -> failure_scenario_step().
 do_failure_scenario_step(Scenario, Key) ->
@@ -463,10 +490,13 @@ process_failure_scenario(PaymentInfo, Scenario, PaymentId) ->
     end.
 
 finish(Status, TrxID) ->
+    finish(Status, TrxID, #{}).
+
+finish(Status, TrxID, Extra) ->
     AdditionalInfo = hg_ct_fixture:construct_dummy_additional_info(),
     #prxprv_PaymentProxyResult{
         intent = ?finish(Status),
-        trx = #domain_TransactionInfo{id = TrxID, extra = #{}, additional_info = AdditionalInfo}
+        trx = #domain_TransactionInfo{id = TrxID, extra = Extra, additional_info = AdditionalInfo}
     }.
 
 finish(Status) ->
@@ -577,18 +607,19 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_f
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_", BinScenario/binary>>}}) ->
     Scenario = decode_failure_scenario(BinScenario),
     {temporary_unavailability, Scenario};
-get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type = euroset}}) ->
+get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type_deprecated = euroset}}) ->
     terminal;
-get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider = qiwi}}) ->
+get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider_deprecated = qiwi}}) ->
     digital_wallet;
-get_payment_tool_scenario({'crypto_currency', bitcoin}) ->
-    crypto_currency;
-get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = mts}}) ->
+get_payment_tool_scenario({'crypto_currency_deprecated', bitcoin}) ->
+    crypto_currency_deprecated;
+get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_deprecated = mts}}) ->
     mobile_commerce.
 
 -spec make_payment_tool(PaymenToolCode) -> PaymenTool when
-    PaymenToolCode :: atom() | {temporary_unavailability, failure_scenario()},
-    PaymenTool :: {hg_domain_thrift:'PaymentTool'(), hg_domain_thrift:'PaymentSessionID'()}.
+    PaymenToolCode ::
+        atom() | {scenario, failure_scenario()} | {preauth_3ds, integer()} | {preauth_3ds_sleep, integer()},
+    PaymenTool :: {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}.
 make_payment_tool(no_preauth) ->
     make_simple_payment_tool(<<"no_preauth">>, visa);
 make_payment_tool(no_preauth_mc) ->
@@ -603,10 +634,10 @@ make_payment_tool(empty_cvv) ->
     {
         {bank_card, #domain_BankCard{
             token = <<"empty_cvv">>,
-            payment_system = visa,
+            payment_system_deprecated = visa,
             bin = <<"424242">>,
             last_digits = <<"4242">>,
-            token_provider = undefined,
+            token_provider_deprecated = undefined,
             is_cvv_empty = true
         }},
         <<"SESSION42">>
@@ -631,14 +662,14 @@ make_payment_tool({scenario, Scenario}) ->
 make_payment_tool(terminal) ->
     {
         {payment_terminal, #domain_PaymentTerminal{
-            terminal_type = euroset
+            terminal_type_deprecated = euroset
         }},
         <<>>
     };
 make_payment_tool(digital_wallet) ->
     {
         {digital_wallet, #domain_DigitalWallet{
-            provider = qiwi,
+            provider_deprecated = qiwi,
             id = <<"+79876543210">>,
             token = <<"some_token">>
         }},
@@ -646,15 +677,15 @@ make_payment_tool(digital_wallet) ->
     };
 make_payment_tool(tokenized_bank_card) ->
     make_simple_payment_tool(<<"no_preauth">>, visa, applepay, dpan);
-make_payment_tool(crypto_currency) ->
+make_payment_tool(crypto_currency_deprecated) ->
     {
-        {crypto_currency, bitcoin},
+        {crypto_currency_deprecated, bitcoin},
         <<"">>
     };
 make_payment_tool(mobile_commerce_failure) ->
     {
         {mobile_commerce, #domain_MobileCommerce{
-            operator = mts,
+            operator_deprecated = mts,
             phone = #domain_MobilePhone{
                 cc = <<"777">>,
                 ctn = <<"0000000000">>
@@ -665,7 +696,7 @@ make_payment_tool(mobile_commerce_failure) ->
 make_payment_tool(mobile_commerce) ->
     {
         {mobile_commerce, #domain_MobileCommerce{
-            operator = mts,
+            operator_deprecated = mts,
             phone = #domain_MobilePhone{
                 cc = <<"7">>,
                 ctn = <<"9876543210">>
@@ -695,10 +726,10 @@ construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider
     {
         {bank_card, #domain_BankCard{
             token = Token,
-            payment_system = PaymentSystem,
+            payment_system_deprecated = PaymentSystem,
             bin = Bin,
             last_digits = Pan,
-            token_provider = TokenProvider,
+            token_provider_deprecated = TokenProvider,
             tokenization_method = TokenizationMethod
         }},
         Session

@@ -16,14 +16,14 @@
 -type value() :: term().
 
 -type msgpack_value() ::
-    undefined |
-    boolean() |
-    list() |
-    map() |
-    binary() |
-    {bin, binary()} |
-    integer() |
-    float().
+    undefined
+    | boolean()
+    | list()
+    | map()
+    | binary()
+    | {bin, binary()}
+    | integer()
+    | float().
 
 %%
 

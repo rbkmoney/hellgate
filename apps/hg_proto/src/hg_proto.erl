@@ -49,7 +49,9 @@ get_service(processor) ->
 get_service(eventsink) ->
     {mg_proto_state_processing_thrift, 'EventSink'};
 get_service(fault_detector) ->
-    {fd_proto_fault_detector_thrift, 'FaultDetector'}.
+    {fd_proto_fault_detector_thrift, 'FaultDetector'};
+get_service(limiter) ->
+    {lim_limiter_thrift, 'Limiter'}.
 
 -spec get_service_spec(Name :: atom()) -> service_spec().
 get_service_spec(Name) ->

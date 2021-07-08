@@ -142,7 +142,7 @@ init_per_testcase(Name, C) ->
         | C
     ].
 
--spec end_per_testcase(test_case_name(), config()) -> config().
+-spec end_per_testcase(test_case_name(), config()) -> _.
 end_per_testcase(_Name, _C) ->
     ok.
 
@@ -160,33 +160,37 @@ end_per_testcase(_Name, _C) ->
 -spec invalid_payment_method(config()) -> test_case_result().
 
 invalid_user(C) ->
+    PaytoolID = hg_utils:unique_id(),
     Client = cfg(client, C),
     PartyID = hg_utils:unique_id(),
     ShopID = hg_utils:unique_id(),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     {exception, #payproc_InvalidUser{}} = hg_client_recurrent_paytool:create(Params, Client).
 
 invalid_party(C) ->
     RootUrl = cfg(root_url, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = hg_utils:unique_id(),
     ShopID = hg_utils:unique_id(),
     Client = hg_client_recurrent_paytool:start(hg_ct_helper:create_client(RootUrl, PartyID, cfg(trace_id, C))),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     {exception, #payproc_PartyNotFound{}} = hg_client_recurrent_paytool:create(Params, Client).
 
 invalid_shop(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = hg_utils:unique_id(),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     {exception, #payproc_ShopNotFound{}} = hg_client_recurrent_paytool:create(Params, Client).
 
 invalid_party_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     ok = hg_client_party:block(<<>>, PartyClient),
     {exception, ?invalid_party_status({blocking, _})} = hg_client_recurrent_paytool:create(Params, Client),
     ok = hg_client_party:unblock(<<>>, PartyClient),
@@ -197,9 +201,10 @@ invalid_party_status(C) ->
 invalid_shop_status(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     ok = hg_client_party:block_shop(ShopID, <<>>, PartyClient),
     {exception, ?invalid_shop_status({blocking, _})} = hg_client_recurrent_paytool:create(Params, Client),
     ok = hg_client_party:unblock_shop(ShopID, <<>>, PartyClient),
@@ -209,17 +214,19 @@ invalid_shop_status(C) ->
 
 invalid_payment_method(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     PaymentTool =
         {bank_card, #domain_BankCard{
             token = <<"TOKEN">>,
-            payment_system = mastercard,
+            payment_system_deprecated = mastercard,
             bin = <<"666666">>,
             last_digits = <<"666">>
         }},
     PaymentResource = make_disposable_payment_resource(PaymentTool, <<"SESSION0">>),
     Params = #payproc_RecurrentPaymentToolParams{
+        id = PaytoolID,
         party_id = PartyID,
         shop_id = ShopID,
         payment_resource = PaymentResource
@@ -238,28 +245,31 @@ invalid_payment_method(C) ->
 -spec recurrent_paytool_abandoned(config()) -> test_case_result().
 
 recurrent_paytool_not_found(C) ->
+    PaytoolID = hg_utils:unique_id(),
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     _RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     {exception, #payproc_RecurrentPaymentToolNotFound{}} =
         hg_client_recurrent_paytool:get(hg_utils:unique_id(), Client).
 
 get_recurrent_paytool(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     RecurrentPaytool = hg_client_recurrent_paytool:get(RecurrentPaytoolID, Client).
 
 recurrent_paytool_acquirement_failed(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_bad_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_bad_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     [
@@ -272,18 +282,20 @@ recurrent_paytool_acquirement_failed(C) ->
 
 recurrent_paytool_acquired(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, Client),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     ok = await_acquirement(RecurrentPaytoolID, Client).
 
 recurrent_paytool_event_sink(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     CreateResult = hg_client_recurrent_paytool:create(Params, Client),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = CreateResult,
     ok = await_acquirement(RecurrentPaytoolID, Client),
@@ -307,9 +319,10 @@ recurrent_paytool_event_sink(C) ->
 
 recurrent_paytool_cost(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{
         id = RecurrentPaytoolID,
@@ -329,9 +342,10 @@ recurrent_paytool_cost(C) ->
 
 recurrent_paytool_w_tds_acquired(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_tds_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_tds_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     RecurrentPaytool = hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} = RecurrentPaytool,
     [
@@ -350,9 +364,10 @@ recurrent_paytool_w_tds_acquired(C) ->
 
 recurrent_paytool_abandoned(C) ->
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     #payproc_RecurrentPaymentTool{id = RecurrentPaytoolID} =
         hg_client_recurrent_paytool:create(Params, cfg(client, C)),
     {exception, #payproc_InvalidRecurrentPaymentToolStatus{status = {created, _}}} =
@@ -370,35 +385,39 @@ recurrent_paytool_abandoned(C) ->
 recurrent_paytool_creation_not_permitted(C) ->
     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     Client = cfg(client, C),
+    PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
-    Params = make_recurrent_paytool_params(PartyID, ShopID),
+    Params = make_recurrent_paytool_params(PaytoolID, PartyID, ShopID),
     {exception, #payproc_OperationNotPermitted{}} = hg_client_recurrent_paytool:create(Params, Client).
 
 %%
 
-make_bad_recurrent_paytool_params(PartyID, ShopID) ->
+make_bad_recurrent_paytool_params(PaytoolID, PartyID, ShopID) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(forbidden),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
+        id = PaytoolID,
         party_id = PartyID,
         shop_id = ShopID,
         payment_resource = PaymentResource
     }.
 
-make_recurrent_paytool_params(PartyID, ShopID) ->
+make_recurrent_paytool_params(PaytoolID, PartyID, ShopID) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
+        id = PaytoolID,
         party_id = PartyID,
         shop_id = ShopID,
         payment_resource = PaymentResource
     }.
 
-make_tds_recurrent_paytool_params(PartyID, ShopID) ->
+make_tds_recurrent_paytool_params(PaytoolID, PartyID, ShopID) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
+        id = PaytoolID,
         party_id = PartyID,
         shop_id = ShopID,
         payment_resource = PaymentResource
@@ -429,9 +448,11 @@ start_proxies(Proxies) ->
 setup_proxies(Proxies) ->
     ok = hg_domain:upsert(Proxies).
 
+-spec start_service_handler(module(), list(), map()) -> binary().
 start_service_handler(Module, C, HandlerOpts) ->
     start_service_handler(Module, Module, C, HandlerOpts).
 
+-spec start_service_handler(atom(), module(), list(), map()) -> binary().
 start_service_handler(Name, Module, C, HandlerOpts) ->
     IP = "127.0.0.1",
     Port = get_random_port(),
@@ -440,6 +461,7 @@ start_service_handler(Name, Module, C, HandlerOpts) ->
     {ok, _} = supervisor:start_child(cfg(test_sup, C), ChildSpec),
     hg_test_proxy:get_url(Module, IP, Port).
 
+-spec get_random_port() -> inet:port_number().
 get_random_port() ->
     rand:uniform(32768) + 32767.
 
@@ -604,11 +626,10 @@ construct_domain_fixture(TermSet) ->
                 name = <<"Test Inc.">>,
                 system_account_set = {value, ?sas(1)},
                 default_contract_template = {value, ?tmpl(1)},
-                providers =
-                    {value,
-                        ?ordset([
-                            ?prv(1)
-                        ])},
+                payment_routing_rules = #domain_RoutingRules{
+                    policies = ?ruleset(2),
+                    prohibitions = ?ruleset(1)
+                },
                 inspector =
                     {decisions, [
                         #domain_InspectorDecision{
@@ -620,7 +641,23 @@ construct_domain_fixture(TermSet) ->
                 realm = test
             }
         }},
-
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(1),
+            data = #domain_RoutingRuleset{
+                name = <<"Prohibitions: all is allow">>,
+                decisions = {candidates, []}
+            }
+        }},
+        {routing_rules, #domain_RoutingRulesObject{
+            ref = ?ruleset(2),
+            data = #domain_RoutingRuleset{
+                name = <<"Prohibitions: all is allow">>,
+                decisions =
+                    {candidates, [
+                        ?candidate({constant, true}, ?trm(1))
+                    ]}
+            }
+        }},
         {globals, #domain_GlobalsObject{
             ref = #domain_GlobalsRef{},
             data = #domain_Globals{
@@ -645,7 +682,6 @@ construct_domain_fixture(TermSet) ->
             data = #domain_Provider{
                 name = <<"Brovider">>,
                 description = <<"A provider but bro">>,
-                terminal = {value, [?prvtrm(1)]},
                 proxy = #domain_Proxy{ref = ?prx(1), additional = #{}},
                 abs_account = <<"1234567890">>,
                 accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
@@ -701,7 +737,8 @@ construct_domain_fixture(TermSet) ->
             ref = ?trm(1),
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
-                description = <<"Brominal 1">>
+                description = <<"Brominal 1">>,
+                provider_ref = ?prv(1)
             }
         }}
     ].

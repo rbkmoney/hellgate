@@ -170,8 +170,8 @@ build_log_param(_Key, _Value) ->
 
 -spec get_log_message(EventType) -> string() when
     EventType ::
-        invoice_adjustment_created |
-        invoice_adjustment_status_changed.
+        invoice_adjustment_created
+        | invoice_adjustment_status_changed.
 get_log_message(invoice_adjustment_created) ->
     "Invoice adjustment created";
 get_log_message(invoice_adjustment_status_changed) ->
