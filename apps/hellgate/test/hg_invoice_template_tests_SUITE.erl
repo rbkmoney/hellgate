@@ -6,7 +6,8 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/domain.hrl").
 
--include_lib("hellgate/include/party_events.hrl"). %% TODO: remove later
+%% TODO: remove later
+-include_lib("hellgate/include/party_events.hrl").
 
 -export([all/0]).
 -export([init_per_suite/1]).
@@ -119,10 +120,10 @@ create_party_and_shop(PartyID, Category, Currency, TemplateRef, PaymentInstituti
     ShopParams = make_shop_params(Category, ContractID, PayoutToolID),
     ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(Currency)},
 
-    ContractParams = hg_ct_helper:make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef),
-    PayoutToolParams = hg_ct_helper:make_battle_ready_payout_tool_params(),
+    ContractParams = hg_ct_helper:make_contract_params(TemplateRef, PaymentInstitutionRef),
+    PayoutToolParams = hg_ct_helper:make_payout_tool_params(),
 
-%    _ = timer:sleep(5000),
+    _ = timer:sleep(5000),
 
     Changeset = [
         {contract_modification, #payproc_ContractModificationUnit{
@@ -163,7 +164,6 @@ make_party_params() ->
             email = <<?MODULE_STRING>>
         }
     }.
-
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
