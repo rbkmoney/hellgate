@@ -11,7 +11,7 @@
  {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.9.1">>},2},
  {<<"damsel">>,
   {git,"https://github.com/rbkmoney/damsel.git",
-       {ref,"a9b8f23b2a8f3337e02f846094b8602f6ff9e77c"}},
+       {ref,"80ce3119c2cbb5bd39e9d81202a1517a92015d61"}},
   0},
  {<<"dmt_client">>,
   {git,"https://github.com/rbkmoney/dmt_client.git",
