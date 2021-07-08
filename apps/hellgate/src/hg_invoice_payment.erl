@@ -1994,7 +1994,11 @@ process_refund_cashflow(ID, Action, St) ->
     case get_available_amount(SettlementID, Clock) of
         % TODO we must pull this rule out of refund terms
         Available when Available >= 0 ->
-            Events = [?refund_clock_update(Clock), ?session_ev(?refunded(), ?session_started()) | get_manual_refund_events(RefundSt)],
+            Events = [
+                ?refund_clock_update(Clock),
+                ?session_ev(?refunded(), ?session_started())
+                | get_manual_refund_events(RefundSt)
+            ],
             {next, {
                 [?refund_ev(ID, C) || C <- Events],
                 hg_machine_action:set_timeout(0, Action)
@@ -2225,7 +2229,13 @@ process_result({refund_accounter, ID}, Action, St) ->
             ?cash(Amount, _) when Amount > 0 ->
                 []
         end,
-    {done, {[?refund_ev(ID, ?refund_clock_update(Clock)), ?refund_ev(ID, ?refund_status_changed(?refund_succeeded())) | Events], Action}}.
+    {done,
+        {[
+                ?refund_ev(ID, ?refund_clock_update(Clock)),
+                ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
+                | Events
+            ],
+            Action}}.
 
 process_failure(Activity, Events, Action, Failure, St) ->
     process_failure(Activity, Events, Action, Failure, St, undefined).
