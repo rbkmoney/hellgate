@@ -10,15 +10,9 @@
 -type refund() :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type attempt() :: non_neg_integer().
--type limit_overflowing() :: #{
-    id := binary(),
-    amount := integer(),
-    upper_boundary := integer()
-}.
 
 -export([get_turnover_limits/1]).
 -export([check_limits/3]).
--export([print_overflowing_limits/1]).
 -export([hold_payment_limits/4]).
 -export([hold_refund_limits/4]).
 -export([commit_payment_limits/5]).
@@ -67,31 +61,15 @@ check_limits(TurnoverLimits, Invoice, Payment) ->
 
 check_limit_amount(Limit, UpperBoundary, AccIn, OverflowLimits) ->
     #limiter_Limit{
-        id = LimitID,
-        amount = LimiterAmount
+        id = ID,
+        amount = Amount
     } = Limit,
-    case LimiterAmount < UpperBoundary of
+    case Amount < UpperBoundary of
         true ->
             {[Limit | AccIn], OverflowLimits};
         false ->
-            LimitOverflowing = #{
-                id => LimitID,
-                amount => LimiterAmount,
-                upper_boundary => UpperBoundary
-            },
-            {AccIn, [LimitOverflowing | OverflowLimits]}
+            {AccIn, [ID | OverflowLimits]}
     end.
-
--spec print_overflowing_limits([limit_overflowing()]) -> ok.
-print_overflowing_limits(OverflowingLimits) ->
-    PrintFun = fun(#{id := LimitID, amount := LimiterAmount, upper_boundary := UpperBoundary}) ->
-        logger:info("Limit with id ~p overflowed, amount ~p upper boundary ~p", [
-            LimitID,
-            LimiterAmount,
-            UpperBoundary
-        ])
-    end,
-    lists:foreach(PrintFun, OverflowingLimits).
 
 -spec hold_payment_limits([turnover_limit()], invoice(), payment(), attempt()) -> ok.
 hold_payment_limits(TurnoverLimits, Invoice, Payment, Attempt) ->

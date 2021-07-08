@@ -765,21 +765,20 @@ validate_limit(Cash, CashRange) ->
 
 choose_route(PaymentInstitution, RiskScore, VS, Revision, St) ->
     Payer = get_payment_payer(St),
-    PrevRoutes = get_route_history(St),
     case get_predefined_route(Payer) of
         {ok, Route} ->
             check_risk_score(Route, RiskScore);
         undefined ->
             Payment = get_payment(St),
             Predestination = choose_routing_predestination(Payment),
-            {Routes, RejectContext} = hg_routing_rule:gather_routes(
+            {Routes, RejectContext1} = hg_routing_rule:gather_routes(
                 Predestination,
                 PaymentInstitution,
                 VS#{risk_score => RiskScore},
                 Revision
             ),
-
-            {Routes1, RejectContext1} = filter_prev_routes(Routes, PrevRoutes, RejectContext),
+            PrevRoutes = get_route_history(St),
+            Routes1 = filter_prev_routes(Routes, PrevRoutes),
             {Routes2, RejectContext2} = check_limit_overflowing(Routes1, RejectContext1, St),
             FailRatedRoutes = hg_routing:gather_fail_rates(Routes2),
             case hg_routing:choose_route(FailRatedRoutes, RejectContext2, RiskScore) of
@@ -819,37 +818,28 @@ check_limit_overflowing_([Route | Routes], RejectContext, St, Acc) ->
                 case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
                     {ok, _} ->
                         {[Route | Acc], RejectContext};
-                    {error, {limit_overflow, OverflowingLimits}} ->
-                        hg_limiter:print_overflowing_limits(OverflowingLimits),
+                    {error, {limit_overflow, LimitIDs}} ->
                         RejectedProvIn = maps:get(rejected_providers, RejectContext),
-                        RejectedProvOut = [{ProviderRef, {'LimitOverflow', undefined}} | RejectedProvIn],
+                        RejectedProvOut = [{ProviderRef, {'LimitOverflow', LimitIDs}} | RejectedProvIn],
                         {Acc, RejectContext#{rejected_providers => RejectedProvOut}}
                 end
         end,
 
     check_limit_overflowing_(Routes, RejectContextOut, St, AccOut).
 
-filter_prev_routes(Routes, PrevRoutes, RejectContext) ->
-    filter_prev_routes_(Routes, PrevRoutes, RejectContext, []).
-
-filter_prev_routes_([], _, RejectContext, Routes) ->
-    {Routes, RejectContext};
-filter_prev_routes_([Route | Routes], PrevRoutes, RejectContext, AccIn) ->
-    {{PRef, _Provider}, _Terminal} = Route,
-    FindUsedRouteFun = lists:search(
-        fun(#domain_PaymentRoute{provider = ProviderRef}) ->
-            ProviderRef =:= PRef
-        end,
-        PrevRoutes
-    ),
-    case FindUsedRouteFun of
-        {value, _} ->
-            RejectedRoutes0 = maps:get(rejected_providers, RejectContext),
-            RejectedRoutes1 = [{PRef, {'LimitOverflow', undefined}} | RejectedRoutes0],
-            filter_prev_routes_(Routes, PrevRoutes, RejectContext#{rejected_providers => RejectedRoutes1}, AccIn);
-        _ ->
-            filter_prev_routes_(Routes, PrevRoutes, RejectContext, [Route | AccIn])
-    end.
+filter_prev_routes(Routes, []) ->
+    Routes;
+filter_prev_routes(Routes, PrevRoutes) ->
+    RouteNotUsedFun = fun(Route) ->
+        {{PRef, _Provider}, _Terminal} = Route,
+        not lists:any(
+            fun(#domain_PaymentRoute{provider = ProviderRef}) ->
+                ProviderRef =:= PRef
+            end,
+            PrevRoutes
+        )
+    end,
+    [R || R <- Routes, RouteNotUsedFun].
 
 check_risk_score(Route, RiskScore) ->
     case hg_routing:check_risk_score(RiskScore) of
@@ -911,6 +901,11 @@ log_reject_context(Level, RejectReason, RejectContext) ->
         logger:get_process_metadata()
     ),
     ok.
+
+log_limit_overflow(Route, LimitIDs) ->
+    #domain_PaymentRoute{provider = PRef} = Route,
+    Text = "The provider with ref ~p has been rejected: ~p, limit id: ~p",
+    _ = logger:warning(Text, [PRef, <<"LimitOverflow">>, LimitIDs]).
 
 validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector) ->
     EligibilityTime = get_selector_value(eligibility_time, TimeSpanSelector),
@@ -1954,7 +1949,7 @@ process_cash_flow_building(Action, St) ->
         {ok, _} ->
             {next, {Events, hg_machine_action:set_timeout(0, Action)}};
         {error, {limit_overflow, OverflowingLimits}} ->
-            hg_limiter:print_overflowing_limits(OverflowingLimits),
+            log_limit_overflow(Route, OverflowingLimits),
             Failure = failure(
                 {authorization_failed, {provider_limit_exceeded, {unknown, #payprocerr_GeneralFailure{}}}}
             ),
