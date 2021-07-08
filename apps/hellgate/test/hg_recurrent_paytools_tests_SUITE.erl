@@ -71,7 +71,6 @@ init_per_suite(C) ->
         scoper,
         dmt_client,
         party_client,
-        party_management,
         hellgate,
         {cowboy, CowboySpec}
     ]),
@@ -79,6 +78,7 @@ init_per_suite(C) ->
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    _ = timer:sleep(5000),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),

@@ -106,7 +106,6 @@ init_per_suite(C) ->
         woody,
         scoper,
         dmt_client,
-        party_management,
         hellgate,
         {cowboy, CowboySpec}
     ]),
@@ -115,6 +114,7 @@ init_per_suite(C) ->
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
+    _ = timer:sleep(5000),
     Shop1ID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     Shop2ID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
