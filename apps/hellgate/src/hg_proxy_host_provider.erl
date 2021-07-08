@@ -19,9 +19,9 @@
 -type callback() :: dmsl_proxy_provider_thrift:'Callback'().
 -type callback_response() :: dmsl_proxy_provider_thrift:'CallbackResponse'().
 -type callback_name() ::
-    'ProcessPaymentCallback' |
-    'ProcessRecurrentTokenCallback' |
-    'GetPayment'.
+    'ProcessPaymentCallback'
+    | 'ProcessRecurrentTokenCallback'
+    | 'GetPayment'.
 
 -spec handle_function(callback_name(), {tag()} | {tag(), callback()}, hg_woody_wrapper:handler_opts()) ->
     term() | no_return().

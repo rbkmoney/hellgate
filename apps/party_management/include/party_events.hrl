@@ -5,6 +5,11 @@
 
 -define(party_ev(PartyChanges), {party_changes, PartyChanges}).
 
+-define(party_event_data(PartyChanges, Snapshot), #payproc_PartyEventData{
+    changes = PartyChanges,
+    state_snapshot = Snapshot
+}).
+
 -define(party_created(PartyID, ContactInfo, Timestamp),
     {party_created, #payproc_PartyCreated{
         id = PartyID,

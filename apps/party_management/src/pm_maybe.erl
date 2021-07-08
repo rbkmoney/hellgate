@@ -11,11 +11,11 @@
 
 -export_type([maybe/1]).
 
--spec apply(fun(), Arg :: undefined | term()) -> term().
+-spec apply(fun((T) -> U), maybe(T)) -> maybe(U).
 apply(Fun, Arg) ->
     pm_maybe:apply(Fun, Arg, undefined).
 
--spec apply(fun(), Arg :: undefined | term(), Default :: term()) -> term().
+-spec apply(fun((T) -> U), maybe(T), Default) -> U | Default.
 apply(Fun, Arg, _Default) when Arg =/= undefined ->
     Fun(Arg);
 apply(_Fun, undefined, Default) ->
