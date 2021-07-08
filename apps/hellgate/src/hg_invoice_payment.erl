@@ -839,7 +839,7 @@ filter_prev_routes(Routes, PrevRoutes) ->
             PrevRoutes
         )
     end,
-    [R || R <- Routes, RouteNotUsedFun].
+    [R || R <- Routes, RouteNotUsedFun(R)].
 
 check_risk_score(Route, RiskScore) ->
     case hg_routing:check_risk_score(RiskScore) of
