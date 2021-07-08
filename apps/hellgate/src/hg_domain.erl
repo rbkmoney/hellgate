@@ -13,6 +13,7 @@
 
 -export([head/0]).
 -export([all/1]).
+-export([get/1]).
 -export([get/2]).
 -export([find/2]).
 -export([exists/2]).
@@ -43,13 +44,17 @@ head() ->
 
 -spec all(revision()) -> dmsl_domain_thrift:'Domain'().
 all(Revision) ->
-    #'Snapshot'{domain = Domain} = dmt_client:checkout({version, Revision}),
+    #'Snapshot'{domain = Domain} = dmt_client:checkout(Revision),
     Domain.
 
--spec get(revision(), ref()) -> data() | no_return().
+-spec get(ref()) -> data() | no_return().
+get(Ref) ->
+    get(latest, Ref).
+
+-spec get(dmt_client:version(), ref()) -> data() | no_return().
 get(Revision, Ref) ->
     try
-        extract_data(dmt_client:checkout_object({version, Revision}, Ref))
+        extract_data(dmt_client:checkout_object(Revision, Ref))
     catch
         throw:#'ObjectNotFound'{} ->
             error({object_not_found, {Revision, Ref}})
@@ -58,7 +63,7 @@ get(Revision, Ref) ->
 -spec find(revision(), ref()) -> data() | notfound.
 find(Revision, Ref) ->
     try
-        extract_data(dmt_client:checkout_object({version, Revision}, Ref))
+        extract_data(dmt_client:checkout_object(Revision, Ref))
     catch
         throw:#'ObjectNotFound'{} ->
             notfound
@@ -67,14 +72,14 @@ find(Revision, Ref) ->
 -spec exists(revision(), ref()) -> boolean().
 exists(Revision, Ref) ->
     try
-        _ = dmt_client:checkout_object({version, Revision}, Ref),
+        _ = dmt_client:checkout_object(Revision, Ref),
         true
     catch
         throw:#'ObjectNotFound'{} ->
             false
     end.
 
-extract_data(#'VersionedObject'{object = {_Tag, {_Name, _Ref, Data}}}) ->
+extract_data({_Tag, {_Name, _Ref, Data}}) ->
     Data.
 
 -spec commit(revision(), dmt_client:commit()) -> ok | no_return().
