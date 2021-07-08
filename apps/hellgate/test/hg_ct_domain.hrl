@@ -5,6 +5,7 @@
 
 -define(ordset(Es), ordsets:from_list(Es)).
 
+-define(match(Term), erlang:binary_to_term(erlang:term_to_binary(Term))).
 -define(glob(), #domain_GlobalsRef{}).
 -define(cur(ID), #domain_CurrencyRef{symbolic_code = ID}).
 -define(pmt(C, T), #domain_PaymentMethodRef{id = {C, T}}).
@@ -70,8 +71,8 @@
 -define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, dpan)).
 
 -define(tkz_bank_card(PaymentSystem, TokenProvider, TokenizationMethod), #domain_TokenizedBankCard{
-    payment_system = PaymentSystem,
-    token_provider = TokenProvider,
+    payment_system_deprecated = PaymentSystem,
+    token_provider_deprecated = TokenProvider,
     tokenization_method = TokenizationMethod
 }).
 
@@ -86,6 +87,97 @@
             metadata = Details
         }
     ]
+}).
+
+-define(candidate(Allowed, TerminalRef), #domain_RoutingCandidate{
+    allowed = Allowed,
+    terminal = TerminalRef
+}).
+
+-define(candidate(Descr, Allowed, TerminalRef), #domain_RoutingCandidate{
+    description = Descr,
+    allowed = Allowed,
+    terminal = TerminalRef
+}).
+
+-define(candidate(Descr, Allowed, TerminalRef, Priority), #domain_RoutingCandidate{
+    description = Descr,
+    allowed = Allowed,
+    terminal = TerminalRef,
+    priority = Priority
+}).
+
+-define(delegate(Allowed, RuleSetRef), #domain_RoutingDelegate{
+    allowed = Allowed,
+    ruleset = RuleSetRef
+}).
+
+-define(delegate(Descr, Allowed, RuleSetRef), #domain_RoutingDelegate{
+    description = Descr,
+    allowed = Allowed,
+    ruleset = RuleSetRef
+}).
+
+-define(terminal_obj(Ref, PRef), #domain_TerminalObject{
+    ref = Ref,
+    data = #domain_Terminal{
+        name = <<"Payment Terminal">>,
+        description = <<"Best terminal">>,
+        provider_ref = PRef
+    }
+}).
+
+-define(provider(ProvisionTermSet), #domain_Provider{
+    name = <<"Biba">>,
+    description = <<"Payment terminal provider">>,
+    proxy = #domain_Proxy{
+        ref = ?prx(1),
+        additional = #{
+            <<"override">> => <<"biba">>
+        }
+    },
+    abs_account = <<"0987654321">>,
+    accounts = hg_ct_fixture:construct_provider_account_set([?cur(<<"RUB">>)]),
+    terms = ProvisionTermSet
+}).
+
+-define(payment_terms, #domain_PaymentsProvisionTerms{
+    currencies =
+        {value,
+            ?ordset([
+                ?cur(<<"RUB">>)
+            ])},
+    categories =
+        {value,
+            ?ordset([
+                ?cat(1)
+            ])},
+    payment_methods =
+        {value,
+            ?ordset([
+                ?pmt(payment_terminal_deprecated, euroset),
+                ?pmt(digital_wallet_deprecated, qiwi)
+            ])},
+    cash_limit =
+        {value,
+            ?cashrng(
+                {inclusive, ?cash(1000, <<"RUB">>)},
+                {exclusive, ?cash(10000000, <<"RUB">>)}
+            )},
+    cash_flow =
+        {value, [
+            ?cfpost(
+                {provider, settlement},
+                {merchant, settlement},
+                ?share(1, 1, operation_amount)
+            ),
+            ?cfpost(
+                {system, settlement},
+                {provider, settlement},
+                ?share(21, 1000, operation_amount)
+            )
+        ]},
+    risk_coverage = undefined
 }).
 
 -endif.

@@ -47,7 +47,7 @@ upsert(Revision, NewObjects) ->
     ok = commit(Revision, Commit),
     pm_domain:head().
 
--spec reset(revision()) -> ok | no_return().
+-spec reset(revision()) -> revision() | no_return().
 reset(ToRevision) ->
     upsert(hg_domain:head(), maps:values(pm_domain:all(ToRevision))).
 

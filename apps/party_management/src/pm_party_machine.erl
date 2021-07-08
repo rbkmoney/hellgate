@@ -3,7 +3,7 @@
 -include("party_events.hrl").
 -include("legacy_party_structures.hrl").
 
--include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("pm_proto/include/dmsl_party_state_thrift.hrl").
 -include_lib("damsel/include/dmsl_claim_management_thrift.hrl").
 
 -include("claim_management.hrl").
@@ -44,29 +44,18 @@
 -define(SNAPSHOT_STEP, 10).
 -define(CT_ERLANG_BINARY, <<"application/x-erlang-binary">>).
 
--record(st, {
-    party :: undefined | party(),
-    timestamp :: undefined | timestamp(),
-    claims = #{} :: #{claim_id() => claim()},
-    meta = #{} :: meta(),
-    migration_data = #{} :: #{any() => any()},
-    last_event = 0 :: event_id()
-}).
-
--type st() :: #st{}.
+-type st() :: #pm_State{}.
 
 -type call() :: pm_machine:thrift_call().
 -type service_name() :: atom().
 
 -type call_target() :: party | {shop, shop_id()}.
 
--type party() :: pm_party:party().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type party_status() :: pm_party:party_status().
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
 -type claim_id() :: dmsl_payment_processing_thrift:'ClaimID'().
 -type claim() :: dmsl_payment_processing_thrift:'Claim'().
--type timestamp() :: pm_datetime:timestamp().
 -type meta() :: dmsl_domain_thrift:'PartyMeta'().
 -type meta_ns() :: dmsl_domain_thrift:'PartyMetaNamespace'().
 -type meta_data() :: dmsl_domain_thrift:'PartyMetaData'().
@@ -115,7 +104,7 @@ process_init(PartyID, #payproc_PartyParams{contact_info = ContactInfo}) ->
     Timestamp = pm_datetime:format_now(),
     Changes = [?party_created(PartyID, ContactInfo, Timestamp), ?revision_changed(Timestamp, 0)],
     #{
-        events => [wrap_event_payload(?party_ev(Changes))],
+        events => [wrap_event_payload(Changes)],
         auxst => wrap_aux_state(#{
             snapshot_index => [],
             party_revision_index => #{}
@@ -366,12 +355,13 @@ handle_activate(Target, AuxSt, St) ->
         St
     ).
 
-publish_party_event(Source, {ID, Dt, Ev = ?party_ev(_)}) ->
-    #payproc_Event{id = ID, source = Source, created_at = Dt, payload = Ev}.
+publish_party_event(Source, {ID, Dt, {Changes, _}}) ->
+    #payproc_Event{id = ID, source = Source, created_at = Dt, payload = ?party_ev(Changes)}.
 
 -spec publish_event(party_id(), pm_machine:event_payload()) -> pm_event_provider:public_event().
 publish_event(PartyID, Ev) ->
-    {{party_id, PartyID}, unwrap_event_payload(Ev)}.
+    {Changes, _} = unwrap_event_payload(Ev),
+    {{party_id, PartyID}, ?party_ev(Changes)}.
 
 %%
 -spec start(party_id(), Args :: term()) -> ok | no_return().
@@ -395,12 +385,11 @@ get_state(PartyID) ->
 
 get_state(PartyID, []) ->
     %% No snapshots, so we need entire history
-    Events = lists:map(fun unwrap_event/1, get_history(PartyID, undefined, undefined, forward)),
-    merge_events(Events, #st{});
+    Events = unwrap_events(get_history(PartyID, undefined, undefined, forward)),
+    merge_events(Events, #pm_State{});
 get_state(PartyID, [FirstID | _]) ->
     History = get_history(PartyID, FirstID - 1, undefined, forward),
-    Events = lists:map(fun unwrap_event/1, History),
-    [FirstEvent | _] = History,
+    Events = [FirstEvent | _] = unwrap_events(History),
     St = unwrap_state(FirstEvent),
     merge_events(Events, St).
 
@@ -419,7 +408,7 @@ get_state_for_call(_, {St0, Events}, EventsAcc, AuxSt0) ->
     {St1, PartyRevisionIndex1} = build_revision_index(
         Events ++ EventsAcc,
         PartyRevisionIndex0,
-        pm_utils:select_defined(St0, #st{})
+        pm_utils:select_defined(St0, #pm_State{})
     ),
     AuxSt1 = set_party_revision_index(PartyRevisionIndex1, AuxSt0),
     {St1, AuxSt1}.
@@ -429,10 +418,10 @@ parse_history(ReversedHistoryPart) ->
 
 parse_history([WrappedEvent | Others], EventsAcc) ->
     Event = unwrap_event(WrappedEvent),
-    case unwrap_state(WrappedEvent) of
+    case unwrap_state(Event) of
         undefined ->
             parse_history(Others, [Event | EventsAcc]);
-        #st{} = St ->
+        #pm_State{} = St ->
             {St, [Event | EventsAcc]}
     end;
 parse_history([], EventsAcc) ->
@@ -472,8 +461,7 @@ get_last_revision(PartyID) ->
 
 -spec get_last_revision_old_way(party_id()) -> party_revision() | no_return().
 get_last_revision_old_way(PartyID) ->
-    {History, Last, Step} = get_history_part(PartyID, undefined, ?STEP),
-    get_revision_of_part(PartyID, History, Last, Step).
+    get_revision_of_part(PartyID, undefined, ?STEP).
 
 -spec get_status(party_id()) -> party_status() | no_return().
 get_status(PartyID) ->
@@ -513,12 +501,12 @@ get_claim(ID, PartyID) ->
 
 -spec get_claims(party_id()) -> [claim()] | no_return().
 get_claims(PartyID) ->
-    #st{claims = Claims} = get_state(PartyID),
+    #pm_State{claims = Claims} = get_state(PartyID),
     maps:values(Claims).
 
 -spec get_meta(party_id()) -> meta() | no_return().
 get_meta(PartyID) ->
-    #st{meta = Meta} = get_state(PartyID),
+    #pm_State{meta = Meta} = get_state(PartyID),
     Meta.
 
 -spec get_metadata(meta_ns(), party_id()) -> meta_data() | no_return().
@@ -556,13 +544,13 @@ get_aux_state(PartyID) ->
             AuxState#{last_event_id => EventID}
     end.
 
-get_revision_of_part(PartyID, History, Last, Step) ->
+get_revision_of_part(PartyID, Last, Step) ->
+    {History, LastNext, StepNext} = get_history_part(PartyID, Last, Step),
     case find_revision_in_history(History) of
         revision_not_found when Last == 0 ->
             0;
         revision_not_found ->
-            {History1, Last1, Step1} = get_history_part(PartyID, Last, Step * 2),
-            get_revision_of_part(PartyID, History1, Last1, Step1);
+            get_revision_of_part(PartyID, LastNext, StepNext);
         Revision ->
             Revision
     end.
@@ -578,7 +566,7 @@ get_history_part(PartyID, Last, Step) ->
 
 find_revision_in_history([]) ->
     revision_not_found;
-find_revision_in_history([{_, _, ?party_ev(PartyChanges)} | Rest]) when is_list(PartyChanges) ->
+find_revision_in_history([{_, _, {PartyChanges, _}} | Rest]) when is_list(PartyChanges) ->
     case find_revision_in_changes(PartyChanges) of
         revision_not_found ->
             find_revision_in_history(Rest);
@@ -603,16 +591,16 @@ map_history_error({error, notfound}) ->
 
 %%
 
-get_st_party(#st{party = Party}) ->
+get_st_party(#pm_State{party = Party}) ->
     Party.
 
-get_next_party_revision(#st{party = Party}) ->
+get_next_party_revision(#pm_State{party = Party}) ->
     Party#domain_Party.revision + 1.
 
-get_st_claim(ID, #st{claims = Claims}) ->
+get_st_claim(ID, #pm_State{claims = Claims}) ->
     assert_claim_exists(maps:get(ID, Claims, undefined)).
 
-get_st_pending_claims(#st{claims = Claims}) ->
+get_st_pending_claims(#pm_State{claims = Claims}) ->
     % TODO cache it during history collapse
     % Looks like little overhead, compared to previous version (based on maps:fold),
     % but I hope for small amount of pending claims simultaniously.
@@ -626,7 +614,7 @@ get_st_pending_claims(#st{claims = Claims}) ->
     ).
 
 -spec get_st_metadata(meta_ns(), st()) -> meta_data().
-get_st_metadata(NS, #st{meta = Meta}) ->
+get_st_metadata(NS, #pm_State{meta = Meta}) ->
     case maps:get(NS, Meta, undefined) of
         MetaData when MetaData =/= undefined ->
             MetaData;
@@ -636,9 +624,9 @@ get_st_metadata(NS, #st{meta = Meta}) ->
 
 set_claim(
     #payproc_Claim{id = ID} = Claim,
-    #st{claims = Claims} = St
+    #pm_State{claims = Claims} = St
 ) ->
-    St#st{claims = Claims#{ID => Claim}}.
+    St#pm_State{claims = Claims#{ID => Claim}}.
 
 assert_claim_exists(Claim = #payproc_Claim{}) ->
     Claim;
@@ -722,7 +710,7 @@ finalize_claim(Claim, Timestamp) ->
         Timestamp
     ).
 
-get_next_claim_id(#st{claims = Claims}) ->
+get_next_claim_id(#pm_State{claims = Claims}) ->
     % TODO cache sequences on history collapse
     lists:max([0 | maps:keys(Claims)]) + 1.
 
@@ -730,7 +718,7 @@ apply_accepted_claim(Claim, St) ->
     case pm_claim:is_accepted(Claim) of
         true ->
             Party = pm_claim:apply(Claim, pm_datetime:format_now(), get_st_party(St)),
-            St#st{party = Party};
+            St#pm_State{party = Party};
         false ->
             St
     end.
@@ -756,15 +744,15 @@ respond_w_exception(Exception) ->
 
 append_party_revision_index(Changes, St0, AuxSt) ->
     PartyRevisionIndex0 = get_party_revision_index(AuxSt),
-    LastEventID = St0#st.last_event,
+    LastEventID = St0#pm_State.last_event,
     % Brave prediction of next EventID ))
-    St1 = merge_party_changes(Changes, St0#st{last_event = LastEventID + 1}),
+    St1 = merge_party_changes(Changes, St0#pm_State{last_event = LastEventID + 1}),
     PartyRevisionIndex1 = update_party_revision_index(St1, PartyRevisionIndex0),
     set_party_revision_index(PartyRevisionIndex1, AuxSt).
 
 update_party_revision_index(St, PartyRevisionIndex) ->
     #domain_Party{revision = PartyRevision} = get_st_party(St),
-    EventID = St#st.last_event,
+    EventID = St#pm_State.last_event,
     {FromEventID, ToEventID} = get_party_revision_range(PartyRevision, PartyRevisionIndex),
     PartyRevisionIndex#{
         PartyRevision => {
@@ -815,23 +803,23 @@ get_limit(_ToEventID, []) ->
 -spec checkout_party(party_id(), party_revision_param()) -> {ok, st()} | {error, revision_not_found}.
 checkout_party(PartyID, {timestamp, Timestamp}) ->
     Events = unwrap_events(get_history(PartyID, undefined, undefined)),
-    checkout_history_by_timestamp(Events, Timestamp, #st{});
+    checkout_history_by_timestamp(Events, Timestamp, #pm_State{});
 checkout_party(PartyID, {revision, Revision}) ->
     checkout_cached_party_by_revision(PartyID, Revision).
 
-checkout_history_by_timestamp([Ev | Rest], Timestamp, #st{timestamp = PrevTimestamp} = St) ->
+checkout_history_by_timestamp([Ev | Rest], Timestamp, #pm_State{timestamp = PrevTimestamp} = St) ->
     St1 = merge_event(Ev, St),
-    EventTimestamp = St1#st.timestamp,
+    EventTimestamp = St1#pm_State.timestamp,
     case pm_datetime:compare(EventTimestamp, Timestamp) of
         later when PrevTimestamp =/= undefined ->
-            {ok, St#st{timestamp = Timestamp}};
+            {ok, St#pm_State{timestamp = Timestamp}};
         later when PrevTimestamp == undefined ->
             {error, revision_not_found};
         _ ->
             checkout_history_by_timestamp(Rest, Timestamp, St1)
     end;
 checkout_history_by_timestamp([], Timestamp, St) ->
-    {ok, St#st{timestamp = Timestamp}}.
+    {ok, St#pm_State{timestamp = Timestamp}}.
 
 checkout_cached_party_by_revision(PartyID, Revision) ->
     case pm_party_cache:get_party(PartyID, Revision) of
@@ -862,7 +850,7 @@ checkout_party_by_revision(PartyID, Revision) ->
     ReversedHistory = get_history(PartyID, FromEventID, Limit, backward),
     case parse_history(ReversedHistory) of
         {undefined, Events} ->
-            checkout_history_by_revision(Events, Revision, #st{});
+            checkout_history_by_revision(Events, Revision, #pm_State{});
         {St, Events} ->
             checkout_history_by_revision(Events, Revision, St)
     end.
@@ -886,49 +874,49 @@ checkout_history_by_revision([], Revision, St) ->
 merge_events(Events, St) ->
     lists:foldl(fun merge_event/2, St, Events).
 
-merge_event({ID, _Dt, ?party_ev(PartyChanges)}, #st{last_event = LastEventID} = St) when
+merge_event({ID, _Dt, {PartyChanges, _}}, #pm_State{last_event = LastEventID} = St) when
     is_list(PartyChanges) andalso ID =:= LastEventID + 1
 ->
-    merge_party_changes(PartyChanges, St#st{last_event = ID}).
+    merge_party_changes(PartyChanges, St#pm_State{last_event = ID}).
 
 merge_party_changes(Changes, St) ->
     lists:foldl(fun merge_party_change/2, St, Changes).
 
 merge_party_change(?party_created(PartyID, ContactInfo, Timestamp), St) ->
-    St#st{
+    St#pm_State{
         timestamp = Timestamp,
         party = pm_party:create_party(PartyID, ContactInfo, Timestamp)
     };
 merge_party_change(?party_blocking(Blocking), St) ->
     Party = get_st_party(St),
-    St#st{party = pm_party:blocking(Blocking, Party)};
+    St#pm_State{party = pm_party:blocking(Blocking, Party)};
 merge_party_change(?revision_changed(Timestamp, Revision), St) ->
     Party = get_st_party(St),
-    St#st{
+    St#pm_State{
         timestamp = Timestamp,
         party = Party#domain_Party{revision = Revision}
     };
 merge_party_change(?party_suspension(Suspension), St) ->
     Party = get_st_party(St),
-    St#st{party = pm_party:suspension(Suspension, Party)};
-merge_party_change(?party_meta_set(NS, Data), #st{meta = Meta} = St) ->
+    St#pm_State{party = pm_party:suspension(Suspension, Party)};
+merge_party_change(?party_meta_set(NS, Data), #pm_State{meta = Meta} = St) ->
     NewMeta = Meta#{NS => Data},
-    St#st{meta = NewMeta};
-merge_party_change(?party_meta_removed(NS), #st{meta = Meta} = St) ->
+    St#pm_State{meta = NewMeta};
+merge_party_change(?party_meta_removed(NS), #pm_State{meta = Meta} = St) ->
     NewMeta = maps:remove(NS, Meta),
-    St#st{meta = NewMeta};
+    St#pm_State{meta = NewMeta};
 merge_party_change(?shop_blocking(ID, Blocking), St) ->
     Party = get_st_party(St),
-    St#st{party = pm_party:shop_blocking(ID, Blocking, Party)};
+    St#pm_State{party = pm_party:shop_blocking(ID, Blocking, Party)};
 merge_party_change(?shop_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
-    St#st{party = pm_party:shop_suspension(ID, Suspension, Party)};
+    St#pm_State{party = pm_party:shop_suspension(ID, Suspension, Party)};
 merge_party_change(?wallet_blocking(ID, Blocking), St) ->
     Party = get_st_party(St),
-    St#st{party = pm_party:wallet_blocking(ID, Blocking, Party)};
+    St#pm_State{party = pm_party:wallet_blocking(ID, Blocking, Party)};
 merge_party_change(?wallet_suspension(ID, Suspension), St) ->
     Party = get_st_party(St),
-    St#st{party = pm_party:wallet_suspension(ID, Suspension, Party)};
+    St#pm_State{party = pm_party:wallet_suspension(ID, Suspension, Party)};
 merge_party_change(?claim_created(Claim0), St) ->
     Claim = ensure_claim(Claim0),
     St1 = set_claim(Claim, St),
@@ -1137,37 +1125,48 @@ get_template(TemplateRef, Revision) ->
 
 %%
 
-try_attach_snapshot(Changes, AuxSt0, #st{last_event = LastEventID} = St) when
+try_attach_snapshot(Changes, AuxSt0, #pm_State{last_event = LastEventID} = St) when
     LastEventID > 0 andalso
         LastEventID rem ?SNAPSHOT_STEP =:= 0
 ->
     AuxSt1 = append_snapshot_index(LastEventID + 1, AuxSt0),
     {
-        [wrap_event_payload_w_snapshot(?party_ev(Changes), St)],
+        [wrap_event_payload_w_snapshot(Changes, St)],
         wrap_aux_state(AuxSt1)
     };
 try_attach_snapshot(Changes, AuxSt, _) ->
     {
-        [wrap_event_payload(?party_ev(Changes))],
+        [wrap_event_payload(Changes)],
         wrap_aux_state(AuxSt)
     }.
 
 %% TODO add transmutations for new international legal entities and bank accounts
 
--define(TOP_VERSION, 6).
+-define(TOP_VERSION, 7).
+
+% NOTE
+% Version of any legacy encoded party state from the point of view of transmutation
+% facilities.
+-define(PARTY_STATE_ERLBIN_VERSION, 6).
+
+% NOTE
+% These pertain to the format of state snapshots in events.
+% Event payloads themselves are always thrift-serialized in such events.
+-define(FORMAT_VERSION_THRIFT, 2).
+-define(FORMAT_VERSION_ERLBIN, 1).
 
 wrap_event_payload(Changes) ->
-    marshal_event_payload(Changes, undefined).
+    marshal_event_payload(?FORMAT_VERSION_THRIFT, Changes, undefined).
 
 wrap_event_payload_w_snapshot(Changes, St) ->
-    StateSnapshot = encode_state(?CT_ERLANG_BINARY, St),
-    marshal_event_payload(Changes, StateSnapshot).
+    {FormatVsn, StateSnapshot} = encode_state(St),
+    marshal_event_payload(FormatVsn, Changes, StateSnapshot).
 
-marshal_event_payload(?party_ev(Changes), StateSnapshot) ->
+marshal_event_payload(FormatVsn, Changes, StateSnapshot) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
     Bin = pm_proto_utils:serialize(Type, #payproc_PartyEventData{changes = Changes, state_snapshot = StateSnapshot}),
     #{
-        format_version => 1,
+        format_version => FormatVsn,
         data => {bin, Bin}
     }.
 
@@ -1177,67 +1176,57 @@ unwrap_events(History) ->
 unwrap_event({ID, Dt, Event}) ->
     {ID, Dt, unwrap_event_payload(Event)}.
 
-unwrap_event_payload(#{format_version := Format, data := Changes}) ->
-    unwrap_event_payload(Format, Changes).
+unwrap_event_payload(#{format_version := Format, data := Data}) ->
+    unwrap_event_payload(Format, Data).
 
-unwrap_event_payload(1, {bin, ThriftEncodedBin}) ->
+unwrap_event_payload(
+    FormatVsn,
+    {bin, ThriftEncodedBin}
+) when is_integer(FormatVsn) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-    #payproc_PartyEventData{changes = Changes} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
-    ?party_ev(Changes);
-unwrap_event_payload(undefined, [
-    #{
-        <<"vsn">> := Version,
-        <<"ct">> := ContentType
-    },
-    EncodedEvent
-]) ->
-    transmute([Version, decode_event(ContentType, EncodedEvent)]);
+    ?party_event_data(Changes, Snapshot) = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
+    {Changes, pm_maybe:apply(fun(S) -> {FormatVsn, S} end, Snapshot)};
 %% TODO legacy support, will be removed after migration
+unwrap_event_payload(
+    undefined,
+    [Header = #{<<"vsn">> := Version, <<"ct">> := ContentType}, EncodedEvent]
+) ->
+    Snapshot =
+        case maps:get(<<"state_snapshot">>, Header, undefined) of
+            undefined -> undefined;
+            EncodedSt -> {ctype_to_format_version(ContentType), EncodedSt}
+        end,
+    {transmute([Version, decode_event(ContentType, EncodedEvent)]), Snapshot};
 unwrap_event_payload(undefined, Event) when is_list(Event) ->
-    transmute(pm_party_marshalling:unmarshal(Event));
+    {transmute(pm_party_marshalling:unmarshal(Event)), undefined};
 unwrap_event_payload(undefined, {bin, Bin}) when is_binary(Bin) ->
-    transmute([1, binary_to_term(Bin)]).
+    {transmute([1, binary_to_term(Bin)]), undefined}.
 
-unwrap_state(
-    {
-        _ID,
-        _Dt,
-        #{
-            data := {bin, ThriftEncodedBin},
-            format_version := 1
-        }
-    }
-) ->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'PartyEventData'}},
-    #payproc_PartyEventData{state_snapshot = StateSnapshot} = pm_proto_utils:deserialize(Type, ThriftEncodedBin),
-    decode_state(?CT_ERLANG_BINARY, StateSnapshot);
-unwrap_state(
-    {
-        _ID,
-        _Dt,
-        #{
-            data := [
-                #{<<"ct">> := ContentType, <<"state_snapshot">> := EncodedSt},
-                _EncodedEvent
-            ],
-            format_version := undefined
-        }
-    }
-) ->
-    decode_state(ContentType, EncodedSt);
-unwrap_state(_) ->
+unwrap_state({_ID, _Dt, {_Changes, {FormatVsn, EncodedSt}}}) ->
+    decode_state_format(FormatVsn, EncodedSt);
+unwrap_state({_ID, _Dt, {_Changes, undefined}}) ->
     undefined.
 
-encode_state(?CT_ERLANG_BINARY, St) ->
-    {bin, term_to_binary(St)}.
+-define(STATE_THRIFT_TYPE, {struct, struct, {dmsl_party_state_thrift, 'State'}}).
 
-decode_state(?CT_ERLANG_BINARY, undefined) ->
-    undefined;
-decode_state(?CT_ERLANG_BINARY, {bin, EncodedSt}) ->
-    binary_to_term(EncodedSt).
+encode_state(St) ->
+    {?FORMAT_VERSION_THRIFT, {bin, pm_proto_utils:serialize(?STATE_THRIFT_TYPE, St)}}.
+
+decode_state_format(?FORMAT_VERSION_THRIFT, {bin, EncodedSt}) ->
+    pm_proto_utils:deserialize(?STATE_THRIFT_TYPE, EncodedSt);
+decode_state_format(?FORMAT_VERSION_ERLBIN, {bin, EncodedSt}) ->
+    transmute_state(validate_state(binary_to_term(EncodedSt))).
 
 decode_event(?CT_ERLANG_BINARY, {bin, EncodedEvent}) ->
     binary_to_term(EncodedEvent).
+
+%% NOTE
+%% Just to be sure this field was never used.
+validate_state(St = ?legacy_st(_, _, _, _, MigrationData, _)) when map_size(MigrationData) == 0 ->
+    St.
+
+ctype_to_format_version(?CT_ERLANG_BINARY) ->
+    ?FORMAT_VERSION_ERLBIN.
 
 -spec wrap_aux_state(party_aux_st()) -> pm_msgpack_marshalling:msgpack_value().
 wrap_aux_state(AuxSt) ->
@@ -1260,13 +1249,17 @@ decode_aux_state(?CT_ERLANG_BINARY, {bin, AuxSt}) ->
     binary_to_term(AuxSt).
 
 transmute([Version, Event]) ->
-    transmute_event(Version, ?TOP_VERSION, Event).
+    ?party_ev(Changes) = transmute_event(Version, ?TOP_VERSION, Event),
+    Changes.
 
 transmute_event(V1, V2, ?party_ev(Changes)) when V2 > V1 ->
     NewChanges = [transmute_change(V1, V1 + 1, C) || C <- Changes],
     transmute_event(V1 + 1, V2, ?party_ev(NewChanges));
 transmute_event(V, V, Event) ->
     Event.
+
+transmute_state(St) ->
+    transmute_state(?PARTY_STATE_ERLBIN_VERSION, ?TOP_VERSION, St).
 
 -spec transmute_change(pos_integer(), pos_integer(), term()) -> dmsl_payment_processing_thrift:'PartyChange'().
 transmute_change(
@@ -1288,7 +1281,7 @@ transmute_change(
             UpdatedAt
         )
     )
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_created(#payproc_Claim{
         id = ID,
@@ -1302,18 +1295,61 @@ transmute_change(
     V1,
     V2,
     ?legacy_claim_updated(ID, Changeset, ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     NewChangeset = [transmute_party_modification(V1, V2, M) || M <- Changeset],
     ?claim_updated(ID, NewChangeset, ClaimRevision, Timestamp);
 transmute_change(
     V1,
     V2,
     ?claim_status_changed(ID, ?accepted(Effects), ClaimRevision, Timestamp)
-) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     NewEffects = [transmute_claim_effect(V1, V2, E) || E <- Effects],
     ?claim_status_changed(ID, ?accepted(NewEffects), ClaimRevision, Timestamp);
-transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+transmute_change(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     C.
+
+-spec transmute_state(pos_integer(), pos_integer(), _LegacyState) -> st().
+transmute_state(V1, V2, ?legacy_st(Party, Timestamp, Claims, Meta, _, LastEventID)) ->
+    #pm_State{
+        party = transmute_party(V1, V2, Party),
+        timestamp = Timestamp,
+        claims = maps:map(fun(_, C) -> transmute_claim(V1, V2, C) end, Claims),
+        meta = Meta,
+        last_event = LastEventID
+    }.
+
+transmute_claim(V1, V2, Claim = #payproc_Claim{changeset = Changeset}) ->
+    transmute_claim_status(V1, V2, Claim#payproc_Claim{
+        changeset = [transmute_party_modification(V1, V2, M) || M <- Changeset]
+    }).
+
+transmute_claim_status(V1, V2, Claim = #payproc_Claim{status = ?accepted(Effects = [_ | _])}) ->
+    Claim#payproc_Claim{
+        status = ?accepted([transmute_claim_effect(V1, V2, E) || E <- Effects])
+    };
+transmute_claim_status(_V1, _V2, Claim) ->
+    Claim.
+
+transmute_party(
+    V1,
+    V2,
+    Party = #domain_Party{
+        contractors = Contractors,
+        contracts = Contracts
+    }
+) ->
+    Party#domain_Party{
+        contractors = maps:map(fun(_, C) -> transmute_party_contractor(V1, V2, C) end, Contractors),
+        contracts = maps:map(fun(_, C) -> transmute_contract(V1, V2, C) end, Contracts)
+    };
+transmute_party(_, _, undefined) ->
+    undefined.
+
+transmute_party_contractor(V1, V2, PartyContractor = #domain_PartyContractor{contractor = Contractor}) ->
+    PartyContractor#domain_PartyContractor{contractor = transmute_contractor(V1, V2, Contractor)}.
+
+transmute_contract(V1, V2, Contract = #domain_Contract{contractor = Contractor}) ->
+    Contract#domain_Contract{contractor = transmute_contractor(V1, V2, Contractor)}.
 
 transmute_party_modification(
     1,
@@ -1373,6 +1409,35 @@ transmute_party_modification(
         }}
     );
 transmute_party_modification(
+    6 = V1,
+    7 = V2,
+    ?legacy_contract_modification(
+        ID,
+        {creation,
+            ContractParams = #payproc_ContractParams{
+                contractor = Contractor
+            }}
+    )
+) ->
+    ?contract_modification(
+        ID,
+        {creation, ContractParams#payproc_ContractParams{
+            contractor = transmute_contractor(V1, V2, Contractor)
+        }}
+    );
+transmute_party_modification(
+    6 = V1,
+    7 = V2,
+    ?contractor_modification(
+        ID,
+        {creation, Contractor}
+    )
+) ->
+    ?contractor_modification(
+        ID,
+        {creation, transmute_contractor(V1, V2, Contractor)}
+    );
+transmute_party_modification(
     V1,
     V2,
     ?legacy_contract_modification(
@@ -1411,7 +1476,7 @@ transmute_party_modification(
             schedule = transmute_payout_schedule_ref(3, 4, PayoutScheduleRef)
         }}
     );
-transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+transmute_party_modification(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     C.
 
 transmute_claim_effect(
@@ -1571,6 +1636,32 @@ transmute_claim_effect(
         }}
     );
 transmute_claim_effect(
+    6 = V1,
+    7 = V2,
+    ?contract_effect(
+        ID,
+        {created, Contract = #domain_Contract{contractor = Contractor}}
+    )
+) ->
+    ?contract_effect(
+        ID,
+        {created, Contract#domain_Contract{
+            contractor = transmute_contractor(V1, V2, Contractor)
+        }}
+    );
+transmute_claim_effect(
+    6 = V1,
+    7 = V2,
+    ?contractor_effect(
+        ID,
+        {created, PartyContractor}
+    )
+) ->
+    ?contractor_effect(
+        ID,
+        {created, transmute_party_contractor(V1, V2, PartyContractor)}
+    );
+transmute_claim_effect(
     V1,
     V2,
     ?legacy_contract_effect(
@@ -1673,7 +1764,7 @@ transmute_claim_effect(
             schedule = transmute_payout_schedule_ref(3, 4, PayoutSchedule)
         }}
     );
-transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5 ->
+transmute_claim_effect(V1, _, C) when V1 =:= 1; V1 =:= 2; V1 =:= 3; V1 =:= 4; V1 =:= 5; V1 =:= 6 ->
     C.
 
 transmute_contractor(
@@ -1718,13 +1809,36 @@ transmute_contractor(
             )}}
 ) ->
     {legal_entity,
+        {international_legal_entity,
+            ?legacy_international_legal_entity_v2(
+                LegalName,
+                TradingName,
+                RegisteredAddress,
+                ActualAddress,
+                undefined
+            )}};
+transmute_contractor(
+    6,
+    7,
+    {legal_entity,
+        {international_legal_entity,
+            ?legacy_international_legal_entity_v2(
+                LegalName,
+                TradingName,
+                RegisteredAddress,
+                ActualAddress,
+                RegisteredNumber
+            )}}
+) ->
+    {legal_entity,
         {international_legal_entity, #domain_InternationalLegalEntity{
             legal_name = LegalName,
             trading_name = TradingName,
             registered_address = RegisteredAddress,
-            actual_address = ActualAddress
+            actual_address = ActualAddress,
+            registered_number = RegisteredNumber
         }}};
-transmute_contractor(V1, _, Contractor) when V1 =:= 1; V1 =:= 2 ->
+transmute_contractor(V1, _, Contractor) when V1 =:= 1; V1 =:= 2; V1 =:= 6 ->
     Contractor.
 
 transmute_payout_tool(
@@ -1816,3 +1930,35 @@ transmute_payout_schedule_ref(3, 4, ?legacy_payout_schedule_ref(ID)) ->
     #domain_BusinessScheduleRef{id = ID};
 transmute_payout_schedule_ref(3, 4, undefined) ->
     undefined.
+
+%%
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+%% NOTE
+%% Adapted from:
+%% ```
+%% -record(st, {
+%%     party :: undefined | party(),
+%%     timestamp :: undefined | timestamp(),
+%%     claims = #{} :: #{claim_id() => claim()},
+%%     meta = #{} :: meta(),
+%%     migration_data = #{} :: #{},
+%%     last_event = 0 :: event_id()
+%% }).
+%% ```
+-define(INITIAL_LEGACY_ST, ?legacy_st(undefined, undefined, #{}, #{}, #{}, 0)).
+
+-spec test() -> _.
+
+-spec encode_decode_success_test_() -> _.
+encode_decode_success_test_() ->
+    ?_assertEqual(
+        #pm_State{},
+        begin
+            decode_state_format(?FORMAT_VERSION_ERLBIN, {bin, term_to_binary(?INITIAL_LEGACY_ST)})
+        end
+    ).
+
+-endif.

@@ -19,24 +19,24 @@
 %% TODO: move it to the thrift runtime lib?
 
 -type thrift_type() ::
-    thrift_base_type() |
-    thrift_collection_type() |
-    thrift_enum_type() |
-    thrift_struct_type().
+    thrift_base_type()
+    | thrift_collection_type()
+    | thrift_enum_type()
+    | thrift_struct_type().
 
 -type thrift_base_type() ::
-    bool |
-    double |
-    i8 |
-    i16 |
-    i32 |
-    i64 |
-    string.
+    bool
+    | double
+    | i8
+    | i16
+    | i32
+    | i64
+    | string.
 
 -type thrift_collection_type() ::
-    {list, thrift_type()} |
-    {set, thrift_type()} |
-    {map, thrift_type(), thrift_type()}.
+    {list, thrift_type()}
+    | {set, thrift_type()}
+    | {map, thrift_type(), thrift_type()}.
 
 -type thrift_enum_type() ::
     {enum, thrift_type_ref()}.
@@ -48,13 +48,14 @@
 
 -type thrift_type_ref() :: {module(), Name :: atom()}.
 
--type thrift_struct_def() :: list({
-    Tag :: pos_integer(),
-    Requireness :: required | optional | undefined,
-    Type :: thrift_struct_type(),
-    Name :: atom(),
-    Default :: any()
-}).
+-type thrift_struct_def() ::
+    list({
+        Tag :: pos_integer(),
+        Requireness :: required | optional | undefined,
+        Type :: thrift_struct_type(),
+        Name :: atom(),
+        Default :: any()
+    }).
 
 -type thrift_fun_ref() :: {Service :: atom(), Function :: atom()}.
 -type thrift_fun_full_ref() :: {module(), thrift_fun_ref()}.

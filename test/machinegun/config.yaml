@@ -46,7 +46,14 @@ namespaces:
         processor:
             url: http://dominant:8022/v1/stateproc
             pool_size: 300
-
+    lim/config_v1:
+        processor:
+            url: http://limiter:8022/v1/stateproc/lim/config_v1
+            pool_size: 500
+    lim/range_v1:
+        processor:
+            url: http://limiter:8022/v1/stateproc/lim/range_v1
+            pool_size: 500
 storage:
     type: memory
 
