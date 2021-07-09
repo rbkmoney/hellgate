@@ -2150,18 +2150,17 @@ payment_adjustment_failed_from_captured(C) ->
     Failed = ?failed({failure, #domain_Failure{code = <<"404">>}}),
     AdjustmentParams = make_status_adjustment_params(Failed, AdjReason = <<"because i can">>),
     AdjustmentID = execute_payment_adjustment(InvoiceID, PaymentID, AdjustmentParams, Client),
+    ?adjustment_reason(AdjReason) =
+        hg_client_invoicing:get_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     ?assertMatch(
         ?payment_state(?payment_w_status(PaymentID, Failed)),
         hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client)
     ),
-    #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} =
-        ?adjustment_reason(AdjReason) =
-        hg_client_invoicing:get_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     % verify that cash deposited correctly everywhere
     % new cash flow must be calculated using initial domain and party revisions
-    PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
-    SysAccount2 = get_cashflow_account({system, settlement}, CF2),
-    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
+    PrvAccount2 = get_cashflow_account({provider, settlement}, CF1),
+    SysAccount2 = get_cashflow_account({system, settlement}, CF1),
+    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF1),
     Context = #{operation_amount => ?cash(Amount, <<"RUB">>)},
     #domain_Cash{amount = MrcAmount1} = hg_cashflow:compute_volume(?merchant_to_system_share_1, Context),
     MrcDiff = Amount - MrcAmount1,
