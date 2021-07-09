@@ -98,13 +98,16 @@ construct_payment_method(?pmt(_Type, Name) = Ref) when is_atom(Name) ->
 construct_payment_method(?pmt(_Type, #domain_BankCardPaymentMethod{} = PM) = Ref) ->
     construct_payment_method(PM#domain_BankCardPaymentMethod.payment_system, Ref).
 
-construct_payment_method(Name, Ref) ->
-    Def = erlang:atom_to_binary(Name, unicode),
+construct_payment_method(Name, Ref) when is_atom(Name) ->
+    construct_payment_method(erlang:atom_to_binary(Name, unicode), Ref);
+construct_payment_method(#domain_PaymentSystemRef{id = Id}, Ref) when is_binary(Id) ->
+    construct_payment_method(Id, Ref);
+construct_payment_method(Name, Ref) when is_binary(Name) ->
     {payment_method, #domain_PaymentMethodObject{
         ref = Ref,
         data = #domain_PaymentMethodDefinition{
-            name = Def,
-            description = Def
+            name = Name,
+            description = Name
         }
     }}.
 

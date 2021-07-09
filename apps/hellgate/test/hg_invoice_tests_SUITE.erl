@@ -5824,9 +5824,17 @@ construct_domain_fixture() ->
         %% categories influents in limits choice
         hg_ct_fixture:construct_category(?cat(8), <<"commit success">>),
 
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, jcb)),
+        hg_ct_fixture:construct_payment_method(
+            ?pmt(bank_card, #domain_BankCardPaymentMethod{payment_system = #domain_PaymentSystemRef{id = <<"visa">>}})
+        ),
+        hg_ct_fixture:construct_payment_method(
+            ?pmt(bank_card, #domain_BankCardPaymentMethod{
+                payment_system = #domain_PaymentSystemRef{id = <<"mastercard">>}
+            })
+        ),
+        hg_ct_fixture:construct_payment_method(
+            ?pmt(bank_card, #domain_BankCardPaymentMethod{payment_system = #domain_PaymentSystemRef{id = <<"jcb">>}})
+        ),
         hg_ct_fixture:construct_payment_method(?pmt(payment_terminal_deprecated, euroset)),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet_deprecated, qiwi)),
         hg_ct_fixture:construct_payment_method(?pmt(empty_cvv_bank_card_deprecated, visa)),
