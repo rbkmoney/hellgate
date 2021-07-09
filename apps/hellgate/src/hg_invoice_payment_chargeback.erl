@@ -76,7 +76,8 @@
 -type opts() :: #{
     payment_state := payment_state(),
     party := party(),
-    invoice := invoice()
+    invoice := invoice(),
+    timestamp := hg_datetime:timestamp()
 }.
 
 -type payment_state() ::
