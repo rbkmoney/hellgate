@@ -6764,7 +6764,7 @@ construct_domain_fixture() ->
             data = #domain_Terminal{
                 name = <<"Brominal 1">>,
                 description = <<"Brominal 1">>,
-                provider_ref = #domain_ProviderRef{id = 1}
+                provider_ref = ?prv(1)
             }
         }},
 
@@ -7030,7 +7030,7 @@ construct_domain_fixture() ->
             ref = ?trm(10),
             data = #domain_Terminal{
                 name = <<"Payment Terminal Terminal">>,
-                provider_ref = #domain_ProviderRef{id = 3},
+                provider_ref = ?prv(3),
                 description = <<"Euroset">>
             }
         }},
@@ -7301,7 +7301,12 @@ construct_domain_fixture() ->
                 }
             })
         }},
-        {terminal, ?terminal_obj(?trm(14), ?prv(7))}
+        {terminal, ?terminal_obj(?trm(14), ?prv(7))},
+
+        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"visa">>), <<"visa payment system">>),
+        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"mastercard">>), <<"mastercard payment system">>),
+        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"jcb">>), <<"jcb payment system">>),
+        hg_ct_fixture:construct_mobile_operator(?mob(<<"mts">>), <<"mts mobile operator">>)
     ].
 
 construct_term_set_for_cost(LowerBound, UpperBound) ->

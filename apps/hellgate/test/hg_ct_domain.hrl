@@ -9,6 +9,7 @@
 -define(glob(), #domain_GlobalsRef{}).
 -define(cur(ID), #domain_CurrencyRef{symbolic_code = ID}).
 -define(pmt(C, T), #domain_PaymentMethodRef{id = {C, T}}).
+-define(pmt_sys(ID), #domain_PaymentSystemRef{id = ID}).
 -define(pomt(M), #domain_PayoutMethodRef{id = M}).
 -define(cat(ID), #domain_CategoryRef{id = ID}).
 -define(prx(ID), #domain_ProxyRef{id = ID}).
@@ -25,6 +26,7 @@
 -define(bussched(ID), #domain_BusinessScheduleRef{id = ID}).
 -define(ruleset(ID), #domain_RoutingRulesetRef{id = ID}).
 -define(bc_cat(ID), #domain_BankCardCategoryRef{id = ID}).
+-define(mob(ID), #domain_MobileOperatorRef{id = ID}).
 
 -define(cashrng(Lower, Upper), #domain_CashRange{lower = Lower, upper = Upper}).
 

@@ -31,6 +31,8 @@
 -export([construct_routing_delegate/2]).
 -export([construct_routing_candidate/2]).
 -export([construct_bank_card_category/4]).
+-export([construct_payment_system/2]).
+-export([construct_mobile_operator/2]).
 
 %%
 
@@ -44,6 +46,8 @@
 -type terms() :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime() :: dmsl_domain_thrift:'Lifetime'() | undefined.
 -type payment_routing_ruleset() :: dmsl_domain_thrift:'RoutingRulesetRef'().
+-type payment_system() :: dmsl_domain_thrift:'PaymentSystemRef'().
+-type mobile_operator() :: dmsl_domain_thrift:'MobileOperatorRef'().
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
@@ -299,5 +303,25 @@ construct_bank_card_category(Ref, Name, Description, Patterns) ->
             name = Name,
             description = Description,
             category_patterns = Patterns
+        }
+    }}.
+
+-spec construct_payment_system(payment_system(), name()) ->
+    {payment_system, dmsl_domain_thrift:'PaymentSystemObject'()}.
+construct_payment_system(Ref, Name) ->
+    {payment_system, #domain_PaymentSystemObject{
+        ref = Ref,
+        data = #domain_PaymentSystem{
+            name = Name
+        }
+    }}.
+
+-spec construct_mobile_operator(mobile_operator(), name()) ->
+    {mobile_operator, dmsl_domain_thrift:'MobileOperatorObject'()}.
+construct_mobile_operator(Ref, Name) ->
+    {mobile_operator, #domain_MobileOperatorObject{
+        ref = Ref,
+        data = #domain_MobileOperator{
+            name = Name
         }
     }}.
