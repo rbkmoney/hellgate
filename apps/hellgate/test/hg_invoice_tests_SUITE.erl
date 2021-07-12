@@ -415,9 +415,9 @@ groups() ->
 
 -spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
-    %%_ = dbg:tracer(),
-    %%_ = dbg:p(all, c),
-    %%_ = dbg:tpl({'hg_invoice_payment', 'merge_change', '_'}, x),
+    % _ = dbg:tracer(),
+    % _ = dbg:p(all, c),
+    % _ = dbg:tpl({'hg_invoice_payment', 'p', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
     {Apps, Ret} = hg_ct_helper:start_apps([

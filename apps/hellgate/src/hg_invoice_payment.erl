@@ -2549,14 +2549,10 @@ rollback_refund_limits(RefundSt, St) ->
     TurnoverLimits = get_turnover_limits(ProviderTerms),
     hg_limiter:rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund).
 
-% commit_payment_cashflow(St) ->
-%     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
 commit_payment_cashflow(St = #st{clock = Clock}) ->
     #{timestamp := Timestamp} = get_opts(St),
     hg_accounting_new:commit(construct_payment_plan_id(St), get_cashflow_plan(St), Timestamp, Clock).
 
-% rollback_payment_cashflow(St) ->
-%     hg_accounting:rollback(construct_payment_plan_id(St), get_cashflow_plan(St)).
 rollback_payment_cashflow(St = #st{clock = Clock}) ->
     #{timestamp := Timestamp} = get_opts(St),
     hg_accounting_new:rollback(construct_payment_plan_id(St), get_cashflow_plan(St), Timestamp, Clock).
@@ -2902,7 +2898,6 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
         {payment, cash_flow_building} ->
             St#st{
                 cash_flow = Cashflow
-                % activity = {payment, processing_session}
             };
         {payment, processing_capture} ->
             St#st{
@@ -2918,7 +2913,6 @@ merge_change(Change = ?payment_clock_update(Clock), #st{activity = Activity} = S
             {payment, S}
             || S <- [
                    cash_flow_building,
-                   % processing_capture,
                    processing_session,
                    processing_failure,
                    finalizing_accounter,
