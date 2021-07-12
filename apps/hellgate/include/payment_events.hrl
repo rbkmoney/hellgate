@@ -41,6 +41,10 @@
     {invoice_payment_rollback_started, #payproc_InvoicePaymentRollbackStarted{reason = Failure}}
 ).
 
+-define(payment_route_declined(),
+    {invoice_payment_route_declined, #payproc_InvoicePaymentRouteDeclined{}}
+).
+
 -define(rec_token_acquired(Token),
     {invoice_payment_rec_token_acquired, #payproc_InvoicePaymentRecTokenAcquired{token = Token}}
 ).

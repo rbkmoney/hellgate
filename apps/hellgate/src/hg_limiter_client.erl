@@ -18,15 +18,15 @@
 -export_type([context/0]).
 -export_type([clock/0]).
 
--spec get(limit_id(), clock(), context()) -> limit() | no_return().
+-spec get(limit_id(), clock(), context()) -> {ok, limit()} | {error, not_found}.
 get(LimitID, Clock, Context) ->
     Args = {LimitID, Clock, Context},
     Opts = hg_woody_wrapper:get_service_options(limiter),
     case hg_woody_wrapper:call(limiter, 'Get', Args, Opts) of
         {ok, Limit} ->
-            Limit;
+            {ok, Limit};
         {exception, #limiter_LimitNotFound{}} ->
-            error({not_found, LimitID});
+            {error, not_found};
         {exception, #'limiter_base_InvalidRequest'{errors = Errors}} ->
             error({invalid_request, Errors})
     end.
