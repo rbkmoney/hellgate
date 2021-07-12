@@ -930,11 +930,20 @@ collect_validation_varset(Party, Shop, Payment, VS) ->
 
 collect_cashflow(
     #domain_PaymentsServiceTerms{fees = MerchantCashflowSelector},
-    #domain_PaymentsProvisionTerms{cash_flow = ProviderCashflowSelector}
+    #domain_PaymentsProvisionTerms{cash_flow = ProviderCashflowSelector},
+    Opts,
+    Route
 ) ->
+    MerchantContext = #{
+        party => get_party(Opts),
+        shop => get_shop(Opts)
+    },
+    ProviderContext = #{
+        route => Route
+    },
     MerchantCashflow = get_selector_value(merchant_payment_fees, MerchantCashflowSelector),
     ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
-    MerchantCashflow ++ ProviderCashflow.
+    add_cashflow_context(MerchantCashflow ++ ProviderCashflow, MerchantContext, ProviderContext).
 
 construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
     hg_cashflow:finalize(
@@ -1214,7 +1223,7 @@ make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     ok = validate_refund(MerchantTerms, Refund, Payment),
     ProviderPaymentsTerms = get_provider_terminal_terms(Route, VS, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment),
-    Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms),
+    Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, Opts, Route),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
@@ -1374,11 +1383,33 @@ validate_common_refund_terms(Terms, Refund, Payment) ->
 
 collect_refund_cashflow(
     #domain_PaymentRefundsServiceTerms{fees = MerchantCashflowSelector},
-    #domain_PaymentRefundsProvisionTerms{cash_flow = ProviderCashflowSelector}
+    #domain_PaymentRefundsProvisionTerms{cash_flow = ProviderCashflowSelector},
+    Opts,
+    Route
 ) ->
+    MerchantContext = #{
+        party => get_party(Opts),
+        shop => get_shop(Opts)
+    },
+    ProviderContext = #{
+        route => Route
+    },
     MerchantCashflow = get_selector_value(merchant_refund_fees, MerchantCashflowSelector),
     ProviderCashflow = get_selector_value(provider_refund_cash_flow, ProviderCashflowSelector),
-    MerchantCashflow ++ ProviderCashflow.
+    add_cashflow_context(MerchantCashflow ++ ProviderCashflow, MerchantContext, ProviderContext).
+
+add_cashflow_context(CashFlow, MerchantContext, ProviderContext) ->
+    lists:map(
+        fun
+            ({merchant, _} = A) ->
+                {A, MerchantContext};
+            ({provider, _} = A) ->
+                {A, ProviderContext};
+            (A) ->
+                {A, #{}}
+        end,
+        CashFlow
+    ).
 
 prepare_refund_cashflow(RefundSt, St) ->
     hg_accounting:hold(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
@@ -1577,7 +1608,7 @@ calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, O
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    Cashflow = collect_cashflow(MerchantTerms, ProviderTerms),
+    Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, Opts, Route),
     construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision).
 
 -spec construct_adjustment(
@@ -3259,10 +3290,6 @@ try_accrue_waiting_timing(Opts, #st{payment = Payment, timings = Timings}) ->
 -spec get_cashflow(st()) -> final_cash_flow().
 get_cashflow(#st{cash_flow = FinalCashflow}) ->
     FinalCashflow.
-
-%%-spec get_cashflow(st()) -> cash_flow().
-%%get_cashflow(#st{cash_flow = FinalCashflow}) ->
-%%    FinalCashflow.
 
 set_cashflow(Cashflow, St = #st{}) ->
     St#st{

@@ -5202,7 +5202,7 @@ await_payment_process_failure(InvoiceID, PaymentID, Client, Restarts, Target) ->
 
 await_refund_created(InvoiceID, PaymentID, RefundID, Client) ->
     [
-        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(_Refund, _, _)))
+        ?payment_ev(PaymentID, ?refund_ev(RefundID, ?refund_created(_Refund, _)))
     ] = next_event(InvoiceID, Client),
     PaymentID.
 

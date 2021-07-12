@@ -9,7 +9,6 @@
 -module(hg_cashflow).
 
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
--include_lib("damsel/include/dmsl_cash_flow_thrift.hrl").
 
 -type account() :: dmsl_domain_thrift:'CashFlowAccount'().
 -type account_id() :: dmsl_domain_thrift:'AccountID'().
@@ -58,13 +57,6 @@
     details = Details
 }).
 
--define(transaction(Source, Destination, Volume, Details), #cash_flow_CashFlowTransaction{
-    source = Source,
-    destination = Destination,
-    volume = Volume,
-    details = Details
-}).
-
 -spec finalize(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
 finalize(CF, Context, AccountMap) ->
     compute_postings(CF, Context, AccountMap).
@@ -92,34 +84,34 @@ construct_final_account(AccountType, AccountMap, PostingContext) ->
 construct_transaction_account({merchant, MerchantFlowAccount}, #{party := Party, shop := Shop}) ->
     #domain_Party{id = PartyID} = Party,
     #domain_Shop{id = ShopID} = Shop,
-    AccountOwner = #cash_flow_MerchantTransactionAccountOwner{
+    AccountOwner = #domain_MerchantTransactionAccountOwner{
         party_id = PartyID,
         shop_id = ShopID
     },
-    {merchant, #cash_flow_MerchantTransactionAccount{
-        account_type = MerchantFlowAccount,
-        account_owner = AccountOwner
+    {merchant, #domain_MerchantTransactionAccount{
+        type = MerchantFlowAccount,
+        owner = AccountOwner
     }};
 construct_transaction_account({provider, ProviderFlowAccount}, #{route := Route}) ->
     #domain_PaymentRoute{
         provider = ProviderRef,
         terminal = TerminalRef
     } = Route,
-    AccountOwner = #cash_flow_ProviderTransactionAccountOwner{
+    AccountOwner = #domain_ProviderTransactionAccountOwner{
         provider_ref = ProviderRef,
         terminal_ref = TerminalRef
     },
-    {merchant, #cash_flow_ProviderTransactionAccount{
-        account_type = ProviderFlowAccount,
-        account_owner = AccountOwner
+    {merchant, #domain_ProviderTransactionAccount{
+        type = ProviderFlowAccount,
+        owner = AccountOwner
     }};
 construct_transaction_account({system, SystemFlowAccount}, _) ->
-    {system, #cash_flow_SystemTransactionAccount{
-        account_type = SystemFlowAccount
+    {system, #domain_SystemTransactionAccount{
+        type = SystemFlowAccount
     }};
 construct_transaction_account({external, ExternalFlowAccount}, _) ->
-    {system, #cash_flow_ExternalTransactionAccount{
-        account_type = ExternalFlowAccount
+    {system, #domain_ExternalTransactionAccount{
+        type = ExternalFlowAccount
     }}.
 
 -spec resolve_account(account(), account_map()) -> account_id() | no_return().
