@@ -415,9 +415,9 @@ groups() ->
 
 -spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
-    %%_ = dbg:tracer(),
-    %%_ = dbg:p(all, c),
-    %%_ = dbg:tpl({'hg_invoice_payment', 'merge_change', '_'}, x),
+    % _ = dbg:tracer(),
+    % _ = dbg:p(all, c),
+    % _ = dbg:tpl({'hg_invoice_payment', 'p', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
     {Apps, Ret} = hg_ct_helper:start_apps([
@@ -4687,22 +4687,19 @@ consistent_account_balances(C) ->
     ].
 
 consistent_account_balance(AccountID, Comment) ->
-    try hg_accounting:get_balance(AccountID) of
+    case hg_accounting:get_balance(AccountID) of
         #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
             ok;
         #{} = Account ->
             erlang:error({"Inconsistent account balance", Account, Comment})
-    catch
-        #payproc_AccountNotFound{} ->
-            ok
     end.
 
 consistent_account_balance_new(AccountID, Comment) ->
-    try hg_accounting:get_balance(AccountID) of
+    try hg_accounting_new:get_balance(AccountID) of
         #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
             ok;
         #{} = Account ->
-            erlang:error({"Inconsistent account balance", Account, Comment})
+            erlang:error({"Inconsistent account balance (new)", Account, Comment})
     catch
         #payproc_AccountNotFound{} ->
             ok
