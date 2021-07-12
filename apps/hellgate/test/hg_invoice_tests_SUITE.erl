@@ -4734,7 +4734,8 @@ consistent_account_balance(AccountID, Comment) ->
     end.
 
 consistent_account_balance_new(AccountID, Comment) ->
-    try hg_accounting_new:get_balance(AccountID) of
+    %% TODO: Switch to hg_accounting_new when all operations are migrated
+    try hg_accounting:get_balance(AccountID) of
         #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
             ok;
         #{} = Account ->
