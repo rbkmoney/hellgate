@@ -78,11 +78,7 @@ get_account(AccountID, Clock) ->
         {ok, Result} ->
             construct_account(AccountID, Result);
         {exception, #shumaich_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{});
-        {exception, #shumaich_NotReady{}} ->
-            % FIXME: this should probably work differently, hg_retry?
-            timer:sleep(100),
-            get_account(AccountID, Clock)
+            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 -spec get_balance(account_id()) -> balance().
@@ -95,10 +91,7 @@ get_balance(AccountID, Clock) ->
         {ok, Result} ->
             construct_balance(AccountID, Result);
         {exception, #shumaich_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{});
-        % FIXME: this should probably work differently, hg_retry?
-        {exception, #shumaich_NotReady{}} ->
-            get_balance(AccountID, Clock)
+            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
     end.
 
 -spec create_account(currency_code()) -> account_id().
@@ -211,11 +204,6 @@ do(Op, Plan, PreviousClock) ->
     case call_accounter(Op, {Plan, PreviousClock}) of
         {ok, Clock} ->
             to_domain_clock(Clock);
-        {exception, #shumaich_NotReady{}} ->
-            erlang:display({'NOT READY', Op, Plan#shumaich_PostingPlan.id}),
-            % FIXME: maybe some other way?
-            ok = timer:sleep(200),
-            do(Op, Plan, PreviousClock);
         {exception, Exception} ->
             % FIXME
             error({accounting, Exception})
@@ -287,22 +275,34 @@ construct_balance(
     #shumaich_Balance{
         own_amount = OwnAmount,
         min_available_amount = MinAvailableAmount,
-        max_available_amount = MaxAvailableAmount
-        % clock = Clock
+        max_available_amount = MaxAvailableAmount,
+        clock = Clock
     }
 ) ->
     #{
         account_id => AccountID,
         own_amount => OwnAmount,
         min_available_amount => MinAvailableAmount,
-        max_available_amount => MaxAvailableAmount
-        % clock => to_domain_clock(Clock)
+        max_available_amount => MaxAvailableAmount,
+        clock => to_domain_clock(Clock)
     }.
 
 %%
 
 call_accounter(Function, Args) ->
-    hg_woody_wrapper:call(accounter_new, Function, Args).
+    hg_retry:call_with_retry(
+        fun() ->
+            case hg_woody_wrapper:call(accounter_new, Function, Args) of
+                {ok, _} = Ok ->
+                    {return, Ok};
+                {exception, #shumaich_NotReady{}} ->
+                    retry;
+                {exception, _} = Exception ->
+                    {return, Exception}
+            end
+        end,
+        get_retry_strategy(Function)
+    ).
 
 get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
     Cost.
@@ -317,3 +317,7 @@ to_accounter_clock(undefined) ->
     {latest, #shumaich_LatestClock{}};
 to_accounter_clock({vector, #domain_VectorClock{state = State}}) ->
     {vector, #shumaich_VectorClock{state = State}}.
+
+get_retry_strategy(Function) ->
+    PolicyConfig = genlib_app:env(hellgate, accounter_retry_policy, #{}),
+    hg_retry:new_strategy(maps:get(Function, PolicyConfig, no_retry)).

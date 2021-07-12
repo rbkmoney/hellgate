@@ -59,7 +59,7 @@ services:
         condition: service_healthy
 
   shumway:
-    image: dr2.rbkmoney.com/rbkmoney/shumway:658c9aec229b5a70d745a49cb938bb1a132b5ca2
+    image: dr2.rbkmoney.com/rbkmoney/shumway:2f7d381d36ec69cfc90c77996f7e82b79d89e80b
     hostname: shumway
     container_name: shumway
     ports:
@@ -70,7 +70,7 @@ services:
             "spring.datasource.username": "postgres",
             "spring.datasource.password": "postgres",
             "management.metrics.export.statsd.enabled": "false",
-            "service.shumaich.url": "http://shumaich:8033/shumaich"
+            "service.shumaich.url": "http://shumaich:8022/shumaich"
           }'
     depends_on:
       - postgres
@@ -140,12 +140,9 @@ services:
     image: dr2.rbkmoney.com/rbkmoney/shumaich:1e4ebe41a9aaae0c46b1c41edffb95f7d93c5f48
     hostname: shumaich
     container_name: shumaich
-    ports:
-      - "8033:8033"
     restart: on-failure
     environment:
       SPRING_APPLICATION_JSON: '{
-          "server.port": "8033",
           "rocksdb.name": "shumaich",
           "rocksdb.dir": "/temp/rocksdb",
           "kafka.bootstrap-servers": "broker:9092",
@@ -160,6 +157,11 @@ services:
         target: /temp/rocksdb/shumaich
         volume:
           nocopy: true
+    healthcheck:
+      test: "curl http://localhost:8022/"
+      interval: 5s
+      timeout: 1s
+      retries: 20
 
   holmes:
     image: dr2.rbkmoney.com/rbkmoney/holmes:7d496d0886a1489044c57eee4ba4bfcf8f8b6a48

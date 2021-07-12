@@ -4674,25 +4674,19 @@ consistent_account_balances(C) ->
     ].
 
 consistent_account_balance(AccountID, Comment) ->
-    try hg_accounting:get_balance(AccountID) of
+    case hg_accounting:get_balance(AccountID) of
         #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
             ok;
         #{} = Account ->
             erlang:error({"Inconsistent account balance", Account, Comment})
-    catch
-        #payproc_AccountNotFound{} ->
-            ok
     end.
 
 consistent_account_balance_new(AccountID, Comment) ->
-    try hg_accounting:get_balance(AccountID) of
+    case hg_accounting_new:get_balance(AccountID) of
         #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
             ok;
         #{} = Account ->
-            erlang:error({"Inconsistent account balance", Account, Comment})
-    catch
-        #payproc_AccountNotFound{} ->
-            ok
+            erlang:error({"Inconsistent account balance (new)", Account, Comment})
     end.
 
 %%
