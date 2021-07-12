@@ -793,14 +793,12 @@ choose_route(PaymentInstitution, RiskScore, VS, Revision, St) ->
     end.
 
 check_limit_overflowing(Routes, RejectContext, St) ->
-    IsFirstAttempt = fun
-        (Value) when Value =:= 0 ->
+    case get_attempt(St) of
+        0 ->
             check_limit_overflowing_(Routes, RejectContext, St, []);
-        (_) ->
+        _ ->
             {Routes, RejectContext}
-    end,
-    Attempt = get_attempt(St),
-    IsFirstAttempt(Attempt).
+    end.
 
 check_limit_overflowing_([], RejectContext, _St, FilteredRoutes) ->
     {FilteredRoutes, RejectContext};
@@ -904,8 +902,8 @@ log_reject_context(Level, RejectReason, RejectContext) ->
 
 log_limit_overflow(Route, LimitIDs) ->
     #domain_PaymentRoute{provider = PRef} = Route,
-    Text = "The provider with ref ~p has been rejected: ~p, limit id: ~p",
-    _ = logger:warning(Text, [PRef, <<"LimitOverflow">>, LimitIDs]).
+    Text = "The provider with ref ~p has been rejected: LimitOverflow, limit id: ~p",
+    _ = logger:warning(Text, [PRef, LimitIDs]).
 
 validate_refund_time(RefundCreatedAt, PaymentCreatedAt, TimeSpanSelector) ->
     EligibilityTime = get_selector_value(eligibility_time, TimeSpanSelector),
@@ -2929,11 +2927,9 @@ throw_invalid_recurrent_parent(Details) ->
 -spec merge_change(change(), st() | undefined, change_opts()) -> st().
 merge_change(Change, undefined, Opts) ->
     merge_change(Change, #st{activity = {payment, new}}, Opts);
-%% TODO[limiter] cascading: it is temporary ugly decesion, it should be rewrite in full limiter integration
 merge_change(Change = ?payment_route_declined(), #st{} = St, Opts) ->
     _ = validate_transition({payment, processing_failure}, Change, St, Opts),
     St#st{
-        target = ?processed(),
         activity = {payment, risk_scoring},
         timings = hg_timings:mark(started, define_event_timestamp(Opts))
     };
