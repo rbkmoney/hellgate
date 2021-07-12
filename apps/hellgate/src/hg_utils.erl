@@ -15,12 +15,8 @@
 -export([gen_sequence/2]).
 -export([gen_sequence/3]).
 
--define(APP, bender_client).
-
 -type sequence_params() :: #{minimum => integer()}.
 -type woody_context() :: woody_context:ctx().
-
--include_lib("bender_proto/include/bender_thrift.hrl").
 
 %%
 
