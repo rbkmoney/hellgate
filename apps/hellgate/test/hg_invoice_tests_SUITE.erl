@@ -202,22 +202,22 @@ cfg(Key, C) ->
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        % invalid_party_status,
-        % invalid_shop_status,
+        invalid_party_status,
+        invalid_shop_status,
 
-        % % With constant domain config
-        % {group, all_non_destructive_tests},
+        % With constant domain config
+        {group, all_non_destructive_tests},
 
-        % payments_w_bank_card_issuer_conditions,
-        % payments_w_bank_conditions,
+        payments_w_bank_card_issuer_conditions,
+        payments_w_bank_conditions,
 
-        % % With variable domain config
-        % {group, adjustments},
-        % {group, holds_management_with_custom_config},
+        % With variable domain config
+        {group, adjustments},
+        {group, holds_management_with_custom_config},
         {group, refunds},
-        % {group, chargebacks},
-        % rounding_cashflow_volume,
-        % terms_retrieval,
+        {group, chargebacks},
+        rounding_cashflow_volume,
+        terms_retrieval,
 
         consistent_account_balances,
         consistent_history

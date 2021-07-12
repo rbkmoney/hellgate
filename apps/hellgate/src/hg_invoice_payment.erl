@@ -1957,31 +1957,6 @@ maybe_set_charged_back_status(_ChargebackStatus, _ChargebackBody, _St) ->
 %%
 
 -spec process_refund_cashflow(refund_id(), action(), st()) -> machine_result().
-% process_refund_cashflow(ID, Action, St) ->
-%     Opts = get_opts(St),
-%     Shop = get_shop(Opts),
-%     #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
-%     RefundSt = try_get_refund_state(ID, St),
-%     Clock = prepare_refund_cashflow(RefundSt, St),
-%     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
-%     case get_available_amount(SettlementID, Clock) of
-%         % TODO we must pull this rule out of refund terms
-%         Available when Available >= 0 ->
-%             Events0 = [?session_ev(?refunded(), ?session_started())],
-%             Events1 = get_manual_refund_events(RefundSt),
-%             {next, {
-%                 [?refund_ev(ID, C) || C <- Events0 ++ Events1],
-%                 hg_machine_action:set_timeout(0, Action)
-%             }};
-%         Available when Available < 0 ->
-%             Failure =
-%                 {failure,
-%                     payproc_errors:construct(
-%                         'RefundFailure',
-%                         {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
-%                     )},
-%             process_failure(get_activity(St), [], Action, Failure, St, RefundSt)
-%     end.
 process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
     Shop = get_shop(Opts),
