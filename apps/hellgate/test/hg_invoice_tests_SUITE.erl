@@ -2242,7 +2242,7 @@ get_cashflow_account(Type, CF) ->
            } <- CF,
            T == Type
     ],
-    hg_ct_helper:get_balance(ID).
+    hg_accounting_new:get_balance(ID).
 
 -spec invalid_payment_w_deprived_party(config()) -> test_return().
 invalid_payment_w_deprived_party(C) ->
