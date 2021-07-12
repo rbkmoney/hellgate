@@ -202,22 +202,22 @@ cfg(Key, C) ->
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        % invalid_party_status,
-        % invalid_shop_status,
+        invalid_party_status,
+        invalid_shop_status,
 
-        % % With constant domain config
-        % {group, all_non_destructive_tests},
+        % With constant domain config
+        {group, all_non_destructive_tests},
 
-        % payments_w_bank_card_issuer_conditions,
-        % payments_w_bank_conditions,
+        payments_w_bank_card_issuer_conditions,
+        payments_w_bank_conditions,
 
-        % % With variable domain config
-        % {group, adjustments},
-        % {group, holds_management_with_custom_config},
-        % {group, refunds},
+        % With variable domain config
+        {group, adjustments},
+        {group, holds_management_with_custom_config},
+        {group, refunds},
         {group, chargebacks},
-        % rounding_cashflow_volume,
-        % terms_retrieval,
+        rounding_cashflow_volume,
+        terms_retrieval,
 
         consistent_account_balances,
         consistent_history
@@ -318,25 +318,25 @@ groups() ->
             cancel_partial_payment_chargeback_exceeded,
             cancel_payment_chargeback_refund,
             reject_payment_chargeback_inconsistent,
-            reject_payment_chargeback
-            % reject_payment_chargeback_no_fees,
-            % reject_payment_chargeback_new_levy,
-            % accept_payment_chargeback_inconsistent,
-            % accept_payment_chargeback_exceeded,
-            % accept_payment_chargeback_empty_params,
-            % accept_payment_chargeback_twice,
-            % accept_payment_chargeback_new_body,
-            % accept_payment_chargeback_new_levy,
-            % reopen_accepted_payment_chargeback_fails,
-            % reopen_payment_chargeback_inconsistent,
-            % reopen_payment_chargeback_exceeded,
-            % reopen_payment_chargeback_cancel,
-            % reopen_payment_chargeback_reject,
-            % reopen_payment_chargeback_accept,
-            % reopen_payment_chargeback_skip_stage_accept,
-            % reopen_payment_chargeback_accept_new_levy,
-            % reopen_payment_chargeback_arbitration,
-            % reopen_payment_chargeback_arbitration_reopen_fails
+            reject_payment_chargeback,
+            reject_payment_chargeback_no_fees,
+            reject_payment_chargeback_new_levy,
+            accept_payment_chargeback_inconsistent,
+            accept_payment_chargeback_exceeded,
+            accept_payment_chargeback_empty_params,
+            accept_payment_chargeback_twice,
+            accept_payment_chargeback_new_body,
+            accept_payment_chargeback_new_levy,
+            reopen_accepted_payment_chargeback_fails,
+            reopen_payment_chargeback_inconsistent,
+            reopen_payment_chargeback_exceeded,
+            reopen_payment_chargeback_cancel,
+            reopen_payment_chargeback_reject,
+            reopen_payment_chargeback_accept,
+            reopen_payment_chargeback_skip_stage_accept,
+            reopen_payment_chargeback_accept_new_levy,
+            reopen_payment_chargeback_arbitration,
+            reopen_payment_chargeback_arbitration_reopen_fails
         ]},
 
         {operation_limits, [], [
