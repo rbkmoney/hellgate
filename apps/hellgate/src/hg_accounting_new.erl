@@ -69,6 +69,8 @@
     clock => clock()
 }.
 
+-define(DEFAULT_RETRY_STRATEGY, {linear, 5, 100}).
+
 -spec get_account(account_id()) -> account().
 get_account(AccountID) ->
     get_account(AccountID, undefined).
@@ -280,17 +282,18 @@ construct_balance(
         clock = Clock
     }
 ) ->
-    #{
+    genlib_map:compact(#{
         account_id => AccountID,
         own_amount => OwnAmount,
         min_available_amount => MinAvailableAmount,
         max_available_amount => MaxAvailableAmount,
         clock => to_domain_clock(Clock)
-    }.
+    }).
 
 %%
 
 call_accounter(Function, Args) ->
+    %% Really not sure what to best do when we run out of retries
     hg_retry:call_with_retry(
         fun() ->
             case hg_woody_wrapper:call(accounter_new, Function, Args) of
@@ -311,6 +314,8 @@ get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
 get_currency(#domain_Cash{currency = Currency}) ->
     Currency.
 
+to_domain_clock({latest, #shumaich_LatestClock{}}) ->
+    undefined;
 to_domain_clock({vector, #shumaich_VectorClock{state = State}}) ->
     {vector, #domain_VectorClock{state = State}}.
 
@@ -321,4 +326,4 @@ to_accounter_clock({vector, #domain_VectorClock{state = State}}) ->
 
 get_retry_strategy(Function) ->
     PolicyConfig = genlib_app:env(hellgate, accounter_retry_policy, #{}),
-    hg_retry:new_strategy(maps:get(Function, PolicyConfig, no_retry)).
+    hg_retry:new_strategy(maps:get(Function, PolicyConfig, ?DEFAULT_RETRY_STRATEGY)).
