@@ -69,7 +69,7 @@
     clock => clock()
 }.
 
--define(DEFAULT_RETRY_STRATEGY, {linear, 5, 100}).
+-define(DEFAULT_RETRY_STRATEGY, {exponential, 6, 1.5, 100}).
 
 -spec get_account(account_id()) -> account().
 get_account(AccountID) ->
