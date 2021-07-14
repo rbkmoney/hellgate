@@ -3746,8 +3746,20 @@ start_chargeback(C, Cost, CBParams, PaymentParams) ->
     % 0.045
     Fee = 1890,
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
-    PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
-    Settlement1 = hg_accounting_new:get_balance(SettlementID),
+    PaymentID = process_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_clock_update(Clock)),
+        ?payment_ev(PaymentID, ?payment_status_changed(Target)),
+        ?invoice_status_changed(?invoice_paid())
+    ] = next_event(InvoiceID, Client),
+    Settlement1 = hg_accounting_new:get_balance(SettlementID, Clock),
     ?assertEqual(Cost - Fee, maps:get(min_available_amount, Settlement1)),
     Chargeback = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
     {InvoiceID, PaymentID, SettlementID, Chargeback}.
