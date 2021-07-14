@@ -966,6 +966,7 @@ await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cos
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(Target)),
         ?invoice_status_changed(?invoice_paid())
     ] = next_event(InvoiceID, Client),
