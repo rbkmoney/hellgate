@@ -3748,8 +3748,8 @@ start_chargeback(C, Cost, CBParams, PaymentParams) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
-        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
