@@ -3142,10 +3142,9 @@ reopen_payment_chargeback_cancel(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement2 = hg_accounting_new:get_balance(SID, Clock2),
@@ -3224,10 +3223,9 @@ reopen_payment_chargeback_reject(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement2 = hg_accounting_new:get_balance(SID, Clock2),
@@ -3306,10 +3304,9 @@ reopen_payment_chargeback_accept(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement2 = hg_accounting_new:get_balance(SID, Clock2),
@@ -3384,10 +3381,9 @@ reopen_payment_chargeback_skip_stage_accept(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement2 = hg_accounting_new:get_balance(SID, Clock2),
@@ -3464,10 +3460,9 @@ reopen_payment_chargeback_accept_new_levy(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement2 = hg_accounting_new:get_balance(SID, Clock2),
@@ -3550,10 +3545,9 @@ reopen_payment_chargeback_arbitration(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement2 = hg_accounting_new:get_balance(SID, Clock2),
@@ -3584,10 +3578,9 @@ reopen_payment_chargeback_arbitration(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock4)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock4))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement4 = hg_accounting_new:get_balance(SID, Clock4),
@@ -3667,10 +3660,9 @@ reopen_payment_chargeback_arbitration_reopen_fails(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement2 = hg_accounting_new:get_balance(SID, Clock2),
@@ -3701,10 +3693,9 @@ reopen_payment_chargeback_arbitration_reopen_fails(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(_)))
+        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock4)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock4))),
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_status_changed(?chargeback_status_pending())))
     ] = next_event(IID, Client),
     Settlement4 = hg_accounting_new:get_balance(SID, Clock4),
@@ -3757,7 +3748,7 @@ start_chargeback(C, Cost, CBParams, PaymentParams) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     Settlement1 = hg_accounting_new:get_balance(SettlementID),
-    ?assertEqual(Cost - Fee, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(-Fee, maps:get(min_available_amount, Settlement1)),
     Chargeback = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
     {InvoiceID, PaymentID, SettlementID, Chargeback}.
 
