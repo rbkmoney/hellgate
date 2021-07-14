@@ -3748,7 +3748,7 @@ start_chargeback(C, Cost, CBParams, PaymentParams) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     Settlement1 = hg_accounting_new:get_balance(SettlementID),
-    ?assertEqual(-Fee, maps:get(min_available_amount, Settlement1)),
+    ?assertEqual(Cost - Fee, maps:get(min_available_amount, Settlement1)),
     Chargeback = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
     {InvoiceID, PaymentID, SettlementID, Chargeback}.
 
