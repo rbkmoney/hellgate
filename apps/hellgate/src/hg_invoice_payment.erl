@@ -2169,18 +2169,18 @@ process_result({payment, processing_failure}, Action, St = #st{failure = Failure
     {done, {[?payment_clock_update(Clock), ?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
-    _Clocks =
+    AccounterClock =
         case Target of
             ?captured() ->
-                commit_payment_limits(St),
+                _LimiterClock = commit_payment_limits(St),
                 commit_payment_cashflow(St);
             ?cancelled() ->
-                rollback_payment_limits(St),
+                _LimiterClock = rollback_payment_limits(St),
                 rollback_payment_cashflow(St)
         end,
     check_recurrent_token(St),
     NewAction = get_action(Target, Action, St),
-    {done, {[?payment_status_changed(Target)], NewAction}};
+    {done, {[?payment_clock_update(AccounterClock), ?payment_status_changed(Target)], NewAction}};
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Failure = RefundSt#refund_st.failure,
