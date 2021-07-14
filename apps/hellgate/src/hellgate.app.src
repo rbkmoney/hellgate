@@ -24,7 +24,8 @@
         erl_health,
         party_management,
         prometheus,
-        prometheus_cowboy
+        prometheus_cowboy,
+        limiter_proto
     ]},
     {env, []},
     {modules, []},

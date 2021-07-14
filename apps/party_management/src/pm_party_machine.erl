@@ -17,12 +17,6 @@
 -export([process_signal/2]).
 -export([process_call/2]).
 
-%% Event provider callbacks
-
--behaviour(pm_event_provider).
-
--export([publish_event/2]).
-
 %%
 
 -export([start/2]).
@@ -357,11 +351,6 @@ handle_activate(Target, AuxSt, St) ->
 
 publish_party_event(Source, {ID, Dt, {Changes, _}}) ->
     #payproc_Event{id = ID, source = Source, created_at = Dt, payload = ?party_ev(Changes)}.
-
--spec publish_event(party_id(), pm_machine:event_payload()) -> pm_event_provider:public_event().
-publish_event(PartyID, Ev) ->
-    {Changes, _} = unwrap_event_payload(Ev),
-    {{party_id, PartyID}, ?party_ev(Changes)}.
 
 %%
 -spec start(party_id(), Args :: term()) -> ok | no_return().

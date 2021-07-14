@@ -26,8 +26,6 @@ get_service(invoice_templating) ->
     {dmsl_payment_processing_thrift, 'InvoiceTemplating'};
 get_service(customer_management) ->
     {dmsl_payment_processing_thrift, 'CustomerManagement'};
-get_service(payment_processing_eventsink) ->
-    {dmsl_payment_processing_thrift, 'EventSink'};
 get_service(recurrent_paytool) ->
     {dmsl_payment_processing_thrift, 'RecurrentPaymentTools'};
 get_service(recurrent_paytool_eventsink) ->
@@ -49,7 +47,7 @@ get_service(eventsink) ->
 get_service(fault_detector) ->
     {fd_proto_fault_detector_thrift, 'FaultDetector'};
 get_service(limiter) ->
-    {dmsl_proto_limiter_thrift, 'Limiter'}.
+    {lim_limiter_thrift, 'Limiter'}.
 
 -spec get_service_spec(Name :: atom()) -> service_spec().
 get_service_spec(Name) ->
@@ -62,8 +60,6 @@ get_service_spec(Name = invoice_templating, #{}) ->
     {?VERSION_PREFIX ++ "/processing/invoice_templating", get_service(Name)};
 get_service_spec(Name = customer_management, #{}) ->
     {?VERSION_PREFIX ++ "/processing/customer_management", get_service(Name)};
-get_service_spec(Name = payment_processing_eventsink, #{}) ->
-    {?VERSION_PREFIX ++ "/processing/eventsink", get_service(Name)};
 get_service_spec(Name = recurrent_paytool, #{}) ->
     {?VERSION_PREFIX ++ "/processing/recpaytool", get_service(Name)};
 get_service_spec(Name = recurrent_paytool_eventsink, #{}) ->

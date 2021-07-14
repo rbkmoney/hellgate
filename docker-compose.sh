@@ -36,6 +36,15 @@ services:
       timeout: 1s
       retries: 20
 
+  limiter:
+    image: dr2.rbkmoney.com/rbkmoney/limiter:c5572a9a22b3fea68213f32276b5272605aebec8
+    command: /opt/limiter/bin/limiter foreground
+    depends_on:
+      machinegun:
+        condition: service_healthy
+      shumway:
+        condition: service_healthy
+
   shumway:
     image: dr2.rbkmoney.com/rbkmoney/shumway:658c9aec229b5a70d745a49cb938bb1a132b5ca2
     restart: unless-stopped

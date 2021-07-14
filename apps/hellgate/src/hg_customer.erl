@@ -26,12 +26,6 @@
 -export([process_call/2]).
 -export([process_repair/2]).
 
-%% Event provider callbacks
-
--behaviour(hg_event_provider).
-
--export([publish_event/2]).
-
 %% Types
 
 -define(SYNC_INTERVAL, 5).
@@ -177,14 +171,6 @@ map_start_error({ok, _}) ->
     ok;
 map_start_error({error, Reason}) ->
     error(Reason).
-
-%%
-%% Event provider callbacks
-%%
-
--spec publish_event(customer_id(), hg_machine:event_payload()) -> hg_event_provider:public_event().
-publish_event(CustomerID, Payload) ->
-    {{customer_id, CustomerID}, ?customer_event(unmarshal_event_payload(Payload))}.
 
 %%
 %% hg_machine callbacks

@@ -179,13 +179,6 @@ start_app(hellgate = AppName) ->
                         max_connections => 300
                     }
                 },
-                payment_processing_eventsink => #{
-                    url => <<"http://hellgate:8022/v1/processing/eventsink">>,
-                    transport_opts => #{
-                        pool => payment_processing_eventsink,
-                        max_connections => 300
-                    }
-                },
                 recurrent_paytool_eventsink => #{
                     url => <<"http://hellgate:8022/v1/processing/recpaytool/eventsink">>,
                     transport_opts => #{
@@ -194,7 +187,7 @@ start_app(hellgate = AppName) ->
                     }
                 },
                 limiter => #{
-                    url => <<"http://127.0.0.1:30001/test/proxy/limiter/dummy">>,
+                    url => <<"http://limiter:8022/v1/limiter">>,
                     transport_opts => #{}
                 }
             }},

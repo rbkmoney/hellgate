@@ -84,8 +84,7 @@ get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts) ->
                     construct_service_handler(customer_management, hg_customer, Opts),
                     construct_service_handler(recurrent_paytool, hg_recurrent_paytool, Opts),
                     construct_service_handler(recurrent_paytool_eventsink, hg_recurrent_paytool, Opts),
-                    construct_service_handler(proxy_host_provider, hg_proxy_host_provider, Opts),
-                    construct_service_handler(payment_processing_eventsink, hg_event_sink_handler, Opts)
+                    construct_service_handler(proxy_host_provider, hg_proxy_host_provider, Opts)
                 ],
             additional_routes => [PrometeusRoute | HealthRoutes],
             shutdown_timeout => genlib_app:env(?MODULE, shutdown_timeout, 0)
