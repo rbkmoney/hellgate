@@ -1396,13 +1396,19 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(1000), Amount, C),
     PaymentParams = make_scenario_payment_params([good, fail, good], {hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    ?assertMatch(#{max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ?assertMatch(
+        #{min_available_amount := -1890, max_available_amount := 42000},
+        hg_accounting_new:get_balance(SettlementID)
+    ),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"cancel">>, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(Reason), ?session_started()))
     ] = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, Client),
-    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ?assertMatch(
+        #{min_available_amount := -1890, max_available_amount := 42000},
+        hg_accounting_new:get_balance(SettlementID)
+    ),
     ?assertException(
         error,
         {{woody_error, _}, _},
@@ -1424,14 +1430,20 @@ payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(1000), Amount, C),
     PaymentParams = make_scenario_payment_params([good, fail, good], {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ?assertMatch(
+        #{min_available_amount := -1890, max_available_amount := 42000},
+        hg_accounting_new:get_balance(SettlementID)
+    ),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"capture">>, Client),
     [
         ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, Client),
-    ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_ct_helper:get_balance(SettlementID)),
+    ?assertMatch(
+        #{min_available_amount := -1890, max_available_amount := 42000},
+        hg_accounting_new:get_balance(SettlementID)
+    ),
     ?assertException(
         error,
         {{woody_error, _}, _},
@@ -1457,6 +1469,7 @@ repair_failed_cancel(InvoiceID, PaymentID, Reason, Client) ->
         ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(Reason), ?session_finished(?session_succeeded())))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(Reason)))
     ] = next_event(InvoiceID, Client),
     PaymentID.
@@ -5213,6 +5226,7 @@ await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cos
         ?payment_ev(PaymentID, ?session_ev(Target, ?session_finished(?session_succeeded())))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(Target)),
         ?invoice_status_changed(?invoice_paid())
     ] = next_event(InvoiceID, Client),
@@ -5226,6 +5240,7 @@ await_payment_cancel(InvoiceID, PaymentID, Reason, Client) ->
         ?payment_ev(PaymentID, ?session_ev(?cancelled_with_reason(Reason), ?session_finished(?session_succeeded())))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?payment_clock_update(_)),
         ?payment_ev(PaymentID, ?payment_status_changed(?cancelled_with_reason(Reason)))
     ] = next_event(InvoiceID, Client),
     PaymentID.
