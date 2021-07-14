@@ -2871,7 +2871,7 @@ accept_payment_chargeback_twice(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_cash_flow_changed(_)))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock2)))
+        ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_clock_update(Clock2)))
     ] = next_event(IID, Client),
     Settlement2 = hg_accounting_new:get_balance(SID, Clock2),
     AcceptParams = make_chargeback_accept_params(),
@@ -2880,7 +2880,7 @@ accept_payment_chargeback_twice(C) ->
         ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_target_status_changed(?chargeback_status_accepted())))
     ] = next_event(IID, Client),
     [
-        ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_clock_update(Clock3))),
+        ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_clock_update(Clock3))),
         ?payment_ev(PID, ?chargeback_ev(CBID2, ?chargeback_status_changed(?chargeback_status_accepted()))),
         ?payment_ev(PID, ?payment_status_changed(?charged_back()))
     ] = next_event(IID, Client),
@@ -3168,8 +3168,8 @@ reopen_payment_chargeback_cancel(C) ->
     ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)),
-    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount - LevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement2)),
     ?assertEqual(Paid, maps:get(min_available_amount, Settlement3)),
     ?assertEqual(Paid, maps:get(max_available_amount, Settlement3)).
 
@@ -3249,8 +3249,8 @@ reopen_payment_chargeback_reject(C) ->
     ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)),
-    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount - LevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement2)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement3)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement3)).
 
@@ -3325,8 +3325,8 @@ reopen_payment_chargeback_accept(C) ->
     ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)),
-    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount - LevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement2)),
     ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement3)),
     ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(max_available_amount, Settlement3)).
 
@@ -3402,8 +3402,8 @@ reopen_payment_chargeback_skip_stage_accept(C) ->
     ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)),
-    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount - LevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement2)),
     ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement3)),
     ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(max_available_amount, Settlement3)).
 
@@ -3488,8 +3488,8 @@ reopen_payment_chargeback_accept_new_levy(C) ->
     ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)),
-    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount - LevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement2)),
     ?assertEqual(Paid - Cost - AcceptLevyAmount, maps:get(min_available_amount, Settlement3)),
     ?assertEqual(Paid - Cost - AcceptLevyAmount, maps:get(max_available_amount, Settlement3)).
 
@@ -3599,12 +3599,12 @@ reopen_payment_chargeback_arbitration(C) ->
     ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)),
-    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount - LevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement2)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement3)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement3)),
-    ?assertEqual(Paid - Cost - ReopenArbAmount, maps:get(min_available_amount, Settlement4)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement4)),
+    ?assertEqual(Paid - Cost - ReopenArbAmount - LevyAmount, maps:get(min_available_amount, Settlement4)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement4)),
     ?assertEqual(Paid - Cost - ReopenArbAmount, maps:get(min_available_amount, Settlement5)),
     ?assertEqual(Paid - Cost - ReopenArbAmount, maps:get(max_available_amount, Settlement5)).
 
@@ -3720,12 +3720,12 @@ reopen_payment_chargeback_arbitration_reopen_fails(C) ->
     ?assertEqual(Paid, maps:get(max_available_amount, Settlement0)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement1)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement1)),
-    ?assertEqual(Paid - Cost - ReopenLevyAmount, maps:get(min_available_amount, Settlement2)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement2)),
+    ?assertEqual(Paid - Cost - ReopenLevyAmount - LevyAmount, maps:get(min_available_amount, Settlement2)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement2)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement3)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement3)),
-    ?assertEqual(Paid - Cost - ReopenArbAmount, maps:get(min_available_amount, Settlement4)),
-    ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement4)),
+    ?assertEqual(Paid - Cost - ReopenArbAmount - LevyAmount, maps:get(min_available_amount, Settlement4)),
+    ?assertEqual(Paid, maps:get(max_available_amount, Settlement4)),
     ?assertEqual(Paid - LevyAmount, maps:get(min_available_amount, Settlement5)),
     ?assertEqual(Paid - LevyAmount, maps:get(max_available_amount, Settlement5)),
     ?assertMatch(?chargeback_cannot_reopen_arbitration(), Error).
