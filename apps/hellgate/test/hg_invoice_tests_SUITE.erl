@@ -2150,18 +2150,18 @@ get_deprecated_cashflow_account(Type, CF) ->
     hg_ct_helper:get_balance(ID).
 
 get_deprecated_cashflow_account_id(Type, CF) ->
-%%    Account = convert_transaction_account(Type),
+    %%    Account = convert_transaction_account(Type),
     [ID] = [
         V
         || #domain_FinalCashFlowPosting{
                destination = #domain_FinalCashFlowAccount{
                    account_id = V,
                    account_type = T
-%%                   transaction_account = A
+                   %%                   transaction_account = A
                }
            } <- CF,
            T == Type
-%%           A == Account
+           %%           A == Account
     ],
     ID.
 

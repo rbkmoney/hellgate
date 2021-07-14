@@ -451,35 +451,25 @@ build_provider_cash_flow_context(State, Fees) ->
             maps:merge(ComputedFees, #{operation_amount => get_body(State)})
     end.
 
-get_chargeback_service_cash_flow(#domain_PaymentChargebackServiceTerms{fees = {value, V}}, Party, Shop, Route) ->
-    add_cashflow_context(V, Party, Shop, Route);
+get_chargeback_service_cash_flow(
+    #domain_PaymentChargebackServiceTerms{fees = {value, V}},
+    Party,
+    Shop,
+    Route
+) ->
+    hg_cashflow:add_cashflow_posting_context(V, Party, Shop, Route);
 get_chargeback_service_cash_flow(_, _Party, _Shop, _Route) ->
     throw(#payproc_OperationNotPermitted{}).
 
-get_chargeback_provider_cash_flow(#domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}}, Party, Shop, Route) ->
-    add_cashflow_context(V, Party, Shop, Route);
+get_chargeback_provider_cash_flow(
+    #domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}},
+    Party,
+    Shop,
+    Route
+) ->
+    hg_cashflow:add_cashflow_posting_context(V, Party, Shop, Route);
 get_chargeback_provider_cash_flow(_, _Party, _Shop, _Route) ->
     throw(#payproc_OperationNotPermitted{}).
-
-add_cashflow_context(CashFlow, Party, Shop, Route) ->
-    MerchantContext = #{
-        party => Party,
-        shop => Shop
-    },
-    ProviderContext = #{
-        route => Route
-    },
-    lists:map(
-        fun
-            ({merchant, _} = A) ->
-                {A, MerchantContext};
-            ({provider, _} = A) ->
-                {A, ProviderContext};
-            (A) ->
-                {A, #{}}
-        end,
-        CashFlow
-    ).
 
 collect_chargeback_provider_fees(#domain_PaymentChargebackProvisionTerms{fees = undefined}) ->
     #{};

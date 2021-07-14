@@ -15,6 +15,7 @@
 -type account_map() :: #{account() => account_id()}.
 -type context() :: dmsl_domain_thrift:'CashFlowContext'().
 -type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
+-type cash_flow_posting() :: dmsl_domain_thrift:'CashFlowPosting'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_volume() :: dmsl_domain_thrift:'CashVolume'().
@@ -24,15 +25,16 @@
 -type party() :: hg_party:party().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
 -type posting_context() :: #{
-    shop => shop(),
-    party => party(),
-    route => route()
+    shop := shop(),
+    party := party(),
+    route := route()
 }.
 
 %%
 
 -export([finalize/3]).
 -export([revert/1]).
+-export([add_cashflow_posting_context/4]).
 
 -export([compute_volume/2]).
 
@@ -101,7 +103,7 @@ construct_transaction_account({provider, ProviderFlowAccount}, #{route := Route}
         provider_ref = ProviderRef,
         terminal_ref = TerminalRef
     },
-    {merchant, #domain_ProviderTransactionAccount{
+    {provider, #domain_ProviderTransactionAccount{
         type = ProviderFlowAccount,
         owner = AccountOwner
     }};
@@ -110,7 +112,7 @@ construct_transaction_account({system, SystemFlowAccount}, _) ->
         type = SystemFlowAccount
     }};
 construct_transaction_account({external, ExternalFlowAccount}, _) ->
-    {system, #domain_ExternalTransactionAccount{
+    {external, #domain_ExternalTransactionAccount{
         type = ExternalFlowAccount
     }}.
 
@@ -137,6 +139,15 @@ revert_details(undefined) ->
 revert_details(Details) ->
     % TODO looks gnarly
     <<"Revert '", Details/binary, "'">>.
+
+-spec add_cashflow_posting_context(cash_flow(), party(), shop(), route()) -> [{cash_flow_posting(), posting_context()}].
+add_cashflow_posting_context(CashFlow, Party, Shop, Route) ->
+    Context = #{
+        party => Party,
+        shop => Shop,
+        route => Route
+    },
+    lists:map(fun(A) -> {A, Context} end, CashFlow).
 
 %%
 

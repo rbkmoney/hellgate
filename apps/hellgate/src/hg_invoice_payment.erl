@@ -934,16 +934,14 @@ collect_cashflow(
     Opts,
     Route
 ) ->
-    MerchantContext = #{
-        party => get_party(Opts),
-        shop => get_shop(Opts)
-    },
-    ProviderContext = #{
-        route => Route
-    },
     MerchantCashflow = get_selector_value(merchant_payment_fees, MerchantCashflowSelector),
     ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
-    add_cashflow_context(MerchantCashflow ++ ProviderCashflow, MerchantContext, ProviderContext).
+    hg_cashflow:add_cashflow_posting_context(
+        MerchantCashflow ++ ProviderCashflow,
+        get_party(Opts),
+        get_shop(Opts),
+        Route
+    ).
 
 construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
     hg_cashflow:finalize(
@@ -1387,28 +1385,13 @@ collect_refund_cashflow(
     Opts,
     Route
 ) ->
-    MerchantContext = #{
-        party => get_party(Opts),
-        shop => get_shop(Opts)
-    },
-    ProviderContext = #{
-        route => Route
-    },
     MerchantCashflow = get_selector_value(merchant_refund_fees, MerchantCashflowSelector),
     ProviderCashflow = get_selector_value(provider_refund_cash_flow, ProviderCashflowSelector),
-    add_cashflow_context(MerchantCashflow ++ ProviderCashflow, MerchantContext, ProviderContext).
-
-add_cashflow_context(CashFlow, MerchantContext, ProviderContext) ->
-    lists:map(
-        fun
-            ({merchant, _} = A) ->
-                {A, MerchantContext};
-            ({provider, _} = A) ->
-                {A, ProviderContext};
-            (A) ->
-                {A, #{}}
-        end,
-        CashFlow
+    hg_cashflow:add_cashflow_posting_context(
+        MerchantCashflow ++ ProviderCashflow,
+        get_party(Opts),
+        get_shop(Opts),
+        Route
     ).
 
 prepare_refund_cashflow(RefundSt, St) ->
