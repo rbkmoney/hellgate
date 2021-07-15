@@ -6604,8 +6604,9 @@ construct_domain_fixture() ->
                                                     {bank_card, #domain_BankCardCondition{
                                                         definition = {payment_system_is, visa}
                                                     }}}},
-                                        %% FIXME: The shumaich+shumway combo employed here is considerably slower at processing payments (up to +3 seconds)
-                                        %% Change this value back to original when the migraton is completed
+                                        %% FIXME: The shumaich+shumway combo employed here is considerably slower
+                                        %% at processing payments (up to +3 seconds). Change this value back to
+                                        %% original when the migraton is completed
                                         % then_ = {value, ?hold_lifetime(12)}
                                         then_ = {value, ?hold_lifetime(20)}
                                     }
