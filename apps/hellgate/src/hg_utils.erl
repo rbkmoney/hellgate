@@ -12,6 +12,12 @@
 
 -export([format_reason/1]).
 
+-export([gen_sequence/2]).
+-export([gen_sequence/3]).
+
+-type sequence_params() :: #{minimum => integer()}.
+-type woody_context() :: woody_context:ctx().
+
 %%
 
 -spec unique_id() -> dmsl_base_thrift:'ID'().
@@ -80,3 +86,13 @@ unwrap_result({error, E}) ->
 %% TODO: fix this dirty hack
 format_reason(V) ->
     genlib:to_binary(V).
+
+-spec gen_sequence(binary(), woody_context()) -> integer().
+gen_sequence(SequenceID, WoodyContext) ->
+    gen_sequence(SequenceID, WoodyContext, #{}).
+
+-spec gen_sequence(binary(), woody_context(), sequence_params()) -> integer().
+gen_sequence(SequenceID, WoodyContext, Params) ->
+    case bender_generator_client:gen_sequence(SequenceID, WoodyContext, Params) of
+        {ok, {_, ID}} -> ID
+    end.

@@ -3,7 +3,8 @@
 -export([
     next_step/1,
     skip_steps/2,
-    new_strategy/1
+    new_strategy/1,
+    call_with_retry/2
 ]).
 
 -type retries_num() :: pos_integer() | infinity.
@@ -57,5 +58,23 @@ skip_steps(Strategy, N) when N > 0 ->
                 NextStrategy
         end,
     skip_steps(NewStrategy, N - 1).
+
+-type retry_fun_return() :: term() | no_return().
+-type retry_fun() :: fun(() -> retry_fun_return()).
+
+-spec call_with_retry(retry_fun(), strategy()) -> retry_fun_return().
+call_with_retry(Fun, Strategy) ->
+    case Fun() of
+        {return, Result} ->
+            Result;
+        retry ->
+            case next_step(Strategy) of
+                {wait, Timeout, NextStrategy} ->
+                    _ = timer:sleep(Timeout),
+                    call_with_retry(Fun, NextStrategy);
+                finish ->
+                    throw({error, no_more_retries})
+            end
+    end.
 
 %%% Internal functions

@@ -4664,18 +4664,33 @@ consistent_account_balances(C) ->
     Party = hg_client_party:get(PartyClient),
     Shops = maps:values(Party#domain_Party.shops),
     _ = [
-        consistent_account_balance(AccountID, Shop)
+        {
+            consistent_account_balance(AccountID, Shop),
+            consistent_account_balance_new(AccountID, Shop)
+        }
         || #domain_Shop{account = ShopAccount} = Shop <- Shops,
            #domain_ShopAccount{settlement = AccountID1, guarantee = AccountID2} <- [ShopAccount],
            AccountID <- [AccountID1, AccountID2]
     ].
 
 consistent_account_balance(AccountID, Comment) ->
-    case hg_ct_helper:get_balance(AccountID) of
+    case hg_accounting:get_balance(AccountID) of
         #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
             ok;
         #{} = Account ->
             erlang:error({"Inconsistent account balance", Account, Comment})
+    end.
+
+consistent_account_balance_new(AccountID, Comment) ->
+    %% TODO: Switch to hg_accounting_new when all operations are migrated
+    try hg_accounting:get_balance(AccountID) of
+        #{own_amount := V, min_available_amount := V, max_available_amount := V} ->
+            ok;
+        #{} = Account ->
+            erlang:error({"Inconsistent account balance (new)", Account, Comment})
+    catch
+        #payproc_AccountNotFound{} ->
+            ok
     end.
 
 %%

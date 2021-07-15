@@ -11,6 +11,7 @@
         genlib,
         pm_proto,
         shumpune_proto,
+        shumaich_proto,
         cowboy,
         how_are_you,  % must be after ranch and before any woody usage
         woody,
@@ -20,6 +21,7 @@
         woody_user_identity,
         payproc_errors,
         erl_health,
+        bender_client,
         cache
     ]},
     {env, []},
