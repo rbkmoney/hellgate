@@ -1,6 +1,8 @@
 -ifndef(__hellgate_recurrent_payment_tools__).
 -define(__hellgate_recurrent_payment_tools__, 42).
 
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+
 %%
 %% Recurrent Payment Tools
 %%
