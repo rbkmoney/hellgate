@@ -4945,7 +4945,10 @@ consistent_account_balance_new(AccountID, Comment) ->
 
 next_event(InvoiceID, Client) ->
     %% timeout should be at least as large as hold expiration in construct_domain_fixture/0
-    next_event(InvoiceID, 12000, Client).
+    %% next_event(InvoiceID, 12000, Client).
+    %% FIXME: The shumaich+shumway combo employed here is considerably slower at processing payments (up to +3 seconds)
+    %% Change this value back to original when the migraton is completed
+    next_event(InvoiceID, 20000, Client).
 
 next_event(InvoiceID, Timeout, Client) ->
     case hg_client_invoicing:pull_event(InvoiceID, Timeout, Client) of
@@ -6601,7 +6604,10 @@ construct_domain_fixture() ->
                                                     {bank_card, #domain_BankCardCondition{
                                                         definition = {payment_system_is, visa}
                                                     }}}},
-                                        then_ = {value, ?hold_lifetime(12)}
+                                        %% FIXME: The shumaich+shumway combo employed here is considerably slower at processing payments (up to +3 seconds)
+                                        %% Change this value back to original when the migraton is completed
+                                        % then_ = {value, ?hold_lifetime(12)}
+                                        then_ = {value, ?hold_lifetime(20)}
                                     }
                                 ]}
                         },
