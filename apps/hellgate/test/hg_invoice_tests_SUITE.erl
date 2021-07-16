@@ -3776,7 +3776,7 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
     % Fee          = 450, % 0.045
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth_mc),
-    PaymentParams = make_payment_params(PaymentTool, Session, {hold, capture}),
+    PaymentParams = make_payment_params(PaymentTool, Session, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Cash, Client),
     [
@@ -6732,7 +6732,7 @@ construct_domain_fixture() ->
                                                     {bank_card, #domain_BankCardCondition{
                                                         definition = {payment_system_is, mastercard}
                                                     }}}},
-                                        then_ = {value, ?hold_lifetime(999)}
+                                        then_ = {value, ?hold_lifetime(120)}
                                     }
                                 ]}
                         },
