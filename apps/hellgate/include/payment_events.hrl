@@ -340,6 +340,10 @@
     }}
 ).
 
+-define(refund_clock_update(Clock),
+    {invoice_payment_refund_clock_update, #payproc_InvoicePaymentClockUpdate{clock = Clock}}
+).
+
 -define(refund_rollback_started(Failure),
     {invoice_payment_refund_rollback_started, #payproc_InvoicePaymentRefundRollbackStarted{reason = Failure}}
 ).
