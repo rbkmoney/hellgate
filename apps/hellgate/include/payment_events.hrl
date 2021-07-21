@@ -174,6 +174,10 @@
     {invoice_payment_adjustment_status_changed, #payproc_InvoicePaymentAdjustmentStatusChanged{status = Status}}
 ).
 
+-define(adjustment_clock_update(Clock),
+    {invoice_payment_adjustment_clock_update, #payproc_InvoicePaymentClockUpdate{clock = Clock}}
+).
+
 -define(adjustment_pending(),
     {pending, #domain_InvoicePaymentAdjustmentPending{}}
 ).
