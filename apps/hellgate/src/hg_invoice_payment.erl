@@ -3120,7 +3120,7 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
                 St
         end,
     RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St1)),
-    St2 = set_refund_state(ID, RefundSt, St1),
+    St2 = set_refund_clock(set_refund_state(ID, RefundSt, St1), Event),
     case get_refund_status(get_refund(RefundSt)) of
         {S, _} when S == succeeded; S == failed ->
             St2#st{activity = idle};
@@ -3232,6 +3232,14 @@ merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
     add_refund_session(create_session(?refunded(), undefined), St);
 merge_refund_change(?session_ev(?refunded(), Change), St) ->
     update_refund_session(merge_session_change(Change, get_refund_session(St), #{}), St).
+
+set_refund_clock(St = #st{activity = {Activity, _}}, ?refund_clock_update(Clock)) when
+    Activity =:= refund_accounter;
+    Activity =:= refund_failure
+->
+    St#st{clock = Clock};
+set_refund_clock(St = #st{}, _) ->
+    St.
 
 merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
     Adjustment;
