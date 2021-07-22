@@ -18,7 +18,7 @@
 -export(
     [
         merge_change/2,
-        process_timeout/4
+        process_timeout/5
     ]
 ).
 
@@ -66,6 +66,7 @@
 }).
 
 -type state() :: #chargeback_st{}.
+-type payment_state() :: hg_invoice_payment:st().
 
 -type cash_flow_plans() :: #{
     ?chargeback_stage_chargeback() := [batch()],
@@ -275,17 +276,17 @@ merge_change(?chargeback_clock_update(Clock), State) ->
 merge_change(?chargeback_cash_flow_changed(CashFlow), State) ->
     set_cash_flow(CashFlow, State).
 
--spec process_timeout(activity(), state(), action(), opts()) -> result().
-process_timeout(preparing_initial_cash_flow, State, _Action, Opts) ->
+-spec process_timeout(activity(), state(), payment_state(), action(), opts()) -> result().
+process_timeout(preparing_initial_cash_flow, State, _PaymentSt, _Action, Opts) ->
     update_cash_flow(State, hg_machine_action:instant(), Opts);
-process_timeout(holding_initial_cash_flow, State, _Action, Opts) ->
-    hold_cash_flow(State, hg_machine_action:new(), Opts);
-process_timeout(updating_cash_flow, State, _Action, Opts) ->
+process_timeout(holding_initial_cash_flow, State, PaymentSt, _Action, Opts) ->
+    hold_cash_flow(State, PaymentSt, hg_machine_action:new(), Opts);
+process_timeout(updating_cash_flow, State, _PaymentSt, _Action, Opts) ->
     update_cash_flow(State, hg_machine_action:instant(), Opts);
-process_timeout(holding_updated_cash_flow, State, _Action, Opts) ->
-    hold_cash_flow(State, hg_machine_action:instant(), Opts);
-process_timeout(finalising_accounter, State, Action, Opts) ->
-    finalise(State, Action, Opts).
+process_timeout(holding_updated_cash_flow, State, PaymentSt, _Action, Opts) ->
+    hold_cash_flow(State, PaymentSt, hg_machine_action:instant(), Opts);
+process_timeout(finalising_accounter, State, PaymentSt, Action, Opts) ->
+    finalise(State, PaymentSt, Action, Opts).
 
 %% Private
 
@@ -355,21 +356,21 @@ update_cash_flow(State, Action, Opts) ->
     FinalCashFlow = build_chargeback_cash_flow(State, Opts),
     {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}.
 
--spec hold_cash_flow(state(), action(), opts()) -> result() | no_return().
-hold_cash_flow(State, Action, Opts) ->
+-spec hold_cash_flow(state(), payment_state(), action(), opts()) -> result() | no_return().
+hold_cash_flow(State, PaymentSt, Action, Opts) ->
     CashFlowPlan = get_current_plan(State),
-    Clock = prepare_cash_flow(State, CashFlowPlan, Opts),
+    Clock = prepare_cash_flow(get_clock(State, PaymentSt), State, CashFlowPlan, Opts),
     {[?chargeback_clock_update(Clock)], Action}.
 
--spec finalise(state(), action(), opts()) -> result() | no_return().
-finalise(#chargeback_st{target_status = Status = ?chargeback_status_pending()}, Action, _Opts) ->
+-spec finalise(state(), payment_state(), action(), opts()) -> result() | no_return().
+finalise(#chargeback_st{target_status = Status = ?chargeback_status_pending()}, _PaymentSt, Action, _Opts) ->
     {[?chargeback_status_changed(Status)], Action};
-finalise(State = #chargeback_st{target_status = Status}, Action, Opts) when
+finalise(State = #chargeback_st{target_status = Status}, PaymentSt, Action, Opts) when
     Status =:= ?chargeback_status_rejected();
     Status =:= ?chargeback_status_accepted();
     Status =:= ?chargeback_status_cancelled()
 ->
-    Clock = commit_cash_flow(State, Opts),
+    Clock = commit_cash_flow(get_clock(State, PaymentSt), State, Opts),
     {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action}.
 
 -spec build_chargeback(opts(), create_params(), revision(), timestamp()) -> chargeback() | no_return().
@@ -512,15 +513,13 @@ define_body(undefined, PaymentState) ->
 define_body(Cash, _PaymentState) ->
     Cash.
 
-prepare_cash_flow(State, CashFlowPlan, Opts) ->
+prepare_cash_flow(Clock, State, CashFlowPlan, Opts) ->
     #{timestamp := Timestamp} = Opts,
-    Clock = get_clock(State),
     PlanID = construct_chargeback_plan_id(State, Opts),
     hg_accounting_new:plan(PlanID, CashFlowPlan, Timestamp, Clock).
 
-commit_cash_flow(State, Opts) ->
+commit_cash_flow(Clock, State, Opts) ->
     #{timestamp := Timestamp} = Opts,
-    Clock = get_clock(State),
     CashFlowPlan = get_current_plan(State),
     PlanID = construct_chargeback_plan_id(State, Opts),
     hg_accounting_new:commit(PlanID, CashFlowPlan, Timestamp, Clock).
@@ -626,8 +625,10 @@ get_current_plan(#chargeback_st{cash_flow_plans = Plans} = State) ->
     #{Stage := Plan} = Plans,
     Plan.
 
--spec get_clock(state()) -> clock().
-get_clock(#chargeback_st{clock = Clock}) ->
+-spec get_clock(state(), payment_state()) -> clock().
+get_clock(#chargeback_st{clock = undefined}, PaymentSt) ->
+    hg_invoice_payment:get_clock(PaymentSt);
+get_clock(#chargeback_st{clock = Clock}, _PaymentSt) ->
     Clock.
 
 -spec get_reverted_previous_stage(state()) -> [batch()].
