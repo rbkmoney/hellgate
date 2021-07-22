@@ -29,6 +29,13 @@
     {invoice_payment_route_changed, #payproc_InvoicePaymentRouteChanged{route = Route}}
 ).
 
+-define(route_changed(Route, AvailableRoutes),
+    {invoice_payment_route_changed, #payproc_InvoicePaymentRouteChanged{
+        route = Route,
+        available_routes = AvailableRoutes
+    }}
+).
+
 -define(cash_flow_changed(CashFlow),
     {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}}
 ).

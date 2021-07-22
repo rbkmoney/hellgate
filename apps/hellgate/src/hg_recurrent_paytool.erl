@@ -237,25 +237,34 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     VS1 = VS#{risk_score => RiskScore},
     PaymentInstitutionRef = get_payment_institution_ref(Shop, Party),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
-
-    Predestination = recurrent_paytool,
-    {Routes, RejectContext} = hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision),
-    FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
-    Route = validate_route(
-        hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore),
-        RecPaymentTool
-    ),
-    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision),
-    {ok, {Changes, Action}} = start_session(),
-    StartChanges = [
-        ?recurrent_payment_tool_has_created(RecPaymentTool2),
-        ?recurrent_payment_tool_risk_score_changed(RiskScore),
-        ?recurrent_payment_tool_route_changed(Route)
-    ],
-    handle_result(#{
-        changes => StartChanges ++ Changes,
-        action => Action
-    }).
+    try
+        _ = hg_invoice_payment:check_risk_score(RiskScore),
+        Predestination = recurrent_paytool,
+        {Routes, RejectContext} = hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision),
+        case hg_routing:gather_fail_rates(Routes) of
+            [] ->
+                throw({no_route_found, {unknown, RejectContext}});
+            FailRatedRoutes ->
+                {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(FailRatedRoutes),
+                _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),
+                RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, ChoosenRoute, VS, Revision),
+                {ok, {Changes, Action}} = start_session(),
+                StartChanges = [
+                    ?recurrent_payment_tool_has_created(RecPaymentTool2),
+                    ?recurrent_payment_tool_risk_score_changed(RiskScore),
+                    ?recurrent_payment_tool_route_changed(ChoosenRoute)
+                ],
+                handle_result(#{
+                    changes => StartChanges ++ Changes,
+                    action => Action
+                })
+        end
+    catch
+        throw:risk_score_is_too_high = Error ->
+            handle_route_error(Error, RecPaymentTool);
+        throw:{no_route_found, {unknown, _}} = Error ->
+            handle_route_error(Error, RecPaymentTool)
+    end.
 
 get_party_shop(Params) ->
     #payproc_RecurrentPaymentToolParams{
@@ -333,19 +342,13 @@ inspect(_RecPaymentTool, _VS) ->
 validate_risk_score(RiskScore) when RiskScore == low; RiskScore == high ->
     RiskScore.
 
-validate_route({ok, Route, ChoiceMeta}, _RecPaymentTool) ->
-    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),
-    Route;
-validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
-    Level =
-        case Reason of
-            risk_score_is_too_high -> info;
-            _ -> error
-        end,
-
+handle_route_error(risk_score_is_too_high = Reason, RecPaymentTool) ->
+    _ = logger:log(info, "No route found, reason = ~p", [Reason], logger:get_process_metadata()),
+    error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}});
+handle_route_error({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
     LogFun = fun(Msg, Param) ->
         _ = logger:log(
-            Level,
+            error,
             Msg,
             [Reason, Param],
             logger:get_process_metadata()

@@ -7,8 +7,7 @@
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
 -export([gather_fail_rates/1]).
--export([choose_route/3]).
--export([check_risk_score/1]).
+-export([choose_route/1]).
 
 -export([get_payments_terms/2]).
 
@@ -19,6 +18,8 @@
 
 -export([get_logger_metadata/1]).
 
+-export([convert_fail_rated_route/1]).
+-export([convert_non_fail_rated_route/1]).
 %%
 
 -include("domain.hrl").
@@ -92,8 +93,6 @@
     reject_reason => atom()
 }.
 
--type risk_score() :: dmsl_domain_thrift:'RiskScore'().
-
 -type varset() :: #{
     category => dmsl_domain_thrift:'CategoryRef'(),
     currency => dmsl_domain_thrift:'CurrencyRef'(),
@@ -125,38 +124,27 @@
 -export_type([reject_context/0]).
 -export_type([varset/0]).
 
+-spec convert_fail_rated_route(fail_rated_route()) -> route().
+convert_fail_rated_route(FailRatedRoute) ->
+    {{ProviderRef, _}, {TerminalRef, _, _}, _ProviderStatus} = FailRatedRoute,
+    ?route(ProviderRef, TerminalRef).
+
+-spec convert_non_fail_rated_route(non) -> route().
+convert_non_fail_rated_route(NonFailRatedRoute) ->
+    {{ProviderRef, _}, {TerminalRef, _, _}} = NonFailRatedRoute,
+    ?route(ProviderRef, TerminalRef).
+
 -spec gather_fail_rates([non_fail_rated_route()]) -> [fail_rated_route()].
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([fail_rated_route()], reject_context(), risk_score() | undefined) ->
-    {ok, route(), route_choice_meta()}
-    | {error, {no_route_found, {risk_score_is_too_high | unknown, reject_context()}}}.
-choose_route(FailRatedRoutes, RejectContext, RiskScore) ->
-    case check_risk_score(RiskScore) of
-        ok ->
-            do_choose_route(FailRatedRoutes, RejectContext);
-        {error, Reason} ->
-            {error, {no_route_found, {Reason, RejectContext}}}
-    end.
-
--spec check_risk_score(risk_score() | undefined) -> ok | {error, risk_score_is_too_high}.
-check_risk_score(fatal) ->
-    {error, risk_score_is_too_high};
-check_risk_score(_RiskScore) ->
-    ok.
-
--spec do_choose_route([fail_rated_route()], reject_context()) ->
-    {ok, route(), route_choice_meta()}
-    | {error, {no_route_found, {unknown, reject_context()}}}.
-do_choose_route([] = _Routes, RejectContext) ->
-    {error, {no_route_found, {unknown, RejectContext}}};
-do_choose_route(Routes, _RejectContext) ->
-    BalancedRoutes = balance_routes(Routes),
+-spec choose_route([fail_rated_route()]) -> {route(), route_choice_meta()}.
+choose_route(FailRatedRoutes) ->
+    BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes),
     {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
     RouteChoiceMeta = get_route_choice_meta(ChosenRoute, IdealRoute),
-    {ok, export_route(ChosenRoute), RouteChoiceMeta}.
+    {export_route(ChosenRoute), RouteChoiceMeta}.
 
 -spec find_best_routes([scored_route()]) -> {Chosen :: scored_route(), Ideal :: scored_route()}.
 find_best_routes([Route]) ->
