@@ -74,7 +74,7 @@ init_per_suite(C) ->
         snowflake,
         {cowboy, CowboySpec}
     ]),
-    ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
+    _ = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -95,7 +95,7 @@ init_per_suite(C) ->
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    _ = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 -spec all() -> [{group, test_case_name()}].
@@ -584,7 +584,7 @@ start_two_bindings_w_tds(C) ->
 -spec start_binding_not_permitted(config()) -> test_case_result().
 
 create_customer_not_permitted(C) ->
-    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
+    _ = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
@@ -592,13 +592,13 @@ create_customer_not_permitted(C) ->
     {exception, #payproc_OperationNotPermitted{}} = hg_client_customer:create(CustomerParams, Client).
 
 start_binding_not_permitted(C) ->
-    ok = hg_domain:upsert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
+    _ = hg_domain:upsert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
-    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
+    _ = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     CustomerBindingParams =
         hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
     {exception, #payproc_OperationNotPermitted{}} =
@@ -671,7 +671,7 @@ start_proxies(Proxies) ->
     ).
 
 setup_proxies(Proxies) ->
-    ok = hg_domain:upsert(Proxies).
+    _ = hg_domain:upsert(Proxies).
 
 start_service_handler(Module, C, HandlerOpts) ->
     start_service_handler(Module, Module, C, HandlerOpts).

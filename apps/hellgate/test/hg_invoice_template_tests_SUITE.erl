@@ -81,7 +81,7 @@ init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps(
         [woody, scoper, dmt_client, party_client, party_management, hellgate, snowflake]
     ),
-    ok = hg_domain:insert(construct_domain_fixture()),
+    _ = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     Client = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -97,7 +97,7 @@ init_per_suite(C) ->
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    _ = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 %% tests
@@ -437,7 +437,7 @@ terms_retrieval(C) ->
             payment_methods = undefined
         }
     } = TermSet1,
-    ok = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
+    _ = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
     TermSet2 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{

@@ -12,13 +12,15 @@
 %%
 
 -export([head/0]).
--export([all/1]).
+-export([get/1]).
 -export([get/2]).
 -export([find/2]).
 -export([exists/2]).
 
 -export([insert/1]).
 -export([update/1]).
+-export([upsert/1]).
+-export([upsert/2]).
 -export([cleanup/0]).
 
 %%
@@ -37,10 +39,9 @@
 head() ->
     dmt_client:get_last_version().
 
--spec all(revision()) -> dmsl_domain_thrift:'Domain'().
-all(Revision) ->
-    #'Snapshot'{domain = Domain} = dmt_client:checkout(Revision),
-    Domain.
+-spec get(ref()) -> data() | no_return().
+get(Ref) ->
+    get(latest, Ref).
 
 -spec get(revision(), ref()) -> data() | no_return().
 get(Revision, Ref) ->
@@ -73,56 +74,29 @@ exists(Revision, Ref) ->
 extract_data({_Tag, {_Name, _Ref, Data}}) ->
     Data.
 
--spec commit(revision(), dmt_client:commit()) -> ok | no_return().
-commit(Revision, Commit) ->
-    Revision = dmt_client:commit(Revision, Commit) - 1,
-    _ = pm_domain:all(Revision + 1),
-    ok.
+%% convenience shortcuts, use carefully
 
--spec insert(object() | [object()]) -> ok | no_return().
-insert(Object) when not is_list(Object) ->
-    insert([Object]);
-insert(Objects) ->
-    Commit = #'Commit'{
-        ops = [
-            {insert, #'InsertOp'{
-                object = Object
-            }}
-            || Object <- Objects
-        ]
-    },
-    commit(head(), Commit).
+-spec insert(object() | [object()]) -> revision() | no_return().
+insert(ObjectOrMany) ->
+    dmt_client:insert(ObjectOrMany).
 
--spec update(object() | [object()]) -> ok | no_return().
-update(NewObject) when not is_list(NewObject) ->
-    update([NewObject]);
-update(NewObjects) ->
-    Revision = head(),
-    Commit = #'Commit'{
-        ops = [
-            {update, #'UpdateOp'{
-                old_object = {Tag, {ObjectName, Ref, OldData}},
-                new_object = NewObject
-            }}
-            || NewObject = {Tag, {ObjectName, Ref, _Data}} <- NewObjects,
-               OldData <- [get(Revision, {Tag, Ref})]
-        ]
-    },
-    commit(Revision, Commit).
+-spec update(object() | [object()]) -> revision() | no_return().
+update(NewObjectOrMany) ->
+    dmt_client:update(NewObjectOrMany).
 
--spec remove([object()]) -> ok | no_return().
-remove(Objects) ->
-    Commit = #'Commit'{
-        ops = [
-            {remove, #'RemoveOp'{
-                object = Object
-            }}
-            || Object <- Objects
-        ]
-    },
-    commit(head(), Commit).
+-spec upsert(object() | [object()]) -> revision() | no_return().
+upsert(NewObjectOrMany) ->
+    upsert(latest, NewObjectOrMany).
 
--spec cleanup() -> ok | no_return().
+-spec upsert(revision(), object() | [object()]) -> revision() | no_return().
+upsert(Revision, NewObjectOrMany) ->
+    dmt_client:upsert(Revision, NewObjectOrMany).
+
+-spec remove(object() | [object()]) -> revision() | no_return().
+remove(ObjectOrMany) ->
+    dmt_client:remove(ObjectOrMany).
+
+-spec cleanup() -> revision() | no_return().
 cleanup() ->
-    Domain = all(head()),
+    #'Snapshot'{domain = Domain} = dmt_client:checkout(latest),
     remove(maps:values(Domain)).

@@ -659,6 +659,7 @@ contract_terms_retrieval(C) ->
     ContractID = ?REAL_CONTRACT_ID,
     Varset = #payproc_Varset{},
     PartyRevision = pm_client_party:get_revision(Client),
+
     DomainRevision1 = pm_domain:head(),
     Timstamp1 = pm_datetime:format_now(),
     TermSet1 = pm_client_party:compute_contract_terms(

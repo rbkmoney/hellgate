@@ -74,7 +74,7 @@ handle_function_('ComputeShopTerms', {UserInfo, PartyID, ShopID, Timestamp, Part
     Party = checkout_party(PartyID, PartyRevision),
     Shop = ensure_shop(pm_party:get_shop(ShopID, Party)),
     Contract = pm_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    Revision = pm_domain:head(),
+    Revision = latest,
     DecodedVS = pm_varset:decode_varset(Varset),
     pm_party:reduce_terms(pm_party:get_terms(Contract, Timestamp, Revision), DecodedVS, Revision);
 handle_function_(Fun, Args, _Opts) when
@@ -93,7 +93,7 @@ handle_function_('ComputeWalletTermsNew', {UserInfo, PartyID, ContractID, Timest
     ok = set_meta_and_check_access(UserInfo, PartyID),
     Party = checkout_party(PartyID, {timestamp, Timestamp}),
     Contract = pm_party:get_contract(ContractID, Party),
-    Revision = pm_domain:head(),
+    Revision = latest,
     VS0 = #{
         identification_level => get_identification_level(Contract, Party)
     },
@@ -196,7 +196,7 @@ handle_function_(
     _Opts
 ) ->
     ok = assume_user_identity(UserInfo),
-    Revision = pm_domain:head(),
+    Revision = latest,
     PaymentInstitution = get_payment_institution(PaymentInstitutionRef, Revision),
     VS = prepare_varset(Varset),
     ContractTemplate = get_default_contract_template(PaymentInstitution, VS, Revision),
@@ -230,7 +230,7 @@ handle_function_(
         cost => Amount,
         payout_method => pm_payout_tool:get_method(PayoutTool)
     },
-    Revision = pm_domain:head(),
+    Revision = latest,
     case pm_party:get_terms(Contract, Timestamp, Revision) of
         #domain_TermSet{payouts = PayoutsTerms} when PayoutsTerms /= undefined ->
             compute_payout_cash_flow(Amount, PayoutsTerms, Shop, Contract, VS, Revision);

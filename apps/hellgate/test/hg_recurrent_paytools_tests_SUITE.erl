@@ -75,7 +75,7 @@ init_per_suite(C) ->
         hellgate,
         {cowboy, CowboySpec}
     ]),
-    ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
+    _ = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -96,7 +96,7 @@ init_per_suite(C) ->
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    _ = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 -spec all() -> [test_case_name()].
@@ -383,7 +383,7 @@ recurrent_paytool_abandoned(C) ->
 
 -spec recurrent_paytool_creation_not_permitted(config()) -> test_case_result().
 recurrent_paytool_creation_not_permitted(C) ->
-    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
+    _ = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     Client = cfg(client, C),
     PaytoolID = hg_utils:unique_id(),
     PartyID = cfg(party_id, C),
@@ -446,7 +446,7 @@ start_proxies(Proxies) ->
     ).
 
 setup_proxies(Proxies) ->
-    ok = hg_domain:upsert(Proxies).
+    _ = hg_domain:upsert(Proxies).
 
 -spec start_service_handler(module(), list(), map()) -> binary().
 start_service_handler(Module, C, HandlerOpts) ->

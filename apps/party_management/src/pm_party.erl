@@ -200,7 +200,7 @@ get_account_state(AccountID, Party) ->
     CurrencyRef = #domain_CurrencyRef{
         symbolic_code = CurrencyCode
     },
-    Currency = pm_domain:get(pm_domain:head(), {currency, CurrencyRef}),
+    Currency = pm_domain:get({currency, CurrencyRef}),
     Balance = pm_accounting:get_balance(AccountID),
     #{
         own_amount := OwnAmount,
