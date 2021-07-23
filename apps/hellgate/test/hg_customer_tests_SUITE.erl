@@ -671,7 +671,8 @@ start_proxies(Proxies) ->
     ).
 
 setup_proxies(Proxies) ->
-    _ = hg_domain:upsert(Proxies).
+    _ = hg_domain:upsert(Proxies),
+    ok.
 
 start_service_handler(Module, C, HandlerOpts) ->
     start_service_handler(Module, Module, C, HandlerOpts).
