@@ -66,7 +66,6 @@
 }).
 
 -type state() :: #chargeback_st{}.
--type payment_state() :: hg_invoice_payment:st().
 
 -type cash_flow_plans() :: #{
     ?chargeback_stage_chargeback() := [batch()],
