@@ -27,6 +27,7 @@
 -define(ruleset(ID), #domain_RoutingRulesetRef{id = ID}).
 -define(bc_cat(ID), #domain_BankCardCategoryRef{id = ID}).
 -define(mob(ID), #domain_MobileOperatorRef{id = ID}).
+-define(bank_card(ID), #domain_BankCardPaymentMethod{payment_system = ?pmt_sys(ID)}).
 
 -define(cashrng(Lower, Upper), #domain_CashRange{lower = Lower, upper = Upper}).
 

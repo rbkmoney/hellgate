@@ -6207,6 +6207,11 @@ construct_domain_fixture() ->
         %% categories influents in limits choice
         hg_ct_fixture:construct_category(?cat(8), <<"commit success">>),
 
+        hg_ct_fixture:construct_payment_method(?pmt(mobile, ?mob(<<"mts">>))),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"visa">>))),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"mastercard">>))),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"jcb">>))),
+
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, jcb)),
