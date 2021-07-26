@@ -3816,7 +3816,7 @@ payment_manual_refund(C) ->
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     _PaymentID2 = execute_payment(InvoiceID2, make_payment_params(), Client),
     % prevent proxy access
-    OriginalRevision = hg_domain:get(),
+    OriginalRevision = hg_domain:head(),
     Fixture = payment_manual_refund_fixture(OriginalRevision),
     _ = hg_domain:upsert(Fixture),
     % create refund
