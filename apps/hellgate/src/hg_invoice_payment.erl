@@ -77,7 +77,6 @@
 -export([collapse_changes/2]).
 
 -export([get_log_params/2]).
--export([check_risk_score/1]).
 
 %% Marshalling
 
@@ -269,6 +268,8 @@ get_route(#st{route = Route}) ->
     Route.
 
 -spec get_available_routes(st()) -> [route()].
+get_available_routes(#st{available_routes = undefined}) ->
+    [];
 get_available_routes(#st{available_routes = Routes}) ->
     Routes.
 
@@ -1848,15 +1849,15 @@ process_routing(Action, St) ->
         Payer = get_payment_payer(St),
         case get_predefined_route(Payer) of
             {ok, Route} ->
-                Events = handle_predefined_route_result(
-                    is_unoverflowed_limit_route(Route, VS3, St),
-                    Route
+                Events = handle_gathered_route_result(
+                    find_unoverflowed_limit_routes([Route], VS3, St),
+                    [Route]
                 ),
                 Events1 = Events0 ++ Events,
                 {next, {Events1, hg_machine_action:set_timeout(0, Action)}};
             undefined ->
                 NonFailRatedRoutes = gather_routes(PaymentInstitution, RiskScore, VS3, Revision, St),
-                Routes = [hg_routing:convert_non_fail_rated_route(R) || R <- NonFailRatedRoutes],
+                Routes = [hg_routing:to_route(R) || R <- NonFailRatedRoutes],
                 Events = handle_gathered_route_result(
                     find_unoverflowed_limit_routes(NonFailRatedRoutes, VS3, St),
                     Routes
@@ -1871,20 +1872,10 @@ process_routing(Action, St) ->
             handle_choose_route_error(Reason, Events0, St, Action)
     end.
 
-handle_predefined_route_result(ok, Route) ->
+handle_gathered_route_result({ok, [_Route]}, [Route]) ->
     [?route_changed(Route, [Route])];
-handle_predefined_route_result({error, limit_overflow}, Route) ->
-    Failure =
-        {failure,
-            payproc_errors:construct(
-                'PaymentFailure',
-                {no_route_found, {forbidden, #payprocerr_GeneralFailure{}}}
-            )},
-    [?route_changed(Route, [Route]), ?payment_rollback_started(Failure)].
-
 handle_gathered_route_result({ok, NonFailRatedRoutes}, Routes) ->
-    FailRatedRoutes = hg_routing:gather_fail_rates(NonFailRatedRoutes),
-    {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(FailRatedRoutes),
+    {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(NonFailRatedRoutes),
     _ = log_route_choice_meta(ChoiceMeta),
     [?route_changed(ChoosenRoute, Routes)];
 handle_gathered_route_result({error, not_found}, Routes) ->
@@ -2156,15 +2147,11 @@ process_result({payment, processing_accounter}, Action, St) ->
     Target = get_target(St),
     NewAction = get_action(Target, Action, St),
     {done, {[?payment_status_changed(Target)], NewAction}};
-process_result({payment, processing_failure}, Action, St = #st{failure = Failure, cash_flow = undefined}) ->
+process_result({payment, processing_failure}, Action, St = #st{failure = Failure, cash_flow = CashFlow}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
     Routes = get_available_routes(St),
     _ = rollback_payment_limits(Routes, St),
-    {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
-process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
-    NewAction = hg_machine_action:set_timeout(0, Action),
-    _ = rollback_payment_limits(St),
-    _Clocks = rollback_payment_cashflow(St),
+    CashFlow /= undefined andalso rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
@@ -2536,17 +2523,7 @@ get_provider_terms(St, Revision) ->
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     get_provider_terminal_terms(Route, VS1, Revision).
 
-find_unoverflowed_limit_routes(RoutesIn, VS, St) ->
-    ok = hold_limit_routes(RoutesIn, VS, St),
-    RejectedContext = #{rejected_routes => []},
-    case get_unoverflowed_limit_routes(RoutesIn, VS, St, RejectedContext) of
-        {[], _RejectedRoutesOut} ->
-            {error, not_found};
-        {UnOverflowedRoutes, _} ->
-            {ok, UnOverflowedRoutes}
-    end.
-
-is_unoverflowed_limit_route(Route, VS, St) ->
+find_unoverflowed_limit_routes([?route(_, _) = Route], VS, St) ->
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
     Invoice = get_invoice(get_opts(St)),
@@ -2555,9 +2532,19 @@ is_unoverflowed_limit_route(Route, VS, St) ->
     ok = hg_limiter:hold_payment_limits(TurnoverLimits, Invoice, Payment),
     case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
         {ok, _} ->
-            ok;
+            {ok, [Route]};
         {error, {limit_overflow, _IDs}} ->
-            {error, limit_overflow}
+            {error, not_found}
+    end;
+find_unoverflowed_limit_routes(NonFailRatedRoutes, VS, St) ->
+    Routes = [hg_routing:to_route(R) || R <- NonFailRatedRoutes],
+    ok = hold_limit_routes(Routes, VS, St),
+    RejectedContext = #{rejected_routes => []},
+    case get_unoverflowed_limit_routes(NonFailRatedRoutes, VS, St, RejectedContext) of
+        {[], _RejectedRoutesOut} ->
+            {error, not_found};
+        {UnOverflowedRoutes, _} ->
+            {ok, UnOverflowedRoutes}
     end.
 
 get_unoverflowed_limit_routes(Routes, VS, St, RejectedRoutes) ->
@@ -2566,7 +2553,7 @@ get_unoverflowed_limit_routes(Routes, VS, St, RejectedRoutes) ->
     Invoice = get_invoice(get_opts(St)),
     lists:foldl(
         fun(NonFailRatedRoute, {UnOverflowedRoutesIn, RejectedIn}) ->
-            Route = hg_routing:convert_non_fail_rated_route(NonFailRatedRoute),
+            Route = hg_routing:to_route(NonFailRatedRoute),
             ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
@@ -2587,8 +2574,7 @@ hold_limit_routes(Routes, VS, St) ->
     Payment = get_payment(St),
     Invoice = get_invoice(get_opts(St)),
     lists:foreach(
-        fun(NonFailRatedRoute) ->
-            Route = hg_routing:convert_non_fail_rated_route(NonFailRatedRoute),
+        fun(Route) ->
             ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             ok = hg_limiter:hold_payment_limits(TurnoverLimits, Invoice, Payment)
@@ -2615,15 +2601,7 @@ rollback_payment_limits(Routes, St) ->
 rollback_unused_payment_limits(St) ->
     Route = get_route(St),
     Routes = get_available_routes(St),
-    UnUsedRoutes = lists:filter(
-        fun
-            (R) when R =:= Route ->
-                false;
-            (_) ->
-                true
-        end,
-        Routes
-    ),
+    UnUsedRoutes = Routes -- [Route],
     rollback_payment_limits(UnUsedRoutes, St).
 
 get_turnover_limits(ProviderTerms) ->
@@ -2638,14 +2616,6 @@ commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     ProviderTerms = get_provider_terms(St, Revision),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
     hg_limiter:commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash).
-
-rollback_payment_limits(St) ->
-    Revision = get_payment_revision(St),
-    Invoice = get_invoice(get_opts(St)),
-    Payment = get_payment(St),
-    ProviderTerms = get_provider_terms(St, Revision),
-    TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:rollback_payment_limits(TurnoverLimits, Invoice, Payment).
 
 hold_refund_limits(RefundSt, St) ->
     Invoice = get_invoice(get_opts(St)),
@@ -3036,13 +3006,7 @@ merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     St#st{recurrent_token = Token};
 merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
     _ = validate_transition(
-        [
-            {payment, S}
-            || S <- [
-                   cash_flow_building,
-                   processing_session
-               ]
-        ],
+        [{payment, cash_flow_building}, {payment, processing_session}],
         Change,
         St,
         Opts

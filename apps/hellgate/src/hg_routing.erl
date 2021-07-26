@@ -8,6 +8,7 @@
 
 -export([gather_fail_rates/1]).
 -export([choose_route/1]).
+-export([choose_rated_route/1]).
 
 -export([get_payments_terms/2]).
 
@@ -17,9 +18,8 @@
 -export([unmarshal/1]).
 
 -export([get_logger_metadata/1]).
+-export([to_route/1]).
 
--export([convert_fail_rated_route/1]).
--export([convert_non_fail_rated_route/1]).
 %%
 
 -include("domain.hrl").
@@ -124,22 +124,24 @@
 -export_type([reject_context/0]).
 -export_type([varset/0]).
 
--spec convert_fail_rated_route(fail_rated_route()) -> route().
-convert_fail_rated_route(FailRatedRoute) ->
-    {{ProviderRef, _}, {TerminalRef, _, _}, _ProviderStatus} = FailRatedRoute,
-    ?route(ProviderRef, TerminalRef).
 
--spec convert_non_fail_rated_route(non) -> route().
-convert_non_fail_rated_route(NonFailRatedRoute) ->
-    {{ProviderRef, _}, {TerminalRef, _, _}} = NonFailRatedRoute,
+-spec to_route(fail_rated_route() | non_fail_rated_route()) -> route().
+to_route({{ProviderRef, _}, {TerminalRef, _, _}, _ProviderStatus}) ->
+    ?route(ProviderRef, TerminalRef);
+to_route({{ProviderRef, _}, {TerminalRef, _, _}}) ->
     ?route(ProviderRef, TerminalRef).
 
 -spec gather_fail_rates([non_fail_rated_route()]) -> [fail_rated_route()].
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([fail_rated_route()]) -> {route(), route_choice_meta()}.
-choose_route(FailRatedRoutes) ->
+-spec choose_route([non_fail_rated_route()]) -> {route(), route_choice_meta()}.
+choose_route(NonFailRatedRoutes) ->
+    FailRatedRoutes = gather_fail_rates(NonFailRatedRoutes),
+    choose_rated_route(FailRatedRoutes).
+
+-spec choose_rated_route([fail_rated_route()]) -> {route(), route_choice_meta()}.
+choose_rated_route(FailRatedRoutes) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes),
     {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),

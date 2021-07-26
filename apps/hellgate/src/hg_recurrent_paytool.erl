@@ -238,33 +238,48 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     PaymentInstitutionRef = get_payment_institution_ref(Shop, Party),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     try
-        _ = hg_invoice_payment:check_risk_score(RiskScore),
-        Predestination = recurrent_paytool,
-        {Routes, RejectContext} = hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision),
-        case hg_routing:gather_fail_rates(Routes) of
-            [] ->
-                throw({no_route_found, {unknown, RejectContext}});
-            FailRatedRoutes ->
-                {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(FailRatedRoutes),
-                _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),
-                RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, ChoosenRoute, VS, Revision),
-                {ok, {Changes, Action}} = start_session(),
-                StartChanges = [
-                    ?recurrent_payment_tool_has_created(RecPaymentTool2),
-                    ?recurrent_payment_tool_risk_score_changed(RiskScore),
-                    ?recurrent_payment_tool_route_changed(ChoosenRoute)
-                ],
-                handle_result(#{
-                    changes => StartChanges ++ Changes,
-                    action => Action
-                })
-        end
+        check_risk_score(RiskScore),
+        NonFailRatedRoutes = gather_routes(PaymentInstitution, VS1, Revision),
+        {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(NonFailRatedRoutes),
+        _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),
+        RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, ChoosenRoute, VS, Revision),
+        {ok, {Changes, Action}} = start_session(),
+        StartChanges = [
+            ?recurrent_payment_tool_has_created(RecPaymentTool2),
+            ?recurrent_payment_tool_risk_score_changed(RiskScore),
+            ?recurrent_payment_tool_route_changed(ChoosenRoute)
+        ],
+        handle_result(#{
+            changes => StartChanges ++ Changes,
+            action => Action
+        })
     catch
         throw:risk_score_is_too_high = Error ->
             handle_route_error(Error, RecPaymentTool);
         throw:{no_route_found, {unknown, _}} = Error ->
             handle_route_error(Error, RecPaymentTool)
     end.
+
+gather_routes(PaymentInstitution, VS, Revision) ->
+    Predestination = recurrent_paytool,
+    case
+        hg_routing_rule:gather_routes(
+            Predestination,
+            PaymentInstitution,
+            VS,
+            Revision
+        )
+    of
+        {[], _RejectContext} ->
+            throw({no_route_found, unknown});
+        {Routes, _RejectContext} ->
+            Routes
+    end.
+
+check_risk_score(fatal) ->
+    throw(risk_score_is_too_high);
+check_risk_score(_RiskScore) ->
+    ok.
 
 get_party_shop(Params) ->
     #payproc_RecurrentPaymentToolParams{
