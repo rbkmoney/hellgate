@@ -2365,7 +2365,7 @@ construct_ta_context(Party, Shop, Route) ->
 
 get_deprecated_cashflow_account(Type, CF, CFContext) ->
     ID = get_deprecated_cashflow_account_id(Type, CF, CFContext),
-    hg_ct_helper:get_balance(ID).
+    hg_accounting:get_balance(ID).
 
 get_deprecated_cashflow_account_id(Type, CF, CFContext) ->
     Account = convert_transaction_account(Type, CFContext),
