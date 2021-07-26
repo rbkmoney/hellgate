@@ -446,7 +446,8 @@ start_proxies(Proxies) ->
     ).
 
 setup_proxies(Proxies) ->
-    _ = hg_domain:upsert(Proxies).
+    _ = hg_domain:upsert(Proxies),
+    ok.
 
 -spec start_service_handler(module(), list(), map()) -> binary().
 start_service_handler(Module, C, HandlerOpts) ->

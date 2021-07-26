@@ -764,7 +764,8 @@ start_proxies(Proxies) ->
     ).
 
 setup_proxies(Proxies) ->
-    _ = hg_domain:upsert(Proxies).
+    _ = hg_domain:upsert(Proxies),
+    ok.
 
 get_random_port() ->
     rand:uniform(32768) + 32767.
