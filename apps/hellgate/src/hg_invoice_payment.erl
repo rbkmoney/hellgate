@@ -2055,7 +2055,7 @@ process_active_session(Action, Session, Events, St) ->
     finish_session_processing(Result, St).
 
 repair_session(St = #st{repair_scenario = Scenario}) ->
-    case hg_invoice_repair:check_for_action(fail_session, Scenario) of
+    case hg_invoice_repair:check_for_action(repair_session, Scenario) of
         {result, Result} ->
             {ok, Result};
         call ->
