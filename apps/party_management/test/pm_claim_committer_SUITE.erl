@@ -70,14 +70,14 @@ all() ->
 init_per_suite(C) ->
     {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, party_management, hellgate]),
     RootUrl = maps:get(hellgate_root_url, Ret),
-    ok = pm_domain:insert(construct_domain_fixture()),
+    _ = pm_domain:insert(construct_domain_fixture()),
     PartyID = erlang:list_to_binary([?MODULE_STRING, ".", erlang:integer_to_list(erlang:system_time())]),
     ApiClient = pm_ct_helper:create_client(RootUrl, PartyID),
     [{root_url, RootUrl}, {apps, Apps}, {party_id, PartyID}, {api_client, ApiClient} | C].
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = pm_domain:cleanup(),
+    _ = pm_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 %%% Tests

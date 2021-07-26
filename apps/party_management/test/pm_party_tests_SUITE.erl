@@ -275,12 +275,12 @@ groups() ->
 -spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
     {Apps, Ret} = pm_ct_helper:start_apps([woody, scoper, dmt_client, party_client, party_management, hellgate]),
-    ok = pm_domain:insert(construct_domain_fixture()),
+    _ = pm_domain:insert(construct_domain_fixture()),
     [{root_url, maps:get(hellgate_root_url, Ret)}, {apps, Apps}] ++ C.
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = pm_domain:cleanup(),
+    _ = pm_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 %% tests
@@ -675,7 +675,7 @@ contract_terms_retrieval(C) ->
             payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
         }
     } = TermSet1,
-    ok = pm_domain:update(construct_term_set_for_party(PartyID, undefined)),
+    _ = pm_domain:update(construct_term_set_for_party(PartyID, undefined)),
     DomainRevision2 = pm_domain:head(),
     Timstamp2 = pm_datetime:format_now(),
     TermSet2 = pm_client_party:compute_contract_terms(
@@ -1109,7 +1109,7 @@ shop_terms_retrieval(C) ->
             payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
         }
     } = TermSet1,
-    ok = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
+    _ = pm_domain:update(construct_term_set_for_party(PartyID, {shop_is, ShopID})),
     TermSet2 = pm_client_party:compute_shop_terms(ShopID, pm_datetime:format_now(), {timestamp, Timestamp}, VS, Client),
     #domain_TermSet{
         payments = #domain_PaymentsServiceTerms{

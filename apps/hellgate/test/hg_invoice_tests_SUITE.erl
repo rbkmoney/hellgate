@@ -594,7 +594,7 @@ init_per_testcase(Name, C) when
     Name == payment_adjustment_captured_from_failed;
     Name == payment_adjustment_failed_from_captured
 ->
-    Revision = latest,
+    Revision = hg_domain:head(),
     Fixture = get_payment_adjustment_fixture(Revision),
     _ = hg_domain:upsert(Fixture),
     [{original_domain_revision, Revision} | init_per_testcase(C)];
@@ -606,7 +606,7 @@ init_per_testcase(Name, C) when
     Name == invalid_permit_partial_capture_in_service;
     Name == invalid_permit_partial_capture_in_provider
 ->
-    Revision = latest,
+    Revision = hg_domain:head(),
     Fixture =
         case Name of
             rounding_cashflow_volume ->
@@ -2215,7 +2215,7 @@ payment_temporary_unavailability_too_many_retries(C) ->
     ).
 
 update_payment_terms_cashflow(ProviderRef, CashFlow) ->
-    Provider = hg_domain:get(latest, {provider, ProviderRef}),
+    Provider = hg_domain:get({provider, ProviderRef}),
     ProviderTerms = Provider#domain_Provider.terms,
     PaymentTerms = ProviderTerms#domain_ProvisionTermSet.payments,
     NewProvider = Provider#domain_Provider{
@@ -2309,7 +2309,7 @@ external_account_posting(C) ->
     AssistAccountID = get_deprecated_cashflow_account_id({external, outcome}, CF, CFContext),
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
-    } = hg_domain:get(latest, {external_account_set, ?eas(2)}).
+    } = hg_domain:get({external_account_set, ?eas(2)}).
 
 -spec terminal_cashflow_overrides_provider(config()) -> test_return().
 terminal_cashflow_overrides_provider(C) ->
@@ -2345,7 +2345,7 @@ terminal_cashflow_overrides_provider(C) ->
     AssistAccountID = get_deprecated_cashflow_account_id({external, outcome}, CF, CFContext),
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
-    } = hg_domain:get(latest, {external_account_set, ?eas(2)}).
+    } = hg_domain:get({external_account_set, ?eas(2)}).
 
 %%  CHARGEBACKS
 
@@ -3816,7 +3816,7 @@ payment_manual_refund(C) ->
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     _PaymentID2 = execute_payment(InvoiceID2, make_payment_params(), Client),
     % prevent proxy access
-    OriginalRevision = latest,
+    OriginalRevision = hg_domain:get(),
     Fixture = payment_manual_refund_fixture(OriginalRevision),
     _ = hg_domain:upsert(Fixture),
     % create refund
@@ -4388,7 +4388,7 @@ terms_retrieval(C) ->
                 ]}
         }
     } = TermSet1,
-    Revision = latest,
+    Revision = hg_domain:head(),
     _ = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp}, Client),
     #domain_TermSet{

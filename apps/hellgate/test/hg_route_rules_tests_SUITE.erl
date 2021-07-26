@@ -123,20 +123,16 @@ end_per_suite(C) ->
 
 -spec init_per_group(group_name(), config()) -> config().
 init_per_group(base_routing_rule, C) ->
-    Revision = latest,
-    _ = hg_domain:upsert(base_routing_rules_fixture(Revision)),
+    _ = hg_domain:upsert(base_routing_rules_fixture(latest)),
     C;
 init_per_group(routing_with_risk_coverage_set, C) ->
-    Revision = latest,
-    _ = hg_domain:upsert(routing_with_risk_score_fixture(Revision, true)),
+    _ = hg_domain:upsert(routing_with_risk_score_fixture(latest, true)),
     C;
 init_per_group(routing_with_fail_rate, C) ->
-    Revision = latest,
-    _ = hg_domain:upsert(routing_with_risk_score_fixture(Revision, false)),
+    _ = hg_domain:upsert(routing_with_risk_score_fixture(latest, false)),
     C;
 init_per_group(terminal_priority, C) ->
-    Revision = latest,
-    _ = hg_domain:upsert(terminal_priority_fixture(Revision)),
+    _ = hg_domain:upsert(terminal_priority_fixture(latest)),
     C;
 init_per_group(_, C) ->
     C.
@@ -184,7 +180,7 @@ no_route_found_for_payment(_C) ->
         flow => instant
     },
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
@@ -221,7 +217,7 @@ gather_route_success(_C) ->
         risk_score => low
     },
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[{_, {?trm(1), _, _}}], RejectContext} = hg_routing_rule:gather_routes(
@@ -255,7 +251,7 @@ rejected_by_table_prohibitions(_C) ->
         risk_score => low
     },
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[], RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
@@ -286,7 +282,7 @@ empty_candidate_ok(_C) ->
         flow => instant
     },
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
     {[], #{
         varset := VS,
@@ -301,7 +297,7 @@ ruleset_misconfig(_C) ->
         flow => instant
     },
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {[], #{
@@ -328,7 +324,7 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
         flow => instant,
         risk_score => RiskScore
     },
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     {SelectedProviders, _} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     Routes = lists:sort(SelectedProviders),
@@ -349,7 +345,7 @@ prefer_alive(_C) ->
     },
     RiskScore = low,
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {RoutesUnordered, RejectContext} = hg_routing_rule:gather_routes(
@@ -401,7 +397,7 @@ prefer_normal_conversion(_C) ->
     },
     RiskScore = low,
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
@@ -451,7 +447,7 @@ prefer_higher_availability(_C) ->
     },
     RiskScore = low,
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
@@ -488,7 +484,7 @@ prefer_higher_conversion(_C) ->
         flow => instant
     },
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
         payment,
@@ -523,7 +519,7 @@ prefer_weight_over_availability(_C) ->
     },
     RiskScore = low,
 
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
@@ -556,7 +552,7 @@ prefer_weight_over_conversion(_C) ->
         flow => instant
     },
     RiskScore = low,
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     {RoutesUnordered, RC} = hg_routing_rule:gather_routes(
         payment,
@@ -588,7 +584,7 @@ gathers_fail_rated_routes(_C) ->
         party_id => <<"12345">>,
         flow => instant
     },
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
     {Routes0, _RejectContext0} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
@@ -630,7 +626,7 @@ terminal_priority_for_shop(PartyID, ShopID, _C) ->
         flow => instant
     },
     RiskScore = low,
-    Revision = latest,
+    Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     {Routes, RejectContext} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
