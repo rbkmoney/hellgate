@@ -124,7 +124,6 @@
 -export_type([reject_context/0]).
 -export_type([varset/0]).
 
-
 -spec to_route(fail_rated_route() | non_fail_rated_route()) -> route().
 to_route({{ProviderRef, _}, {TerminalRef, _, _}, _ProviderStatus}) ->
     ?route(ProviderRef, TerminalRef);
