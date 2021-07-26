@@ -23,6 +23,8 @@
 
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 
+-include_lib("hellgate/include/domain.hrl").
+
 %% API
 
 %% St accessors
@@ -132,9 +134,9 @@
     payment :: undefined | payment(),
     risk_score :: undefined | risk_score(),
     route :: undefined | route(),
-    cash_flow :: undefined | cash_flow(),
-    partial_cash_flow :: undefined | cash_flow(),
-    final_cash_flow :: undefined | cash_flow(),
+    cash_flow :: undefined | final_cash_flow(),
+    partial_cash_flow :: undefined | final_cash_flow(),
+    final_cash_flow :: undefined | final_cash_flow(),
     trx :: undefined | trx_info(),
     target :: undefined | target(),
     sessions = #{} :: #{target_type() => [session()]},
@@ -153,7 +155,7 @@
 
 -record(refund_st, {
     refund :: undefined | domain_refund(),
-    cash_flow :: undefined | cash_flow(),
+    cash_flow :: undefined | final_cash_flow(),
     sessions = [] :: [session()],
     transaction_info :: undefined | trx_info(),
     failure :: undefined | failure()
@@ -189,7 +191,7 @@
 -type target_type() :: 'processed' | 'captured' | 'cancelled' | 'refunded'.
 -type risk_score() :: dmsl_domain_thrift:'RiskScore'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
--type cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
+-type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type trx_info() :: dmsl_domain_thrift:'TransactionInfo'().
 -type session_result() :: dmsl_payment_processing_thrift:'SessionResult'().
 -type proxy_state() :: dmsl_proxy_provider_thrift:'ProxyState'().
@@ -928,11 +930,18 @@ collect_validation_varset(Party, Shop, Payment, VS) ->
 
 collect_cashflow(
     #domain_PaymentsServiceTerms{fees = MerchantCashflowSelector},
-    #domain_PaymentsProvisionTerms{cash_flow = ProviderCashflowSelector}
+    #domain_PaymentsProvisionTerms{cash_flow = ProviderCashflowSelector},
+    Opts,
+    Route
 ) ->
     MerchantCashflow = get_selector_value(merchant_payment_fees, MerchantCashflowSelector),
     ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
-    MerchantCashflow ++ ProviderCashflow.
+    hg_cashflow:add_cashflow_posting_context(
+        MerchantCashflow ++ ProviderCashflow,
+        get_party(Opts),
+        get_shop(Opts),
+        Route
+    ).
 
 construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision) ->
     hg_cashflow:finalize(
@@ -991,10 +1000,10 @@ start_capture(Reason, Cost, Cart) ->
     [?payment_capture_started(Reason, Cost, Cart)] ++
         start_session(?captured(Reason, Cost, Cart)).
 
-start_partial_capture(Reason, Cost, Cart, Cashflow) ->
+start_partial_capture(Reason, Cost, Cart, FinalCashflow) ->
     [
         ?payment_capture_started(Reason, Cost, Cart),
-        ?cash_flow_changed(Cashflow)
+        ?cash_flow_changed(FinalCashflow)
     ].
 
 -spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
@@ -1029,7 +1038,8 @@ partial_capture(St0, Reason, Cost, Cart, Opts) ->
     Route = get_route(St),
     ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
     ok = validate_provider_holds_terms(ProviderTerms),
-    FinalCashflow = calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
+    FinalCashflow =
+        calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
     {ok, {Changes, hg_machine_action:instant()}}.
 
@@ -1211,7 +1221,7 @@ make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     ok = validate_refund(MerchantTerms, Refund, Payment),
     ProviderPaymentsTerms = get_provider_terminal_terms(Route, VS, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment),
-    Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms),
+    Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, Opts, Route),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
@@ -1371,11 +1381,18 @@ validate_common_refund_terms(Terms, Refund, Payment) ->
 
 collect_refund_cashflow(
     #domain_PaymentRefundsServiceTerms{fees = MerchantCashflowSelector},
-    #domain_PaymentRefundsProvisionTerms{cash_flow = ProviderCashflowSelector}
+    #domain_PaymentRefundsProvisionTerms{cash_flow = ProviderCashflowSelector},
+    Opts,
+    Route
 ) ->
     MerchantCashflow = get_selector_value(merchant_refund_fees, MerchantCashflowSelector),
     ProviderCashflow = get_selector_value(provider_refund_cash_flow, ProviderCashflowSelector),
-    MerchantCashflow ++ ProviderCashflow.
+    hg_cashflow:add_cashflow_posting_context(
+        MerchantCashflow ++ ProviderCashflow,
+        get_party(Opts),
+        get_shop(Opts),
+        Route
+    ).
 
 prepare_refund_cashflow(RefundSt, St) ->
     hg_accounting:hold(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
@@ -1521,7 +1538,7 @@ is_adjustment_payment_status_final({failed, _}) ->
 is_adjustment_payment_status_final(_) ->
     false.
 
--spec get_cash_flow_for_status(payment_status(), st()) -> cash_flow().
+-spec get_cash_flow_for_status(payment_status(), st()) -> final_cash_flow().
 get_cash_flow_for_status({captured, _}, St) ->
     get_final_cashflow(St);
 get_cash_flow_for_status({cancelled, _}, _St) ->
@@ -1529,7 +1546,7 @@ get_cash_flow_for_status({cancelled, _}, _St) ->
 get_cash_flow_for_status({failed, _}, _St) ->
     [].
 
--spec get_cash_flow_for_target_status(payment_status(), st(), opts()) -> cash_flow().
+-spec get_cash_flow_for_target_status(payment_status(), st(), opts()) -> final_cash_flow().
 get_cash_flow_for_target_status({captured, Captured}, St0, Opts) ->
     Payment0 = get_payment(St0),
     Route = get_route(St0),
@@ -1554,7 +1571,7 @@ get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
     hg_varset:varset(),
     hg_domain:revision(),
     opts()
-) -> cash_flow().
+) -> final_cash_flow().
 calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
@@ -1568,13 +1585,13 @@ calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
     hg_varset:varset(),
     hg_domain:revision(),
     opts()
-) -> cash_flow().
+) -> final_cash_flow().
 calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts) ->
     Shop = get_shop(Opts),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    Cashflow = collect_cashflow(MerchantTerms, ProviderTerms),
+    Cashflow = collect_cashflow(MerchantTerms, ProviderTerms, Opts, Route),
     construct_final_cashflow(Payment, Shop, PaymentInstitution, Provider, Cashflow, VS, Revision).
 
 -spec construct_adjustment(
@@ -1582,12 +1599,21 @@ calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, O
     Params :: adjustment_params(),
     DomainRevision :: hg_domain:revision(),
     PartyRevision :: hg_party:party_revision(),
-    OldCashFlow :: cash_flow(),
-    NewCashFlow :: cash_flow(),
+    OldCashFlow :: final_cash_flow(),
+    NewCashFlow :: final_cash_flow(),
     State :: adjustment_state(),
     St :: st()
 ) -> {adjustment(), result()}.
-construct_adjustment(Timestamp, Params, DomainRevision, PartyRevision, OldCashFlow, NewCashFlow, State, St) ->
+construct_adjustment(
+    Timestamp,
+    Params,
+    DomainRevision,
+    PartyRevision,
+    OldCashFlow,
+    NewCashFlow,
+    State,
+    St
+) ->
     ID = construct_adjustment_id(St),
     Adjustment = #domain_InvoicePaymentAdjustment{
         id = ID,
@@ -2870,7 +2896,7 @@ merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
         capture_params = Params,
         activity = {payment, processing_capture}
     };
-merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St0, Opts) ->
+merge_change(Change = ?cash_flow_changed(CashFlow), #st{activity = Activity} = St0, Opts) ->
     _ = validate_transition(
         [
             {payment, S}
@@ -2883,16 +2909,18 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
         St0,
         Opts
     ),
-    St = St0#st{final_cash_flow = Cashflow},
+    St = St0#st{
+        final_cash_flow = CashFlow
+    },
     case Activity of
         {payment, cash_flow_building} ->
             St#st{
-                cash_flow = Cashflow,
+                cash_flow = CashFlow,
                 activity = {payment, processing_session}
             };
         {payment, processing_capture} ->
             St#st{
-                partial_cash_flow = Cashflow,
+                partial_cash_flow = CashFlow,
                 activity = {payment, updating_accounter}
             };
         _ ->
@@ -3203,7 +3231,7 @@ try_accrue_waiting_timing(Opts, #st{payment = Payment, timings = Timings}) ->
             hg_timings:accrue(waiting, processed, define_event_timestamp(Opts), Timings)
     end.
 
--spec get_cashflow(st()) -> cash_flow().
+-spec get_cashflow(st()) -> final_cash_flow().
 get_cashflow(#st{cash_flow = FinalCashflow}) ->
     FinalCashflow.
 
@@ -3213,7 +3241,7 @@ set_cashflow(Cashflow, St = #st{}) ->
         final_cash_flow = Cashflow
     }.
 
--spec get_final_cashflow(st()) -> cash_flow().
+-spec get_final_cashflow(st()) -> final_cash_flow().
 get_final_cashflow(#st{final_cash_flow = Cashflow}) ->
     Cashflow.
 
@@ -3538,16 +3566,16 @@ get_log_params(?route_changed(Route), _) ->
         event_type => invoice_payment_route_changed
     },
     make_log_params(Params);
-get_log_params(?cash_flow_changed(Cashflow), _) ->
+get_log_params(?cash_flow_changed(CashFlow), _) ->
     Params = #{
-        cashflow => Cashflow,
+        cashflow => CashFlow,
         event_type => invoice_payment_cash_flow_changed
     },
     make_log_params(Params);
-get_log_params(?payment_started(Payment, RiskScore, Route, Cashflow), _) ->
+get_log_params(?payment_started(Payment, RiskScore, Route, CashFlow), _) ->
     Params = #{
         payment => Payment,
-        cashflow => Cashflow,
+        cashflow => CashFlow,
         risk_score => RiskScore,
         route => Route,
         event_type => invoice_payment_started
