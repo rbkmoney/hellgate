@@ -255,9 +255,9 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         })
     catch
         throw:risk_score_is_too_high = Error ->
-            handle_route_error(Error, RecPaymentTool);
+            error(handle_route_error(Error, RecPaymentTool));
         throw:{no_route_found, {unknown, _}} = Error ->
-            handle_route_error(Error, RecPaymentTool)
+            error(handle_route_error(Error, RecPaymentTool))
     end.
 
 gather_routes(PaymentInstitution, VS, Revision) ->
@@ -270,15 +270,16 @@ gather_routes(PaymentInstitution, VS, Revision) ->
             Revision
         )
     of
-        {[], _RejectContext} ->
-            throw({no_route_found, unknown});
+        {[], RejectContext} ->
+            throw({no_route_found, {unknown, RejectContext}});
         {Routes, _RejectContext} ->
             Routes
     end.
 
-check_risk_score(fatal) ->
-    throw(risk_score_is_too_high);
-check_risk_score(_RiskScore) ->
+%% TODO uncomment after inspect will implement
+% check_risk_score(fatal) ->
+%     throw(risk_score_is_too_high);
+check_risk_score(_) ->
     ok.
 
 get_party_shop(Params) ->
@@ -359,8 +360,8 @@ validate_risk_score(RiskScore) when RiskScore == low; RiskScore == high ->
 
 handle_route_error(risk_score_is_too_high = Reason, RecPaymentTool) ->
     _ = logger:log(info, "No route found, reason = ~p", [Reason], logger:get_process_metadata()),
-    error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}});
-handle_route_error({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
+    {misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}};
+handle_route_error({no_route_found, {Reason, RejectContext}}, RecPaymentTool) ->
     LogFun = fun(Msg, Param) ->
         _ = logger:log(
             error,
@@ -372,7 +373,7 @@ handle_route_error({error, {no_route_found, {Reason, RejectContext}}}, RecPaymen
     _ = LogFun("No route found, reason = ~p, varset: ~p", maps:get(varset, RejectContext)),
     _ = LogFun("No route found, reason = ~p, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
     _ = LogFun("No route found, reason = ~p, rejected routes: ~p", maps:get(rejected_routes, RejectContext)),
-    error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}).
+    {misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}.
 
 start_session() ->
     Events = [?session_ev(?session_started())],
