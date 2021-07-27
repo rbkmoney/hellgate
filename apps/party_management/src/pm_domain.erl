@@ -25,7 +25,7 @@
 
 %%
 
--type revision() :: pos_integer().
+-type revision() :: dmt_client:version().
 -type ref() :: dmsl_domain_thrift:'Reference'().
 -type object() :: dmsl_domain_thrift:'DomainObject'().
 -type data() :: _.
