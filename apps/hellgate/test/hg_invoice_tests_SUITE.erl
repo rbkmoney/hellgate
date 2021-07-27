@@ -2230,7 +2230,8 @@ update_payment_terms_cashflow(ProviderRef, CashFlow) ->
             ref = ProviderRef,
             data = NewProvider
         }}
-    ).
+    ),
+    ok.
 
 construct_ta_context(Party, Shop, Route) ->
     #{
