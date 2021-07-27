@@ -195,6 +195,7 @@ init([]) ->
 -define(PARTY_ID_WITH_LIMIT, <<"bIg merch limit">>).
 -define(PARTY_ID_WITH_LIMIT2, <<"bIg merch limit cascading">>).
 -define(LIMIT_ID, <<"ID">>).
+-define(LIMIT_ID2, <<"ID2">>).
 -define(LIMIT_UPPER_BOUNDARY, 100000).
 
 cfg(Key, C) ->
@@ -344,9 +345,8 @@ groups() ->
             payment_limit_other_shop_success,
             payment_limit_overflow,
             payment_partial_capture_limit_success,
-            switch_provider_after_limit_overflow
-            % TODO[limiter] uncomment after fix refund bug(increase amount after refund payment)
-            % refund_limit_success
+            switch_provider_after_limit_overflow,
+            refund_limit_success
         ]},
 
         {refunds, [], [
@@ -434,7 +434,11 @@ init_per_suite(C) ->
 
     ok = hg_domain:insert(construct_domain_fixture()),
     {ok, #limiter_config_LimitConfig{}} = hg_dummy_limiter:create_config(
-        limiter_create_params(),
+        limiter_create_params(?LIMIT_ID),
+        hg_dummy_limiter:new()
+    ),
+    {ok, #limiter_config_LimitConfig{}} = hg_dummy_limiter:create_config(
+        limiter_create_params(?LIMIT_ID2),
         hg_dummy_limiter:new()
     ),
 
@@ -1096,7 +1100,7 @@ switch_provider_after_limit_overflow(C) ->
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), Client),
     Route = start_payment_ev(InvoiceID, Client),
 
-    ?assertMatch(#domain_PaymentRoute{provider = #domain_ProviderRef{id = 6}}, Route),
+    ?assertMatch(#domain_PaymentRoute{provider = #domain_ProviderRef{id = 7}}, Route),
     [?payment_ev(PaymentID2, ?cash_flow_changed(_))] = next_event(InvoiceID, Client),
     PaymentID2 = await_payment_session_started(InvoiceID, PaymentID2, Client, ?processed()),
     PaymentID2 = await_payment_process_finish(InvoiceID, PaymentID2, Client, 0).
@@ -1117,7 +1121,7 @@ refund_limit_success(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()) = Invoice,
         [?payment_state(Payment)]
-    ) = create_payment(PartyID, ShopID, 50000, Client),
+    ) = create_payment(PartyID, ShopID, 40000, Client),
     ?invoice(InvoiceID) = Invoice,
     ?payment(PaymentID) = Payment,
 
@@ -1125,7 +1129,7 @@ refund_limit_success(C) ->
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
-        fun({authorization_failed, {provider_limit_exceeded, _}}) -> ok end
+        fun({no_route_found, {forbidden, _}}) -> ok end
     ),
     % create a refund finally
     RefundParams = make_refund_params(),
@@ -1138,8 +1142,8 @@ refund_limit_success(C) ->
     % try payment after refund(limit was decreased)
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(_Payment)]
-    ) = create_payment(PartyID, ShopID, 50000, Client).
+        [?payment_state(_)]
+    ) = create_payment(PartyID, ShopID, 40000, Client).
 
 -spec payment_partial_capture_limit_success(config()) -> test_return().
 payment_partial_capture_limit_success(C) ->
@@ -5952,8 +5956,9 @@ construct_domain_fixture() ->
             ?ruleset(6),
             <<"SubMain">>,
             {candidates, [
-                ?candidate(<<"High priority">>, {constant, true}, ?trm(12), 1005),
-                ?candidate({constant, true}, ?trm(13))
+                ?candidate(<<"High priority">>, {constant, true}, ?trm(12), 1010),
+                ?candidate(<<"Middle priority">>, {constant, true}, ?trm(13), 1005),
+                ?candidate({constant, true}, ?trm(14))
             ]}
         ),
         hg_ct_fixture:construct_payment_routing_ruleset(
@@ -6896,11 +6901,62 @@ construct_domain_fixture() ->
                                         {exclusive, ?cash(1000000000, <<"RUB">>)}
                                     )}
                         }
-                    }
+                    },
+                    turnover_limits =
+                        {value, [
+                            #domain_TurnoverLimit{
+                                id = ?LIMIT_ID,
+                                upper_boundary = ?LIMIT_UPPER_BOUNDARY
+                            }
+                        ]}
                 }
             })
         }},
-        {terminal, ?terminal_obj(?trm(13), ?prv(6))}
+        {terminal, ?terminal_obj(?trm(13), ?prv(6))},
+        {provider, #domain_ProviderObject{
+            ref = ?prv(7),
+            data = ?provider(#domain_ProvisionTermSet{
+                payments = ?payment_terms#domain_PaymentsProvisionTerms{
+                    categories =
+                        {value,
+                            ?ordset([
+                                ?cat(8)
+                            ])},
+                    payment_methods =
+                        {value,
+                            ?ordset([
+                                ?pmt(bank_card_deprecated, visa),
+                                ?pmt(mobile_deprecated, mts)
+                            ])},
+                    refunds = #domain_PaymentRefundsProvisionTerms{
+                        cash_flow =
+                            {value, [
+                                ?cfpost(
+                                    {merchant, settlement},
+                                    {provider, settlement},
+                                    ?share(1, 1, operation_amount)
+                                )
+                            ]},
+                        partial_refunds = #domain_PartialRefundsProvisionTerms{
+                            cash_limit =
+                                {value,
+                                    ?cashrng(
+                                        {inclusive, ?cash(10, <<"RUB">>)},
+                                        {exclusive, ?cash(1000000000, <<"RUB">>)}
+                                    )}
+                        }
+                    },
+                    turnover_limits =
+                        {value, [
+                            #domain_TurnoverLimit{
+                                id = ?LIMIT_ID2,
+                                upper_boundary = ?LIMIT_UPPER_BOUNDARY
+                            }
+                        ]}
+                }
+            })
+        }},
+        {terminal, ?terminal_obj(?trm(14), ?prv(7))}
     ].
 
 construct_term_set_for_cost(LowerBound, UpperBound) ->
@@ -7667,11 +7723,14 @@ set_processing_deadline(Timeout, PaymentParams) ->
     Deadline = woody_deadline:to_binary(woody_deadline:from_timeout(Timeout)),
     PaymentParams#payproc_InvoicePaymentParams{processing_deadline = Deadline}.
 
-limiter_create_params() ->
+limiter_create_params(LimitID) ->
     #limiter_cfg_LimitCreateParams{
-        id = ?LIMIT_ID,
+        id = LimitID,
         name = <<"ShopMonthTurnover">>,
         description = <<"description">>,
         started_at = <<"2000-01-01T00:00:00Z">>,
-        body_type = {cash, #limiter_config_LimitBodyTypeCash{currency = <<"RUB">>}}
+        body_type = {cash, #limiter_config_LimitBodyTypeCash{currency = <<"RUB">>}},
+        op_behaviour = #limiter_config_OperationLimitBehaviour{
+            invoice_payment_refund = {subtraction, #limiter_config_Subtraction{}}
+        }
     }.

@@ -37,7 +37,7 @@ services:
       retries: 20
 
   limiter:
-    image: dr2.rbkmoney.com/rbkmoney/limiter:886acc0503af5ce60f85c3ad3e30ecea5747a8be
+    image: dr2.rbkmoney.com/rbkmoney/limiter:c7e96068a56da444e78cc7739a902da8e268dc63
     command: /opt/limiter/bin/limiter foreground
     depends_on:
       machinegun:

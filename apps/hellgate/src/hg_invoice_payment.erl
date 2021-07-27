@@ -2529,7 +2529,7 @@ find_unoverflowed_limit_routes([?route(_, _) = Route], VS, St) ->
     Invoice = get_invoice(get_opts(St)),
     ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
-    ok = hg_limiter:hold_payment_limits(TurnoverLimits, Invoice, Payment),
+    ok = hg_limiter:hold_payment_limits(TurnoverLimits, Route, Invoice, Payment),
     case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
         {ok, _} ->
             {ok, [Route]};
@@ -2577,7 +2577,7 @@ hold_limit_routes(Routes, VS, St) ->
         fun(Route) ->
             ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
-            ok = hg_limiter:hold_payment_limits(TurnoverLimits, Invoice, Payment)
+            ok = hg_limiter:hold_payment_limits(TurnoverLimits, Route, Invoice, Payment)
         end,
         Routes
     ).
@@ -2593,7 +2593,7 @@ rollback_payment_limits(Routes, St) ->
         fun(Route) ->
             ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
-            ok = hg_limiter:rollback_payment_limits(TurnoverLimits, Invoice, Payment)
+            ok = hg_limiter:rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment)
         end,
         Routes
     ).
@@ -2612,10 +2612,11 @@ commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     Revision = get_payment_revision(St),
     Invoice = get_invoice(get_opts(St)),
     Payment = get_payment(St),
+    Route = get_route(St),
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
     ProviderTerms = get_provider_terms(St, Revision),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash).
+    hg_limiter:commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash).
 
 hold_refund_limits(RefundSt, St) ->
     Invoice = get_invoice(get_opts(St)),

@@ -1,5 +1,6 @@
 -module(hg_limiter).
 
+-include("domain.hrl").
 -include_lib("limiter_proto/include/lim_limiter_thrift.hrl").
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
 
@@ -7,16 +8,17 @@
 -type turnover_limit() :: dmsl_domain_thrift:'TurnoverLimit'().
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type payment() :: dmsl_domain_thrift:'InvoicePayment'().
+-type route() :: dmsl_domain_thrift:'PaymentRoute'().
 -type refund() :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 
 -export([get_turnover_limits/1]).
 -export([check_limits/3]).
--export([hold_payment_limits/3]).
+-export([hold_payment_limits/4]).
 -export([hold_refund_limits/4]).
--export([commit_payment_limits/4]).
+-export([commit_payment_limits/5]).
 -export([commit_refund_limits/4]).
--export([rollback_payment_limits/3]).
+-export([rollback_payment_limits/4]).
 -export([rollback_refund_limits/4]).
 
 -spec get_turnover_limits(turnover_selector() | undefined) -> [turnover_limit()].
@@ -63,10 +65,10 @@ check_limits_([T | TurnoverLimits], Context, Acc) ->
             throw(limit_overflow)
     end.
 
--spec hold_payment_limits([turnover_limit()], invoice(), payment()) -> ok.
-hold_payment_limits(TurnoverLimits, Invoice, Payment) ->
+-spec hold_payment_limits([turnover_limit()], route(), invoice(), payment()) -> ok.
+hold_payment_limits(TurnoverLimits, Route, Invoice, Payment) ->
     IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    LimitChanges = gen_limit_payment_changes(IDs, Invoice, Payment),
+    LimitChanges = gen_limit_payment_changes(IDs, Route, Invoice, Payment),
     Context = gen_limit_context(Invoice, Payment),
     hold(LimitChanges, get_latest_clock(), Context).
 
@@ -77,10 +79,10 @@ hold_refund_limits(TurnoverLimits, Invoice, Payment, Refund) ->
     Context = gen_limit_refund_context(Invoice, Payment, Refund),
     hold(LimitChanges, get_latest_clock(), Context).
 
--spec commit_payment_limits([turnover_limit()], invoice(), payment(), cash() | undefined) -> ok.
-commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash) ->
+-spec commit_payment_limits([turnover_limit()], route(), invoice(), payment(), cash() | undefined) -> ok.
+commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash) ->
     IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    LimitChanges = gen_limit_payment_changes(IDs, Invoice, Payment),
+    LimitChanges = gen_limit_payment_changes(IDs, Route, Invoice, Payment),
     Context = gen_limit_context(Invoice, Payment, CapturedCash),
     commit(LimitChanges, get_latest_clock(), Context).
 
@@ -91,13 +93,13 @@ commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund) ->
     Context = gen_limit_refund_context(Invoice, Payment, Refund),
     commit(LimitChanges, get_latest_clock(), Context).
 
--spec rollback_payment_limits([turnover_limit()], invoice(), payment()) -> ok.
-rollback_payment_limits(TurnoverLimits, Invoice, Payment) ->
+-spec rollback_payment_limits([turnover_limit()], route(), invoice(), payment()) -> ok.
+rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment) ->
     #domain_InvoicePayment{cost = Cash} = Payment,
     CapturedCash = Cash#domain_Cash{
         amount = 0
     },
-    commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash).
+    commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash).
 
 -spec rollback_refund_limits([turnover_limit()], invoice(), payment(), refund()) -> ok.
 rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund0) ->
@@ -154,11 +156,11 @@ gen_limit_refund_context(Invoice, Payment, Refund) ->
         }
     }.
 
-gen_limit_payment_changes(LimitIDs, Invoice, Payment) ->
+gen_limit_payment_changes(LimitIDs, Route, Invoice, Payment) ->
     [
         #limiter_LimitChange{
             id = ID,
-            change_id = construct_limit_change_id(ID, Invoice, Payment)
+            change_id = construct_limit_change_id(ID, Route, Invoice, Payment)
         }
         || ID <- LimitIDs
     ].
@@ -172,9 +174,12 @@ gen_limit_refund_changes(LimitIDs, Invoice, Payment, Refund) ->
         || ID <- LimitIDs
     ].
 
-construct_limit_change_id(LimitID, Invoice, Payment) ->
+construct_limit_change_id(LimitID, Route, Invoice, Payment) ->
+    ?route(ProviderRef, TerminalRef) = Route,
     ComplexID = hg_utils:construct_complex_id([
         LimitID,
+        genlib:to_binary(get_provider_id(ProviderRef)),
+        genlib:to_binary(get_terminal_id(TerminalRef)),
         get_invoice_id(Invoice),
         get_payment_id(Payment)
     ]),
@@ -188,6 +193,12 @@ construct_limit_refund_change_id(LimitID, Invoice, Payment, Refund) ->
         {refund_session, get_refund_id(Refund)}
     ]),
     genlib_string:join($., [<<"limiter">>, ComplexID]).
+
+get_provider_id(#domain_ProviderRef{id = ID}) ->
+    ID.
+
+get_terminal_id(#domain_TerminalRef{id = ID}) ->
+    ID.
 
 get_invoice_id(#domain_Invoice{id = ID}) ->
     ID.
