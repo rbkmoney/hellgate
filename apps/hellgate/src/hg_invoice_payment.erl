@@ -1886,6 +1886,9 @@ handle_gathered_route_result({error, not_found}, Routes) ->
                 {no_route_found, {forbidden, #payprocerr_GeneralFailure{}}}
             )},
     [Route | _] = Routes,
+    %% For protocol compatability we set choosen route in route_changed event.
+    %% It doesn't influence cash_flow building because this step will be skiped. And all limit's 'hold' operations
+    %% will be diclined.
     [?route_changed(Route, Routes), ?payment_rollback_started(Failure)].
 
 handle_choose_route_error(Reason, Events, St, Action) ->
