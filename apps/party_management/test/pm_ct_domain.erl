@@ -17,7 +17,7 @@ reset(ToRevision) ->
     #'Snapshot'{domain = Domain} = dmt_client:checkout(ToRevision),
     pm_domain:upsert(maps:values(Domain)).
 
--spec commit(revision(), dmt_client:commit()) -> ok | no_return().
+-spec commit(revision(), dmt_client:commit()) -> revision() | no_return().
 commit(Revision, Commit) ->
     dmt_client:commit(Revision, Commit).
 
