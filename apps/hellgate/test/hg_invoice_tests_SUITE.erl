@@ -1032,7 +1032,7 @@ payment_limit_success(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(_Payment)]
-    ) = create_payment(PartyID, ShopID, 100000, Client).
+    ) = create_payment(PartyID, ShopID, 10000, Client).
 
 -spec payment_limit_other_shop_success(config()) -> test_return().
 payment_limit_other_shop_success(C) ->
@@ -1042,7 +1042,7 @@ payment_limit_other_shop_success(C) ->
     ShopID1 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     ShopID2 = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    PaymentAmount = ?LIMIT_UPPER_BOUNDARY,
+    PaymentAmount = ?LIMIT_UPPER_BOUNDARY - 1,
 
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
@@ -1061,17 +1061,17 @@ payment_limit_overflow(C) ->
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-
+    PaymentAmount = ?LIMIT_UPPER_BOUNDARY - 1,
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()) = Invoice,
         [?payment_state(Payment)]
-    ) = create_payment(PartyID, ShopID, ?LIMIT_UPPER_BOUNDARY, Client),
+    ) = create_payment(PartyID, ShopID, PaymentAmount, Client),
 
     Failure = create_payment_limit_overflow(PartyID, ShopID, 1000, Client),
     #domain_Invoice{id = ID} = Invoice,
     #domain_InvoicePayment{id = PaymentID} = Payment,
     Limit = get_payment_limit(PartyID, ShopID, ID, PaymentID, 1000),
-    ?assertMatch(#limiter_Limit{amount = ?LIMIT_UPPER_BOUNDARY}, Limit),
+    ?assertMatch(#limiter_Limit{amount = PaymentAmount}, Limit),
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
@@ -1082,6 +1082,7 @@ payment_limit_overflow(C) ->
 switch_provider_after_limit_overflow(C) ->
     RootUrl = cfg(root_url, C),
     PartyID = ?PARTY_ID_WITH_LIMIT2,
+    PaymentAmount = 49999,
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -1089,14 +1090,14 @@ switch_provider_after_limit_overflow(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()) = Invoice,
         [?payment_state(Payment)]
-    ) = create_payment(PartyID, ShopID, ?LIMIT_UPPER_BOUNDARY, Client),
+    ) = create_payment(PartyID, ShopID, PaymentAmount, Client),
 
     #domain_Invoice{id = ID} = Invoice,
     #domain_InvoicePayment{id = PaymentID} = Payment,
-    Limit = get_payment_limit(PartyID, ShopID, ID, PaymentID, 1000),
-    ?assertMatch(#limiter_Limit{amount = ?LIMIT_UPPER_BOUNDARY}, Limit),
+    Limit = get_payment_limit(PartyID, ShopID, ID, PaymentID, PaymentAmount),
+    ?assertMatch(#limiter_Limit{amount = PaymentAmount}, Limit),
 
-    InvoiceID = start_invoice(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), 1000, Client),
+    InvoiceID = start_invoice(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), PaymentAmount, Client),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, make_payment_params(), Client),
     Route = start_payment_ev(InvoiceID, Client),
 
@@ -1147,8 +1148,8 @@ refund_limit_success(C) ->
 
 -spec payment_partial_capture_limit_success(config()) -> test_return().
 payment_partial_capture_limit_success(C) ->
-    InitialCost = 1000 * 100,
-    PartialCost = 700 * 100,
+    InitialCost = 1000 * 10,
+    PartialCost = 700 * 10,
     PaymentParams = make_payment_params({hold, cancel}),
 
     PartyID = ?PARTY_ID_WITH_LIMIT,

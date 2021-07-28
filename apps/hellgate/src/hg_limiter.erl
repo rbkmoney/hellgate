@@ -53,6 +53,7 @@ check_limits_([T | TurnoverLimits], Context, Acc) ->
         amount = LimiterAmount
     } = Limit,
     UpperBoundary = T#domain_TurnoverLimit.upper_boundary,
+    ct:print("LimitID ~p Limiter amount = ~p", [LimitID, LimiterAmount]),
     case LimiterAmount < UpperBoundary of
         true ->
             check_limits_(TurnoverLimits, Context, [Limit | Acc]);
