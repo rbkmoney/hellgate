@@ -20,7 +20,7 @@
 -type action_type() ::
     fail_pre_processing
     | skip_inspector
-    | fail_session.
+    | repair_session.
 
 -type scenario_result() ::
     hg_invoice_payment:machine_result()
