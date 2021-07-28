@@ -2561,11 +2561,9 @@ get_unoverflowed_limit_routes(Routes, VS, St, RejectedRoutes) ->
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
                 {ok, _} ->
-                    ct:print("Route ~p ok", [Route]),
                     {[NonFailRatedRoute | UnOverflowedRoutesIn], RejectedIn};
                 {error, {limit_overflow, IDs}} ->
                     ?route(ProviderRef, TerminalRef) = Route,
-                    ct:print("Route ~p overflow ~p", [Route, IDs]),
                     RejectedOut = [{ProviderRef, TerminalRef, {'LimitOverflow', IDs}} | RejectedIn],
                     {UnOverflowedRoutesIn, RejectedOut}
             end
