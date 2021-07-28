@@ -1,7 +1,7 @@
 -module(hg_invoice_payment_chargeback).
 
--include_lib("hellgate/include/domain.hrl").
--include_lib("hellgate/include/payment_events.hrl").
+-include("domain.hrl").
+-include("payment_events.hrl").
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
@@ -55,7 +55,7 @@
 -record(chargeback_st, {
     chargeback :: undefined | chargeback(),
     target_status :: undefined | status(),
-    cash_flow = [] :: final_cash_flow(),
+    cash_flow = [] :: cash_flow(),
     cash_flow_plans = #{
         ?chargeback_stage_chargeback() => [],
         ?chargeback_stage_pre_arbitration() => [],
@@ -108,7 +108,7 @@
 -type cash() ::
     dmsl_domain_thrift:'Cash'().
 
--type final_cash_flow() ::
+-type cash_flow() ::
     dmsl_domain_thrift:'FinalCashFlow'().
 
 -type batch() ::
@@ -164,7 +164,7 @@ get_status(#domain_InvoicePaymentChargeback{status = Status}) ->
 get_target_status(#chargeback_st{target_status = TargetStatus}) ->
     TargetStatus.
 
--spec get_cash_flow(state()) -> final_cash_flow().
+-spec get_cash_flow(state()) -> cash_flow().
 get_cash_flow(#chargeback_st{cash_flow = CashFlow}) ->
     CashFlow.
 
@@ -339,7 +339,7 @@ do_reopen(State, PaymentState, ReopenParams = ?reopen_params(Levy, Body)) ->
 
 -spec update_cash_flow(state(), action(), opts()) -> result() | no_return().
 update_cash_flow(State, Action, Opts) ->
-    FinalCashFlow = build_chargeback_final_cash_flow(State, Opts),
+    FinalCashFlow = build_chargeback_cash_flow(State, Opts),
     UpdatedPlan = build_updated_plan(FinalCashFlow, State),
     _ = prepare_cash_flow(State, UpdatedPlan, Opts),
     {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}.
@@ -407,10 +407,10 @@ build_reopen_result(State, ?reopen_params(ParamsLevy, ParamsBody) = Params) ->
     Changes = lists:append([StageChange, BodyChange, LevyChange, StatusChange]),
     {Changes, Action}.
 
--spec build_chargeback_final_cash_flow(state(), opts()) -> final_cash_flow() | no_return().
-build_chargeback_final_cash_flow(#chargeback_st{target_status = ?chargeback_status_cancelled()}, _Opts) ->
+-spec build_chargeback_cash_flow(state(), opts()) -> cash_flow() | no_return().
+build_chargeback_cash_flow(#chargeback_st{target_status = ?chargeback_status_cancelled()}, _Opts) ->
     [];
-build_chargeback_final_cash_flow(State, Opts) ->
+build_chargeback_cash_flow(State, Opts) ->
     CreatedAt = get_created_at(State),
     Revision = get_revision(State),
     Body = get_body(State),
@@ -424,8 +424,8 @@ build_chargeback_final_cash_flow(State, Opts) ->
     ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     PaymentsTerms = hg_routing:get_payments_terms(Route, Revision),
     ProviderTerms = get_provider_chargeback_terms(PaymentsTerms, Payment),
-    ServiceCashFlow = get_chargeback_service_cash_flow(ServiceTerms, Party, Shop, Route),
-    ProviderCashFlow = get_chargeback_provider_cash_flow(ProviderTerms, Party, Shop, Route),
+    ServiceCashFlow = get_chargeback_service_cash_flow(ServiceTerms),
+    ProviderCashFlow = get_chargeback_provider_cash_flow(ProviderTerms),
     ProviderFees = collect_chargeback_provider_fees(ProviderTerms),
     PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
     PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
@@ -451,24 +451,14 @@ build_provider_cash_flow_context(State, Fees) ->
             maps:merge(ComputedFees, #{operation_amount => get_body(State)})
     end.
 
-get_chargeback_service_cash_flow(
-    #domain_PaymentChargebackServiceTerms{fees = {value, V}},
-    Party,
-    Shop,
-    Route
-) ->
-    hg_cashflow:add_cashflow_posting_context(V, Party, Shop, Route);
-get_chargeback_service_cash_flow(_, _Party, _Shop, _Route) ->
+get_chargeback_service_cash_flow(#domain_PaymentChargebackServiceTerms{fees = {value, V}}) ->
+    V;
+get_chargeback_service_cash_flow(_) ->
     throw(#payproc_OperationNotPermitted{}).
 
-get_chargeback_provider_cash_flow(
-    #domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}},
-    Party,
-    Shop,
-    Route
-) ->
-    hg_cashflow:add_cashflow_posting_context(V, Party, Shop, Route);
-get_chargeback_provider_cash_flow(_, _Party, _Shop, _Route) ->
+get_chargeback_provider_cash_flow(#domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}}) ->
+    V;
+get_chargeback_provider_cash_flow(_) ->
     throw(#payproc_OperationNotPermitted{}).
 
 collect_chargeback_provider_fees(#domain_PaymentChargebackProvisionTerms{fees = undefined}) ->
@@ -688,14 +678,11 @@ set(Chargeback, undefined) ->
 set(Chargeback, #chargeback_st{} = State) ->
     State#chargeback_st{chargeback = Chargeback}.
 
--spec set_cash_flow(final_cash_flow(), state()) -> state().
+-spec set_cash_flow(cash_flow(), state()) -> state().
 set_cash_flow(CashFlow, #chargeback_st{cash_flow_plans = Plans} = State) ->
     Stage = get_stage(State),
     Plan = build_updated_plan(CashFlow, State),
-    State#chargeback_st{
-        cash_flow_plans = Plans#{Stage := Plan},
-        cash_flow = CashFlow
-    }.
+    State#chargeback_st{cash_flow_plans = Plans#{Stage := Plan}, cash_flow = CashFlow}.
 
 -spec set_target_status(status() | undefined, state()) -> state().
 set_target_status(TargetStatus, #chargeback_st{} = State) ->
@@ -803,11 +790,7 @@ add_batch(FinalCashFlow, Batches) ->
     {ID, _CF} = lists:last(Batches),
     Batches ++ [{ID + 1, FinalCashFlow}].
 
-build_updated_plan(NewCashFlow, State) ->
-    #chargeback_st{
-        cash_flow_plans = Plans,
-        cash_flow = OldCashFlow
-    } = State,
+build_updated_plan(NewCashFlow, #chargeback_st{cash_flow_plans = Plans, cash_flow = OldCashFlow} = State) ->
     Stage = get_stage(State),
     case Plans of
         #{Stage := []} ->

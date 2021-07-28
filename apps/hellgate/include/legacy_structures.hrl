@@ -210,7 +210,7 @@
     {external_failure, {domain_ExternalFailure, Code, Description}}
 ).
 
--define(legacy_final_cash_flow_posting(Source, Destination, Volume, Details),
+-define(legacy_final_cash_flow_posting(Code, Source, Destination, Volume, Details),
     {domain_FinalCashFlowPosting, Source, Destination, Volume, Details}
 ).
 
