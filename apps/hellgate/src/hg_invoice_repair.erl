@@ -90,7 +90,9 @@ check_activity_compatibility({skip_inspector, #payproc_InvoiceRepairSkipInspecto
         Activity =:= {payment, risk_scoring}
 ->
     ok;
-check_activity_compatibility({fulfill_session, #payproc_InvoiceRepairFulfillSession{}}, {payment, processing_session}) ->
+check_activity_compatibility({fulfill_session, #payproc_InvoiceRepairFulfillSession{}}, Activity) when
+    Activity =:= {payment, processing_session}
+->
     ok;
 check_activity_compatibility({fulfill_session, #payproc_InvoiceRepairFulfillSession{}}, {refund_session, _}) ->
     ok;
