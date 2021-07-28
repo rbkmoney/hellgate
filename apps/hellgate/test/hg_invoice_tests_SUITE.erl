@@ -4930,7 +4930,14 @@ repair_fulfill_session_succeeded(C) ->
 repair_fulfill_session_on_pre_processing(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
-    ShopID = hg_ct_helper:create_battle_ready_shop(?cat(7), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
+    ShopID = hg_ct_helper:create_battle_ready_shop(
+        cfg(party_id, C),
+        ?cat(7),
+        <<"RUB">>,
+        ?tmpl(2),
+        ?pinst(2),
+        PartyClient
+    ),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
