@@ -172,8 +172,8 @@
 -export([repair_complex_succeeded_first/1]).
 -export([repair_complex_succeeded_second/1]).
 -export([repair_fulfill_session_succeeded/1]).
--export([repair_fulfill_session_on_pre_processing/1]).
--export([repair_session_trx/1]).
+-export([repair_fulfill_session_on_pre_processing_failed/1]).
+-export([repair_fulfill_session_with_trx_succeeded/1]).
 
 -export([consistent_account_balances/1]).
 
@@ -410,8 +410,8 @@ groups() ->
             repair_complex_succeeded_first,
             repair_complex_succeeded_second,
             repair_fulfill_session_succeeded,
-            repair_fulfill_session_on_pre_processing,
-            repair_session_trx
+            repair_fulfill_session_on_pre_processing_failed,
+            repair_fulfill_session_with_trx_succeeded
         ]}
     ].
 
@@ -4926,8 +4926,8 @@ repair_fulfill_session_succeeded(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
     ] = next_event(InvoiceID, Client).
 
--spec repair_fulfill_session_on_pre_processing(config()) -> test_return().
-repair_fulfill_session_on_pre_processing(C) ->
+-spec repair_fulfill_session_on_pre_processing_failed(config()) -> test_return().
+repair_fulfill_session_on_pre_processing_failed(C) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(
@@ -4956,8 +4956,8 @@ repair_fulfill_session_on_pre_processing(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
     ] = next_event(InvoiceID, Client).
 
--spec repair_session_trx(config()) -> test_return().
-repair_session_trx(C) ->
+-spec repair_fulfill_session_with_trx_succeeded(config()) -> test_return().
+repair_fulfill_session_with_trx_succeeded(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure_no_trx),
