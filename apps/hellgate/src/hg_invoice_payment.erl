@@ -2937,7 +2937,8 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
     case Activity of
         {payment, cash_flow_building} ->
             St#st{
-                cash_flow = Cashflow
+                cash_flow = Cashflow,
+                activity = {payment, processing_session}
             };
         {payment, processing_capture} ->
             St#st{
@@ -2947,36 +2948,22 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
         _ ->
             St
     end;
-merge_change(Change = ?payment_clock_update(Clock), #st{activity = Activity} = St, Opts) ->
+merge_change(Change = ?payment_clock_update(Clock), #st{} = St, Opts) ->
     _ = validate_transition(
         [
             {payment, S}
             || S <- [
-                   cash_flow_building,
                    processing_session,
+                   updating_accounter,
                    processing_failure,
-                   finalizing_accounter,
-                   updating_accounter
+                   finalizing_accounter
                ]
         ],
         Change,
         St,
         Opts
     ),
-    case Activity of
-        {payment, cash_flow_building} ->
-            St#st{
-                clock = Clock,
-                activity = {payment, processing_session}
-            };
-        {payment, processing_capture} ->
-            St#st{
-                clock = Clock,
-                activity = {payment, updating_accounter}
-            };
-        _ ->
-            St
-    end;
+    St#st{clock = Clock};
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};

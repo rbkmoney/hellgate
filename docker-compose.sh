@@ -43,7 +43,6 @@ services:
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
       - ./test/machinegun/cookie:/opt/machinegun/etc/cookie
-      - ./test/log/machinegun:/var/log/machinegun
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s
@@ -77,11 +76,13 @@ services:
       - postgres
       - shumaich
     healthcheck:
+      # FIXME: dirty trick, hangs in "health: staring" otherwise
+      # used to be fine
       test: "exit 0"
-      #test: "curl http://localhost:8022/"
-      #interval: 5s
-      #timeout: 1s
-      #retries: 20
+      # test: "curl http://localhost:8022/"
+      # interval: 5s
+      # timeout: 1s
+      # retries: 20
 
   zookeeper:
     image: confluentinc/cp-zookeeper:5.0.1
