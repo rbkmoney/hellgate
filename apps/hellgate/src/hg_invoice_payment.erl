@@ -769,14 +769,14 @@ validate_limit(Cash, CashRange) ->
             throw_invalid_request(<<"Invalid amount, more than allowed maximum">>)
     end.
 
-gather_routes(PaymentInstitution, RiskScore, VS, Revision, St) ->
+gather_routes(PaymentInstitution, VS, Revision, St) ->
     Payment = get_payment(St),
     Predestination = choose_routing_predestination(Payment),
     case
         hg_routing_rule:gather_routes(
             Predestination,
             PaymentInstitution,
-            VS#{risk_score => RiskScore},
+            VS,
             Revision
         )
     of
@@ -1843,39 +1843,33 @@ process_routing(Action, St) ->
     ),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     RiskScore = repair_inspect(Payment, PaymentInstitution, Opts, St),
+    VS4 = VS3#{risk_score => RiskScore},
     Events0 = [?risk_score_changed(RiskScore)],
     try
         _ = check_risk_score(RiskScore),
         Payer = get_payment_payer(St),
-        case get_predefined_route(Payer) of
-            {ok, Route} ->
-                Events = handle_gathered_route_result(
-                    find_unoverflowed_limit_routes([Route], VS3, St),
-                    [Route]
-                ),
-                Events1 = Events0 ++ Events,
-                {next, {Events1, hg_machine_action:set_timeout(0, Action)}};
-            undefined ->
-                NonFailRatedRoutes = gather_routes(PaymentInstitution, RiskScore, VS3, Revision, St),
-                Routes = [hg_routing:to_route(R) || R <- NonFailRatedRoutes],
-                Events = handle_gathered_route_result(
-                    find_unoverflowed_limit_routes(NonFailRatedRoutes, VS3, St),
-                    Routes
-                ),
-                {next, {Events0 ++ Events, hg_machine_action:set_timeout(0, Action)}}
-        end
+        Routes =
+            case get_predefined_route(Payer) of
+                {ok, PaymentRoute} ->
+                    [hg_routing:to_route(PaymentRoute)];
+                undefined ->
+                    gather_routes(PaymentInstitution, VS4, Revision, St)
+            end,
+        Events = handle_gathered_route_result(
+            find_unoverflowed_limit_routes(Routes, VS4, St),
+            [hg_routing:from_route(R) || R <- Routes]
+        ),
+        {next, {Events0 ++ Events, hg_machine_action:set_timeout(0, Action)}}
     catch
         throw:risk_score_is_too_high = Reason ->
-            logger:info("No route found, reason = ~p, varset: ~p", [Reason, VS3]),
+            logger:info("No route found, reason = ~p, varset: ~p", [Reason, VS4]),
             handle_choose_route_error(Reason, Events0, St, Action);
         throw:{no_route_found, Reason} ->
             handle_choose_route_error(Reason, Events0, St, Action)
     end.
 
-handle_gathered_route_result({ok, [_Route]}, [Route]) ->
-    [?route_changed(Route, [Route])];
-handle_gathered_route_result({ok, NonFailRatedRoutes}, Routes) ->
-    {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(NonFailRatedRoutes),
+handle_gathered_route_result({ok, UnOverflowRoutes}, Routes) ->
+    {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(UnOverflowRoutes),
     _ = log_route_choice_meta(ChoiceMeta),
     [?route_changed(ChoosenRoute, Routes)];
 handle_gathered_route_result({error, not_found}, Routes) ->
@@ -1887,8 +1881,8 @@ handle_gathered_route_result({error, not_found}, Routes) ->
             )},
     [Route | _] = Routes,
     %% For protocol compatability we set choosen route in route_changed event.
-    %% It doesn't influence cash_flow building because this step will be skiped. And all limit's 'hold' operations
-    %% will be diclined.
+    %% It doesn't influence cash_flow building because this step will be skipped. And all limit's 'hold' operations
+    %% will be rolled back.
     [?route_changed(Route, Routes), ?payment_rollback_started(Failure)].
 
 handle_choose_route_error(Reason, Events, St, Action) ->
@@ -2154,7 +2148,7 @@ process_result({payment, processing_failure}, Action, St = #st{failure = Failure
     NewAction = hg_machine_action:set_timeout(0, Action),
     Routes = get_available_routes(St),
     _ = rollback_payment_limits(Routes, St),
-    CashFlow /= undefined andalso rollback_payment_cashflow(St),
+    _ = CashFlow /= undefined andalso rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
@@ -2526,24 +2520,10 @@ get_provider_terms(St, Revision) ->
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     get_provider_terminal_terms(Route, VS1, Revision).
 
-find_unoverflowed_limit_routes([?route(_, _) = Route], VS, St) ->
-    Revision = get_payment_revision(St),
-    Payment = get_payment(St),
-    Invoice = get_invoice(get_opts(St)),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
-    TurnoverLimits = get_turnover_limits(ProviderTerms),
-    ok = hg_limiter:hold_payment_limits(TurnoverLimits, Route, Invoice, Payment),
-    case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
-        {ok, _} ->
-            {ok, [Route]};
-        {error, {limit_overflow, _IDs}} ->
-            {error, not_found}
-    end;
-find_unoverflowed_limit_routes(NonFailRatedRoutes, VS, St) ->
-    Routes = [hg_routing:to_route(R) || R <- NonFailRatedRoutes],
+find_unoverflowed_limit_routes(Routes, VS, St) ->
     ok = hold_limit_routes(Routes, VS, St),
     RejectedContext = #{rejected_routes => []},
-    case get_unoverflowed_limit_routes(NonFailRatedRoutes, VS, St, RejectedContext) of
+    case get_unoverflowed_limit_routes(Routes, VS, St, RejectedContext) of
         {[], _RejectedRoutesOut} ->
             {error, not_found};
         {UnOverflowedRoutes, _} ->
@@ -2555,16 +2535,17 @@ get_unoverflowed_limit_routes(Routes, VS, St, RejectedRoutes) ->
     Payment = get_payment(St),
     Invoice = get_invoice(get_opts(St)),
     lists:foldl(
-        fun(NonFailRatedRoute, {UnOverflowedRoutesIn, RejectedIn}) ->
-            Route = hg_routing:to_route(NonFailRatedRoute),
-            ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
+        fun(Route, {UnOverflowedRoutesIn, RejectedIn}) ->
+            PaymentRoute = hg_routing:from_route(Route),
+            ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
                 {ok, _} ->
-                    {[NonFailRatedRoute | UnOverflowedRoutesIn], RejectedIn};
+                    {[Route | UnOverflowedRoutesIn], RejectedIn};
                 {error, {limit_overflow, IDs}} ->
-                    ?route(ProviderRef, TerminalRef) = Route,
-                    RejectedOut = [{ProviderRef, TerminalRef, {'LimitOverflow', IDs}} | RejectedIn],
+                    PRef = hg_routing:provider_ref(Route),
+                    TRef = hg_routing:terminal_ref(Route),
+                    RejectedOut = [{PRef, TRef, {'LimitOverflow', IDs}} | RejectedIn],
                     {UnOverflowedRoutesIn, RejectedOut}
             end
         end,
@@ -2578,9 +2559,10 @@ hold_limit_routes(Routes, VS, St) ->
     Invoice = get_invoice(get_opts(St)),
     lists:foreach(
         fun(Route) ->
-            ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
+            PaymentRoute = hg_routing:from_route(Route),
+            ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
-            ok = hg_limiter:hold_payment_limits(TurnoverLimits, Route, Invoice, Payment)
+            ok = hg_limiter:hold_payment_limits(TurnoverLimits, PaymentRoute, Invoice, Payment)
         end,
         Routes
     ).

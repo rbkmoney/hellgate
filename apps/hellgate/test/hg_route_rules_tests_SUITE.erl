@@ -223,8 +223,7 @@ gather_route_success(_C) ->
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-
-    {[{_, {?trm(1), _, _}}], RejectContext} = hg_routing_rule:gather_routes(
+    {[#{terminal_ref := ?trm(1)}], RejectContext} = hg_routing_rule:gather_routes(
         payment,
         PaymentInstitution,
         VS,
@@ -331,10 +330,10 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
     {SelectedProviders, _} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
-    Routes = lists:sort(SelectedProviders),
+    Routes = sort_routes(SelectedProviders),
 
     %% Ensure list of selected provider ID match to given
-    PrvIDList = [P || {{?prv(P), _}, _} <- Routes],
+    PrvIDList = [P || #{provider_ref := ?prv(P)} <- Routes],
     ok.
 
 -spec prefer_alive(config()) -> test_return().
@@ -357,10 +356,15 @@ prefer_alive(_C) ->
         VS,
         Revision
     ),
-    Routes = lists:sort(RoutesUnordered),
-    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
-
-    {ProviderRefs, TerminalData} = lists:unzip(Routes),
+    Routes = sort_routes(RoutesUnordered),
+    ?assertMatch(
+        [
+            #{provider_ref := ?prv(21)},
+            #{provider_ref := ?prv(22)},
+            #{provider_ref := ?prv(23)}
+        ],
+        Routes
+    ),
 
     Alive = {alive, 0.0},
     Dead = {dead, 1.0},
@@ -370,9 +374,9 @@ prefer_alive(_C) ->
     ProviderStatuses1 = [{Dead, Normal}, {Alive, Normal}, {Dead, Normal}],
     ProviderStatuses2 = [{Dead, Normal}, {Dead, Normal}, {Alive, Normal}],
 
-    FailRatedRoutes0 = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses0),
-    FailRatedRoutes1 = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses1),
-    FailRatedRoutes2 = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses2),
+    FailRatedRoutes0 = lists:zip(Routes, ProviderStatuses0),
+    FailRatedRoutes1 = lists:zip(Routes, ProviderStatuses1),
+    FailRatedRoutes2 = lists:zip(Routes, ProviderStatuses2),
 
     Result0 = hg_routing:choose_rated_route(FailRatedRoutes0),
     Result1 = hg_routing:choose_rated_route(FailRatedRoutes1),
@@ -408,9 +412,15 @@ prefer_normal_conversion(_C) ->
         VS,
         Revision
     ),
-    Routes = lists:sort(RoutesUnordered),
-    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
-    {Providers, TerminalData} = lists:unzip(Routes),
+    Routes = sort_routes(RoutesUnordered),
+    ?assertMatch(
+        [
+            #{provider_ref := ?prv(21)},
+            #{provider_ref := ?prv(22)},
+            #{provider_ref := ?prv(23)}
+        ],
+        Routes
+    ),
 
     Alive = {alive, 0.0},
     Normal = {normal, 0.0},
@@ -419,9 +429,9 @@ prefer_normal_conversion(_C) ->
     ProviderStatuses0 = [{Alive, Normal}, {Alive, Lacking}, {Alive, Lacking}],
     ProviderStatuses1 = [{Alive, Lacking}, {Alive, Normal}, {Alive, Lacking}],
     ProviderStatuses2 = [{Alive, Lacking}, {Alive, Lacking}, {Alive, Normal}],
-    FailRatedRoutes0 = lists:zip3(Providers, TerminalData, ProviderStatuses0),
-    FailRatedRoutes1 = lists:zip3(Providers, TerminalData, ProviderStatuses1),
-    FailRatedRoutes2 = lists:zip3(Providers, TerminalData, ProviderStatuses2),
+    FailRatedRoutes0 = lists:zip(Routes, ProviderStatuses0),
+    FailRatedRoutes1 = lists:zip(Routes, ProviderStatuses1),
+    FailRatedRoutes2 = lists:zip(Routes, ProviderStatuses2),
 
     Result0 = hg_routing:choose_rated_route(FailRatedRoutes0),
     Result1 = hg_routing:choose_rated_route(FailRatedRoutes1),
@@ -457,14 +467,18 @@ prefer_higher_availability(_C) ->
         VS,
         Revision
     ),
-    Routes = lists:sort(RoutesUnordered),
-    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
-
-    {ProviderRefs, TerminalData} = lists:unzip(Routes),
+    Routes = sort_routes(RoutesUnordered),
+    ?assertMatch(
+        [
+            #{provider_ref := ?prv(21)},
+            #{provider_ref := ?prv(22)},
+            #{provider_ref := ?prv(23)}
+        ],
+        Routes
+    ),
 
     ProviderStatuses = [{{alive, 0.5}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.6}, {normal, 0.5}}],
-    FailRatedRoutes = lists:zip3(ProviderRefs, TerminalData, ProviderStatuses),
-
+    FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
 
     {#domain_PaymentRoute{provider = ?prv(21), terminal = ?trm(21)}, #{
@@ -493,13 +507,18 @@ prefer_higher_conversion(_C) ->
         VS,
         Revision
     ),
-    Routes = lists:sort(RoutesUnordered),
-    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
-
-    {Providers, TerminalData} = lists:unzip(Routes),
+    Routes = sort_routes(RoutesUnordered),
+    ?assertMatch(
+        [
+            #{provider_ref := ?prv(21)},
+            #{provider_ref := ?prv(22)},
+            #{provider_ref := ?prv(23)}
+        ],
+        Routes
+    ),
 
     ProviderStatuses = [{{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.5}}],
-    FailRatedRoutes = lists:zip3(Providers, TerminalData, ProviderStatuses),
+    FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
 
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
     {#domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, #{
@@ -528,17 +547,22 @@ prefer_weight_over_availability(_C) ->
         VS,
         Revision
     ),
-    Routes = lists:sort(RoutesUnordered),
-    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
-    {Providers, TerminalData} = lists:unzip(Routes),
+    Routes = sort_routes(RoutesUnordered),
+    ?assertMatch(
+        [
+            #{provider_ref := ?prv(21)},
+            #{provider_ref := ?prv(22)},
+            #{provider_ref := ?prv(23)}
+        ],
+        Routes
+    ),
 
     ProviderStatuses = [{{alive, 0.3}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
-    FailRatedRoutes = lists:zip3(Providers, TerminalData, ProviderStatuses),
+    FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
 
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
 
     {#domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, _Meta} = Result,
-
     ok.
 
 -spec prefer_weight_over_conversion(config()) -> test_return().
@@ -559,18 +583,21 @@ prefer_weight_over_conversion(_C) ->
         VS,
         Revision
     ),
-    Routes = lists:sort(RoutesUnordered),
-    ?assertMatch([{{?prv(21), _}, _}, {{?prv(22), _}, _}, {{?prv(23), _}, _}], Routes),
-
-    {Providers, TerminalData} = lists:unzip(Routes),
+    Routes = sort_routes(RoutesUnordered),
+    ?assertMatch(
+        [
+            #{provider_ref := ?prv(21)},
+            #{provider_ref := ?prv(22)},
+            #{provider_ref := ?prv(23)}
+        ],
+        Routes
+    ),
 
     ProviderStatuses = [{{alive, 0.3}, {normal, 0.5}}, {{alive, 0.3}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
-    FailRatedRoutes = lists:zip3(Providers, TerminalData, ProviderStatuses),
+    FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
 
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
-
     {#domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, _Meta} = Result,
-
     ok.
 
 -spec gathers_fail_rated_routes(config()) -> test_return().
@@ -590,11 +617,19 @@ gathers_fail_rated_routes(_C) ->
     Result = hg_routing:gather_fail_rates(Routes0),
     ?assertMatch(
         [
-            {{?prv(21), _}, _, {{dead, 0.9}, {lacking, 0.9}}},
-            {{?prv(22), _}, _, {{alive, 0.1}, {normal, 0.1}}},
-            {{?prv(23), _}, _, {{alive, 0.0}, {normal, 0.0}}}
+            {#{provider_ref := ?prv(21)}, {{dead, 0.9}, {lacking, 0.9}}},
+            {#{provider_ref := ?prv(22)}, {{alive, 0.1}, {normal, 0.1}}},
+            {#{provider_ref := ?prv(23)}, {{alive, 0.0}, {normal, 0.0}}}
         ],
         lists:sort(Result)
+    ).
+
+sort_routes(Routes) ->
+    lists:sort(
+        fun(#{provider_ref := ?prv(ID1)}, #{provider_ref := ?prv(ID2)}) ->
+            ID1 < ID2
+        end,
+        Routes
     ).
 
 %%% Terminal priority tests

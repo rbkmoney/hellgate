@@ -18,8 +18,11 @@
 -export([unmarshal/1]).
 
 -export([get_logger_metadata/1]).
--export([to_route/1]).
 
+-export([to_route/1]).
+-export([from_route/1]).
+-export([provider_ref/1]).
+-export([terminal_ref/1]).
 %%
 
 -include("domain.hrl").
@@ -29,7 +32,7 @@
     | dmsl_domain_thrift:'RecurrentPaytoolsProvisionTerms'()
     | undefined.
 
--type route() :: dmsl_domain_thrift:'PaymentRoute'().
+-type payment_route() :: dmsl_domain_thrift:'PaymentRoute'().
 -type route_predestination() :: payment | recurrent_paytool | recurrent_payment.
 
 -define(rejected(Reason), {rejected, Reason}).
@@ -43,24 +46,14 @@
 -type rejected_provider() :: {provider_ref(), Reason :: term()}.
 -type rejected_route() :: {provider_ref(), terminal_ref(), Reason :: term()}.
 
--type provider() :: dmsl_domain_thrift:'Provider'().
 -type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
 -type terminal() :: dmsl_domain_thrift:'Terminal'().
 -type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 
 -type fd_service_stats() :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
-
--type non_fail_rated_route() :: {provider_with_ref(), weighted_terminal()}.
--type fail_rated_route() :: {provider_with_ref(), weighted_terminal(), provider_status()}.
-
--type provider_with_ref() :: {provider_ref(), provider()}.
-
 -type unweighted_terminal() :: {terminal_ref(), terminal()}.
--type weighted_terminal() :: {terminal_ref(), terminal(), terminal_priority()}.
--type terminal_priority() :: {terminal_priority_rating(), terminal_priority_weight()}.
 
 -type terminal_priority_rating() :: integer().
--type terminal_priority_weight() :: integer().
 
 -type provider_status() :: {availability_status(), conversion_status()}.
 
@@ -75,9 +68,20 @@
 
 -type condition_score() :: 0 | 1.
 
--type scored_route() :: {route_scores(), non_fail_rated_route()}.
-
 -type route_groups_by_priority() :: #{{availability_condition(), terminal_priority_rating()} => [fail_rated_route()]}.
+
+-type route() :: #{
+    provider_ref := dmsl_domain_thrift:'ProviderRef'(),
+    provider_name => binary(),
+    terminal_ref := dmsl_domain_thrift:'TerminalRef'(),
+    terminal_name => binary(),
+    weight => integer(),
+    priority := integer()
+}.
+
+-type fail_rated_route() :: {route(), provider_status()}.
+
+-type scored_route() :: {route_scores(), route()}.
 
 -type route_info() :: #{
     provider_ref => integer(),
@@ -119,33 +123,76 @@
 
 -type route_scores() :: #route_scores{}.
 
+-export_type([route/0]).
 -export_type([route_predestination/0]).
--export_type([non_fail_rated_route/0]).
 -export_type([reject_context/0]).
 -export_type([varset/0]).
 
--spec to_route(fail_rated_route() | non_fail_rated_route()) -> route().
-to_route({{ProviderRef, _}, {TerminalRef, _, _}, _ProviderStatus}) ->
-    ?route(ProviderRef, TerminalRef);
-to_route({{ProviderRef, _}, {TerminalRef, _, _}}) ->
-    ?route(ProviderRef, TerminalRef).
+-spec to_route(payment_route()) -> route().
+to_route(Route) ->
+    ?route(ProviderRef, TerminalRef) = Route,
+    DefaultPriority = 1000,
+    #{
+        provider_ref => ProviderRef,
+        terminal_ref => TerminalRef,
+        priority => DefaultPriority
+    }.
 
--spec gather_fail_rates([non_fail_rated_route()]) -> [fail_rated_route()].
+-spec from_route(route() | scored_route()) -> payment_route().
+from_route(#{provider_ref := _, terminal_ref := _} = Route) ->
+    ?route(provider_ref(Route), terminal_ref(Route));
+from_route({_Scores, Route}) ->
+    ?route(provider_ref(Route), terminal_ref(Route)).
+
+-spec provider_ref(route()) -> provider_ref().
+provider_ref(#{provider_ref := Ref}) ->
+    Ref.
+
+-spec terminal_ref(route()) -> terminal_ref().
+terminal_ref(#{terminal_ref := Ref}) ->
+    Ref.
+
+-spec provider_name(route()) -> binary() | undefined.
+provider_name(Route) ->
+    maps:get(provider_name, Route, undefined).
+
+-spec terminal_name(route()) -> binary() | undefined.
+terminal_name(Route) ->
+    maps:get(terminal_name, Route, undefined).
+
+-spec priority(route()) -> integer().
+priority(#{priority := Priority}) ->
+    Priority.
+
+-spec weight(route()) -> integer() | undefined.
+weight(Route) ->
+    maps:get(weight, Route, undefined).
+
+-spec set_weight(integer(), route()) -> route().
+set_weight(Weight, Route) ->
+    Route#{weight => Weight}.
+
+-spec gather_fail_rates([route()]) -> [fail_rated_route()].
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([non_fail_rated_route()]) -> {route(), route_choice_meta()}.
-choose_route(NonFailRatedRoutes) ->
-    FailRatedRoutes = gather_fail_rates(NonFailRatedRoutes),
+-spec choose_route([route()]) -> {payment_route(), route_choice_meta()}.
+choose_route([Route]) ->
+    RouteChoiceMeta = #{
+        chosen_route => export_route_info(Route)
+    },
+    {?route(provider_ref(Route), terminal_ref(Route)), RouteChoiceMeta};
+choose_route(Routes) ->
+    FailRatedRoutes = gather_fail_rates(Routes),
     choose_rated_route(FailRatedRoutes).
 
--spec choose_rated_route([fail_rated_route()]) -> {route(), route_choice_meta()}.
+-spec choose_rated_route([fail_rated_route()]) -> {payment_route(), route_choice_meta()}.
 choose_rated_route(FailRatedRoutes) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes),
     {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
     RouteChoiceMeta = get_route_choice_meta(ChosenRoute, IdealRoute),
-    {export_route(ChosenRoute), RouteChoiceMeta}.
+    {from_route(ChosenRoute), RouteChoiceMeta}.
 
 -spec find_best_routes([scored_route()]) -> {Chosen :: scored_route(), Ideal :: scored_route()}.
 find_best_routes([Route]) ->
@@ -192,14 +239,16 @@ get_route_choice_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
         reject_reason => map_route_switch_reason(ChosenScores, IdealScores)
     }.
 
--spec export_route_info(non_fail_rated_route()) -> route_info().
-export_route_info({{ProviderRef, Provider}, {TerminalRef, Terminal, _Priority}}) ->
-    #{
+-spec export_route_info(route()) -> route_info().
+export_route_info(Route) ->
+    ProviderRef = provider_ref(Route),
+    TerminalRef = terminal_ref(Route),
+    genlib_map:compact(#{
         provider_ref => ProviderRef#domain_ProviderRef.id,
-        provider_name => Provider#domain_Provider.name,
+        provider_name => provider_name(Route),
         terminal_ref => TerminalRef#domain_TerminalRef.id,
-        terminal_name => Terminal#domain_Terminal.name
-    }.
+        terminal_name => terminal_name(Route)
+    }).
 
 -spec get_logger_metadata(route_choice_meta()) -> LoggerFormattedMetadata :: map().
 get_logger_metadata(RouteChoiceMeta) ->
@@ -246,15 +295,11 @@ balance_routes(FailRatedRoutes) ->
     balance_route_groups(FilteredRouteGroups).
 
 -spec group_routes_by_priority(fail_rated_route(), Acc :: route_groups_by_priority()) -> route_groups_by_priority().
-group_routes_by_priority(Route = {_, _, {ProviderCondition, _}}, SortedRoutes) ->
-    TerminalPriority = get_priority_from_route(Route),
+group_routes_by_priority(FailRatedRoute = {Route, {ProviderCondition, _}}, SortedRoutes) ->
+    TerminalPriority = priority(Route),
     Key = {ProviderCondition, TerminalPriority},
     Routes = maps:get(Key, SortedRoutes, []),
-    SortedRoutes#{Key => [Route | Routes]}.
-
-get_priority_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
-    {PriorityRate, _Weight} = Priority,
-    PriorityRate.
+    SortedRoutes#{Key => [FailRatedRoute | Routes]}.
 
 -spec balance_route_groups(route_groups_by_priority()) -> [fail_rated_route()].
 balance_route_groups(RouteGroups) ->
@@ -269,12 +314,13 @@ balance_route_groups(RouteGroups) ->
 
 set_routes_random_condition(Routes) ->
     NewRoutes = lists:map(
-        fun(Route) ->
-            case undefined =:= get_weight_from_route(Route) of
+        fun(FailRatedRoute) ->
+            {Route, ProviderStatus} = FailRatedRoute,
+            case undefined =:= weight(Route) of
                 true ->
-                    set_weight_to_route(0, Route);
+                    {set_weight(0, Route), ProviderStatus};
                 false ->
-                    Route
+                    FailRatedRoute
             end
         end,
         Routes
@@ -283,51 +329,41 @@ set_routes_random_condition(Routes) ->
     Random = rand:uniform() * Summary,
     lists:reverse(calc_random_condition(0.0, Random, NewRoutes, [])).
 
-get_weight_from_route({_Provider, {_TerminalRef, _Terminal, Priority}, _ProviderStatus}) ->
-    {_PriorityRate, Weight} = Priority,
-    Weight.
-
-set_weight_to_route(Value, Route) ->
-    {Provider, {TerminalRef, Terminal, Priority}, ProviderStatus} = Route,
-    {PriorityRate, _Weight} = Priority,
-    {Provider, {TerminalRef, Terminal, {PriorityRate, Value}}, ProviderStatus}.
-
-set_random_condition(Value, Route) ->
-    set_weight_to_route(Value, Route).
-
-get_summary_weight(Routes) ->
+get_summary_weight(FailRatedRoutes) ->
     lists:foldl(
-        fun(Route, Acc) ->
-            Weight = get_weight_from_route(Route),
+        fun({Route, _}, Acc) ->
+            Weight = weight(Route),
             Acc + Weight
         end,
         0,
-        Routes
+        FailRatedRoutes
     ).
 
 calc_random_condition(_, _, [], Routes) ->
     Routes;
-calc_random_condition(StartFrom, Random, [Route | Rest], Routes) ->
-    Weight = get_weight_from_route(Route),
+calc_random_condition(StartFrom, Random, [FailRatedRoute | Rest], Routes) ->
+    {Route, Status} = FailRatedRoute,
+    Weight = weight(Route),
     InRange = (Random >= StartFrom) and (Random < StartFrom + Weight),
     case InRange of
         true ->
-            NewRoute = set_random_condition(1, Route),
-            calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes]);
+            NewRoute = set_weight(1, Route),
+            calc_random_condition(StartFrom + Weight, Random, Rest, [{NewRoute, Status} | Routes]);
         false ->
-            NewRoute = set_random_condition(0, Route),
-            calc_random_condition(StartFrom + Weight, Random, Rest, [NewRoute | Routes])
+            NewRoute = set_weight(0, Route),
+            calc_random_condition(StartFrom + Weight, Random, Rest, [{NewRoute, Status} | Routes])
     end.
 
 -spec score_routes([fail_rated_route()]) -> [scored_route()].
 score_routes(Routes) ->
-    [{score_route(R), {Provider, Terminal}} || {Provider, Terminal, _ProviderStatus} = R <- Routes].
+    [{score_route(FailRatedRoute), Route} || {Route, _} = FailRatedRoute <- Routes].
 
-score_route({_Provider, {_TerminalRef, _Terminal, Priority}, ProviderStatus}) ->
+score_route({Route, ProviderStatus}) ->
+    PriorityRate = priority(Route),
+    RandomCondition = weight(Route),
     {AvailabilityStatus, ConversionStatus} = ProviderStatus,
     {AvailabilityCondition, Availability} = get_availability_score(AvailabilityStatus),
     {ConversionCondition, Conversion} = get_conversion_score(ConversionStatus),
-    {PriorityRate, RandomCondition} = Priority,
     #route_scores{
         availability_condition = AvailabilityCondition,
         conversion_condition = ConversionCondition,
@@ -343,18 +379,13 @@ get_availability_score({dead, FailRate}) -> {0, 1.0 - FailRate}.
 get_conversion_score({normal, FailRate}) -> {1, 1.0 - FailRate};
 get_conversion_score({lacking, FailRate}) -> {0, 1.0 - FailRate}.
 
-export_route({_Scores, {{ProviderRef, _Provider}, {TerminalRef, _Terminal, _Priority}}}) ->
-    % TODO shouldn't we provide something along the lines of `get_provider_ref/1`,
-    %      `get_terminal_ref/1` instead?
-    ?route(ProviderRef, TerminalRef).
-
--spec score_routes_with_fault_detector([non_fail_rated_route()]) -> [fail_rated_route()].
+-spec score_routes_with_fault_detector([route()]) -> [fail_rated_route()].
 score_routes_with_fault_detector([]) ->
     [];
 score_routes_with_fault_detector(Routes) ->
     IDs = build_ids(Routes),
     FDStats = hg_fault_detector_client:get_statistics(IDs),
-    [{P, T, get_provider_status(PR, FDStats)} || {{PR, _} = P, T} <- Routes].
+    [{R, get_provider_status(provider_ref(R), FDStats)} || R <- Routes].
 
 -spec get_provider_status(provider_ref(), [fd_service_stats()]) -> provider_status().
 get_provider_status(ProviderRef, FDStats) ->
@@ -391,7 +422,8 @@ get_provider_conversion_status(FDID, Stats) ->
 build_ids(Routes) ->
     lists:foldl(fun build_fd_ids/2, [], Routes).
 
-build_fd_ids({{ProviderRef, _Provider}, _Terminal}, IDs) ->
+build_fd_ids(Route, IDs) ->
+    ProviderRef = provider_ref(Route),
     AvailabilityID = build_fd_availability_service_id(ProviderRef),
     ConversionID = build_fd_conversion_service_id(ProviderRef),
     [AvailabilityID, ConversionID | IDs].
@@ -402,7 +434,7 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
 
--spec get_payments_terms(route(), hg_domain:revision()) -> terms().
+-spec get_payments_terms(payment_route(), hg_domain:revision()) -> terms().
 get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
     #domain_Provider{terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
     #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
@@ -683,7 +715,7 @@ marshal(_, Other) ->
 
 %% Unmarshalling
 
--spec unmarshal(hg_msgpack_marshalling:value()) -> route().
+-spec unmarshal(hg_msgpack_marshalling:value()) -> payment_route().
 unmarshal(Route) ->
     unmarshal(route, Route).
 
@@ -748,33 +780,39 @@ record_comparsion_test() ->
 
 -spec balance_routes_test() -> list().
 balance_routes_test() ->
+    Route = #{
+        terminal_ref => #domain_TerminalRef{id = 1},
+        priority => 1000
+    },
+    Status = {{alive, 0.0}, {normal, 0.0}},
     WithWeight = [
-        {1, {test, test, {test, 1}}, test},
-        {2, {test, test, {test, 2}}, test},
-        {3, {test, test, {test, 0}}, test},
-        {4, {test, test, {test, 1}}, test},
-        {5, {test, test, {test, 0}}, test}
+        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 1}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 2}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 1}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
     ],
+
     Result1 = [
-        {1, {test, test, {test, 1}}, test},
-        {2, {test, test, {test, 0}}, test},
-        {3, {test, test, {test, 0}}, test},
-        {4, {test, test, {test, 0}}, test},
-        {5, {test, test, {test, 0}}, test}
+        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 1}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
     ],
     Result2 = [
-        {1, {test, test, {test, 0}}, test},
-        {2, {test, test, {test, 1}}, test},
-        {3, {test, test, {test, 0}}, test},
-        {4, {test, test, {test, 0}}, test},
-        {5, {test, test, {test, 0}}, test}
+        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 1}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
     ],
     Result3 = [
-        {1, {test, test, {test, 0}}, test},
-        {2, {test, test, {test, 0}}, test},
-        {3, {test, test, {test, 0}}, test},
-        {4, {test, test, {test, 0}}, test},
-        {5, {test, test, {test, 0}}, test}
+        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
     ],
     [
         ?assertEqual(Result1, lists:reverse(calc_random_condition(0.0, 0.2, WithWeight, []))),
@@ -784,13 +822,18 @@ balance_routes_test() ->
 
 -spec balance_routes_without_weight_test() -> list().
 balance_routes_without_weight_test() ->
+    Route = #{
+        terminal_ref => #domain_TerminalRef{id = 1},
+        priority => 1000
+    },
+    Status = {{alive, 0.0}, {normal, 0.0}},
     Routes = [
-        {1, {test, test, {test, undefined}}, test},
-        {2, {test, test, {test, undefined}}, test}
+        {Route#{provider_ref => #domain_ProviderRef{id = 1}}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 2}}, Status}
     ],
     Result = [
-        {1, {test, test, {test, 0}}, test},
-        {2, {test, test, {test, 0}}, test}
+        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
+        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status}
     ],
     [
         ?assertEqual(Result, set_routes_random_condition(Routes))
