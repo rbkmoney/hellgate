@@ -193,7 +193,7 @@ init([]) ->
 -type test_return() :: _ | no_return().
 
 -define(PARTY_ID_WITH_LIMIT, <<"bIg merch limit">>).
--define(PARTY_ID_WITH_LIMIT2, <<"bIg merch limit cascading">>).
+-define(PARTY_ID_WITH_SEVERAL_LIMITS, <<"bIg merch limit cascading">>).
 -define(LIMIT_ID, <<"ID">>).
 -define(LIMIT_ID2, <<"ID2">>).
 -define(LIMIT_UPPER_BOUNDARY, 100000).
@@ -1081,7 +1081,7 @@ payment_limit_overflow(C) ->
 -spec switch_provider_after_limit_overflow(config()) -> test_return().
 switch_provider_after_limit_overflow(C) ->
     RootUrl = cfg(root_url, C),
-    PartyID = ?PARTY_ID_WITH_LIMIT2,
+    PartyID = ?PARTY_ID_WITH_SEVERAL_LIMITS,
     PaymentAmount = 49999,
     PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
     ShopID = hg_ct_helper:create_party_and_shop(?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
@@ -5940,7 +5940,7 @@ construct_domain_fixture() ->
                 ),
                 ?delegate(
                     <<"Provider cascading with turnover limit">>,
-                    {condition, {party, #domain_PartyCondition{id = ?PARTY_ID_WITH_LIMIT2}}},
+                    {condition, {party, #domain_PartyCondition{id = ?PARTY_ID_WITH_SEVERAL_LIMITS}}},
                     ?ruleset(6)
                 ),
                 ?delegate(<<"Common">>, {constant, true}, ?ruleset(1))

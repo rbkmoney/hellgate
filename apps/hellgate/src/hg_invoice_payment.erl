@@ -1856,7 +1856,7 @@ process_routing(Action, St) ->
                     gather_routes(PaymentInstitution, VS4, Revision, St)
             end,
         Events = handle_gathered_route_result(
-            find_unoverflowed_limit_routes(Routes, VS4, St),
+            filter_limit_overflow_routes(Routes, VS4, St),
             [hg_routing:from_route(R) || R <- Routes]
         ),
         {next, {Events0 ++ Events, hg_machine_action:set_timeout(0, Action)}}
@@ -2520,17 +2520,17 @@ get_provider_terms(St, Revision) ->
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     get_provider_terminal_terms(Route, VS1, Revision).
 
-find_unoverflowed_limit_routes(Routes, VS, St) ->
+filter_limit_overflow_routes(Routes, VS, St) ->
     ok = hold_limit_routes(Routes, VS, St),
     RejectedContext = #{rejected_routes => []},
-    case get_unoverflowed_limit_routes(Routes, VS, St, RejectedContext) of
+    case get_limit_overflow_routes(Routes, VS, St, RejectedContext) of
         {[], _RejectedRoutesOut} ->
             {error, not_found};
         {UnOverflowedRoutes, _} ->
             {ok, UnOverflowedRoutes}
     end.
 
-get_unoverflowed_limit_routes(Routes, VS, St, RejectedRoutes) ->
+get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
     Invoice = get_invoice(get_opts(St)),
